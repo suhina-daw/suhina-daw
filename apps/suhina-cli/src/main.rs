@@ -21,8 +21,9 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
        suhina-cli commands [--markdown]
        suhina-cli mcp [--read-root <dir>] [--write-root <dir>] [--audio]
        suhina-cli audio devices
-       suhina-cli plugins (scan [--all] | list | folders | add-folder <dir> | remove-folder <dir>
-                             | check <project.als> | set-hosting <plug-in> (binary | vendor | instance))
+       suhina-cli plugins (scan [--all] | list [--ignored] | folders | add-folder <dir>
+                             | remove-folder <dir> | check <project.als>
+                             | set-hosting <plug-in> (binary | vendor | instance))
        suhina-cli plugin run <plug-in> (<in-audio> | -) <out.wav> [--tail <seconds>] [--state <file>]
        suhina-cli plugin run-device <project.als> <device> (<in-audio> | -) <out.wav> [--tail <seconds>]
                                      [--from <bar>] [--seconds <seconds>]
@@ -42,7 +43,8 @@ commands:
   audio     audio devices: list the audio hosts (WASAPI, ASIO, ALSA...) and each one's output
             devices with their sample rates and buffer sizes
   plugins   find installed plug-ins: scan looks in the standard folders and the added ones
-            (only new and changed files, or every file with --all), list shows what was found,
+            (new and changed files and failed ones again, or every file with --all), list shows
+            what was found and what failed (--ignored: also the files that hold no plug-ins),
             folders shows where scans look, add-folder and remove-folder change that; check
             lists a project's plug-ins and the installed plug-in found for each, or none;
             set-hosting chooses whether a plug-in's instances share a process per file (the
@@ -652,6 +654,7 @@ fn plugins(args: &[String]) -> Result<(), String> {
         ["scan"] => ("plugins.scan", serde_json::json!({})),
         ["scan", "--all"] => ("plugins.scan", serde_json::json!({ "all": true })),
         ["list"] => ("plugins.list", serde_json::json!({})),
+        ["list", "--ignored"] => ("plugins.list", serde_json::json!({ "ignored": true })),
         ["folders"] => ("plugins.folders", serde_json::json!({})),
         ["add-folder", folder] => ("plugins.addFolder", serde_json::json!({ "folder": folder })),
         ["remove-folder", folder] => ("plugins.removeFolder", serde_json::json!({ "folder": folder })),

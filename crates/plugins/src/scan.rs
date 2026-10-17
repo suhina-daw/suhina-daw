@@ -8,15 +8,17 @@
 //! changed one in a `suhina-plugin-host --scan` process of its own, with a timeout, so a
 //! plug-in that crashes or hangs while loading costs its own entry, nothing else. The catalog
 //! keeps what it learned, keyed by path, modification time and size, so the next scan reads only
-//! what changed; files that failed stay listed with the reason and are not tried again until
-//! they change.
+//! what changed. A failure may be passing (a plug-in that waits on another process of its vendor
+//! while loading), so files that fail are read once more, one at a time, at the end of the same
+//! scan, and later scans try them again ([`Catalog::scan`]). Only a file that loads and holds no
+//! plug-ins ([`Scanned::NoPlugins`]) is settled until it changes.
 //!
 //! CLAP and VST3.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
@@ -29,8 +31,16 @@ const MAX_FILES: usize = 10_000;
 /// Bytes of a scanner's output read, at most.
 const MAX_OUTPUT: u64 = 4 * 1024 * 1024;
 /// The saved catalog's format. A catalog saved in another one is dropped and everything is read
-/// again (2: plug-ins list what they replace).
-const CATALOG_VERSION: u64 = 2;
+/// again, except one saved in 2, which is read (2: plug-ins list what they replace; 3: entries
+/// keep when they were last read, and a file that holds no plug-ins is kept as such).
+const CATALOG_VERSION: u64 = 3;
+/// How often a later scan tries again a file that hung: a hang costs its whole timeout each
+/// time, so a plug-in that always hangs slows down one scan a day, not every scan.
+pub const HANG_RETRY: Duration = Duration::from_secs(24 * 60 * 60);
+/// Why a file gave [`Scanned::NoPlugins`], in words.
+pub const NO_PLUGINS: &str = "the file holds no plug-ins";
+/// How every hang reason starts ([`hung_message`]).
+const HUNG: &str = "hung: ";
 
 /// One plug-in a file holds.
 #[derive(Debug, Clone, PartialEq)]
@@ -81,7 +91,12 @@ fn is_vst3(path: &Path) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Scanned {
     Plugins(Vec<PluginInfo>),
-    /// Why the file gave no plug-ins: it crashed, hung, or is not a plug-in.
+    /// The scanner loaded the file and it holds no audio plug-ins (an empty file, or a library
+    /// that is not one). Settled: not read again while the file is unchanged, and not listed
+    /// among the failures.
+    NoPlugins,
+    /// Why the file gave no plug-ins: it crashed, hung, or could not be loaded. Tried again by
+    /// later scans, since the reason may be passing.
     Failed(String),
 }
 
@@ -93,6 +108,19 @@ pub struct Entry {
     pub modified: u64,
     pub size: u64,
     pub scanned: Scanned,
+    /// When it was last read (seconds since 1970; 0 when not known).
+    pub tried: u64,
+}
+
+impl Entry {
+    /// Whether a scan at `now` (seconds since 1970) reads this unchanged file again: a failure
+    /// may be passing, so it is, except a hang tried less than [`HANG_RETRY`] ago.
+    fn retry_due(&self, now: u64) -> bool {
+        match &self.scanned {
+            Scanned::Failed(why) => !is_hang(why) || now.saturating_sub(self.tried) >= HANG_RETRY.as_secs(),
+            Scanned::Plugins(_) | Scanned::NoPlugins => false,
+        }
+    }
 }
 
 /// What a scan did.
@@ -100,11 +128,15 @@ pub struct Entry {
 pub struct Report {
     /// Files read for the first time or again because they changed.
     pub read: Vec<PathBuf>,
-    /// Files whose plug-ins failed to load (read in this scan).
+    /// Files whose plug-ins failed to load (read in this scan), after the second try.
     pub failed: Vec<(PathBuf, String)>,
+    /// Files that failed in the first pass and were read once more, one at a time.
+    pub retried: Vec<PathBuf>,
+    /// Files read in this scan that hold no plug-ins ([`Scanned::NoPlugins`]).
+    pub ignored: Vec<PathBuf>,
     /// Files no longer there, dropped from the catalog.
     pub removed: Vec<PathBuf>,
-    /// Files that had not changed since the last scan.
+    /// Files that had not changed since the last scan and were not tried again.
     pub unchanged: usize,
 }
 
@@ -232,7 +264,17 @@ pub fn scan_file(host: &Path, file: &str, timeout: Duration) -> Scanned {
 /// ended. Only the scanner's own deadline gives this reason, so a test can tell a hang that was
 /// caught from any other failure.
 pub fn hung_message(timeout: Duration) -> String {
-    format!("hung: no answer within {} s", timeout.as_secs_f32())
+    format!("{HUNG}no answer within {} s", timeout.as_secs_f32())
+}
+
+/// Whether `why` is the reason a hang gives ([`hung_message`]).
+pub fn is_hang(why: &str) -> bool {
+    why.starts_with(HUNG)
+}
+
+/// Seconds since 1970, now.
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// What the host prints for a scan that found `plugins` (their paths are not printed).
@@ -322,7 +364,7 @@ pub(crate) fn parse_scan(value: &Value, file: &str) -> Scanned {
             replaces: strings(p, "replaces"),
         })
         .collect::<Vec<_>>();
-    if plugins.is_empty() { Scanned::Failed("the file holds no plug-ins".into()) } else { Scanned::Plugins(plugins) }
+    if plugins.is_empty() { Scanned::NoPlugins } else { Scanned::Plugins(plugins) }
 }
 
 impl Catalog {
@@ -338,7 +380,7 @@ impl Catalog {
     /// way, and tests with the host's own test plug-ins). Replaces what was known about `path`.
     pub fn insert(&mut self, path: PathBuf, plugins: Vec<PluginInfo>) {
         self.entries.retain(|e| e.path != path);
-        self.entries.push(Entry { path, modified: 0, size: 0, scanned: Scanned::Plugins(plugins) });
+        self.entries.push(Entry { path, modified: 0, size: 0, scanned: Scanned::Plugins(plugins), tried: 0 });
     }
 
     /// Every plug-in found, in file order.
@@ -347,9 +389,22 @@ impl Catalog {
             .iter()
             .filter_map(|e| match &e.scanned {
                 Scanned::Plugins(p) => Some(p.iter()),
-                Scanned::Failed(_) => None,
+                Scanned::NoPlugins | Scanned::Failed(_) => None,
             })
             .flatten()
+    }
+
+    /// The files whose plug-ins failed to load, with the reason.
+    pub fn failed(&self) -> impl Iterator<Item = (&Path, &str)> {
+        self.entries.iter().filter_map(|e| match &e.scanned {
+            Scanned::Failed(why) => Some((e.path.as_path(), why.as_str())),
+            Scanned::Plugins(_) | Scanned::NoPlugins => None,
+        })
+    }
+
+    /// The files that hold no plug-ins ([`Scanned::NoPlugins`]).
+    pub fn ignored(&self) -> impl Iterator<Item = &Path> {
+        self.entries.iter().filter(|e| e.scanned == Scanned::NoPlugins).map(|e| e.path.as_path())
     }
 
     /// The plug-in with this id, or else the first whose name matches (ignoring case).
@@ -362,9 +417,16 @@ impl Catalog {
     /// Looks through `folders`, reads new and changed files, and drops files that are gone.
     /// VST3 bundles with a `moduleinfo.json` are read from it; the rest are loaded by
     /// [`scan_pool::default_workers`](crate::scan_pool::default_workers) worker processes, each
-    /// file within `timeout` (shells within [`SHELL_TIMEOUT`](crate::scan_pool::SHELL_TIMEOUT)).
+    /// file within `timeout` (shells within [`SHELL_TIMEOUT`](crate::scan_pool::SHELL_TIMEOUT)),
+    /// and the files that failed are read once more, one at a time
+    /// ([`scan_files_retrying`](crate::scan_pool::scan_files_retrying)).
+    ///
+    /// Unchanged files that failed in an earlier scan are read again too, since the reason may
+    /// have passed; one that hung, at most once per [`HANG_RETRY`]. An unchanged file that holds
+    /// no plug-ins is not.
     pub fn scan(&mut self, host: &Path, folders: &[PathBuf], timeout: Duration) -> Report {
-        use crate::scan_pool::{default_workers, module_info, scan_files, timeout_for};
+        use crate::scan_pool::{default_workers, module_info, scan_files_retrying, timeout_for};
+        let now = now();
         let files = find_files(folders);
         let mut report = Report::default();
         self.entries.retain(|e| {
@@ -378,26 +440,32 @@ impl Catalog {
         let mut to_load: Vec<(PathBuf, u64, u64)> = Vec::new();
         for file in files {
             let Some((modified, size)) = stamp(&file) else { continue };
-            if self.entries.iter().any(|e| e.path == file && e.modified == modified && e.size == size) {
+            let same = self.entries.iter().find(|e| e.path == file && e.modified == modified && e.size == size);
+            if same.is_some_and(|e| !e.retry_due(now)) {
                 report.unchanged += 1;
                 continue;
             }
             match module_info(&file) {
-                Some(plugins) => fresh.push(Entry { path: file, modified, size, scanned: Scanned::Plugins(plugins) }),
+                Some(plugins) => {
+                    fresh.push(Entry { path: file, modified, size, scanned: Scanned::Plugins(plugins), tried: now })
+                }
                 None => to_load.push((file, modified, size)),
             }
         }
         let names: Vec<String> = to_load.iter().map(|(f, _, _)| f.display().to_string()).collect();
-        let loaded = scan_files(host, &names, default_workers(), &|f| timeout_for(f, timeout));
+        let (loaded, retried) = scan_files_retrying(host, &names, default_workers(), &|f| timeout_for(f, timeout));
+        report.retried = retried.iter().filter_map(|&i| to_load.get(i)).map(|(f, _, _)| f.clone()).collect();
         for ((file, modified, size), mut scanned) in to_load.into_iter().zip(loaded) {
             if let Scanned::Plugins(plugins) = &mut scanned {
                 plugins.iter_mut().for_each(|p| p.path = file.clone());
             }
-            fresh.push(Entry { path: file, modified, size, scanned });
+            fresh.push(Entry { path: file, modified, size, scanned, tried: now });
         }
         for entry in fresh {
-            if let Scanned::Failed(why) = &entry.scanned {
-                report.failed.push((entry.path.clone(), why.clone()));
+            match &entry.scanned {
+                Scanned::Failed(why) => report.failed.push((entry.path.clone(), why.clone())),
+                Scanned::NoPlugins => report.ignored.push(entry.path.clone()),
+                Scanned::Plugins(_) => {}
             }
             report.read.push(entry.path.clone());
             match self.entries.iter_mut().find(|e| e.path == entry.path) {
@@ -416,11 +484,14 @@ impl Catalog {
             .entries
             .iter()
             .map(|e| {
-                let mut value = json!({ "path": e.path.display().to_string(), "modified": e.modified, "size": e.size });
+                let mut value = json!({
+                    "path": e.path.display().to_string(), "modified": e.modified, "size": e.size, "tried": e.tried,
+                });
                 match &e.scanned {
                     Scanned::Plugins(plugins) => {
                         value["plugins"] = plugins.iter().map(plugin_json).collect();
                     }
+                    Scanned::NoPlugins => value["plugins"] = json!([]),
                     Scanned::Failed(why) => value["failed"] = json!(why),
                 }
                 value
@@ -430,10 +501,13 @@ impl Catalog {
     }
 
     /// A catalog saved by [`Catalog::to_json`]; anything unreadable gives an empty catalog, so
-    /// the next scan reads everything again.
+    /// the next scan reads everything again. One saved in version 2 is read: when its entries
+    /// were last read is not known, and its "holds no plug-ins" failures are
+    /// [`Scanned::NoPlugins`].
     pub fn from_json(text: &str) -> Self {
         let Ok(value) = serde_json::from_str::<Value>(text) else { return Self::default() };
-        if value.get("version").and_then(Value::as_u64) != Some(CATALOG_VERSION) {
+        let version = value.get("version").and_then(Value::as_u64);
+        if version != Some(CATALOG_VERSION) && version != Some(2) {
             return Self::default();
         }
         let entries = value
@@ -445,14 +519,16 @@ impl Catalog {
                         let path = PathBuf::from(e.get("path")?.as_str()?);
                         let modified = e.get("modified")?.as_u64()?;
                         let size = e.get("size")?.as_u64()?;
+                        let tried = e.get("tried").and_then(Value::as_u64).unwrap_or(0);
                         let scanned = match e.get("failed").and_then(Value::as_str) {
+                            Some(NO_PLUGINS) if version == Some(2) => Scanned::NoPlugins,
                             Some(why) => Scanned::Failed(why.to_string()),
                             None => match parse_scan(e, &path.display().to_string()) {
-                                Scanned::Plugins(p) => Scanned::Plugins(p),
                                 Scanned::Failed(_) => return None,
+                                scanned => scanned,
                             },
                         };
-                        Some(Entry { path, modified, size, scanned })
+                        Some(Entry { path, modified, size, scanned, tried })
                     })
                     .collect()
             })

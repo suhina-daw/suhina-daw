@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use suhina_model::{Device, DeviceKind};
 use suhina_plugins::SavedState;
 use suhina_plugins::matching::Match;
-use suhina_plugins::scan::{Catalog, Report, Scanned};
+use suhina_plugins::scan::{Catalog, NO_PLUGINS, Report};
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::projects::project_param;
@@ -22,14 +22,18 @@ const FOLDER: Param = param("folder", ParamType::Text, "a folder that holds plug
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugins.list",
-        label: "List the plug-ins the last scan found (id, name, vendor, version, features, file) and the files that failed",
-        params: &[],
+        label: "List the plug-ins the last scan found (id, name, vendor, version, features, file) and the files that failed; files that hold no plug-ins only with ignored",
+        params: &[optional(
+            "ignored",
+            ParamType::Bool,
+            "also list the files that hold no plug-ins, which scans pass over (default false)",
+        )],
         kind: CommandKind::Plugins,
         run: list,
     },
     CommandSpec {
         id: "plugins.scan",
-        label: "Look for installed plug-ins in the standard folders and the added ones; reads only new and changed files unless all is true",
+        label: "Look for installed plug-ins in the standard folders and the added ones; reads new and changed files and tries failed ones again (a hung one once a day), every file if all is true",
         params: &[optional("all", ParamType::Bool, "read every file again, failed ones too (default false)")],
         kind: CommandKind::Plugins,
         run: scan,
@@ -92,7 +96,8 @@ fn paths(list: &[std::path::PathBuf]) -> Vec<String> {
     list.iter().map(|p| p.display().to_string()).collect()
 }
 
-fn list(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let ignored = bool_param(params, "ignored")?;
     let library = projects.library_mut();
     let specs: Vec<String> = library.catalog().plugins().map(|p| p.spec()).collect();
     let hosting: std::collections::HashMap<String, suhina_plugins::library::Hosting> =
@@ -113,15 +118,20 @@ fn list(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
             })
         })
         .collect();
-    let failed: Vec<Value> = catalog
-        .entries()
-        .iter()
-        .filter_map(|e| match &e.scanned {
-            Scanned::Failed(why) => Some(json!({ "file": e.path.display().to_string(), "reason": why })),
-            Scanned::Plugins(_) => None,
-        })
-        .collect();
-    Ok(json!({ "plugins": plugins, "failed": failed }))
+    let failed: Vec<Value> =
+        catalog.failed().map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect();
+    let mut listed = json!({ "plugins": plugins, "failed": failed });
+    if ignored {
+        listed["ignored"] =
+            catalog.ignored().map(|file| json!({ "file": file.display().to_string(), "reason": NO_PLUGINS })).collect();
+    }
+    Ok(listed)
+}
+
+/// The optional true-or-false parameter `name` (default false).
+fn bool_param(params: &Value, name: &str) -> Result<bool, CommandError> {
+    let value = params.get(name).map(|v| v.as_bool().ok_or_else(|| format!("{name} must be true or false")));
+    Ok(value.transpose()?.unwrap_or(false))
 }
 
 fn report(report: &Report, found: usize) -> Value {
@@ -130,12 +140,14 @@ fn report(report: &Report, found: usize) -> Value {
         "read": paths(&report.read),
         "unchanged": report.unchanged,
         "removed": paths(&report.removed),
+        "retried": paths(&report.retried),
+        "ignored": paths(&report.ignored),
         "failed": report.failed.iter().map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect::<Vec<_>>(),
     })
 }
 
 fn scan(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let all = params.get("all").map(|v| v.as_bool().ok_or("all must be true or false")).transpose()?.unwrap_or(false);
+    let all = bool_param(params, "all")?;
     let library = projects.library_mut();
     let done = library.scan(all)?;
     let found = library.catalog().plugins().count();

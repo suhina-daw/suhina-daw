@@ -370,7 +370,18 @@ workspace forbids.
      timed the shells out; this takes 86 s and finds every plug-in (733). Starting a process
      cost about a second there (antivirus checks each start), more than most plug-ins take to
      load.
-   - A file that failed keeps its reason and is not tried again until it changes.
+   - A failure can be passing: a plug-in that waits on a lock another process of its vendor
+     holds (seen with a vendor's daily background sync) gives no factory or hangs, more often
+     when files load side by side. So the files that failed in the parallel pass are read once
+     more, one at a time, at the end of the same scan, and the second result is kept. A file
+     that still fails keeps its reason and is listed as failed; later plain scans try it again
+     while it is unchanged, one that hung at most once a day (a hang costs its whole timeout),
+     so a plug-in that always hangs slows one scan a day, not every start. *Amended 2026-10-17*
+     (#602; was: a file that failed is not tried again until it changes).
+   - Only a file that loads and holds no plug-ins (an empty file) is settled: it is not read
+     again while it is unchanged, and is not listed among the failures; `plugins.list` with
+     `ignored` lists it. The catalog (format 3) keeps when each file was last read; a catalog
+     in format 2 is read as it is.
    The `plugins.*` commands run scans and choose the added folders (ADR 0002 amendment); the
    folders and the catalog are kept as JSON in Suhina's settings folder.
 10. **Editors** open from the host process, by default floating above Suhina's window and

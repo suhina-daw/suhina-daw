@@ -37,6 +37,7 @@ mod window;
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
@@ -126,7 +127,8 @@ fn main() {
 /// loading takes this process with it, and the scanner in the engine notices.
 ///
 /// For tests, `test:clap` describes the built-in test plug-in, `test:crash` exits without an
-/// answer and `test:hang` never answers.
+/// answer, `test:hang` never answers and `test:flaky:<file>` fails the first time (while
+/// `<file>` does not exist; it then makes it) and describes the test plug-in after that.
 fn scan(file: &str) -> ! {
     use suhina_plugins::scan::{SCAN_MARKER, scan_error_json, scan_json};
     let result = describe(file);
@@ -148,9 +150,25 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         },
         "test:clap" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
         "test:vst3" => vst3::describe(file),
+        _ if file.starts_with(FLAKY) => flaky(file),
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
         _ => clap::describe(&format!("clap:{file}")),
     }
+}
+
+/// The `test:` name of a file that fails to load once ([`flaky`]).
+const FLAKY: &str = "test:flaky:";
+
+/// `test:flaky:<file>`: a plug-in whose first load fails as a passing failure does (no factory)
+/// and whose later ones work. Whether it was loaded before is `<file>`'s existence, so it holds
+/// across scan processes.
+fn flaky(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String> {
+    let marker = Path::new(file.strip_prefix(FLAKY).unwrap_or_default());
+    if marker.exists() {
+        return clap::describe("test:clap");
+    }
+    std::fs::write(marker, b"loaded once").map_err(|e| format!("could not mark the first load: {e}"))?;
+    Err("the plug-in has no factory".into())
 }
 
 /// `--scan-worker`: reads one file name per line from standard input and prints each answer on

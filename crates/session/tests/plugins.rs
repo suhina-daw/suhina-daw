@@ -70,6 +70,30 @@ fn nothing_scanned_lists_nothing_and_a_missing_host_is_an_error() {
 }
 
 #[test]
+fn files_that_hold_no_plugins_are_listed_only_when_asked() {
+    let dir = std::env::temp_dir().join(format!("suhina-plugin-commands-ignored-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("settings")).unwrap();
+    let catalog = r#"{"version":3,"entries":[
+        {"path":"/vst3/Empty.vst3","modified":1,"size":0,"tried":5,"plugins":[]},
+        {"path":"/vst3/Broken.vst3","modified":1,"size":9,"tried":5,"failed":"the plug-in has no factory"}]}"#;
+    std::fs::write(dir.join("settings").join("plugin-catalog.json"), catalog).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(dir.join("settings")), dir.join("no-such-host")));
+    let file = |path: &str| std::path::Path::new(path).display().to_string();
+
+    let listed = run(&mut p, "plugins.list", json!({})).unwrap();
+    assert_eq!(
+        listed["failed"],
+        json!([{ "file": file("/vst3/Broken.vst3"), "reason": "the plug-in has no factory" }])
+    );
+    assert!(listed.get("ignored").is_none(), "{listed}");
+    let all = run(&mut p, "plugins.list", json!({ "ignored": true })).unwrap();
+    assert_eq!(all["ignored"], json!([{ "file": file("/vst3/Empty.vst3"), "reason": "the file holds no plug-ins" }]));
+    assert_eq!(all["failed"], listed["failed"]);
+    assert!(run(&mut p, "plugins.list", json!({ "ignored": "yes" })).is_err());
+}
+
+#[test]
 fn plugin_commands_belong_to_suhina_not_to_a_project() {
     assert!(plugin_commands().iter().all(|c| c.id.starts_with("plugins.") && c.kind == CommandKind::Plugins));
     let (mut p, _) = projects("kinds");
