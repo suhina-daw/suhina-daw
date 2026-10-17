@@ -123,7 +123,11 @@ commands; plugdata is expected to load as an ordinary CLAP or VST3 plug-in now t
 but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), proposed).
 
 **ARA** after VST3 hosting works in the sandbox: Arrangement first, since looping, quantised
-Session clips do not fit ARA's linear timeline; Session view later. ADR before implementation.
+Session clips do not fit ARA's linear timeline; Session view later. The design is
+[ADR 0028](docs/decisions/0028-ara-hosting.md) (proposed) and the stages are the epic
+[#587](https://github.com/suhina-daw/suhina-daw/issues/587): the document lives in the plug-in host,
+audio reaches it through shared memory, and an ARA clip that would overlap another audio clip is
+refused or suspended, never by losing its edits.
 
 ## What works now
 
@@ -540,6 +544,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
+- `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
+  spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
+  ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - Arrangement clips split and consolidate: Ctrl+E cuts the selected clip at the playhead and
   a clip's right-click menu has Split here (`clip.split`, the second part playing on from where
   the clip was); Ctrl+J or Consolidate turns a range of one track into one clip, MIDI by joining

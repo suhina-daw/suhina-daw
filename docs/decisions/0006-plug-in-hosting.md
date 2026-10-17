@@ -461,7 +461,7 @@ workspace forbids.
   editors). Decided after native CLAP and VST3 work and the cost of the yabridge path has been
   measured; yabridge's code (GPL-3.0) can be read for how it solves the same problems.
 - macOS block sync and audio workgroup details, after the prototype.
-- Audio Units on macOS, LV2 on Linux, ARA (LOOP-15).
+- Audio Units on macOS, LV2 on Linux. ARA (LOOP-15) is [ADR 0028](0028-ara-hosting.md) (proposed).
 
 ## Consequences
 

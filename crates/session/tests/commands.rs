@@ -1291,3 +1291,63 @@ fn an_empty_midi_clip_follows_odd_time_signatures_splits_a_clip_it_falls_inside_
     assert_eq!((lead.name.as_str(), lead.clips.len()), ("Lead", 1));
     assert!(session.project().validate().is_ok());
 }
+
+/// `lane_project` with its clips playing audio, and a second audio track with one clip.
+fn audio_lane_project() -> Project {
+    let mut p = lane_project();
+    for t in &mut p.tracks {
+        t.content = ContentKinds { notes: false, audio: true };
+    }
+    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("vocal.wav")) }];
+    let clip = Clip::new(ContentId(1), 0.0, 4.0);
+    p.arrangement.lanes.push(ArrangementLane {
+        track: Some(TrackId(2)),
+        clips: vec![clip],
+        ..ArrangementLane::default()
+    });
+    p
+}
+
+#[test]
+fn audio_overlaps_follow_stacking_and_undo() {
+    let mut session = Session::new(audio_lane_project());
+    let none = run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap();
+    assert_eq!(none, json!({ "overlaps": [], "truncated": false }));
+
+    // Stacked at 6, the clip from 0 sounds with the clips at 4 and 8.
+    run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 6, "stack": true })).unwrap();
+    let found = run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap();
+    let spans: Vec<_> = found["overlaps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| (o["track_name"].clone(), o["start"].clone(), o["end"].clone(), o["kind"].clone()))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            (json!("Bass"), json!(6.0), json!(8.0), json!("partial")),
+            (json!("Bass"), json!(8.0), json!(10.0), json!("partial")),
+        ]
+    );
+    let clips = &found["overlaps"][0]["clips"];
+    assert_eq!(clips[0]["name"], "Riff");
+    for c in clips.as_array().unwrap() {
+        assert_eq!(c["track"], 1);
+        let index = c["index"].as_u64().unwrap() as usize;
+        assert!(session.project().arrangement.lanes[0].clips.get(index).is_some());
+    }
+
+    // The track filter, by name and by id.
+    let lead = run(&mut session, "arrangement.audioOverlaps", json!({ "track": "Lead" })).unwrap();
+    assert_eq!(lead["overlaps"], json!([]));
+    let bass = run(&mut session, "arrangement.audioOverlaps", json!({ "track": 1 })).unwrap();
+    assert_eq!(bass["overlaps"].as_array().map(Vec::len), Some(2));
+    assert!(run(&mut session, "arrangement.audioOverlaps", json!({ "track": "Nobody" })).is_err());
+
+    // Undo takes the overlap away; a move without stack replaces instead of overlapping.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap()["overlaps"], json!([]));
+    run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 6 })).unwrap();
+    assert_eq!(run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap()["overlaps"], json!([]));
+}

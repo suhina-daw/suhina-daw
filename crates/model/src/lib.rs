@@ -21,9 +21,11 @@ pub use tempo::{
 
 mod launch;
 mod mapping;
+mod overlap;
 mod scale;
 pub use launch::{LaunchMode, LaunchQuantization, LaunchSettings};
 pub use mapping::{KEY_NAME_MAX, LaunchMapping, MappingSource, MappingTarget};
+pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, TOUCH_TOLERANCE};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 
 /// Identifies a [`Track`] within a project.
