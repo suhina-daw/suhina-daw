@@ -51,7 +51,7 @@ cpal = "0.18"  # Apache-2.0
 serde_json = "1"  # MIT OR Apache-2.0
 chrono = { version = "0.4", default-features = false, features = ["clock"] }  # MIT OR Apache-2.0
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
-rtrb = "0.3"  # MIT OR Apache-2.0
+rtrb = "0.4"  # MIT OR Apache-2.0
 midir = "0.11"  # MIT
 notify-debouncer-full = "0.6"  # MIT OR Apache-2.0; with notify (CC0-1.0)
 memory-stats = "1.2"  # MIT; the process's RAM, for the control bar
