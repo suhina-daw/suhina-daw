@@ -199,6 +199,7 @@ checking out or running the pull request's code) then:
 |---|---|
 | a maintainer adds the label | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
 | the label on a contributor's pull request without `test-build` | the label comes off, with a comment: a maintainer tries the build of the commit they read first |
+| the label on a Dependabot version update | as for a maintainer's own pull request: no `test-build` needed, the queue's build and tests check the new version |
 | anyone else adds the label | it comes off |
 | a push by a maintainer | the label stays; the app approves the new head and turns auto-merge on for it |
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
