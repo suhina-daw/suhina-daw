@@ -44,7 +44,7 @@ suhina-separation = { path = "crates/separation" }
 # external (licences must be GPLv3-compatible)
 hound = "3.5"  # Apache-2.0
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }  # MIT OR Apache-2.0
-base64 = "0.22"  # MIT OR Apache-2.0
+base64 = "0.23"  # MIT OR Apache-2.0
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }  # MIT
 roxmltree = "0.21"  # MIT OR Apache-2.0
 cpal = "0.18"  # Apache-2.0
