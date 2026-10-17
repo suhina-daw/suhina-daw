@@ -53,6 +53,13 @@ fn channel(id: u32) -> Channel {
 
 /// Keys (plays notes) and Mic (hears input channel 1), with two empty scenes.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let empty = || Slot { clip: None, has_stop: true };
     Project {
         tracks: vec![track(1, "Keys", InputChannels::None), track(2, "Mic", InputChannels::Mono(1))],

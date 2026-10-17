@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use suhina_engine::LauncherMonitor;
 
-use suhina_engine::model::{ChannelRole, Clip, ClipContent, FadeCurve, LaneData, Meter, Project, Rgb, TrackId};
+use suhina_engine::model::{ChannelRole, Clip, ClipContent, ClipId, FadeCurve, LaneData, Meter, Project, Rgb, TrackId};
 
 use crate::interaction::grid::{ColumnKind, default_track_colour, gain_to_db};
 use crate::interaction::nesting::depth;
@@ -66,7 +66,10 @@ impl AudioView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipBox {
-    /// Index on the track, as `clip.move` and `project.clips` count it.
+    /// Which clip it is: commands name it by this id, so a selection or a drag keeps naming the
+    /// same clip when others move (ADR 0025).
+    pub id: ClipId,
+    /// Where it is on the track now, in start order, as `project.clips` counts it.
     pub index: usize,
     pub start: f64,
     pub length: f64,
@@ -258,6 +261,7 @@ impl Timeline {
                         .map(|(index, clip)| {
                             let content = project.content(clip.content);
                             ClipBox {
+                                id: clip.id,
                                 index,
                                 start: clip.start,
                                 length: clip.length,

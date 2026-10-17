@@ -17,6 +17,7 @@ fn note(time: f64, key: u8) -> Note {
 
 fn clip(content: u32) -> Clip {
     Clip {
+        id: Default::default(),
         content: ContentId(content),
         start: 0.0,
         length: 4.0,
@@ -36,6 +37,13 @@ fn clip(content: u32) -> Clip {
 /// Track 1 "Keys": arrangement clips 0 and 1 both play content 1 (a duplicate), clip 2 is audio;
 /// scene 1's slot plays content 1 too, scene 2's slot is empty.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let content = |id: u32, data: LaneData| ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
@@ -75,6 +83,7 @@ fn project() -> Project {
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), Clip { start: 4.0, ..clip(1) }, Clip { start: 8.0, ..clip(2) }],

@@ -11,6 +11,13 @@ use suhina_session::Session;
 /// Bass (notes, one clip) and Lead, Group (a group Lead plays into) and two returns, all into
 /// Main.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str, notes: bool| Track {
         content: ContentKinds { notes, audio: false },
         channel: Some(ChannelId(id)),
@@ -49,6 +56,7 @@ fn project() -> Project {
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Bass".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],

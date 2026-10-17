@@ -18,10 +18,10 @@ use std::path::Path;
 
 use roxmltree::Node;
 use suhina_model::{
-    Arrangement, ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ContentId,
-    ContentKinds, ContentLane, Device, DeviceKind, Extension, Extensions, LaneData, Launcher, LauncherColumn,
+    Arrangement, ArrangementLane, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId, ContentId,
+    ContentKinds, ContentLane, Device, DeviceKind, Extension, Extensions, LaneData, LaneId, Launcher, LauncherColumn,
     LoopRange, MAX_CHANGE_BEAT, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note, Project,
-    Scene, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
+    Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
     ValidationError, WarpMarker, valid_bpm,
 };
 
@@ -100,7 +100,10 @@ pub fn read_xml(xml: &str) -> Result<Import, AlsError> {
     }
     let live_set = child(root, "LiveSet").ok_or(AlsError::NotALiveSet)?;
     let mut reader = Reader::default();
-    let project = reader.live_set(live_set);
+    let mut project = reader.live_set(live_set);
+    // The set's own object ids are not Suhina's (ADR 0025): every lane, clip and scene gets a new
+    // one, in document order. A set within the size cap holds far fewer objects than there are ids.
+    project.assign_ids().map_err(|_| AlsError::TooLarge)?;
     project.validate().map_err(AlsError::Invalid)?;
     Ok(Import { project, warnings: reader.warnings })
 }
@@ -193,6 +196,7 @@ impl Reader {
             });
             if entry.kind != TrackKind::Return {
                 lanes.push(ArrangementLane {
+                    id: LaneId::NONE,
                     name: entry.name.clone(),
                     track: Some(entry.track),
                     clips: self.arrangement_clips(entry),
@@ -212,6 +216,7 @@ impl Reader {
             launcher: Launcher { scenes, columns, mappings: Vec::new() },
             extensions: Extensions::default(),
             default_scale: None,
+            next_id: 0,
         };
         self.untangle_groups(&mut project);
         project
@@ -553,6 +558,7 @@ impl Reader {
             .children()
             .filter(|n| n.has_tag_name("Scene"))
             .map(|scene| Scene {
+                id: SceneId::NONE,
                 name: value(scene, &["Name"]).unwrap_or_default().to_string(),
                 tempo_bpm: if boolean(scene, &["IsTempoEnabled"]) == Some(true) {
                     number(scene, &["Tempo"]).filter(|bpm| (1.0..=999.0).contains(bpm))
@@ -676,6 +682,7 @@ impl Reader {
         }
 
         Some(Clip {
+            id: ClipId::NONE,
             content: id,
             start,
             length,

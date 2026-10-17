@@ -39,7 +39,12 @@ pub(crate) fn project(region: AudioRegion, length: f64, fade_in: f64, fade_out: 
             scale: None,
         }],
         arrangement: Arrangement {
-            lanes: vec![ArrangementLane { name: "Audio".into(), track: Some(TrackId(1)), clips: vec![clip.clone()] }],
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "Audio".into(),
+                track: Some(TrackId(1)),
+                clips: vec![clip.clone()],
+            }],
             markers: Vec::new(),
         },
         launcher: Launcher {
@@ -248,7 +253,10 @@ fn bad_fades_are_an_error_not_a_crash() {
         let result = render_offline_with_audio(&project(region.clone(), 2.0, fade_in, fade_out), &pool, SR, 512);
         assert_eq!(
             result.err(),
-            Some(crate::RenderError::InvalidProject(vec![ValidationError::BadFades { lane: 0, clip: 0 }])),
+            Some(crate::RenderError::InvalidProject(vec![ValidationError::BadFades {
+                lane: suhina_model::LaneId::NONE,
+                clip: suhina_model::ClipId::NONE
+            }])),
             "fades {fade_in} and {fade_out}"
         );
     }

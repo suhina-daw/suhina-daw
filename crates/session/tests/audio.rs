@@ -113,6 +113,13 @@ impl Stand {
 }
 
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     suhina_session::blank_project()
 }
 
@@ -325,7 +332,14 @@ fn a_choice_is_found_by_its_host_and_device() {
 
 /// A project with two tracks whose first launcher slots hold looping clips.
 fn launcher_project() -> Project {
-    let mut p = project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = launcher_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn launcher_project_built() -> Project {
+    let mut p = project_built();
     let note = suhina_model::Note::new(0.0, 0.25, 60, 1.0);
     p.contents.push(suhina_model::ClipContent {
         id: suhina_model::ContentId(900),

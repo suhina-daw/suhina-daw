@@ -12,7 +12,7 @@
 
 use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::{DeviceKind, LaneData, Note, Project, TrackId};
+use suhina_engine::model::{ClipId, DeviceKind, LaneData, Note, Project, TrackId};
 use suhina_session::{Placement, PluginReport, PluginStatus};
 
 use crate::interaction::grid::gain_to_db;
@@ -161,11 +161,11 @@ impl PluginBox {
     }
 }
 
-/// A selected clip: on the arrangement (its track and index there), or in a launcher slot (its
-/// track and scene, from 0).
+/// A selected clip: on the arrangement (its track and its id, which stays when it moves), or in
+/// a launcher slot (its track and scene, from 0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipRef {
-    Arrangement(TrackId, usize),
+    Arrangement(TrackId, ClipId),
     Slot(TrackId, usize),
 }
 
@@ -312,12 +312,12 @@ pub fn build_with(
     let track_name =
         |id: TrackId| project.tracks.iter().find(|t| t.id == id).map(|t| t.name.clone()).unwrap_or_default();
     let found = clip.and_then(|clip| match clip {
-        ClipRef::Arrangement(id, index) => project
+        ClipRef::Arrangement(id, clip) => project
             .arrangement
             .lanes
             .iter()
             .find(|l| l.track == Some(id))
-            .and_then(|l| l.clips.get(index))
+            .and_then(|l| l.clips.iter().find(|c| c.id == clip))
             .map(|placed| (id, placed, None)),
         ClipRef::Slot(id, scene) => project
             .launcher
@@ -1322,7 +1322,10 @@ mod tests {
 
     #[test]
     fn a_selected_clip_shows_its_properties() {
-        let detail = build(&demo_project(), Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), 1)));
+        let project = demo_project();
+        let beat_b = project.arrangement.lanes[0].clips[1].id;
+        assert_eq!(project.arrangement.lanes[0].track, Some(TrackId(1)));
+        let detail = build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)));
         let Detail::Clip(info, chain) = detail else { panic!("expected the clip") };
         assert_eq!(chain.track, TrackId(1));
         assert_eq!((info.name.as_str(), info.start.as_str(), info.length.as_str()), ("Beat B", "17.1", "12.0"));
@@ -1367,7 +1370,8 @@ mod tests {
         assert_eq!(chain.devices[0].params, [("gain".to_string(), "-3.5".to_string())]);
         assert!(!chain.devices[0].enabled);
         // A clip on the track shows the same chain beside its properties.
-        let Detail::Clip(_, with_clip) = build(&project, None, Some(ClipRef::Arrangement(TrackId(1), 0))) else {
+        let first = project.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap().clips[0].id;
+        let Detail::Clip(_, with_clip) = build(&project, None, Some(ClipRef::Arrangement(TrackId(1), first))) else {
             panic!()
         };
         assert_eq!(with_clip, chain);

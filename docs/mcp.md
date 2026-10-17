@@ -154,7 +154,20 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   root. Agents cannot choose `interval: "critical"`, which would write there unasked; the server
   writes no timed backups.
 
-- **Clips.** `project.clips` lists each arrangement clip with its start, length and fades
+- **Clips by id.** Every clip has an `id`, a whole number that stays the same when the clip is
+  moved, trimmed or edited, and never comes back once the clip is deleted
+  ([ADR 0025](decisions/0025-object-identity.md)). `project.clips` and `project.launcher` report
+  it, and every command that acts on a clip takes it as `clip` (or a name only one clip has),
+  `{ "clip": id }` in a `clips` list, so an agent can read a project, change it, and still name
+  the clip it meant: `clip.move {clip, start}`, `note.add {clip, notes}`. Commands that make
+  clips (`clip.paste`, `clip.duplicate`, `clip.split`, `clip.create`, `clip.consolidate`,
+  `clip.addFiles`) return the new clips' ids. The older form, `track` with `index` (an
+  arrangement clip's place on its track) or `scene`, still works and is **deprecated**: an index
+  changes whenever a clip before it moves, and it is accepted only until the project format's
+  next version. The examples below show the positional form where it is still the only way to
+  name a slot (`scene`).
+
+- **Clips.** `project.clips` lists each arrangement clip with its id, start, length and fades
   (lengths, shapes and curves); `clip.move`, `clip.duplicate`, `clip.delete`, `clip.copy`,
   `clip.cut`, `clip.paste`, `clip.setGain` and `clip.setFades` (fade-in and fade-out in beats,
   `inShape`/`outShape` and `inCurve`/`outCurve`) edit them through

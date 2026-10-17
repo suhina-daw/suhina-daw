@@ -15,6 +15,13 @@ const BEAT: usize = SR as usize / 2;
 
 /// Two tracks and two scenes; track 1 has a clip in both, track 2 only in scene 2.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = |id: u32| Track {
         content: ContentKinds { notes: true, audio: false },
         channel: Some(ChannelId(id)),
@@ -80,7 +87,8 @@ fn inserting_a_scene_adds_a_row_of_empty_slots_and_undo_removes_it() {
     assert_eq!(names(&session), ["Intro", "Break", "Drop", ""]);
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
 #[test]
@@ -126,12 +134,17 @@ fn a_scene_is_renamed_and_given_a_tempo_and_time_signature() {
     let set = run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": 7, "denominator": 8 }));
     assert_eq!(set.unwrap()["time_signature"], "7/8");
     let grid = run(&mut session, "project.launcher", json!({})).unwrap();
-    assert_eq!(grid["scenes"][0], json!({ "scene": 1, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" }));
+    let id = session.project().launcher.scenes[0].id.0;
+    assert_eq!(
+        grid["scenes"][0],
+        json!({ "scene": 1, "id": id, "name": "Verse", "tempo_bpm": 96.5, "time_signature": "7/8" })
+    );
     // Leaving the values out clears them; an empty name clears the name.
     run(&mut session, "scene.setTempo", json!({ "scene": 1 })).unwrap();
     run(&mut session, "scene.setTimeSignature", json!({ "scene": 1, "numerator": null, "denominator": null })).unwrap();
     run(&mut session, "scene.rename", json!({ "scene": 1, "name": "  " })).unwrap();
-    assert_eq!(session.project().launcher.scenes[0], Scene::default());
+    let id = session.project().launcher.scenes[0].id;
+    assert_eq!(session.project().launcher.scenes[0], Scene { id, ..Scene::default() });
     for _ in 0..6 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }

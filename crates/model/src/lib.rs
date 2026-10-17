@@ -12,12 +12,15 @@ use std::fmt;
 
 pub mod automation;
 mod build;
+mod ids;
 mod tempo;
 
 pub use tempo::{
     BarPosition, MAX_BPM, MAX_CHANGE_BEAT, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MIN_BPM, Meter, TempoMap,
     TempoPoint, TimeSignatureChange, valid_bpm,
 };
+
+pub use ids::{ClipId, ClipPlace, IdsExhausted, LaneId, SceneId};
 
 mod launch;
 mod mapping;
@@ -57,6 +60,11 @@ pub struct Project {
     /// The scale a new MIDI clip takes, if any; clips made before it was set keep theirs
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub default_scale: Option<Scale>,
+    /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
+    /// counter, and a value is never handed out twice, deleted objects' included
+    /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
+    /// [`Project::new_clip_id`] and its neighbours; 0 means nothing was handed out yet.
+    pub next_id: u32,
 }
 
 /// The song's tempo and time signature: `tempo_bpm` and `time_signature` hold from the start,
@@ -443,6 +451,9 @@ pub struct WarpMarker {
 /// Places a clip content on the arrangement or in a launcher slot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Clip {
+    /// Which clip this is; [`ClipId::NONE`] until the project gives it one
+    /// ([`Project::assign_ids`]). A copy of a clip is a new clip and gets a new id.
+    pub id: ClipId,
     pub content: ContentId,
     /// Start in beats on the arrangement; 0.0 in a launcher slot.
     pub start: f64,
@@ -769,6 +780,8 @@ impl Marker {
 /// carry their own targets).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ArrangementLane {
+    /// Which lane this is; [`LaneId::NONE`] until the project gives it one.
+    pub id: LaneId,
     pub name: String,
     pub track: Option<TrackId>,
     pub clips: Vec<Clip>,
@@ -786,6 +799,8 @@ pub struct Launcher {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scene {
+    /// Which scene this is; [`SceneId::NONE`] until the project gives it one.
+    pub id: SceneId,
     pub name: String,
     /// Tempo the scene switches to when launched, if any.
     pub tempo_bpm: Option<f64>,
@@ -830,11 +845,23 @@ pub enum ValidationError {
     MissingTrack(TrackId),
     MissingChannel(ChannelId),
     MissingContent(ContentId),
-    /// The clip at this index on the arrangement lane at this index has fades that are negative,
-    /// not finite, or together longer than the clip, or a fade curve outside −1 … +1.
+    /// Two clips have this id.
+    DuplicateClip(ClipId),
+    /// Two arrangement lanes have this id.
+    DuplicateLane(LaneId),
+    /// Two scenes have this id.
+    DuplicateScene(SceneId),
+    /// Objects of two kinds (a clip, a lane, a scene) have this id; the kinds share one counter,
+    /// so a value names at most one object.
+    SharedId(u32),
+    /// An object has an id the project's counter has not handed out yet: the next new object
+    /// would get it too.
+    IdAhead(u32),
+    /// This clip on this arrangement lane has fades that are negative, not finite, or together
+    /// longer than the clip, or a fade curve outside −1 … +1.
     BadFades {
-        lane: usize,
-        clip: usize,
+        lane: LaneId,
+        clip: ClipId,
     },
     /// The arrangement marker at this index has a beat that is negative or not finite.
     BadMarker(usize),
@@ -859,6 +886,11 @@ impl fmt::Display for ValidationError {
             Self::MissingTrack(id) => write!(f, "track {} does not exist", id.0),
             Self::MissingChannel(id) => write!(f, "channel {} does not exist", id.0),
             Self::MissingContent(id) => write!(f, "clip content {} does not exist", id.0),
+            Self::DuplicateClip(id) => write!(f, "clip id {id} is used twice"),
+            Self::DuplicateLane(id) => write!(f, "arrangement lane id {id} is used twice"),
+            Self::DuplicateScene(id) => write!(f, "scene id {id} is used twice"),
+            Self::SharedId(id) => write!(f, "object id {id} is used by a clip, a lane or a scene at once"),
+            Self::IdAhead(id) => write!(f, "object id {id} is not below the project's next id"),
             Self::GroupCycle(id) => write!(f, "track {} is inside itself through its groups", id.0),
             Self::GroupTooDeep(id) => {
                 write!(f, "track {} is inside more than {MAX_GROUP_DEPTH} nested groups", id.0)
@@ -893,6 +925,26 @@ impl Project {
         let tracks = unique(self.tracks.iter().map(|t| t.id), ValidationError::DuplicateTrack, &mut errors);
         let channels = unique(self.channels.iter().map(|c| c.id), ValidationError::DuplicateChannel, &mut errors);
         let contents = unique(self.contents.iter().map(|c| c.id), ValidationError::DuplicateContent, &mut errors);
+        // Objects without an id yet (0) are not duplicates of each other.
+        let clip_ids = self.all_clips().map(|c| c.id).filter(|id| id.is_some());
+        let clip_ids = unique(clip_ids, ValidationError::DuplicateClip, &mut errors);
+        let lane_ids = self.arrangement.lanes.iter().map(|l| l.id).filter(|id| id.is_some());
+        let lane_ids = unique(lane_ids, ValidationError::DuplicateLane, &mut errors);
+        let scene_ids = self.launcher.scenes.iter().map(|s| s.id).filter(|id| id.is_some());
+        let scene_ids = unique(scene_ids, ValidationError::DuplicateScene, &mut errors);
+        // The three kinds share one counter, so a value names at most one object of any of them
+        // (ADR 0025 › 2): a lane and a clip with the same value are refused as well.
+        let mut kinds: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+        let values =
+            clip_ids.iter().map(|c| c.0).chain(lane_ids.iter().map(|l| l.0)).chain(scene_ids.iter().map(|s| s.0));
+        for value in values {
+            *kinds.entry(value).or_default() += 1;
+        }
+        errors.extend(kinds.into_iter().filter(|&(_, n)| n > 1).map(|(value, _)| ValidationError::SharedId(value)));
+        let highest = self.max_object_id();
+        if highest != 0 && highest >= self.next_id {
+            errors.push(ValidationError::IdAhead(highest));
+        }
 
         let track_ref = |id: TrackId, errors: &mut Vec<ValidationError>| {
             if !tracks.contains(&id) {
@@ -950,14 +1002,14 @@ impl Project {
                 }
             }
         }
-        for (lane_index, lane) in self.arrangement.lanes.iter().enumerate() {
+        for lane in &self.arrangement.lanes {
             if let Some(track) = lane.track {
                 track_ref(track, &mut errors);
             }
-            for (clip_index, clip) in lane.clips.iter().enumerate() {
+            for clip in &lane.clips {
                 content_ref(clip.content, &mut errors);
                 if !clip.fades_valid() {
-                    errors.push(ValidationError::BadFades { lane: lane_index, clip: clip_index });
+                    errors.push(ValidationError::BadFades { lane: lane.id, clip: clip.id });
                 }
             }
         }
@@ -1046,9 +1098,7 @@ impl Project {
 
     /// Every clip, on the arrangement or in a launcher slot, that plays the content `id`.
     pub fn clips_of(&self, id: ContentId) -> impl Iterator<Item = &Clip> {
-        let arranged = self.arrangement.lanes.iter().flat_map(|l| &l.clips);
-        let launched = self.launcher.columns.iter().flat_map(|c| &c.slots).filter_map(|s| s.clip.as_ref());
-        arranged.chain(launched).filter(move |c| c.content == id)
+        self.all_clips().filter(move |c| c.content == id)
     }
 }
 
@@ -1146,6 +1196,7 @@ mod tests {
             ],
             arrangement: Arrangement {
                 lanes: vec![ArrangementLane {
+                    id: Default::default(),
                     name: "Bass".into(),
                     track: Some(TrackId(1)),
                     clips: vec![clip(1, 0.0)],
@@ -1189,6 +1240,7 @@ mod tests {
             contents: vec![pattern],
             arrangement: Arrangement {
                 lanes: vec![ArrangementLane {
+                    id: Default::default(),
                     name: "Track 1".into(),
                     track: None,
                     clips: vec![clip(1, 0.0), clip(1, 4.0)],
@@ -1214,6 +1266,7 @@ mod tests {
             channels: vec![ch],
             arrangement: Arrangement {
                 lanes: vec![ArrangementLane {
+                    id: Default::default(),
                     name: String::new(),
                     track: Some(TrackId(5)),
                     clips: vec![clip(3, 0.0)],
@@ -1298,6 +1351,7 @@ mod tests {
             contents: vec![content],
             arrangement: Arrangement {
                 lanes: vec![ArrangementLane {
+                    id: Default::default(),
                     name: String::new(),
                     track: None,
                     clips: vec![with(1.0, 1.0), with(3.0, 3.0)],
@@ -1306,7 +1360,10 @@ mod tests {
             },
             ..Project::default()
         };
-        assert_eq!(project.validate(), Err(vec![ValidationError::BadFades { lane: 0, clip: 1 }]));
+        let mut project = project;
+        project.assign_ids().unwrap();
+        // The lane is object 1, its clips 2 and 3.
+        assert_eq!(project.validate(), Err(vec![ValidationError::BadFades { lane: LaneId(1), clip: ClipId(3) }]));
     }
 
     #[test]

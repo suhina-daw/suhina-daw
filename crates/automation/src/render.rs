@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use suhina_engine::model::{Arrangement, ArrangementLane, Project};
+use suhina_engine::model::{Arrangement, ArrangementLane, Clip, ClipId, Project};
 use suhina_engine::{AudioPool, Plugins, Renderer, render_offline_with_cue, render_offline_with_plugins};
 use suhina_session::{CommandKind, OfflinePlugins, Player, PluginEnv, Session, commands, start_offline};
 
@@ -190,11 +190,20 @@ pub fn scene_as_arrangement(project: &Project, scene: usize) -> Result<Project, 
         .map(|column| ArrangementLane {
             name: String::new(),
             track: Some(column.track),
-            clips: column.slots.get(scene).and_then(|s| s.clip.clone()).into_iter().collect(),
+            // A copy of the slot's clip: a clip of its own, given an id below.
+            clips: column
+                .slots
+                .get(scene)
+                .and_then(|s| s.clip.clone())
+                .map(|c| Clip { id: ClipId::NONE, ..c })
+                .into_iter()
+                .collect(),
+            ..ArrangementLane::default()
         })
         .collect();
     let mut project = project.clone();
     project.arrangement = Arrangement { lanes, markers: Vec::new() };
+    project.assign_ids().map_err(|e| e.to_string())?;
     Ok(project)
 }
 

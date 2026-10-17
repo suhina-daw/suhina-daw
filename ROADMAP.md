@@ -224,6 +224,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   track) or never, written on a background thread, the newest 20 kept; after a crash the
   next start offers the backup back, to open as an unsaved project tied to its file
   (`project.autosave`, Settings › General › Backups, [spec](docs/spec/backups.md)).
+- Clips, arrangement lanes and scenes have ids that stay the same when they are moved or edited and
+  are never used twice; commands name a clip by its id (`clip`), so an agent's target does not move
+  when other clips do, and the positional `index` is deprecated
+  ([#568](https://github.com/suhina-daw/suhina-daw/issues/568),
+  [ADR 0025](docs/decisions/0025-object-identity.md)).
 - Still to do: more commands (notes, [#200](https://github.com/suhina-daw/suhina-daw/issues/200);
   clips), MCP resources.
 

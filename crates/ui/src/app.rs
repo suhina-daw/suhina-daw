@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::TrackId;
+use suhina_engine::model::{ClipId, TrackId};
 use suhina_session::{CommandKind, ProjectId, Projects, Session};
 
 use crate::app::project_dialog::{
@@ -127,7 +127,7 @@ struct Carry {
 enum CarryFrom {
     Arrangement {
         track: TrackId,
-        index: usize,
+        clip: ClipId,
     },
     /// Scene from 0.
     Slot {
@@ -662,8 +662,8 @@ impl App {
         self.shown
     }
 
-    /// The clip selected in the Arrangement view: its track and index.
-    pub fn selected_clip(&self) -> Option<(TrackId, usize)> {
+    /// The clip selected in the Arrangement view: its track and id.
+    pub fn selected_clip(&self) -> Option<(TrackId, ClipId)> {
         self.arrangement.selected_clip()
     }
 
@@ -685,15 +685,13 @@ impl App {
         let clip =
             (selected || self.settings.play_from == PlayFrom::Clip).then(|| self.selected_arrangement_clip()).flatten();
         match clip {
-            Some((track, index)) => {
-                Action::new("transport.play", json!({ "from": "clip", "track": track.0, "index": index }))
-            }
+            Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
         }
     }
 
     /// The clip selected in the Arrangement view, while that view is shown.
-    fn selected_arrangement_clip(&self) -> Option<(TrackId, usize)> {
+    fn selected_arrangement_clip(&self) -> Option<(TrackId, ClipId)> {
         if self.shown == View::Arrangement { self.arrangement.selected_clip() } else { None }
     }
 
@@ -1210,8 +1208,9 @@ impl App {
                     && let Some(track) = result["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
-                    match (at("index"), at("scene").and_then(|s| s.checked_sub(1))) {
-                        (Some(index), _) => self.arrangement.select_clip(track, index),
+                    let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
+                    match (clip.filter(|_| at("scene").is_none()), at("scene").and_then(|s| s.checked_sub(1))) {
+                        (Some(clip), _) => self.arrangement.select_clip(track, clip),
                         (None, Some(scene)) => self.view.select_slot(track, scene),
                         (None, None) => self.view.selected = Some(track),
                     }
@@ -1957,8 +1956,8 @@ impl App {
         let control_bar = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
         let quantization = suhina_session::parse_quantization(control_bar).ok()?;
         let mut piano = match clip? {
-            detail_view::ClipRef::Arrangement(track, index) => {
-                piano_roll::arrangement_clip(self.session()?.project(), track, index, quantization)?
+            detail_view::ClipRef::Arrangement(track, clip) => {
+                piano_roll::arrangement_clip(self.session()?.project(), track, clip, quantization)?
             }
             detail_view::ClipRef::Slot(track, scene) => {
                 piano_roll::launcher_clip(self.session()?.project(), track, scene, quantization)?
@@ -2875,7 +2874,7 @@ impl App {
                 actions.push(Action::new(id, params));
             }
             "selection.split" | "selection.consolidate" => {
-                let Some((track, index)) = self.arrangement.selected_clip() else {
+                let Some((track, id)) = self.arrangement.selected_clip() else {
                     self.status = Status::Hint("Select a clip in the Arrangement first".into());
                     return;
                 };
@@ -2883,7 +2882,7 @@ impl App {
                 let beat = timeline.map_or(0.0, |t| t.beat);
                 let clip = timeline
                     .and_then(|t| t.lanes.iter().find(|l| l.track == track))
-                    .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                    .and_then(|l| l.clips.iter().find(|c| c.id == id))
                     .map(|c| (c.start, c.length));
                 let Some((start, length)) = clip else { return };
                 if action == "selection.consolidate" {
@@ -2892,7 +2891,7 @@ impl App {
                     let params = json!({ "track": track.0, "start": start, "end": start + length });
                     actions.push(Action::new("clip.consolidate", params));
                 } else if beat > start && beat < start + length {
-                    actions.push(Action::new("clip.split", json!({ "track": track.0, "index": index, "at": beat })));
+                    actions.push(Action::new("clip.split", json!({ "clip": id.0, "at": beat })));
                 } else {
                     self.status = Status::Hint("Move the playhead into the selected clip to split it there".into());
                 }
@@ -2908,7 +2907,7 @@ impl App {
                 actions.push(Action::new("clip.setEnabled", json!({ "clips": clips, "enabled": !enabled })));
             }
             "selection.selectAll" => {
-                let clips: Vec<(TrackId, usize)> = self
+                let clips: Vec<(TrackId, ClipId)> = self
                     .session()
                     .map(|session| {
                         session
@@ -2916,8 +2915,8 @@ impl App {
                             .arrangement
                             .lanes
                             .iter()
-                            .filter_map(|lane| lane.track.map(|track| (track, lane.clips.len())))
-                            .flat_map(|(track, count)| (0..count).map(move |index| (track, index)))
+                            .filter_map(|lane| lane.track.map(|track| (track, &lane.clips)))
+                            .flat_map(|(track, clips)| clips.iter().map(move |clip| (track, clip.id)))
                             .collect()
                     })
                     .unwrap_or_default();
@@ -2927,9 +2926,9 @@ impl App {
                 // After the selected clip, or at the playhead on the selected track.
                 let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                 let target = match self.arrangement.selected_clip() {
-                    Some((track, index)) => timeline
+                    Some((track, id)) => timeline
                         .and_then(|t| t.lanes.iter().find(|l| l.track == track))
-                        .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                        .and_then(|l| l.clips.iter().find(|c| c.id == id))
                         .map(|c| (track, c.start + c.length)),
                     None => self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.beat))),
                 };
@@ -2992,23 +2991,19 @@ impl App {
 
     /// The clips the Arrangement view has selected, as `clip.*` commands name them.
     fn selected_clip_list(&self) -> Vec<serde_json::Value> {
-        self.arrangement
-            .selected_clips()
-            .iter()
-            .map(|(track, index)| json!({ "track": track.0, "index": index }))
-            .collect()
+        self.arrangement.selected_clips().iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect()
     }
 
     /// Whether any selected clip plays now. The window reads the clips it drew; a clip it cannot
     /// find counts as playing, so the first key press turns the selection off.
     fn any_selected_clip_plays(&self) -> bool {
         let Some((_, _, timeline)) = self.timeline.as_ref() else { return true };
-        self.arrangement.selected_clips().iter().any(|(track, index)| {
+        self.arrangement.selected_clips().iter().any(|(track, id)| {
             timeline
                 .lanes
                 .iter()
                 .find(|l| l.track == *track)
-                .and_then(|l| l.clips.iter().find(|c| c.index == *index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| c.enabled)
         })
     }
@@ -3021,12 +3016,12 @@ impl App {
         if selected.is_empty() {
             return false;
         }
-        selected.iter().all(|(track, index)| {
+        selected.iter().all(|(track, id)| {
             timeline
                 .lanes
                 .iter()
                 .find(|l| l.track == *track)
-                .and_then(|l| l.clips.iter().find(|c| c.index == *index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| self.stacks(c.audio))
         })
     }
@@ -3469,18 +3464,18 @@ impl App {
         }
         self.switch_hover = None;
         if self.carry.is_none()
-            && let Some((track, index)) = self.arrangement.dragged_clip()
+            && let Some((track, id)) = self.arrangement.dragged_clip()
         {
             let name = self
                 .timeline
                 .as_ref()
                 .and_then(|(_, _, t)| t.lanes.iter().find(|l| l.track == track))
-                .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == id))
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
             self.arrangement.cancel_clip_drag();
             ctx.stop_dragging();
-            self.carry = Some(Carry { from: CarryFrom::Arrangement { track, index }, name });
+            self.carry = Some(Carry { from: CarryFrom::Arrangement { track, clip: id }, name });
         }
         self.shown = view;
         self.close_large_map();
@@ -3642,7 +3637,7 @@ impl App {
             }
         }
         let copy = match carry.from {
-            CarryFrom::Arrangement { track, index } => json!({ "clips": [{ "track": track.0, "index": index }] }),
+            CarryFrom::Arrangement { clip, .. } => json!({ "clips": [{ "clip": clip.0 }] }),
             CarryFrom::Slot { track, scene } => json!({ "track": track.0, "scene": scene + 1 }),
         };
         let mut paste = match target {

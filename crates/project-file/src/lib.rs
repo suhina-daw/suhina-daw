@@ -25,12 +25,13 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ContentId, ContentKinds, ContentLane, Device, DeviceKind, DeviceParam, Extension,
-    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData, LaunchMapping, LaunchMode,
-    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL,
-    MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor,
-    Note, Project, Rgb, Scale, ScaleMode, Scene, Send, Slot, StretchMode, TempoPoint, TimeSignature,
-    TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceKind, DeviceParam,
+    Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData, LaneId,
+    LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
+    MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MappingSource, MappingTarget,
+    Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot,
+    StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
+    valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -237,11 +238,15 @@ fn project_value(p: &Project) -> Value {
     out.insert("tracks".into(), p.tracks.iter().map(track_value).collect());
     out.insert("channels".into(), p.channels.iter().map(channel_value).collect());
     out.insert("contents".into(), p.contents.iter().map(content_value).collect());
-    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| json!({
-        "name": lane.name,
-        "track": lane.track.map(|t| t.0),
-        "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
-    })).collect::<Vec<_>>() });
+    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| {
+        let mut out = json!({
+            "name": lane.name,
+            "track": lane.track.map(|t| t.0),
+            "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
+        });
+        with_id(&mut out, lane.id.0);
+        out
+    }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
         arrangement["markers"] =
@@ -264,8 +269,34 @@ fn project_value(p: &Project) -> Value {
     if let Some(scale) = p.default_scale {
         out.insert("default_scale".into(), scale_value(scale));
     }
+    // The counter the ids came from, so an id is never handed out twice (ADR 0025); left out
+    // while nothing has an id.
+    if p.next_id != 0 {
+        out.insert("next_id".into(), json!(p.next_id));
+    }
     with_extensions(&mut out, &p.extensions);
     Value::Object(out)
+}
+
+/// Writes an object's `id`, unless it has none yet (0): a reader gives it one then.
+fn with_id(value: &mut Value, id: u32) {
+    if let (Some(map), true) = (value.as_object_mut(), id != 0) {
+        map.insert("id".into(), json!(id));
+    }
+}
+
+/// An object's `id`, or 0 (none: [`Project::assign_ids`] gives it one) when it is missing, as in
+/// a file written before ids. An id is from 1 to `u32::MAX - 1`; the largest value is never one,
+/// so the counter can always name the next.
+fn read_id(o: &Obj, at: &str) -> Result<u32, ProjectFileError> {
+    match o.get("id") {
+        None | Some(Value::Null) => Ok(0),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|&n| n != 0 && n != u32::MAX)
+            .ok_or_else(|| ProjectFileError(format!("{at}.id: expected a whole number from 1 to {}", u32::MAX - 1))),
+    }
 }
 
 fn track_value(t: &Track) -> Value {
@@ -488,6 +519,7 @@ fn clip_value(c: &Clip) -> Value {
         "fade_out_shape": c.fade_out_curve.shape.name(),
         "fade_out_curve": number(c.fade_out_curve.curve),
     });
+    with_id(&mut out, c.id.0);
     if let Some(map) = out.as_object_mut() {
         if c.follow_action != FollowAction::default() {
             map.insert("follow".into(), follow_value(&c.follow_action));
@@ -647,6 +679,7 @@ fn extensions(o: &Obj, at: &str) -> Result<Extensions, ProjectFileError> {
 
 fn scene_value(s: &Scene) -> Value {
     let mut scene = json!({ "name": s.name, "tempo_bpm": s.tempo_bpm.map(number) });
+    with_id(&mut scene, s.id.0);
     if let (Some(ts), Some(object)) = (s.time_signature, scene.as_object_mut()) {
         object.insert("time_signature".into(), json!([ts.numerator, ts.denominator]));
     }
@@ -797,6 +830,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
                     .collect::<Result<_, _>>()?;
                 lanes.push(ArrangementLane {
+                    id: LaneId(read_id(lane, &at)?),
                     name: text(lane, "name", &at)?,
                     track: optional_whole(lane, "track", &at)?.map(TrackId),
                     clips,
@@ -826,6 +860,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 let at = format!("project.launcher.scenes[{i}]");
                 let s = object(v, &at)?;
                 scenes.push(Scene {
+                    id: SceneId(read_id(s, &at)?),
                     name: text(s, "name", &at)?,
                     tempo_bpm: optional_float(s, "tempo_bpm", &at)?,
                     time_signature: read_signature(s.get("time_signature"), &format!("{at}.time_signature"))?,
@@ -861,7 +896,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             Launcher { scenes, columns, mappings }
         }
     };
-    Ok(Project {
+    let mut project = Project {
         transport,
         tracks,
         channels,
@@ -870,7 +905,13 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
         launcher,
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
-    })
+        next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
+    };
+    // A file written before ids, or an object added by hand without one: the objects without an
+    // id get the next ones in document order, so the same file always reads with the same ids.
+    // A stale `next_id` moves past the ids in use.
+    project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
+    Ok(project)
 }
 
 fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
@@ -1170,6 +1211,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         Some(_) => return Err(format!("{at}.loop: expected [start, end]").into()),
     };
     Ok(Clip {
+        id: ClipId(read_id(c, at)?),
         content: ContentId(whole(c, "content", at)?),
         start: float(c, "start", at)?,
         length: float(c, "length", at)?,

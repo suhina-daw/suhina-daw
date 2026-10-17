@@ -891,6 +891,7 @@ fn demo_project() -> Project {
         scale: None,
     };
     let clip = |content: u32, start: f64| Clip {
+        id: Default::default(),
         content: ContentId(content),
         start,
         length: 4.0,
@@ -916,11 +917,13 @@ fn demo_project() -> Project {
         arrangement: Arrangement {
             lanes: vec![
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Bass".into(),
                     track: Some(TrackId(1)),
                     clips: vec![clip(1, 0.0), clip(1, 4.0)],
                 },
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Chords".into(),
                     track: Some(TrackId(2)),
                     clips: vec![clip(2, 0.0), clip(2, 4.0)],

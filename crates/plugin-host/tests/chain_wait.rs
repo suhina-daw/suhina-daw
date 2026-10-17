@@ -102,9 +102,11 @@ fn project(chains: &[usize]) -> Project {
             automation: Vec::new(),
         });
         p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
             name: format!("l{id}"),
             track: Some(TrackId(id)),
             clips: vec![Clip {
+                id: Default::default(),
                 content: ContentId(1),
                 start: 0.0,
                 length: 64.0,

@@ -6,6 +6,13 @@ use suhina_model::*;
 use suhina_session::{CommandKind, Session, commands};
 
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
         content: ContentKinds { notes: true, audio: false },
         channel: Some(ChannelId(id)),
@@ -26,6 +33,7 @@ fn project() -> Project {
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Bass".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(0.0), clip(8.0)],
@@ -256,7 +264,8 @@ fn a_clip_moves_to_another_track_that_takes_its_kind() {
     assert_eq!(moved["index"], lead.clips.iter().position(|c| c.start == 2.0).unwrap());
 
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
     assert!(
         run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 0, "to_track": "Nobody" }))
             .is_err()
@@ -346,7 +355,14 @@ fn a_track_routes_into_a_group_and_back_to_main() {
 
 /// One lane with three one-beat-long clips at 0, 4 and 8 and a looping eight-beat clip at 12.
 fn lane_project() -> Project {
-    let mut p = project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = lane_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn lane_project_built() -> Project {
+    let mut p = project_built();
     let clip = |start: f64, length: f64| Clip { start, length, ..p.arrangement.lanes[0].clips[0].clone() };
     let mut looping = clip(12.0, 8.0);
     looping.loop_range = Some(LoopRange { start: 0.0, end: 4.0 });
@@ -675,7 +691,14 @@ fn copied_clips_paste_together_and_keep_their_places() {
 
 /// The test project with its second Bass clip playing an audio content.
 fn audio_project() -> Project {
-    let mut p = project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = audio_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn audio_project_built() -> Project {
+    let mut p = project_built();
     p.contents.push(ClipContent {
         id: ContentId(9),
         name: "Loop".into(),
@@ -790,7 +813,14 @@ fn bad_fades_are_errors_that_change_nothing() {
 /// The audio project with launcher slots on Bass: scene 1 the audio loop, scene 2 the notes
 /// clip, scene 3 empty.
 fn slot_project() -> Project {
-    let mut p = audio_project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = slot_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn slot_project_built() -> Project {
+    let mut p = audio_project_built();
     let lane = &p.arrangement.lanes[0];
     let (notes, audio) = (lane.clips[0].clone(), Clip { start: 0.0, ..lane.clips[1].clone() });
     p.launcher = Launcher {
@@ -1030,7 +1060,14 @@ fn bad_loop_edits_are_errors_and_change_nothing() {
 /// Bass and Drums; Lead has none. Drums holds a clip in scene 1; the audio clip on the
 /// arrangement has fades, a loop, a gain, warping and an offset.
 fn launcher_project() -> Project {
-    let mut p = audio_project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = launcher_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn launcher_project_built() -> Project {
+    let mut p = audio_project_built();
     p.tracks.push(Track {
         content: ContentKinds { notes: false, audio: true },
         channel: Some(ChannelId(3)),
@@ -1070,11 +1107,13 @@ fn an_arrangement_clip_pastes_into_a_slot_with_everything_it_carries() {
     let arranged = session.project().arrangement.lanes[0].clips[1].clone();
     run(&mut session, "clip.copy", json!({ "clips": [{ "track": "Bass", "index": 1 }] })).unwrap();
     let pasted = run(&mut session, "clip.paste", json!({ "track": "Drums", "scene": 2 })).unwrap();
-    assert_eq!(pasted, json!({ "track": 3, "scene": 2, "replaced": false }));
+    let placed = session.project().launcher.columns[1].slots[1].clip.as_ref().map(|c| c.id.0);
+    assert_eq!(pasted, json!({ "clip": placed, "track": 3, "scene": 2, "replaced": false }));
+    assert_ne!(placed, Some(arranged.id.0), "the pasted clip is a new clip");
     let p = session.project();
     let placed = p.launcher.columns[1].slots[1].clip.clone().unwrap();
     assert_ne!(placed.content, arranged.content, "the slot clip plays its own content");
-    assert_eq!(Clip { content: arranged.content, start: arranged.start, ..placed.clone() }, arranged);
+    assert_eq!(Clip { id: arranged.id, content: arranged.content, start: arranged.start, ..placed.clone() }, arranged);
     assert_eq!(placed.start, 0.0);
     let (copy, original) = (p.content(placed.content).unwrap(), p.content(arranged.content).unwrap());
     assert_eq!(copy.lanes, original.lanes, "gain and warping travel with the content");
@@ -1110,7 +1149,8 @@ fn a_slot_clip_copies_onto_the_arrangement() {
     let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap();
     let slot = p.launcher.columns[1].slots[0].clip.clone().unwrap();
     assert_eq!(lane.clips.len(), 1);
-    assert_eq!(Clip { content: slot.content, start: 0.0, ..lane.clips[0].clone() }, slot);
+    assert_eq!(Clip { id: slot.id, content: slot.content, start: 0.0, ..lane.clips[0].clone() }, slot);
+    assert_ne!(lane.clips[0].id, slot.id, "the copy is a clip of its own");
     assert_eq!(p.validate(), Ok(()));
     // A MIDI clip from a slot goes to a MIDI track's slot too.
     run(&mut session, "clip.copy", json!({ "clips": [{ "track": "Bass", "index": 0 }] })).unwrap();
@@ -1169,7 +1209,14 @@ fn malformed_copies_and_pastes_into_slots_are_errors_that_record_nothing() {
 
 /// Bass and Lead play notes, Drums audio; each has two clip slots, Lead's first one full.
 fn midi_slot_project() -> Project {
-    let mut p = project();
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = midi_slot_project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn midi_slot_project_built() -> Project {
+    let mut p = project_built();
     let mut drums = p.tracks[0].clone();
     drums.id = TrackId(3);
     drums.name = "Drums".into();
@@ -1208,7 +1255,8 @@ fn an_empty_midi_clip_is_made_in_a_slot_one_bar_long_and_looping() {
     // One undo step takes it back.
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert!(session.project().launcher.columns[0].slots[1].clip.is_none());
-    assert_eq!(session.project(), &midi_slot_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..midi_slot_project() });
 }
 
 #[test]
