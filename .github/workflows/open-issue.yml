@@ -8,9 +8,14 @@ run-name: "Open issue: ${{ inputs.title }}"
 # description and its merge stay under the person's account; a review comment on one can be posted
 # as the bot through the Comment on pull request workflow (comment-pr.yml).
 #
-# Start it from Actions › Open issue › Run workflow, with `gh workflow run open-issue.yml -f ...`
-# or with the GitHub MCP's `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in
-# its log and puts the link in its summary.
+# Start it from Actions › Open issue › Run workflow, with
+# `gh workflow run open-issue.yml --json < request.json` (the inputs as JSON on stdin, so a long body
+# is not cut off by the command line; AGENTS.md › Tasks), or with the GitHub MCP's
+# `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in its log and puts the link
+# in its summary; re-running a failed run does not open the issue twice.
+#
+# The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
+# private key, and a tag can be moved to other code.
 #
 # Setup, by a maintainer only: the App `suhina-bot` has Repository permissions › Issues: Read and
 # write, Pull requests: Read-only, Organization permissions › Projects: Read and write, and is
@@ -59,7 +64,7 @@ jobs:
       # scripts only through `env`, never interpolated into a script.
       - name: Check the inputs and who started the run
         id: check
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TITLE: ${{ inputs.title }}
           BODY: ${{ inputs.body }}
@@ -130,14 +135,14 @@ jobs:
 
       - name: Token of the suhina-bot App
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
           private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
           permission-issues: write
 
       - name: Open the issue
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REQUEST: ${{ steps.check.outputs.request }}
           BODY: ${{ inputs.body }}
@@ -147,9 +152,19 @@ jobs:
             const { owner, repo } = context.repo;
             const { title, labels, issueType, parent } = JSON.parse(process.env.REQUEST);
 
-            const payload = { owner, repo, title, body: process.env.BODY, labels };
-            if (issueType) payload.type = issueType;
-            const { data: issue } = await github.request("POST /repos/{owner}/{repo}/issues", payload);
+            // A run that is re-run after it opened the issue (adding it under the epic failed, say)
+            // does not open it twice: the issue carries the run's id, and an issue of the App's with
+            // it is the one this run opened.
+            const marker = `<!-- open-issue run ${context.runId} -->`;
+            const { data: recent } = await github.rest.issues.listForRepo({
+              owner, repo, creator: "suhina-bot[bot]", state: "all", sort: "created", direction: "desc", per_page: 50,
+            });
+            let issue = recent.find((i) => !i.pull_request && (i.body || "").includes(marker));
+            if (!issue) {
+              const payload = { owner, repo, title, body: `${process.env.BODY}\n\n${marker}`, labels };
+              if (issueType) payload.type = issueType;
+              ({ data: issue } = await github.request("POST /repos/{owner}/{repo}/issues", payload));
+            }
 
             // Said before anything else can fail, so a failed run that did open the issue still
             // names it and nobody starts the workflow again for the same issue.
@@ -160,9 +175,14 @@ jobs:
 
             if (parent !== null) {
               try {
-                await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues", {
-                  owner, repo, issue_number: parent, sub_issue_id: issue.id,
+                const children = await github.paginate("GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues", {
+                  owner, repo, issue_number: parent, per_page: 100,
                 });
+                if (!children.some((child) => child.id === issue.id)) {
+                  await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues", {
+                    owner, repo, issue_number: parent, sub_issue_id: issue.id,
+                  });
+                }
                 core.summary.addRaw(` under #${parent}.`);
               } catch (error) {
                 core.summary.addRaw(`, but adding it under #${parent} failed: ${error.message}`);

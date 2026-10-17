@@ -11,9 +11,13 @@ run-name: "Comment on PR #${{ inputs.pr }}"
 # file asks for it in the token step (`permission-pull-requests: write`).
 #
 # Start it from Actions › Comment on pull request › Run workflow, with
-# `gh workflow run comment-pr.yml -f pr=600 -f body="$(cat review.md)"`, or with the GitHub MCP's
+# `gh workflow run comment-pr.yml --json < request.json` (the inputs as JSON on stdin, so a long
+# review is not cut off by the command line; AGENTS.md › Tasks), or with the GitHub MCP's
 # `actions_run_trigger`. The run prints `COMMENTED_PR=#<number> <url>` in its log and puts the link
-# in its summary.
+# in its summary; re-running a failed run does not comment twice.
+#
+# The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
+# private key, and a tag can be moved to other code.
 on:
   workflow_dispatch:
     inputs:
@@ -22,7 +26,7 @@ on:
         required: true
         type: string
       body:
-        description: Comment in Markdown (at most 60 000 bytes)
+        description: Comment in Markdown (at most 60 000 characters)
         required: true
         type: string
 
@@ -42,7 +46,7 @@ jobs:
       # scripts only through `env`, never interpolated into a script.
       - name: Check the inputs and who started the run
         id: check
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR: ${{ inputs.pr }}
           BODY: ${{ inputs.body }}
@@ -72,29 +76,35 @@ jobs:
             if (!/^[0-9]{1,7}$/.test(prInput)) fail(`"${process.env.PR}" is not a pull request number.`);
             const pr = Number(prInput);
 
+            // The same limit as Open issue: characters, as GitHub counts a comment's length.
             const body = process.env.BODY;
             if (body.trim().length === 0) fail("The comment is empty.");
-            if (Buffer.byteLength(body, "utf8") > 60000) fail("The comment is longer than 60 000 bytes.");
+            if (body.length > 60000) fail("The comment is longer than 60 000 characters.");
 
-            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pr });
+            let pull;
+            try {
+              ({ data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pr }));
+            } catch (error) {
+              if (error.status === 404) fail(`#${pr} is not a pull request of ${owner}/${repo}.`);
+              throw error;
+            }
             if (pull.state !== "open") fail(`#${pr} is not open.`);
+            if (pull.locked) fail(`The conversation of #${pr} is locked; a maintainer unlocks it first.`);
 
             core.setOutput("pr", String(pr));
-            core.setOutput("url", pull.html_url);
 
       - name: Token of the suhina-bot App
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
           private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
           permission-issues: write
 
       - name: Comment on the pull request
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR: ${{ steps.check.outputs.pr }}
-          URL: ${{ steps.check.outputs.url }}
           BODY: ${{ inputs.body }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
@@ -102,23 +112,35 @@ jobs:
             const { owner, repo } = context.repo;
             const pr = Number(process.env.PR);
 
-            try {
-              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
-                owner, repo, issue_number: pr, body: process.env.BODY,
-              });
-            } catch (error) {
-              if (error.status === 403) {
-                core.setFailed(
-                  "The App may not comment on a pull request. Grant it Pull requests: Read and write " +
-                  "and add `permission-pull-requests: write` to the token step of this workflow.",
-                );
-                return;
+            // A run that is re-run after it commented (its summary failed, say) does not comment
+            // twice: the comment carries the run's id, and a comment with it already there is the
+            // one this run made.
+            const marker = `<!-- comment-pr run ${context.runId} -->`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr, per_page: 100,
+            });
+            let comment = comments.find((c) => (c.body || "").includes(marker));
+            if (!comment) {
+              try {
+                ({ data: comment } = await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                  owner, repo, issue_number: pr, body: `${process.env.BODY}\n\n${marker}`,
+                }));
+              } catch (error) {
+                // 403 is also the answer for a conversation locked since the check, so GitHub's own
+                // words come first.
+                if (error.status === 403) {
+                  core.setFailed(
+                    `GitHub refused the comment: ${error.message}. If it is about permissions, grant the App ` +
+                    "Pull requests: Read and write and add `permission-pull-requests: write` to the token " +
+                    "step of this workflow.",
+                  );
+                  return;
+                }
+                throw error;
               }
-              throw error;
             }
 
             // Said before anything else can fail, so a failed run that did comment still names it.
-            console.log(`COMMENTED_PR=#${pr} ${process.env.URL}`);
-            core.setOutput("url", process.env.URL);
-            core.summary.addRaw(`Commented on [#${pr}](${process.env.URL})`);
+            console.log(`COMMENTED_PR=#${pr} ${comment.html_url}`);
+            core.summary.addRaw(`Commented on [#${pr}](${comment.html_url})`);
             await core.summary.write();
