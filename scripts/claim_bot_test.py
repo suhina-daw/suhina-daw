@@ -683,8 +683,33 @@ const cases = [
     expect: (s) => says(s.state, "Only a maintainer can claim an issue for someone else") && !s.state.moved,
   },
   {
-    name: "a trusted contributor's /ready is refused",
-    input: { body: "/ready", role: "trusted", board: { status: "Backlog" } },
+    name: "a trusted contributor's /ready moves a feature from Backlog to Ready",
+    input: { body: "/ready", role: "trusted", board: { status: "Backlog" }, issue: { labels: [{ name: "enhancement" }] } },
+    expect: (s) => s.state.moved === "opt-ready" && says(s.state, "Released"),
+  },
+  {
+    name: "a trusted contributor's /ready on an issue not on the board adds it as Ready",
+    input: { body: "/ready", role: "trusted", board: { onBoard: false } },
+    expect: (s) => s.state.added && s.state.moved === "opt-ready",
+  },
+  {
+    name: "a trusted contributor's /ready does not release a held card",
+    input: { body: "/ready", role: "trusted", board: { status: "Do not start yet" } },
+    expect: (s) => says(s.state, "only from **Backlog**", "maintainer's call") && !s.state.moved,
+  },
+  {
+    name: "a trusted contributor's /ready does not move a card in progress",
+    input: { body: "/ready", role: "trusted", assignees: ["other"], board: { status: "In progress" } },
+    expect: (s) => says(s.state, "only from **Backlog**") && !s.state.moved,
+  },
+  {
+    name: "a trusted contributor may not hold",
+    input: { body: "/hold waiting", role: "trusted", board: { status: "Ready" } },
+    expect: (s) => says(s.state, "Only a maintainer") && !s.state.moved,
+  },
+  {
+    name: "a contributor who is not trusted may not /ready",
+    input: { body: "/ready", board: { status: "Backlog" } },
     expect: (s) => says(s.state, "Only a maintainer") && !s.state.moved,
   },
   {

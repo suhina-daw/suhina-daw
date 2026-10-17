@@ -94,7 +94,7 @@ comment there instead. A duplicate that slips through is closed with a link to t
 difference: a **feature request** (`enhancement`) in `Backlog` is not agreed yet. Write your idea or
 plan in the issue; a maintainer moves it to `Ready` when Suhina wants it, and only then is it open to
 claim. A trusted contributor, named in the repository variable `TRUSTED_CONTRIBUTORS`, may claim a
-feature in `Backlog` without waiting ([`docs/claim-bot.md`](docs/claim-bot.md) › Who is who). A bug in `Backlog` is free. `Do not start yet` means the order is deliberate: the issue and
+feature in `Backlog` without waiting, or move it to `Ready` with `/ready` so others can claim it ([`docs/claim-bot.md`](docs/claim-bot.md) › Who is who). A bug in `Backlog` is free. `Do not start yet` means the order is deliberate: the issue and
 its comments say what the work waits for, so ask there instead of starting.
 
 **Claim it** in a comment on the issue before you write code:

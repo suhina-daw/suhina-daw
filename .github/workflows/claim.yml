@@ -481,7 +481,17 @@ jobs:
               };
 
               if (command === "hold" || command === "ready") {
-                if (!maintainer) {
+                // A trusted contributor may agree a card in Backlog (or one without a status) with
+                // `/ready`, so others can claim it too; a hold, and every other status, stays a
+                // maintainer's to change.
+                const fromBacklog = !item || status === null || same(status, "Backlog");
+                if (command === "ready" && !maintainer && trusted && !fromBacklog) {
+                  return say(
+                    `@${actor}, a trusted contributor moves a card to **${RELEASED}** only from ` +
+                      `**Backlog**; this one is **${status}**, so that is a maintainer's call.`,
+                  );
+                }
+                if (!maintainer && !(command === "ready" && trusted)) {
                   return say(`Only a maintainer can hold or release an issue, @${actor}.`);
                 }
                 if (command === "hold" && !argument) {
