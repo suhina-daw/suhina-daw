@@ -20,6 +20,7 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
        suhina-cli fm-synth voices <file.syx>
        suhina-cli commands [--markdown]
        suhina-cli mcp [--read-root <dir>] [--write-root <dir>] [--audio]
+       suhina-cli mcp --attach
        suhina-cli audio devices
        suhina-cli plugins (scan [--all] | list | folders | add-folder <dir> | remove-folder <dir>
                              | check <project.als> | set-hosting <plug-in> (binary | vendor | instance))
@@ -38,7 +39,9 @@ commands:
   mcp       serve the Model Context Protocol on stdin/stdout for agents; files can be read only
             below --read-root and written only below --write-root (no root, no access); with
             --audio, opened projects play on the default output so agents can launch clips,
-            and audio.setOutput chooses another
+            and audio.setOutput chooses another; with --attach, the agent works on the
+            projects open in the running suhina app of this build instead, once the app
+            lets agents in (Settings › General) and the person allows the connection
   audio     audio devices: list the audio hosts (WASAPI, ASIO, ALSA...) and each one's output
             devices with their sample rates and buffer sizes
   plugins   find installed plug-ins: scan looks in the standard folders and the added ones
@@ -821,14 +824,30 @@ fn mcp(args: &[String]) -> Result<(), String> {
     let mut read_root = None;
     let mut write_root = None;
     let mut audio = false;
+    let mut attach = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--read-root" => read_root = Some(PathBuf::from(it.next().ok_or("--read-root needs a folder")?)),
             "--write-root" => write_root = Some(PathBuf::from(it.next().ok_or("--write-root needs a folder")?)),
             "--audio" => audio = true,
+            "--attach" => attach = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
+    }
+    if attach {
+        if read_root.is_some() || write_root.is_some() || audio {
+            return Err("--attach takes no other arguments: the app decides what an agent may read and write, \
+                        and plays on its own output"
+                .into());
+        }
+        let folder = suhina_automation::endpoint::build_folder()
+            .map_err(|e| format!("could not find this program's folder: {e}"))?;
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("could not start the async runtime: {e}"))?;
+        return runtime.block_on(suhina_automation::attach::attach_stdio(&folder));
     }
     let workspace = Workspace::new(read_root.as_deref(), write_root.as_deref())?;
     let library = suhina_library::Library::new(suhina_plugins::library::settings_folder());

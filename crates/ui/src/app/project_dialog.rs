@@ -419,6 +419,57 @@ fn draw_recovery(ui: &mut Ui, area: Rect, name: &str, written: &str, saved: bool
     closed
 }
 
+/// The person's answer to an agent that connected (ADR 0028).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentChoice {
+    Allow,
+    Deny,
+}
+
+/// Asks whether to let `client`, an agent that has just connected, work on the open projects,
+/// over `area`.
+pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
+    egui::Area::new(Id::new("agent-prompt"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(area.min)
+        .show(ui.ctx(), |ui| {
+            ui.set_min_size(area.size());
+            draw_agent(ui, area, client)
+        })
+        .inner
+}
+
+fn draw_agent(ui: &mut Ui, area: Rect, client: &str) -> Option<AgentChoice> {
+    let mut closed: Option<AgentChoice> = None;
+    let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + BUTTON.y + 3.0 * PAD);
+    let panel = panel(ui, area, size, "An agent wants to connect", &mut closed);
+    let painter = ui.painter_at(area);
+    let lines = [
+        format!("{client} wants to work on your open projects."),
+        "You see every change it makes and can undo it; it cannot close tabs or change settings.".to_string(),
+        "The name is what the agent says it is.".to_string(),
+    ];
+    for (n, line) in lines.iter().enumerate() {
+        let text = Rect::from_min_size(
+            Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
+            Vec2::new(panel.width() - 2.0 * PAD, LINE),
+        );
+        let colour = if n == 0 { theme::text_primary() } else { theme::text_hint() };
+        widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
+    }
+    let bottom = panel.bottom() - PAD - BUTTON.y;
+    let allow = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, bottom), BUTTON);
+    let deny = Rect::from_min_size(Pos2::new(allow.left() - 4.0 - BUTTON.x, bottom), BUTTON);
+    if button(ui, &painter, allow, "Allow", &format!("Allow {client}")) {
+        return Some(AgentChoice::Allow);
+    }
+    // Enter does not allow: letting an agent in takes a click.
+    if button(ui, &painter, deny, "Deny", &format!("Deny {client}")) || ui.input(|i| i.key_pressed(Key::Escape)) {
+        return Some(AgentChoice::Deny);
+    }
+    closed
+}
+
 /// A panel in the middle of `area` with a title row and a Close button, the area behind dimmed
 /// and its clicks swallowed. Returns the panel; `closed` is set when Close is clicked.
 fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &mut Option<T>) -> Rect {
@@ -479,6 +530,12 @@ impl CloseChoice for RecoveryChoice {
 impl CloseChoice for AboutChoice {
     fn close() -> Self {
         AboutChoice::Close
+    }
+}
+
+impl CloseChoice for AgentChoice {
+    fn close() -> Self {
+        AgentChoice::Deny
     }
 }
 

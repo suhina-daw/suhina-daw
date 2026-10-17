@@ -1,6 +1,6 @@
 ---
 description: The MCP server for agents: tools, file roots, errors and how to run it
-read_when: MCP, agents, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
+read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
 last_verified: 2026-10-16
@@ -12,6 +12,8 @@ covers:
   - crates/automation/src/render.rs
   - crates/engine/src/cpu.rs
   - apps/suhina-cli/src/main.rs
+  - crates/automation/src/attach.rs
+  - crates/automation/src/endpoint.rs
 ---
 
 # MCP server
@@ -377,6 +379,41 @@ Commands are defined once in `suhina-session` (ADR 0002); the MCP server, the CL
 desktop app all run the same ones. [`commands.md`](commands.md) lists every command with its
 parameters; it is generated from the registry, so a new command needs no edit there.
 
+## Attached to the app
+
+`suhina-cli mcp --attach` works on the projects open in the running desktop app instead of
+projects of its own ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)): the person sees each
+change as it is made, and each editing command is one step in the undo history of its tab
+(`edit.undo` and the window's Ctrl+Z walk the same history).
+
+```sh
+suhina-cli mcp --attach
+```
+
+- **Which app.** The app of the same build: both executables sit in one folder, and the app
+  listens on a named pipe (Windows) or a Unix domain socket named from that folder, never a
+  network port. Test builds in different folders do not meet. Starting a build's `suhina` while it
+  runs opens the project as a tab in the running window instead (`suhina --new-instance` starts
+  another window, which serves no agents).
+- **The person lets agents in.** Nothing listens until **Settings › General › Agents › Let agents
+  work on open projects** is on. Each connection then waits: the window asks whether to allow the
+  client (by the name it gives at `initialize`), and tool calls wait for the answer; Deny ends the
+  connection. The control bar shows each agent let in with a **Disconnect** button.
+- **Tabs.** The agent works on the window's tabs: `projects.list`, `projects.switch` and the
+  `project` argument act on them. `project_open` is refused (the person opens projects), and so is
+  `projects.close`: closing loses a tab's unsaved changes and its undo history.
+- **Files.** The agent writes only in the folder of the project it acts on (`project.save`,
+  `project_render`, `project.autosave` with `now`), and reads that folder and the browser's
+  library folders. Relative paths start in the project's folder. A project never saved has no
+  folder: the agent can edit it but writes nothing until the person saves it once.
+- **Settings.** Commands that change the app's settings or the person's library rather than a
+  project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
+  `midi.setInput`, `plugins.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
+  `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
+  `project.autosave` with `interval` or `clean_up`. Transport commands play on the window's output.
+- **Errors.** With no app of the build running, or with agents not let in, `--attach` says which
+  and exits.
+
 ## Errors
 
 - Unknown tool arguments return JSON-RPC error `-32602` naming the key, before anything runs.
@@ -388,4 +425,10 @@ parameters; it is generated from the registry, so a new command needs no edit th
 
 ```sh
 claude mcp add suhina -- /path/to/suhina-cli mcp --read-root /path/to/projects --write-root /path/to/renders
+```
+
+Or, to work on the projects open in the running app:
+
+```sh
+claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 ```

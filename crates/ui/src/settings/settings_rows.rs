@@ -108,6 +108,14 @@ pub(crate) static ROWS: &[Entry] = &[
     }),
     row(
         Page::General,
+        "Agents",
+        "Let agents work on open projects",
+        "An agent started with suhina-cli mcp --attach may work on the open projects once you allow it; you see every change and can undo it",
+        &["agents"],
+        |cx, r| cx.on_off(r, |s| &mut s.agents),
+    ),
+    row(
+        Page::General,
         "Dropping files",
         "Several files",
         "Onto one track, or one track each; Ctrl while dropping does the other",

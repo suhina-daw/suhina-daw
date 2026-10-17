@@ -195,6 +195,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   active one or to a named one ([ADR 0007](docs/decisions/0007-several-open-projects.md)).
 - `suhina-cli mcp` serves them to agents over the Model Context Protocol, with file access
   only below granted roots ([`docs/mcp.md`](docs/mcp.md)).
+- `suhina-cli mcp --attach` lets an agent work on the projects open in the running app, once the
+  person turns it on in Settings and allows the connection: its edits show in the window at once
+  and undo with Ctrl+Z; starting a build that is running opens the project there as a tab
+  ([ADR 0028](docs/decisions/0028-mcp-in-the-running-app.md)).
 - Edits and undo/redo are heard by a playing engine from its next audio block, without a gap:
   a new graph is swapped in at an exact frame and playing clips carry on; device parameters go
   as messages, without a new graph

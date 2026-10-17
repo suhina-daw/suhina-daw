@@ -87,7 +87,8 @@ crates/
   session  L2 open projects (tabs, ADR 0007), undo history, the command registry (ADR 0002), the
            attached player, each project's decoded audio and previews (ADR 0011), backups
            (autosave and the offer after a crash, ADR 0010)
-  automation L3 MCP server (rmcp) over a session, file roots, WAV rendering (docs/mcp.md)
+  automation L3 MCP server (rmcp) over a session, file roots, WAV rendering (docs/mcp.md); the app's
+           endpoints: one instance per build, agents attached to the open projects (ADR 0028)
   output   L3 the audio device: lists hosts and devices (cpal; ASIO with the `asio` feature), opens the one
            chosen (WASAPI exclusive through `wasapi`), plays an engine in blocks of the chosen buffer;
            opens the input device chosen beside it for the tracks' audio inputs (ADR 0017)

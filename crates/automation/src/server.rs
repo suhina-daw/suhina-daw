@@ -22,6 +22,7 @@ use suhina_session::{
     AudioSystem, CommandKind, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
 };
 
+use crate::attach::AppHost;
 use crate::render::{LaunchStep, render_launch_script, render_wav, scene_as_arrangement};
 use crate::workspace::{Workspace, display_path};
 
@@ -40,12 +41,31 @@ const MAX_BATCH_STEPS: usize = 256;
 
 #[derive(Clone)]
 pub struct SuhinaMcp {
-    projects: Arc<Mutex<Projects>>,
+    host: Host,
+    /// The roots `suhina-cli mcp` was given; an attached server works out its own per call.
     workspace: Arc<Workspace>,
     /// Opened projects play out loud (`--audio`): the projects have an audio system.
     audio_output: bool,
     tool_router: ToolRouter<Self>,
 }
+
+/// Where the tools' projects live.
+#[derive(Clone)]
+enum Host {
+    /// `suhina-cli mcp`: the server's own projects.
+    Own(Arc<Mutex<Projects>>),
+    /// The desktop app's open tabs: tools run as jobs the window runs between frames (ADR 0028).
+    App(AppHost),
+}
+
+const INSTRUCTIONS_ATTACHED: &str = "Suhina, an open-source clip-launching DAW. You are attached to the Suhina app the person is using: \
+you work on the projects open in its window, they see every change as you make it, and each editing command is one step \
+in the undo history of its tab (edit.undo reverts the last step, theirs or yours). Look with project_inspect, discover \
+command ids and parameters with command_list, and change projects with command_run or command_batch; projects.list, \
+projects.switch and the `project` argument act on the window's tabs. Tool calls wait until the person allows the \
+connection. You cannot open projects from disk or close tabs, and you cannot change the app's settings. You may write \
+only inside the folder of the project you act on (a project never saved has none yet) and read that folder and the \
+browser's library folders. Transport commands play on the window's audio output.";
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -157,10 +177,32 @@ impl SuhinaMcp {
     /// A server with no project open.
     pub fn new(workspace: Workspace) -> Self {
         Self {
-            projects: Arc::new(Mutex::new(Projects::new())),
+            host: Host::Own(Arc::new(Mutex::new(Projects::new()))),
             workspace: Arc::new(workspace),
             audio_output: false,
             tool_router: Self::tool_router(),
+        }
+    }
+
+    /// A server for the projects open in the desktop app (ADR 0028), reached through `host`.
+    pub fn attached(host: AppHost) -> Self {
+        Self {
+            host: Host::App(host),
+            workspace: Arc::new(Workspace::default()),
+            audio_output: false,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    fn is_attached(&self) -> bool {
+        matches!(self.host, Host::App(_))
+    }
+
+    /// The server's own projects, for the builders below.
+    fn own(&self) -> Option<std::sync::MutexGuard<'_, Projects>> {
+        match &self.host {
+            Host::Own(projects) => projects.lock().ok(),
+            Host::App(_) => None,
         }
     }
 
@@ -168,7 +210,7 @@ impl SuhinaMcp {
     /// thread of its own. Agents may search it and read what it lists inside the read root.
     pub fn with_file_library(self, mut library: suhina_library::Library) -> Self {
         let _ = library.start();
-        if let Ok(mut projects) = self.projects.lock() {
+        if let Some(mut projects) = self.own() {
             projects.set_file_library(library);
             // And the sample map's analysis of its samples (`soundmap.*`, ADR 0013).
             projects.start_sound_map();
@@ -179,21 +221,34 @@ impl SuhinaMcp {
     /// Plays each opened project on `system`'s devices, so transport and launcher commands are
     /// heard and the `audio.*` commands choose the output.
     pub fn with_audio_output(mut self, system: Arc<dyn AudioSystem>) -> Self {
-        if let Ok(mut projects) = self.projects.lock() {
-            projects.set_audio_system(system);
-            self.audio_output = true;
-        }
+        let set = match self.own() {
+            Some(mut projects) => {
+                projects.set_audio_system(system);
+                true
+            }
+            None => false,
+        };
+        self.audio_output = set;
         self
     }
 
     /// Hears MIDI controllers on `system`'s input ports: the armed tracks of the project that
     /// plays play them (`midi.*`, `track.setArm`, ADR 0017).
     pub fn with_midi_input(self, system: Arc<dyn MidiSystem>) -> Self {
-        if let Ok(mut projects) = self.projects.lock() {
+        if let Some(mut projects) = self.own() {
             // A port that cannot be opened is listed by midi.inputs with why.
             let _ = projects.set_midi_system(system);
         }
         self
+    }
+
+    /// The file rules for a call on project `target`: the roots given at launch, or for an
+    /// attached server that project's folder and the browser's library folders (ADR 0028).
+    fn files(&self) -> Files {
+        match self.host {
+            Host::Own(_) => Files::Fixed(Arc::clone(&self.workspace)),
+            Host::App(_) => Files::PerProject,
+        }
     }
 
     /// Serves MCP over stdin and stdout until the client disconnects.
@@ -208,13 +263,18 @@ impl SuhinaMcp {
         &self,
         f: impl FnOnce(&mut Projects) -> Result<T, String> + Send + 'static,
     ) -> Result<T, String> {
-        let projects = Arc::clone(&self.projects);
-        tokio::task::spawn_blocking(move || {
-            let mut guard = projects.lock().unwrap_or_else(PoisonError::into_inner);
-            f(&mut guard)
-        })
-        .await
-        .unwrap_or_else(|e| Err(format!("task failed: {e}")))
+        match &self.host {
+            Host::Own(projects) => {
+                let projects = Arc::clone(projects);
+                tokio::task::spawn_blocking(move || {
+                    let mut guard = projects.lock().unwrap_or_else(PoisonError::into_inner);
+                    f(&mut guard)
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("task failed: {e}")))
+            }
+            Host::App(app) => app.run(f).await,
+        }
     }
 
     /// Runs `f` with the session `project` names, or the active one.
@@ -233,6 +293,11 @@ impl SuhinaMcp {
         description = "Open a Suhina project (.suhina, or .locr from before) or a Live Set (.als) below the read root and make it the active project. Returns a summary and the warnings from reading it (unsupported content is skipped, not fatal)."
     )]
     async fn project_open(&self, Parameters(p): Parameters<OpenParams>) -> Result<CallToolResult, McpError> {
+        if self.is_attached() {
+            return Ok(fail(
+                "attached to the app, agents work on the projects open in its window; the person opens projects (projects.list shows them)",
+            ));
+        }
         let path = match self.workspace.readable(&p.path) {
             Ok(path) => path,
             Err(e) => return Ok(fail(e)),
@@ -293,14 +358,16 @@ impl SuhinaMcp {
         description = "Run one command by id with its parameters. Editing commands record one undo step; on error the project is unchanged."
     )]
     async fn command_run(&self, Parameters(p): Parameters<RunParams>) -> Result<CallToolResult, McpError> {
-        if let Some(why) = refused(&p.id) {
+        let attached = self.is_attached();
+        if let Some(why) = refused(&p.id, p.params.as_ref(), attached) {
             return Ok(fail(why));
         }
         let output = self.audio_output;
-        let workspace = Arc::clone(&self.workspace);
+        let files = self.files();
         let target = p.project.map(ProjectId);
         let result = self
             .with_projects(move |projects| {
+                let workspace = files.workspace(projects, target);
                 let source = save_source(projects, target, &p.id);
                 let params = confine(&workspace, &p.id, p.params.unwrap_or_else(|| json!({})), source.as_deref())?;
                 let mut value = projects.execute_in(target, &p.id, &params).map_err(|e| e.0)?;
@@ -324,17 +391,20 @@ impl SuhinaMcp {
         }
         let stop_on_error = p.stop_on_error.unwrap_or(true);
         let output = self.audio_output;
-        let workspace = Arc::clone(&self.workspace);
+        let attached = self.is_attached();
+        let files = self.files();
         let target = p.project.map(ProjectId);
         let result = self
             .with_projects(move |projects| {
                 let mut results = Vec::new();
                 let mut failed = false;
                 for step in p.steps {
+                    let workspace = files.workspace(projects, target);
                     let source = save_source(projects, target, &step.id);
+                    let why = refused(&step.id, step.params.as_ref(), attached);
                     let params =
                         confine(&workspace, &step.id, step.params.unwrap_or_else(|| json!({})), source.as_deref());
-                    let outcome = match (refused(&step.id), params) {
+                    let outcome = match (why, params) {
                         (Some(why), _) => Err(why.into()),
                         (None, Err(e)) => Err(suhina_session::CommandError(e)),
                         (None, Ok(params)) => projects.execute_in(target, &step.id, &params),
@@ -371,10 +441,9 @@ impl SuhinaMcp {
         description = "Render the arrangement (or one launcher scene, or a script of clip launches) offline to a 32-bit float stereo WAV below the write root. Built-in effects and instruments, and installed plug-ins (found in the plug-in catalog, with the state their running instances have now, else the saved one) run as in playback; notes on a track without an instrument play as sine tones; audio clips play. `plugins` in the result lists plug-ins that are missing or did not start."
     )]
     async fn project_render(&self, Parameters(p): Parameters<RenderParams>) -> Result<CallToolResult, McpError> {
-        let path = match self.workspace.writable(&p.output, p.overwrite.unwrap_or(false)) {
-            Ok(path) => path,
-            Err(e) => return Ok(fail(e)),
-        };
+        let files = self.files();
+        let output = p.output;
+        let overwrite = p.overwrite.unwrap_or(false);
         let sample_rate = p.sample_rate.unwrap_or(48_000);
         let scene = p.scene;
         let launches: Option<Vec<LaunchStep>> = p.launches.map(|steps| {
@@ -387,6 +456,7 @@ impl SuhinaMcp {
         let project_id = p.project;
         let result = self
             .with_projects(move |projects| {
+                let path = files.workspace(projects, project_id.map(ProjectId)).writable(&output, overwrite)?;
                 let env = projects.plugin_env();
                 let session = projects.session_mut(project_id.map(ProjectId)).map_err(|e| e.0)?;
                 if let Some(steps) = launches {
@@ -644,15 +714,82 @@ fn confine_file(workspace: &Workspace, params: &mut Value, name: &str) -> Result
 const NOT_FOR_AGENTS: [&str; 4] =
     ["plugins.addFolder", "plugins.removeFolder", "library.addFolder", "library.removeFolder"];
 
-/// Why an agent may not run command `id`, if it may not.
-fn refused(id: &str) -> Option<String> {
-    NOT_FOR_AGENTS.contains(&id).then(|| {
-        if id.starts_with("library.") {
+/// Commands an agent attached to the app may not run (ADR 0028): closing a tab loses its unsaved
+/// changes and its undo history, and the rest change the app's settings or the person's library
+/// rather than a project.
+const NOT_FOR_ATTACHED: [&str; 13] = [
+    "projects.close",
+    "audio.setOutput",
+    "output.setCuePair",
+    "output.setCueVolume",
+    "midi.setInput",
+    "plugins.setHosting",
+    "library.setPluginsView",
+    "library.pin",
+    "library.unpin",
+    "library.tag",
+    "library.setTag",
+    "library.removeTag",
+    "soundmap.setKind",
+];
+
+/// Why an agent may not run command `id` with `params`, if it may not; `attached` when it works
+/// on the app's open tabs.
+fn refused(id: &str, params: Option<&Value>, attached: bool) -> Option<String> {
+    if NOT_FOR_AGENTS.contains(&id) {
+        return Some(if id.starts_with("library.") {
             format!("{id} is not available to agents: the user chooses the browser's folders")
         } else {
             format!("{id} is not available to agents: the user chooses plug-in folders (suhina-cli plugins add-folder)")
+        });
+    }
+    if !attached {
+        return None;
+    }
+    if id == "projects.close" {
+        return Some(
+            "agents never close a tab: closing loses its unsaved changes and its undo history; the person closes tabs"
+                .into(),
+        );
+    }
+    if NOT_FOR_ATTACHED.contains(&id) {
+        return Some(format!(
+            "{id} changes the app's settings or the person's library; agents attached to the app work on projects"
+        ));
+    }
+    let sets_backups = params.is_some_and(|p| p.get("interval").is_some() || p.get("clean_up").is_some());
+    if id == "project.autosave" && sets_backups {
+        return Some(
+            "the backup settings are the person's; agents attached to the app may only back up now (now: true)".into(),
+        );
+    }
+    None
+}
+
+/// The file rules a call follows.
+#[derive(Clone)]
+enum Files {
+    /// The roots `suhina-cli mcp` was given at launch.
+    Fixed(Arc<Workspace>),
+    /// Attached to the app: the folder of the project the call acts on, and the library to read.
+    PerProject,
+}
+
+impl Files {
+    fn workspace(&self, projects: &mut Projects, target: Option<ProjectId>) -> Workspace {
+        match self {
+            Files::Fixed(workspace) => Workspace::clone(workspace),
+            Files::PerProject => {
+                let folder = projects
+                    .session_mut(target)
+                    .ok()
+                    .and_then(|s| s.source().and_then(Path::parent).map(Path::to_path_buf))
+                    .filter(|f| !f.as_os_str().is_empty());
+                let library: Vec<PathBuf> = projects.file_library_mut().folders().into_iter().map(|f| f.path).collect();
+                Workspace::attached(folder.as_deref(), &library)
+            }
         }
-    })
+    }
 }
 
 /// After a project command, starts the newly active project playing when the server has audio
@@ -692,7 +829,7 @@ impl ServerHandler for SuhinaMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("suhina", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(if self.is_attached() { INSTRUCTIONS_ATTACHED } else { INSTRUCTIONS })
     }
 
     async fn list_tools(
@@ -725,13 +862,63 @@ impl ServerHandler for SuhinaMcp {
 mod refused_tests {
     use super::refused;
 
+    use serde_json::json;
+
     #[test]
     fn agents_may_scan_but_not_choose_plugin_folders() {
-        assert!(refused("plugins.addFolder").is_some());
-        assert!(refused("plugins.removeFolder").is_some());
-        for id in ["plugins.scan", "plugins.list", "plugins.folders", "plugins.check", "track.setPan"] {
-            assert!(refused(id).is_none(), "{id}");
+        for attached in [false, true] {
+            assert!(refused("plugins.addFolder", None, attached).is_some());
+            assert!(refused("plugins.removeFolder", None, attached).is_some());
+            for id in ["plugins.scan", "plugins.list", "plugins.folders", "plugins.check", "track.setPan"] {
+                assert!(refused(id, None, attached).is_none(), "{id}");
+            }
         }
+    }
+
+    #[test]
+    fn attached_agents_never_close_a_tab_nor_change_the_apps_settings() {
+        for id in ["projects.close", "audio.setOutput", "midi.setInput", "plugins.setHosting", "library.pin"] {
+            assert!(refused(id, None, true).is_some(), "{id}");
+            assert!(refused(id, None, false).is_none(), "{id} stays open to suhina-cli mcp");
+        }
+        for id in ["projects.list", "projects.switch", "transport.play", "transport.stop", "edit.undo", "project.save"]
+        {
+            assert!(refused(id, None, true).is_none(), "{id}");
+        }
+        assert!(refused("project.autosave", Some(&json!({ "now": true })), true).is_none());
+        assert!(refused("project.autosave", Some(&json!({ "interval": "5m" })), true).is_some());
+        assert!(refused("project.autosave", Some(&json!({ "clean_up": true })), true).is_some());
+    }
+}
+
+#[cfg(test)]
+mod attached_files_tests {
+    use super::*;
+
+    #[test]
+    fn an_attached_agent_writes_in_the_projects_folder_and_reads_the_library_too() {
+        let dir = std::env::temp_dir().join(format!("suhina-attached-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for folder in ["song", "library/drums", "elsewhere"] {
+            std::fs::create_dir_all(dir.join(folder)).unwrap();
+        }
+        for file in ["song/vocal.wav", "library/drums/kick.wav", "elsewhere/secret.wav"] {
+            std::fs::write(dir.join(file), b"x").unwrap();
+        }
+        let workspace = Workspace::attached(Some(&dir.join("song")), &[dir.join("library")]);
+        // Relative paths start in the project's folder; the library is read by its full path.
+        assert!(workspace.readable("vocal.wav").is_ok());
+        assert!(workspace.readable(dir.join("library/drums/kick.wav").to_str().unwrap()).is_ok());
+        assert!(workspace.readable(dir.join("elsewhere/secret.wav").to_str().unwrap()).is_err());
+        assert!(workspace.readable("../elsewhere/secret.wav").is_err());
+        // It writes only in the project's folder.
+        assert!(workspace.writable("mix.wav", false).is_ok());
+        assert!(workspace.writable(dir.join("library/drums/new.wav").to_str().unwrap(), false).is_err());
+        // A project never saved has no folder: nothing is written, the library is still read.
+        let unsaved = Workspace::attached(None, &[dir.join("library")]);
+        assert!(unsaved.writable("mix.wav", false).is_err());
+        assert!(unsaved.readable(dir.join("library/drums/kick.wav").to_str().unwrap()).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
@@ -872,10 +1059,12 @@ mod confine_tests {
 
     #[test]
     fn agents_may_search_the_library_but_not_choose_its_folders() {
-        assert!(refused("library.addFolder").is_some());
-        assert!(refused("library.removeFolder").is_some());
-        for id in ["library.search", "library.refresh", "library.folders", "clip.addFiles", "preview.play"] {
-            assert!(refused(id).is_none(), "{id}");
+        for attached in [false, true] {
+            assert!(refused("library.addFolder", None, attached).is_some());
+            assert!(refused("library.removeFolder", None, attached).is_some());
+            for id in ["library.search", "library.refresh", "library.folders", "clip.addFiles", "preview.play"] {
+                assert!(refused(id, None, attached).is_none(), "{id}");
+            }
         }
     }
 }

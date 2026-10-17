@@ -21,7 +21,7 @@ use suhina_engine::model::TrackId;
 use suhina_session::{CommandKind, ProjectId, Projects, Session};
 
 use crate::app::project_dialog::{
-    AboutChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
+    AboutChoice, AgentChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
 };
 use crate::app::start_panel::{AudioSummary, StartChoice, StartState};
 use crate::arrangement::arrangement_view::{self, ArrangementViewState};
@@ -296,6 +296,12 @@ pub struct App {
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     switch_hover: Option<(View, f64)>,
+    /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
+    /// the agents let in, and those the person disconnected, for the app.
+    agent_asks: Vec<(u64, String)>,
+    agent_answers: Vec<(u64, bool)>,
+    agents: Vec<(u64, String)>,
+    agent_disconnects: Vec<u64>,
 }
 
 impl Default for App {
@@ -378,7 +384,44 @@ impl App {
             next_ram: None,
             carry: None,
             switch_hover: None,
+            agent_asks: Vec::new(),
+            agent_answers: Vec::new(),
+            agents: Vec::new(),
+            agent_disconnects: Vec::new(),
         }
+    }
+
+    /// Asks the person whether to let `client`, an agent that has connected as `connection`,
+    /// work on the open projects (ADR 0028); the answer comes back from
+    /// [`App::take_agent_answers`].
+    pub fn ask_agent(&mut self, connection: u64, client: String) {
+        self.agent_asks.push((connection, client));
+    }
+
+    /// A connection ended: its question, if still open, goes away.
+    pub fn agent_gone(&mut self, connection: u64) {
+        self.agent_asks.retain(|(c, _)| *c != connection);
+    }
+
+    /// The person's answers to [`App::ask_agent`] since the last call: allowed or not.
+    pub fn take_agent_answers(&mut self) -> Vec<(u64, bool)> {
+        std::mem::take(&mut self.agent_answers)
+    }
+
+    /// The agents the person has let in, which the control bar shows.
+    pub fn set_agents(&mut self, agents: Vec<(u64, String)>) {
+        self.agents = agents;
+    }
+
+    /// The agents the person disconnected from the control bar since the last call.
+    pub fn take_agent_disconnects(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.agent_disconnects)
+    }
+
+    /// The projects changed outside the window's own commands (an agent's, ADR 0028): what the
+    /// views keep from them is read again.
+    pub fn note_outside_change(&mut self) {
+        self.revision += 1;
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
@@ -1094,6 +1137,22 @@ impl App {
                     self.status = Status::Done(format!("Copied {line}"));
                 }
                 Some(AboutChoice::Close) => self.about_open = false,
+                None => {}
+            }
+        }
+        let other_dialog = other_dialog || self.unsaved_prompt.is_some() || !self.recovery.is_empty();
+        if !other_dialog && let Some((connection, client)) = self.agent_asks.first().cloned() {
+            match project_dialog::show_agent(ui, window, &client) {
+                Some(AgentChoice::Allow) => {
+                    self.agent_asks.remove(0);
+                    self.agent_answers.push((connection, true));
+                    self.status = Status::Done(format!("{client} may work on the open projects"));
+                }
+                Some(AgentChoice::Deny) => {
+                    self.agent_asks.remove(0);
+                    self.agent_answers.push((connection, false));
+                    self.status = Status::Done(format!("{client} was not let in"));
+                }
                 None => {}
             }
         }
@@ -4090,7 +4149,26 @@ impl App {
                 }
                 let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
                 painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
+                right = rect.left() - PAD;
             }
+        }
+        // Left of that, each agent the person let in (ADR 0028), lit; a click disconnects it.
+        for (connection, client) in self.agents.clone() {
+            let text = format!("Disconnect {client}");
+            let galley = widgets::fitted(&painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
+            let size = galley.size();
+            if !fits(right, size.x) {
+                break;
+            }
+            let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
+            let response = widgets::button_area(ui, rect, Id::new(("agent", connection)), text.clone());
+            if response.clicked() {
+                self.agent_disconnects.push(connection);
+                self.status = Status::Done(format!("Disconnected {client}"));
+            }
+            let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
+            painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
+            right = rect.left() - PAD;
         }
         self.hover_switch(ui.ctx(), hovered_switch);
         // The underline slides to the view that was picked.
