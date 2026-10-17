@@ -11,7 +11,7 @@ name: Ready to merge
 #   auto-merge with that commit as the expected head, so a commit pushed in between is never what
 #   gets merged. A contributor's pull request also needs `test-build` (a maintainer read the code
 #   and its build); without it the label comes off with a comment saying why. Dependabot's
-#   version updates do not: the queue's build and tests are what check a new dependency.
+#   Cargo updates do not: the queue's build and tests are what check a new crate.
 # - A push by anyone but a maintainer takes the label off, turns auto-merge off and leaves the
 #   pull request out of the queue: the new commits wait for a maintainer to read them, as the
 #   `test-build` label does (test-build-links.yml, job `unlabel`). main's rule dismisses the
@@ -92,20 +92,25 @@ jobs:
           SENDER: ${{ github.event.sender.login }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
           AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           HAS_TEST_BUILD: ${{ contains(github.event.pull_request.labels.*.name, 'test-build') }}
         run: |
           eval "$HELPERS"
           is_maintainer() { printf '%s\n' $MAINTAINERS | grep -Fxq -- "$1"; }
-          # Dependabot's version updates need no `test-build`: a new version of a dependency is
-          # checked by the build and the tests the queue runs, not by trying the app by hand. The
-          # login is GitHub's own bot account, which no one else can open a pull request as.
-          is_dependabot() { [ "$AUTHOR" = "dependabot[bot]" ] && [ "$AUTHOR_TYPE" = "Bot" ]; }
+          # Dependabot's Cargo updates need no `test-build`: a new version of a crate is checked by
+          # the build and the tests the queue runs, not by trying the app by hand. Its updates of
+          # the Actions are not: `ci` skips the Rust jobs for a change under .github/, so nothing
+          # in the queue runs the workflows they change. The login is GitHub's own bot account,
+          # which no one else can open a pull request as, and it names its branches by ecosystem.
+          is_dependabot_cargo() {
+            [ "$AUTHOR" = "dependabot[bot]" ] && [ "$AUTHOR_TYPE" = "Bot" ] && [[ "$HEAD_REF" == dependabot/cargo/* ]]
+          }
           if ! is_maintainer "$SENDER"; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             echo "::notice::$SENDER is not a maintainer; the label was taken off."
             exit 0
           fi
-          if ! is_maintainer "$AUTHOR" && ! is_dependabot && [ "$HAS_TEST_BUILD" != "true" ]; then
+          if ! is_maintainer "$AUTHOR" && ! is_dependabot_cargo && [ "$HAS_TEST_BUILD" != "true" ]; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body \
               "\`$LABEL\` needs \`test-build\` on a contributor's pull request: add \`test-build\`, try the build of the commit you read, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
