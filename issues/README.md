@@ -55,7 +55,7 @@ The order is a dependency order, not a priority order. Property 1 can start toda
 waits for what is above it.
 
 ```text
- 1 musical time ────────────────┐   (independent; can start today)
+ 1 musical time ────────────────┐   (done: #402, ADR 0024 accepted; no issue to create)
                                 │
  2 object identity ─────────────┼──┐   (independent; can start today — and it
                                 │  │    is what the version diff needs)

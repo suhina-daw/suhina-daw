@@ -364,7 +364,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "tempo.addPoint",
-        label: "Add a tempo change at a beat: a step, or a ramp that glides from the tempo before it (one already on that beat is replaced)",
+        label: "Add a tempo change at a beat: a step, or a ramp that glides from the tempo before it (a beat holds a ramp and a step; one of the same kind already there is replaced)",
         params: &[
             param("beat", ParamType::Number, "where the change is, in beats from the start, after 0"),
             param("bpm", ParamType::Number, "the tempo from there, 20 to 999"),

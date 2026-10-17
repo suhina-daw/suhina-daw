@@ -95,9 +95,10 @@ A feasibility pass produced these findings, all of which the decisions below res
    UI, the CLI and MCP, and its permissions and path confinement extend the patterns those callers
    already have. It is untrusted **data**, not untrusted code, which is why it does not need the
    process boundary a plug-in or an extension needs.
-5. **All positions are musical time, and tempo is append-only.** Exactly one representation for
-   where something is, and a tempo change appends a segment instead of rewriting one, because an
-   append-only list merges as a union. Decided in [0024](0024-musical-time-and-tempo.md), and
+5. **All positions are musical time, and the tempo map merges by key.** Exactly one representation
+   for where something is, and the tempo map is a list of changes keyed by beat (by bar for the time
+   signature), so two versions merge it three-way against their ancestor. Decided in
+   [0024](0024-musical-time-and-tempo.md), and
    independently of whether collaboration ever ships, because being wrong here is a model-wide
    rewrite later.
 6. **Objects have stable identity, and identity never comes from content.** A hash cannot be an
@@ -211,7 +212,7 @@ A feasibility pass produced these findings, all of which the decisions below res
 
 ## Sources
 
-- Ableton Link, on tempo changes as timeline segments (read for
+- Ableton Link, on tempo changes as timeline segments (read for the first version of
   [0024](0024-musical-time-and-tempo.md)):
   <https://help.ableton.com/hc/en-us/articles/209776125-Link-features-and-functions-FAQ>
 - The published large-scale measurement of hole punching (4.4 M attempts, 85 000 networks, 167
