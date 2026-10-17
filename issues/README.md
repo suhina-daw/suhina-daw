@@ -66,7 +66,7 @@ waits for what is above it.
  6 merge driver and git ◄── 5
  7 version browser ◄── 3, 6
  8 musical diff ◄── 2, 7
- 9 remove .locr  (independent, small, can start today)
+ 9 remove .locr  (being done in #565; no issue to create)
 15 author identity  (small; issues 5, 7 and 10 want what it provides, so it is
                     worth landing before them)
 

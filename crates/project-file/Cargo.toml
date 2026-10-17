@@ -1,6 +1,6 @@
 [package]
 name = "suhina-project-file"
-description = "Reads and writes Suhina's own project files (.suhina, versioned JSON; .locr from before still read)"
+description = "Reads and writes Suhina's own project files (.suhina, versioned JSON)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

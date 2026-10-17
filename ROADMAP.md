@@ -200,8 +200,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   as messages, without a new graph
   ([ADR 0005](docs/decisions/0005-edits-while-playing.md)).
 - Projects are saved in Suhina's own format, `.suhina` (versioned JSON, plug-in state included,
-  audio referred to by path): `project.save { path?, copy? }`; `.suhina` files, and `.locr`
-  files saved before October 2026, open in the app,
+  audio referred to by path): `project.save { path?, copy? }`; `.suhina` files open in the app,
   `suhina-cli` and MCP like Live Sets do ([ADR 0010](docs/decisions/0010-project-files.md),
   [spec](docs/spec/suhina-format.md)).
 - Automation envelopes for a track's volume, pan and mute and every built-in and `.sd` device parameter:

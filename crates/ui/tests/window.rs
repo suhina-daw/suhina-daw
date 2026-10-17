@@ -3491,7 +3491,7 @@ fn browse_buttons_ask_for_the_systems_dialog_and_fill_their_fields() {
     harness.run();
     let request = harness.state_mut().take_pick_request().unwrap_or_else(|| panic!("no dialog asked for"));
     assert_eq!(request.field, PickField::StartTemplate);
-    assert_eq!(request.field.extensions(), ["suhina", "locr", "als"]);
+    assert_eq!(request.field.extensions(), ["suhina", "als"]);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
 

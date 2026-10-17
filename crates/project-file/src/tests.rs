@@ -342,28 +342,25 @@ fn a_file_names_the_suhina_format() {
 }
 
 #[test]
-fn a_file_saved_before_the_rename_still_opens() {
-    // Written with the old format name, as projects saved before October 2026 are.
+fn the_format_from_before_the_rename_is_refused_by_name() {
+    // Files saved before October 2026 named another format; it is no longer read (ADR 0010
+    // decision 12), and the message says what the file named.
     let old = to_json(&everything()).replacen(r#""format": "suhina""#, r#""format": "locr""#, 1);
-    assert!(old.contains(r#""format": "locr""#), "{old}");
-    assert_eq!(from_json(&old), Ok(everything()));
-    // And from a file with the old extension.
-    let dir = std::env::temp_dir().join(format!("suhina-project-file-old-{}", std::process::id()));
-    let path = dir.join("song.locr");
-    let written = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, &old));
-    assert!(written.is_ok(), "{written:?}");
-    assert_eq!(read_file(&path), Ok(everything()));
-    // Saved again, it names the new format.
-    assert!(to_json(&everything()).contains(r#""format": "suhina""#));
-    let _clean = std::fs::remove_dir_all(&dir);
+    let error = from_json(&old).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(error.contains(r#""locr""#), "{error}");
+    // A format longer than a name is cut short in the message.
+    let long = format!(r#"{{ "format": "{}", "version": 1, "project": {{}} }}"#, "x".repeat(10_000));
+    let error = from_json(&long).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(error.len() < 200, "{error}");
+    assert!(from_json(r#"{ "format": 1, "version": 1, "project": {} }"#).is_err(), "a format that is not text");
 }
 
 #[test]
-fn project_files_are_known_by_either_extension() {
-    for name in ["a.suhina", "a.SUHINA", "a.locr", "a.LOCR", "dir/b c.suhina"] {
+fn project_files_are_known_by_their_extension() {
+    for name in ["a.suhina", "a.SUHINA", "dir/b c.suhina"] {
         assert!(is_project_file(Path::new(name)), "{name}");
     }
-    for name in ["a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
+    for name in ["a.locr", "a.LOCR", "a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
         assert!(!is_project_file(Path::new(name)), "{name}");
     }
 }
@@ -378,9 +375,8 @@ fn what_is_not_a_project_is_refused() {
     assert!(refused(r#"{ "format": "suhina", "project": {} }"#), "no version");
     assert!(refused(r#"{ "format": "suhina", "version": 2, "project": {} }"#), "a newer version");
     assert!(refused(r#"{ "format": "suhina", "version": 1 }"#), "no project");
-    assert!(refused(r#"{ "format": "locr", "version": 2, "project": {} }"#), "a newer version, old name");
     assert_eq!(from_json(r#"{ "format": "suhina", "version": 1, "project": {} }"#), Ok(Project::default()));
-    assert_eq!(from_json(r#"{ "format": "locr", "version": 1, "project": {} }"#), Ok(Project::default()));
+    assert!(refused(r#"{ "format": "locr", "version": 1, "project": {} }"#), "the format from before the rename");
 }
 
 #[test]

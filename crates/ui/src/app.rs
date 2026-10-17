@@ -977,8 +977,8 @@ impl App {
         self.saved_path.take()
     }
 
-    /// Saves the active project: to its own project file (`.suhina`, or the `.locr` it was
-    /// opened from), or, the first time and when `ask`, to a name and folder the user gives.
+    /// Saves the active project: to its own `.suhina` file, or, the first time and when `ask`,
+    /// to a name and folder the user gives.
     fn save_active(&mut self, ask: bool) {
         let Some(id) = self.projects.active() else { return };
         match self.own_file(id) {
@@ -995,8 +995,7 @@ impl App {
         }
     }
 
-    /// The project's own file (`.suhina`, or the `.locr` it was opened from), once it has been
-    /// saved or was opened from one.
+    /// The project's own `.suhina` file, once it has been saved or was opened from one.
     fn own_file(&self, id: ProjectId) -> Option<PathBuf> {
         self.projects.get(id)?.source().filter(|s| suhina_session::is_project_file(s)).map(Path::to_path_buf)
     }

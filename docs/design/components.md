@@ -420,11 +420,11 @@ shortcuts wait while it shows.
 
 | Part | Spec |
 |---|---|
-| New (left half) | "New" heading (10 px `text.hint` over a `border` hairline); a 20 px row "New blank project" with "4 tracks, 2 returns, 8 scenes" on the right; "From a template" and the templates folder's `.suhina`, `.locr` (saved before October 2026) and `.als` files by name, 20 px rows that scroll, "Suhina project" or "Live Set" on the right; "No templates yet: File › Save as template" when there are none; the folder at the bottom in 10 px `text.hint` |
-| Open (right half) | A path field (hint "Path to a .suhina or .als file"; Enter opens; quotes around a pasted path are dropped), a 64 px **Browse…** button (the system's file dialog, offering `.suhina`, `.locr` and `.als`; the dialog stays behind it, and a project chosen opens) and a 56 px Open button; "Recent": the projects opened and saved lately, newest first (12 kept), the name and its folder, or "Nothing opened yet" |
+| New (left half) | "New" heading (10 px `text.hint` over a `border` hairline); a 20 px row "New blank project" with "4 tracks, 2 returns, 8 scenes" on the right; "From a template" and the templates folder's `.suhina` and `.als` files by name, 20 px rows that scroll, "Suhina project" or "Live Set" on the right; "No templates yet: File › Save as template" when there are none; the folder at the bottom in 10 px `text.hint` |
+| Open (right half) | A path field (hint "Path to a .suhina or .als file"; Enter opens; quotes around a pasted path are dropped), a 64 px **Browse…** button (the system's file dialog, offering `.suhina` and `.als`; the dialog stays behind it, and a project chosen opens) and a 56 px Open button; "Recent": the projects opened and saved lately, newest first (12 kept), the name and its folder, or "Nothing opened yet" |
 | Rows | Hover `panel.hoverBackground`; name 11 px `text.primary`, note 10 px `text.hint` |
 
-A new project opens in a new tab. Save (Ctrl+S) writes the project's own `.suhina` file (or the `.locr` it was opened from); the first
+A new project opens in a new tab. Save (Ctrl+S) writes the project's own `.suhina` file; the first
 time, Save as (Ctrl+Shift+S) and Save as template ask in a 420 px prompt: Name and Folder fields
 (the projects folder, the project's own folder, or the templates folder; Folder ends in a 64 px
 **Browse…** button, the system's folder dialog), the file that will be

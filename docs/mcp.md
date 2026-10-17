@@ -144,10 +144,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Saving.** `project.save { path?, copy? }` (through `command_run`) writes the project as a
   Suhina project (`.suhina`, [spec](spec/suhina-format.md)) with its plug-ins' state as it is now;
-  without a path, to the project file it came from (a `.locr` from before October 2026 stays `.locr`); `copy: true` writes a copy (a template) and the
+  without a path, to the project file it came from; `copy: true` writes a copy (a template) and the
   project keeps its own file. `project.info` reports `unsaved_changes`, which a change made only in
   a plug-in's editor sets too, within about a minute (two state reads that agree). `project_open` opens
-  `.suhina` (and older `.locr`) files as well as Live Sets.
+  `.suhina` files as well as Live Sets.
 - **Backups.** `project.autosave { now?, interval?, clean_up? }` reports where the active
   project's backups go, its last one and whether one is due ([spec](spec/backups.md));
   `now: true` writes one into `.backup` beside the project's file, which must be below the write
@@ -366,7 +366,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 | Tool | What it does |
 |---|---|
-| `project_open` | Open a Suhina project (`.suhina`, or `.locr` from before) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
+| `project_open` | Open a Suhina project (`.suhina`) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
 | `project_inspect` | Summary, tracks (volume, pan, mute, devices) and arrangement clips as JSON; optional `project`. |
 | `command_list` | Command ids with description, kind (`read`, `edit`, `history`, `transport`, `projects`, `plugins`, `plugin`, `library`, `audio`) and parameter schema; optional `filter`. |
 | `command_run` | Run one command: `{"id": "track.setPan", "params": {"tracks": ["Bass"], "pan": -1}}`; optional `project`. |

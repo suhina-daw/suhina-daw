@@ -50,7 +50,7 @@ pub struct SuhinaMcp {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OpenParams {
-    /// Path of a Suhina project (`.suhina`, or `.locr` from before) or a Live Set (`.als`), relative to the read root.
+    /// Path of a Suhina project (`.suhina`) or a Live Set (`.als`), relative to the read root.
     pub path: String,
 }
 
@@ -230,7 +230,7 @@ impl SuhinaMcp {
 #[tool_router]
 impl SuhinaMcp {
     #[tool(
-        description = "Open a Suhina project (.suhina, or .locr from before) or a Live Set (.als) below the read root and make it the active project. Returns a summary and the warnings from reading it (unsupported content is skipped, not fatal)."
+        description = "Open a Suhina project (.suhina) or a Live Set (.als) below the read root and make it the active project. Returns a summary and the warnings from reading it (unsupported content is skipped, not fatal)."
     )]
     async fn project_open(&self, Parameters(p): Parameters<OpenParams>) -> Result<CallToolResult, McpError> {
         let path = match self.workspace.readable(&p.path) {
@@ -566,8 +566,8 @@ fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Option<&P
 }
 
 /// `project.save` writes below the write root only. Its `path` (with `.suhina` added as the
-/// session adds it) must be there; without a path it saves over the project's own file (`.suhina`,
-/// or the `.locr` it was opened from), which must be there too. Either way an existing file is
+/// session adds it) must be there; without a path it saves over the project's own `.suhina` file,
+/// which must be there too. Either way an existing file is
 /// replaced only with `overwrite: true`, an MCP parameter that is taken out before the command
 /// runs.
 fn confine_save(workspace: &Workspace, params: &mut Value, source: Option<&Path>) -> Result<(), String> {
@@ -855,15 +855,6 @@ mod confine_tests {
         let ok = save(&workspace, json!({ "overwrite": true }), Some(&mine)).unwrap();
         assert!(ok["path"].as_str().unwrap().ends_with("song.suhina"));
         assert!(save(&workspace, json!({ "path": "x", "overwrite": "yes" }), None).is_err());
-
-        // A project opened from a .locr file (saved before October 2026) is saved back to it.
-        let old = dir.join("out").join("old.locr");
-        std::fs::write(&old, b"x").unwrap();
-        let old = old.canonicalize().unwrap();
-        let ok = save(&workspace, json!({ "overwrite": true }), Some(&old)).unwrap();
-        assert!(ok["path"].as_str().unwrap().ends_with("old.locr"));
-        let ok = save(&workspace, json!({ "path": "old.locr", "overwrite": true }), None).unwrap();
-        assert!(ok["path"].as_str().unwrap().ends_with("old.locr"));
 
         // A project without a project file and no path is left to the command, which asks for one.
         assert_eq!(save(&workspace, json!({}), None).unwrap(), json!({}));

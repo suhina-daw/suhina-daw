@@ -9,9 +9,6 @@
 //! { "format": "suhina", "version": 1, "project": { "transport": { … }, "tracks": [ … ], … } }
 //! ```
 //!
-//! Files saved before October 2026 end in `.locr` and name the format `"locr"`; they are the
-//! same format and still open ([`OLD_EXTENSION`], [`is_project_file`]).
-//!
 //! Binary data (plug-in state, extensions) is base64. Audio files are referred to by path,
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
 //! somewhere else.
@@ -35,13 +32,8 @@ use suhina_model::{
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = "suhina";
-/// The extension of project files saved before October 2026, without the dot: the same format,
-/// still read, never chosen for a new file.
-pub const OLD_EXTENSION: &str = "locr";
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
-/// The `format` files saved before October 2026 name; read as [`FORMAT`].
-const OLD_FORMAT: &str = "locr";
 /// The version this crate writes, and the newest it reads.
 pub const VERSION: u64 = 1;
 /// A larger file is refused before it is parsed.
@@ -71,10 +63,9 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension: `.suhina`, or `.locr` from before
-/// October 2026 (either case).
+/// Whether `path` names a project file by its extension, `.suhina` in either case.
 pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION) || e.eq_ignore_ascii_case(OLD_EXTENSION))
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))
 }
 
 /// Reads a project file.
@@ -111,13 +102,19 @@ pub fn to_json(project: &Project) -> String {
     serde_json::to_string_pretty(&file).unwrap_or_default()
 }
 
-/// Reads the text of a `.suhina` file, or of a `.locr` one saved before October 2026. The
-/// project must validate (ids unique, references resolve), as an imported one must.
+/// Reads the text of a `.suhina` file. The project must validate (ids unique, references
+/// resolve), as an imported one must.
 pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     let root = serde_json::from_str::<Value>(text).map_err(|e| format!("the project is not JSON: {e}"))?;
     let root = root.as_object().ok_or("a project file is a JSON object")?;
-    if !matches!(root.get("format").and_then(Value::as_str), Some(FORMAT | OLD_FORMAT)) {
-        return Err("this is not a Suhina project (its format is not \"suhina\")".to_string().into());
+    match root.get("format") {
+        Some(Value::String(format)) if format == FORMAT => {}
+        Some(Value::String(format)) => {
+            // Named in the message, cut short: the text is the file's, so it may be anything.
+            let found: String = format.chars().take(40).collect();
+            return Err(format!("this is not a Suhina project: its format is \"{found}\", not \"{FORMAT}\"").into());
+        }
+        _ => return Err(format!("this is not a Suhina project: it does not name the format \"{FORMAT}\"").into()),
     }
     let version = root.get("version").and_then(Value::as_u64).ok_or("the project's version is missing")?;
     if version == 0 || version > VERSION {

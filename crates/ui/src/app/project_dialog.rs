@@ -552,10 +552,9 @@ mod tests {
     fn the_dialog_makes_new_projects_and_opens_recent_ones() {
         let lists = Lists {
             recent: vec![PathBuf::from("songs/Night.suhina")],
-            // `Groove.locr` was saved before October 2026; it is listed like the others.
             templates: vec![
                 PathBuf::from("templates/Beat.suhina"),
-                PathBuf::from("templates/Groove.locr"),
+                PathBuf::from("templates/Groove.suhina"),
                 PathBuf::from("templates/Old.als"),
             ],
             templates_folder: "templates".into(),
@@ -571,7 +570,7 @@ mod tests {
         assert_eq!(harness.state().1, Some(Choice::NewFromTemplate("templates/Beat.suhina".into())));
         harness.get_by_label("Template Groove").click();
         harness.run();
-        assert_eq!(harness.state().1, Some(Choice::NewFromTemplate("templates/Groove.locr".into())));
+        assert_eq!(harness.state().1, Some(Choice::NewFromTemplate("templates/Groove.suhina".into())));
         harness.get_by_label("Recent Night").click();
         harness.run();
         assert_eq!(harness.state().1, Some(Choice::Open("songs/Night.suhina".into())));

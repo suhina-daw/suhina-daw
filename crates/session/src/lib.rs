@@ -632,12 +632,19 @@ impl Session {
         })
     }
 
-    /// Opens a project: a Suhina project (`.suhina`, or `.locr` from before October 2026) or a
-    /// Live Set to import (`.als`). Returns the session and the importer's warnings.
+    /// Opens a project: a Suhina project (`.suhina`) or a Live Set to import (`.als`). Returns
+    /// the session and the importer's warnings. Any other file is refused by its extension.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
+        } else if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als")) {
+            return Err(format!(
+                "{}: Suhina opens a Suhina project (.{}) or a Live Set (.als), not this file",
+                path.display(),
+                suhina_project_file::EXTENSION
+            )
+            .into());
         } else {
             let import = suhina_als::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (import.project, import.warnings)
@@ -696,9 +703,8 @@ impl Session {
         self.plugins.check_edits();
     }
 
-    /// Saves the project as a Suhina project at `path` (`.suhina` is added when it has neither
-    /// `.suhina` nor `.locr`, so a project opened from a `.locr` file is saved back to it), with
-    /// the running plug-ins' state as it is now and audio paths written relative to the new
+    /// Saves the project as a Suhina project at `path` (`.suhina` is added when it does not end
+    /// in it), with the running plug-ins' state as it is now and audio paths written relative to the new
     /// file. The session then belongs to that file, unless `copy` (a template, a backup), which
     /// leaves the session as it was. Returns the path written.
     pub fn save(&mut self, path: &Path, copy: bool) -> Result<PathBuf, CommandError> {

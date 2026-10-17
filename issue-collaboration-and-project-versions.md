@@ -308,7 +308,7 @@ Measured on an authored `.als` project folder (41 files, 39.2 MB) — the observ
   separate from the versioned feature cache, closing [#325](https://github.com/suhina-daw/suhina-daw/issues/325);
   (5) the merge over two folders, with the conflict rules; (6) `suhina merge-driver` and the git
   integration, including ignoring `.git` in the library scan and watch; (7) the version browser;
-  (8) the musical diff; (9) the release of `.locr` compatibility, as its own documented decision
+  (8) the musical diff; (9) the release of `.locr` compatibility, as its own documented decision (#565)
   (it is a fossil of a name the project may not write out, its functional code is about four lines,
   and no such file exists in the wild); (10) the session protocol and the peer permission model;
   (11) the transport: direct, hole-punched and relayed, with the invitation; (12) `suhina-relay`;

@@ -61,7 +61,7 @@ commands:
             its window is closed, then --save writes the state it has to a file
 
 options:
-  <project.als>      a Live Set to import, or a Suhina project (.suhina, or .locr from before) to open
+  <project.als>      a Live Set to import, or a Suhina project (.suhina) to open
   --demo             use the built-in demo project instead
   -o, --output       output WAV path (render only)
   --cue <cue.wav>    render only: also write the cue (the tracks whose cue is on, after their
@@ -329,7 +329,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool), String> {
     let (project, audio) = match &args.source {
         Source::Demo => (demo_project(), AudioPool::new()),
         Source::Als(path) => {
-            // A Suhina project (.suhina or .locr) or a Live Set to import.
+            // A Suhina project (.suhina) or a Live Set to import.
             let (session, warnings) = suhina_session::Session::open(path).map_err(|e| e.0)?;
             let folder = path.parent().unwrap_or(std::path::Path::new("."));
             let started = std::time::Instant::now();
