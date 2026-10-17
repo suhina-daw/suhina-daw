@@ -205,7 +205,20 @@ Several agents often run at once, so an agent never starts work that exists alre
 
   `type` is one of `enhancement`, `bug`, `documentation`, `chore`, `epic` and sets the type label
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
-  board's Priority and Phase afterwards. Pull requests and comments stay under the person's account.
+  board's Priority and Phase afterwards. A pull request itself — its branch, its description and
+  its merge — stays under the person's account.
+- **Comment on a pull request as the bot when the comment is a review.** A review, a request for
+  changes or a summary of what an agent found goes onto the pull request through the
+  [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so it is written by
+  `suhina-bot[bot]` and the person who ran the session is not its author. Start it the same way,
+  and read `COMMENTED_PR=#N <url>` from the log of the run the start returns.
+
+  ```sh
+  run_url="$(gh workflow run comment-pr.yml -f pr=600 -f body="$(cat review.md)")"
+  run_id="${run_url##*/}"
+  gh run watch "$run_id" --exit-status; gh run view "$run_id" --log | grep COMMENTED_PR
+  ```
+
 - **Before writing code**, comment `/claim` with the plan and a `Touches:` line naming the paths
   you will change (`Touches: crates/ui/src/detail, crates/session`), and read the bot's answer.
   When it says the work is taken, that it is blocked by another issue, or that it is already yours

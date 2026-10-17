@@ -4,8 +4,9 @@ run-name: "Open issue: ${{ inputs.title }}"
 # Opens an issue as the GitHub App `suhina-bot` (`suhina-bot[bot]`) rather than as the person who
 # starts the run. Agent sessions write to GitHub with the account of the person who runs them;
 # issues they open through this workflow show the bot as their author (AGENTS.md › Tasks). The
-# Discord bot writes as the same App (suhina-daw/suhina-bot#1). Pull requests, comments and merges stay under the person's
-# account.
+# Discord bot writes as the same App (suhina-daw/suhina-bot#1). A pull request itself, its
+# description and its merge stay under the person's account; a review comment on one can be posted
+# as the bot through the Comment on pull request workflow (comment-pr.yml).
 #
 # Start it from Actions › Open issue › Run workflow, with `gh workflow run open-issue.yml -f ...`
 # or with the GitHub MCP's `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in

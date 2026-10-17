@@ -1,0 +1,124 @@
+name: Comment on pull request
+run-name: "Comment on PR #${{ inputs.pr }}"
+
+# Posts a comment on a pull request as the GitHub App `suhina-bot` (`suhina-bot[bot]`) rather than
+# as the person who starts the run, for a review an agent session wrote (AGENTS.md › Tasks). The
+# pull request itself, its description and its merge stay under the person's account.
+#
+# A comment on the conversation of a pull request is an issue comment, so the App's
+# `Issues: Read and write` permission covers it. If GitHub answers 403, it wants
+# `Pull requests: Read and write` instead: a maintainer grants it in the App's settings and this
+# file asks for it in the token step (`permission-pull-requests: write`).
+#
+# Start it from Actions › Comment on pull request › Run workflow, with
+# `gh workflow run comment-pr.yml -f pr=600 -f body="$(cat review.md)"`, or with the GitHub MCP's
+# `actions_run_trigger`. The run prints `COMMENTED_PR=#<number> <url>` in its log and puts the link
+# in its summary.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+      body:
+        description: Comment in Markdown (at most 60 000 bytes)
+        required: true
+        type: string
+
+# The workflow's own token only reads: the actor's permission and the pull request. The comment is
+# written with the App's token.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    environment: suhina-bot
+    steps:
+      # Everything the run was given is checked before the App's key is touched. Inputs reach the
+      # scripts only through `env`, never interpolated into a script.
+      - name: Check the inputs and who started the run
+        id: check
+        uses: actions/github-script@v9
+        env:
+          PR: ${{ inputs.pr }}
+          BODY: ${{ inputs.body }}
+          # Only whether the secrets are set; the values stay out of this step.
+          HAS_SUHINA_BOT_APP_ID: ${{ secrets.SUHINA_BOT_APP_ID != '' }}
+          HAS_SUHINA_BOT_PRIVATE_KEY: ${{ secrets.SUHINA_BOT_PRIVATE_KEY != '' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const fail = (message) => { core.setFailed(message); throw new Error(message); };
+
+            for (const name of ["SUHINA_BOT_APP_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
+              if (process.env[`HAS_${name}`] !== "true") {
+                fail(`The secret ${name} is missing from the environment suhina-bot.`);
+              }
+            }
+
+            // Starting a workflow already needs write access; this says so in the run as well.
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner, repo, username: context.actor,
+            });
+            if (!["admin", "maintain", "write"].includes(permission.role_name)) {
+              fail(`@${context.actor} has no write access to ${owner}/${repo}.`);
+            }
+
+            const prInput = process.env.PR.trim().replace(/^#/, "");
+            if (!/^[0-9]{1,7}$/.test(prInput)) fail(`"${process.env.PR}" is not a pull request number.`);
+            const pr = Number(prInput);
+
+            const body = process.env.BODY;
+            if (body.trim().length === 0) fail("The comment is empty.");
+            if (Buffer.byteLength(body, "utf8") > 60000) fail("The comment is longer than 60 000 bytes.");
+
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pr });
+            if (pull.state !== "open") fail(`#${pr} is not open.`);
+
+            core.setOutput("pr", String(pr));
+            core.setOutput("url", pull.html_url);
+
+      - name: Token of the suhina-bot App
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
+          private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
+          permission-issues: write
+
+      - name: Comment on the pull request
+        uses: actions/github-script@v9
+        env:
+          PR: ${{ steps.check.outputs.pr }}
+          URL: ${{ steps.check.outputs.url }}
+          BODY: ${{ inputs.body }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = Number(process.env.PR);
+
+            try {
+              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                owner, repo, issue_number: pr, body: process.env.BODY,
+              });
+            } catch (error) {
+              if (error.status === 403) {
+                core.setFailed(
+                  "The App may not comment on a pull request. Grant it Pull requests: Read and write " +
+                  "and add `permission-pull-requests: write` to the token step of this workflow.",
+                );
+                return;
+              }
+              throw error;
+            }
+
+            // Said before anything else can fail, so a failed run that did comment still names it.
+            console.log(`COMMENTED_PR=#${pr} ${process.env.URL}`);
+            core.setOutput("url", process.env.URL);
+            core.summary.addRaw(`Commented on [#${pr}](${process.env.URL})`);
+            await core.summary.write();
