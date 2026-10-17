@@ -40,7 +40,7 @@ permissions: {}
 # must be handled. A push that lands while a run approves is caught by --match-head-commit.
 
 env:
-  # The maintainers are listed here, in test-build.yml and in test-build-links.yml.
+  # The maintainers are listed here, in test-build.yml, in test-build-links.yml and in claim.yml.
   MAINTAINERS: juhamikael
   LABEL: ready to merge
   # Shell functions the jobs source: whether the pull request has the label now (not as the event

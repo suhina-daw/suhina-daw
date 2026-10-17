@@ -93,7 +93,8 @@ comment there instead. A duplicate that slips through is closed with a link to t
 *Linked pull requests* box shows it). On the board it is in `Backlog` or `Ready`, with one
 difference: a **feature request** (`enhancement`) in `Backlog` is not agreed yet. Write your idea or
 plan in the issue; a maintainer moves it to `Ready` when Suhina wants it, and only then is it open to
-claim. A bug in `Backlog` is free. `Do not start yet` means the order is deliberate: the issue and
+claim. A trusted contributor, named in the repository variable `TRUSTED_CONTRIBUTORS`, may claim a
+feature in `Backlog` without waiting ([`docs/claim-bot.md`](docs/claim-bot.md) › Who is who). A bug in `Backlog` is free. `Do not start yet` means the order is deliberate: the issue and
 its comments say what the work waits for, so ask there instead of starting.
 
 **Claim it** in a comment on the issue before you write code:
@@ -106,7 +107,8 @@ assigns you, and refuses the claim when the work is not free or another issue it
 is still open. The `Touches:` line names the paths you will change; it is optional, and with it the
 bot's answer lists the open pull requests and other claims that touch the same code. Without the bot, a plain comment
 ("I'd like to take this. Plan: …") is the claim, and the first one wins: a bot that is down never
-means the issue is free.
+means the issue is free. Hold at most five claims without a pull request at a time; the bot refuses
+the sixth until a draft pull request or an `/unclaim` frees one.
 
 A maintainer who hands an issue to someone writes `/claim @their-login`, with the plan after it if
 there is one: the bot makes the same checks for that person, assigns them and moves the card, also

@@ -14,6 +14,12 @@ name: Claim
 # the paths the work will change, and the answer lists the open pull requests and other claims that
 # touch the same paths, so overlapping work is found before it is written twice (AGENTS.md › Tasks).
 #
+# Who may do what is named, not taken from GitHub's author association (every collaborator with
+# triage access is a `COLLABORATOR` there): maintainers are listed in `MAINTAINERS` below, and the
+# repository variable `TRUSTED_CONTRIBUTORS` lists contributors who may claim a feature still in
+# Backlog. Anyone who is not a maintainer holds at most `MAX_OPEN_CLAIMS` claims without a pull
+# request at a time.
+#
 # It needs the repository secret `PROJECT_TOKEN`, because the workflow's `GITHUB_TOKEN` cannot
 # reach a project owned by the organization. docs/claim-bot.md says how to make one, which
 # scopes it needs and what happens when it expires.
@@ -44,6 +50,11 @@ jobs:
           PROJECT_OWNER: suhina-daw
           PROJECT_NUMBER: "1"
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          # Logins, separated by commas or spaces. The maintainers are also listed in
+          # ready-to-merge.yml, test-build.yml and test-build-links.yml; a change to them is a pull request:
+          # trusted contributors are a repository variable, so adding one needs no change here.
+          MAINTAINERS: juhamikael
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
         with:
           script: |
             const owner = process.env.PROJECT_OWNER;
@@ -65,6 +76,9 @@ jobs:
             // A claim with no pull request after this long has lapsed, and the next `/claim` takes it
             // over (CONTRIBUTING.md › Working on an issue). A draft pull request is enough to keep it.
             const LAPSE_HOURS = 48;
+            // How many claims without a pull request one person who is not a maintainer may hold at
+            // once: open issues assigned to them that no open pull request closes.
+            const MAX_OPEN_CLAIMS = 5;
 
             const issue = context.payload.issue;
             // Assignees and labels are read again rather than taken from the event, which is as old
@@ -77,12 +91,18 @@ jobs:
             }
             const comment = context.payload.comment;
             const actor = comment.user.login;
-            // GitHub's own word for someone who may move a card: the owner, an organization member
-            // or a collaborator. An outside contributor cannot write the project field at all,
-            // which is half the reason this bot exists.
-            const maintainer = ["OWNER", "MEMBER", "COLLABORATOR"].includes(
-              comment.author_association,
-            );
+            // The two lists of logins, compared without case. GitHub's author association is not
+            // used: it calls every collaborator, triage access included, a `COLLABORATOR`.
+            const logins = (text) =>
+              String(text || "")
+                .split(/[\s,]+/)
+                .map((login) => login.replace(/^@/, "").toLowerCase())
+                .filter((login) => login.length > 0);
+            const maintainers = logins(process.env.MAINTAINERS);
+            const isMaintainer = (login) => typeof login === "string" && maintainers.includes(login.toLowerCase());
+            const maintainer = isMaintainer(actor);
+            // A trusted contributor may claim a feature still in Backlog; nothing else changes for them.
+            const trusted = maintainer || logins(process.env.TRUSTED_CONTRIBUTORS).includes(actor.toLowerCase());
 
             const body = (comment.body || "").trim();
             const head = body.split("\n")[0].trim().match(/^\/(claim|unclaim|hold|ready)\b/i);
@@ -422,7 +442,7 @@ jobs:
                     per_page: 100,
                   });
                   const held = comments
-                    .filter((entry) => ["OWNER", "MEMBER", "COLLABORATOR"].includes(entry.author_association))
+                    .filter((entry) => entry.user && isMaintainer(entry.user.login))
                     .filter((entry) => /^\/hold\b/i.test((entry.body || "").trim()))
                     .pop();
                   if (!held) return "";
@@ -533,14 +553,54 @@ jobs:
 
               // A feature request in Backlog is not agreed yet: a maintainer moves it to Ready (`/ready`)
               // once Suhina wants it, so two people never start the same idea in two shapes. A bug in
-              // Backlog is free, and a maintainer may claim either.
+              // Backlog is free, and a maintainer or a trusted contributor may claim either.
               const feature = (current.labels || []).some((label) => label.name === "enhancement");
-              if (feature && !maintainer && (!item || status === null || same(status, "Backlog"))) {
+              if (feature && !trusted && (!item || status === null || same(status, "Backlog"))) {
                 return say(
                   `This feature is not agreed yet (**${status || "Backlog"}**), so it is not open to ` +
                     `claim. Write your plan in this issue; a maintainer moves it to **${RELEASED}** with ` +
                     `\`/ready\` when Suhina wants it, and then \`/claim\` works.`,
                 );
+              }
+
+              // One person who is not a maintainer holds at most MAX_OPEN_CLAIMS claims without a pull
+              // request: the open issues assigned to them that no open pull request closes, this one
+              // left out. A claim they have already, and a maintainer's claim for someone, are not
+              // new claims. A lookup that fails lets the claim go ahead.
+              if (!maintainer && !hasClaimant) {
+                let waiting = [];
+                try {
+                  const theirs = await project.graphql(
+                    `query ($owner: String!, $name: String!, $login: String!) {
+                       repository(owner: $owner, name: $name) {
+                         issues(states: OPEN, first: 100, filterBy: { assignee: $login }) {
+                           nodes {
+                             number title
+                             closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { totalCount }
+                           }
+                         }
+                       }
+                     }`,
+                    { owner: context.repo.owner, name: context.repo.repo, login: claimant },
+                  );
+                  const nodes = (theirs.repository && theirs.repository.issues && theirs.repository.issues.nodes) || [];
+                  waiting = nodes.filter(
+                    (other) =>
+                      other.number !== issue.number &&
+                      !(other.closedByPullRequestsReferences && other.closedByPullRequestsReferences.totalCount > 0),
+                  );
+                } catch (error) {
+                  core.warning(`Could not count the open claims of @${claimant}: ${error.message}`);
+                }
+                if (waiting.length >= MAX_OPEN_CLAIMS) {
+                  const list = waiting.slice(0, 10).map((other) => `- #${other.number} ${other.title}`).join("\n");
+                  return say(
+                    `@${actor}, you hold ${waiting.length} claims without a pull request, and the limit is ` +
+                      `${MAX_OPEN_CLAIMS}:\n\n${list}\n\nOpen a draft pull request that says \`Closes #N\` ` +
+                      `for one of them, or comment \`/unclaim\` on one you will not do now, and then ` +
+                      `\`/claim\` works here.`,
+                  );
+                }
               }
 
               if (item && isNotReady(status)) {

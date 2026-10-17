@@ -182,7 +182,7 @@ area labels (`CONTRIBUTING.md` › Issues lists them); a larger piece split into
 board keep their old key in the title (`(LOOP-27)`); a pull request for one names that key.
 Before starting, claim the item the way [`CONTRIBUTING.md`](CONTRIBUTING.md) › *Working on an issue*
 describes, for a person and for an agent alike: no assignee and no open pull request for it,
-`Backlog` or `Ready` on the board (`Ready` for a feature), and a `/claim` comment with the plan.
+`Backlog` or `Ready` on the board (`Ready` for a feature, unless you are a trusted contributor), and a `/claim` comment with the plan.
 
 Several agents often run at once, so an agent never starts work that exists already:
 

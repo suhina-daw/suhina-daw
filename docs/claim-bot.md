@@ -1,6 +1,6 @@
 ---
 description: How the claim bot moves an issue's card on the project board, holds work, refuses blocked work, lists overlapping work, and how the Depends on check orders pull requests
-read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order
+read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
 last_verified: 2026-10-15
@@ -51,7 +51,29 @@ A card `In review` never lapses either.
 
 A feature request (`enhancement`) lands in `Backlog` like any issue, but it is not agreed until a
 maintainer moves it to `Ready` (`/ready`); until then a contributor's `/claim` is refused with that
-explanation, so two people never start the same idea in two shapes. A bug in `Backlog` is free.
+explanation, so two people never start the same idea in two shapes. A trusted contributor
+([Who is who](#who-is-who)) may claim it in `Backlog` without waiting. A bug in `Backlog` is free.
+
+A claim without a pull request is a promise, so one person holds only a few at once: anyone who is
+not a maintainer may hold at most five (`MAX_OPEN_CLAIMS`), counted as the open issues assigned to
+them that no open pull request closes, this issue left out. The sixth `/claim` is refused and lists
+them; a draft pull request that says `Closes #N`, or an `/unclaim`, frees a place. A maintainer's
+`/claim @login` is not counted against `@login`, and a count that fails lets the claim go ahead.
+
+## Who is who
+
+The bot does not take roles from GitHub's author association, which calls everyone with any access
+to the repository, triage included, a `COLLABORATOR`. It reads two lists of logins instead:
+
+| Role | Listed in | May |
+|---|---|---|
+| Maintainer | `MAINTAINERS` in [`claim.yml`](../.github/workflows/claim.yml) (also in `ready-to-merge.yml`, `test-build.yml` and `test-build-links.yml`); changed by a pull request | everything in the table above: `/hold`, `/ready`, `/claim @login`, `/unclaim` for anyone, claim a feature in `Backlog`, any number of claims |
+| Trusted contributor | the repository variable `TRUSTED_CONTRIBUTORS` (Settings → Secrets and variables → Actions → Variables), logins separated by commas or spaces | claim a feature in `Backlog` without `/ready`; otherwise as anyone |
+| Anyone else | | claim free work for themselves, `/unclaim` their own claim |
+
+Being trusted is about claiming only. Merging stays a maintainer's: only a maintainer's
+`ready to merge` label queues a pull request ([`CONTRIBUTING.md`](../CONTRIBUTING.md) › Merging many
+pull requests), and a `/hold` reason is quoted only when a maintainer wrote it.
 
 ## Blocked work
 

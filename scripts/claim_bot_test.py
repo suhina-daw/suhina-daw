@@ -46,6 +46,21 @@ function scenario(input) {
   const state = { moved: undefined, added: false, assigned: [], unassigned: [], comments: [] };
   const board = input.board || {};
   const graphql = async (query, vars) => {
+    // The claimer's open issues, for the limit on claims without a pull request.
+    if (query.includes("filterBy")) {
+      if (input.openClaims === "fail") throw new Error("issues are not answered");
+      return {
+        repository: {
+          issues: {
+            nodes: (input.openClaims || []).map((other) => ({
+              number: other.number,
+              title: other.title || `Issue ${other.number}`,
+              closedByPullRequestsReferences: { totalCount: other.prs || 0 },
+            })),
+          },
+        },
+      };
+    }
     if (query.includes("organization(login")) {
       return {
         organization: {
@@ -112,6 +127,10 @@ function scenario(input) {
   process.env.PROJECT_OWNER = "suhina-daw";
   process.env.PROJECT_NUMBER = "1";
   process.env.PROJECT_TOKEN = input.token === undefined ? "token" : input.token;
+  // `boss` is always a maintainer; the commenter, `someone`, is one with role "maintainer" and a
+  // trusted contributor with role "trusted". GitHub's author association no longer decides either.
+  process.env.MAINTAINERS = input.role === "maintainer" ? "boss, someone" : "boss";
+  process.env.TRUSTED_CONTRIBUTORS = input.role === "trusted" ? "other @Someone" : "other";
   global.getOctokit = () => ({ graphql });
   global.core = { warning: () => {}, setFailed: (message) => (state.failed = message) };
   global.context = {
@@ -132,7 +151,8 @@ function scenario(input) {
       },
     },
   };
-  // A comment is its text, written by a maintainer, or { body, by } for anyone else; { bot, hoursAgo }
+  // A comment is its text, written by a maintainer, or { body, by } for anyone else (`by` is
+  // their author association, which no longer makes anyone a maintainer); { bot, hoursAgo }
   // makes it the bot's own comment, written that many hours ago. Other issues' comments come from
   // `claims`: { number, title, assignees, comments }.
   const claims = input.claims || [];
@@ -142,11 +162,11 @@ function scenario(input) {
       : (claims.find((other) => other.number === args.issue_number) || { comments: [] }).comments
     ).map((entry) =>
       typeof entry === "string"
-        ? { body: entry, author_association: "MEMBER", user: { type: "User" } }
+        ? { body: entry, author_association: "MEMBER", user: { login: "boss", type: "User" } }
         : {
             body: entry.body,
-            author_association: entry.bot ? "NONE" : entry.by,
-            user: { type: entry.bot ? "Bot" : "User" },
+            author_association: entry.bot ? "NONE" : entry.by || "COLLABORATOR",
+            user: entry.bot ? { login: "github-actions[bot]", type: "Bot" } : { login: "stranger", type: "User" },
             created_at: new Date(Date.now() - (entry.hoursAgo || 0) * 3600 * 1000).toISOString(),
           },
     ),
@@ -312,7 +332,7 @@ const cases = [
     name: "a maintainer may claim a feature in Backlog",
     input: {
       body: "/claim",
-      association: "MEMBER",
+      role: "maintainer",
       board: { status: "Backlog" },
       issue: { labels: [{ name: "enhancement" }] },
     },
@@ -320,7 +340,7 @@ const cases = [
   },
   {
     name: "a maintainer claims for someone else, who is assigned and named",
-    input: { body: "/claim @Other-Person Plan: the wheel routing", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/claim @Other-Person Plan: the wheel routing", role: "maintainer", board: { status: "Ready" } },
     expect: (s) =>
       s.state.moved === "opt-progress" &&
       s.state.assigned.length === 1 &&
@@ -329,7 +349,7 @@ const cases = [
   },
   {
     name: "a maintainer claims for someone assigned by hand: the card moves, nobody is assigned again",
-    input: { body: "/claim @other", association: "OWNER", assignees: ["Other"], board: { status: "Ready" } },
+    input: { body: "/claim @other", role: "maintainer", assignees: ["Other"], board: { status: "Ready" } },
     expect: (s) =>
       s.state.moved === "opt-progress" && s.state.assigned.length === 0 && says(s.state, "Claimed by @Other, on behalf"),
   },
@@ -337,7 +357,7 @@ const cases = [
     name: "a maintainer may claim a feature in Backlog for someone",
     input: {
       body: "/claim @other",
-      association: "COLLABORATOR",
+      role: "maintainer",
       board: { status: "Backlog" },
       issue: { labels: [{ name: "enhancement" }] },
     },
@@ -345,7 +365,7 @@ const cases = [
   },
   {
     name: "a maintainer's claim for someone already In progress for them changes nothing",
-    input: { body: "/claim @other", association: "MEMBER", assignees: ["other"], board: { status: "In progress" } },
+    input: { body: "/claim @other", role: "maintainer", assignees: ["other"], board: { status: "In progress" } },
     expect: (s) => says(s.state, "already **In progress** for @other") && !s.state.moved && !s.state.assigned.length,
   },
   {
@@ -360,30 +380,30 @@ const cases = [
   },
   {
     name: "a name that is not a GitHub login is refused and not quoted",
-    input: { body: "/claim @bad$(name) @everyone", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/claim @bad$(name) @everyone", role: "maintainer", board: { status: "Ready" } },
     expect: (s) =>
       says(s.state, "not a GitHub username") && !says(s.state, "bad$") && !s.state.moved && !s.state.assigned.length,
   },
   {
     name: "a login with a double hyphen is refused",
-    input: { body: `/claim @a--b`, association: "MEMBER", board: { status: "Ready" } },
+    input: { body: `/claim @a--b`, role: "maintainer", board: { status: "Ready" } },
     expect: (s) => says(s.state, "not a GitHub username") && !s.state.moved,
   },
   {
     name: "a login longer than 39 characters is refused",
-    input: { body: `/claim @${"a".repeat(40)}`, association: "MEMBER", board: { status: "Ready" } },
+    input: { body: `/claim @${"a".repeat(40)}`, role: "maintainer", board: { status: "Ready" } },
     expect: (s) => says(s.state, "not a GitHub username") && !s.state.moved,
   },
   {
     name: "a trailing comma after the name is not part of it",
-    input: { body: "/claim @other, please take this", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/claim @other, please take this", role: "maintainer", board: { status: "Ready" } },
     expect: (s) => s.state.assigned.includes("other") && s.state.moved === "opt-progress",
   },
   {
     name: "a maintainer's claim for someone on a held card is refused",
     input: {
       body: "/claim @other",
-      association: "MEMBER",
+      role: "maintainer",
       board: { status: "Do not start yet" },
       issue: { comments: ["/hold waiting for ADR 0003"] },
     },
@@ -391,28 +411,28 @@ const cases = [
   },
   {
     name: "a maintainer's claim for someone on a taken card is refused",
-    input: { body: "/claim @other", association: "MEMBER", assignees: ["third"], board: { status: "In progress" } },
+    input: { body: "/claim @other", role: "maintainer", assignees: ["third"], board: { status: "In progress" } },
     expect: (s) => says(s.state, "already **In progress** (@third)") && !s.state.moved && !s.state.assigned.length,
   },
   {
     name: "a maintainer's claim for someone is refused when a pull request closes the issue",
     input: {
       body: "/claim @other",
-      association: "MEMBER",
+      role: "maintainer",
       board: { status: "Ready", openPrs: [{ number: 239, title: "Fix", url: "u" }] },
     },
     expect: (s) => says(s.state, "already a pull request", "#239") && !s.state.moved,
   },
   {
     name: "a maintainer's claim for someone on an epic is refused",
-    input: { body: "/claim @other", association: "MEMBER", board: { status: "Ready" }, issue: { labels: [{ name: "epic" }] } },
+    input: { body: "/claim @other", role: "maintainer", board: { status: "Ready" }, issue: { labels: [{ name: "epic" }] } },
     expect: (s) => says(s.state, "`epic`") && !s.state.moved,
   },
   {
     name: "a lapsed claim passes to the person a maintainer names",
     input: {
       body: "/claim @other",
-      association: "MEMBER",
+      role: "maintainer",
       board: { status: "In progress" },
       assignees: ["third"],
       issue: { comments: [{ body: "Claimed by @third: **In progress**", bot: true, hoursAgo: 49 }] },
@@ -425,7 +445,7 @@ const cases = [
   },
   {
     name: "someone GitHub will not assign is named in the answer",
-    input: { body: "/claim @ghost", association: "MEMBER", unassignable: ["ghost"], board: { status: "Ready" } },
+    input: { body: "/claim @ghost", role: "maintainer", unassignable: ["ghost"], board: { status: "Ready" } },
     expect: (s) => s.state.moved === "opt-progress" && says(s.state, "Claimed by @ghost", "GitHub did not assign @ghost"),
   },
   {
@@ -445,17 +465,17 @@ const cases = [
   },
   {
     name: "hold without a reason is refused",
-    input: { body: "/hold", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/hold", role: "maintainer", board: { status: "Ready" } },
     expect: (s) => says(s.state, "Write the reason") && !s.state.moved,
   },
   {
     name: "hold with a reason gates the card",
-    input: { body: "/hold\nwaiting for ADR 0003", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/hold\nwaiting for ADR 0003", role: "maintainer", board: { status: "Ready" } },
     expect: (s) => s.state.moved === "opt-hold" && says(s.state, "Held"),
   },
   {
     name: "ready opens a held card again",
-    input: { body: "/ready", association: "OWNER", board: { status: "Do not start yet" } },
+    input: { body: "/ready", role: "maintainer", board: { status: "Do not start yet" } },
     expect: (s) => s.state.moved === "opt-ready" && says(s.state, "Released"),
   },
   {
@@ -480,12 +500,12 @@ const cases = [
   },
   {
     name: "unclaim by a maintainer releases the person who claimed it",
-    input: { body: "/unclaim", association: "MEMBER", assignees: ["other"], board: { status: "In progress" } },
+    input: { body: "/unclaim", role: "maintainer", assignees: ["other"], board: { status: "In progress" } },
     expect: (s) => s.state.moved === "opt-ready" && s.state.unassigned.includes("other") && !s.state.unassigned.includes("someone"),
   },
   {
     name: "unclaim on a free card with nobody assigned says it is free",
-    input: { body: "/unclaim", association: "MEMBER", board: { status: "Ready" } },
+    input: { body: "/unclaim", role: "maintainer", board: { status: "Ready" } },
     expect: (s) => says(s.state, "already free") && !s.state.moved,
   },
   {
@@ -549,7 +569,7 @@ const cases = [
     name: "a maintainer's claim for someone on a blocked issue is refused",
     input: {
       body: "/claim @other",
-      association: "MEMBER",
+      role: "maintainer",
       board: { status: "Ready", blockedBy: [{ number: 7, title: "Model field", state: "OPEN" }] },
     },
     expect: (s) => says(s.state, "blocked by", "#7") && !s.state.moved && !s.state.assigned.length,
@@ -641,6 +661,93 @@ const cases = [
     name: "a failed pull request lookup still answers the claim",
     input: { body: "/claim\nTouches: crates/ui", board: { status: "Ready" }, pulls: "fail" },
     expect: (s) => s.state.moved === "opt-progress" && says(s.state, "Claimed by", "No other open"),
+  },
+  {
+    name: "a collaborator GitHub calls COLLABORATOR is not a maintainer for that",
+    input: { body: "/hold waiting", association: "COLLABORATOR", board: { status: "Ready" } },
+    expect: (s) => says(s.state, "Only a maintainer") && !s.state.moved,
+  },
+  {
+    name: "a collaborator's /ready on a feature in Backlog is refused",
+    input: { body: "/ready", association: "COLLABORATOR", board: { status: "Backlog" } },
+    expect: (s) => says(s.state, "Only a maintainer") && !s.state.moved,
+  },
+  {
+    name: "a trusted contributor may claim a feature in Backlog",
+    input: { body: "/claim", role: "trusted", board: { status: "Backlog" }, issue: { labels: [{ name: "enhancement" }] } },
+    expect: (s) => s.state.moved === "opt-progress" && s.state.assigned.includes("someone"),
+  },
+  {
+    name: "a trusted contributor may not claim for someone else",
+    input: { body: "/claim @third", role: "trusted", board: { status: "Ready" } },
+    expect: (s) => says(s.state, "Only a maintainer can claim an issue for someone else") && !s.state.moved,
+  },
+  {
+    name: "a trusted contributor's /ready is refused",
+    input: { body: "/ready", role: "trusted", board: { status: "Backlog" } },
+    expect: (s) => says(s.state, "Only a maintainer") && !s.state.moved,
+  },
+  {
+    name: "a hold reason from a collaborator who is not a maintainer is not quoted",
+    input: {
+      body: "/claim",
+      board: { status: "Do not start yet" },
+      issue: { comments: [{ body: "/hold go to evil.example", by: "COLLABORATOR" }] },
+    },
+    expect: (s) => says(s.state, "This is held") && !says(s.state, "evil.example") && !s.state.moved,
+  },
+  {
+    name: "a sixth claim without a pull request is refused and lists the five",
+    input: {
+      body: "/claim",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5, title: "Fifth" }],
+    },
+    expect: (s) =>
+      says(s.state, "5 claims without a pull request", "#5 Fifth", "`/unclaim`") && !s.state.moved && !s.state.assigned.length,
+  },
+  {
+    name: "claims with a pull request do not count toward the limit",
+    input: {
+      body: "/claim",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5, prs: 1 }, { number: 6, prs: 2 }],
+    },
+    expect: (s) => s.state.moved === "opt-progress",
+  },
+  {
+    name: "this issue itself does not count toward the limit",
+    input: {
+      body: "/claim",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 42 }],
+    },
+    expect: (s) => s.state.moved === "opt-progress",
+  },
+  {
+    name: "a trusted contributor has the same limit",
+    input: {
+      body: "/claim",
+      role: "trusted",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5 }],
+    },
+    expect: (s) => says(s.state, "the limit is 5") && !s.state.moved,
+  },
+  {
+    name: "a maintainer has no limit",
+    input: {
+      body: "/claim",
+      role: "maintainer",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5 }, { number: 6 }],
+    },
+    expect: (s) => s.state.moved === "opt-progress",
+  },
+  {
+    name: "a failed count of open claims lets the claim go ahead",
+    input: { body: "/claim", board: { status: "Ready" }, openClaims: "fail" },
+    expect: (s) => s.state.moved === "opt-progress",
   },
   {
     name: "a missing token is announced instead of failing silently",
