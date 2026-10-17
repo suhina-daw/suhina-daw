@@ -55,6 +55,17 @@ pub(crate) enum Slot {
     Plugin(PluginSlot),
 }
 
+impl Slot {
+    /// Sets parameter `index` of a data-only (`.sd`) device; other devices are left alone.
+    fn set_sd_parameter(&mut self, index: usize, value: f64) {
+        match self {
+            Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
+            Slot::MidiSd(effect) => effect.set_parameter(index, value),
+            Slot::Device(_) | Slot::Plugin(_) => {}
+        }
+    }
+}
+
 pub(crate) struct Chain {
     pub(crate) track: TrackId,
     /// The launcher column of the track, or `NO_COLUMN`.
@@ -184,11 +195,7 @@ impl Chain {
                             .find(|value| value.id == parameter.id)
                             .map_or(parameter.default, |value| parameter.clamp(value.value));
                         let value = device_lanes.initial(slot_index, index).unwrap_or(stored_value);
-                        match &mut slot {
-                            Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
-                            Slot::MidiSd(effect) => effect.set_parameter(index, value),
-                            Slot::Device(_) | Slot::Plugin(_) => {}
-                        }
+                        slot.set_sd_parameter(index, value);
                         values.push(stored_value);
                     }
                     params.push(values);
@@ -446,15 +453,7 @@ impl Chain {
                     *stage += 1;
                 }
                 Slot::MidiSd(effect) => {
-                    run_sd_midi(
-                        effect,
-                        *stage,
-                        pending,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
+                    run_sd_midi(effect, *stage, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     *stage += 1;
                 }
@@ -691,15 +690,7 @@ impl Chain {
                     index += 1;
                 }
                 Slot::MidiSd(effect) => {
-                    run_sd_midi(
-                        effect,
-                        index,
-                        pending,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
+                    run_sd_midi(effect, index, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     index += 1;
                 }
@@ -794,8 +785,8 @@ impl Chain {
                     *slot = device.param(param).unwrap_or(value);
                 }
             }
-            Some(Slot::Sd(effect) | Slot::InstrumentSd(effect)) => {
-                effect.set_parameter(param, value);
+            Some(slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_))) => {
+                slot.set_sd_parameter(param, value);
                 if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
                     *slot = value;
                 }
@@ -803,12 +794,6 @@ impl Chain {
             Some(Slot::Plugin(plugin)) => {
                 if let Ok(id) = u32::try_from(param) {
                     plugin.params.set(id, value);
-                }
-            }
-            Some(Slot::MidiSd(effect)) => {
-                effect.set_parameter(param, value);
-                if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
-                    *slot = value;
                 }
             }
             None => {}
@@ -837,18 +822,11 @@ impl Chain {
                         device.set_param(index, value);
                     }
                 }
-                (Slot::Sd(effect) | Slot::InstrumentSd(effect), _) => {
+                (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
                     for (index, &value) in
                         values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                     {
-                        effect.set_parameter(index, value);
-                    }
-                }
-                (Slot::MidiSd(effect), _) => {
-                    for (index, &value) in
-                        values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                    {
-                        effect.set_parameter(index, value);
+                        slot.set_sd_parameter(index, value);
                     }
                 }
                 (Slot::Plugin(running), Slot::Plugin(fresh)) => {
@@ -1181,17 +1159,14 @@ fn run_sd_midi(
     effect: &mut suhina_device_sdk::PreparedMidiEffect,
     slot: usize,
     events: &[(usize, NoteEvent)],
-    input: &mut Vec<(usize, NoteEvent)>,
     output: &mut Vec<(usize, NoteEvent)>,
     lanes: &DeviceLanes,
     run: SdRun<'_>,
 ) {
-    input.clear();
-    input.extend_from_slice(events);
-    output.resize(input.len().saturating_mul(2).min(output.capacity()), (0, NoteEvent::AllNotesOff));
+    output.resize(events.len().saturating_mul(2).min(output.capacity()), (0, NoteEvent::AllNotesOff));
     let mut written = 0;
     let mut changes = lanes.changes(slot, run.from, run.to).peekable();
-    for event in input.iter() {
+    for event in events {
         while let Some(change) = changes.next_if(|change| change.frame <= event.0) {
             effect.set_parameter(change.param, change.value);
         }
@@ -1241,13 +1216,11 @@ mod sd_tests {
         graph.connections = vec![Connection::new("in", "transpose"), Connection::new("transpose", "out")];
         let mut effect = graph.compile_midi().unwrap();
         let events = [(150, NoteEvent::On { key: 60, velocity: 0.8 })];
-        let mut input = Vec::with_capacity(1);
         let mut output = Vec::with_capacity(1);
         run_sd_midi(
             &mut effect,
             0,
             &events,
-            &mut input,
             &mut output,
             &DeviceLanes::none(),
             SdRun { from: 100, to: 200, context: &ProcessContext::default() },
