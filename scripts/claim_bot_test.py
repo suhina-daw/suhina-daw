@@ -758,7 +758,7 @@ const cases = [
       body: "/claim",
       board: { status: "Ready" },
       openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5 }],
-      ownPulls: ["<!-- Closes #5 -->"],
+      ownPulls: ["<!-- Closes #5 -->", "Draft.\n<!--\nCloses #5"],
     },
     expect: (s) => says(s.state, "the limit is 5") && !s.state.moved,
   },

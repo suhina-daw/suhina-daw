@@ -607,7 +607,8 @@ jobs:
                   );
                   const said = new Set();
                   for (const pull of (theirs.search && theirs.search.nodes) || []) {
-                    const text = String((pull && pull.body) || "").replace(/<!--[\s\S]*?-->/g, "");
+                    // An HTML comment left open runs to the end of the body, as GitHub renders it.
+                    const text = String((pull && pull.body) || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
                     for (const match of text.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
                       said.add(Number(match[1]));
                     }
