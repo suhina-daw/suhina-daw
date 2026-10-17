@@ -5,10 +5,9 @@ run-name: "Comment on PR #${{ inputs.pr }}"
 # as the person who starts the run, for a review an agent session wrote (AGENTS.md › Tasks). The
 # pull request itself, its description and its merge stay under the person's account.
 #
-# A comment on the conversation of a pull request is an issue comment, so the App's
-# `Issues: Read and write` permission covers it. If GitHub answers 403, it wants
-# `Pull requests: Read and write` instead: a maintainer grants it in the App's settings and this
-# file asks for it in the token step (`permission-pull-requests: write`).
+# A comment on the conversation of a pull request goes through the issue comments API, but GitHub
+# checks the App's `Pull requests` permission for it: `Issues: Read and write` alone is answered with
+# 403. The App has `Pull requests: Read and write`, and the token step asks for both.
 #
 # Start it from Actions › Comment on pull request › Run workflow, with
 # `gh workflow run comment-pr.yml --json < request.json` (the inputs as JSON on stdin, so a long
@@ -102,6 +101,7 @@ jobs:
           app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
           private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
           permission-issues: write
+          permission-pull-requests: write
 
       - name: Comment on the pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -133,9 +133,8 @@ jobs:
                 // words come first.
                 if (error.status === 403) {
                   core.setFailed(
-                    `GitHub refused the comment: ${error.message}. If it is about permissions, grant the App ` +
-                    "Pull requests: Read and write and add `permission-pull-requests: write` to the token " +
-                    "step of this workflow.",
+                    `GitHub refused the comment: ${error.message}. If it is about permissions, check that ` +
+                    "the App still has Pull requests: Read and write and that its installation accepted it.",
                   );
                   return;
                 }

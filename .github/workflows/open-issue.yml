@@ -18,8 +18,8 @@ run-name: "Open issue: ${{ inputs.title }}"
 # private key, and a tag can be moved to other code.
 #
 # Setup, by a maintainer only: the App `suhina-bot` has Repository permissions › Issues: Read and
-# write, Pull requests: Read-only, Organization permissions › Projects: Read and write, and is
-# installed on this repository only. The environment `suhina-bot` (Settings › Environments),
+# write, Pull requests: Read and write (for comment-pr.yml), Organization permissions › Projects:
+# Read and write, and is installed on this repository only. The environment `suhina-bot` (Settings › Environments),
 # limited to the `main` branch, holds its App ID as SUHINA_BOT_APP_ID and a private key as
 # SUHINA_BOT_PRIVATE_KEY.
 on:
