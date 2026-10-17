@@ -568,20 +568,24 @@ jobs:
               if (feature && !trusted && (!item || status === null || same(status, "Backlog"))) {
                 return say(
                   `This feature is not agreed yet (**${status || "Backlog"}**), so it is not open to ` +
-                    `claim. Write your plan in this issue; a maintainer moves it to **${RELEASED}** with ` +
-                    `\`/ready\` when Suhina wants it, and then \`/claim\` works.`,
+                    `claim. Write your plan in this issue; a maintainer or a trusted contributor moves it ` +
+                    `to **${RELEASED}** with \`/ready\` when Suhina wants it, and then \`/claim\` works.`,
                 );
               }
 
               // One person who is not a maintainer holds at most MAX_OPEN_CLAIMS claims without a pull
               // request: the open issues assigned to them that no open pull request closes, this one
-              // left out. A claim they have already, and a maintainer's claim for someone, are not
-              // new claims. A lookup that fails lets the claim go ahead.
+              // left out. A claim they have already, and a maintainer's claim for someone at the moment
+              // it is made, are not new claims. A lookup that fails lets the claim go ahead.
+              //
+              // GitHub links `Closes #N` only from a pull request into the default branch, so a pull
+              // request stacked on another branch has no closing link; their open pull requests that
+              // say `Closes #N` (or fixes, resolves) count as well.
               if (!maintainer && !hasClaimant) {
                 let waiting = [];
                 try {
                   const theirs = await project.graphql(
-                    `query ($owner: String!, $name: String!, $login: String!) {
+                    `query ($owner: String!, $name: String!, $login: String!, $pulls: String!) {
                        repository(owner: $owner, name: $name) {
                          issues(states: OPEN, first: 100, filterBy: { assignee: $login }) {
                            nodes {
@@ -590,13 +594,29 @@ jobs:
                            }
                          }
                        }
+                       search(query: $pulls, type: ISSUE, first: 50) {
+                         nodes { ... on PullRequest { body } }
+                       }
                      }`,
-                    { owner: context.repo.owner, name: context.repo.repo, login: claimant },
+                    {
+                      owner: context.repo.owner,
+                      name: context.repo.repo,
+                      login: claimant,
+                      pulls: `repo:${context.repo.owner}/${context.repo.repo} is:pr is:open author:${claimant}`,
+                    },
                   );
+                  const said = new Set();
+                  for (const pull of (theirs.search && theirs.search.nodes) || []) {
+                    const text = String((pull && pull.body) || "").replace(/<!--[\s\S]*?-->/g, "");
+                    for (const match of text.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
+                      said.add(Number(match[1]));
+                    }
+                  }
                   const nodes = (theirs.repository && theirs.repository.issues && theirs.repository.issues.nodes) || [];
                   waiting = nodes.filter(
                     (other) =>
                       other.number !== issue.number &&
+                      !said.has(other.number) &&
                       !(other.closedByPullRequestsReferences && other.closedByPullRequestsReferences.totalCount > 0),
                   );
                 } catch (error) {

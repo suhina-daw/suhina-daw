@@ -58,8 +58,11 @@ for an issue they opened themselves. A bug in `Backlog` is free.
 A claim without a pull request is a promise, so one person holds only a few at once: anyone who is
 not a maintainer may hold at most five (`MAX_OPEN_CLAIMS`), counted as the open issues assigned to
 them that no open pull request closes, this issue left out. The sixth `/claim` is refused and lists
-them; a draft pull request that says `Closes #N`, or an `/unclaim`, frees a place. A maintainer's
-`/claim @login` is not counted against `@login`, and a count that fails lets the claim go ahead.
+them; a pull request that says `Closes #N` (a draft is enough), or an `/unclaim`, frees a place. A
+pull request stacked on another branch counts too: GitHub links `Closes #N` only from a pull request
+into the default branch, so the bot also reads the claimer's open pull requests for it. A
+maintainer's `/claim @login` is not refused by the limit, and afterwards counts among `@login`'s
+claims like any other; a count that fails lets the claim go ahead.
 
 ## Who is who
 

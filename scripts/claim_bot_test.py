@@ -59,6 +59,8 @@ function scenario(input) {
             })),
           },
         },
+        // Their open pull requests, whose `Closes #N` counts when GitHub made no link (stacked).
+        search: { nodes: (input.ownPulls || []).map((body) => ({ body })) },
       };
     }
     if (query.includes("organization(login")) {
@@ -739,6 +741,26 @@ const cases = [
       openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5, prs: 1 }, { number: 6, prs: 2 }],
     },
     expect: (s) => s.state.moved === "opt-progress",
+  },
+  {
+    name: "a stacked pull request that says Closes #N frees its claim's place",
+    input: {
+      body: "/claim",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5 }],
+      ownPulls: ["Part two of the stack.\n\nFixes: #5"],
+    },
+    expect: (s) => s.state.moved === "opt-progress",
+  },
+  {
+    name: "a Closes #N inside an HTML comment does not count",
+    input: {
+      body: "/claim",
+      board: { status: "Ready" },
+      openClaims: [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }, { number: 5 }],
+      ownPulls: ["<!-- Closes #5 -->"],
+    },
+    expect: (s) => says(s.state, "the limit is 5") && !s.state.moved,
   },
   {
     name: "this issue itself does not count toward the limit",
