@@ -153,9 +153,10 @@ request. An agent searches for an existing issue before it opens one, and for an
 before it opens one; it continues work that is open rather than starting it again. An agent run
 by someone with write access opens issues through the
 [Open issue](.github/workflows/open-issue.yml) workflow, so they show the bot `suhina-bot[bot]` as
-their author rather than that person, and posts the review it wrote onto a pull request through the
-[Comment on pull request](.github/workflows/comment-pr.yml) workflow, so the review is the bot's
-comment and not that person's (`AGENTS.md` › Tasks has the commands). The rules in
+their author rather than that person, and posts the feedback it wrote onto a pull request's
+conversation through the [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so it
+is the bot's comment and not that person's; it is a comment, not a GitHub review, and approves or
+blocks nothing (`AGENTS.md` › Tasks has the commands). The rules in
 [AI-assisted contributions](#ai-assisted-contributions) apply to what the agent wrote.
 
 ## Trying a pull request

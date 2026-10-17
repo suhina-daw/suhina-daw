@@ -212,10 +212,12 @@ Several agents often run at once, so an agent never starts work that exists alre
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
   board's Priority and Phase afterwards. A pull request itself — its branch, its description and
   its merge — stays under the person's account.
-- **Comment on a pull request as the bot when the comment is a review.** A review, a request for
-  changes or a summary of what an agent found goes onto the pull request through the
-  [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so it is written by
-  `suhina-bot[bot]` and the person who ran the session is not its author. Start it the same way,
+- **Comment on a pull request as the bot when the comment is an agent's feedback.** A review an
+  agent wrote, the changes it asks for or a summary of what it found goes onto the pull request's
+  conversation through the [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so
+  it is written by `suhina-bot[bot]` and the person who ran the session is not its author. It is a
+  comment, not a GitHub review: it neither approves nor requests changes, and no merge rule sees
+  it; approving stays the maintainer's `ready to merge` label. Start it the same way,
   with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
   start returns. Re-running a failed run does not comment twice.
 

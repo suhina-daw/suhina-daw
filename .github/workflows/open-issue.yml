@@ -89,7 +89,9 @@ jobs:
             const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner, repo, username: context.actor,
             });
-            if (!["admin", "maintain", "write"].includes(permission.role_name)) {
+            // `permission` is the base level (a custom role or maintain reads as write); `role_name`
+            // can be a custom role's own name.
+            if (!["admin", "write"].includes(permission.permission)) {
               fail(`@${context.actor} has no write access to ${owner}/${repo}.`);
             }
 
@@ -155,11 +157,18 @@ jobs:
             // A run that is re-run after it opened the issue (adding it under the epic failed, say)
             // does not open it twice: the issue carries the run's id, and an issue of the App's with
             // it is the one this run opened.
+            // Every page of the App's issues, newest first, until the marked one turns up.
             const marker = `<!-- open-issue run ${context.runId} -->`;
-            const { data: recent } = await github.rest.issues.listForRepo({
-              owner, repo, creator: "suhina-bot[bot]", state: "all", sort: "created", direction: "desc", per_page: 50,
-            });
-            let issue = recent.find((i) => !i.pull_request && (i.body || "").includes(marker));
+            const [found] = await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, creator: "suhina-bot[bot]", state: "all", sort: "created", direction: "desc", per_page: 100 },
+              (response, done) => {
+                const hit = response.data.find((i) => !i.pull_request && (i.body || "").endsWith(marker));
+                if (hit) done();
+                return hit ? [hit] : [];
+              },
+            );
+            let issue = found;
             if (!issue) {
               const payload = { owner, repo, title, body: `${process.env.BODY}\n\n${marker}`, labels };
               if (issueType) payload.type = issueType;

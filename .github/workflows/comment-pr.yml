@@ -68,7 +68,9 @@ jobs:
             const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner, repo, username: context.actor,
             });
-            if (!["admin", "maintain", "write"].includes(permission.role_name)) {
+            // `permission` is the base level (a custom role or maintain reads as write); `role_name`
+            // can be a custom role's own name.
+            if (!["admin", "write"].includes(permission.permission)) {
               fail(`@${context.actor} has no write access to ${owner}/${repo}.`);
             }
 
@@ -113,17 +115,18 @@ jobs:
             const pr = Number(process.env.PR);
 
             // A run that is re-run after it commented (its summary failed, say) does not comment
-            // twice: the comment carries the run's id, and a comment with it already there is the
-            // one this run made.
+            // twice: the comment carries the run's id, and the App's comment with exactly this body
+            // is the one this run made. Anyone can write the marker, so neither alone counts.
             const marker = `<!-- comment-pr run ${context.runId} -->`;
+            const body = `${process.env.BODY}\n\n${marker}`;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pr, per_page: 100,
             });
-            let comment = comments.find((c) => (c.body || "").includes(marker));
+            let comment = comments.find((c) => c.user?.login === "suhina-bot[bot]" && c.body === body);
             if (!comment) {
               try {
                 ({ data: comment } = await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
-                  owner, repo, issue_number: pr, body: `${process.env.BODY}\n\n${marker}`,
+                  owner, repo, issue_number: pr, body,
                 }));
               } catch (error) {
                 // 403 is also the answer for a conversation locked since the check, so GitHub's own
