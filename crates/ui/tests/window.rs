@@ -3805,3 +3805,157 @@ fn launching_a_clip_greys_the_arrangement_until_back_to_arrangement() {
     }
     assert!(!back, "the arrangement is back");
 }
+
+#[test]
+fn a_slot_drag_to_another_slot_moves_it_ctrl_drags_copy_and_an_occupied_one_swaps() {
+    let slots = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .map(|s| {
+                let p = s.project();
+                let of = |track: u32, scene: usize| {
+                    p.launcher
+                        .columns
+                        .iter()
+                        .find(|c| c.track == TrackId(track))
+                        .and_then(|c| c.slots.get(scene))
+                        .and_then(|s| s.clip.as_ref())
+                        .map(|c| c.content)
+                };
+                (of(2, 1), of(2, 3), of(1, 0))
+            })
+            .unwrap_or((None, None, None))
+    };
+    let mut harness = window(demo_app());
+    // Walk (Bass, scene 2) dragged to Bass' empty scene 4: it moves, the source empties.
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let to = harness.get_by_label("Stop Bass (scene 4)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+    let (first, target, _) = slots(&harness);
+    assert!(first.is_none(), "the source slot emptied");
+    assert!(target.is_some(), "the clip is in scene 4 now");
+    // The grid rebuilt: the moved clip's slot shows it, the emptied one is a stop control.
+    assert!(harness.query_by_label("Launch Walk on Bass (scene 4)").is_some(), "the grid shows the moved clip");
+    assert!(harness.query_by_label("Stop Bass (scene 2)").is_some(), "the source's slot is empty again");
+    assert!(
+        matches!(harness.state().status(), Status::Done(text) if text.contains("Moved")),
+        "{:?}",
+        harness.state().status()
+    );
+    // One undo moves it back.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    let (first, target, walk) = slots(&harness);
+    assert!(first.is_some() && target.is_none(), "the clip is back");
+    let _ = walk;
+    // Ctrl+drag copies: both slots hold a clip (the copies' contents are their own). The
+    // modifier is held over the drop: its state is set in the input directly (kittest's own
+    // key presses reset the modifiers right after), and egui's state keeps it until changed.
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let to = harness.get_by_label("Stop Bass (scene 4)").rect().center();
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.step();
+    harness.drop_at(to);
+    // The drop's frame runs with the modifier still held; the reset comes after it.
+    harness.run();
+    harness.input_mut().events.push(egui::Event::ModifiersChanged(Modifiers::default()));
+    harness.run();
+    let (_, target, _) = slots(&harness);
+    assert!(target.is_some(), "the copy landed");
+    assert!(harness.query_by_label("Launch Walk on Bass (scene 2)").is_some(), "the source kept its clip");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    // A drag onto an occupied slot swaps the two: Walk to Beat's slot, Beat to Walk's.
+    let (walk_content, _, beat_content) = slots(&harness);
+    let walk = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let beat = harness.get_by_label("Launch Beat A on Drums (scene 1)").rect().center();
+    harness.hover_at(walk);
+    harness.step();
+    harness.drag_at(walk);
+    harness.step();
+    harness.hover_at(beat);
+    harness.step();
+    harness.drop_at(beat);
+    harness.run();
+    let (bass, _, drums) = slots(&harness);
+    assert!(
+        matches!(harness.state().status(), Status::Done(text) if text.contains("Swapped")),
+        "{:?}",
+        harness.state().status()
+    );
+    assert_eq!((bass, drums), (beat_content, walk_content), "Beat A is in Walk's slot and Walk in Beat A's");
+}
+
+#[test]
+fn a_slots_context_menu_renames_its_clip() {
+    let mut harness = window(demo_app());
+    // Walk's slot in Bass, scene 2: a right-click opens the menu with the clip's name field
+    // (the menu stays open on a click inside: CloseOnClickOutside).
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label_contains("Rename clip Walk").is_some(), "the menu carries the clip's name field");
+    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label_contains("Rename clip Walk").type_text("Walk the bass");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    // The slot's label carries the new name; one undo brings Walk back.
+    assert!(harness.query_by_label("Launch Walk the bass on Bass (scene 2)").is_some(), "the slot shows the new name");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(harness.query_by_label("Launch Walk on Bass (scene 2)").is_some(), "the undo brings the name back");
+}
+
+#[test]
+fn an_empty_rename_field_clears_the_clips_name() {
+    let mut harness = window(demo_app());
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.key_press(Key::Backspace);
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(harness.query_by_label("Launch clip on Bass (scene 2)").is_some(), "the empty draft clears the name");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(harness.query_by_label("Launch Walk on Bass (scene 2)").is_some(), "the undo brings the name back");
+}
+
+#[test]
+fn a_rename_draft_dies_with_its_menu() {
+    let mut harness = window(demo_app());
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    harness.get_by_label_contains("Rename clip Walk").click();
+    harness.run();
+    harness.get_by_label_contains("Rename clip Walk").type_text("X");
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(harness.query_by_label_contains("Rename clip").is_none(), "the menu closed");
+    // Reopening starts from the name as it is now, not the typing that was never applied.
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    let field = harness.get_by_label_contains("Rename clip Walk");
+    assert_eq!(field.value().as_deref(), Some("Walk"), "the reopened field carries the name, not the stale draft");
+}

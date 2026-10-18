@@ -1,9 +1,9 @@
 ---
 description: How the claim bot moves an issue's card on the project board, holds work, refuses blocked work, lists overlapping work, and how the Depends on check orders pull requests
-read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order
+read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-17
 covers:
   - .github/workflows/claim.yml
   - scripts/claim_bot_test.py
@@ -28,7 +28,7 @@ comment carries the command; the rest is the plan.
 | `/claim @login` | A maintainer only: the same claim, made for `@login` instead of the commenter. Every refusal above applies to that person, the card becomes `In progress`, `@login` is assigned, and the answer reads *Claimed by @login, on behalf of a maintainer*. Someone already assigned by hand keeps the assignment and the card moves; a feature in `Backlog` may be claimed, as with a maintainer's own claim. Anyone else naming another person is refused (they may claim only for themselves; naming yourself is an ordinary claim), and a name that is not a GitHub login (letters, digits and single hyphens, up to 39 characters) is refused without being quoted. When GitHub will not assign the person (no access, and never commented on the issue), the claim stands on the card and the answer says so |
 | `/unclaim` | By the assigned person, who is unassigned, or a maintainer, who unassigns whoever claimed it. A card `In progress` goes back to `Ready`; a held card or one `In review` keeps its status |
 | `/hold <why>` | A maintainer only, and the reason is required: Status becomes `Do not start yet` |
-| `/ready` | A maintainer only: Status goes back to `Ready`, so the card can be claimed again |
+| `/ready` | A maintainer: Status goes back to `Ready`, so the card can be claimed again. A trusted contributor ([Who is who](#who-is-who)): only from `Backlog` or a card without a status, which agrees a feature so that anyone may claim it; a held card or any other status is refused |
 | anything else | Ignored; a comment that does not start with `/` does not even start a run |
 
 Contributors keep working without it: a plain comment that says "I'd like to take this" is still a
@@ -51,7 +51,33 @@ A card `In review` never lapses either.
 
 A feature request (`enhancement`) lands in `Backlog` like any issue, but it is not agreed until a
 maintainer moves it to `Ready` (`/ready`); until then a contributor's `/claim` is refused with that
-explanation, so two people never start the same idea in two shapes. A bug in `Backlog` is free.
+explanation, so two people never start the same idea in two shapes. A trusted contributor
+([Who is who](#who-is-who)) may claim it in `Backlog` without waiting, or agree it with `/ready`, also
+for an issue they opened themselves. A bug in `Backlog` is free.
+
+A claim without a pull request is a promise, so one person holds only a few at once: anyone who is
+not a maintainer may hold at most five (`MAX_OPEN_CLAIMS`), counted as the open issues assigned to
+them that no open pull request closes, this issue left out. The sixth `/claim` is refused and lists
+them; a pull request that says `Closes #N` (a draft is enough), or an `/unclaim`, frees a place. A
+pull request stacked on another branch counts too: GitHub links `Closes #N` only from a pull request
+into the default branch, so the bot also reads the claimer's open pull requests for it. A
+maintainer's `/claim @login` is not refused by the limit, and afterwards counts among `@login`'s
+claims like any other; a count that fails lets the claim go ahead.
+
+## Who is who
+
+The bot does not take roles from GitHub's author association, which calls everyone with any access
+to the repository, triage included, a `COLLABORATOR`. It reads two lists of logins instead:
+
+| Role | Listed in | May |
+|---|---|---|
+| Maintainer | `MAINTAINERS` in [`claim.yml`](../.github/workflows/claim.yml) (also in `ready-to-merge.yml`, `test-build.yml` and `test-build-links.yml`); changed by a pull request | everything in the table above: `/hold`, `/ready`, `/claim @login`, `/unclaim` for anyone, claim a feature in `Backlog`, any number of claims |
+| Trusted contributor | the repository variable `TRUSTED_CONTRIBUTORS` (Settings → Secrets and variables → Actions → Variables), logins separated by commas or spaces | claim a feature in `Backlog` without `/ready`, and `/ready` a card in `Backlog` so anyone may claim it; not `/hold`, not release a held card, not claim for others |
+| Anyone else | | claim free work for themselves, `/unclaim` their own claim |
+
+Being trusted is about the board only: no access to the code comes with it. Merging stays a maintainer's: only a maintainer's
+`ready to merge` label queues a pull request ([`CONTRIBUTING.md`](../CONTRIBUTING.md) › Merging many
+pull requests), and a `/hold` reason is quoted only when a maintainer wrote it.
 
 ## Blocked work
 

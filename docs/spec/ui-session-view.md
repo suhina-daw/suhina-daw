@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Session view: regions, c
 read_when: Session view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-10-16
+last_verified: 2026-10-17
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -181,9 +181,12 @@ a slot to the arrangement, in two ways. **Suhina** decisions, our own design:
 - **Dragging.** While a clip is dragged, holding it over the other view's name in the control bar
   for half a second switches the view, and the drag goes on there: let go over a slot and the clip
   is copied into it; over a track's lane and it is copied there, at the beat under the pointer on
-  the grid (Alt for free), stacking when the setting for its kind says so. A slot's clip can
-  also be dragged to another slot in the Session view, which copies it. A label beside the pointer
-  says where it will go ("Copy Fill to Drums, scene 5"); Escape, or letting go anywhere else (a
+  the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** a slot's
+  clip dragged to another slot in the Session view **moves** — the target's slot takes it and
+  the source's empties; the two slots **swap** when the target has a clip, so nothing is lost
+  (`clip.moveSlot`, one undo step). Ctrl (Cmd on macOS) held on the drop copies instead. A label
+  beside the pointer says where it will go ("Move Fill to Drums, scene 5", "Swap Fill and Beat A
+  in Drums, scene 5", "Copy …" with Ctrl); Escape, or letting go anywhere else (a
   header, the empty space, the clip's own slot), does nothing.
 - **Always a copy.** A clip that crosses views is copied, never moved: the arrangement and the
   launcher are separate places, and the original stays where it was. The drop runs `clip.copy`

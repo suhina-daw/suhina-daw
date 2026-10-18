@@ -3569,7 +3569,10 @@ impl App {
             ui.ctx().stop_dragging();
             self.carry = Some(Carry { from: CarryFrom::Slot { track, scene }, name });
         }
-        let Some(carry) = self.carry.clone() else { return };
+        let carry = self.carry.clone();
+        // Ctrl (Cmd on macOS) held at the drop: a copy, as the keymap's rule has it.
+        let copy = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+        let Some(carry) = carry else { return };
         let (released, escape, pointer) =
             ui.input(|i| (!i.pointer.primary_down(), i.key_pressed(Key::Escape), i.pointer.latest_pos()));
         let target = match self.shown {
@@ -3583,13 +3586,13 @@ impl App {
             self.arrangement.drop = None;
             if released && !escape {
                 match target {
-                    Some(target) => self.drop_carried(&carry, target),
+                    Some(target) => self.drop_carried(&carry, target, copy),
                     None => self.status = Status::Hint("Drop a clip on a clip slot or a track's lane".into()),
                 }
             }
             return;
         }
-        let label = target.and_then(|t| self.carry_label(&carry, t));
+        let label = target.and_then(|t| self.carry_label(&carry, t, copy));
         if let Some(pointer) = pointer {
             let name = if carry.name.is_empty() { "clip" } else { carry.name.as_str() };
             drag_label(ui.ctx(), pointer, label.as_deref().unwrap_or(name), label.is_some());
@@ -3597,18 +3600,63 @@ impl App {
     }
 
     /// What the label beside a carried clip says over `target`, or `None` where it cannot land.
-    fn carry_label(&self, carry: &Carry, target: DropTarget) -> Option<String> {
+    /// `copy`: Ctrl is held — a slot-to-slot drag says Copy instead of its move or swap.
+    fn carry_label(&self, carry: &Carry, target: DropTarget, copy: bool) -> Option<String> {
         let project = self.session()?.project();
         let name = |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(String::new, |x| x.name.clone());
         let clip = if carry.name.is_empty() { "clip" } else { carry.name.as_str() };
         match target {
-            DropTarget::Slot { track, scene } => Some(format!("Copy {clip} to {}, scene {}", name(track), scene + 1)),
+            DropTarget::Slot { track, scene } => {
+                if carry.from == (CarryFrom::Slot { track, scene }) {
+                    return None;
+                }
+                // A slot-to-slot drag moves the clip, swapping with a target's clip — Ctrl
+                // copies instead, as the cross-view drags do. The occupancy decides Move or
+                // Swap: an occupied slot's clip may have no name, and the swap is still a swap.
+                let (target_occupied, target_clip) = project
+                    .launcher
+                    .columns
+                    .iter()
+                    .find(|c| c.track == track)
+                    .and_then(|c| c.slots.get(scene))
+                    .map(|s| {
+                        (
+                            s.clip.is_some(),
+                            s.clip
+                                .as_ref()
+                                .and_then(|placed| project.content(placed.content))
+                                .map(|c| c.name.clone())
+                                .unwrap_or_default(),
+                        )
+                    })
+                    .unwrap_or((false, String::new()));
+                match (copy, target_occupied) {
+                    (false, false) => Some(format!("Move {clip} to {}, scene {}", name(track), scene + 1)),
+                    (false, true) => {
+                        let theirs = if target_clip.is_empty() { "clip" } else { target_clip.as_str() };
+                        Some(format!("Swap {clip} and {theirs} in {}, scene {}", name(track), scene + 1))
+                    }
+                    (true, _) => Some(format!("Copy {clip} to {}, scene {}", name(track), scene + 1)),
+                }
+            }
             DropTarget::Lane { track, beat } => {
                 let bar = (beat / self.bar_beats()).floor() as u64 + 1;
                 Some(format!("Copy {clip} to {}, bar {bar}", name(track)))
             }
             _ => None,
         }
+    }
+
+    /// The carried clip's display name: "clip" when it has none.
+    fn carry_name(&self, carry: &Carry) -> String {
+        if carry.name.is_empty() { "clip".into() } else { carry.name.clone() }
+    }
+
+    /// A track's name, or its id when the project has none by that id.
+    fn track_name(&self, track: TrackId) -> String {
+        self.session()
+            .and_then(|s| s.project().tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()))
+            .unwrap_or_else(|| track.0.to_string())
     }
 
     /// Beats in a bar of the shown project, 4 when it has no usable time signature.
@@ -3621,7 +3669,44 @@ impl App {
 
     /// Puts a copy of the carried clip on `target`: `clip.copy` from where it came, then
     /// `clip.paste` there, the same commands as Ctrl+C and Ctrl+V; the paste is one undo step.
-    fn drop_carried(&mut self, carry: &Carry, target: DropTarget) {
+    fn drop_carried(&mut self, carry: &Carry, target: DropTarget, copy: bool) {
+        // A slot-to-slot drop moves the clip: one undo step, an occupied target's clip swaps
+        // into the source's slot (nothing lost). Ctrl: a copy, as the cross-view drags are.
+        if let (CarryFrom::Slot { track, scene }, DropTarget::Slot { track: to_track, scene: to_scene }) =
+            (&carry.from, &target)
+        {
+            if track == to_track && scene == to_scene {
+                return;
+            }
+            if !copy {
+                let Ok(session) = self.projects.session_mut(None) else { return };
+                match session.execute(
+                    "clip.moveSlot",
+                    &json!({
+                        "track": track.0,
+                        "scene": scene + 1,
+                        "to_track": to_track.0,
+                        "to_scene": to_scene + 1,
+                    }),
+                ) {
+                    Ok(out) => {
+                        // The command ran under this call, not under `run`: the revision bump
+                        // is explicit, so the views rebuild with the moved clip.
+                        self.revision += 1;
+                        let verb = if out["swapped"].as_bool().unwrap_or(false) { "Swapped" } else { "Moved" };
+                        let label = format!(
+                            "{verb} {} to {}, scene {}",
+                            self.carry_name(carry),
+                            self.track_name(*to_track),
+                            to_scene + 1
+                        );
+                        self.status = Status::Done(label);
+                    }
+                    Err(e) => self.status = Status::Error(e.0),
+                }
+                return;
+            }
+        }
         let copy = match carry.from {
             CarryFrom::Arrangement { track, index } => json!({ "clips": [{ "track": track.0, "index": index }] }),
             CarryFrom::Slot { track, scene } => json!({ "track": track.0, "scene": scene + 1 }),
@@ -3649,7 +3734,7 @@ impl App {
         self.status = Status::Hint(String::new());
         self.run(&Action::new("clip.paste", paste));
         if !matches!(self.status, Status::Error(_)) {
-            let label = self.carry_label(carry, target).unwrap_or_default();
+            let label = self.carry_label(carry, target, true).unwrap_or_default();
             self.status = Status::Done(label.replacen("Copy", "Copied", 1));
         }
     }
