@@ -990,7 +990,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         .map(|l| state.return_height(l.track) + 1.0 + state.automation.height(l.track, &timeline.automation))
         .sum::<f32>()
         + if main_volume_db.is_some() { state.main_height + 1.0 } else { 0.0 };
-    let fixed_top = (area.bottom() - fixed_height).max(marker_row.bottom() + 1.0);
+    // They take at most half the room under the rulers, so the track lanes never vanish under
+    // them in a short view.
+    let room = (area.bottom() - marker_row.bottom() - 1.0).max(0.0);
+    let fixed_top = (area.bottom() - fixed_height.min(room / 2.0)).max(marker_row.bottom() + 1.0);
     let fixed = Rect::from_min_max(Pos2::new(area.left(), fixed_top), area.max);
     let lanes_area =
         Rect::from_min_max(Pos2::new(area.left(), marker_row.bottom() + 1.0), Pos2::new(area.right(), fixed_top - 1.0));
