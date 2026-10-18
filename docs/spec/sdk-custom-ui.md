@@ -261,9 +261,14 @@ separate widgets, so the graph's surface does not darken surrounding fields.
 
 `SampleWaveform` supports anchored vertical zoom and horizontal pan on empty space.
 Source/loop handles, slice lines and voice heads share its view transform. Peaks
-are rebuilt for the visible range, and areas outside S/E are gray. Manual lines
-have horizontal resize cursors; double-click adds/removes a line, and line drags
-dispatch `device.setSampleSlices`, grouped as one undo step. View navigation
+are overlaid with solid two-pixel orange marker lines, without outlines;
+source/loop handles use the same colour. The Slice by selector reserves room
+for its full caption and arrow alongside the region and fade fields.
+Peaks are rebuilt for the visible range, and areas outside S/E are gray. Manual lines
+have horizontal resize cursors; double-click adds/removes a line. Line drags
+preview locally without preparing an audio graph per frame; releasing commits
+`device.setSampleSlices` once, as one undo step. Playback uses the committed map
+until release, then new notes use the edited map. View navigation
 never changes project data. The host resets the view when source audio changes.
 
 `WaveformPreview { shape }` draws a theme-aware oscillator preview. Its X binding controls rate (linear or logarithmic), and `shape` references a zero-based waveform parameter (0..5 or 0..6). It uses a Position gesture with no Y binding. The SDK owns the drawing; device authors only supply the widget and bindings.

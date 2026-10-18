@@ -40,6 +40,7 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("jitter", "Jitter", 0., 1., 0.25, Unit::Percent),
     continuous("spread", "Spread", 0., 1., 0., Unit::Percent),
     ParamInfo::toggle("freeze", "Freeze", false),
+    // Retained at its historical index for saved definitions; loop edges use fade_in/out.
     continuous("crossfade", "Loop fade (ms)", 0., 100., 5., Unit::None),
     continuous("velocity", "Velocity to volume", 0., 1., 1., Unit::Percent),
     continuous("glide", "Glide", 0., 2., 0., Unit::Seconds),
@@ -596,28 +597,10 @@ impl Device for Sampler {
                     } else {
                         read(self.source.as_ref().as_ref(), self.channels, v.position)
                     };
-                    let fade = source_fade(v.position, start, end, p[57], p[58], self.source_rate);
+                    let (fade_start, fade_end) =
+                        if looping && v.position >= lo && v.position < hi { (lo, hi) } else { (start, end) };
+                    let fade = source_fade(v.position, fade_start, fade_end, p[57], p[58], self.source_rate);
                     signal.iter_mut().for_each(|sample| *sample *= fade);
-                    if looping && p[9] == 0. && !stretched {
-                        let fade = (p[27] * self.source_rate / 1000.).min((hi - lo) * 0.5);
-                        if fade > 0. && v.direction > 0. && v.position >= hi - fade && v.position < hi {
-                            let blend = (v.position - (hi - fade)) / fade;
-                            let position = lo + v.position - (hi - fade);
-                            let other = read(self.source.as_ref().as_ref(), self.channels, position);
-                            let fade = source_fade(position, start, end, p[57], p[58], self.source_rate);
-                            for ch in 0..2 {
-                                signal[ch] = signal[ch] * (1. - blend) + other[ch] * fade * blend;
-                            }
-                        } else if fade > 0. && v.direction < 0. && v.position < lo + fade && v.position >= lo {
-                            let blend = (lo + fade - v.position) / fade;
-                            let position = hi - fade + v.position - lo;
-                            let other = read(self.source.as_ref().as_ref(), self.channels, position);
-                            let fade = source_fade(position, start, end, p[57], p[58], self.source_rate);
-                            for ch in 0..2 {
-                                signal[ch] = signal[ch] * (1. - blend) + other[ch] * fade * blend;
-                            }
-                        }
-                    }
                     v.position +=
                         if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
                     let boundary = if p[9] > 0. { hi - 1. } else { hi };
@@ -631,14 +614,7 @@ impl Device for Sampler {
                             v.position = v.position.min(boundary);
                             v.direction *= if phase < length { 1. } else { -1. };
                         } else {
-                            let fade =
-                                if stretched { 0. } else { (p[27] * self.source_rate / 1000.).min(length * 0.5) };
-                            let span = (length - fade).max(1.);
-                            v.position = if v.direction > 0. {
-                                lo + fade + (v.position - hi).rem_euclid(span)
-                            } else {
-                                hi - fade - (lo - v.position).rem_euclid(span)
-                            };
+                            v.position = lo + (v.position - lo).rem_euclid(length);
                         }
                     }
                 } else {

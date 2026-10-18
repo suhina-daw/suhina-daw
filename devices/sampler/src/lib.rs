@@ -203,7 +203,6 @@ pub fn panel() -> DeviceUi {
                 ("end", "End"),
                 ("loop_start", "Loop start"),
                 ("loop_end", "Loop end"),
-                ("crossfade", "Loop fade ms"),
                 ("fade_in", "Fade in ms"),
                 ("fade_out", "Fade out ms"),
             ]
@@ -222,18 +221,17 @@ pub fn panel() -> DeviceUi {
             }
         }
     }
-    for (i, (id, caption)) in [
-        ("start", "Start"),
-        ("end", "End"),
-        ("sensitivity", "Sensitivity"),
-        ("slice_by", "Slice by"),
-        ("fade_in", "Fade in ms"),
-        ("fade_out", "Fade out ms"),
+    for (id, caption, x, width) in [
+        ("start", "Start", 8., 76.),
+        ("end", "End", 92., 76.),
+        ("sensitivity", "Sensitivity", 176., 92.),
+        ("slice_by", "Slice by", 276., 124.),
+        ("fade_in", "Fade in ms", 408., 92.),
+        ("fade_out", "Fade out ms", 508., 92.),
     ]
     .iter()
-    .enumerate()
     {
-        let bounds = [8. + i as f32 * 100., 86., 92., 18.];
+        let bounds = [*x, 86., *width, 18.];
         if *id == "slice_by" {
             control(
                 &mut ui,
@@ -729,6 +727,8 @@ mod tests {
     #[test]
     fn compact_panel_keeps_controls_reachable_on_its_pages() {
         let ui = panel();
+        let slice_by = ui.controls.iter().find(|c| c.x.as_ref().is_some_and(|b| b.parameter == "slice_by")).unwrap();
+        assert_eq!(slice_by.bounds, [276., 86., 124., 18.]);
         assert_eq!(ui.size, [900., 168.]);
         assert!(ui.size[1] + 32. <= 200.);
         assert_eq!(ui.viewport_size, Some(ui.size));
@@ -749,6 +749,7 @@ mod tests {
                         | "grain_env"
                         | "envelope_tab"
                         | "warp_beats"
+                        | "crossfade"
                 )
             {
                 continue;
@@ -757,6 +758,7 @@ mod tests {
                 || matches!(&c.widget, Some(Widget::Envelope { attack, decay, level, release }) if [Some(attack.as_str()),Some(decay.as_str()),Some(level.as_str()),release.as_deref()].contains(&Some(p.id)))), "{}", p.id);
         }
         assert!(!ui.controls.iter().any(|c| c.id == "grain_cloud"));
+        assert!(!ui.controls.iter().any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == "crossfade")));
         assert_eq!(
             ui.controls
                 .iter()
@@ -907,6 +909,52 @@ mod tests {
             reset.reset();
             note(&mut reset, 60);
             assert_eq!(output, render(&mut reset, 10000, 64));
+        }
+    }
+
+    #[test]
+    fn loop_edges_use_source_fades_without_shortening_the_loop() {
+        for reverse in [0., 1.] {
+            for warp in [0., 1.] {
+                for (fade_in, fade_out) in [(0., 0.), (10., 0.), (0., 20.), (10., 20.)] {
+                    let make = |crossfade| {
+                        let mut s = Sampler::new();
+                        s.load_sample(48000, 1, vec![1.; 4800].into());
+                        for (id, value) in [
+                            ("attack", 0.),
+                            ("sustain", 1.),
+                            ("playback", 2.),
+                            ("loop_start", 0.25),
+                            ("loop_end", 0.75),
+                            ("reverse", reverse),
+                            ("fade_in", fade_in),
+                            ("fade_out", fade_out),
+                            ("crossfade", crossfade),
+                            ("warp", warp),
+                            ("warp_mode", 0.),
+                            ("source_bpm", 120.),
+                        ] {
+                            set(&mut s, id, value);
+                        }
+                        note(&mut s, 60);
+                        s
+                    };
+                    let output = render(&mut make(0.), 10800, 64);
+                    assert_eq!(output, render(&mut make(100.), 10800, 127), "legacy crossfade is inert");
+                    for (i, frame) in output.as_chunks::<2>().0.iter().enumerate() {
+                        let offset = if i < 3600 { i } else { 1200 + (i - 3600) % 2400 };
+                        let pos = if reverse > 0. { 4799 - offset } else { offset } as f64;
+                        let (lo, hi) = if (1200. ..3600.).contains(&pos) { (1200., 3600.) } else { (0., 4800.) };
+                        let fade =
+                            |distance: f64, ms: f64| if ms == 0. { 1. } else { (distance / (ms * 48.)).clamp(0., 1.) };
+                        let expected = fade(pos - lo, fade_in) * fade(hi - 1. - pos, fade_out);
+                        assert!(
+                            (f64::from(frame[0]) - expected).abs() < 1e-6,
+                            "{reverse} {warp} {fade_in} {fade_out} frame {i}"
+                        );
+                    }
+                }
+            }
         }
     }
 

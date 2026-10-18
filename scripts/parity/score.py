@@ -210,7 +210,7 @@ CHAPTERS = [
      "None of the 8 documented MIDI effects is implemented in full."),
     (31, "Live Instrument Reference", 120, 0.12, "started",
      "FM synth and single-source sample/granular instrument against 13 instruments; "
-     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; "

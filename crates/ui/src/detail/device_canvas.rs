@@ -129,7 +129,6 @@ struct SampleDrag {
     anchor: Pos2,
     selected: Option<usize>,
     points: Arc<[f64]>,
-    edited: bool,
     delta: Vec2,
 }
 #[derive(Clone)]
@@ -155,6 +154,13 @@ fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: usize, points: 
         "device.setSampleSlices",
         json!({"track":track.0,"device":device,"points":points,"continue":continued}),
     ));
+}
+
+const SAMPLE_MARKER: Color32 = Color32::from_rgb(230, 120, 35);
+
+fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
+    let line = [Pos2::new(x, top), Pos2::new(x, bottom)];
+    painter.line_segment(line, Stroke::new(2., SAMPLE_MARKER));
 }
 
 fn sample_waveform(
@@ -203,7 +209,7 @@ fn sample_waveform(
         .map_or(SampleView::default(), |(_, v)| v);
     let slicing = value("mode") == 0. && value("playback") == 3.;
     let manual = slicing && value("slice_by") == 3.;
-    let manual_points =
+    let mut manual_points =
         ui.ctx().data(|d| d.get_temp::<Arc<[f64]>>(source_id.with("manual-points"))).unwrap_or_else(|| {
             let mut points: Vec<_> = parameters
                 .iter()
@@ -228,14 +234,7 @@ fn sample_waveform(
                 let anchor = response.interact_pointer_pos().unwrap_or(field.center());
                 d.insert_temp(
                     drag_id,
-                    SampleDrag {
-                        view,
-                        anchor,
-                        selected: nearest,
-                        points: manual_points.clone(),
-                        edited: false,
-                        delta: Vec2::ZERO,
-                    },
+                    SampleDrag { view, anchor, selected: nearest, points: manual_points.clone(), delta: Vec2::ZERO },
                 );
             }
         });
@@ -289,8 +288,13 @@ fn sample_waveform(
             if let Some(point) = points.get_mut(index) {
                 *point = (state.points[index] + f64::from(delta.x / field.width()) * state.view.span)
                     .clamp(f64::EPSILON, 1. - f64::EPSILON);
-                slice_edit(actions, track, device, points, state.edited);
-                state.edited = true;
+                points.sort_unstable_by(f64::total_cmp);
+                points.dedup();
+                // Preparing the audio graph on each pointer move stalls the UI.
+                if response.drag_stopped() && points.as_slice() != state.points.as_ref() {
+                    slice_edit(actions, track, device, points.clone(), false);
+                }
+                manual_points = Arc::from(points);
             }
         } else if let Some(source) = &source {
             view = state.view.dragged(state.anchor, delta, field, source.frames());
@@ -389,10 +393,7 @@ fn sample_waveform(
                 .take_while(|p| **p < active_end.min(view.start + view.span))
             {
                 let x = view.x(point, field);
-                wave_painter.line_segment(
-                    [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                    Stroke::new(1., colors.text_primary),
-                );
+                sample_marker(&wave_painter, x, field.top(), field.bottom());
             }
         }
     } else {
@@ -410,10 +411,7 @@ fn sample_waveform(
         .unwrap_or([None; 32]);
     for position in positions.into_iter().flatten() {
         let x = view.x(f64::from(position.clamp(0., 1.)), field);
-        wave_painter.line_segment(
-            [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-            Stroke::new(1.5, colors.text_primary),
-        );
+        sample_marker(&wave_painter, x, field.top(), field.bottom());
     }
     for (id, caption, offset) in [
         (if edit_loop { "loop_start" } else { "start" }, "S", 0.),
@@ -431,8 +429,8 @@ fn sample_waveform(
         }
         let y = bounds.top() + if compact { 8. + offset * 0.7 } else { 26. + offset };
         let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(14., if compact { 12. } else { 18. }));
-        painter.line_segment([Pos2::new(x, y), Pos2::new(x, field.bottom())], Stroke::new(1., colors.accent));
-        painter.rect_filled(marker, 0., colors.accent);
+        sample_marker(&painter, x, y, field.bottom());
+        painter.rect_filled(marker, 0., SAMPLE_MARKER);
         painter.text(
             marker.center(),
             egui::Align2::CENTER_CENTER,
@@ -1268,6 +1266,24 @@ pub(crate) fn show(
 mod tests {
     use super::*;
     #[test]
+    fn sample_markers_have_one_solid_color_without_an_outline() {
+        let context = egui::Context::default();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            sample_marker(&ui.ctx().layer_painter(egui::LayerId::background()), 20., 10., 80.);
+        });
+        let strokes: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::LineSegment { stroke, .. } => Some(*stroke),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strokes, vec![Stroke::new(2., SAMPLE_MARKER)]);
+        output.textures_delta.clear();
+    }
+
+    #[test]
     fn waveform_zoom_reads_only_the_visible_end_of_a_long_source() {
         let mut samples = vec![0.; 200000];
         samples[199998] = 0.75;
@@ -1317,7 +1333,8 @@ mod tests {
             .iter()
             .filter(|s| {
                 matches!(&s.shape,
-                    egui::Shape::LineSegment { points, stroke } if stroke.width == 1.5 && points[0].x == points[1].x
+                    egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(2., SAMPLE_MARKER)
+                        && points[0].x == points[1].x && points[0].y == 28.
                 )
             })
             .count();
@@ -2096,6 +2113,7 @@ mod tests {
         let mut edits = Vec::new();
         let mut time = 0.;
         let mut frame = |position: Pos2, pressed: Option<bool>| {
+            let edits_before = edits.len();
             time += 0.05;
             let mut events = vec![egui::Event::PointerMoved(position)];
             if let Some(pressed) = pressed {
@@ -2140,6 +2158,9 @@ mod tests {
                     panic!("unexpected edit {action:?}");
                 }
             }
+            if pressed != Some(false) {
+                assert_eq!(edits.len(), edits_before, "drag preview must not dispatch project edits");
+            }
             output
         };
         let field = Rect::from_min_max(Pos2::new(8., 32.), Pos2::new(892., 74.));
@@ -2155,7 +2176,15 @@ mod tests {
         );
         frame(line, Some(true));
         let moved = Pos2::new(SampleView::default().x(0.6, field), 50.);
-        frame(moved, None);
+        let preview = frame(moved, None);
+        assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.3, 0.5]);
+        assert!(
+            preview.shapes.iter().any(|s| matches!(&s.shape,
+                egui::Shape::LineSegment { points, stroke }
+                    if stroke.color == SAMPLE_MARKER && (points[0].x - moved.x).abs() < 0.01
+            )),
+            "the marker follows the pointer before the command is committed"
+        );
         frame(moved, Some(false));
         let points = ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap();
         assert_eq!(points.len(), 2);
@@ -2198,13 +2227,9 @@ mod tests {
             "zoomed samples fill the viewport instead of leaving empty bins"
         );
         drop(frame);
-        assert_eq!(
-            edits.len(),
-            4,
-            "navigation must not emit project edits; line drag emits initial and continued changes"
-        );
+        assert_eq!(edits.len(), 3, "navigation must not emit project edits; line drag commits once on release");
         assert_eq!(edits[0].params["continue"], false);
-        assert_eq!(edits[1].params["continue"], true);
+        assert!(edits.iter().all(|a| a.params["continue"] == false));
         let zoomed = view.dragged(blank, Vec2::new(1e6, 1e6), field, 48000);
         assert_eq!(zoomed, SampleView::default());
         let zoomed = view.dragged(blank, Vec2::new(-1e6, -1e6), field, 48000);

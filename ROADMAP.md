@@ -802,3 +802,5 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Drop one audio file onto an empty MIDI track to add Sampler with that source.
 
 - Project-open audio references stay inside the project folder; external files require explicit relinking.
+
+- Sampler Loop playback uses Fade in and Fade out for its edges, without a separate Loop fade field or a shortened loop.

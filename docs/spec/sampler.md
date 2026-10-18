@@ -57,7 +57,7 @@ Numeric values drag vertically, Shift gives precision, and double-click resets.
 All edits use the shared device parameter command, persistence and undo.
 
 Start/end and loop markers are fractions of the source. Empty or crossed ranges
-produce silence. Forward loops crossfade at the boundary; ping-pong reflects the
+produce silence. Forward loops wrap at the boundary; ping-pong reflects the
 read head. Ping-pong remains readable in saved projects but has no panel control.
 Changing playback mode immediately silences existing voices; selecting the current
 mode leaves them playing. Gate releases on note-off; one-shot ignores note-off. Reset silences all
@@ -153,10 +153,14 @@ reset restarts its sequence.
 edges (0..1000 ms, default 0). They are linear functions of source position and
 multiply when overlapping; reverse playback follows the same source edges.
 Grain applies them to each grain's source reads before its own window.
-The historical `crossfade` parameter retains loop crossfading and is labelled
-Loop fade ms. Loop start, Loop end and Loop fade fields appear only for Sample
-with Playback = Loop; Start, End, Fade in ms and Fade out ms remain available for
-other Sample playback modes. Hidden controls cannot intercept input.
+With Sample Playback = Loop, Fade in ms and Fade out ms attenuate the Loop start
+and Loop end edges on every pass, including reverse and ping-pong playback.
+Outside the loop region, the source edges still apply. Zero fades preserve the
+full loop length without overlapping or skipping source frames. The historical
+`crossfade` parameter is retained for saved-definition compatibility but has no
+sound effect or panel control. Loop start and Loop end fields appear only for
+Sample with Playback = Loop; Start, End, Fade in ms and Fade out ms remain
+available for other Sample playback modes. Hidden controls cannot intercept input.
 
 The waveform occupies y=24..82. The source/grain row at y=86 and five normal
 sections at y=108..168 retain gaps and internal padding within the 200-pixel device.
@@ -264,7 +268,7 @@ existing stretch state, primes it using bounded source lookahead, and streams in
 64-frame blocks without allocation. Source sample rates are converted to the output
 rate during lookahead. Forward, reverse, sliced and looping reads respect their
 source bounds. Stretched loops use the stretcher's continuous spectral overlap;
-Loop fade remains the direct-read loop crossfade. Changing project or source tempo re-primes
+Fade in/out apply to the loop edges in direct and stretched playback. Changing project or source tempo re-primes
 the voice at its current source position. Changing Warp or its mode keeps active notes, source positions and envelopes.
 Switches between Repitch/direct reading and the stretcher use a 5 ms transition
 from the voice's last output. The five modes sharing Signalsmith keep the existing
