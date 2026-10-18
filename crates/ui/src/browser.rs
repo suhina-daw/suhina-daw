@@ -469,8 +469,8 @@ impl BrowserState {
         if !open {
             return;
         }
-        for info in suhina_device_registry::DEVICES {
-            let is_instrument = info.role == suhina_device_api::Role::Instrument;
+        for info in suhina_device_bundle::DEVICES {
+            let is_instrument = info.instrument;
             if is_instrument != instruments {
                 continue;
             }

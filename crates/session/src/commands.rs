@@ -1396,6 +1396,32 @@ static COMMANDS: &[CommandSpec] = &[
         run: devices::set_enabled,
     },
     CommandSpec {
+        id: "device.loadSample",
+        label: "Load an audio file into a Sampler instrument",
+        params: &[TRACK, DEVICE, param("path", ParamType::Text, "sample audio file")],
+        kind: CommandKind::Edit,
+        run: devices::load_sample,
+    },
+    CommandSpec {
+        id: "device.setSampleSlices",
+        label: "Replace a Sampler's manual slice boundaries",
+        params: &[
+            TRACK,
+            DEVICE,
+            param("points", ParamType::Numbers, "normalized source positions strictly between 0 and 1"),
+            optional("continue", ParamType::Bool, "continue the preceding slice drag undo step"),
+        ],
+        kind: CommandKind::Edit,
+        run: devices::set_sample_slices,
+    },
+    CommandSpec {
+        id: "device.recordSample",
+        label: "Record the armed track's selected audio input into its Sampler; stop commits the source as one undo step",
+        params: &[TRACK, DEVICE, param("on", ParamType::Bool, "start or stop sample recording")],
+        kind: CommandKind::Transport,
+        run: crate::recording::record_sample,
+    },
+    CommandSpec {
         id: "device.setParam",
         label: "Set a parameter of a device on a track, heard from the next block; the value is limited to the parameter's range",
         params: &[

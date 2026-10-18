@@ -91,3 +91,7 @@ Both need an engine playing the project (`suhina-cli play --launcher`, the MCP s
 - A track whose path to the output has a volume of zero after its own (a group at −inf) reads
   silence, as nothing of it is heard.
 - Meters of the cue output and of track inputs come with them (ROADMAP).
+
+Sample instruments additionally publish up to 32 independent voice positions in fixed
+atomic slots per metered track. These are read heads, separate from audio levels;
+inactive voices are absent and do not leave a stale waveform line.

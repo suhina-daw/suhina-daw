@@ -20,6 +20,20 @@ use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
+fn device_display_name(device: &suhina_engine::model::Device) -> String {
+    let Some(file) =
+        device.sample_file().and_then(|path| std::path::Path::new(path).file_name()).and_then(|s| s.to_str())
+    else {
+        return device.name.clone();
+    };
+    let stem = std::path::Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or(file);
+    if device.name.to_lowercase().contains(&stem.to_lowercase()) {
+        device.name.clone()
+    } else {
+        format!("{} \u{b7} {file}", device.name)
+    }
+}
+
 /// Width of one device in a row, and of the column the stacked chain takes.
 pub const DEVICE_WIDTH: f32 = 220.0;
 pub const STACK_WIDTH: f32 = 260.0;
@@ -382,7 +396,7 @@ fn chain(project: &Project, id: TrackId, plugins: &mut dyn FnMut(TrackId, usize)
                 .enumerate()
                 .map(|(index, d)| DeviceBox {
                     index,
-                    name: d.name.clone(),
+                    name: device_display_name(d),
                     kind: match &d.kind {
                         DeviceKind::Builtin(_) => "Suhina".into(),
                         DeviceKind::Sd => d
@@ -407,6 +421,33 @@ fn chain(project: &Project, id: TrackId, plugins: &mut dyn FnMut(TrackId, usize)
                     enabled: d.enabled,
                     params: d.params.iter().map(|p| (p.id.clone(), format_value(p.value))).collect(),
                     graph: match (&d.kind, d.state.as_deref()) {
+                        (DeviceKind::Builtin(_), _) => suhina_device_bundle::source(d)
+                            .and_then(crate::detail::device_canvas::graph)
+                            .map(|cached| GraphBox {
+                                canvas: cached.canvas.clone(),
+                                linear: false,
+                                nodes: vec![],
+                                parameters: cached
+                                    .graph
+                                    .parameters
+                                    .iter()
+                                    .map(|p| GraphParameter {
+                                        default: p.default,
+                                        control: p.control,
+                                        ui: p.ui.clone(),
+                                        unit: p.unit.clone(),
+                                        id: p.id.clone(),
+                                        name: p.name.clone(),
+                                        min: p.min,
+                                        max: p.max,
+                                        value: d
+                                            .params
+                                            .iter()
+                                            .find(|v| v.id == p.id)
+                                            .map_or(p.default, |v| p.clamp(v.value)),
+                                    })
+                                    .collect(),
+                            }),
                         (DeviceKind::Sd, Some(state)) => crate::detail::device_canvas::graph(state).map(|cached| {
                             let graph = &cached.graph;
                             GraphBox {
@@ -961,7 +1002,7 @@ fn device_panel(
                                         .speed(if parameter.ui.step > 0.0 {
                                             parameter.ui.step
                                         } else {
-                                            (parameter.max - parameter.min) / 200.0
+                                            (parameter.max - parameter.min) / widgets::PARAMETER_DRAG_PIXELS
                                         })
                                         .max_decimals(parameter.ui.decimals),
                                 ),
@@ -989,7 +1030,7 @@ fn device_panel(
                                     if response.dragged() {
                                         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
                                         position =
-                                            (position - response.drag_delta().y as f64 * 0.005 * fine).clamp(0.0, 1.0);
+                                            (position - response.drag_delta().y as f64 / widgets::PARAMETER_DRAG_PIXELS * fine).clamp(0.0, 1.0);
                                         value = if logarithmic {
                                             parameter.min * (parameter.max / parameter.min).powf(position)
                                         } else {
@@ -1038,6 +1079,7 @@ fn device_panel(
                                     ),
                                 ),
                             };
+                            if response.double_clicked() { value = parameter.default; }
                             if value != previous {
                                 response.mark_changed();
                             }
@@ -1297,6 +1339,17 @@ mod custom_panel;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sample_name_is_in_header_once() {
+        let mut device =
+            suhina_engine::model::Device::new("Sampler", suhina_engine::model::DeviceKind::Builtin("sampler".into()));
+        assert_eq!(super::device_display_name(&device), "Sampler");
+        device.set_sample_file("samples/Piano.wav");
+        assert_eq!(super::device_display_name(&device), "Sampler \u{b7} Piano.wav");
+        device.name = "Piano".into();
+        assert_eq!(super::device_display_name(&device), "Piano");
+    }
+
     use super::*;
 
     #[test]

@@ -184,6 +184,9 @@ decision 9.
   [ADR 0014](0014-stock-presets.md), their loader is not built yet).
 - Parameter ids and device ids are stored in projects: renaming one is a breaking change, like a
   command id (ADR 0002).
+- The native sampler reuses the SDK's sample runtime and theme-aware UI widgets.
+  `Device::load_sample` installs immutable decoded audio off the callback; graph
+  replacement owns its disposal. This is a native instrument, not an `.sd` node.
 - An instrument that works in fixed internal blocks (the FM synth renders 64 frames at a time)
   applies an event at its next internal block boundary on a grid counted from `reset`, which
   keeps the output independent of the host's block sizes at the cost of up to one internal

@@ -12,6 +12,10 @@ covers:
 
 # Missing files
 
+Sampler source paths participate in missing-file discovery and relinking alongside
+audio regions. Relinking decodes the replacement before changing the source and
+uses the same project undo step; the source remains silent while missing.
+
 A project names the audio files its clips play. When a file has moved or been renamed since the
 project was saved, it cannot be decoded and its clips are silent. Suhina says so when the
 project opens and helps find the files again.

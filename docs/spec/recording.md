@@ -17,6 +17,12 @@ covers:
 
 # Recording
 
+Sampler's waveform Record/Stop controls use `device.recordSample`. The track must
+be armed with an audio input selected and the project saved. This records directly
+into the instrument source through the same recording writer, without making a
+clip. Start and stop use the current arrangement beat rather than launch
+quantization. Loading the finished take is one undo step; undo keeps the WAV file.
+
 Suhina records what armed tracks play ([ADR 0017](../decisions/0017-inputs-and-latency.md)):
 the notes a MIDI controller plays on a track that plays notes, and the sound of the audio input
 on a track that has one. A recording makes one clip per armed track, a **take**, either in a

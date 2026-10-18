@@ -39,6 +39,17 @@ pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
+    for device in project.channels.iter().flat_map(|c| &c.devices) {
+        if let Some(file) = device.sample_file()
+            && !wanted.iter().any(|(key, _, _)| key == file)
+        {
+            let mut candidates = vec![project_dir.join(file)];
+            if let Some(absolute) = device.sample_absolute_file() {
+                candidates.push(PathBuf::from(absolute));
+            }
+            wanted.push((file.into(), candidates, false));
+        }
+    }
     for content in &project.contents {
         for lane in &content.lanes {
             let LaneData::Audio(region) = &lane.data else { continue };
@@ -128,6 +139,18 @@ pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path) -> Option<
 /// them. Only looks at whether files exist; nothing is decoded.
 pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio> {
     let mut out: Vec<MissingAudio> = Vec::new();
+    for device in project.channels.iter().flat_map(|c| &c.devices) {
+        if let Some(file) = device.sample_file()
+            && locate(file, device.sample_absolute_file(), project_dir).is_none()
+            && !out.iter().any(|m| m.file == file)
+        {
+            out.push(MissingAudio {
+                file: file.into(),
+                last_path: device.sample_absolute_file().map_or_else(|| project_dir.join(file), PathBuf::from),
+                clips: 0,
+            });
+        }
+    }
     let mut found: Vec<&str> = Vec::new();
     for content in &project.contents {
         for lane in &content.lanes {

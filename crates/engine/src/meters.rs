@@ -55,6 +55,8 @@ struct Row {
     peak: [AtomicU32; 2],
     rms: [AtomicU32; 2],
     clipped: AtomicBool,
+    sample: std::sync::atomic::AtomicU64,
+    voices: [AtomicU32; 32],
 }
 
 impl Row {
@@ -94,6 +96,27 @@ impl Default for MeterMonitor {
 }
 
 impl MeterMonitor {
+    /// Active sample read head for a channel device.
+    pub fn sample_position(&self, track: TrackId, device: usize) -> Option<f32> {
+        let packed = self.row(track)?.sample.load(Ordering::Relaxed);
+        if packed >> 32 != u64::try_from(device).ok()?.checked_add(1)? {
+            return None;
+        }
+        Some(f32::from_bits(packed as u32))
+    }
+    /// Independent active read heads for the channel's sample instrument.
+    pub fn sample_positions(&self, track: TrackId, device: usize) -> [Option<f32>; 32] {
+        let Some(row) = self.row(track) else { return [None; 32] };
+        if row.sample.load(Ordering::Acquire) >> 32
+            != u64::try_from(device).ok().and_then(|v| v.checked_add(1)).unwrap_or(0)
+        {
+            return [None; 32];
+        }
+        std::array::from_fn(|i| {
+            let value = f32::from_bits(row.voices[i].load(Ordering::Relaxed));
+            (value >= 0.).then_some(value)
+        })
+    }
     /// The main output's level.
     pub fn main(&self) -> Level {
         self.main.level()
@@ -272,6 +295,23 @@ impl Levels {
     /// for the next block. Call it once the chains have finished the block. Never allocates.
     pub(crate) fn finish(&mut self, chains: &[Chain], frames: usize, writer: &mut MeterWriter) {
         let frames = frames.min(MAX_BLOCK);
+        for chain in chains {
+            if let Some(row) = writer.monitor.row(chain.track) {
+                let heads = chain.sample_positions();
+                let positions = heads.as_ref().map_or([None; 32], |(_, positions)| *positions);
+                for (slot, value) in row.voices.iter().zip(positions) {
+                    slot.store(value.unwrap_or(-1.).to_bits(), Ordering::Relaxed);
+                }
+                let packed = heads
+                    .and_then(|(device, positions)| {
+                        let device = u32::try_from(device).ok()?.checked_add(1)?;
+                        let first = positions.into_iter().flatten().next()?;
+                        Some((u64::from(device) << 32) | u64::from(first.to_bits()))
+                    })
+                    .unwrap_or(0);
+                row.sample.store(packed, Ordering::Release);
+            }
+        }
         for (chain, slot) in chains.iter().zip(&self.chain_slots) {
             let Some(slot) = *slot else { continue };
             let Some(&(gain_left, gain_right)) = self.chained.get(slot) else { continue };
@@ -363,6 +403,7 @@ impl MeterWriter {
     /// starts from silence with its clip indicator off. Never allocates.
     pub(crate) fn assign(&mut self, tracks: &[TrackId]) {
         for (slot, row) in self.monitor.tracks.iter().enumerate() {
+            row.sample.store(0, Ordering::Relaxed);
             let id = tracks.get(slot).map_or(NO_TRACK, |t| t.0);
             if row.track.load(Ordering::Relaxed) == id {
                 continue;
@@ -434,5 +475,42 @@ impl MeterWriter {
         if peak.iter().any(|&p| p > 1.0) {
             row.clipped.store(true, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod sample_position_tests {
+    use super::*;
+    #[test]
+    fn voice_positions_remain_independent_and_inactive_slots_are_absent() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        for slot in &row.voices {
+            slot.store((-1f32).to_bits(), Ordering::Relaxed);
+        }
+        row.voices[0].store(0.25f32.to_bits(), Ordering::Relaxed);
+        row.voices[3].store(0.75f32.to_bits(), Ordering::Relaxed);
+        row.sample.store((3u64 << 32) | u64::from(0.25f32.to_bits()), Ordering::Release);
+        let positions = writer.monitor.sample_positions(TrackId(7), 2);
+        assert_eq!(positions[0], Some(0.25));
+        assert_eq!(positions[3], Some(0.75));
+        assert_eq!(positions.into_iter().flatten().count(), 2);
+        assert_eq!(writer.monitor.sample_positions(TrackId(7), 1), [None; 32]);
+        row.sample.store(0, Ordering::Release);
+        assert_eq!(writer.monitor.sample_positions(TrackId(7), 2), [None; 32]);
+    }
+
+    #[test]
+    fn read_head_is_scoped_to_track_and_device_and_cleared_on_graph_swap() {
+        let mut writer = MeterWriter::new(48000);
+        writer.assign(&[TrackId(7)]);
+        let row = writer.monitor.row(TrackId(7)).unwrap();
+        row.sample.store((3u64 << 32) | u64::from(0.25f32.to_bits()), Ordering::Relaxed);
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 2), Some(0.25));
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 1), None);
+        assert_eq!(writer.monitor.sample_position(TrackId(8), 2), None);
+        writer.assign(&[TrackId(7)]);
+        assert_eq!(writer.monitor.sample_position(TrackId(7), 2), None);
     }
 }

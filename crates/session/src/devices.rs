@@ -16,6 +16,50 @@ use crate::{CommandError, ParamEdit, Session};
 /// Devices one track may hold.
 const MAX_DEVICES: usize = 64;
 
+pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let path = params.get("path").and_then(Value::as_str).ok_or("path must be an audio file")?;
+    let path = crate::files::absolute(std::path::Path::new(path));
+    let channel = channel_param(session, params)?;
+    let index = device_index(channel.devices.len(), params)?;
+    if !channel.devices.get(index).is_some_and(|d| matches!(&d.kind, DeviceKind::Builtin(id) if id == "sampler")) {
+        return Err("loadSample needs a Sampler instrument".into());
+    }
+    let audio = session.decoded_audio(&path)?;
+    if audio.frames() < 2 || !(1..=32).contains(&audio.channels) || !(1000..=384000).contains(&audio.sample_rate) {
+        return Err("sample needs at least two frames, 1..32 channels and a sample rate of 1000..384000 Hz".into());
+    }
+    let file = path.display().to_string();
+    let device = channel_param(session, params)?.devices.get_mut(index).ok_or("device is missing")?;
+    device.set_sample_file(&file);
+    Ok(json!({"device": index, "path": file, "frames": audio.frames()}))
+}
+
+pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let values =
+        params.get("points").and_then(Value::as_array).ok_or("points must be a list of normalized positions")?;
+    if values.len() > 1_000_000 {
+        return Err("slice map exceeds the input memory budget".into());
+    }
+    let mut points = Vec::with_capacity(values.len());
+    for value in values {
+        let point = value
+            .as_f64()
+            .filter(|v| v.is_finite() && *v > 0. && *v < 1.)
+            .ok_or("slice positions must be finite and strictly between 0 and 1")?;
+        points.push(point);
+    }
+    points.sort_unstable_by(f64::total_cmp);
+    points.dedup();
+    let channel = channel_param(session, params)?;
+    let index = device_index(channel.devices.len(), params)?;
+    let device = channel.devices.get_mut(index).ok_or("device is missing")?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler") {
+        return Err("slice editing needs a Sampler instrument".into());
+    }
+    device.set_sample_slices(&points);
+    Ok(json!({"points":points}))
+}
+
 fn sd_role(device: &Device) -> Option<suhina_device_sdk::DeviceRole> {
     (device.kind == DeviceKind::Sd).then_some(())?;
     let bytes = device.state.as_deref()?;
@@ -200,6 +244,9 @@ fn device_json(index: usize, device: &Device) -> Value {
             json!({ "id": node.id, "kind": kind })
         }).collect::<Vec<_>>()),
     });
+    if let Some(points) = device.sample_slices() {
+        value["sample_slices"] = json!(points);
+    }
     if !device.automation.is_empty() {
         value["automation"] = device
             .automation
@@ -256,6 +303,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     };
     let info = suhina_device_registry::info(id)
         .ok_or_else(|| format!("no built-in effect or instrument {id:?}; devices.list lists them"))?;
+    let definition = suhina_device_bundle::find(id).ok_or("the stock .sd definition is missing")?;
     if info.role == Role::Instrument {
         let track = track_id(&session.project, params)?;
         if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
@@ -300,7 +348,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     if has_instrument && !instrument && position <= midi_prefix {
         return Err("position 0 is the track's instrument; effects go after it".into());
     }
-    let device = Device {
+    let mut device = Device {
         name: info.name.to_string(),
         kind: DeviceKind::Builtin(info.id.to_string()),
         enabled: true,
@@ -311,6 +359,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         extensions: Extensions::default(),
         automation: Vec::new(),
     };
+    suhina_device_bundle::embed(&mut device, definition.sd.as_bytes().to_vec());
     channel.devices.insert(position, device);
     Ok(json!({ "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }))
 }
@@ -318,6 +367,30 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let path = params.get("path").and_then(Value::as_str).ok_or("path must be a .sd file path")?;
     let graph = suhina_device_sdk::DeviceGraph::read_file(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    if let Some(id) = graph.native_device_id().map_err(|e| e.to_string())? {
+        let _prepared = graph.prepare_native_at(48000., &suhina_device_registry::create).map_err(|e| e.to_string())?;
+        let mut request = params.clone();
+        let object = request.as_object_mut().ok_or("parameters must be an object")?;
+        object.remove("path");
+        object.insert("id".into(), json!(id));
+        let result = add(session, &request)?;
+        let index =
+            result["device"].as_u64().and_then(|i| usize::try_from(i).ok()).ok_or("missing inserted device index")?;
+        let device = channel_param(session, params)?.devices.get_mut(index).ok_or("inserted device is missing")?;
+        device.name = graph.name.clone();
+        device.params = graph
+            .parameters
+            .iter()
+            .filter(|p| {
+                suhina_device_registry::info(id)
+                    .and_then(|info| info.params.iter().find(|native| native.id == p.id))
+                    .is_some_and(|native| native.default != p.default)
+            })
+            .map(|p| DeviceParam::new(&p.id, p.default))
+            .collect();
+        suhina_device_bundle::embed(device, graph.to_sd().map_err(|e| e.to_string())?.into_bytes());
+        return Ok(json!({"device":index,"id":graph.id,"name":graph.name,"kind":"sd","implementation":id}));
+    }
     if graph.role != suhina_device_sdk::DeviceRole::Effect {
         let track = track_id(&session.project, params)?;
         if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
@@ -398,13 +471,23 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
     let channel = channel_param(session, params)?;
     let index = device_index(channel.devices.len(), params)?;
     let device = channel.devices.get_mut(index).ok_or("the device is missing")?;
-    if device.kind != DeviceKind::Sd {
+    let native = matches!(device.kind, DeviceKind::Builtin(_)) && device.sd_definition().is_some();
+    if device.kind != DeviceKind::Sd && !native {
         return Err("device.updateSd only updates .sd devices".into());
     }
-    let bytes = device.state.as_deref().ok_or("the .sd graph is missing")?;
+    let bytes =
+        if native { device.sd_definition() } else { device.state.as_deref() }.ok_or("the .sd graph is missing")?;
     let text = std::str::from_utf8(bytes).map_err(|_| "the embedded .sd graph is invalid UTF-8")?;
     let current = suhina_device_sdk::DeviceGraph::from_sd(text).map_err(|e| e.to_string())?;
     let newer = suhina_device_sdk::DeviceGraph::read_file(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    if native {
+        let _prepared = newer.prepare_native_at(48000., &suhina_device_registry::create).map_err(|e| e.to_string())?;
+        if newer.native_device_id().map_err(|e| e.to_string())?
+            != current.native_device_id().map_err(|e| e.to_string())?
+        {
+            return Err("the native implementation must stay the same".into());
+        }
+    }
     if current.id != newer.id || current.role != newer.role {
         return Err("the .sd file must have the same device id and role".into());
     }
@@ -416,7 +499,11 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
     let state = newer.to_sd().map_err(|e| e.to_string())?.into_bytes();
     let from_version = current.device_version;
     device.name = newer.name.clone();
-    device.state = Some(state);
+    if native {
+        device.set_sd_definition(state);
+    } else {
+        device.state = Some(state);
+    }
     device.params = migrated.into_iter().map(|(id, value)| DeviceParam::new(id, value)).collect();
     Ok(
         json!({ "device": index, "id": newer.id, "name": newer.name, "from_version": from_version, "to_version": newer.device_version }),

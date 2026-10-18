@@ -16,6 +16,13 @@ covers:
 
 # MCP server
 
+Sampler uses the common commands: `device.add {"track":1,"id":"sampler"}`,
+`device.loadSample {"track":1,"device":0,"path":"/path/to/sample.wav"}` and
+`device.setParam` for its stable parameters. Sample paths are confined to the
+read root. `device.recordSample {"track":1,"device":0,"on":true}` records the
+armed track's selected audio input; `on:false` finishes and loads the take, as one
+undo step. Save the project and open an audio output before recording.
+
 `suhina-cli mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io) on
 stdin/stdout (the official `rmcp` SDK), so an agent can open, inspect, edit and render projects.
 It follows the same conventions as [PhotoCraft](https://github.com/storytold/photocraft)'s MCP server.
@@ -389,3 +396,10 @@ parameters; it is generated from the registry, so a new command needs no edit th
 ```sh
 claude mcp add suhina -- /path/to/suhina-cli mcp --read-root /path/to/projects --write-root /path/to/renders
 ```
+
+Sampler manual boundaries are edited with `device.setSampleSlices` (`track`,
+`device`, `points`: normalized source positions strictly between 0 and 1). The
+command validates, sorts and deduplicates the list and supports undo/redo; an
+empty list clears the map. Optional `continue` groups consecutive drag edits.
+
+`track.devices` includes `sample_slices` when a Sampler has an explicit manual map.

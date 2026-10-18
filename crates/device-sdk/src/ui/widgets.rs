@@ -75,7 +75,7 @@ fn number(ui: &mut DeviceUi, id: &str, b: [f32; 4], decimals: usize, log: bool, 
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![readout(id, if center { b[2] / 2. } else { 4. }, 0., decimals, color, center)],
     });
 }
@@ -96,7 +96,7 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![
             text(cx, 0., label, TEXT, true),
             Draw::Circle { center: [cx.into(), center_y.into()], radius: radius.into(), color: RIM },
@@ -123,6 +123,17 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Widget {
+    /// Host-provided sample waveform with editable region/loop markers and recording actions.
+    SampleWaveform,
+    /// Host-backed sample input and recording controls, independent of the waveform.
+    SampleRecording,
+    /// Cumulative ADSR; omitting release makes a bipolar Attack/Decay envelope.
+    Envelope {
+        attack: String,
+        decay: String,
+        level: String,
+        release: Option<String>,
+    },
     Button {
         label: String,
         #[serde(default)]
@@ -148,12 +159,21 @@ pub enum Widget {
     /// Ringed dial whose diameter follows the available control area.
     Dial {
         label: String,
+        #[serde(default)]
+        decimals: usize,
+        #[serde(default)]
+        format: TextFormat,
     },
     Stepper {
         decimals: usize,
     },
     /// Non-interactive, theme-aware section caption.
     Label {
+        label: String,
+    },
+    /// Passive, theme-aware section background and optional heading.
+    Panel {
+        #[serde(default)]
         label: String,
     },
     /// Non-interactive vertical section divider.
@@ -167,6 +187,10 @@ pub enum Widget {
         choices: Vec<(u16, String)>,
     },
     WaveformMenu,
+    /// Theme-aware oscillator preview; X binds its rate, shape names its waveform parameter.
+    WaveformPreview {
+        shape: String,
+    },
     FilterBand {
         min_hz: f32,
         max_hz: f32,
@@ -232,6 +256,20 @@ impl Widget {
             }
             return vec![caption];
         }
+        if let Self::Panel { label } = self {
+            let mut drawing = vec![
+                rect(0., 0., w.into(), height, RIM),
+                rect(1., 1., (w - 2.).into(), height - 2., if label.is_empty() { DARK } else { [46, 45, 42, 255] }),
+            ];
+            if !label.is_empty() {
+                let mut heading = text(4., 2., label, TEXT, false);
+                if let Draw::Text { size, .. } = &mut heading {
+                    *size = 9.;
+                }
+                drawing.push(heading);
+            }
+            return drawing;
+        }
         if matches!(self, Self::Separator) {
             return vec![Draw::Line {
                 from: [(w / 2.).into(), 0.0.into()],
@@ -246,7 +284,7 @@ impl Widget {
         let id = binding.parameter.as_str();
         match self {
             Self::Button { label, off_label, indicator } => {
-                let value = if let UiGesture::Set(v) = control.gesture { Some(v) } else { None };
+                let value = if let UiGesture::Set(v) | UiGesture::Tab(v) = control.gesture { Some(v) } else { None };
                 button(&mut ui, id, value, label, [0., 0., w, height]);
                 if let Some(c) = ui.controls.last_mut() {
                     if *indicator {
@@ -285,7 +323,7 @@ impl Widget {
                     }
                 }
             }
-            Self::Label { .. } | Self::Separator => return vec![],
+            Self::Label { .. } | Self::Panel { .. } | Self::Separator => return vec![],
             Self::Stepper { decimals } => {
                 let mut value = readout(id, 3., (height - 10.) / 2., *decimals, ACCENT, false);
                 if let Draw::Text { size, .. } = &mut value {
@@ -308,7 +346,7 @@ impl Widget {
                 }
                 return out;
             }
-            Self::Dial { label } => {
+            Self::Dial { label, decimals, format } => {
                 let label_height = if label.is_empty() { 0. } else { 24. };
                 let r = ((height - label_height - 18.) / 2.).min(w / 2. - 2.).max(1.);
                 let cx = w / 2.;
@@ -318,6 +356,10 @@ impl Widget {
                     text(cx, if label.contains('\n') { 0. } else { label_height / 4. }, label, TEXT, true);
                 if let Draw::Text { size, .. } = &mut caption {
                     *size = 9.;
+                }
+                let mut value = readout(id, cx, height - 16., *decimals, TEXT, true);
+                if let Draw::Text { format: f, .. } = &mut value {
+                    *f = *format;
                 }
                 return vec![
                     caption,
@@ -347,9 +389,10 @@ impl Widget {
                         color: ACCENT,
                         width: if r > 20. { 2. } else { 1.5 },
                     },
-                    readout(id, cx, height - 16., 0, TEXT, true),
+                    value,
                 ];
             }
+            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);
@@ -372,6 +415,21 @@ impl Widget {
 
                 return disclosure;
             }
+            Self::WaveformPreview { shape } => {
+                let points = (0..129)
+                    .map(|i| {
+                        let t = i as f32 / 128.;
+                        let cycles = UiValue::from(t)
+                            * (UiValue::from(0.25) + UiValue::normalized(id, binding.logarithmic) * 3.75.into());
+                        let wave = UiValue::Expression(Box::new(UiExpression::Wave {
+                            shape: UiValue::parameter(shape, false),
+                            cycles,
+                        }));
+                        [UiValue::from(t * w), UiValue::from(height / 2. - 1.) + wave * (-(height / 2. - 3.)).into()]
+                    })
+                    .collect();
+                return vec![Draw::Path { points, color: ACCENT, width: 1.2, closed: false, fill: None }];
+            }
             Self::WaveformMenu => {
                 let mut wave = vec![rect(0., 0., w.into(), height, [46, 45, 42, 255])];
                 for shape in 0..7 {
@@ -379,21 +437,7 @@ impl Widget {
                     let mut pts = Vec::new();
                     for i in 0..17 {
                         let t = i as f32 / 16.;
-                        let y = match shape {
-                            0 => (t * std::f32::consts::TAU).sin(),
-                            1 => 1. - 4. * (t - 0.5).abs(),
-                            2 => t * 2. - 1.,
-                            3 => 1. - t * 2.,
-                            4 => {
-                                if t < 0.5 {
-                                    1.
-                                } else {
-                                    -1.
-                                }
-                            }
-                            5 => ((t * 4.).floor() * 5.).sin(),
-                            _ => (t * 8.).sin() * 0.6 + (t * 3.).cos() * 0.4,
-                        };
+                        let y = waveform(shape as usize, f64::from(t) * if shape == 5 { 3. } else { 1. }) as f32;
                         pts.push([UiValue::from(4. + t * (w - 22.)) + shift.clone(), (height / 2. - y * 3.).into()]);
                     }
                     wave.push(Draw::Path { points: pts, color: ACCENT, width: 1., closed: false, fill: None });
@@ -520,6 +564,41 @@ impl Widget {
 mod tests {
     use super::*;
     #[test]
+    fn panels_follow_the_theme_and_tabs_validate_their_zero_based_range() {
+        let parameter = Parameter::new("view", "View", (0., 2.), 0.);
+        let mut ui = DeviceUi::default();
+        ui.controls.push(CustomControl {
+            id: "tab".into(),
+            name: "Tab".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 100., 20.],
+            widget: Some(Widget::Button { label: "LFO".into(), off_label: None, indicator: false }),
+            gesture: UiGesture::Tab(2),
+            x: Some(UiBinding::new("view")),
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        });
+        assert!(ui.validate(std::slice::from_ref(&parameter)).is_ok());
+        let decoded: DeviceUi = serde_json::from_str(&serde_json::to_string(&ui).unwrap()).unwrap();
+        assert_eq!(decoded.controls[0].gesture, UiGesture::Tab(2));
+        for invalid in [0, 3] {
+            ui.controls[0].gesture = UiGesture::Tab(invalid);
+            assert!(ui.validate(std::slice::from_ref(&parameter)).is_err());
+        }
+        ui.controls[0].gesture = UiGesture::Tab(1);
+        let mut nonzero = parameter.clone();
+        nonzero.min = 1.;
+        assert!(ui.validate(&[nonzero]).is_err());
+        ui.controls[0].widget = Some(Widget::Panel { label: "FILTER".into() });
+        ui.controls[0].gesture = UiGesture::Drag;
+        ui.controls[0].x = None;
+        assert!(ui.validate(&[parameter]).is_ok());
+        let palette = WidgetPalette { control: [100, 110, 120, 255], ..WidgetPalette::default() };
+        let drawing = ui.controls[0].drawings_with_palette(&palette);
+        assert!(matches!(&drawing[1], Draw::Rect { color, .. } if *color == palette.control));
+    }
+    #[test]
     fn widgets_work_with_unrelated_parameter_names() {
         let mut amount = Parameter::new("amount", "Amount", (1., 64.), 4.);
         amount.control = crate::ParameterControl::Choice;
@@ -540,7 +619,7 @@ mod tests {
                 UiGesture::Drag,
             ),
             (Widget::Knob { label: "Amount".into() }, UiGesture::Drag),
-            (Widget::Dial { label: "Amount".into() }, UiGesture::Drag),
+            (Widget::Dial { label: "Amount".into(), decimals: 0, format: TextFormat::Number }, UiGesture::Drag),
             (Widget::Stepper { decimals: 1 }, UiGesture::Drag),
             (Widget::Disclosure { label: "Details".into() }, UiGesture::Toggle),
             (Widget::Menu, UiGesture::Menu),
@@ -564,7 +643,7 @@ mod tests {
                 bounds: [0., 0., 100., 100.],
                 visible_when: None,
                 gesture,
-                x: (!drag).then(|| UiBinding { parameter: "amount".into(), logarithmic: position }),
+                x: (!drag).then(|| UiBinding { parameter: "amount".into(), logarithmic: position, drag_scale: 1. }),
                 y: if drag {
                     Some(UiBinding::new("amount"))
                 } else if position {

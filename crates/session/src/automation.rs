@@ -29,7 +29,7 @@ struct Target {
     kind: Kind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Kind {
     /// The mixer's volume: decibels in commands, a linear gain in the lane.
     Volume,
@@ -38,7 +38,7 @@ enum Kind {
     /// A built-in device parameter, limited and rounded as the device takes it.
     Builtin(&'static suhina_device_api::ParamInfo),
     /// A data-only device parameter's range and discrete behavior.
-    Sd { min: f64, max: f64, control: suhina_device_sdk::ParameterControl },
+    Sd(Box<suhina_device_sdk::Parameter>),
     /// A plug-in parameter by its id.
     Plugin(u32),
 }
@@ -79,10 +79,10 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
                     let graph = sd_graph(device)?;
                     let spec = graph
                         .parameters
-                        .iter()
+                        .into_iter()
                         .find(|p| p.id == param)
                         .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
-                    Kind::Sd { min: spec.min, max: spec.max, control: spec.control }
+                    Kind::Sd(Box::new(spec))
                 }
                 _ => {
                     return Err("this device has no parameters Suhina can automate (it is from another program)".into());
@@ -102,7 +102,7 @@ fn channel_of(session: &Session, track: TrackId) -> Result<&suhina_model::Channe
 impl Target {
     /// `value` from a command as the lane keeps it.
     fn store(&self, session: &Session, value: f64) -> Result<f64, CommandError> {
-        match self.kind {
+        match &self.kind {
             Kind::Volume => {
                 if value > 6.0 {
                     return Err(format!("a volume must be at most +6 dB, got {value}").into());
@@ -117,18 +117,15 @@ impl Target {
                 Ok(if self.param == MUTE { value.round() } else { value })
             }
             Kind::Builtin(spec) => Ok(spec.clamp(value)),
-            Kind::Sd { min, max, control } => {
-                let value =
-                    if value.is_finite() { value.clamp(min, max) } else { return Err("value must be finite".into()) };
-                Ok(if control.is_stepped() { value.round().clamp(min, max) } else { value })
-            }
-            Kind::Plugin(id) => plugin_value(session, self.track, self.device.unwrap_or(0), id, value),
+            Kind::Sd(parameter) if value.is_finite() => Ok(parameter.clamp(value)),
+            Kind::Sd(_) => Err("value must be finite".into()),
+            Kind::Plugin(id) => plugin_value(session, self.track, self.device.unwrap_or(0), *id, value),
         }
     }
 
     /// A lane's value as commands show it.
     fn show(&self, value: f64) -> Value {
-        match self.kind {
+        match &self.kind {
             Kind::Volume => to_db(value).map_or(json!("-inf"), |db| json!(db)),
             _ => json!(value),
         }
@@ -144,8 +141,8 @@ impl Target {
     }
 
     fn matches(&self, lane: &AutomationLane) -> bool {
-        match self.kind {
-            Kind::Plugin(id) => param_id(&lane.param) == Some(id),
+        match &self.kind {
+            Kind::Plugin(id) => param_id(&lane.param) == Some(*id),
             _ => lane.param == self.param,
         }
     }
@@ -292,7 +289,7 @@ fn optional_number(params: &Value, name: &str) -> Result<Option<f64>, CommandErr
 impl Target {
     /// A lane value moved by `delta` in the unit of the parameter's set command, kept in range.
     fn shift(&self, session: &Session, value: f64, delta: f64) -> Result<f64, CommandError> {
-        match self.kind {
+        match &self.kind {
             // Silence stays silent; a level never goes past the fader's top.
             Kind::Volume => match to_db(value) {
                 None => Ok(0.0),
@@ -302,7 +299,7 @@ impl Target {
                 let (min, max) = mixer_range(&self.param).unwrap_or((value, value));
                 self.store(session, (value + delta).clamp(min, max))
             }
-            Kind::Builtin(_) | Kind::Sd { .. } | Kind::Plugin(_) => self.store(session, value + delta),
+            Kind::Builtin(_) | Kind::Sd(_) | Kind::Plugin(_) => self.store(session, value + delta),
         }
     }
 }

@@ -135,6 +135,19 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
 /// to `to` (the folder of the file it is saved in): each relative path is written relative to
 /// `to` where both are on one drive, and the absolute path is kept for when it does not resolve.
 pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path) {
+    for device in project.channels.iter_mut().flat_map(|c| &mut c.devices) {
+        let Some(source) = device.sample_file() else { continue };
+        let here = from.join(source);
+        let file = if here.is_file() {
+            here
+        } else {
+            device.sample_absolute_file().map(PathBuf::from).filter(|p| p.is_file()).unwrap_or(here)
+        };
+        let absolute = normalise(&std::path::absolute(&file).unwrap_or(file));
+        let relative = relative_to(&absolute, &normalise(&std::path::absolute(to).unwrap_or(to.into())))
+            .map_or_else(|| source.to_owned(), |p| slashes(&p));
+        device.set_sample_reference(&relative, &absolute.display().to_string());
+    }
     for content in &mut project.contents {
         for lane in &mut content.lanes {
             let LaneData::Audio(region) = &mut lane.data else { continue };

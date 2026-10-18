@@ -40,6 +40,627 @@ struct Loaded {
     images: Vec<Result<egui::TextureHandle, String>>,
     controls: Vec<Vec<Draw>>,
 }
+
+pub(crate) type SampleTarget = (Rect, TrackId, usize);
+pub(crate) fn sample_targets_id() -> egui::Id {
+    egui::Id::new("sampler-drop-targets")
+}
+pub(crate) fn sample_source_id(track: TrackId, device: usize) -> egui::Id {
+    egui::Id::new(("sampler-source", track.0, device))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SampleView {
+    start: f64,
+    span: f64,
+}
+impl Default for SampleView {
+    fn default() -> Self {
+        Self { start: 0., span: 1. }
+    }
+}
+impl SampleView {
+    fn x(self, point: f64, field: Rect) -> f32 {
+        field.left() + ((point - self.start) / self.span) as f32 * field.width()
+    }
+    fn point(self, x: f32, field: Rect) -> f64 {
+        self.start + f64::from((x - field.left()) / field.width()) * self.span
+    }
+    fn dragged(self, anchor: Pos2, delta: Vec2, field: Rect, frames: usize) -> Self {
+        let fraction = f64::from((anchor.x - field.left()) / field.width());
+        let span = (self.span * (f64::from(delta.y) / 120.).exp()).clamp(1. / frames.max(1) as f64, 1.);
+        let start = (self.point(anchor.x, field) - fraction * span - f64::from(delta.x / field.width()) * self.span)
+            .clamp(0., 1. - span);
+        Self { start, span }
+    }
+}
+#[derive(Clone)]
+struct SampleDrag {
+    view: SampleView,
+    anchor: Pos2,
+    selected: Option<usize>,
+    points: Arc<[f64]>,
+    edited: bool,
+    delta: Vec2,
+}
+#[derive(Clone)]
+struct SamplePeaks {
+    source: Arc<suhina_engine::AudioData>,
+    range: (usize, usize),
+    peaks: Arc<Vec<f32>>,
+}
+fn nearest_slice(points: &[f64], view: SampleView, field: Rect, pointer: Pos2, start: f64, end: f64) -> Option<usize> {
+    let index = points.partition_point(|p| *p < view.point(pointer.x, field));
+    [index.checked_sub(1), Some(index)]
+        .into_iter()
+        .flatten()
+        .filter(|&i| {
+            points.get(i).is_some_and(|p| *p > start && *p < end && (view.x(*p, field) - pointer.x).abs() <= 6.)
+        })
+        .min_by(|&a, &b| {
+            (view.x(points[a], field) - pointer.x).abs().total_cmp(&(view.x(points[b], field) - pointer.x).abs())
+        })
+}
+fn slice_edit(actions: &mut Vec<Action>, track: TrackId, device: usize, points: Vec<f64>, continued: bool) {
+    actions.push(Action::new(
+        "device.setSampleSlices",
+        json!({"track":track.0,"device":device,"points":points,"continue":continued}),
+    ));
+}
+
+fn sample_waveform(
+    ui: &mut egui::Ui,
+    bounds: Rect,
+    parameters: &[GraphParameter],
+    track: TrackId,
+    device: usize,
+    actions: &mut Vec<Action>,
+    inline_recording: bool,
+) {
+    let visible = bounds.intersect(ui.clip_rect());
+    if visible.is_positive() {
+        // MIDI can start a voice while the transport and read head are idle.
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    }
+    ui.ctx().data_mut(|data| {
+        data.get_temp_mut_or_default::<Vec<SampleTarget>>(sample_targets_id()).push((visible, track, device))
+    });
+    let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
+    let painter = ui.painter_at(visible);
+    painter.rect_filled(bounds, 0., crate::kit::theme::control_background());
+    let colors = crate::kit::theme::palette();
+    let compact = bounds.height() < 100.;
+    let field = if compact {
+        Rect::from_min_max(
+            bounds.min + Vec2::new(8., 8.),
+            bounds.max - Vec2::new(8., if inline_recording { 26. } else { 8. }),
+        )
+    } else {
+        bounds.shrink2(Vec2::new(8., 28.))
+    };
+    let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
+    let edit_loop = value("mode") == 0. && value("playback") == 2.;
+    let active_start = f64::from(value(if edit_loop { "loop_start" } else { "start" }));
+    let active_end = f64::from(value(if edit_loop { "loop_end" } else { "end" }));
+    let source_id = sample_source_id(track, device);
+    let view_id = source_id.with("view");
+    let old = ui.ctx().data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(view_id));
+    let mut view = old
+        .filter(|(old, _)| match (old.as_ref(), source.as_ref()) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        })
+        .map_or(SampleView::default(), |(_, v)| v);
+    let slicing = value("mode") == 0. && value("playback") == 3.;
+    let manual = slicing && value("slice_by") == 3.;
+    let manual_points =
+        ui.ctx().data(|d| d.get_temp::<Arc<[f64]>>(source_id.with("manual-points"))).unwrap_or_else(|| {
+            let mut points: Vec<_> = parameters
+                .iter()
+                .filter(|p| p.id.starts_with("slice_") && p.id != "slice_by" && p.value > 0. && p.value < 1.)
+                .map(|p| p.value)
+                .collect();
+            points.sort_unstable_by(f64::total_cmp);
+            points.dedup();
+            Arc::from(points)
+        });
+    let response = ui.interact(field, source_id.with("wave-navigation"), egui::Sense::click_and_drag());
+    let hovered = ui.input(|i| i.pointer.hover_pos()).filter(|p| field.contains(*p));
+    let nearest = if manual {
+        hovered.and_then(|p| nearest_slice(&manual_points, view, field, p, active_start, active_end))
+    } else {
+        None
+    };
+    let drag_id = source_id.with("wave-drag");
+    if response.is_pointer_button_down_on() {
+        ui.ctx().data_mut(|d| {
+            if d.get_temp::<SampleDrag>(drag_id).is_none() {
+                let anchor = response.interact_pointer_pos().unwrap_or(field.center());
+                d.insert_temp(
+                    drag_id,
+                    SampleDrag {
+                        view,
+                        anchor,
+                        selected: nearest,
+                        points: manual_points.clone(),
+                        edited: false,
+                        delta: Vec2::ZERO,
+                    },
+                );
+            }
+        });
+    }
+    let mut drag = ui.ctx().data(|d| d.get_temp::<SampleDrag>(drag_id));
+    let click_id = source_id.with("manual-click");
+    let double_click = if manual
+        && response.clicked()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let time = ui.input(|i| i.time);
+        let options = ui.ctx().options(|o| o.input_options);
+        ui.ctx().data_mut(|d| {
+            let paired = d.get_temp::<(f64, Pos2)>(click_id).is_some_and(|(last, pos)| {
+                time - last <= options.max_double_click_delay && pos.distance(pointer) <= options.max_click_dist
+            });
+            if paired {
+                d.remove::<(f64, Pos2)>(click_id);
+            } else {
+                d.insert_temp(click_id, (time, pointer));
+            }
+            paired
+        })
+    } else {
+        false
+    };
+    if response.dragged() {
+        ui.ctx().data_mut(|d| d.remove::<(f64, Pos2)>(click_id));
+    }
+    if double_click && manual && source.is_some() {
+        if let Some(pointer) = response.interact_pointer_pos() {
+            let mut points = manual_points.to_vec();
+            if let Some(index) = nearest {
+                points.remove(index);
+                slice_edit(actions, track, device, points, false);
+            } else {
+                let point = view.point(pointer.x, field);
+                if point > active_start && point < active_end && point > 0. && point < 1. {
+                    points.push(point);
+                    slice_edit(actions, track, device, points, false);
+                }
+            }
+        }
+    } else if (response.dragged() || response.drag_stopped())
+        && let Some(state) = &mut drag
+    {
+        let delta = response.interact_pointer_pos().map_or(state.delta, |p| p - state.anchor);
+        state.delta = delta;
+        if let Some(index) = state.selected {
+            let mut points = state.points.to_vec();
+            if let Some(point) = points.get_mut(index) {
+                *point = (state.points[index] + f64::from(delta.x / field.width()) * state.view.span)
+                    .clamp(f64::EPSILON, 1. - f64::EPSILON);
+                slice_edit(actions, track, device, points, state.edited);
+                state.edited = true;
+            }
+        } else if let Some(source) = &source {
+            view = state.view.dragged(state.anchor, delta, field, source.frames());
+        }
+    }
+    let cursor = if nearest.is_some() || drag.as_ref().is_some_and(|d| d.selected.is_some()) {
+        egui::CursorIcon::ResizeHorizontal
+    } else if response.dragged() && response.drag_delta().y > 0. {
+        egui::CursorIcon::ZoomOut
+    } else {
+        egui::CursorIcon::ZoomIn
+    };
+    response.on_hover_cursor(cursor).on_hover_text(
+        "Drag up/down to zoom, left/right to pan. Manual: double-click to add/remove a slice; drag a line to move it.",
+    );
+    let pointer_down = ui.input(|i| i.pointer.primary_down());
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(view_id, (source.clone(), view));
+        if pointer_down {
+            if let Some(state) = drag {
+                d.insert_temp(drag_id, state);
+            }
+        } else {
+            d.remove::<SampleDrag>(drag_id);
+        }
+    });
+    let wave_painter = ui.painter_at(field.intersect(visible));
+    let loop_area = Rect::from_min_max(
+        Pos2::new(view.x(active_start, field), field.top()),
+        Pos2::new(view.x(active_end, field), field.bottom()),
+    )
+    .intersect(field);
+    if edit_loop && loop_area.is_positive() {
+        wave_painter.rect_filled(loop_area, 0., colors.accent.gamma_multiply(0.12));
+    }
+    if let Some(source) = &source {
+        let frames = source.frames();
+        let range = ((view.start * frames as f64) as usize, ((view.start + view.span) * frames as f64).ceil() as usize);
+        let cache_id = source_id.with("visible-peaks");
+        let cached = ui.ctx().data(|d| d.get_temp::<SamplePeaks>(cache_id));
+        let peaks = if let Some(cached) = cached.filter(|c| Arc::ptr_eq(&c.source, source) && c.range == range) {
+            cached.peaks
+        } else {
+            let mut peaks = vec![0f32; 1024];
+            let channels = usize::from(source.channels.max(1));
+            let span = range.1.saturating_sub(range.0).max(1);
+            for (i, frame) in source.samples.chunks(channels).skip(range.0).take(span).enumerate() {
+                let bin = i.saturating_mul(1024) / span;
+                if let Some(peak) = peaks.get_mut(bin) {
+                    for &sample in frame {
+                        if sample.is_finite() {
+                            *peak = peak.max(sample.abs().min(1.));
+                        }
+                    }
+                }
+            }
+            if span < peaks.len() {
+                let bins = peaks.len();
+                for (i, peak) in peaks.iter_mut().enumerate() {
+                    if let Some(frame) =
+                        source.samples.chunks(channels).nth(range.0.saturating_add(i.saturating_mul(span) / bins))
+                    {
+                        *peak =
+                            frame.iter().copied().filter(|v| v.is_finite()).fold(0f32, |p, v| p.max(v.abs().min(1.)));
+                    }
+                }
+            }
+            let peaks = Arc::new(peaks);
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(cache_id, SamplePeaks { source: source.clone(), range, peaks: peaks.clone() })
+            });
+            peaks
+        };
+        for (i, peak) in peaks.iter().enumerate() {
+            let x = field.left() + i as f32 / 1024. * field.width();
+            let point = view.point(x, field);
+            let color = if point < active_start || point > active_end { Color32::GRAY } else { colors.accent };
+            let h = peak * field.height() * 0.48;
+            wave_painter.line_segment(
+                [Pos2::new(x, field.center().y - h), Pos2::new(x, field.center().y + h)],
+                Stroke::new(1., color),
+            );
+        }
+        if slicing {
+            let points: Arc<[f64]> = if manual {
+                manual_points
+            } else {
+                let cache_id = source_id.with("slices");
+                let cached = ui.ctx().data(|d| {
+                    d.get_temp::<(Arc<suhina_engine::AudioData>, suhina_device_sdk::sampler::SliceAnalysis)>(cache_id)
+                });
+                let analysis = if let Some((_, a)) = cached.filter(|(old, _)| Arc::ptr_eq(old, source)) {
+                    a
+                } else {
+                    let a = suhina_device_sdk::sampler::SliceAnalysis::new(
+                        &source.samples,
+                        usize::from(source.channels),
+                        f64::from(source.sample_rate),
+                    );
+                    ui.ctx().data_mut(|d| d.insert_temp(cache_id, (source.clone(), a.clone())));
+                    a
+                };
+                let params: Vec<_> = suhina_device_sdk::sampler::PARAMS
+                    .iter()
+                    .map(|p| parameters.iter().find(|v| v.id == p.id).map_or(p.default, |v| v.value))
+                    .collect();
+                Arc::from(analysis.points(
+                    &params,
+                    source.frames(),
+                    f64::from(source.sample_rate),
+                    ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.),
+                ))
+            };
+            let first = points.partition_point(|p| *p <= active_start.max(view.start));
+            for &point in points
+                .get(first..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(|p| **p < active_end.min(view.start + view.span))
+            {
+                let x = view.x(point, field);
+                wave_painter.line_segment(
+                    [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+                    Stroke::new(1., colors.text_primary),
+                );
+            }
+        }
+    } else {
+        wave_painter.text(
+            field.center(),
+            egui::Align2::CENTER_CENTER,
+            "Drop a sample here",
+            crate::kit::theme::ui_font(12.),
+            colors.text_primary,
+        );
+    }
+    let positions = ui
+        .ctx()
+        .data(|d| d.get_temp::<[Option<f32>; 32]>(sample_source_id(track, device).with("position")))
+        .unwrap_or([None; 32]);
+    for position in positions.into_iter().flatten() {
+        let x = view.x(f64::from(position.clamp(0., 1.)), field);
+        wave_painter.line_segment(
+            [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+            Stroke::new(1.5, colors.text_primary),
+        );
+    }
+    for (id, caption, offset) in [
+        (if edit_loop { "loop_start" } else { "start" }, "S", 0.),
+        (if edit_loop { "loop_end" } else { "end" }, "E", 0.),
+        ("position", "G", 40.),
+    ] {
+        if id == "position" && value("mode") == 0. {
+            continue;
+        }
+        let (origin, span) =
+            if id == "position" { (value("start"), (value("end") - value("start")).max(1e-6)) } else { (0., 1.) };
+        let x = view.x(f64::from(origin + value(id) * span), field);
+        if x < field.left() || x > field.right() {
+            continue;
+        }
+        let y = bounds.top() + if compact { 8. + offset * 0.7 } else { 26. + offset };
+        let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(14., if compact { 12. } else { 18. }));
+        painter.line_segment([Pos2::new(x, y), Pos2::new(x, field.bottom())], Stroke::new(1., colors.accent));
+        painter.rect_filled(marker, 0., colors.accent);
+        painter.text(
+            marker.center(),
+            egui::Align2::CENTER_CENTER,
+            caption,
+            crate::kit::theme::ui_font(10.),
+            crate::kit::theme::window_background(),
+        );
+        let response = ui
+            .interact(marker, egui::Id::new(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
+            .on_hover_text(format!("Drag {}", id.replace('_', " ")))
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        if response.double_clicked() {
+            if let Some(p) = parameters.iter().find(|p| p.id == id) {
+                actions.push(Action::new(
+                    "device.setParam",
+                    json!({"track":track.0,"device":device,"param":id,"value":p.default,"continuous":false}),
+                ));
+            }
+        } else if (response.dragged() || response.drag_stopped())
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": device, "param": id, "value": ((view.point(pos.x,field) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "continuous": !response.drag_stopped()})));
+        }
+    }
+    if inline_recording {
+        sample_recording(
+            ui,
+            Rect::from_min_size(bounds.right_bottom() - Vec2::new(324., 24.), Vec2::new(316., 22.)),
+            track,
+            device,
+            actions,
+        );
+    }
+}
+fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usize, actions: &mut Vec<Action>) {
+    let recording =
+        ui.ctx().data(|d| d.get_temp::<bool>(sample_source_id(track, device).with("recording"))).unwrap_or(false);
+    let (input, channels, armed) = ui
+        .ctx()
+        .data(|d| {
+            d.get_temp::<(suhina_engine::model::AudioInput, u16, bool)>(sample_source_id(track, device).with("input"))
+        })
+        .unwrap_or_default();
+    let record_x = bounds.right() - if recording { 152. } else { 78. };
+    let menu = Rect::from_min_size(Pos2::new(record_x - 164., bounds.top()), Vec2::new(160., bounds.height()));
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(menu).layout(egui::Layout::right_to_left(egui::Align::Center)),
+        |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            ui.spacing_mut().interact_size.y = bounds.height();
+            ui.menu_button(format!("Input: {}", crate::interaction::menus::audio_input_text(&input)), |ui| {
+                let mut next_armed = armed;
+                if ui.checkbox(&mut next_armed, "Arm track").changed() {
+                    actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":next_armed})));
+                }
+                crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
+            });
+        },
+    );
+    for (text, on, x) in [(if recording { "Recording" } else { "Record" }, true, 8.), ("Stop", false, 90.)] {
+        if !on && !recording {
+            continue;
+        }
+        let button = Rect::from_min_size(
+            Pos2::new(record_x + x - 8., bounds.top()),
+            Vec2::new(if on { 78. } else { 70. }, bounds.height()),
+        );
+        let response = ui.put(
+            button,
+            egui::Button::new(if on { format!("   {text}") } else { text.into() })
+                .corner_radius(0.)
+                .selected(on && recording),
+        );
+        if on {
+            ui.painter().circle_filled(
+                Pos2::new(button.left() + 10., button.center().y),
+                3.5,
+                Color32::from_rgb(225, 72, 86),
+            );
+        }
+        if response.clicked() {
+            actions.push(Action::new("device.recordSample", json!({"track": track.0, "device": device, "on": on})));
+        }
+    }
+}
+struct EnvelopePlot {
+    points: [Pos2; 5],
+    field: Rect,
+    time_width: f32,
+    hold: f32,
+    max_time: f64,
+}
+impl EnvelopePlot {
+    fn new(bounds: Rect, values: [f64; 4], max_time: f64, adsr: bool) -> Self {
+        let field = bounds.shrink(8.);
+        let hold = if adsr { field.width() * 0.25 } else { 0. };
+        let mut plot =
+            Self { points: [field.left_bottom(); 5], field, time_width: field.width() - hold, hold, max_time };
+        let baseline = if adsr { field.bottom() } else { field.center().y };
+        let level = field.bottom() - values[2] as f32 * field.height();
+        plot.points = [
+            Pos2::new(field.left(), baseline),
+            Pos2::new(plot.x(values[0]), if adsr { field.top() } else { level }),
+            Pos2::new(plot.x(values[0] + values[1]), if adsr { level } else { baseline }),
+            Pos2::new(plot.x(values[0] + values[1]) + hold, level),
+            Pos2::new(plot.x(values[0] + values[1] + values[3]) + hold, baseline),
+        ];
+        plot
+    }
+    fn x(&self, time: f64) -> f32 {
+        self.field.left() + ((time.max(0.) / 0.01).ln_1p() / (self.max_time / 0.01).ln_1p()) as f32 * self.time_width
+    }
+    fn time(&self, x: f32) -> f64 {
+        (((x - self.field.left()) / self.time_width).clamp(0., 1.) as f64 * (self.max_time / 0.01).ln_1p()).exp_m1()
+            * 0.01
+    }
+}
+
+fn envelope(
+    ui: &mut egui::Ui,
+    bounds: Rect,
+    control: &CustomControl,
+    parameters: &[GraphParameter],
+    target: (TrackId, usize),
+    actions: &mut Vec<Action>,
+) {
+    let Some(Widget::Envelope { attack, decay, level, release }) = &control.widget else { return };
+    let find = |id: &str| parameters.iter().find(|p| p.id == id);
+    let (Some(a), Some(d), Some(l)) = (find(attack), find(decay), find(level)) else { return };
+    let r = release.as_deref().and_then(find);
+    let adsr = r.is_some();
+    let values = [a.value, d.value, normalized(l, false), r.map_or(0., |p| p.value)];
+    let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
+    let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
+    let palette = crate::kit::theme::palette();
+    let background = palette.panel_background;
+    let darker = Color32::from_rgb(
+        (f32::from(background.r()) * 0.8) as u8,
+        (f32::from(background.g()) * 0.8) as u8,
+        (f32::from(background.b()) * 0.8) as u8,
+    );
+    let painter = ui.painter_at(bounds.intersect(ui.clip_rect()));
+    painter.rect_filled(bounds, 0., darker);
+    let count = if adsr { 5 } else { 3 };
+    painter.add(egui::Shape::line(plot.points[..count].to_vec(), Stroke::new(1.2, palette.accent)));
+    painter.circle_filled(plot.points[0], 2.5, palette.accent);
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let nearest = pointer.and_then(|pos| {
+        (1..count)
+            .filter(|i| plot.points[*i].distance(pos) <= 11.)
+            .min_by(|i, j| plot.points[*i].distance_sq(pos).total_cmp(&plot.points[*j].distance_sq(pos)))
+    });
+    for index in 1..count {
+        let id = egui::Id::new(("sd-envelope", target.0.0, target.1, &control.id, index));
+        let state_id = id.with("press");
+        let state = ui.ctx().data(|data| data.get_temp::<([f64; 4], [f64; 4])>(state_id));
+        let sense = if nearest == Some(index) || state.is_some() {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::focusable_noninteractive()
+        };
+        let response = ui.interact(Rect::from_center_size(plot.points[index], Vec2::splat(22.)), id, sense);
+        let (time_param, level_param) = match index {
+            1 => (Some(a), (!adsr).then_some(l)),
+            2 => (Some(d), adsr.then_some(l)),
+            3 => (None, Some(l)),
+            _ => (r, None),
+        };
+        let caption = [time_param.map(|p| p.name.as_str()), level_param.map(|p| p.name.as_str())]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" + ");
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, &caption));
+        let response = response
+            .on_hover_text(format!("{caption}: drag point; Shift for precision; double-click resets"))
+            .on_hover_cursor(egui::CursorIcon::Grab);
+        if response.is_pointer_button_down_on() {
+            response.request_focus();
+            if state.is_none() {
+                ui.ctx().data_mut(|data| data.insert_temp(state_id, (values, values)));
+            }
+        }
+        let focused = response.has_focus();
+        let (keys, fine) = ui.input(|i| {
+            (
+                if focused {
+                    Vec2::new(
+                        f32::from(i.key_pressed(egui::Key::ArrowRight))
+                            - f32::from(i.key_pressed(egui::Key::ArrowLeft)),
+                        f32::from(i.key_pressed(egui::Key::ArrowDown)) - f32::from(i.key_pressed(egui::Key::ArrowUp)),
+                    )
+                } else {
+                    Vec2::ZERO
+                },
+                if i.modifiers.shift { 0.1 } else { 1. },
+            )
+        });
+        let (start, mut next) = state.unwrap_or((values, values));
+        if response.dragged() {
+            let initial = EnvelopePlot::new(bounds, start, max_time, adsr);
+            let delta = response.total_drag_delta().unwrap_or_default() * fine;
+            let point = initial.points[index] + delta;
+            match index {
+                1 => next[0] = initial.time(point.x).clamp(a.min, a.max),
+                2 => next[1] = (initial.time(point.x) - start[0]).clamp(d.min, d.max),
+                4 => {
+                    if let Some(r) = r {
+                        next[3] = (initial.time(point.x - initial.hold) - start[0] - start[1]).clamp(r.min, r.max);
+                    }
+                }
+                _ => {}
+            }
+            if level_param.is_some() {
+                next[2] = (start[2] - f64::from(delta.y / initial.field.height())).clamp(0., 1.);
+            }
+            ui.ctx().data_mut(|data| data.insert_temp(state_id, (start, next)));
+        }
+        if response.dragged() || response.drag_stopped() || response.double_clicked() || keys != Vec2::ZERO {
+            let mut edits = Vec::new();
+            if let Some(p) = time_param {
+                let value = next[if index == 1 {
+                    0
+                } else if index == 2 {
+                    1
+                } else {
+                    3
+                }];
+                edits.push((
+                    p,
+                    (value + f64::from(keys.x) * (p.max - p.min) * 0.01 * f64::from(fine)).clamp(p.min, p.max),
+                ));
+            }
+            if let Some(p) = level_param {
+                let value = p.min + next[2] * (p.max - p.min);
+                edits.push((
+                    p,
+                    (value - f64::from(keys.y) * (p.max - p.min) * 0.01 * f64::from(fine)).clamp(p.min, p.max),
+                ));
+            }
+            let len = edits.len();
+            for (i, (p, value)) in edits.into_iter().enumerate() {
+                actions.push(Action::new("device.setParam", json!({"track":target.0.0,"device":target.1,"param":p.id,"value":if response.double_clicked() { p.default } else { value },"continuous":i+1<len || response.dragged(),"gesture":format!("{}_{}",control.id,index)})));
+            }
+        }
+        if response.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
+            ui.ctx().data_mut(|data| data.remove::<([f64; 4], [f64; 4])>(state_id));
+        }
+        let active = nearest == Some(index) || response.has_focus() || response.dragged();
+        painter.circle_filled(plot.points[index], if active { 5. } else { 4.5 }, palette.accent);
+        painter.circle_stroke(plot.points[index], if active { 5. } else { 4.5 }, Stroke::new(0.75, darker));
+    }
+}
+
 fn rgba(color: egui::Color32) -> [u8; 4] {
     [color.r(), color.g(), color.b(), color.a()]
 }
@@ -155,6 +776,14 @@ fn paint(painter: &egui::Painter, drawings: &[Draw], origin: Pos2, parameters: &
                             p.ui.options.get(p.value.round().max(0.0) as usize).cloned().unwrap_or_default()
                         }
                         TextFormat::Frequency if p.value >= 1000.0 => format!("{text}{:.2} kHz", p.value / 1000.0),
+                        TextFormat::Seconds if p.value < 1. => format!("{text}{:.0} ms", p.value * 1000.),
+                        TextFormat::Seconds => format!("{text}{:.2} s", p.value),
+                        TextFormat::Percent => format!("{text}{:.0}%", p.value * 100.),
+                        TextFormat::Decibels => format!("{text}{:.1} dB", p.value),
+                        TextFormat::Balance if p.value.abs() < 0.005 => format!("{text}C"),
+                        TextFormat::Balance => {
+                            format!("{text}{:.0} {}", p.value.abs() * 100., if p.value < 0. { "L" } else { "R" })
+                        }
                         _ => format!(
                             "{text}{:.*}{}{}",
                             *decimals,
@@ -265,6 +894,26 @@ pub(crate) fn show(
         }
         let [x, y, w, h] = control.bounds;
         let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y), Vec2::new(w, h));
+        if matches!(control.widget, Some(Widget::Envelope { .. })) {
+            envelope(ui, bounds, control, parameters, (track, device), actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::SampleRecording)) {
+            sample_recording(ui, bounds, track, device, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::SampleWaveform)) {
+            sample_waveform(
+                ui,
+                bounds,
+                parameters,
+                track,
+                device,
+                actions,
+                !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
+            );
+            continue;
+        }
         paint(
             &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
             drawings,
@@ -272,7 +921,7 @@ pub(crate) fn show(
             parameters,
             &loaded,
         );
-        if matches!(control.widget, Some(Widget::Label { .. } | Widget::Separator)) {
+        if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
             continue;
         }
         let response = ui
@@ -318,7 +967,10 @@ pub(crate) fn show(
                 let key_open =
                     focused && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
                 let mut popup = egui::Popup::menu(&response);
-                if key_open {
+                if response.double_clicked() {
+                    popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
+                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":device,"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
+                } else if key_open {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let frame = egui::Frame::popup(ui.style())
@@ -354,7 +1006,9 @@ pub(crate) fn show(
                         + scroll.bar_width
                         + scroll.bar_inner_margin
                         + scroll.bar_outer_margin;
-                    ui.set_min_width(width.ceil());
+                    ui.set_min_width(
+                        width.ceil() + if matches!(control.widget, Some(Widget::WaveformMenu)) { 48. } else { 0. },
+                    );
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     egui::ScrollArea::vertical().max_height(240.).show(ui, |ui| {
                         for (value, label) in choices {
@@ -364,7 +1018,41 @@ pub(crate) fn show(
                             } else {
                                 loaded.palette.text
                             }));
-                            if ui.selectable_label(selected, text).clicked() {
+                            let clicked = if matches!(control.widget, Some(Widget::WaveformMenu)) {
+                                let response = ui.add_sized(
+                                    Vec2::new(ui.available_width(), 18.),
+                                    egui::Button::selectable(selected, text).right_text(()),
+                                );
+                                let icon = Rect::from_min_size(
+                                    response.rect.left_top() + Vec2::new(text_width + 12., 3.),
+                                    Vec2::new(36., 10.),
+                                );
+                                let points = (0..49)
+                                    .map(|i| {
+                                        let t = f64::from(i) / 48.;
+                                        let y = waveform(value as usize, t * if value == 5. { 3. } else { 1. });
+                                        Pos2::new(
+                                            icon.left() + t as f32 * icon.width(),
+                                            icon.center().y - y as f32 * 4.,
+                                        )
+                                    })
+                                    .collect();
+                                ui.painter().add(egui::Shape::line(
+                                    points,
+                                    Stroke::new(
+                                        1.,
+                                        color(if selected {
+                                            loaded.palette.accent_text
+                                        } else {
+                                            loaded.palette.accent
+                                        }),
+                                    ),
+                                ));
+                                response.clicked()
+                            } else {
+                                ui.selectable_label(selected, text).clicked()
+                            };
+                            if clicked {
                                 picked = Some(value);
                                 ui.close();
                             }
@@ -390,11 +1078,20 @@ pub(crate) fn show(
                 }
                 UiGesture::Drag if response.dragged() => {
                     let delta = response.drag_delta();
-                    next += if axis == 0 { delta.x as f64 / w as f64 } else { -delta.y as f64 / h as f64 } * fine;
+                    next += if axis == 0 {
+                        delta.x as f64 / crate::kit::widgets::PARAMETER_DRAG_PIXELS
+                    } else {
+                        -delta.y as f64 / crate::kit::widgets::PARAMETER_DRAG_PIXELS
+                    } * fine
+                        * f64::from(binding.drag_scale);
                 }
                 UiGesture::Toggle if response.clicked() => next = if old >= 0.5 { 0.0 } else { 1.0 },
-                UiGesture::Set(value) if response.clicked() || button => {
-                    let value = f64::from(value);
+                UiGesture::Set(value) | UiGesture::Tab(value) if response.clicked() || button => {
+                    let value = if matches!(control.gesture, UiGesture::Tab(_)) && p.value == f64::from(value) {
+                        0.
+                    } else {
+                        f64::from(value)
+                    };
                     next = if binding.logarithmic {
                         (value.ln() - p.min.ln()) / (p.max.ln() - p.min.ln())
                     } else {
@@ -406,7 +1103,7 @@ pub(crate) fn show(
             }
             if !matches!(
                 control.gesture,
-                UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Menu
+                UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
                 next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine;
             }
@@ -435,7 +1132,7 @@ pub(crate) fn show(
             if key_delta != 0
                 && !matches!(
                     control.gesture,
-                    UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Menu
+                    UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
                 )
                 && (discrete || p.ui.step > 0.0 || step_click != 0)
             {
@@ -448,12 +1145,7 @@ pub(crate) fn show(
                 };
                 value = (p.value + f64::from(key_delta) * step).clamp(p.min, p.max);
             }
-            if response.double_clicked()
-                && !matches!(
-                    control.gesture,
-                    UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Menu
-                )
-            {
+            if response.double_clicked() {
                 value = p.default;
             }
             // Reuse the SDK's discrete/range rules through the shared command.
@@ -485,7 +1177,7 @@ pub(crate) fn show(
         response.widget_info(|| {
             let kind = if matches!(
                 control.gesture,
-                UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Menu
+                UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
                 egui::WidgetType::Button
             } else {
@@ -515,6 +1207,416 @@ pub(crate) fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sample_waveform_draws_a_line_for_each_active_voice() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            let mut positions = [None::<f32>; 32];
+            positions[0] = Some(0.2);
+            positions[7] = Some(0.7);
+            ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions));
+            sample_waveform(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(550., 180.)),
+                &[],
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+                false,
+            );
+        });
+        output.textures_delta.clear();
+        let heads = output
+            .shapes
+            .iter()
+            .filter(|s| {
+                matches!(&s.shape,
+                    egui::Shape::LineSegment { points, stroke } if stroke.width == 1.5 && points[0].x == points[1].x
+                )
+            })
+            .count();
+        assert_eq!(heads, 2);
+    }
+
+    #[test]
+    fn sample_stop_is_only_visible_while_recording() {
+        use egui_kittest::kittest::Queryable;
+        for recording in [false, true] {
+            let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(600., 220.)).build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0).with("recording"), recording));
+                sample_recording(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(550., 180.)),
+                    TrackId(1),
+                    0,
+                    &mut Vec::new(),
+                );
+            });
+            harness.run_steps(4);
+            assert!(harness.query_by_label("Input: No input").is_some());
+            assert_eq!(harness.query_by_label("Stop").is_some(), recording);
+        }
+    }
+
+    #[test]
+    fn historical_sampler_waveforms_keep_recording_controls() {
+        use egui_kittest::kittest::Queryable;
+        let mut graph = suhina_device_registry::stock::definition("sampler").unwrap();
+        let mut canvas = graph.ui.take().unwrap();
+        canvas.controls.retain(|c| !matches!(c.widget, Some(Widget::SampleRecording)));
+        canvas.controls.iter_mut().find(|c| matches!(c.widget, Some(Widget::SampleWaveform))).unwrap().bounds =
+            [0., 22., 900., 76.];
+        let canvas = Arc::new(canvas);
+        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                &canvas,
+                &[],
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+            );
+        });
+        harness.run_steps(4);
+        assert!(harness.query_by_label("Input: No input").is_some());
+        assert!(harness.query_by_label_contains("Record").is_some());
+    }
+
+    #[test]
+    fn envelope_geometry_is_cumulative_and_padded_at_all_extremes() {
+        let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(284., 40.));
+        for adsr in [false, true] {
+            for level in [0., 0.5, 1.] {
+                for time in [0., 0.001, 0.2, 10.] {
+                    let plot = EnvelopePlot::new(bounds, [time, 0., level, 0.], if adsr { 30. } else { 20. }, adsr);
+                    assert_eq!(plot.points[1].x, plot.points[2].x, "zero decay must reach A");
+                    if adsr {
+                        assert_eq!(plot.points[3].x, plot.points[4].x, "zero release must reach S");
+                    }
+                    for p in &plot.points[..if adsr { 5 } else { 3 }] {
+                        assert!(bounds.shrink(5.).contains(*p), "{p:?}");
+                    }
+                    assert!((plot.time(plot.x(time)) - time).abs() < 1e-4);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
+        use egui_kittest::kittest::Queryable;
+        let definition = suhina_device_registry::stock::definition("sampler").unwrap();
+        let canvas = Arc::new(definition.ui.unwrap());
+        let specs = definition.parameters;
+        let mut parameters: Vec<_> = specs
+            .iter()
+            .map(|p| GraphParameter {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                default: p.default,
+                min: p.min,
+                max: p.max,
+                value: p.default,
+                ui: p.ui.clone(),
+                unit: p.unit.clone(),
+                control: p.control,
+            })
+            .collect();
+        for (position, param, expected) in
+            [(Pos2::new(120., 10.), "mode", 1.), (Pos2::new(850., 10.), "panel_view", 1.)]
+        {
+            let actions = click(&canvas, &parameters, position);
+            assert!(actions.iter().any(|a| a.params["param"] == param && a.params["value"] == expected), "{param}");
+        }
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 1.;
+        for (current, position, expected) in [
+            (1., Pos2::new(850., 10.), 0.),
+            (1., Pos2::new(760., 10.), 2.),
+            (2., Pos2::new(760., 10.), 0.),
+            (2., Pos2::new(850., 10.), 1.),
+        ] {
+            parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = current;
+            let actions = click(&canvas, &parameters, position);
+            assert!(
+                actions.iter().any(|a| a.params["param"] == "panel_view" && a.params["value"] == expected),
+                "{current} -> {expected}: {actions:?}"
+            );
+        }
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 1.;
+        for (id, value) in [
+            ("attack", 0.1),
+            ("decay", 0.2),
+            ("sustain", 0.6),
+            ("release", 0.3),
+            ("filter_attack", 0.1),
+            ("filter_decay", 0.2),
+            ("filter_sustain", 0.6),
+            ("filter_release", 0.3),
+            ("pitch_attack", 0.1),
+            ("pitch_decay", 0.2),
+            ("pitch_env", 12.),
+        ] {
+            parameters.iter_mut().find(|p| p.id == id).unwrap().value = value;
+        }
+        for (name, param, index) in [
+            ("AMP_envelope", "attack", 1),
+            ("AMP_envelope", "decay", 2),
+            ("AMP_envelope", "release", 4),
+            ("FILTER_envelope", "filter_attack", 1),
+            ("FILTER_envelope", "filter_decay", 2),
+            ("FILTER_envelope", "filter_release", 4),
+            ("PITCH_envelope", "pitch_attack", 1),
+            ("PITCH_envelope", "pitch_decay", 2),
+        ] {
+            let control = canvas.controls.iter().find(|c| c.id == name).unwrap();
+            let [x, y, w, h] = control.bounds;
+            let adsr = index == 4 || !param.starts_with("pitch");
+            let plot = EnvelopePlot::new(
+                Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h)),
+                [0.1, 0.2, if adsr { 0.6 } else { 0.625 }, 0.3],
+                if adsr { 30. } else { 20. },
+                adsr,
+            );
+            let offset = Vec2::new(3., 1.);
+            let start = plot.points[index] + offset;
+            assert!(click(&canvas, &parameters, start).is_empty(), "click must not jump {name}");
+            let time = 0.5
+                + if index == 2 {
+                    0.1
+                } else if index == 4 {
+                    0.3
+                } else {
+                    0.
+                };
+            let end = Pos2::new(plot.x(time) + if index == 4 { plot.hold } else { 0. }, plot.points[index].y) + offset;
+            let actions = pointer_gesture(&canvas, &parameters, start, Some(end));
+            assert!(
+                actions
+                    .iter()
+                    .any(|a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - 0.5).abs() < 1e-5),
+                "{param}: {actions:?}"
+            );
+            assert!(actions.iter().any(|a| a.params["continuous"] == false));
+            let reset = pointer_gesture_with_clicks(&canvas, &parameters, start, None, 2);
+            let default = parameters.iter().find(|p| p.id == param).unwrap().default;
+            assert!(
+                reset.iter().any(|a| a.params["param"] == param && a.params["value"] == default),
+                "reset {param}: {reset:?}"
+            );
+        }
+        for (name, index, param, expected) in [
+            ("AMP_envelope", 3, "sustain", 0.6 + 8. / 24.),
+            ("FILTER_envelope", 3, "filter_sustain", 0.6 + 8. / 24.),
+            ("PITCH_envelope", 1, "pitch_env", 44.),
+        ] {
+            let control = canvas.controls.iter().find(|c| c.id == name).unwrap();
+            let [x, y, w, h] = control.bounds;
+            let adsr = index == 3;
+            let plot = EnvelopePlot::new(
+                Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h)),
+                [0.1, 0.2, if adsr { 0.6 } else { 0.625 }, 0.3],
+                if adsr { 30. } else { 20. },
+                adsr,
+            );
+            let start = plot.points[index];
+            let actions = pointer_gesture(&canvas, &parameters, start, Some(start - Vec2::new(0., 8.)));
+            assert!(
+                actions.iter().any(
+                    |a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - expected).abs() < 1e-5
+                ),
+                "vertical {param}: {actions:?}"
+            );
+        }
+        for (id, value) in [("attack", 0.), ("decay", 0.), ("sustain", 0.78)] {
+            parameters.iter_mut().find(|p| p.id == id).unwrap().value = value;
+        }
+        let zero = EnvelopePlot::new(
+            Rect::from_min_size(Pos2::new(8., 126.), Vec2::new(284., 40.)),
+            [0., 0., 0.78, 0.3],
+            30.,
+            true,
+        );
+        let actions =
+            pointer_gesture(&canvas, &parameters, zero.points[2], Some(Pos2::new(zero.x(0.05), zero.points[2].y)));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.params["param"] == "decay" && (a.params["value"].as_f64().unwrap() - 0.05).abs() < 1e-5)
+        );
+        assert!(!actions.iter().any(|a| a.params["param"] == "attack"));
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 2.;
+        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(200., 140.), Some(Pos2::new(244., 136.)));
+        assert!(actions.iter().any(
+            |a| a.params["param"] == "lfo_rate" && (a.params["value"].as_f64().unwrap() - 0.4472136).abs() < 0.001
+        ));
+        assert!(!actions.iter().any(|a| a.params["param"] == "lfo_pitch"));
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(640., 136.), Some(Pos2::new(640., 126.)));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.params["param"] == "gain" && (a.params["value"].as_f64().unwrap() - 1.8).abs() < 0.001),
+            "{actions:?}"
+        );
+        let actions = click(&canvas, &parameters, Pos2::new(286., 158.));
+        assert!(actions.iter().any(|a| a.params["param"] == "filter_slope" && a.params["value"] == 1.));
+        for (mode, playback, param) in [(0., 0., "start"), (0., 1., "start"), (0., 2., "loop_start"), (1., 2., "start")]
+        {
+            parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = mode;
+            parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
+            let actions = pointer_gesture(&canvas, &parameters, Pos2::new(8., 30.), Some(Pos2::new(229., 30.)));
+            assert!(
+                actions
+                    .iter()
+                    .any(|a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - 0.25).abs() < 0.001),
+                "{param}: {actions:?}"
+            );
+            assert!(
+                !actions.iter().any(|a| a.params["param"] == if param == "start" { "loop_start" } else { "start" })
+            );
+        }
+        for view in [0., 1., 2.] {
+            parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = view;
+            parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = 0.;
+            parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = 2.;
+            for control in &canvas.controls {
+                if control.widget.is_none() {
+                    continue;
+                }
+                let Some(binding) = control.x.as_ref().or(control.y.as_ref()) else {
+                    continue;
+                };
+                if control.visible_when.as_ref().is_some_and(|v| {
+                    v.evaluate(&|id, norm, log| {
+                        parameters
+                            .iter()
+                            .find(|p| p.id == id)
+                            .map_or(0., |p| if norm { normalized(p, log) } else { p.value })
+                    }) <= 0.
+                }) {
+                    continue;
+                }
+                let mut edited = parameters.clone();
+                let p = edited.iter_mut().find(|p| p.id == binding.parameter).unwrap();
+                p.value = if p.default == p.min { p.max } else { p.min };
+                let expected = p.default;
+                let [x, y, w, h] = control.bounds;
+                let actions = pointer_gesture_with_clicks(&canvas, &edited, Pos2::new(x + w / 2., y + h / 2.), None, 2);
+                assert!(
+                    actions
+                        .iter()
+                        .rev()
+                        .find(|a| a.params["param"] == binding.parameter)
+                        .is_some_and(|a| a.params["value"] == expected),
+                    "double-click {}: {actions:?}",
+                    control.id
+                );
+            }
+        }
+        for playback in [0., 1., 2.] {
+            parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+            parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
+            for id in ["loop_start", "loop_end"] {
+                let visible =
+                    canvas.controls.iter().filter(|c| c.y.as_ref().is_some_and(|b| b.parameter == id)).any(|c| {
+                        c.visible_when
+                            .as_ref()
+                            .unwrap()
+                            .evaluate(&|id, _, _| parameters.iter().find(|p| p.id == id).unwrap().value)
+                            > 0.
+                    });
+                assert_eq!(visible, playback == 2.);
+            }
+        }
+        for (id, x, expected) in
+            [("cutoff", 336., 3100. * 1000_f64.powf(0.05)), ("resonance", 394., 0.707 + 9.9 * 0.05)]
+        {
+            let actions = pointer_gesture(&canvas, &parameters, Pos2::new(x, 142.), Some(Pos2::new(x, 132.)));
+            assert!(
+                actions
+                    .iter()
+                    .any(|a| a.params["param"] == id && (a.params["value"].as_f64().unwrap() - expected).abs() < 1e-6),
+                "{id}: {actions:?}"
+            );
+        }
+        for (view, mode, filename) in [
+            (0., 0., "sampler-simple.png"),
+            (0., 0., "sampler-loop.png"),
+            (1., 0., "sampler-envelopes.png"),
+            (1., 0., "sampler-envelopes-zero-light.png"),
+            (0., 1., "sampler-grain.png"),
+            (2., 1., "sampler-lfo.png"),
+        ] {
+            parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = view;
+            parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = mode;
+            parameters.iter_mut().find(|p| p.id == "lfo_pitch").unwrap().value = 3.;
+            parameters.iter_mut().find(|p| p.id == "playback").unwrap().value =
+                if filename == "sampler-simple.png" { 0. } else { 2. };
+            for (id, normal) in [
+                ("attack", 0.1),
+                ("decay", 0.2),
+                ("filter_attack", 0.1),
+                ("filter_decay", 0.2),
+                ("pitch_attack", 0.1),
+                ("pitch_decay", 0.2),
+            ] {
+                parameters.iter_mut().find(|p| p.id == id).unwrap().value =
+                    if filename.contains("zero") { 0. } else { normal };
+            }
+            let light = crate::kit::theme::built_in_themes()
+                .into_iter()
+                .find(|(id, _)| *id == "suhina-light")
+                .unwrap()
+                .1
+                .colors;
+            let preview_canvas = canvas.clone();
+            let preview_parameters = parameters.clone();
+            let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+                crate::kit::theme::install(ui.ctx());
+                if filename.contains("light") {
+                    crate::kit::theme::set_palette(ui.ctx(), light);
+                }
+                let data = Arc::new(suhina_engine::AudioData {
+                    sample_rate: 48000,
+                    channels: 1,
+                    samples: (0..4800).map(|i| (i as f32 * 0.17).sin() * (1. - i as f32 / 4800.)).collect(),
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(sample_source_id(TrackId(1), 0), data));
+                ui.ctx().data_mut(|d| {
+                    let mut positions = [None::<f32>; 32];
+                    positions[0] = Some(0.22);
+                    positions[1] = Some(0.67);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("position"), positions);
+                    d.insert_temp(sample_source_id(TrackId(1), 0).with("name"), "Sampler-test.wav".to_string());
+                });
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(900., 168.)),
+                    &preview_canvas,
+                    &preview_parameters,
+                    TrackId(1),
+                    0,
+                    &mut Vec::new(),
+                );
+            });
+            harness.run_steps(4);
+            snapshot(&mut harness, filename);
+            crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
+            if view == 2. {
+                harness.get_by_label("lfo shape").click();
+                harness.run_steps(4);
+                assert!(harness.query_by_label("Random").is_some());
+                snapshot(&mut harness, "sampler-lfo-menu.png");
+                harness.get_by_label("Random").click();
+                harness.run_steps(4);
+                assert!(harness.query_by_label("Random").is_none());
+            }
+        }
+    }
     fn parameter(id: &str, logarithmic: bool) -> GraphParameter {
         GraphParameter {
             default: 0.5,
@@ -653,9 +1755,10 @@ mod tests {
         );
         let offset = pointer_gesture(&canvas, &parameters, start, Some(start - Vec2::new(0., 12.)));
         assert!(
-            offset.iter().any(
-                |a| a.params["param"] == "offset_left" && (a.params["value"].as_f64().unwrap() - 33.3).abs() < 1e-6
-            )
+            offset
+                .iter()
+                .any(|a| a.params["param"] == "offset_left"
+                    && (a.params["value"].as_f64().unwrap() - 1.998).abs() < 1e-6)
         );
         assert!(offset.iter().any(|a| a.params["param"] == "offset_left" && a.params["continuous"] == false));
         let actions = click(&canvas, &parameters, Pos2::new(100., 151.));
@@ -794,6 +1897,248 @@ mod tests {
     }
     /// Saves a picture of `harness` to `target/` for the design review when
     /// `SUHINA_UI_SNAPSHOTS` is set; drawing it needs a GPU adapter, which test machines may lack.
+    #[test]
+    fn sampler_slice_controls_replace_loop_fields() {
+        let graph = suhina_device_registry::stock::definition("sampler").unwrap();
+        let canvas = Arc::new(graph.ui.unwrap());
+        let parameters: Vec<_> = graph
+            .parameters
+            .iter()
+            .map(|p| GraphParameter {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                default: p.default,
+                min: p.min,
+                max: p.max,
+                value: if p.id == "playback" { 3. } else { p.default },
+                ui: p.ui.clone(),
+                unit: p.unit.clone(),
+                control: p.control,
+            })
+            .collect();
+        for (id, expected) in [("loop_start", false), ("loop_end", false), ("sensitivity", true), ("slice_by", true)] {
+            let visible =
+                canvas.controls.iter().filter(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == id)).any(|c| {
+                    c.visible_when.as_ref().is_none_or(|v| {
+                        v.evaluate(&|id, _, _| parameters.iter().find(|p| p.id == id).unwrap().value) > 0.
+                    })
+                });
+            assert_eq!(visible, expected, "{id}");
+        }
+        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(350., 95.), Some(Pos2::new(350., 75.)));
+        assert!(actions.iter().any(|a| a.params["param"] == "sensitivity"));
+        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                &canvas,
+                &parameters,
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+            );
+        });
+        harness.run_steps(2);
+        snapshot(&mut harness, "sampler-slices.png");
+    }
+    #[test]
+    fn waveform_manual_edit_navigation_and_inactive_colors() {
+        let graph = suhina_device_registry::stock::definition("sampler").unwrap();
+        let canvas = Arc::new(graph.ui.unwrap());
+        let parameters: Vec<_> = graph
+            .parameters
+            .iter()
+            .map(|p| GraphParameter {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                default: p.default,
+                min: p.min,
+                max: p.max,
+                value: match p.id.as_str() {
+                    "playback" | "slice_by" => 3.,
+                    "start" => 0.2,
+                    "end" => 0.8,
+                    _ => p.default,
+                },
+                ui: p.ui.clone(),
+                unit: p.unit.clone(),
+                control: p.control,
+            })
+            .collect();
+        let ctx = egui::Context::default();
+        let id = sample_source_id(TrackId(1), 0);
+        let source = Arc::new(suhina_engine::AudioData {
+            sample_rate: 48000,
+            channels: 1,
+            samples: (0..48000).map(|i| (i as f32 * 0.05).sin()).collect(),
+        });
+        ctx.data_mut(|d| {
+            d.insert_temp(id, source.clone());
+            d.insert_temp(id.with("manual-points"), Arc::<[f64]>::from([0.3, 0.5]));
+        });
+        let mut edits = Vec::new();
+        let mut time = 0.;
+        let mut frame = |position: Pos2, pressed: Option<bool>| {
+            time += 0.05;
+            let mut events = vec![egui::Event::PointerMoved(position)];
+            if let Some(pressed) = pressed {
+                events.push(egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                });
+            }
+            let mut actions = Vec::new();
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(916., 184.))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::kit::theme::install(ui.ctx());
+                    show(
+                        ui,
+                        Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                        &canvas,
+                        &parameters,
+                        TrackId(1),
+                        0,
+                        &mut actions,
+                    );
+                },
+            );
+            output.textures_delta.clear();
+            for action in actions {
+                if action.id == "device.setSampleSlices" {
+                    let mut points: Vec<_> =
+                        action.params["points"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+                    points.sort_unstable_by(f64::total_cmp);
+                    points.dedup();
+                    ctx.data_mut(|d| d.insert_temp(id.with("manual-points"), Arc::<[f64]>::from(points)));
+                    edits.push(action);
+                } else {
+                    panic!("unexpected edit {action:?}");
+                }
+            }
+            output
+        };
+        let field = Rect::from_min_max(Pos2::new(8., 32.), Pos2::new(892., 74.));
+        let line = Pos2::new(SampleView::default().x(0.3, field), 50.);
+        frame(line, None);
+        let output = frame(line, None);
+        assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
+        assert!(
+            output
+                .shapes
+                .iter()
+                .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==Color32::GRAY))
+        );
+        frame(line, Some(true));
+        let moved = Pos2::new(SampleView::default().x(0.6, field), 50.);
+        frame(moved, None);
+        frame(moved, Some(false));
+        let points = ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap();
+        assert_eq!(points.len(), 2);
+        assert!((points[1] - 0.6).abs() < 1e-6, "{points:?}");
+        assert_eq!(points[0], 0.5);
+        frame(moved, None);
+        for _ in 0..2 {
+            frame(moved, Some(true));
+            frame(moved, Some(false));
+        }
+        assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.5]);
+        let empty = Pos2::new(SampleView::default().x(0.4, field), 50.);
+        frame(empty, None);
+        frame(empty, Some(true));
+        frame(empty, Some(false));
+        frame(empty, Some(true));
+        frame(empty, Some(false));
+        let points = ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap();
+        assert_eq!(points.len(), 2);
+        assert!((points[0] - 0.4).abs() < 1e-6);
+        let blank = Pos2::new(SampleView::default().x(0.7, field), 50.);
+        frame(blank, None);
+        frame(blank, Some(true));
+        frame(blank + Vec2::new(-25., -20.), None);
+        frame(blank + Vec2::new(-25., -20.), Some(false));
+        let view =
+            ctx.data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(id.with("view"))).unwrap().1;
+        assert!(view.span < 1.);
+        assert!(view.start > 0.);
+        for point in [0., 0.2, 0.4, 1.] {
+            assert!((view.point(view.x(point, field), field) - point).abs() < 1e-6);
+        }
+        ctx.data_mut(|d| {
+            d.insert_temp(id.with("view"), (Some(source.clone()), SampleView { start: 0.3, span: 4. / 48000. }))
+        });
+        frame(blank, None);
+        let peaks = ctx.data(|d| d.get_temp::<SamplePeaks>(id.with("visible-peaks"))).unwrap();
+        assert!(
+            peaks.peaks.iter().filter(|p| **p > 0.1).count() > 500,
+            "zoomed samples fill the viewport instead of leaving empty bins"
+        );
+        drop(frame);
+        assert_eq!(
+            edits.len(),
+            4,
+            "navigation must not emit project edits; line drag emits initial and continued changes"
+        );
+        assert_eq!(edits[0].params["continue"], false);
+        assert_eq!(edits[1].params["continue"], true);
+        let zoomed = view.dragged(blank, Vec2::new(1e6, 1e6), field, 48000);
+        assert_eq!(zoomed, SampleView::default());
+        let zoomed = view.dragged(blank, Vec2::new(-1e6, -1e6), field, 48000);
+        assert!(zoomed.span >= 1. / 48000.);
+        assert!(zoomed.start + zoomed.span <= 1.);
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                id,
+                Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.; 32] }),
+            )
+        });
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                &canvas,
+                &parameters,
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+            )
+        });
+        output.textures_delta.clear();
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(id.with("view"))).unwrap().1,
+            SampleView::default()
+        );
+        let snapshot_source = source.clone();
+        let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            crate::kit::theme::install(ui.ctx());
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(id, snapshot_source.clone());
+                d.insert_temp(
+                    id.with("manual-points"),
+                    Arc::<[f64]>::from((1..30).map(|i| i as f64 / 30.).collect::<Vec<_>>()),
+                );
+            });
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                &canvas,
+                &parameters,
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+            );
+        });
+        harness.run_steps(2);
+        snapshot(&mut harness, "sampler-manual-navigation.png");
+    }
     fn snapshot<State>(harness: &mut egui_kittest::Harness<'_, State>, name: &str) {
         if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {
             harness.render().unwrap().save(format!("../../target/{name}")).unwrap();
@@ -808,6 +2153,15 @@ mod tests {
         position: Pos2,
         drag_to: Option<Pos2>,
     ) -> Vec<Action> {
+        pointer_gesture_with_clicks(canvas, parameters, position, drag_to, 1)
+    }
+    fn pointer_gesture_with_clicks(
+        canvas: &Arc<DeviceUi>,
+        parameters: &[GraphParameter],
+        position: Pos2,
+        drag_to: Option<Pos2>,
+        clicks: usize,
+    ) -> Vec<Action> {
         let ctx = egui::Context::default();
         let mut actions = Vec::new();
         let mut frames = vec![(position, None), (position, Some(true))];
@@ -815,6 +2169,10 @@ mod tests {
             frames.push((end, None));
         }
         frames.push((drag_to.unwrap_or(position), Some(false)));
+        for _ in 1..clicks {
+            frames.push((position, Some(true)));
+            frames.push((position, Some(false)));
+        }
         for (position, pressed) in frames {
             let events = pressed.map_or_else(
                 || vec![egui::Event::PointerMoved(position)],
@@ -832,14 +2190,17 @@ mod tests {
             );
             let mut output = ctx.run_ui(
                 egui::RawInput {
-                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(956., 180.))),
+                    screen_rect: Some(Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(canvas.size[0] + 12., canvas.size[1] + 12.),
+                    )),
                     events,
                     ..Default::default()
                 },
                 |ui| {
                     show(
                         ui,
-                        Rect::from_min_size(Pos2::ZERO, Vec2::new(944., 168.)),
+                        Rect::from_min_size(Pos2::ZERO, Vec2::new(canvas.size[0], canvas.size[1])),
                         canvas,
                         parameters,
                         TrackId(1),
@@ -865,7 +2226,7 @@ mod tests {
                 tooltip: String::new(),
                 bounds: [0.0, 0.0, 100.0, 100.0],
                 gesture: UiGesture::Position,
-                x: Some(UiBinding { parameter: "x".into(), logarithmic: true }),
+                x: Some(UiBinding { parameter: "x".into(), logarithmic: true, drag_scale: 1. }),
                 y: Some(UiBinding::new("y")),
                 drawing: vec![],
             }],

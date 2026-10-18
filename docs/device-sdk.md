@@ -25,6 +25,13 @@ covers:
 
 # Author a data-only SDK device
 
+Native sample instruments can also use `sampler::Sampler` from the SDK and author
+their panel with `ui::DeviceUi`; `devices/sampler` is the built-in example. This
+route uses the native Device contract, not a serialized sample DSP node. The host
+installs decoded source audio during graph preparation. `Widget::SampleWaveform`
+provides the host waveform, region handles, slice editing and zoom/pan; `Widget::SampleRecording` places
+input selection and recording actions independently for that instrument.
+
 The deliverable is one `.sd` file. It can be added to a track and is embedded in the project.
 
 Version 4 separates the `.sd` file schema version from `device.version`, the revision of the
@@ -302,3 +309,18 @@ and Y width bindings (logarithmic X, linear Y). WaveformMenu uses seven choices
 in order: sine, triangle, rising ramp, falling ramp, square, sample-and-hold and wander. Number supports precision, number/frequency/choice formatting,
 colour, alignment, border, prefix and suffix. The widget contains no device-specific
 parameter names. Custom drawings remain available for artwork and specialised controls.
+
+## Stock device packaging
+
+Application builds generate registered `devices/` packages as `.sd` files in
+`target/<profile>/devices/` and embed them for startup. Native DSP uses the explicit
+`native_device` whole-device wrapper, prepared through `DeviceGraph::prepare_native_at`
+and the registry factory. Primitive graphs still use `compile_at`. See the
+[stock bundle specification](spec/stock-device-bundle.md).
+
+Use `Widget::Panel { label }` for themed, non-interactive groups behind controls.
+`UiGesture::Tab(value)` on a Button selects a positive value in a zero-based
+parameter; pressing the active tab returns to zero. Sampler uses this to switch
+between its normal controls, envelopes and LFO without changing audio parameters.
+
+`Widget::Envelope` provides a theme-aware point editor for cumulative ADSR or bipolar Attack/Decay envelopes; the sampler demonstrates both, with separate numeric readouts.

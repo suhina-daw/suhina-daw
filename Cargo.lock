@@ -4270,6 +4270,7 @@ dependencies = [
  "eframe",
  "raw-window-handle",
  "rfd",
+ "suhina-device-bundle",
  "suhina-engine",
  "suhina-library",
  "suhina-media",
@@ -4341,6 +4342,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-bundle"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-registry",
+ "suhina-device-sdk",
+ "suhina-model",
+]
+
+[[package]]
 name = "suhina-device-compressor"
 version = "0.0.1"
 dependencies = [
@@ -4390,8 +4400,18 @@ dependencies = [
  "suhina-device-fm-synth",
  "suhina-device-limiter",
  "suhina-device-overdrive",
+ "suhina-device-sampler",
+ "suhina-device-sdk",
  "suhina-device-utility",
  "suhina-device-vinyl-distortion",
+]
+
+[[package]]
+name = "suhina-device-sampler"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-device-sdk",
 ]
 
 [[package]]
@@ -4568,6 +4588,7 @@ dependencies = [
  "serde_json",
  "suhina-als",
  "suhina-device-api",
+ "suhina-device-bundle",
  "suhina-device-fm-synth",
  "suhina-device-registry",
  "suhina-device-sdk",
@@ -4610,6 +4631,7 @@ dependencies = [
  "memory-stats",
  "serde_json",
  "suhina-device-api",
+ "suhina-device-bundle",
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",

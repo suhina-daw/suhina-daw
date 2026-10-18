@@ -21,6 +21,9 @@ pub fn pointer_over(ui: &Ui, rect: Rect) -> Option<Pos2> {
     if ui.rect_contains_pointer(rect) { ui.ctx().pointer_hover_pos() } else { None }
 }
 
+/// Normalized device parameter range traversed by a vertical drag.
+pub(crate) const PARAMETER_DRAG_PIXELS: f64 = 400.;
+
 /// A command for the session to run, made by a view: the same ids the CLI and MCP use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {

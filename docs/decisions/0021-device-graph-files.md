@@ -91,3 +91,9 @@ An optional data-only [custom canvas](../spec/sdk-custom-ui.md) now packages emb
 images, vector drawing expressions and parameter input bindings. Authors program these with Rust
 SDK types; the file contains no executable extension. The UI caches parsed scenes and bounded
 image textures, performs decoding with allocation limits, and sends edits through `device.setParam`.
+
+Stock devices ship as generated, validated `.sd` definitions with their parameter
+contracts and SDK panels. The `native_device` node wraps a trusted registered
+implementation; it cannot load executable code or participate in arbitrary primitive
+graphs. The host verifies its role and parameter contract before preparation.
+See [stock bundles](../spec/stock-device-bundle.md).

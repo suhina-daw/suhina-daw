@@ -282,6 +282,7 @@ pub struct App {
     pending_drop: Option<PendingDrop>,
     /// Where the detail area is this frame and the track it shows, for drops on its devices.
     detail_drop: Option<(Rect, TrackId)>,
+    sample_drops: Vec<crate::detail::device_canvas::SampleTarget>,
     /// The piano roll a selected MIDI clip shows in the detail area.
     piano_roll: PianoRollState,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
@@ -370,6 +371,7 @@ impl App {
             map_window: MapWindow::default(),
             pending_drop: None,
             detail_drop: None,
+            sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
             recovery: Vec::new(),
             recovery_open: None,
@@ -1376,6 +1378,13 @@ impl App {
             let inner = if self.settings.browser_open && !full_width { self.browser_panel(ui, inner) } else { inner };
             let mut view_area = inner;
             self.detail_drop = None;
+            self.sample_drops.clear();
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(
+                    crate::detail::device_canvas::sample_targets_id(),
+                    Vec::<crate::detail::device_canvas::SampleTarget>::new(),
+                )
+            });
             // A clip selected (or clicked) while the editor was closed by hand opens it again.
             let shown_clip = self.shown_clip();
             let clicked = std::mem::take(&mut self.arrangement.clip_clicked);
@@ -1788,6 +1797,48 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, i| reports.remove(&(t, i)))
         });
+        if let Some(session) = self.session() {
+            for channel in &session.project().channels {
+                let Some(track) = session.project().tracks.iter().find(|t| t.channel == Some(channel.id)) else {
+                    continue;
+                };
+                for (index, device) in channel.devices.iter().enumerate() {
+                    let id = crate::detail::device_canvas::sample_source_id(track.id, index);
+                    ui.ctx().data_mut(|d| {
+                        if let Some(points) = device.sample_slices() {
+                            d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
+                        } else {
+                            d.remove::<std::sync::Arc<[f64]>>(id.with("manual-points"));
+                        }
+                    });
+                    let position =
+                        session.player().map_or([None; 32], |p| p.meter_monitor().sample_positions(track.id, index));
+                    ui.ctx().data_mut(|d| d.insert_temp(id.with("position"), position));
+                    let channels =
+                        session.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(id.with("input"), (track.audio_input, channels, session.is_armed(track.id)))
+                    });
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(
+                            id.with("name"),
+                            device
+                                .sample_file()
+                                .and_then(|file| std::path::Path::new(file).file_name())
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                        )
+                    });
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(id.with("recording"), session.recording_sampler(track.id, index)));
+                    if let Some(data) = device.sample_file().and_then(|file| session.audio().files.get(file)) {
+                        ui.ctx().data_mut(|d| d.insert_temp(id, data.clone()));
+                    } else {
+                        ui.ctx().data_mut(|d| d.remove::<std::sync::Arc<suhina_engine::AudioData>>(id));
+                    }
+                }
+            }
+        }
         // What the piano roll has selected, described for the clip column (› Clip column).
         if let (detail_view::Detail::Clip(info, _), Some(piano), Some(session)) = (&mut shown, &piano, self.session()) {
             info.selection = detail_view::SelectionInfo::of(
@@ -1870,6 +1921,14 @@ impl App {
             self.detail_showing = showing;
         }
         self.place_editors(&places);
+        self.sample_drops = ui
+            .ctx()
+            .data(|d| {
+                d.get_temp::<Vec<crate::detail::device_canvas::SampleTarget>>(
+                    crate::detail::device_canvas::sample_targets_id(),
+                )
+            })
+            .unwrap_or_default();
         // The toolbar's × hides the editor.
         if std::mem::take(&mut self.piano_roll.hide_requested) {
             self.hide_editor();
@@ -3410,6 +3469,13 @@ impl App {
 
     /// The target the views found under the pointer, or the detail area's track for devices.
     fn drop_target(&self, items: &[BrowserItem], pointer: Option<Pos2>) -> Option<DropTarget> {
+        if let Some(pointer) = pointer
+            && items.len() == 1
+            && items[0].kind == crate::interaction::drop::ItemKind::Sample
+            && let Some((_, track, device)) = self.sample_drops.iter().find(|(area, _, _)| area.contains(pointer))
+        {
+            return Some(DropTarget::Sampler { track: *track, device: *device });
+        }
         let target = match self.shown {
             View::Session => self.view.drop.as_ref().and_then(|p| p.target),
             View::Arrangement => self.arrangement.drop.as_ref().and_then(|p| p.target),
@@ -3873,6 +3939,7 @@ impl App {
         // Left: tempo, time signature, launch quantisation.
         let mut x = bar.left() + PAD;
         let tempo_rect = row(x, 56.0);
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("sampler-tempo"), grid.tempo_bpm));
         let tempo_shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
         let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", format!("{tempo_shown:.2}"));
         match widgets::drag_value(ui, &response, &mut self.tempo_drag, grid.tempo_bpm, 0.1, 1.0, (20.0, 999.0), 120.0) {

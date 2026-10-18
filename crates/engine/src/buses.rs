@@ -29,6 +29,7 @@ const MAX_HOPS: usize = 64;
 /// brought up to. Allocates: call it off the audio thread.
 pub(crate) fn build(
     project: &Project,
+    audio: &crate::AudioPool,
     sample_rate: u32,
     plugins: &mut Plugins,
     column_of: impl Fn(TrackId) -> u32,
@@ -40,7 +41,9 @@ pub(crate) fn build(
     let mut chains: Vec<Chain> = project
         .tracks
         .iter()
-        .filter_map(|track| Chain::build(project, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins))
+        .filter_map(|track| {
+            Chain::build(project, audio, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins)
+        })
         .collect();
     // A track whose mixer follows lanes applies its gains after a chain, one without devices
     // when it has none (#395); a group's chain makes it a bus.

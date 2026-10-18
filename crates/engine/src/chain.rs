@@ -55,6 +55,17 @@ pub(crate) enum Slot {
     Plugin(PluginSlot),
 }
 
+impl Slot {
+    /// Sets parameter `index` of a data-only (`.sd`) device; other devices are left alone.
+    fn set_sd_parameter(&mut self, index: usize, value: f64) {
+        match self {
+            Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
+            Slot::MidiSd(effect) => effect.set_parameter(index, value),
+            Slot::Device(_) | Slot::Plugin(_) => {}
+        }
+    }
+}
+
 pub(crate) struct Chain {
     pub(crate) track: TrackId,
     /// The launcher column of the track, or `NO_COLUMN`.
@@ -66,6 +77,7 @@ pub(crate) struct Chain {
     /// The project's device ids in order (a plug-in's by its key), so a graph swap can tell
     /// whether a new chain holds the same devices as an old one.
     ids: Vec<String>,
+    sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
     /// Every parameter's value from the project (its default when the project has none), per
     /// device.
     params: Vec<Vec<f64>>,
@@ -125,6 +137,16 @@ pub(crate) struct Chain {
 }
 
 impl Chain {
+    pub(crate) fn sample_positions(&self) -> Option<(usize, [Option<f32>; 32])> {
+        self.slots.iter().zip(&self.positions).find_map(|(slot, &position)| match slot {
+            Slot::Device(device) => {
+                let positions = device.sample_positions();
+                positions.iter().any(Option::is_some).then_some((position, positions))
+            }
+            _ => None,
+        })
+    }
+
     /// The chain for `track` at `sample_rate`, or `None` when its channel holds no device
     /// Suhina can run (other DAWs' devices and plug-ins that are not installed pass the sound
     /// through). Plug-in devices take their processors from `plugins` (one without a processor
@@ -132,6 +154,7 @@ impl Chain {
     /// the audio thread.
     pub(crate) fn build(
         project: &Project,
+        audio: &crate::AudioPool,
         track: TrackId,
         column: u32,
         post: (f32, f32),
@@ -184,11 +207,7 @@ impl Chain {
                             .find(|value| value.id == parameter.id)
                             .map_or(parameter.default, |value| parameter.clamp(value.value));
                         let value = device_lanes.initial(slot_index, index).unwrap_or(stored_value);
-                        match &mut slot {
-                            Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
-                            Slot::MidiSd(effect) => effect.set_parameter(index, value),
-                            Slot::Device(_) | Slot::Plugin(_) => {}
-                        }
+                        slot.set_sd_parameter(index, value);
                         values.push(stored_value);
                     }
                     params.push(values);
@@ -227,11 +246,26 @@ impl Chain {
                 _ => continue,
             };
             let Some(mut device) = suhina_device_registry::create(id) else { continue };
+            if let Some(source) = stored.sample_file().and_then(|file| audio.files.get(file)) {
+                device.load_shared_sample(source.sample_rate, source.channels, source.clone());
+            }
+            device.load_sample_slices(stored.sample_slices().map(std::sync::Arc::from));
             if device.prepare(f64::from(sample_rate)).is_err() {
                 continue;
             }
             let info = device.info();
             let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
+            if let Some(graph) = stored
+                .sd_definition()
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .and_then(|text| suhina_device_sdk::DeviceGraph::from_sd(text).ok())
+            {
+                for p in &graph.parameters {
+                    if let Some(value) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
+                        *value = p.default;
+                    }
+                }
+            }
             for p in &stored.params {
                 if let Some(slot) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
                     *slot = p.value;
@@ -246,7 +280,13 @@ impl Chain {
             latency = latency.saturating_add(device.latency());
             slots.push(Slot::Device(device));
             positions.push(position);
-            ids.push(id.clone());
+            ids.push(stored.sample_file().map_or_else(
+                || id.clone(),
+                |file| {
+                    let source = audio.files.get(file).map(std::sync::Arc::as_ptr);
+                    format!("{id}:{file}:{source:?}")
+                },
+            ));
             params.push(values);
         }
         let instrument = slots.iter().any(|slot| match slot {
@@ -259,6 +299,12 @@ impl Chain {
             track,
             column,
             slots,
+            sample_slices: positions
+                .iter()
+                .map(|&i| {
+                    channel.devices.get(i).and_then(suhina_model::Device::sample_slices).map(std::sync::Arc::from)
+                })
+                .collect(),
             positions,
             ids,
             params,
@@ -300,6 +346,7 @@ impl Chain {
             slots: Vec::new(),
             positions: Vec::new(),
             ids: Vec::new(),
+            sample_slices: Vec::new(),
             params: Vec::new(),
             instrument: false,
             latency: 0,
@@ -446,15 +493,7 @@ impl Chain {
                     *stage += 1;
                 }
                 Slot::MidiSd(effect) => {
-                    run_sd_midi(
-                        effect,
-                        *stage,
-                        pending,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
+                    run_sd_midi(effect, *stage, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     *stage += 1;
                 }
@@ -691,15 +730,7 @@ impl Chain {
                     index += 1;
                 }
                 Slot::MidiSd(effect) => {
-                    run_sd_midi(
-                        effect,
-                        index,
-                        pending,
-                        span_events,
-                        midi_scratch,
-                        device_lanes,
-                        SdRun { from, to, context },
-                    );
+                    run_sd_midi(effect, index, pending, midi_scratch, device_lanes, SdRun { from, to, context });
                     std::mem::swap(pending, midi_scratch);
                     index += 1;
                 }
@@ -794,8 +825,8 @@ impl Chain {
                     *slot = device.param(param).unwrap_or(value);
                 }
             }
-            Some(Slot::Sd(effect) | Slot::InstrumentSd(effect)) => {
-                effect.set_parameter(param, value);
+            Some(slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_))) => {
+                slot.set_sd_parameter(param, value);
                 if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
                     *slot = value;
                 }
@@ -803,12 +834,6 @@ impl Chain {
             Some(Slot::Plugin(plugin)) => {
                 if let Ok(id) = u32::try_from(param) {
                     plugin.params.set(id, value);
-                }
-            }
-            Some(Slot::MidiSd(effect)) => {
-                effect.set_parameter(param, value);
-                if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
-                    *slot = value;
                 }
             }
             None => {}
@@ -829,6 +854,9 @@ impl Chain {
         {
             match (slot, fresh) {
                 (Slot::Device(device), _) => {
+                    if let Some(points) = self.sample_slices.get_mut(position) {
+                        device.swap_sample_slices(points);
+                    }
                     // A parameter that follows a lane keeps its running value until the lane
                     // sets it in the next block.
                     for (index, &value) in
@@ -837,18 +865,11 @@ impl Chain {
                         device.set_param(index, value);
                     }
                 }
-                (Slot::Sd(effect) | Slot::InstrumentSd(effect), _) => {
+                (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
                     for (index, &value) in
                         values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
                     {
-                        effect.set_parameter(index, value);
-                    }
-                }
-                (Slot::MidiSd(effect), _) => {
-                    for (index, &value) in
-                        values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
-                    {
-                        effect.set_parameter(index, value);
+                        slot.set_sd_parameter(index, value);
                     }
                 }
                 (Slot::Plugin(running), Slot::Plugin(fresh)) => {
@@ -1087,6 +1108,8 @@ fn run_device(
     lanes: &DeviceLanes,
     context: &ProcessContext,
 ) {
+    // Give context-dependent instruments the tempo before an event at frame zero.
+    device.set_context(context);
     let mut at_done = from;
     let mut changes = lanes.changes(slot, from, to).peekable();
     for &(at, event) in pending {
@@ -1181,17 +1204,14 @@ fn run_sd_midi(
     effect: &mut suhina_device_sdk::PreparedMidiEffect,
     slot: usize,
     events: &[(usize, NoteEvent)],
-    input: &mut Vec<(usize, NoteEvent)>,
     output: &mut Vec<(usize, NoteEvent)>,
     lanes: &DeviceLanes,
     run: SdRun<'_>,
 ) {
-    input.clear();
-    input.extend_from_slice(events);
-    output.resize(input.len().saturating_mul(2).min(output.capacity()), (0, NoteEvent::AllNotesOff));
+    output.resize(events.len().saturating_mul(2).min(output.capacity()), (0, NoteEvent::AllNotesOff));
     let mut written = 0;
     let mut changes = lanes.changes(slot, run.from, run.to).peekable();
-    for event in input.iter() {
+    for event in events {
         while let Some(change) = changes.next_if(|change| change.frame <= event.0) {
             effect.set_parameter(change.param, change.value);
         }
@@ -1241,17 +1261,63 @@ mod sd_tests {
         graph.connections = vec![Connection::new("in", "transpose"), Connection::new("transpose", "out")];
         let mut effect = graph.compile_midi().unwrap();
         let events = [(150, NoteEvent::On { key: 60, velocity: 0.8 })];
-        let mut input = Vec::with_capacity(1);
         let mut output = Vec::with_capacity(1);
         run_sd_midi(
             &mut effect,
             0,
             &events,
-            &mut input,
             &mut output,
             &DeviceLanes::none(),
             SdRun { from: 100, to: 200, context: &ProcessContext::default() },
         );
         assert_eq!(output, [(150, NoteEvent::On { key: 72, velocity: 0.8 })]);
+    }
+}
+
+#[cfg(test)]
+mod sampler_regressions {
+    use super::*;
+    #[test]
+    fn first_beat_slice_uses_context_before_frame_zero_note() {
+        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let source =
+            std::sync::Arc::new(crate::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.5; 96000] });
+        sampler.load_shared_sample(48000, 1, source.clone());
+        assert_eq!(std::sync::Arc::strong_count(&source), 2, "PCM must be shared");
+        for (id, value) in [("playback", 3.), ("slice_by", 1.), ("sensitivity", 0.4), ("attack", 0.), ("sustain", 1.)] {
+            sampler.set_param(sampler.info().param_index(id).unwrap(), value);
+        }
+        let mut context = ProcessContext { tempo: 60., ..ProcessContext::default() };
+        let mut buffer = vec![0.; 2048];
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            1024,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+        );
+        for _ in 0..28 {
+            run_device(&mut sampler, 0, &mut buffer, 0, 1024, &[], &DeviceLanes::none(), &context);
+        }
+        assert!(buffer.iter().any(|s| *s > 0.1), "one-beat slice at 60 BPM must outlast half a second");
+        context.tempo = 120.;
+        sampler.reset();
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            1024,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+        );
+        for _ in 0..28 {
+            run_device(&mut sampler, 0, &mut buffer, 0, 1024, &[], &DeviceLanes::none(), &context);
+        }
+        assert!(buffer.iter().all(|s| *s == 0.), "one-beat slice at 120 BPM ends after half a second");
     }
 }

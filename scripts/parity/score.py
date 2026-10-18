@@ -134,7 +134,7 @@ CHAPTERS = [
      "generative or shape-based tools."),
     (12, "Editing MPE", 10, 0.00, "absent", "No MPE data, editing or MPE-aware devices."),
     (13, "Converting Audio to MIDI", 5, 0.05, "planned",
-     "Spec written (docs/spec/audio-to-midi.md); slicing and the four detectors are roadmap."),
+     "Spec written (docs/spec/audio-to-midi.md); Sampler slicing, dynamic manual boundaries and waveform zoom/pan are available; audio-to-MIDI detectors remain roadmap."),
     (14, "Using Grooves", 6, 0.00, "absent", "No groove pool, extraction or commit."),
     (15, "Using Tuning Systems", 9, 0.00, "absent", "No .scl/.ascl tuning systems."),
     (16, "Launching Clips", 12, 0.77, "partial",
@@ -208,8 +208,9 @@ CHAPTERS = [
     (30, "Live MIDI Effect Reference", 13, 0.00, "absent",
      "SDK MIDI-effect graphs run before the instrument; the MIDI-transpose example shifts notes. "
      "None of the 8 documented MIDI effects is implemented in full."),
-    (31, "Live Instrument Reference", 120, 0.08, "started",
-     "One instrument: the FM synth (DX7-style, MSFA port) against 13 instruments; no sampler, "
+    (31, "Live Instrument Reference", 120, 0.12, "started",
+     "FM synth and single-source sample/granular instrument against 13 instruments; "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random and independent source fades; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; "

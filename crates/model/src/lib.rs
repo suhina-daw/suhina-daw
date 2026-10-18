@@ -277,6 +277,63 @@ pub struct Device {
     pub extensions: Extensions,
 }
 
+impl Device {
+    /// Embedded stock .sd metadata is separate from native DSP/source state.
+    pub fn sd_definition(&self) -> Option<&[u8]> {
+        self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "stock_sd").map(|e| e.data.as_slice())
+    }
+    pub fn set_sd_definition(&mut self, definition: Vec<u8>) {
+        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "stock_sd"));
+        self.extensions.0.push(Extension { format: "suhina".into(), key: "stock_sd".into(), data: definition });
+    }
+    /// Manual source boundaries; None reads legacy fixed slice parameters.
+    pub fn sample_slices(&self) -> Option<Vec<f64>> {
+        let data = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_slices")?.data;
+        if !data.len().is_multiple_of(8) || data.len() > 8_000_000 {
+            return None;
+        }
+        let mut points = Vec::with_capacity(data.len() / 8);
+        for bytes in data.as_chunks::<8>().0 {
+            let value = f64::from_le_bytes(*bytes);
+            if !value.is_finite() || value <= 0. || value >= 1. {
+                return None;
+            }
+            points.push(value);
+        }
+        points.sort_unstable_by(f64::total_cmp);
+        points.dedup();
+        Some(points)
+    }
+    pub fn set_sample_slices(&mut self, points: &[f64]) {
+        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_slices"));
+        self.extensions.0.push(Extension {
+            format: "suhina".into(),
+            key: "sample_slices".into(),
+            data: points.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        });
+    }
+    /// A sampler's source path, versioned independently of parameter values.
+    pub fn sample_file(&self) -> Option<&str> {
+        if !matches!(&self.kind, DeviceKind::Builtin(id) if id == "sampler") {
+            return None;
+        }
+        std::str::from_utf8(self.state.as_deref()?).ok()?.strip_prefix("suhina-sample-v1\n")?.split('\0').next()
+    }
+
+    pub fn set_sample_file(&mut self, path: &str) {
+        self.set_sample_reference(path, path);
+    }
+
+    pub fn sample_absolute_file(&self) -> Option<&str> {
+        self.sample_file()?;
+        std::str::from_utf8(self.state.as_deref()?).ok()?.split_once('\0').map(|(_, absolute)| absolute)
+    }
+
+    pub fn set_sample_reference(&mut self, file: &str, absolute: &str) {
+        self.state = Some(format!("suhina-sample-v1\n{file}\0{absolute}").into_bytes());
+    }
+}
+
 /// A parameter's value over the arrangement (an envelope): points in beat order, the value
 /// moving from one to the next along the first one's curve and holding before the first and
 /// after the last. Two points at the same beat make a jump. See `docs/spec/automation.md`.

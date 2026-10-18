@@ -93,7 +93,8 @@ exists in `devices/`, passes its tests and runs in track chains.
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
-| sampler, drum sampler | own | planned |
+| sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording |
+| drum sampler | own | planned |
 | physical-modelling synth | Mutable Instruments Rings and Elements (MIT) | planned |
 
 ## Audio to MIDI
@@ -126,6 +127,14 @@ but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), pr
 Session clips do not fit ARA's linear timeline; Session view later. ADR before implementation.
 
 ## What works now
+
+- Stock instruments and effects are generated as validated `.sd` files during
+  application builds and embedded for startup; DSP uses registered Rust implementations.
+
+- **Sampler:** single-source polyphonic sample and granular playback with an editable
+  waveform, SDK controls, browser/system sample drops and recording from the armed
+  track's selected audio input. Sample replacement is undoable; missing sources can
+  be relinked. Multisample zones remain planned.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -770,3 +779,20 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([#64](https://github.com/suhina-daw/suhina-daw/issues/64)) and the rest of the clip editor
   ([#200](https://github.com/suhina-daw/suhina-daw/issues/200)) in the detail area, installers and
   signed builds ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)).
+
+- Sampler: Poly/Mono selection, mono glide control, pitch attack/decay envelope, live sample read head, and recording controls beside the editor tabs.
+
+- Sampler panel: full-width waveform with context-sensitive S/E source/loop handles, grouped controls, fine drag calibration, compact filter dials and 12/24 buttons, and LFO modulation of pitch/filter/volume/pan within a 200-pixel device height.
+
+- Sampler envelope editing: AMP/PITCH tabs with stage points and a responsive release display; playback-mode changes stop held voices.
+
+- Sampler voice controls: independent polyphonic waveform heads, smooth voice replacement, Retrigger, filter response buttons, 12/24 slopes, filter ADSR and velocity/key cutoff modulation.
+
+- Sampler has waveform LFO selection including Random, independent source Fade In/Out, conditional loop fields and adjacent header Input/Record controls.
+
+- Sampler offers Slices playback with Transient, Beat, Region and editable Manual boundaries, mapped from the root note.
+
+- Sampler envelope graphs have padded dark surfaces, large editable points, cumulative stage timing and direct point dragging without value jumps.
+
+- Sampler waveform: dynamic manual slice maps with double-click add/remove, draggable
+  lines, gray areas outside S/E, anchored zoom and horizontal navigation.
