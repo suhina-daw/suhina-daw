@@ -7,6 +7,19 @@ last_verified: 2026-10-17
 covers:
   - crates/model/src/overlap.rs
   - crates/session/src/commands.rs
+  - crates/plugins/src/scan.rs
+  - crates/plugins/src/scan_pool.rs
+  - crates/plugins/src/protocol.rs
+  - crates/ipc/src/source.rs
+  - crates/ipc/src/events.rs
+  - crates/plugin-host/src/ara.rs
+  - crates/plugin-host/src/ara_sys.rs
+  - crates/session/src/ara.rs
+  - crates/session/src/rack.rs
+  - crates/session/src/devices.rs
+  - crates/ui/src/detail/detail_view.rs
+  - scripts/ara_bindings.sh
+  - third_party/ara-api
 ---
 
 # 0028: ARA hosting
@@ -78,6 +91,15 @@ protocol (`crates/plugins/src/protocol.rs`).
    document (one per track the plug-in sits on) must live in the process that holds its document
    controller. ADR 0006's default, one process per plug-in file, already does this; the
    *own process per instance* choice is refused for an ARA plug-in, with the reason.
+   *Built (#589):* the scan marks each VST3 plug-in that supports ARA (`PluginInfo::ara`, shown
+   by `plugins.list`): its module declares a class in the category `ARA Main Factory Class`
+   with the plug-in's class name, as `ARAVST3.h` pairs them, or the module has one of each. It
+   is read from `moduleinfo.json` without loading anything, or from the factory's class list in
+   the scan worker without making any object. The catalog keeps it (version 4; an older
+   catalog's VST3 files are read again so installed ARA plug-ins are found). `plugins.setHosting
+   ... instance` is refused for such a plug-in, and an `instance` choice saved before its
+   support was known starts it in its file's process. The factory's API generations are checked
+   when an instance is bound (below, *Built so far*).
 
 3. **The engine drives the document with edit batches.** Each command that changes what the
    document describes (adding, moving, trimming, splitting, deleting a clip; a tempo change; undo
@@ -157,6 +179,88 @@ protocol (`crates/plugins/src/protocol.rs`).
     into `suhina-plugin-host` as `test:vst3` is, records what it is told and reads audio, so CI
     runs the whole path without a commercial plug-in. The SDK's example plug-ins come next, then
     real plug-ins, by hand, per system.
+
+### Built so far
+
+What runs now, in [#667](https://github.com/suhina-daw/suhina-daw/pull/667) (stages 3 to 6 of
+the list below, in a first form). Where it differs from the decisions above it is marked
+*interim*; the decision stays the goal.
+
+- **Bindings.** The ARA headers (2.3, Apache-2.0) are vendored in `third_party/ara-api`
+  (`VENDORED.md` names the commit). `scripts/ara_bindings.sh` generates
+  `crates/plugin-host/src/ara_sys.rs` from them with bindgen, with its layout checks, so a
+  struct that does not match the C headers fails to compile. The three VST3 interfaces of
+  `ARAVST3.h` are declared by hand in `crates/plugin-host/src/ara.rs`. The headers pack structs
+  to 1 byte on x86 and to 8 on ARM; the bindings are generated for x86-64, and an ARM build
+  needs them generated there.
+- **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
+  name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
+  (clip id, content id, start, length and offset in seconds). The host queries the component for
+  `IPlugInEntryPoint`, requires ARA 2.0 Final, initialises the factory once per process, makes a
+  document controller with the host interfaces, builds a musical context, one region sequence,
+  the sources (sample access on), one audio modification per content and one playback region per
+  clip in one edit, and binds the instance in every role (`IPlugInEntryPoint2` when there is one)
+  before processing is set up. The plug-in's renderers get every region. On unload the objects
+  go in one edit, then the document controller, as ARA prescribes. A plug-in that cannot be bound
+  does not load, and the reason is the device's (`... could not start: the plug-in does not
+  support ARA`).
+- **Persistent ids.** A source's id is its audio pool key, a modification's is `content-<id>`, a
+  region's is `clip-<id>` ([#568](https://github.com/suhina-daw/suhina-daw/issues/568)).
+- **Audio** (decision 4). `suhina_ipc::AudioSource` writes a file's decoded samples once, planar
+  32-bit floats after a checked header, into a region the host maps read only; `readAudioSamples`
+  copies from it in chunks, as 32- or 64-bit samples, with silence outside the source.
+- **Transport.** An ARA plug-in renders by the song position, so the engine sends a `Transport`
+  event (playing, position in samples) and a `Tempo` event with every block to a plug-in loaded
+  with a document, and the VST3 host turns them into the block's process context.
+- **The project keeps the edits** (decision 7). The device's state is the component's state and
+  the document archive (`storeObjectsToArchive`, with the factory's `documentArchiveID`) in one
+  blob, so save, autosave, backups and a restart keep them as they keep any plug-in's state. On
+  load the archive goes back with `restoreObjectsFromArchive` in an edit, once the document is
+  built; an archive of a kind the plug-in does not read is refused with the reason.
+- **Clip edits** (decision 3). When the track's clips change (moved, trimmed, added, removed,
+  muted, a tempo change, an undo of any of these), the session sends the plug-in the whole new
+  document at once (`ara_update`, answered `ara_updated`): the samples of files already shared
+  are not shared again, only a new file's. The host matches it with what it holds by persistent
+  id and changes it in one edit: a new source or modification is made, none goes (their edits
+  stay in the archive, so an undo brings a deleted clip back with its edits), a region that moved
+  or changed length is updated in place (`updatePlaybackRegionProperties`), a new one made, and
+  one that is gone, or plays another content now, is taken out of the renderers and destroyed.
+  Moving and trimming change nothing else, so the plug-in plays on and its editor stays open.
+  Adding or taking out regions changes the renderers, which ARA allows only while the plug-in
+  does not render: its processing stops for that and starts again, as for a latency change, a
+  gap of a few blocks. Where an update fails, and for a plug-in loaded without a document (its
+  track had no audio clips), the change instead loads it again with the new document once the
+  clips have stayed put for 0.75 s, the edits of the clips still there coming back by their ids
+  and an editor that was open opening again.
+- **The editor in the clip's place** (stage 7, first part,
+  [#594](https://github.com/suhina-daw/suhina-daw/issues/594)). An arrangement audio clip on a
+  track whose plug-in is bound shows that plug-in's editor in the detail area's Clip view, where a
+  MIDI clip has its piano roll ([clip editor](../spec/ui-clip-editor.md) › Where it opens). The
+  session tells the plug-in which clip is selected with `ara_select` (a message that is not
+  answered), and the host passes it to the editor view's `notifySelection`. The editor is
+  embedded whatever the embedding setting says for other editors; **Float** takes it out to a
+  window of its own and **Dock** back (`Session::set_ara_floating`). On Windows an editor's
+  window passes the keyboard focus on to the plug-in's view, so its keys (Ctrl+Z) are its own. The clip's menu
+  (**Open in** the plug-in) and Alt+M open it. The overlap marks and fixes, and the
+  question when the plug-in is removed, come with the overlap guard.
+- **Found when it loads, too.** The host tells the engine with `loaded` whether the plug-in
+  answers `IPlugInEntryPoint` (`edits_clips`). One the scan did not mark (the module's ARA class
+  named differently, say) is then loaded again with its track's clips, with a notice, and is
+  treated as an ARA plug-in from then on.
+- **Opened as a host with a pitch editor built in does.** A clip's menu (**Open in** the plug-in)
+  and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
+  running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is
+  added to the track, and its editor opens in the clip's place once it runs with the clips.
+- **An ARA plug-in goes first in its chain**, wherever it is dropped or `device.addPlugin` puts
+  it (the result says `moved_first`): it plays the clips from their files, so a device before it
+  would not be heard. Observed in another host, which moves it there too.
+- **Other interim limits.** One document per instance, not per plug-in product (decision 2).
+  Warped clips are described at their file's speed (their start and end follow the song), loops
+  are not repeated, and the overlap guard and suspension (decision 6) are not built: overlapping
+  clips are both in the document. Offline renders load the plug-in with the same document. The
+  `notifyDocumentDataChanged` flag is kept but not read yet: the edits are noticed when the
+  state is read. `test:ara` (decision 10) does not exist yet; the test VST3 plug-in, listed as an
+  ARA one, checks that a document reaches the host and that a refusal is reported.
 
 ## Alternatives considered
 

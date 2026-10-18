@@ -378,6 +378,16 @@ impl Chain {
     /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
     /// arrangement frame `time` (`None` while the transport is stopped): call it after
     /// [`Chain::begin`], before any of the block runs. Never allocates.
+    /// Tells the chain's plug-ins where the song is as the block starts
+    /// ([`PluginProcessor::transport`]). Never allocates.
+    pub(crate) fn transport(&mut self, playing: bool, position: u64, tempo: f64) {
+        for slot in self.plugin_slots() {
+            if let Some(processor) = slot.processor.as_mut() {
+                processor.transport(playing, position, tempo);
+            }
+        }
+    }
+
     pub(crate) fn automate(&mut self, time: Option<u64>, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         for slot in self.plugin_slots() {

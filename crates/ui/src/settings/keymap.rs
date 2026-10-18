@@ -184,9 +184,15 @@ fn overlap(a: &str, b: &str) -> bool {
 }
 
 /// The detail area's own actions, listed with the window's, and their default keys.
-const DETAIL_ACTIONS: [(&str, &str, &str); 1] =
-    [("view.devices", "Show the selected clip's track devices, or the clip again", "View")];
-const DETAIL_DEFAULTS: [(&str, &[&str]); 1] = [("view.devices", &["Ctrl+Shift+D"])];
+const DETAIL_ACTIONS: [(&str, &str, &str); 2] = [
+    ("view.devices", "Show the selected clip's track devices, or the clip again", "View"),
+    (
+        "view.araEditor",
+        "Open the selected audio clip in its track's plug-in that edits clips (such as a pitch editor)",
+        "View",
+    ),
+];
+const DETAIL_DEFAULTS: [(&str, &[&str]); 2] = [("view.devices", &["Ctrl+Shift+D"]), ("view.araEditor", &["Alt+M"])];
 
 /// Every action a key can be bound to: the window's, then each command that needs no
 /// parameters.

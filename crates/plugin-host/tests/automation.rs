@@ -34,6 +34,7 @@ fn env() -> Arc<PluginEnv> {
             version: "1".into(),
             features: vec!["audio-effect".into()],
             replaces: Vec::new(),
+            ara: false,
         };
         catalog.insert(path, vec![info]);
     }
@@ -106,7 +107,7 @@ fn an_offline_render_plays_a_plug_ins_automation() {
     let dry = render_offline(&project(8.0, Vec::new()), SR, 512).unwrap();
     for id in ["clap", "vst3"] {
         let p = project(8.0, vec![gain(id, &points)]);
-        let started = suhina_session::start_offline(&p, &env(), SR);
+        let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
         assert_eq!(started.running(), 1, "{id}: {:?}", started.notices);
         let wet = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, started.plugins).unwrap();
         // A tenth of a beat at a time, away from the jump: the level follows the lane.

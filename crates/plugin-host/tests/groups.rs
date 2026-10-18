@@ -25,6 +25,7 @@ fn launch(plugin: &str, group: Option<&str>) -> Launch {
         sample_rate: 48_000.0,
         timeout: PATIENT,
         group: group.map(str::to_string),
+        ara: None,
     }
 }
 

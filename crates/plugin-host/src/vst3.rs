@@ -226,6 +226,7 @@ impl ModuleFile {
                 version: String::new(),
                 features: Vec::new(),
                 replaces: Vec::new(),
+                ara: false,
             };
             if let Some(factory2) = &factory2 {
                 let mut info2: PClassInfo2 = blank();
@@ -242,6 +243,22 @@ impl ModuleFile {
             classes.push((info.cid, plugin));
         }
         Ok(classes)
+    }
+
+    /// The names of the module's ARA factory classes ([`suhina_plugins::scan::ARA_FACTORY_CLASS`]),
+    /// read from the class list without making any object.
+    fn ara_classes(&self) -> Vec<String> {
+        let Ok(factory) = self.factory() else { return Vec::new() };
+        // SAFETY: the factory is a live COM object.
+        let count = unsafe { factory.countClasses() };
+        (0..count.clamp(0, 4096))
+            .filter_map(|index| {
+                let mut info: PClassInfo = blank();
+                // SAFETY: as above; the index is below the count the factory gave.
+                let found = ok(unsafe { factory.getClassInfo(index, &mut info) });
+                (found && text(&info.category) == suhina_plugins::scan::ARA_FACTORY_CLASS).then(|| text(&info.name))
+            })
+            .collect()
     }
 
     /// The module's compatibility list, from its `Plugin Compatibility Class`
@@ -378,6 +395,7 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<PluginInfo>, String> {
     if let Some(list) = module.compatibility() {
         suhina_plugins::scan::apply_compatibility_text(&mut plugins, &list);
     }
+    suhina_plugins::scan::pair_ara(&mut plugins, &module.ara_classes());
     Ok(plugins)
 }
 
@@ -581,6 +599,11 @@ pub(crate) struct Vst3Plugin {
     /// The plug-in's name, for its editor's window.
     name: String,
     editor: Option<crate::vst3_editor::Editor>,
+    /// The ARA document it is bound to, when it was loaded with one (ADR 0028); let go of
+    /// before the component is terminated.
+    ara: Option<Box<crate::ara::Document>>,
+    /// Its component answers ARA's entry point, so it can be bound to a document.
+    supports_ara: bool,
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
@@ -596,7 +619,13 @@ impl Vst3Plugin {
     /// Loads the plug-in `spec` names, activates it for the link's block size at `sample_rate`
     /// and starts serving blocks from `served` on an audio thread, as instance `instance` of
     /// the process.
-    pub(crate) fn load(spec: &str, instance: u32, served: Served, sample_rate: f64) -> Result<Self, String> {
+    pub(crate) fn load(
+        spec: &str,
+        instance: u32,
+        served: Served,
+        sample_rate: f64,
+        ara: Option<suhina_plugins::protocol::AraDocument>,
+    ) -> Result<Self, String> {
         let (module, wanted) = open(spec)?;
         let classes = module.audio_classes()?;
         let (cid, name) = match wanted {
@@ -645,6 +674,8 @@ impl Vst3Plugin {
             pending,
             name,
             editor: None,
+            ara: None,
+            supports_ara: false,
             component,
             _handler: handler,
             _host: host,
@@ -659,6 +690,12 @@ impl Vst3Plugin {
             // `drop` before the controller is terminated).
             let _ = unsafe { controller.setComponentHandler(handler.as_ptr()) };
         }
+
+        // ARA binds before processing is set up (the ARA SDK's order).
+        if let Some(document) = &ara {
+            plugin.ara = Some(Box::new(crate::ara::Document::bind(&plugin.component, document)?));
+        }
+        plugin.supports_ara = plugin.ara.is_some() || crate::ara::supported(&plugin.component);
 
         let processor = plugin.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
         let max_frames = served.max_frames();
@@ -840,7 +877,8 @@ impl Vst3Plugin {
         if !ok(unsafe { self.component.getState(raw.as_ptr()) }) {
             return Err("the plug-in did not give its state".into());
         }
-        Ok(stream.bytes())
+        // Bound to an ARA document, its edits there are part of its state (ADR 0028).
+        Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_deref().and_then(crate::ara::Document::store)))
     }
 
     /// The controller's own state, when it is a separate object that gives one.
@@ -857,6 +895,7 @@ impl Vst3Plugin {
     /// in for a VST2 one reads the VST2 bank here (ADR 0006, decision 8); a bank of programs
     /// is also set as parameters, since not every plug-in reads one.
     pub(crate) fn set_state(&mut self, data: &[u8], controller_state: Option<&[u8]>) -> Result<(), String> {
+        let (data, archive) = crate::ara::unwrap_state(data);
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
@@ -879,6 +918,11 @@ impl Vst3Plugin {
                 let _ = unsafe { controller.setState(own_raw.as_ptr()) };
             }
         }
+        // Its ARA edits go back to the clips they were made on; without a document (the track
+        // has no audio clips now) they wait in the project for one.
+        if let (Some(document), Some((id, bytes))) = (&self.ara, archive) {
+            document.restore(&id, bytes)?;
+        }
         Ok(())
     }
 
@@ -892,6 +936,59 @@ impl Vst3Plugin {
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
+    }
+
+    /// Whether it supports ARA: it is bound to a document, or its component answers
+    /// `IPlugInEntryPoint` (found when it loaded).
+    pub(crate) fn edits_clips(&self) -> bool {
+        self.ara.is_some() || self.supports_ara
+    }
+
+    /// Brings its ARA document in line with `document`, the track's clips as they are now.
+    /// Moved or trimmed clips change in place while it plays; adding or taking out regions
+    /// needs its renderers changed, which ARA allows only while it does not render, so its
+    /// processing stops for that and starts again, as for a latency change.
+    pub(crate) fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
+        let edited = self.ara.as_mut().ok_or("the plug-in is not bound to an ARA document")?.edit(document)?;
+        if edited.changes_renderers() {
+            self.flush.store(true, Ordering::Release);
+            if !self.stop_audio(crate::UNLOAD_WAIT) {
+                return Err("its audio thread does not stop".into());
+            }
+            let served =
+                self.audio.take().ok_or("it has no audio thread")?.join().map_err(|_| "its audio thread failed")?;
+            let processor = self.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
+            // SAFETY: a live component; processing has stopped.
+            let _ = unsafe { self.component.setActive(0) };
+            if let Some(ara) = &self.ara {
+                ara.renderers(&edited);
+            }
+            // SAFETY: as above, set up as when it loaded.
+            let active = ok(unsafe { self.component.setActive(1) });
+            self.start_audio(processor, served)?;
+            if !active {
+                return Err("the plug-in did not activate again".into());
+            }
+        }
+        if let Some(ara) = self.ara.as_mut() {
+            ara.destroy(&edited);
+        }
+        Ok(())
+    }
+
+    /// Tells the plug-in's ARA editor view which region the engine has selected, when it is
+    /// bound to a document.
+    pub(crate) fn ara_select(&self, region: Option<&str>) {
+        if let Some(document) = &self.ara {
+            document.select(region);
+        }
+    }
+
+    /// Asks the open editor to take `size`, the room the engine has for it.
+    pub(crate) fn fit_editor(&mut self, size: crate::window::Size) {
+        if let Some(editor) = &mut self.editor {
+            editor.fit(size);
+        }
     }
 
     /// Puts an embedded editor where the engine says.
@@ -1031,6 +1128,7 @@ impl Drop for Vst3Plugin {
         }
         // SAFETY: a live component; processing has stopped.
         let _ = unsafe { self.component.setActive(0) };
+        self.ara = None;
         if let Some((a, b)) = self.connections.take() {
             // SAFETY: the two connection points connected in `connect`.
             let _ = unsafe { a.disconnect(b.as_ptr()) };
@@ -1185,6 +1283,34 @@ impl Vst3Block {
     }
 }
 
+/// Puts the song's place the engine sent with the block (ADR 0028) into the plug-in's process
+/// context: playing or stopped, the arrangement position in samples and as beats, the tempo.
+/// A block without it leaves the context as it was, counting on from the last block.
+fn follow_song(context: &mut ProcessContext, events: &[suhina_ipc::Event]) {
+    use suhina_ipc::EventKind;
+    use vst3::Steinberg::Vst::ProcessContext_::{StatesAndFlags, StatesAndFlags_ as Flags};
+    #[allow(clippy::unnecessary_cast, reason = "the flags are signed on Windows")]
+    let bits = |flag: StatesAndFlags| flag as u32;
+    for event in events {
+        match event.kind {
+            EventKind::Transport { playing, position } => {
+                context.projectTimeSamples = i64::try_from(position).unwrap_or(i64::MAX);
+                let playing_flag = bits(Flags::kPlaying);
+                context.state = if playing { context.state | playing_flag } else { context.state & !playing_flag };
+            }
+            EventKind::Tempo { bpm } => {
+                context.tempo = f64::from(bpm);
+                context.state |= bits(Flags::kTempoValid);
+            }
+            _ => {}
+        }
+    }
+    if context.sampleRate > 0.0 && context.tempo > 0.0 {
+        context.projectTimeMusic = context.projectTimeSamples as f64 / context.sampleRate * context.tempo / 60.0;
+        context.state |= bits(Flags::kProjectTimeMusicValid);
+    }
+}
+
 impl crate::audio::Block for Vst3Block {
     fn process(&mut self, input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
         let link_channels = self.link_channels;
@@ -1202,6 +1328,7 @@ impl crate::audio::Block for Vst3Block {
                 }
             }
         }
+        follow_song(&mut self.context, events);
         let mapping = &self.mapping;
         let mut data = ProcessData {
             processMode: ProcessModes_::kRealtime as int32,

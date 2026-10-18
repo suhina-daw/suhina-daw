@@ -2680,12 +2680,28 @@ fn a_saved_map_window_opens_at_the_start() {
         ..Default::default()
     };
     app.set_settings(&egui::Context::default(), settings);
-    let mut harness = window(app);
+    // The map is laid out on a thread of its own, which a slow machine takes longer than a
+    // second of frames for: it is given up to ten seconds of real time to finish.
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(0.25)
+        .with_max_steps(4)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    let settle = |harness: &mut Harness<'static, App>| {
+        for _ in 0..200 {
+            if harness.try_run().is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    };
+    settle(&mut harness);
     assert!(harness.state().sample_map.view.window);
     assert!(harness.query_by_label("Dock").is_some());
     // The large view takes the map out of its window.
     harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::M);
-    harness.run();
+    settle(&mut harness);
     assert!(!harness.state().sample_map.view.window);
     assert!(harness.state().sample_map.view.large);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.map_window), Some(false));

@@ -567,6 +567,20 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
+- A plug-in scan notes which VST3 plug-ins support ARA (`plugins.list` shows `ara`), and such a
+  plug-in is never given a host process of its own, since its document and every instance
+  editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+- A plug-in that edits clips (ARA, such as a pitch editor) on an audio track is loaded with the
+  track's arrangement audio clips: its editor shows them and it plays its edited version of them
+  in time with the song. Its edits are saved with the project, and it follows the clips as they
+  are moved, trimmed, added or deleted while it plays, without loading again; an undo brings a
+  deleted clip back with its edits. Warped and looped
+  clips and the overlap guard come later ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+- Selecting an audio clip on such a track shows the plug-in's editor in the detail area, where a
+  MIDI clip has its piano roll, with that clip shown in it; the clip's menu (**Open in** the
+  plug-in) and Alt+M open it, adding the installed one (Melodyne first) to the track when it has
+  none. The plug-in goes first in its track's chain
+  ([clip editor](docs/spec/ui-clip-editor.md) › Where it opens).
 - `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
   spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
   ([ADR 0028](docs/decisions/0028-ara-hosting.md)).

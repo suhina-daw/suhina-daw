@@ -56,7 +56,31 @@ lane, the grid and zoom, and the `note.*` commands.
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
   detail area first when it is hidden. An audio clip has no switch: its track's devices already
-  show beside its properties, and the key leaves it as it is.
+  show beside its properties, and the key leaves it as it is, unless its track has a plug-in that
+  edits clips (below).
+- **Built ([#594](https://github.com/suhina-daw/suhina-daw/issues/594)):** an **audio clip on a
+  track whose plug-in edits clips** (ARA, such as a pitch editor; [ADR
+  0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
+  roll: the clip column on the left, the editor in the rest, embedded in the window whatever
+  Settings › Plug-ins says for other editors (Windows, X11 on Linux; macOS opens it in a window of
+  its own), asked to take the room there as the piano roll does (`fit_editor`; a plug-in that
+  lets its editor be resized takes it within its limits, one of a fixed size is cut off at the
+  edges), and the detail area does not grow for it. **Float** above it takes it out to a window of its own; the area then says so, with
+  **Dock**, which brings it back, and **Close editor**. Its keys are its own while it has the
+  keyboard: a click in it gives it the keyboard, so Ctrl+Z there undoes the plug-in's edit, not
+  Suhina's last step. The plug-in is told which clip is selected, so its editor shows that
+  clip, and selecting another clip on the track shows that one. The editor opens on its own the
+  first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
+  clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The clip's
+  right-click menu has **Open in** and the plug-in's name, and **Alt+M** (`view.araEditor`)
+  does the same for the selected clip: it selects **Clip**, opens the detail area and the editor.
+  Both work on any audio clip in the Arrangement while such a plug-in is installed (Melodyne
+  first): on a track without it, it is added to the track first, and its editor opens in the
+  clip's place once it runs with the track's clips; the status bar says so meanwhile.
+  Moving or trimming the clip changes it in the editor at once, the editor staying open; when the
+  plug-in has to be loaded again (it was added to a track with no audio clips yet), an editor
+  that was open opens again.
 
   The switch is window state, like Shift+Tab: not a command, not an undo step, not saved. It
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or

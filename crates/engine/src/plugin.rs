@@ -132,6 +132,14 @@ pub trait PluginProcessor: Send {
         let _ = params;
     }
 
+    /// Where the song is as the next block starts: whether the transport runs, the
+    /// arrangement position of the block's first frame (in frames) and the tempo. The engine
+    /// calls it before every block; a plug-in that follows the song (an ARA renderer,
+    /// ADR 0028) is told with the block, the rest ignore it. Never allocates.
+    fn transport(&mut self, playing: bool, position: u64, tempo: f64) {
+        let _ = (playing, position, tempo);
+    }
+
     /// Where the plug-in runs while it can take part in a joint round trip now; `None` (the
     /// default) when it cannot, and it runs on its own.
     fn joint(&self) -> Option<Joint> {

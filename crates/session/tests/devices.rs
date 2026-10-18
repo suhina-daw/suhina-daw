@@ -301,11 +301,17 @@ fn plugin_env() -> std::sync::Arc<suhina_session::PluginEnv> {
         version: "1.0".into(),
         features: features.iter().map(|f| f.to_string()).collect(),
         replaces: Vec::new(),
+        ara: false,
     };
     let verb = plugin("Verb.vst3", "ABCDEF0123456789ABCDEF0123456789", "Verb", &["Fx|Reverb"]);
     let synth = plugin("Synth.clap", "com.vendor.synth", "Synth", &["instrument", "synthesizer"]);
     catalog.insert(verb.path.clone(), vec![verb]);
     catalog.insert(synth.path.clone(), vec![synth]);
+    let tune = PluginInfo {
+        ara: true,
+        ..plugin("Tune.vst3", "00112233445566778899AABBCCDDEEFF", "Tune", &["Fx|Pitch Shift"])
+    };
+    catalog.insert(tune.path.clone(), vec![tune]);
     std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into()))
 }
 
@@ -333,6 +339,52 @@ fn installed_plug_ins_are_added_from_the_catalog() {
     // One undo step each.
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);
+}
+
+#[test]
+fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
+    let mut session = Session::new(project());
+    assert_eq!(session.ara_plugin(), None, "no catalog");
+    session.set_plugin_env(plugin_env());
+    let (name, spec) = session.ara_plugin().unwrap();
+    assert_eq!(name, "Tune");
+    assert!(spec.starts_with("vst3:"), "{spec}");
+    // A scan that missed it: Melodyne is still chosen by its name, and the host finds it
+    // supports ARA when it loads.
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let melodyne = PluginInfo {
+        path: "Melodyne.vst3".into(),
+        id: "5653544D656C6F6D656C6F64796E6535".into(),
+        name: "Melodyne".into(),
+        vendor: "Celemony".into(),
+        version: "5.4.2".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(melodyne.path.clone(), vec![melodyne]);
+    session.set_plugin_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    assert_eq!(session.ara_plugin().map(|(name, _)| name).as_deref(), Some("Melodyne"));
+}
+
+#[test]
+fn a_plug_in_that_edits_clips_goes_first() {
+    let mut session = Session::new(project());
+    session.set_plugin_env(plugin_env());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    // Asked for after the utility, it goes before it, as it plays the clips from their files.
+    let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune", "position": 1 })).unwrap();
+    assert_eq!(
+        (tune["device"].clone(), tune["ara"].clone(), tune["moved_first"].clone()),
+        (json!(0), json!(true), json!(true))
+    );
+    let devices = &session.project().channels[0].devices;
+    assert_eq!(devices[0].name, "Tune");
+    // Without a position it goes first too, and says nothing moved.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
+    assert_eq!((tune["device"].clone(), tune["moved_first"].clone()), (json!(0), json!(false)));
 }
 
 #[test]

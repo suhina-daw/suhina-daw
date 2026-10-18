@@ -99,6 +99,7 @@ status bar.
 | Show or hide the detail area (`view.detail`) | Shift+Tab |
 | Hide the clip editor, or show it again (`view.editor`; [spec](spec/ui-clip-editor.md) › Least height and closing). Escape in the piano roll keeps clearing the note selection | Ctrl+Shift+E |
 | Show the selected clip's track devices in the detail area, or the clip again: the detail area's Clip / Devices switch, for a MIDI clip; opens the detail area when it is hidden (`view.devices`; [spec](spec/ui-clip-editor.md) › Where it opens). A double-click on a track's header, a Session column's name or its channel strip shows that track's devices too | Ctrl+Shift+D |
+| Open the selected audio clip in its track's plug-in that edits clips, such as a pitch editor (`view.araEditor`; [spec](spec/ui-clip-editor.md) › Where it opens): the detail area shows the clip with the plug-in's editor, and the plug-in shows that clip. On a track without one, the installed one (Melodyne first) is added to the track first. The clip's right-click menu has the same as **Open in** and the plug-in's name | Alt+M |
 | Map keys to clip slots, scenes and stop buttons, or stop mapping (`view.mappingMode`; [Session view](spec/ui-session-view.md#launch-keys)). A key mapped to a slot wins over its shortcut while the Session view is shown | Ctrl+M |
 | Show or hide the browser (`view.browser`) | Ctrl+B |
 | Show or hide the sample map in the main area (`view.sampleMap`; Escape on the map closes it too) | Ctrl+Shift+M |

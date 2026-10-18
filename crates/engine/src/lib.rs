@@ -649,6 +649,7 @@ impl Renderer {
         let at = self.running.then(|| self.time());
         let time = self.time();
         for chain in &mut self.graph.chains {
+            chain.transport(self.running, time, context.tempo);
             chain.automate(at, frames);
             chain.automate_mix(time, frames, self.running);
         }

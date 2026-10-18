@@ -28,9 +28,14 @@ pub struct RenderSummary {
 }
 
 /// The project's plug-ins started for a render with `plugins` (ADR 0006), or none.
-fn offline_plugins(project: &Project, plugins: Option<&PluginEnv>, sample_rate: u32) -> OfflinePlugins {
+fn offline_plugins(
+    project: &Project,
+    audio: &AudioPool,
+    plugins: Option<&PluginEnv>,
+    sample_rate: u32,
+) -> OfflinePlugins {
     match plugins {
-        Some(env) => start_offline(project, env, sample_rate),
+        Some(env) => start_offline(project, audio, env, sample_rate),
         None => OfflinePlugins::none(),
     }
 }
@@ -59,7 +64,7 @@ pub fn render_wavs(
     sample_rate: u32,
     plugins: Option<&PluginEnv>,
 ) -> Result<RenderSummary, String> {
-    let mut started = offline_plugins(project, plugins, sample_rate);
+    let mut started = offline_plugins(project, audio, plugins, sample_rate);
     let running = std::mem::take(&mut started.plugins);
     let samples = match cue {
         None => render_offline_with_plugins(project, audio, sample_rate, 512, running).map_err(|e| e.to_string())?,
@@ -132,7 +137,7 @@ pub fn render_launch_script(
     let mut steps: Vec<&LaunchStep> = steps.iter().collect();
     steps.sort_by(|a, b| a.at.total_cmp(&b.at));
 
-    let mut started = offline_plugins(project, plugins, sample_rate);
+    let mut started = offline_plugins(project, audio, plugins, sample_rate);
     let running: Plugins = std::mem::take(&mut started.plugins);
     let mut renderer =
         Renderer::stopped_with_plugins(project, audio, sample_rate, running).map_err(|e| e.to_string())?;

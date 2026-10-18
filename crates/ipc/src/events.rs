@@ -26,6 +26,13 @@ pub enum EventKind {
     /// Plug-in parameter `id` moves to `value`, in its own range (as `get_params` gives it),
     /// from this frame on: automation.
     Param { id: u32, value: f32 },
+    /// Where the song is as the block starts: whether the transport runs and the arrangement
+    /// position of the block's first frame, in frames. Sent at frame 0 of every block of a
+    /// plug-in that follows the song (an ARA renderer, ADR 0028); a host that does not know the
+    /// kind skips it.
+    Transport { playing: bool, position: u64 },
+    /// The tempo as the block starts, in beats per minute, beside [`EventKind::Transport`].
+    Tempo { bpm: f32 },
 }
 
 /// One event at `frame` of the block (0 is its first frame). `note` ties a note's start and end
@@ -51,6 +58,16 @@ impl Event {
         Self { frame, note: -1, kind: EventKind::Param { id, value } }
     }
 
+    /// The transport at the start of a block ([`EventKind::Transport`]).
+    pub fn transport(playing: bool, position: u64) -> Self {
+        Self { frame: 0, note: -1, kind: EventKind::Transport { playing, position } }
+    }
+
+    /// The tempo at the start of a block ([`EventKind::Tempo`]).
+    pub fn tempo(bpm: f32) -> Self {
+        Self { frame: 0, note: -1, kind: EventKind::Tempo { bpm } }
+    }
+
     pub(crate) fn encode(&self) -> [u8; EVENT_BYTES] {
         let mut note = self.note;
         let (kind, channel, number, value) = match self.kind {
@@ -62,6 +79,13 @@ impl Event {
                 note = i32::from_le_bytes(id.to_le_bytes());
                 (5, 0, 0, value)
             }
+            // The position's low half in the value's bytes, its high half in the note's.
+            EventKind::Transport { playing, position } => {
+                let [l0, l1, l2, l3, h0, h1, h2, h3] = position.to_le_bytes();
+                note = i32::from_le_bytes([h0, h1, h2, h3]);
+                (6, u8::from(playing), 0, f32::from_le_bytes([l0, l1, l2, l3]))
+            }
+            EventKind::Tempo { bpm } => (7, 0, 0, bpm),
         };
         let mut out = [0; EVENT_BYTES];
         out[..4].copy_from_slice(&self.frame.to_le_bytes());
@@ -87,6 +111,15 @@ impl Event {
             2 => EventKind::NoteOff { channel, key: number, velocity: unit },
             3 => EventKind::Controller { channel, number, value: unit },
             4 => EventKind::PitchBend { channel, value: value.clamp(-1.0, 1.0) },
+            6 => {
+                let position = u64::from_le_bytes([v0, v1, v2, v3, n0, n1, n2, n3]);
+                let kind = EventKind::Transport { playing: channel != 0, position };
+                return Some(Self { frame: 0, note: -1, kind });
+            }
+            7 => {
+                let bpm = if value.is_finite() && value > 0.0 { value.min(999.0) } else { 120.0 };
+                return Some(Self { frame: 0, note: -1, kind: EventKind::Tempo { bpm } });
+            }
             5 => {
                 let id = u32::from_le_bytes([n0, n1, n2, n3]);
                 let event = Self {
@@ -115,6 +148,11 @@ mod tests {
             Event { frame: 4, note: -1, kind: EventKind::PitchBend { channel: 1, value: -0.5 } },
             Event::param(7, 0, 0.25),
             Event::param(8, u32::MAX, -440.0),
+            Event::transport(true, 0),
+            Event::transport(false, u64::MAX),
+            // A position whose low half is a NaN bit pattern still comes back whole.
+            Event::transport(true, 0x7FC0_0001_7FC0_0001),
+            Event::tempo(98.5),
         ];
         for event in events {
             assert_eq!(Event::decode(&event.encode()), Some(event));
@@ -125,6 +163,9 @@ mod tests {
         assert_eq!(Event::decode(&wild), Some(Event::note_on(1, 15, 127, 1.0)));
         wild[4] = 9;
         assert_eq!(Event::decode(&wild), None);
+        // A tempo that is not a tempo reads as 120.
+        assert_eq!(Event::decode(&Event::tempo(f32::NAN).encode()), Some(Event::tempo(120.0)));
+        assert_eq!(Event::decode(&Event::tempo(-1.0).encode()), Some(Event::tempo(120.0)));
         let endless = Event::decode(&Event::param(0, 3, f32::INFINITY).encode());
         assert_eq!(endless, Some(Event::param(0, 3, f32::MAX)));
     }

@@ -20,6 +20,17 @@
 //! each instance whether it did (restarting its processing first where the format asks for
 //! that) and tells the engine unasked (`latency_changed`).
 
+mod ara;
+#[allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code,
+    unsafe_op_in_unsafe_fn,
+    clippy::all,
+    clippy::pedantic
+)]
+mod ara_sys;
 mod audio;
 mod clap;
 mod processors;
@@ -250,6 +261,26 @@ impl Loaded {
         }
     }
 
+    /// Brings a plug-in's ARA document in line with the track's clips.
+    fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
+        match self {
+            Self::Vst3(plugin) => plugin.ara_update(document),
+            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
+        }
+    }
+
+    /// Whether the plug-in supports ARA.
+    fn edits_clips(&self) -> bool {
+        matches!(self, Self::Vst3(plugin) if plugin.edits_clips())
+    }
+
+    /// Tells a plug-in bound to an ARA document which region the engine has selected.
+    fn ara_select(&self, region: Option<&str>) {
+        if let Self::Vst3(plugin) = self {
+            plugin.ara_select(region);
+        }
+    }
+
     /// A size the open editor got since this was last asked, to tell the engine.
     fn editor_resized(&mut self) -> Option<window::Size> {
         match self {
@@ -345,14 +376,26 @@ impl Loaded {
     }
 }
 
-fn load(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Loaded, String> {
-    let loaded = start(instance, plugin, link, sample_rate)?;
+fn load(
+    instance: u32,
+    plugin: &str,
+    link: &str,
+    sample_rate: f64,
+    ara: Option<suhina_plugins::protocol::AraDocument>,
+) -> Result<Loaded, String> {
+    let loaded = start(instance, plugin, link, sample_rate, ara)?;
     // Its thread starts serving at once; a plug-in whose processing would not start never does.
     audio::wait_serving(instance, SERVING_WAIT);
     Ok(loaded)
 }
 
-fn start(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Loaded, String> {
+fn start(
+    instance: u32,
+    plugin: &str,
+    link: &str,
+    sample_rate: f64,
+    ara: Option<suhina_plugins::protocol::AraDocument>,
+) -> Result<Loaded, String> {
     let served = Served::open(link).map_err(|e| e.to_string())?;
     if plugin.starts_with("clap:")
         || plugin == "test:clap"
@@ -362,7 +405,10 @@ fn start(instance: u32, plugin: &str, link: &str, sample_rate: f64) -> Result<Lo
         return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(Loaded::Clap);
     }
     if plugin.starts_with("vst3:") || plugin == "test:vst3" {
-        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate).map(Loaded::Vst3);
+        return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(Loaded::Vst3);
+    }
+    if ara.is_some() {
+        return Err("only a VST3 plug-in can be bound to an ARA document".into());
     }
     let processor = processors::create(plugin)?;
     let stop = Arc::new(AtomicBool::new(false));
@@ -490,14 +536,16 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::Load { instance, .. } if instances.len() >= MAX_INSTANCES => {
             failed(instance, format!("at most {MAX_INSTANCES} plug-ins run in one process"))
         }
-        Message::Load { instance, plugin, link, sample_rate } => match load(instance, &plugin, &link, sample_rate) {
-            Ok(fresh) => {
-                let latency = fresh.latency();
-                instances.insert(instance, fresh);
-                Message::Loaded { instance, latency }
+        Message::Load { instance, plugin, link, sample_rate, ara } => {
+            match load(instance, &plugin, &link, sample_rate, ara) {
+                Ok(fresh) => {
+                    let (latency, edits_clips) = (fresh.latency(), fresh.edits_clips());
+                    instances.insert(instance, fresh);
+                    Message::Loaded { instance, latency, edits_clips }
+                }
+                Err(message) => failed(instance, message),
             }
-            Err(message) => failed(instance, message),
-        },
+        }
         Message::Unload { instance } => {
             if let Some(loaded) = instances.remove(&instance) {
                 loaded.unload();
@@ -522,6 +570,25 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::AraUpdate { instance, document } => {
+            match instances.get_mut(&instance).map(|l| l.ara_update(&document)) {
+                Some(Ok(())) => Message::AraUpdated { instance },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::FitEditor { instance, width, height } => {
+            if let Some(Loaded::Vst3(plugin)) = instances.get_mut(&instance) {
+                plugin.fit_editor(window::Size { width, height });
+            }
+            return None;
+        }
+        Message::AraSelect { instance, region } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.ara_select(region.as_deref());
             }
             return None;
         }

@@ -24,7 +24,7 @@ const ENABLED: Param = param("enabled", ParamType::Bool, "true for on, false for
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugins.list",
-        label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, file, whether it is switched on), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
+        label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, whether it supports ARA, file, whether it is switched on), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
         params: &[optional(
             "ignored",
             ParamType::Bool,
@@ -84,7 +84,7 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "plugins.setHosting",
-        label: "Choose how a plug-in's instances share host processes from their next start: binary (one process per plug-in file, the default), vendor (one per vendor) or instance (a process of its own for each)",
+        label: "Choose how a plug-in's instances share host processes from their next start: binary (one process per plug-in file, the default), vendor (one per vendor) or instance (a process of its own for each; not for a plug-in that edits clips over ARA)",
         params: &[
             param("plugin", ParamType::Text, "plug-in name, id or file, from plugins.list"),
             param("hosting", ParamType::Text, "binary, vendor or instance"),
@@ -139,6 +139,7 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 "type": if crate::is_instrument(p) { "instrument" } else { "effect" },
                 "version": p.version,
                 "features": p.features,
+                "ara": p.ara,
                 "file": p.path.display().to_string(),
                 "hosting": hosting.get(&p.spec()).copied().unwrap_or_default().name(),
                 "enabled": !off.contains(&p.spec()),
@@ -265,6 +266,14 @@ fn set_hosting(projects: &mut Projects, params: &Value) -> Result<Value, Command
         .find(name)
         .or_else(|| catalog.plugins().find(|p| p.spec() == name))
         .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugins.list lists them"))?;
+    if hosting == Hosting::Instance && plugin.ara {
+        return Err(format!(
+            "{} edits clips over ARA, so its instances share one process with the document they edit; \
+             choose binary or vendor",
+            plugin.name
+        )
+        .into());
+    }
     let (spec, shown) = (plugin.spec(), plugin.name.clone());
     library.set_hosting(&spec, hosting)?;
     Ok(json!({ "plugin": shown, "hosting": hosting.name() }))

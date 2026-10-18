@@ -5,6 +5,7 @@
 //! goes through a command (see `docs/decisions/0002-commands.md`), so the CLI, the MCP server and
 //! later the UI all drive the project the same way.
 
+mod ara;
 pub mod audio;
 mod automation;
 pub mod backup;
@@ -582,7 +583,7 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
-        self.plugins.sync(&self.project, self.player.as_mut())
+        self.plugins.sync(&self.project, &self.audio, self.player.as_mut())
     }
 
     /// The window plug-in editors open over, owned by it (a Win32 `HWND`, an X11 window id):
@@ -609,6 +610,81 @@ impl Session {
         self.plugins.place_editors(&keyed);
     }
 
+    /// Tells the plug-ins on `track` that edit clips (ARA, ADR 0028) which of its arrangement
+    /// clips is selected, so their editors show it; `None` selects none. Never waits for a host.
+    pub fn select_ara_clip(&mut self, track: suhina_model::TrackId, clip: Option<suhina_model::ClipId>) {
+        let Some(channel) = self.project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel) else {
+            return;
+        };
+        let region = clip.map(|c| format!("clip-{}", c.0));
+        for device in suhina_engine::plugin_devices(&self.project).into_iter().filter(|d| d.channel == channel) {
+            self.plugins.select_ara(device.key, region.clone());
+        }
+    }
+
+    /// The first device on `track` that runs a plug-in bound to its audio clips (ARA), by its
+    /// index in the track's chain.
+    pub fn ara_device(&self, track: suhina_model::TrackId) -> Option<usize> {
+        self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
+    }
+
+    /// Takes the editor of the plug-in device `device` on `track`, one that edits clips, out of
+    /// the window to float in one of its own, or back into the clip's place (`float` false).
+    pub fn set_ara_floating(
+        &mut self,
+        track: suhina_model::TrackId,
+        device: usize,
+        float: bool,
+    ) -> Result<(), CommandError> {
+        let key = plugin_key_at(&self.project, track, device).ok_or("no such plug-in device")?;
+        self.plugins.set_ara_floating(key, float)
+    }
+
+    /// The installed plug-in a clip is opened in when its track has none that edits clips (ARA):
+    /// its name, and what `device.addPlugin` takes for it. One the scan marked as ARA, Melodyne
+    /// first; else Melodyne, which the host finds to support ARA when it loads. `None` without
+    /// a catalog or such a plug-in.
+    pub fn ara_plugin(&self) -> Option<(String, String)> {
+        let catalog = &self.plugins.env()?.catalog;
+        let melodyne = |p: &&suhina_plugins::scan::PluginInfo| {
+            p.name.as_bytes().windows(8).any(|w| w.eq_ignore_ascii_case(b"melodyne"))
+        };
+        let chosen = catalog
+            .plugins()
+            .filter(|p| p.ara)
+            .find(melodyne)
+            .or_else(|| catalog.plugins().find(|p| p.ara))
+            .or_else(|| catalog.plugins().filter(|p| p.spec().starts_with("vst3:")).find(melodyne))?;
+        Some((chosen.name.clone(), chosen.spec()))
+    }
+
+    /// The tracks whose chain runs a plug-in bound to their audio clips (ARA), each with the
+    /// first such device's index in its chain.
+    pub fn ara_tracks(&self) -> Vec<(suhina_model::TrackId, usize)> {
+        let mut found: Vec<(suhina_model::TrackId, usize)> = Vec::new();
+        for device in suhina_engine::plugin_devices(&self.project) {
+            let Some(track) = device.track else { continue };
+            if !self.plugins.edits_clips(device.key) {
+                continue;
+            }
+            match found.iter_mut().find(|(t, _)| *t == track) {
+                Some(entry) => entry.1 = entry.1.min(device.position),
+                None => found.push((track, device.position)),
+            }
+        }
+        found
+    }
+
+    /// The room in pixels the window has for these plug-in devices' embedded editors (track,
+    /// device, width and height), which they are asked to fit.
+    pub fn fit_editors(&mut self, wanted: &[(suhina_model::TrackId, usize, (u32, u32))]) {
+        let keyed: Vec<(u64, (u32, u32))> = wanted
+            .iter()
+            .filter_map(|(track, device, size)| Some((plugin_key_at(&self.project, *track, *device)?, *size)))
+            .collect();
+        self.plugins.fit_editors(&keyed);
+    }
+
     /// How far the project's plug-ins have got with starting (all zero while it does not play).
     pub fn plugin_progress(&self) -> PluginProgress {
         self.plugins.progress()
@@ -617,7 +693,7 @@ impl Session {
     /// Waits up to `timeout` until none of the project's plug-ins is still starting.
     pub fn wait_for_plugins(&mut self, timeout: std::time::Duration) -> Vec<String> {
         match self.player.as_mut() {
-            Some(player) => self.plugins.wait_started(&self.project, player, timeout),
+            Some(player) => self.plugins.wait_started(&self.project, &self.audio, player, timeout),
             None => Vec::new(),
         }
     }

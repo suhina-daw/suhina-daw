@@ -73,6 +73,7 @@ The project you leave stops playing.
 | Tab | `view.toggle` | Anywhere | Switches between the Session view (clips in a grid of slots, launched by hand) and the Arrangement view (clips on a timeline). |
 | Shift+Tab | `view.detail` | Anywhere | Shows or hides the detail area at the bottom of the window, where the clip editor and the track's effects and instruments are. |
 | Ctrl+Shift+E | `view.editor` | Anywhere | Hides the clip editor, or shows it again. In the piano roll, Escape still only clears the note selection. |
+| Alt+M | `view.araEditor` | Arrangement | Opens the selected audio clip in its track's plug-in that edits clips (such as a pitch editor): the detail area shows the clip with the plug-in's editor. |
 | Ctrl+B | `view.browser` | Anywhere | Shows or hides the browser, the panel on the left that lists your samples, presets, effects, instruments and plug-ins. With the Draw-first preset this is Ctrl+Shift+B. |
 | Ctrl+F | `browser.search` | Anywhere | Puts the cursor in the browser's search field, and shows the browser when it is hidden. In the field, Up and Down move through the results, Enter adds the selected result to the selected track, and Escape clears the search and then leaves the field. |
 | Ctrl+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |

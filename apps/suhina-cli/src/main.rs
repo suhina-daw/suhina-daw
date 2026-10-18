@@ -565,6 +565,7 @@ fn plugin(args: &[String]) -> Result<(), String> {
         sample_rate: f64::from(audio.sample_rate),
         timeout: std::time::Duration::from_secs(30),
         group: None,
+        ara: None,
     };
     // An instrument's notes: its track's arrangement, from the bar asked for or the first clip.
     let events = match &device_source {
@@ -767,6 +768,7 @@ fn edit_plugin<'a>(
         sample_rate: 48_000.0,
         timeout: std::time::Duration::from_secs(30),
         group: None,
+        ara: None,
     };
     let (mut plugin, _audio) = suhina_plugins::Plugin::start(launch).map_err(|e| e.to_string())?;
     if let Some(state) = state
@@ -813,6 +815,7 @@ fn print_params(
         sample_rate: 48_000.0,
         timeout: std::time::Duration::from_secs(30),
         group: None,
+        ara: None,
     };
     let (mut plugin, _audio) = suhina_plugins::Plugin::start(launch).map_err(|e| e.to_string())?;
     if let Some(state) = state

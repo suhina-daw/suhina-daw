@@ -705,6 +705,10 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     if instrument && position != 0 {
         return Err("an instrument goes first in a track's chain (position 0)".into());
     }
+    // A plug-in that edits clips (ARA, ADR 0028) plays the clips from their files, so a device
+    // before it would not be heard: it goes first, wherever it was asked for.
+    let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
+    let position = if plugin.ara { 0 } else { position };
     let device = Device {
         name: plugin.name.clone(),
         kind: crate::rack::device_kind(&plugin),
@@ -721,6 +725,8 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
         "vendor": plugin.vendor,
         "format": plugin.format(),
         "instrument": instrument,
+        "ara": plugin.ara,
+        "moved_first": moved_first,
     }))
 }
 
@@ -739,6 +745,7 @@ pub(crate) fn plugin_json(report: Option<crate::PluginReport>) -> Value {
         "longest_us": report.longest_us,
         "no_time": report.no_time,
         "state_refused": report.state_refused,
+        "ara": report.ara,
     })
 }
 

@@ -235,6 +235,7 @@ fn hosting_is_chosen_per_plug_in_and_reaches_the_sessions() {
         version: "1".into(),
         features: vec!["Fx".into()],
         replaces: Vec::new(),
+        ara: false,
     };
     catalog.insert(verb.path.clone(), vec![verb.clone()]);
     std::fs::write(settings.join("plugin-catalog.json"), catalog.to_json()).unwrap();
@@ -253,4 +254,33 @@ fn hosting_is_chosen_per_plug_in_and_reaches_the_sessions() {
     assert_eq!(run(&mut later, "plugins.list", json!({})).unwrap()["plugins"][0]["hosting"], "vendor");
     assert!(run(&mut p, "plugins.setHosting", json!({ "plugin": "Verb", "hosting": "shared" })).is_err());
     assert!(run(&mut p, "plugins.setHosting", json!({ "plugin": "Nothing", "hosting": "binary" })).is_err());
+}
+
+#[test]
+fn an_ara_plug_in_is_listed_as_such_and_never_hosted_alone() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let (_, dir) = projects("ara-hosting");
+    let settings = dir.join("settings");
+    std::fs::create_dir_all(&settings).unwrap();
+    let tune = PluginInfo {
+        path: PathBuf::from("Tune.vst3"),
+        id: "ABCDEF0123456789ABCDEF0123456780".into(),
+        name: "Tune".into(),
+        vendor: "Vendor".into(),
+        version: "1".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: true,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(tune.path.clone(), vec![tune.clone()]);
+    std::fs::write(settings.join("plugin-catalog.json"), catalog.to_json()).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(settings), dir.join("no-such-host")));
+    assert_eq!(run(&mut p, "plugins.list", json!({})).unwrap()["plugins"][0]["ara"], true);
+    let refused = run(&mut p, "plugins.setHosting", json!({ "plugin": "Tune", "hosting": "instance" })).unwrap_err();
+    assert!(refused.contains("ARA"), "{refused}");
+    assert_eq!(run(&mut p, "plugins.list", json!({})).unwrap()["plugins"][0]["hosting"], "binary");
+    // The other choices stay open.
+    run(&mut p, "plugins.setHosting", json!({ "plugin": "Tune", "hosting": "vendor" })).unwrap();
+    assert_eq!((p.plugin_env().group)(&tune), Some("vendor:Vendor".into()));
 }

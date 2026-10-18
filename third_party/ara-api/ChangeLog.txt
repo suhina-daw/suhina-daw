@@ -1,0 +1,101 @@
+Proposed Features which have been postponed to a later subrelease:
+- Audio Unit version 3 support (App Extension, incl. IPC when not loaded in-process)
+- integration of plug-in undo history integration into the host
+- waveform envelope overview (previous draft temporarily removed)
+- support for dynamic tuning such as Hermode (previous draft temporarily removed)
+- support for automatic adaption of tuning and harmonic context (previous draft temporarily removed)
+
+
+=== ARA SDK 2.3 release (aka 2.3.001) (2025/11/07) ===
+- AAX is now fully supported as companion API
+- CLAP is now fully supported as companion API
+- added API to notify the host when the private, opaque document state changes (to trigger saving it)
+  and incremented API generation to allow plug-ins to indicate that they fully conform to sending
+  notifications whenever any part of their persistent state changes
+- add createDistinctAudioModification flag to ARA audio file chunk
+- required minimum CMake version increased from 3.4 to 3.19 (same as VST3)
+
+
+=== ARA SDK 2.2 release (aka 2.2.001) (2022/11/07) ===
+- added surround support for audio sources
+- added API to determine whether an audio modification actually modifies the underlying audio source
+
+
+=== ARA SDK 2.1 release (aka 2.1.001) (2022/01/06) ===
+- finalized ARM support for Apple Silicon
+- enabled ARA audio file chunk authoring directly in the host
+
+
+=== ARA SDK 2.0 release (aka 2.0.001) (2021/05/03) ===
+- outdated documentation for ARAFactory::factoryID fixed, related chapter "Managing ARA Archives" rewritten
+- clarified undo stack handling if host edits trigger follow-up updates in the plug-in
+- clarified threading constraints for creating/destroying ARA plug-in instances
+- clarified intended use cases and optimization criteria for ARA audio file chunks
+- clarified possible line feeds in base64 encoding of ARA audio file chunk archive data
+- added dedicated section about "Preview Rendering" to "Configuring The Rendering" in chapter "Implementing ARA"
+- various minor documentation cleanups/improvements
+
+ARA SDK 2.0 draft 14 (aka 1.9.14) (2021/02/26)
+- applied Apache License 2.0
+- processing algorithm selection draft finalized for release
+- added API for license management if using ARA plug-ins without UI as analysis or time-stretch engine
+- clarified how to support multiple ARA audio processors in a single VST3 binary (e.g. WaveShell)
+- clarified life time of ARAFactory pointers obtained through ARA::IPlugInEntryPoint or ARA::IMainFactory
+- drafted ARM support (still experimental and bound to change in incompatible ways!)
+- removed now-obsolete transitional switch ARA_HEADER_LIKE_V1
+- clarifications for handling multiple VST3 components within the same binary
+- pdf documentation overhauled, many improvements and clarifications
+- added initial CMake support, still work-in-progress
+
+ARA SDK 2.0 draft 13 (aka 1.9.13) (2020/08/12)
+- Audio Units: adding AudioComponent tag to quickly identify ARA plug-ins when using the system-wide Audio Unit caching
+- VST3: defined call order between bindToDocumentControllerWithRoles () and getProcessContextRequirements () (added in VST 3.7.0)
+- various small improvements and clarifications in pdf documentation, document structure improved
+
+ARA SDK 2.0 draft 12 (aka 1.9.12) (2020/06/12)
+- re-introduced updated version of processing algorithm selection draft
+- replaced remaining draft markups with final markup (tuning & harmonics content, audio file chunks)
+- renamed kARAContentUpdatePitchScopeRemainsUnchanged to kARAContentUpdateTuningScopeRemainsUnchanged for consistency
+- clarified length 0 in playback or modification time is valid for playback regions
+- now using more modern C++ in core headers, dropped C++98 support in favor of C++11
+
+ARA SDK 2.0 draft 11 (aka 1.9.11) (2020/04/02)
+- relaxed restrictions for UI notifications to allow for more concise UI update handling
+- clarified not to notify content changes when restoring data
+- clarified not to notify content changes in response to receiving content changes
+- clarified time based vs. object based host selection
+
+ARA SDK 2.0 draft 10 (aka 1.9.10) (2020/03/13)
+- clarified persistency of deactivation state for audio sources and audio modifications
+- hosts are no longer required to close any UI before deactivating audio modifications
+- pdf documentation revamped to be more compact
+
+ARA SDK 2.0 draft 9 (aka 1.9.9) (2019/12/06)
+- initial draft of ARA-specific audio file chunk format for embedding audio source state (analysis data)
+  this also enables drag&drop between hosts and plug-ins
+- revised persistent ID mapping for partial persistency
+  CAREFUL: previous draft is no longer compatible and will cause crashes!
+- added required new call getDocumentArchiveID () to ARAArchivingControllerInterface
+- revised documentation for partial persistency
+- initial draft to read waveform envelope data for efficient display of output audio signal
+- clarified threading constraints for audio readers: single-threaded per reader,
+  but multiple readers can be used concurrently
+
+ARA SDK 2.0 draft 8 (aka 1.9.8) (2019/06/28)
+- relaxed rules about content reading functions only being callable while document is not in
+  editing state: no state changes may be triggered while making the calls, but they are now
+  valid to make between begin- and endEditing()
+- clarified usage of name field in ARAContentTuning, ARAContentKeySignature and ARAContentChord
+- introduced proper ARAAPIGeneration typedef instead of using plain ARAInt32
+- merged Doxygen-based ARA_API_Reference.pdf into ARA_SDK.pdf
+- clarifications and fixes in pdf documentation
+
+ARA SDK 2.0 draft 7 (aka 1.9.7) (2019/03/04)
+- minor tweaks to analysis algorithm properties draft
+- removed draft for content tags from ARA 2 due to very limited interest in supporting it
+  (content tags may re-appear in some later release if more broadly requested)
+- clarified potential data alignment issues for ARA structs
+
+ARA SDK 2.0 draft 6 (aka 1.9.6) (2018/9/19)
+This is the public release of kARAAPIGeneration_2_0_Draft.
+For changes compared earlier versions, see Version.txt in that release of the SDK.

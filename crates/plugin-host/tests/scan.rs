@@ -343,6 +343,8 @@ fn worker_processes_read_many_files_and_survive_crashes_and_hangs() {
     // What its compatibility class says it replaces: a VST2 plug-in, by its derived class id.
     assert_eq!(vst3[0].replaces, ["5653544761696E6761696E0000000000"]);
     assert_eq!(vst3[0].replaces[0], suhina_plugins::matching::vst2_class_id(0x4761_696E, "Gain"));
+    // Its module declares no ARA factory class, so the scan does not mark it as ARA.
+    assert!(!vst3[0].ara);
     // One hang costs its timeout once, not per file. The room is for slow process starts: on
     // a loaded Windows machine each start can take seconds while the antivirus checks it.
     assert!(started.elapsed() < Duration::from_secs(60), "{:?}", started.elapsed());

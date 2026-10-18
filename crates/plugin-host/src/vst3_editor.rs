@@ -172,6 +172,33 @@ impl Editor {
         self.size
     }
 
+    /// Asks the view to take `size` (the room the engine has for it), when it can be resized:
+    /// it may change the size to one it takes (`checkSizeConstraint`). The window follows, and
+    /// the engine is told the size it got. Nothing for a view of a fixed size.
+    pub(crate) fn fit(&mut self, size: Size) {
+        // SAFETY: a live view.
+        if unsafe { self.view.canResize() } != kResultTrue || size.width == 0 || size.height == 0 {
+            return;
+        }
+        let mut rect = ViewRect {
+            left: 0,
+            top: 0,
+            right: i32::try_from(size.width).unwrap_or(i32::MAX),
+            bottom: i32::try_from(size.height).unwrap_or(i32::MAX),
+        };
+        // SAFETY: a live view, asked whether it takes the size and then given it.
+        let _ = unsafe { self.view.checkSizeConstraint(&mut rect) };
+        let got = size_of(&rect);
+        if got == self.size {
+            return;
+        }
+        window::resize(self.window.id(), got);
+        // SAFETY: as above.
+        let _ = unsafe { self.view.onSize(&mut rect) };
+        self.size = got;
+        self.resized = Some(got);
+    }
+
     /// Puts an embedded editor where the engine says.
     pub(crate) fn place(&self, placement: window::Placement) {
         window::place(self.window.id(), placement);

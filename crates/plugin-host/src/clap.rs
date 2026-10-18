@@ -367,6 +367,7 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
             version: text(d.version()),
             features: d.features().map(|f| f.to_string_lossy().into_owned()).collect(),
             replaces: Vec::new(),
+            ara: false,
         })
         .collect())
 }
@@ -941,6 +942,8 @@ fn push_event(buffer: &mut EventBuffer, event: &Event) {
             let (low, high) = ((bend & 0x7F) as u8, (bend >> 7) as u8);
             buffer.push(&MidiEvent::new(event.frame, 0, [0xE0 | (channel & 0x0F), low, high]));
         }
+        // The song's place goes to VST3 renderers that follow it (ADR 0028); not a CLAP event.
+        EventKind::Transport { .. } | EventKind::Tempo { .. } => {}
     }
 }
 

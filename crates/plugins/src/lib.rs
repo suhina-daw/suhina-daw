@@ -42,10 +42,10 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
-pub use suhina_ipc::{Event, EventKind, MAX_EVENTS, Outcome};
+pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome};
 use suhina_ipc::{IpcError, Link};
 
-use protocol::{MAX_LINE, Message, VERSION};
+use protocol::{AraDocument, MAX_LINE, Message, VERSION};
 pub use protocol::{ParamInfo, Placement};
 
 /// Blocks in a row without an answer after which a running host counts as hung.
@@ -108,6 +108,9 @@ pub struct Launch {
     /// (ADR 0006: by default one per plug-in file; see [`library::group_for`]). `None` gives
     /// the instance a process of its own.
     pub group: Option<String>,
+    /// The ARA document to bind the plug-in to as it loads, for an ARA plug-in on a track
+    /// (ADR 0028); `None` for every other plug-in.
+    pub ara: Option<protocol::AraDocument>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -511,7 +514,7 @@ impl Group {
 
     /// Loads `instance` as `launch` says into the group's process, starting one if none runs.
     /// Returns the generation it was loaded into, its latency and its link.
-    fn load(&mut self, launch: &Launch, instance: u32) -> Result<(u64, u32, Link), PluginError> {
+    fn load(&mut self, launch: &Launch, instance: u32) -> Result<(u64, u32, bool, Link), PluginError> {
         let link = Link::create(launch.channels, launch.max_frames)?;
         if !self.alive() {
             self.spawn(launch)?;
@@ -521,6 +524,7 @@ impl Group {
             plugin: launch.plugin.clone(),
             link: link.address(),
             sample_rate: launch.sample_rate,
+            ara: launch.ara.clone(),
         };
         let loaded = self.request(
             Some(instance),
@@ -529,11 +533,11 @@ impl Group {
             launch.timeout,
             |m| matches!(m, Message::Loaded { instance: i, .. } if *i == instance),
         )?;
-        let latency = match loaded {
-            Message::Loaded { latency, .. } => latency,
-            _ => 0,
+        let (latency, edits_clips) = match loaded {
+            Message::Loaded { latency, edits_clips, .. } => (latency, edits_clips),
+            _ => (0, false),
         };
-        Ok((self.generation, latency, link))
+        Ok((self.generation, latency, edits_clips, link))
     }
 }
 
@@ -589,6 +593,8 @@ pub struct Plugin {
     generation: u64,
     unanswered: Arc<AtomicU32>,
     latency: u32,
+    /// The plug-in supports ARA, as the host found when it loaded it.
+    edits_clips: bool,
     /// The state last read from the plug-in; loaded again after a restart.
     last_state: Option<SavedState>,
     /// Parameters set since the state was last read or loaded, in order; set again after a
@@ -609,7 +615,7 @@ impl Plugin {
     pub fn start(launch: Launch) -> Result<(Self, PluginAudio), PluginError> {
         let group = group_for_launch(&launch);
         let instance = next_instance();
-        let (generation, latency, link) = lock(&group).load(&launch, instance)?;
+        let (generation, latency, edits_clips, link) = lock(&group).load(&launch, instance)?;
         let unanswered = Arc::new(AtomicU32::new(0));
         let plugin = Self {
             launch,
@@ -618,6 +624,7 @@ impl Plugin {
             generation,
             unanswered: unanswered.clone(),
             latency,
+            edits_clips,
             last_state: None,
             params_since: Vec::new(),
             editor_open: false,
@@ -631,6 +638,12 @@ impl Plugin {
     /// [`Plugin::follow_latency`]).
     pub fn latency(&self) -> u32 {
         self.latency
+    }
+
+    /// Whether the plug-in supports ARA (it can edit clips, ADR 0028), as the host found when
+    /// it loaded it: true even when the scan did not see it, or it was loaded without a document.
+    pub fn edits_clips(&self) -> bool {
+        self.edits_clips
     }
 
     /// Takes in a latency the plug-in reported while it runs (a lookahead it was given, say:
@@ -820,6 +833,44 @@ impl Plugin {
         Ok(true)
     }
 
+    /// Asks an embedded editor to take `width` × `height` pixels, the room the engine has for
+    /// it. Never waits, as [`Plugin::place_editor`]: `false` when it was not sent.
+    pub fn fit_editor(&mut self, width: u32, height: u32) -> Result<bool, PluginError> {
+        let Some(mut group) = try_lock(&self.group) else { return Ok(false) };
+        if group.generation != self.generation {
+            return Err(PluginError::Protocol("the host process was replaced; restart the plug-in".into()));
+        }
+        let process = group.process.as_mut().ok_or_else(|| PluginError::Protocol("the host is not running".into()))?;
+        process.send(&Message::FitEditor { instance: self.instance, width, height })?;
+        Ok(true)
+    }
+
+    /// Brings the ARA document of a plug-in loaded with one in line with `document`, its
+    /// track's clips as they are now (moved, trimmed, added or removed), without loading it
+    /// again. Waits for the answer.
+    pub fn ara_update(&mut self, document: AraDocument) -> Result<(), PluginError> {
+        let instance = self.instance;
+        self.request(
+            &Message::AraUpdate { instance, document },
+            "ara_update",
+            |m| matches!(m, Message::AraUpdated { instance: i } if *i == instance),
+        )?;
+        Ok(())
+    }
+
+    /// Tells a plug-in bound to an ARA document which region (`clip-<id>`) the engine has
+    /// selected, or none. Never waits, as [`Plugin::place_editor`]: returns `false` when the
+    /// host process was busy and it was not sent, so the caller sends it again later.
+    pub fn ara_select(&mut self, region: Option<&str>) -> Result<bool, PluginError> {
+        let Some(mut group) = try_lock(&self.group) else { return Ok(false) };
+        if group.generation != self.generation {
+            return Err(PluginError::Protocol("the host process was replaced; restart the plug-in".into()));
+        }
+        let process = group.process.as_mut().ok_or_else(|| PluginError::Protocol("the host is not running".into()))?;
+        process.send(&Message::AraSelect { instance: self.instance, region: region.map(str::to_string) })?;
+        Ok(true)
+    }
+
     /// Closes the plug-in's editor, if it is open.
     pub fn close_editor(&mut self) -> Result<(), PluginError> {
         let instance = self.instance;
@@ -904,8 +955,9 @@ impl Plugin {
             locked.take_latency(instance);
         }
         let instance = next_instance();
-        let (generation, latency, link) = locked.load(&self.launch, instance)?;
+        let (generation, latency, edits_clips, link) = locked.load(&self.launch, instance)?;
         drop(locked);
+        self.edits_clips = edits_clips;
         self.instance = instance;
         self.generation = generation;
         self.latency = latency;
