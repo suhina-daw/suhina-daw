@@ -73,7 +73,7 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
         ("General", Some("Warp mode: Re-pitch")),
         ("Audio", Some("List the audio devices again")),
         ("MIDI", None),
-        ("Plug-ins", Some("Rescan all")),
+        ("Plug-ins", Some("Open the plug-in manager")),
         ("Arrangement", Some("Track headers: Right")),
         ("Session and mixer", Some("Mixer controls: Knob")),
         ("Clip editor", Some("Double-click on a note: Nothing")),

@@ -68,13 +68,15 @@ fn present(params: &Value, name: &str) -> bool {
     params.get(name).is_some_and(|v| !v.is_null())
 }
 
-/// Puts `point` among the changes in beat order; one already on its beat is replaced.
+/// Puts `point` among the changes in beat order. A beat holds at most a ramp and a step, the
+/// ramp first: the tempo glides to the ramp's tempo and then jumps to the step's. A point of the
+/// same kind already on its beat is replaced.
 fn insert_point(changes: &mut Vec<TempoPoint>, point: TempoPoint) -> Result<(), CommandError> {
-    changes.retain(|p| p.beat != point.beat);
+    changes.retain(|p| p.beat != point.beat || p.ramp != point.ramp);
     if changes.len() >= suhina_model::MAX_TEMPO_CHANGES {
         return Err("the project has as many tempo changes as it can hold".into());
     }
-    let at = changes.partition_point(|p| p.beat < point.beat);
+    let at = changes.partition_point(|p| p.beat < point.beat || (p.beat == point.beat && p.ramp && !point.ramp));
     changes.insert(at, point);
     Ok(())
 }

@@ -82,25 +82,30 @@ pub struct Tag {
     pub color: String,
 }
 
-/// How the browser shows the installed plug-ins
-/// ([the plug-in browsing spec](../spec/plugin-browsing.md) › The three views).
+/// Which plug-ins the browser lists when the Plug-ins category is chosen
+/// ([the plug-in browsing spec](../spec/plugin-browsing.md) › Instruments and Effects).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PluginsView {
-    /// The tree: a Plug-ins heading, the vendors under it, the plug-ins under each vendor.
+    /// The plug-in instruments, as one list sortable by column.
     #[default]
-    Grouped,
-    /// The tree by type: Instruments and Effects headings, Suhina's groups under them.
-    Type,
-    /// One flat list, sortable by column.
-    Flat,
+    Instruments,
+    /// The plug-in effects, likewise.
+    Effects,
 }
 
 impl PluginsView {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Grouped => "grouped",
-            Self::Type => "type",
-            Self::Flat => "flat",
+            Self::Instruments => "instruments",
+            Self::Effects => "effects",
+        }
+    }
+
+    /// The name on its button.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Instruments => "Instruments",
+            Self::Effects => "Effects",
         }
     }
 
@@ -109,7 +114,10 @@ impl PluginsView {
         Self::ALL.iter().copied().find(|v| v.name() == text)
     }
 
-    pub const ALL: [PluginsView; 3] = [Self::Grouped, Self::Type, Self::Flat];
+    pub const ALL: [PluginsView; 2] = [Self::Instruments, Self::Effects];
+
+    /// The views kept by earlier versions (by vendor, by type, one list): read as the default.
+    const EARLIER: [&'static str; 3] = ["grouped", "type", "flat"];
 }
 
 /// The seven tags a new library starts with.
@@ -157,7 +165,7 @@ impl Default for Store {
             tags: default_tags(),
             tagged: BTreeMap::new(),
             tag_limit: DEFAULT_TAG_LIMIT,
-            plugins_view: PluginsView::Grouped,
+            plugins_view: PluginsView::Instruments,
         }
     }
 }
@@ -265,9 +273,9 @@ impl Store {
         if let Some(view) = map.get("plugins_view") {
             match view.as_str().and_then(PluginsView::parse) {
                 Some(view) => store.plugins_view = view,
-                None => {
-                    warnings.push("browser.json: plugins_view is not grouped, type or flat; the default is used".into())
-                }
+                None if view.as_str().is_some_and(|v| PluginsView::EARLIER.contains(&v)) => {}
+                None => warnings
+                    .push("browser.json: plugins_view is not instruments or effects; the default is used".into()),
             }
         }
         if let Some(tagged) = map.get("tagged").and_then(Value::as_object) {
@@ -467,28 +475,34 @@ mod tests {
         store.record(Group::Samples, "/samples/a.wav");
         store.set_tag("Drums", Some("#112233"), None).unwrap();
         store.tag("/samples/kick.wav", "Drums", true).unwrap();
-        store.plugins_view = PluginsView::Flat;
+        store.plugins_view = PluginsView::Effects;
         store.save(&file).unwrap();
         let (loaded, warnings) = Store::load(&file);
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(loaded, store);
-        assert_eq!(loaded.plugins_view, PluginsView::Flat);
+        assert_eq!(loaded.plugins_view, PluginsView::Effects);
         assert_eq!(loaded.recent[&Group::Samples], ["/samples/a.wav", "/samples/b.wav"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn a_plugins_view_that_is_not_one_falls_back_to_grouped() {
+    fn a_plugins_view_that_is_not_one_falls_back_to_instruments() {
         let dir = temp("view");
         let file = dir.join("browser.json");
         for junk in ["all", "7", "{", ""] {
             std::fs::write(&file, format!("{{ \"plugins_view\": \"{junk}\" }}")).unwrap();
             let (store, warnings) = Store::load(&file);
-            assert_eq!(store.plugins_view, PluginsView::Grouped, "{junk}");
+            assert_eq!(store.plugins_view, PluginsView::Instruments, "{junk}");
             assert_eq!(warnings.len(), 1, "{junk}");
         }
+        // A view an earlier version kept is read as the default, quietly.
+        for earlier in ["grouped", "type", "flat"] {
+            std::fs::write(&file, format!("{{ \"plugins_view\": \"{earlier}\" }}")).unwrap();
+            let (store, warnings) = Store::load(&file);
+            assert_eq!((store.plugins_view, warnings.len()), (PluginsView::Instruments, 0), "{earlier}");
+        }
         std::fs::write(&file, r#"{}"#).unwrap();
-        assert_eq!(Store::load(&file).0.plugins_view, PluginsView::Grouped, "missing is the default, quietly");
+        assert_eq!(Store::load(&file).0.plugins_view, PluginsView::Instruments, "missing is the default, quietly");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

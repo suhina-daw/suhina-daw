@@ -43,13 +43,31 @@ impl Place {
     }
 }
 
+impl Place {
+    /// The category a recent group's place belongs to: choosing the place chooses it, so the
+    /// category never hides everything the place lists. `None` for the places that hold any
+    /// kind (the pins, a folder, the recent projects).
+    pub fn category(&self) -> Option<Category> {
+        match self {
+            Self::Recent(Group::Samples) => Some(Category::Samples),
+            Self::Recent(Group::Midi) => Some(Category::Midi),
+            Self::Recent(Group::Instruments) => Some(Category::Instruments),
+            Self::Recent(Group::Effects) => Some(Category::Effects),
+            Self::Recent(Group::Plugins) => Some(Category::Plugins),
+            Self::Recent(Group::Presets) => Some(Category::Presets),
+            Self::Recent(Group::Projects) | Self::Pinned | Self::Folder(_) => None,
+        }
+    }
+}
+
 /// How the results area shows what was found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResultsMode {
     /// The list or tree of rows.
     #[default]
     List,
-    /// Another view, drawn by `browser_view::Context::other_results`.
+    /// Another view, drawn by `browser_view::Context::other_results`: the sample map, chosen
+    /// with its own button in the category row.
     Other,
 }
 
@@ -67,17 +85,13 @@ pub struct Row {
     pub columns: Option<PluginColumns>,
 }
 
-/// The columns of one row of the plug-ins' flat list
-/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md) › The three views).
+/// The columns of one row of the Plug-ins category's list besides the name
+/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md) › Instruments and Effects).
+/// The vendor, version and file are the plug-in manager's (Settings › Plug-ins).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginColumns {
-    pub vendor: String,
-    /// `instrument` or `effect`.
-    pub kind: &'static str,
     /// `vst3`, `clap`, …
     pub format: &'static str,
-    /// When the scan read the plug-in's file, as seconds since 1970; `None` when unknown.
-    pub modified: Option<u64>,
 }
 
 /// What is known about a file, as it is read in the background.
@@ -229,8 +243,8 @@ pub struct BrowserState {
     pub(crate) tag_editor_confirm: Option<String>,
     /// How many items carry each tag, as last counted (the editor opened, or a tag changed).
     pub(crate) tag_counts: Option<HashMap<String, usize>>,
-    /// The plug-ins' flat list sorts by this column (0 name, 1 vendor, 2 type, 3 format,
-    /// 4 modified), `true` descending. The window's own, not kept between runs.
+    /// The Plug-ins category's list sorts by this column (0 name, 1 format), `true`
+    /// descending. The window's own, not kept between runs.
     pub plugin_sort: (u8, bool),
     /// Put the cursor in the search field on the next frame.
     pub focus_search: bool,
@@ -439,8 +453,12 @@ impl BrowserState {
                 if devices && category != Category::Instruments {
                     self.device_rows("group:effects", "Effects", false, &mut rows);
                 }
-                if matches!(category, Category::All | Category::Instruments | Category::Effects | Category::Plugins) {
-                    self.plugin_rows(projects, &mut rows);
+                // The Plug-ins category lists the instruments or the effects as one list; the
+                // other categories keep the plug-ins in the tree under their vendors.
+                if category == Category::Plugins {
+                    self.plugin_rows_listed(projects, &mut rows);
+                } else if matches!(category, Category::All | Category::Instruments | Category::Effects) {
+                    self.plugin_rows_grouped(projects, &mut rows);
                 }
                 if !category.file_kinds().is_empty() {
                     let folders: Vec<PathBuf> =
@@ -480,29 +498,21 @@ impl BrowserState {
         }
     }
 
-    fn plugin_rows(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        match projects.file_library_mut().plugins_view() {
-            suhina_library::store::PluginsView::Grouped => self.plugin_rows_grouped(projects, rows),
-            suhina_library::store::PluginsView::Type => self.plugin_rows_type(projects, rows),
-            suhina_library::store::PluginsView::Flat => self.plugin_rows_flat(projects, rows),
-        }
-    }
-
-    /// The plug-ins the category asks for, with their type and when their file was read.
-    fn listed_plugins(&self, projects: &mut Projects) -> Vec<(suhina_plugins::scan::PluginInfo, bool, Option<u64>)> {
+    /// The plug-ins the category asks for (in the Plug-ins category, the instruments or the
+    /// effects its switch chose), with their type. Plug-ins switched off are not among them.
+    fn listed_plugins(&self, projects: &mut Projects) -> Vec<(suhina_plugins::scan::PluginInfo, bool)> {
+        let view = projects.file_library_mut().plugins_view();
         let env = projects.plugin_env();
         let wanted = |instrument: bool| match self.category {
             Category::Instruments => instrument,
             Category::Effects => !instrument,
+            Category::Plugins => instrument == (view == suhina_library::store::PluginsView::Instruments),
             _ => true,
         };
-        // When the scan read each plug-in's file, from the catalog's entries.
-        let modified: HashMap<&Path, u64> =
-            env.catalog.entries().iter().map(|e| (e.path.as_path(), e.modified)).collect();
         env.catalog
             .plugins()
             .filter(|p| wanted(suhina_session::is_instrument(p)))
-            .map(|p| (p.clone(), suhina_session::is_instrument(p), modified.get(p.path.as_path()).copied()))
+            .map(|p| (p.clone(), suhina_session::is_instrument(p)))
             .collect()
     }
 
@@ -512,7 +522,7 @@ impl BrowserState {
 
     fn plugin_rows_grouped(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
         let mut vendors: Vec<(String, Vec<BrowserItem>)> = Vec::new();
-        for (plugin, instrument, _) in self.listed_plugins(projects) {
+        for (plugin, instrument) in self.listed_plugins(projects) {
             let vendor = if plugin.vendor.trim().is_empty() {
                 "Unknown vendor".to_string()
             } else {
@@ -555,22 +565,13 @@ impl BrowserState {
         }
     }
 
-    fn plugin_rows_type(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        // The type's plug-ins under Suhina's groups, in the spec's order, Other last. A
-        // plug-in sits under the first of its groups.
-        for (instruments, title) in [(true, "Instruments"), (false, "Effects")] {
-            let node = if instruments { "group:plugins-instruments" } else { "group:plugins-effects" };
-            let open = self.open.contains(node);
-            rows.push(Row { item: heading(node, title), depth: 0, opens: true, open, context: None, columns: None });
-            if !open {
-                continue;
-            }
-            let mut groups: Vec<(&str, Vec<BrowserItem>)> = Vec::new();
-            for (plugin, instrument, _) in self.listed_plugins(projects) {
-                if instrument != instruments {
-                    continue;
-                }
-                let group = suhina_session::plugin_group(&plugin).unwrap_or("Other");
+    /// The Plug-ins category's list: one row per plug-in, no headings, sorted by the chosen
+    /// column (name in natural order, or format), the name breaking ties.
+    fn plugin_rows_listed(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
+        let mut list: Vec<(BrowserItem, PluginColumns)> = self
+            .listed_plugins(projects)
+            .into_iter()
+            .map(|(plugin, instrument)| {
                 let kind = if instrument { ItemKind::Instrument } else { ItemKind::Effect };
                 let item = BrowserItem {
                     key: format!("plugin:{}", plugin.spec()),
@@ -578,82 +579,13 @@ impl BrowserState {
                     kind,
                     plugin: true,
                 };
-                match groups.iter_mut().find(|(g, _)| *g == group) {
-                    Some((_, list)) => list.push(item),
-                    None => groups.push((group, vec![item])),
-                }
-            }
-            groups.sort_by_key(|(g, _)| {
-                let order = [
-                    "Synth",
-                    "Sampler",
-                    "Drums",
-                    "Reverb",
-                    "Delay",
-                    "EQ",
-                    "Filter",
-                    "Dynamics",
-                    "Distortion",
-                    "Modulation",
-                    "Analyzer",
-                    "Utility",
-                ];
-                order.iter().position(|o| o == g).unwrap_or(order.len())
-            });
-            for (group, mut list) in groups {
-                let key = format!("{node}:{group}");
-                let group_open = self.open.contains(&key);
-                rows.push(Row {
-                    item: heading(&key, group),
-                    depth: 1,
-                    opens: true,
-                    open: group_open,
-                    context: None,
-                    columns: None,
-                });
-                if group_open {
-                    list.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
-                    for item in list {
-                        rows.push(Self::plugin_row(item, 2, None));
-                    }
-                }
-            }
-        }
-    }
-
-    fn plugin_rows_flat(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
-        let mut list: Vec<(BrowserItem, PluginColumns)> = self
-            .listed_plugins(projects)
-            .into_iter()
-            .map(|(plugin, instrument, modified)| {
-                let kind = if instrument { ItemKind::Instrument } else { ItemKind::Effect };
-                (
-                    BrowserItem {
-                        key: format!("plugin:{}", plugin.spec()),
-                        name: plugin.name.clone(),
-                        kind,
-                        plugin: true,
-                    },
-                    PluginColumns {
-                        vendor: if plugin.vendor.trim().is_empty() {
-                            "Unknown vendor".into()
-                        } else {
-                            plugin.vendor.trim().to_string()
-                        },
-                        kind: if instrument { "instrument" } else { "effect" },
-                        format: plugin.format(),
-                        modified,
-                    },
-                )
+                (item, PluginColumns { format: plugin.format() })
             })
             .collect();
         let (column, descending) = self.plugin_sort;
         list.sort_by(|a, b| {
             let order = match column {
-                1 => a.1.vendor.to_lowercase().cmp(&b.1.vendor.to_lowercase()),
-                2 => (a.1.kind == "effect").cmp(&(b.1.kind == "effect")),
-                3 => a.1.format.to_lowercase().cmp(&b.1.format.to_lowercase()),
-                4 => a.1.modified.unwrap_or(0).cmp(&b.1.modified.unwrap_or(0)),
+                1 => a.1.format.cmp(b.1.format),
                 _ => suhina_library::natural_cmp(&a.0.name, &b.0.name),
             };
             order.then_with(|| suhina_library::natural_cmp(&a.0.name, &b.0.name)).then_with(|| a.0.key.cmp(&b.0.key))

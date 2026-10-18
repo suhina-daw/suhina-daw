@@ -64,7 +64,12 @@ a single chain; `midi_transpose` changes note-on/off keys and drops keys outside
 each event's sample offset.
 Note-off events retain the output key of their note-on even when transpose automation changes
 while a note is held. A repeated note-on releases its previous mapped key first; a zero-velocity
-note-on releases the held mapping. Processing needs room for up to two output events per input; a note-on discarded outside the MIDI key range has no matching output note-off.
+note-on releases the held mapping. Processing needs room for up to two output events per input;
+with room for one only, a repeated note-on sends the release and is dropped, so no note is left
+sounding. A note-on discarded outside the MIDI key range has no matching output note-off, and a
+second note-off for a released key is dropped. A note-off for a key the effect has not seen pressed
+since it was made (the chain was rebuilt while the key was down) is transposed by the current
+amount, so the note that started earlier still ends.
 Exactly one role-appropriate input/output is required, and every node must contribute to the output.
 Missing references, duplicate ids, invalid ports,
 missing required inputs and cycles are rejected with node/port diagnostics. Only the `in` port

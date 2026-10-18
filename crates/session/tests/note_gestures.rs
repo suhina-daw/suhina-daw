@@ -18,6 +18,7 @@ fn note(time: f64, key: u8) -> Note {
 
 fn clip(content: u32, start: f64) -> Clip {
     Clip {
+        id: Default::default(),
         content: ContentId(content),
         start,
         length: 4.0,
@@ -49,6 +50,13 @@ fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
 /// clip (index 1), an audio clip (index 2) and a pattern for another track (index 3); in scene 1
 /// a slot with a MIDI clip and in scene 2 an empty slot.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
         id: TrackId(id),
         name: name.into(),
@@ -85,6 +93,7 @@ fn project() -> Project {
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 4.0), clip(3, 8.0), clip(4, 12.0)],

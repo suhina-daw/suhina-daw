@@ -728,15 +728,33 @@ fn midi_repress_and_zero_velocity_release_previous_mapping() {
             assert_eq!(effect.process(&[(7, NoteEvent::On { key: 60, velocity: 0.0 })], &mut output), 1);
             assert_eq!(output[0], (7, NoteEvent::Off { key: 72, velocity: 0.0 }));
         } else {
-            assert_eq!(effect.process(&on, &mut output[..1]), 0);
-            assert_eq!(effect.process(&on, &mut output), 2);
+            // No room for both: the sounding note ends and the press is dropped.
+            assert_eq!(effect.process(&on, &mut output[..1]), 1);
             assert_eq!(output[0], (3, NoteEvent::Off { key: 72, velocity: 0.0 }));
+            assert_eq!(effect.process(&on, &mut output), 1);
+            assert_eq!(output[0], on[0]);
+            assert_eq!(effect.process(&on, &mut output), 2);
+            assert_eq!(output[0], (3, NoteEvent::Off { key: 60, velocity: 0.0 }));
             assert_eq!(output[1], on[0]);
             assert_eq!(effect.process(&[(7, NoteEvent::Off { key: 60, velocity: 0.0 })], &mut output), 1);
             assert_eq!(output[0], (7, NoteEvent::Off { key: 60, velocity: 0.0 }));
         }
         assert_eq!(effect.process(&[(8, NoteEvent::Off { key: 60, velocity: 0.0 })], &mut output), 0);
     }
+}
+
+#[test]
+fn midi_release_of_a_note_from_before_the_effect_is_transposed() {
+    use suhina_device_api::NoteEvent;
+    let mut effect = graph(K::MidiTransposeParameter { parameter: "amount".into() }).compile_midi().unwrap();
+    let mut output = [(0, NoteEvent::AllNotesOff); 2];
+    // The chain was rebuilt while the key was down: the release still reaches the note.
+    assert_eq!(effect.process(&[(4, NoteEvent::Off { key: 60, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(output[0], (4, NoteEvent::Off { key: 72, velocity: 0.5 }));
+    // A key released once has nothing more to end.
+    assert_eq!(effect.process(&[(5, NoteEvent::On { key: 61, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(effect.process(&[(6, NoteEvent::Off { key: 61, velocity: 0.5 })], &mut output), 1);
+    assert_eq!(effect.process(&[(7, NoteEvent::Off { key: 61, velocity: 0.5 })], &mut output), 0);
 }
 
 #[test]

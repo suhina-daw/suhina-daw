@@ -399,13 +399,23 @@ label (300 px, 10 px), its keys (130 px, 10 px mono `#C9C4BB`, "Press keys" in `
 waiting), Change and Clear; Reset all at the top; a key bound twice in red above the list
 ([shortcuts](../shortcuts.md)).
 
-**Plug-ins › Library**, under the Editors row: "Folders" (11 px), the
-standard folders in 10 px `text.hint` with "(standard)",
-the added ones in `text.secondary` with a 64 px Remove button, a 20 px field to add one with a
-64 px Add button; a 34 px Scan row (the count found and failed as its note, Scan and Rescan all
-on the right, run in the background); then the plug-ins found (name, vendor · format version) and
-the files that failed (in the recording red), in a list that scrolls, at least 160 px tall. Read and changed through
-the `plugins.*` commands.
+**Plug-ins › Library**, under the Editors row: "Folders" (11 px), then one 18 px row per
+folder: a 16 px checkbox (scans look in it), its path in 10 px `text.secondary` (`text.hint`
+when off; the standard ones with "(standard)"), its format on the right in `text.hint` ("CLAP
+and VST3", "VST3", "CLAP"), and for an added one a 64 px Remove button; a 20 px field to add
+one, a four-part format switch (Both, VST3, CLAP, VST2 in `text.hint`, not choosable until
+VST2 is hosted) and a 64 px Add button; a 34 px Scan row (the count found, switched off, failed
+and built for another processor as its note, Scan and Rescan all on the right, run in the
+background); a 34 px Plug-in manager row with **Manage plug-ins** on the right. Read and changed
+through the `plugins.*` commands.
+
+**Plug-in manager**, in the Settings dialog's place: the title (11 px) and the counts (10 px
+`text.secondary`), Scan, Rescan all and Close on the right; a 260 px search field; the column
+headings (20 px, 10 px `text.hint`, the sorted one `text.primary` with ▲/▼): On 28, Name and
+File sharing what is left (42 % and the rest), Vendor 130, Type 72, Format 52, Version 70,
+Status 96, and 84 for **Scan again**; 20 px rows, hover `panel.hover`, a plug-in's name in
+`text.value` (`text.secondary` when switched off), a failure's status and reason in the
+recording red ([plug-in manager](../spec/plugin-manager.md)).
 
 The app keeps them in `settings.txt` (`key = value` lines) in its app-data folder, the theme in
 use as `theme = <id>`; unknown lines are skipped with a warning in the status bar.
@@ -420,11 +430,11 @@ shortcuts wait while it shows.
 
 | Part | Spec |
 |---|---|
-| New (left half) | "New" heading (10 px `text.hint` over a `border` hairline); a 20 px row "New blank project" with "4 tracks, 2 returns, 8 scenes" on the right; "From a template" and the templates folder's `.suhina`, `.locr` (saved before October 2026) and `.als` files by name, 20 px rows that scroll, "Suhina project" or "Live Set" on the right; "No templates yet: File › Save as template" when there are none; the folder at the bottom in 10 px `text.hint` |
-| Open (right half) | A path field (hint "Path to a .suhina or .als file"; Enter opens; quotes around a pasted path are dropped), a 64 px **Browse…** button (the system's file dialog, offering `.suhina`, `.locr` and `.als`; the dialog stays behind it, and a project chosen opens) and a 56 px Open button; "Recent": the projects opened and saved lately, newest first (12 kept), the name and its folder, or "Nothing opened yet" |
+| New (left half) | "New" heading (10 px `text.hint` over a `border` hairline); a 20 px row "New blank project" with "4 tracks, 2 returns, 8 scenes" on the right; "From a template" and the templates folder's `.suhina` and `.als` files by name, 20 px rows that scroll, "Suhina project" or "Live Set" on the right; "No templates yet: File › Save as template" when there are none; the folder at the bottom in 10 px `text.hint` |
+| Open (right half) | A path field (hint "Path to a .suhina or .als file"; Enter opens; quotes around a pasted path are dropped), a 64 px **Browse…** button (the system's file dialog, offering `.suhina` and `.als`; the dialog stays behind it, and a project chosen opens) and a 56 px Open button; "Recent": the projects opened and saved lately, newest first (12 kept), the name and its folder, or "Nothing opened yet" |
 | Rows | Hover `panel.hoverBackground`; name 11 px `text.primary`, note 10 px `text.hint` |
 
-A new project opens in a new tab. Save (Ctrl+S) writes the project's own `.suhina` file (or the `.locr` it was opened from); the first
+A new project opens in a new tab. Save (Ctrl+S) writes the project's own `.suhina` file; the first
 time, Save as (Ctrl+Shift+S) and Save as template ask in a 420 px prompt: Name and Folder fields
 (the projects folder, the project's own folder, or the templates folder; Folder ends in a 64 px
 **Browse…** button, the system's folder dialog), the file that will be

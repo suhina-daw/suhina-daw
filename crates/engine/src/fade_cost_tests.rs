@@ -70,6 +70,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
         arrangement: Arrangement {
             lanes: (1..=TRACKS)
                 .map(|t| ArrangementLane {
+                    id: Default::default(),
                     name: format!("Audio {t}"),
                     track: Some(TrackId(t)),
                     clips: (0..CLIPS).map(clip).collect(),

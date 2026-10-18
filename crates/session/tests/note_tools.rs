@@ -23,6 +23,13 @@ fn clip(content: u32) -> Clip {
 /// Track 1 "Keys" has, on the arrangement, a MIDI clip with `notes` (index 0), an empty MIDI clip
 /// (index 1) and an audio clip (index 2).
 fn project(notes: Vec<Note>) -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built(notes);
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built(notes: Vec<Note>) -> Project {
     let content = |id: u32, lanes: Vec<ContentLane>| ClipContent {
         id: ContentId(id),
         name: format!("C{id}"),
@@ -42,6 +49,7 @@ fn project(notes: Vec<Note>) -> Project {
         ],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1), clip(2), clip(3)],

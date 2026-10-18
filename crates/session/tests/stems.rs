@@ -90,7 +90,8 @@ fn a_stems_file_becomes_a_group_of_a_muted_master_and_its_stems() {
 
     // One undo step.
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 

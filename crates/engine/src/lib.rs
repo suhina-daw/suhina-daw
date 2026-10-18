@@ -1421,7 +1421,12 @@ mod tests {
                 scale: None,
             }],
             arrangement: Arrangement {
-                lanes: vec![ArrangementLane { name: "l".into(), track: Some(TrackId(1)), clips }],
+                lanes: vec![ArrangementLane {
+                    id: Default::default(),
+                    name: "l".into(),
+                    track: Some(TrackId(1)),
+                    clips,
+                }],
                 markers: Vec::new(),
             },
             ..Project::default()
@@ -1430,6 +1435,7 @@ mod tests {
 
     fn clip(start: f64, length: f64) -> Clip {
         Clip {
+            id: Default::default(),
             content: ContentId(1),
             start,
             length,

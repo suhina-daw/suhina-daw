@@ -121,9 +121,11 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "l".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip {
+                    id: Default::default(),
                     content: ContentId(1),
                     start: 0.0,
                     length,

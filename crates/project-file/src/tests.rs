@@ -102,7 +102,7 @@ fn everything() -> Project {
         parent: parent.map(TrackId),
         ..Track::new(TrackId(id), format!("Track {id}"))
     };
-    Project {
+    let mut project = Project {
         transport: Transport {
             tempo_bpm: 128.5,
             time_signature: TimeSignature { numerator: 7, denominator: 8 },
@@ -186,11 +186,13 @@ fn everything() -> Project {
         arrangement: Arrangement {
             lanes: vec![
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Keys".into(),
                     track: Some(TrackId(2)),
                     clips: vec![clip(1, 0.0), clip(1, 8.0)],
                 },
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Free".into(),
                     track: None,
                     clips: vec![Clip { enabled: false, loop_range: None, ..clip(2, 4.0) }],
@@ -216,6 +218,7 @@ fn everything() -> Project {
             ],
             scenes: vec![
                 Scene {
+                    id: Default::default(),
                     name: "Intro".into(),
                     tempo_bpm: Some(100.0),
                     time_signature: Some(TimeSignature { numerator: 7, denominator: 8 }),
@@ -232,7 +235,11 @@ fn everything() -> Project {
         },
         extensions: ext("LiveSet"),
         default_scale: None,
-    }
+        next_id: 0,
+    };
+    // Every lane, clip and scene gets an id, as a project in the app has.
+    project.assign_ids().unwrap();
+    project
 }
 
 #[test]
@@ -342,28 +349,25 @@ fn a_file_names_the_suhina_format() {
 }
 
 #[test]
-fn a_file_saved_before_the_rename_still_opens() {
-    // Written with the old format name, as projects saved before October 2026 are.
+fn the_format_from_before_the_rename_is_refused_by_name() {
+    // Files saved before October 2026 named another format; it is no longer read (ADR 0010
+    // decision 12), and the message says what the file named.
     let old = to_json(&everything()).replacen(r#""format": "suhina""#, r#""format": "locr""#, 1);
-    assert!(old.contains(r#""format": "locr""#), "{old}");
-    assert_eq!(from_json(&old), Ok(everything()));
-    // And from a file with the old extension.
-    let dir = std::env::temp_dir().join(format!("suhina-project-file-old-{}", std::process::id()));
-    let path = dir.join("song.locr");
-    let written = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, &old));
-    assert!(written.is_ok(), "{written:?}");
-    assert_eq!(read_file(&path), Ok(everything()));
-    // Saved again, it names the new format.
-    assert!(to_json(&everything()).contains(r#""format": "suhina""#));
-    let _clean = std::fs::remove_dir_all(&dir);
+    let error = from_json(&old).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(error.contains(r#""locr""#), "{error}");
+    // A format longer than a name is cut short in the message.
+    let long = format!(r#"{{ "format": "{}", "version": 1, "project": {{}} }}"#, "x".repeat(10_000));
+    let error = from_json(&long).err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(error.len() < 200, "{error}");
+    assert!(from_json(r#"{ "format": 1, "version": 1, "project": {} }"#).is_err(), "a format that is not text");
 }
 
 #[test]
-fn project_files_are_known_by_either_extension() {
-    for name in ["a.suhina", "a.SUHINA", "a.locr", "a.LOCR", "dir/b c.suhina"] {
+fn project_files_are_known_by_their_extension() {
+    for name in ["a.suhina", "a.SUHINA", "dir/b c.suhina"] {
         assert!(is_project_file(Path::new(name)), "{name}");
     }
-    for name in ["a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
+    for name in ["a.locr", "a.LOCR", "a.als", "a.json", "a", "suhina", "a.suhina.saving"] {
         assert!(!is_project_file(Path::new(name)), "{name}");
     }
 }
@@ -378,9 +382,8 @@ fn what_is_not_a_project_is_refused() {
     assert!(refused(r#"{ "format": "suhina", "project": {} }"#), "no version");
     assert!(refused(r#"{ "format": "suhina", "version": 2, "project": {} }"#), "a newer version");
     assert!(refused(r#"{ "format": "suhina", "version": 1 }"#), "no project");
-    assert!(refused(r#"{ "format": "locr", "version": 2, "project": {} }"#), "a newer version, old name");
     assert_eq!(from_json(r#"{ "format": "suhina", "version": 1, "project": {} }"#), Ok(Project::default()));
-    assert_eq!(from_json(r#"{ "format": "locr", "version": 1, "project": {} }"#), Ok(Project::default()));
+    assert!(refused(r#"{ "format": "locr", "version": 1, "project": {} }"#), "the format from before the rename");
 }
 
 #[test]
@@ -790,4 +793,140 @@ fn a_bad_scale_is_an_error_naming_where_it_is() {
     // `null` is the same as no scale.
     let read = with(&content("null")).unwrap();
     assert_eq!(read.contents.first().and_then(|c| c.scale), None);
+}
+
+/// `project` as text with the ids of its lanes, clips and scenes and its `next_id` taken out: a
+/// file written before ids. Tracks, channels and contents keep theirs.
+fn without_ids(project: &Project) -> String {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                map.remove("id");
+                map.values_mut().for_each(strip);
+            }
+            Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut file: Value = serde_json::from_str(&to_json(project)).unwrap();
+    strip(&mut file["project"]["arrangement"]);
+    strip(&mut file["project"]["launcher"]);
+    file["project"].as_object_mut().unwrap().remove("next_id");
+    file.to_string()
+}
+
+/// The first clip of the first arrangement lane of a project file.
+fn first_clip(file: &mut Value) -> &mut Value {
+    &mut file["project"]["arrangement"]["lanes"][0]["clips"][0]
+}
+
+#[test]
+fn lanes_clips_and_scenes_keep_their_ids_through_a_round_trip() {
+    let project = everything();
+    let written: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let lane = &written["project"]["arrangement"]["lanes"][0];
+    assert_eq!(lane["id"], json!(project.arrangement.lanes[0].id.0));
+    assert_eq!(lane["clips"][0]["id"], json!(project.arrangement.lanes[0].clips[0].id.0));
+    assert_eq!(written["project"]["launcher"]["scenes"][1]["id"], json!(project.launcher.scenes[1].id.0));
+    assert_eq!(written["project"]["next_id"], json!(project.next_id));
+
+    // Ids chosen by hand, out of order and with gaps, stay as they are.
+    let mut chosen = everything();
+    chosen.arrangement.lanes[0].clips[0].id = ClipId(900);
+    chosen.launcher.scenes[0].id = SceneId(40);
+    chosen.next_id = 901;
+    assert_eq!(from_json(&to_json(&chosen)), Ok(chosen));
+}
+
+#[test]
+fn a_file_without_ids_gives_them_in_document_order_and_always_the_same() {
+    let project = everything();
+    let old = without_ids(&project);
+    assert!(!old.contains("next_id"), "{old}");
+    let read = from_json(&old).unwrap();
+    assert_eq!(read, project, "everything() got its ids in document order, as the reader gives them");
+    assert_eq!(from_json(&old).unwrap(), read, "the same file reads with the same ids every time");
+    let lanes: Vec<u32> = read.arrangement.lanes.iter().map(|l| l.id.0).collect();
+    let first_clips: Vec<u32> = read.arrangement.lanes[0].clips.iter().map(|c| c.id.0).collect();
+    assert_eq!(lanes[0], 1);
+    assert_eq!(first_clips.first(), Some(&2), "a lane's clips follow the lane");
+
+    // The lane's two clips written the other way round, in a file without ids: ids come from
+    // where things are written, so each place keeps its id and the clips swap them. The objects
+    // after them (the scenes) keep theirs.
+    let mut moved: Value = serde_json::from_str(&old).unwrap();
+    let clips = moved["project"]["arrangement"]["lanes"][0]["clips"].as_array_mut().unwrap();
+    assert_eq!(clips.len(), 2, "everything() has two clips on its first lane");
+    clips.reverse();
+    let moved = from_json(&moved.to_string()).unwrap();
+    let (before, after) = (&read.arrangement.lanes[0].clips, &moved.arrangement.lanes[0].clips);
+    assert_eq!((after[0].id, after[1].id), (before[0].id, before[1].id), "ids follow the places");
+    assert_eq!((after[0].start, after[1].start), (before[1].start, before[0].start), "the clips swapped");
+    assert_eq!(moved.launcher.scenes, read.launcher.scenes, "the scenes after the lanes keep their ids");
+}
+
+#[test]
+fn an_object_without_an_id_in_a_file_with_ids_gets_one_after_them() {
+    let mut file: Value = serde_json::from_str(&to_json(&everything())).unwrap();
+    let next = file["project"]["next_id"].as_u64().unwrap();
+    file["project"]["launcher"]["scenes"][0].as_object_mut().unwrap().remove("id");
+    let read = from_json(&file.to_string()).unwrap();
+    assert_eq!(u64::from(read.launcher.scenes[0].id.0), next, "the next id, not one of the others");
+    assert_eq!(u64::from(read.next_id), next + 1);
+    assert_eq!(read.validate(), Ok(()));
+
+    // A next_id that falls behind the ids in use moves past them, so no new object repeats one.
+    file["project"]["next_id"] = json!(1);
+    let read = from_json(&file.to_string()).unwrap();
+    assert!(read.next_id > read.max_object_id());
+}
+
+#[test]
+fn bad_ids_are_errors_not_crashes() {
+    let good: Value = serde_json::from_str(&to_json(&everything())).unwrap();
+    let with = |change: &dyn Fn(&mut Value)| {
+        let mut file = good.clone();
+        change(&mut file);
+        from_json(&file.to_string())
+    };
+    let clip = first_clip;
+    let refused = |result: Result<Project, ProjectFileError>, says: &str| match result {
+        Err(e) => assert!(e.0.contains(says), "{e} should say {says:?}"),
+        Ok(_) => panic!("a file with a bad id was read; it should say {says:?}"),
+    };
+
+    // The same id twice: two clips, two scenes, two lanes.
+    let other = good["project"]["arrangement"]["lanes"][0]["clips"][1]["id"].clone();
+    refused(with(&|f| clip(f)["id"] = other.clone()), "is used twice");
+    let scene = good["project"]["launcher"]["scenes"][0]["id"].clone();
+    refused(with(&|f| f["project"]["launcher"]["scenes"][1]["id"] = scene.clone()), "scene id");
+    let lane = good["project"]["arrangement"]["lanes"][0]["id"].clone();
+    refused(with(&|f| f["project"]["arrangement"]["lanes"][1]["id"] = lane.clone()), "lane id");
+    // A slot's clip shares the counter with the arrangement's.
+    let launched = good["project"]["launcher"]["columns"][0]["slots"][0]["clip"]["id"].clone();
+    refused(with(&|f| clip(f)["id"] = launched.clone()), "is used twice");
+    // Lanes, clips and scenes share the counter: a clip with a lane's id is refused too.
+    refused(with(&|f| clip(f)["id"] = lane.clone()), "by a clip, a lane or a scene at once");
+
+    // 0 is no id, and the largest value is never one.
+    refused(with(&|f| clip(f)["id"] = json!(0)), "clips[0].id");
+    refused(with(&|f| f["project"]["launcher"]["scenes"][0]["id"] = json!(u32::MAX)), "scenes[0].id");
+    for bad in [json!(-1), json!(1.5), json!("7"), json!(u64::from(u32::MAX) + 1), json!([1])] {
+        refused(with(&|f| clip(f)["id"] = bad.clone()), "clips[0].id");
+    }
+
+    // A counter beyond u32, or one too near the end to give the objects without ids theirs.
+    refused(with(&|f| f["project"]["next_id"] = json!(u64::from(u32::MAX) + 1)), "next_id");
+    refused(with(&|f| f["project"]["next_id"] = json!(-3)), "next_id");
+    refused(
+        with(&|f| {
+            f["project"]["next_id"] = json!(u32::MAX);
+            clip(f).as_object_mut().unwrap().remove("id");
+        }),
+        "every object id",
+    );
+    // The largest id there is opens, and the project then says it can name nothing new.
+    let mut full = with(&|f| clip(f)["id"] = json!(u32::MAX - 1)).unwrap();
+    assert_eq!(full.next_id, u32::MAX);
+    assert_eq!(full.new_clip_id(), Err(suhina_model::IdsExhausted));
 }

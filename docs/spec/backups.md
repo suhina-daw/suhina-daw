@@ -25,7 +25,7 @@ last save. The next time Suhina starts it offers the copy back.
 
 - **Backup:** a `.suhina` file holding the project as it was at one moment, with the plug-ins'
   state, written beside the project and never in place of it. The project keeps its own file.
-- **Project file:** the `.suhina` (or `.locr`) file the project was opened from or last saved to.
+- **Project file:** the `.suhina` file the project was opened from or last saved to.
   A project made new or from a template has none until it is saved.
 - **Critical operation:** an action after which the edits before it are hard to get back, listed
   below.

@@ -739,9 +739,9 @@ written against another (a bass line against the chords).
     is not offered.
 
   The choice is window state, kept until Suhina closes and across the clips shown: not a command,
-  not saved with the project and not an undo step. A picked clip is named by its place (its
-  track and its index on the lane, or its slot); when that place holds no clip any more, nothing
-  is shown.
+  not saved with the project and not an undo step. A picked arrangement clip is named by its
+  track and its id, so it stays picked when other clips on the lane move; a slot's clip by its
+  slot. When that clip or slot holds nothing any more, nothing is shown.
 - **The time mapping.** Each other clip is laid out in time through its own start, offset and loop,
   as the engine plays it: from its start it plays its content from its offset; a looping clip
   plays on to its loop's end and then round the loop for the rest of its length (an offset at or
@@ -972,17 +972,20 @@ modes, ticked as chosen, and under a divider every **workflow setting** with its
 ## Commands
 
 Every edit is a command (AGENTS.md rule 6), so the piano roll, the CLI and MCP make the same
-edits. A command names a clip by `track` and either `index` (an arrangement clip, as
-`project.clips` lists them) or `scene` (the clip in the track's slot of that scene, from 1). The
-clip must be a MIDI clip: an audio clip, an empty slot or a clip index that does not exist is an
-error. Notes are named by their **index** in the clip's notes, as `note.list` returns them; edits
+edits. A command names a clip by `clip`, its id from `project.clips` or `project.launcher`, which
+stays the same when the clip or the clips around it move
+([ADR 0025](../decisions/0025-object-identity.md)); the piano roll names the clip it shows that
+way. The older form, `track` with `index` (an arrangement clip's place on its track) or `scene`
+(the clip in the track's slot of that scene, from 1), still works and is deprecated, except that
+a slot's clip may still be named by its `scene`. The clip must be a MIDI clip: an audio clip, an
+empty slot or a clip that does not exist is an error. Notes are named by their **index** in the clip's notes, as `note.list` returns them; edits
 keep the order (`note.add` appends, `note.delete` removes and the later notes move up), so the
 indices of notes an edit did not delete stay valid. Each command is one undo step and changes
 nothing when it fails.
 
 | Command | Params | Does |
 |---|---|---|
-| `note.list` | `track`, `index` or `scene` | The clip's notes: index, time, length, key, velocity (1 to 127) |
+| `note.list` | `clip` (or `track` with `index` or `scene`) | The clip's notes: index, time, length, key, velocity (1 to 127) |
 | `note.add` | clip, `notes`: a list of `{time, length, key, velocity?}` | Adds notes (velocity 100 when left out); returns their indices |
 | `note.delete` | clip, `notes`: a list of indices | Deletes them |
 | `note.move` | clip, `notes`, `beats?`, `semitones?` | Moves them in time and in pitch |
@@ -1021,7 +1024,7 @@ it once. `startBy` and a duplicate's `beats` are within ±120 000, `semitones` w
 start that would land before 0, a length at or under 0, a key outside 0 to 127, or a `velocities`
 list not as long as `notes` (or with a value outside 1 to 127) fails the whole command. A split names at most 10 000 notes and adds at most one note per named note, so it can
 never grow a clip past the 100 000 notes it holds; `at` is a beat from 0 to 120 000. The three
-`clip.*` commands take a clip the same way (`track` with `index` or `scene`), MIDI or audio, and
+`clip.*` commands take a clip the same way (`clip`, or `track` with `index` or `scene`), MIDI or audio, and
 refuse a value that is not a finite number in its range, an end not after its start, and a clip
 that does not exist; each is one undo step and changes nothing when it fails.
 

@@ -66,11 +66,13 @@ impl PluginEnv {
         Self { catalog, host, group: Box::new(|plugin| group_for(Hosting::default(), plugin)) }
     }
 
-    /// What `library` gives: its catalog, its host, and how each plug-in is hosted (its
-    /// `plugins.setHosting` choice, else one process per plug-in file).
+    /// What `library` gives: its catalog without the plug-ins switched off, its host, and how
+    /// each plug-in is hosted (its `plugins.setHosting` choice, else one process per plug-in
+    /// file).
     pub fn from_library(library: &mut suhina_plugins::library::Library) -> Self {
         let host = library.host().to_path_buf();
-        let catalog = library.catalog().clone();
+        // Plug-ins switched off are neither offered nor loaded.
+        let catalog = library.enabled_catalog();
         let chosen: HashMap<String, Hosting> = catalog
             .plugins()
             .map(PluginInfo::spec)

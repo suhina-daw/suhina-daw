@@ -1,18 +1,19 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The user's plug-in library: the folders they added, the catalog of what the last scan
-//! found, and how each plug-in is hosted. All are kept as JSON in Suhina's settings folder,
-//! so a scan survives a restart and the next one reads only what changed.
+//! The user's plug-in library: the folders they added (each for one format, or for every
+//! format Suhina hosts) and the folders switched off, the catalog of what the last scan found,
+//! the plug-ins switched off, and how each plug-in is hosted. All are kept as JSON in Suhina's
+//! settings folder, so a scan survives a restart and the next one reads only what changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
-use crate::scan::{Catalog, PluginInfo, Report, standard_folders};
+use crate::scan::{Catalog, FolderFormat, PluginInfo, Report, standard_folders};
 
 /// How long loading one plug-in file may take before it counts as hung (shells get longer).
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -21,12 +22,36 @@ const MAX_FOLDERS: usize = 256;
 const FOLDERS_FILE: &str = "plugin-folders.json";
 const CATALOG_FILE: &str = "plugin-catalog.json";
 const HOSTING_FILE: &str = "plugin-hosting.json";
+const DISABLED_FILE: &str = "plugin-disabled.json";
 /// Plug-ins whose hosting may be set apart from the default.
 const MAX_HOSTING: usize = 4096;
 /// Longest hosting file read; a longer one is not Suhina's and is ignored.
 const MAX_HOSTING_BYTES: u64 = 1 << 20;
 /// Longest plug-in name (its spec) a hosting choice is kept for.
 const MAX_SPEC: usize = 4096;
+
+/// A folder scans look in, as the Settings page and `plugins.folders` list it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folder {
+    pub path: PathBuf,
+    /// The format of the plug-ins taken from it.
+    pub format: FolderFormat,
+    /// Scans look in it. A folder switched off stays listed; its plug-ins leave the catalog with
+    /// the next scan.
+    pub enabled: bool,
+    /// One of the system's standard folders: it can be switched off, not removed.
+    pub standard: bool,
+}
+
+/// The format a standard folder holds, from its name (`…/VST3`, `…/CLAP`, `~/.clap`).
+fn standard_format(path: &Path) -> FolderFormat {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    match name.trim_start_matches('.') {
+        "vst3" => FolderFormat::Vst3,
+        "clap" => FolderFormat::Clap,
+        _ => FolderFormat::Any,
+    }
+}
 
 /// Which host process a plug-in's instances run in (ADR 0006, decision 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -176,8 +201,13 @@ pub struct Library {
     folder: Option<PathBuf>,
     host: PathBuf,
     loaded: bool,
-    custom: Vec<PathBuf>,
+    /// The folders the user added, with the format of each.
+    custom: Vec<(PathBuf, FolderFormat)>,
+    /// Folders (standard or added) scans do not look in.
+    off: Vec<PathBuf>,
     catalog: Catalog,
+    /// Plug-ins (by spec) the user switched off: not offered, not loaded.
+    disabled: BTreeSet<String>,
     /// Whether scans look in the system's standard folders as well as the added ones.
     standard: bool,
     /// Plug-ins (by spec) hosted other than the default way.
@@ -199,7 +229,9 @@ impl Library {
             host,
             loaded: false,
             custom: Vec::new(),
+            off: Vec::new(),
             catalog: Catalog::new(),
+            disabled: BTreeSet::new(),
             standard: true,
             hosting: BTreeMap::new(),
         }
@@ -222,16 +254,17 @@ impl Library {
         }
         self.loaded = true;
         let Some(folder) = &self.folder else { return };
-        if let Ok(text) = std::fs::read_to_string(folder.join(FOLDERS_FILE))
-            && let Ok(Value::Array(list)) = serde_json::from_str::<Value>(&text)
-        {
-            self.custom = list.iter().filter_map(Value::as_str).map(PathBuf::from).take(MAX_FOLDERS).collect();
+        if let Ok(text) = std::fs::read_to_string(folder.join(FOLDERS_FILE)) {
+            (self.custom, self.off) = parse_folders(&text);
         }
         if let Ok(text) = std::fs::read_to_string(folder.join(CATALOG_FILE)) {
             self.catalog = Catalog::from_json(&text);
         }
         if let Some(text) = read_bounded(&folder.join(HOSTING_FILE), MAX_HOSTING_BYTES) {
             self.hosting = parse_hosting(&text);
+        }
+        if let Some(text) = read_bounded(&folder.join(DISABLED_FILE), MAX_HOSTING_BYTES) {
+            self.disabled = parse_disabled(&text);
         }
     }
 
@@ -243,36 +276,61 @@ impl Library {
     }
 
     /// The folders the user added, in the order added.
-    pub fn custom_folders(&mut self) -> &[PathBuf] {
+    pub fn custom_folders(&mut self) -> Vec<PathBuf> {
         self.load();
-        &self.custom
+        self.custom.iter().map(|(path, _)| path.clone()).collect()
     }
 
-    /// Every folder a scan looks in: the system's standard ones, then the user's.
-    pub fn folders(&mut self) -> Vec<PathBuf> {
-        let mut folders = if self.standard { standard_folders() } else { Vec::new() };
-        for folder in self.custom_folders() {
-            if !folders.contains(folder) {
-                folders.push(folder.clone());
+    /// Every folder scans may look in: the system's standard ones, then the user's, each with
+    /// its format and whether it is switched on.
+    pub fn folder_list(&mut self) -> Vec<Folder> {
+        self.load();
+        let mut list: Vec<Folder> = Vec::new();
+        let standard = if self.standard { standard_folders() } else { Vec::new() };
+        for path in standard {
+            let format = standard_format(&path);
+            list.push(Folder { enabled: !self.off.contains(&path), path, format, standard: true });
+        }
+        for (path, format) in &self.custom {
+            if !list.iter().any(|f| f.path == *path) {
+                let enabled = !self.off.contains(path);
+                list.push(Folder { path: path.clone(), format: *format, enabled, standard: false });
             }
         }
-        folders
+        list
     }
 
-    /// Adds a folder to look in; returns false if it was there already.
+    /// The folders a scan looks in now (switched on), with their formats.
+    pub fn folders(&mut self) -> Vec<(PathBuf, FolderFormat)> {
+        self.folder_list().into_iter().filter(|f| f.enabled).map(|f| (f.path, f.format)).collect()
+    }
+
+    /// Adds a folder to look in for every format Suhina hosts; returns false if it was there
+    /// already.
     pub fn add_folder(&mut self, folder: &Path) -> Result<bool, String> {
+        self.add_folder_as(folder, FolderFormat::Any)
+    }
+
+    /// Adds a folder to look in for `format`'s plug-ins; returns false if it was there already
+    /// with that format (with another one, the format changes).
+    pub fn add_folder_as(&mut self, folder: &Path, format: FolderFormat) -> Result<bool, String> {
         self.load();
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
         }
         let folder = folder.canonicalize().map(plain).unwrap_or_else(|_| folder.to_path_buf());
-        if self.custom.contains(&folder) {
-            return Ok(false);
+        if let Some(slot) = self.custom.iter_mut().find(|(path, _)| *path == folder) {
+            if slot.1 == format {
+                return Ok(false);
+            }
+            slot.1 = format;
+            self.save_folders()?;
+            return Ok(true);
         }
         if self.custom.len() >= MAX_FOLDERS {
             return Err(format!("at most {MAX_FOLDERS} folders can be added"));
         }
-        self.custom.push(folder);
+        self.custom.push((folder, format));
         self.save_folders()?;
         Ok(true)
     }
@@ -281,18 +339,91 @@ impl Library {
     pub fn remove_folder(&mut self, folder: &Path) -> Result<bool, String> {
         self.load();
         let canonical = folder.canonicalize().ok().map(plain);
+        let matches = |f: &PathBuf| f == folder || Some(f) == canonical.as_ref();
         let before = self.custom.len();
-        self.custom.retain(|f| f != folder && Some(f) != canonical.as_ref());
+        self.custom.retain(|(f, _)| !matches(f));
         if self.custom.len() == before {
             return Ok(false);
+        }
+        self.off.retain(|f| !matches(f));
+        self.save_folders()?;
+        Ok(true)
+    }
+
+    /// Switches a folder (a standard one or an added one) on or off for scans; returns false
+    /// when it already was so.
+    pub fn set_folder_enabled(&mut self, folder: &Path, enabled: bool) -> Result<bool, String> {
+        let listed = self.folder_list();
+        let canonical = folder.canonicalize().ok().map(plain);
+        let path = listed
+            .iter()
+            .find(|f| f.path == folder || Some(&f.path) == canonical.as_ref())
+            .map(|f| f.path.clone())
+            .ok_or_else(|| format!("{} is not one of the plug-in folders", folder.display()))?;
+        let was = !self.off.contains(&path);
+        if was == enabled {
+            return Ok(false);
+        }
+        if enabled {
+            self.off.retain(|f| *f != path);
+        } else {
+            self.off.push(path);
         }
         self.save_folders()?;
         Ok(true)
     }
 
     fn save_folders(&self) -> Result<(), String> {
-        let list: Vec<String> = self.custom.iter().map(|f| f.display().to_string()).collect();
-        self.save(FOLDERS_FILE, &json!(list).to_string())
+        let added: Vec<Value> = self
+            .custom
+            .iter()
+            .map(|(path, format)| json!({ "path": path.display().to_string(), "format": format.name() }))
+            .collect();
+        let off: Vec<String> = self.off.iter().map(|f| f.display().to_string()).collect();
+        self.save(FOLDERS_FILE, &json!({ "added": added, "off": off }).to_string())
+    }
+
+    /// Whether the plug-in `plugin_spec` ([`PluginInfo::spec`]) is switched on (the default).
+    pub fn is_enabled(&mut self, plugin_spec: &str) -> bool {
+        self.load();
+        !self.disabled.contains(plugin_spec)
+    }
+
+    /// Switches the plug-in `plugin_spec` on or off, and saves it. One switched off is not
+    /// offered in the browser or found by name, and a project that uses it finds it missing.
+    pub fn set_enabled(&mut self, plugin_spec: &str, enabled: bool) -> Result<(), String> {
+        self.load();
+        if plugin_spec.is_empty() || plugin_spec.len() > MAX_SPEC {
+            return Err("not a plug-in name".into());
+        }
+        if enabled {
+            self.disabled.remove(plugin_spec);
+        } else {
+            if !self.disabled.contains(plugin_spec) && self.disabled.len() >= MAX_HOSTING {
+                return Err(format!("at most {MAX_HOSTING} plug-ins can be switched off"));
+            }
+            self.disabled.insert(plugin_spec.to_string());
+        }
+        let list: Vec<&String> = self.disabled.iter().collect();
+        self.save(DISABLED_FILE, &json!(list).to_string())
+    }
+
+    /// The catalog without the plug-ins switched off: what sessions offer and load.
+    pub fn enabled_catalog(&mut self) -> Catalog {
+        self.load();
+        let disabled = &self.disabled;
+        self.catalog.without(|p| disabled.contains(&p.spec()))
+    }
+
+    /// Reads one file of the catalog again now, and saves the catalog.
+    pub fn scan_file_again(&mut self, file: &Path) -> Result<Report, String> {
+        self.load();
+        if !self.host.exists() {
+            return Err(format!("the plug-in host {} is missing; it ships next to Suhina", self.host.display()));
+        }
+        let report = self.catalog.scan_file_again(&self.host, file, SCAN_TIMEOUT)?;
+        self.save(CATALOG_FILE, &self.catalog.to_json())?;
+        Ok(report)
     }
 
     /// Scans every folder and saves the catalog. With `all`, forgets what earlier scans learned
@@ -306,7 +437,7 @@ impl Library {
             self.catalog = Catalog::new();
         }
         let folders = self.folders();
-        let report = self.catalog.scan(&self.host, &folders, SCAN_TIMEOUT);
+        let report = self.catalog.scan_folders(&self.host, &folders, SCAN_TIMEOUT);
         self.save(CATALOG_FILE, &self.catalog.to_json())?;
         Ok(report)
     }
@@ -350,6 +481,51 @@ fn read_bounded(path: &Path, limit: u64) -> Option<String> {
     let mut text = String::new();
     file.take(limit + 1).read_to_string(&mut text).ok()?;
     (text.len() as u64 <= limit).then_some(text)
+}
+
+/// The added folders and the folders switched off in a `plugin-folders.json` text: an object
+/// `{ "added": [{ "path", "format" }], "off": [path] }`, or the earlier form, a list of paths
+/// (each for every format). Entries that are not that are skipped.
+fn parse_folders(text: &str) -> (Vec<(PathBuf, FolderFormat)>, Vec<PathBuf>) {
+    let paths = |list: Option<&Value>| -> Vec<PathBuf> {
+        list.and_then(Value::as_array)
+            .map(|l| l.iter().filter_map(Value::as_str).map(PathBuf::from).take(MAX_FOLDERS).collect())
+            .unwrap_or_default()
+    };
+    match serde_json::from_str::<Value>(text) {
+        Ok(list @ Value::Array(_)) => {
+            (paths(Some(&list)).into_iter().map(|p| (p, FolderFormat::Any)).collect(), Vec::new())
+        }
+        Ok(Value::Object(folders)) => {
+            let added = folders
+                .get("added")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|f| {
+                            let path = PathBuf::from(f.get("path")?.as_str()?);
+                            let format = f.get("format").and_then(Value::as_str).and_then(FolderFormat::parse);
+                            Some((path, format.unwrap_or_default()))
+                        })
+                        .take(MAX_FOLDERS)
+                        .collect()
+                })
+                .unwrap_or_default();
+            (added, paths(folders.get("off")))
+        }
+        _ => (Vec::new(), Vec::new()),
+    }
+}
+
+/// The plug-ins switched off in a `plugin-disabled.json` text: a list of specs.
+fn parse_disabled(text: &str) -> BTreeSet<String> {
+    let Ok(Value::Array(list)) = serde_json::from_str::<Value>(text) else { return BTreeSet::new() };
+    list.iter()
+        .filter_map(Value::as_str)
+        .filter(|spec| !spec.is_empty() && spec.len() <= MAX_SPEC)
+        .take(MAX_HOSTING)
+        .map(str::to_string)
+        .collect()
 }
 
 /// The hosting choices in a `plugin-hosting.json` text: an object from plug-in spec to hosting
@@ -468,6 +644,66 @@ mod tests {
         let many: Map<String, Value> =
             (0..MAX_HOSTING + 10).map(|n| (format!("p{n}"), Value::from("vendor"))).collect();
         assert_eq!(parse_hosting(&Value::Object(many).to_string()).len(), MAX_HOSTING);
+    }
+
+    #[test]
+    fn folders_keep_their_format_and_whether_they_are_on() {
+        let folder = scratch("folders");
+        let (vst2, mixed) = (folder.join("VstPlugins"), folder.join("Mixed"));
+        std::fs::create_dir_all(&vst2).unwrap();
+        std::fs::create_dir_all(&mixed).unwrap();
+        let mut library = Library::new(Some(folder.join("settings")), PathBuf::from("host")).without_standard_folders();
+        assert!(library.add_folder(&mixed).unwrap());
+        assert!(library.add_folder_as(&vst2, FolderFormat::Vst2).unwrap());
+        assert!(!library.add_folder_as(&vst2, FolderFormat::Vst2).unwrap(), "already there");
+        assert!(library.set_folder_enabled(&mixed, false).unwrap());
+        assert!(!library.set_folder_enabled(&mixed, false).unwrap(), "already off");
+        assert!(library.set_folder_enabled(&folder.join("elsewhere"), false).is_err());
+
+        let mut again = Library::new(Some(folder.join("settings")), PathBuf::from("host")).without_standard_folders();
+        let list = again.folder_list();
+        let formats: Vec<(FolderFormat, bool)> = list.iter().map(|f| (f.format, f.enabled)).collect();
+        assert_eq!(formats, [(FolderFormat::Any, false), (FolderFormat::Vst2, true)]);
+        assert_eq!(again.folders().len(), 1, "a folder switched off is not scanned");
+        assert!(again.remove_folder(&mixed).unwrap());
+        assert_eq!(again.folder_list().len(), 1);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn the_earlier_folders_file_is_read() {
+        let (added, off) = parse_folders(r#"["/plugins/a", 5, "/plugins/b"]"#);
+        assert_eq!(
+            added,
+            [(PathBuf::from("/plugins/a"), FolderFormat::Any), (PathBuf::from("/plugins/b"), FolderFormat::Any)]
+        );
+        assert!(off.is_empty());
+        let (added, off) =
+            parse_folders(r#"{"added":[{"path":"/p","format":"clap"},{"path":"/q","format":"?"},{}],"off":["/p"]}"#);
+        assert_eq!(added, [(PathBuf::from("/p"), FolderFormat::Clap), (PathBuf::from("/q"), FolderFormat::Any)]);
+        assert_eq!(off, [PathBuf::from("/p")]);
+        assert_eq!(parse_folders("junk"), (Vec::new(), Vec::new()));
+        assert_eq!(standard_format(Path::new("C:/Program Files/Common Files/VST3")), FolderFormat::Vst3);
+        assert_eq!(standard_format(Path::new("/home/me/.clap")), FolderFormat::Clap);
+    }
+
+    #[test]
+    fn plugins_switched_off_are_kept_and_left_out_of_the_catalog_sessions_see() {
+        let folder = scratch("disabled");
+        let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
+        library.catalog.insert(PathBuf::from("/p/Thing.clap"), vec![info("/p/Thing.clap", "Maker")]);
+        let spec = info("/p/Thing.clap", "Maker").spec();
+        assert!(library.is_enabled(&spec));
+        library.set_enabled(&spec, false).unwrap();
+        assert_eq!(library.enabled_catalog().plugins().count(), 0);
+        assert_eq!(library.catalog().plugins().count(), 1, "the catalog keeps it");
+        let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
+        assert!(!again.is_enabled(&spec));
+        again.set_enabled(&spec, true).unwrap();
+        assert!(again.is_enabled(&spec));
+        assert!(again.set_enabled("", false).is_err());
+        assert_eq!(parse_disabled(r#"["a", 5, "", "b"]"#).len(), 2);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

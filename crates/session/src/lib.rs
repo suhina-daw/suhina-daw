@@ -89,6 +89,12 @@ impl From<&str> for CommandError {
     }
 }
 
+impl From<suhina_model::IdsExhausted> for CommandError {
+    fn from(e: suhina_model::IdsExhausted) -> Self {
+        Self(e.to_string())
+    }
+}
+
 /// A running audio engine that plays the session's project: transport and launcher commands
 /// go to it. Whatever keeps the audio output open (a stream, a thread) is held in `keep_alive`
 /// and closed when the player is dropped.
@@ -291,7 +297,11 @@ pub struct Session {
 const MAX_DECODED: usize = 16;
 
 impl Session {
-    pub fn new(project: Project) -> Self {
+    /// A session on `project`. Its lanes, clips and scenes without an id get one, so commands can
+    /// name them (ADR 0025).
+    pub fn new(mut project: Project) -> Self {
+        // A project that has used every id there is still opens; only adding objects then fails.
+        let _ = project.assign_ids();
         Self {
             project,
             source: None,
@@ -632,12 +642,19 @@ impl Session {
         })
     }
 
-    /// Opens a project: a Suhina project (`.suhina`, or `.locr` from before October 2026) or a
-    /// Live Set to import (`.als`). Returns the session and the importer's warnings.
+    /// Opens a project: a Suhina project (`.suhina`) or a Live Set to import (`.als`). Returns
+    /// the session and the importer's warnings. Any other file is refused by its extension.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
+        } else if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als")) {
+            return Err(format!(
+                "{}: Suhina opens a Suhina project (.{}) or a Live Set (.als), not this file",
+                path.display(),
+                suhina_project_file::EXTENSION
+            )
+            .into());
         } else {
             let import = suhina_als::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (import.project, import.warnings)
@@ -696,9 +713,8 @@ impl Session {
         self.plugins.check_edits();
     }
 
-    /// Saves the project as a Suhina project at `path` (`.suhina` is added when it has neither
-    /// `.suhina` nor `.locr`, so a project opened from a `.locr` file is saved back to it), with
-    /// the running plug-ins' state as it is now and audio paths written relative to the new
+    /// Saves the project as a Suhina project at `path` (`.suhina` is added when it does not end
+    /// in it), with the running plug-ins' state as it is now and audio paths written relative to the new
     /// file. The session then belongs to that file, unless `copy` (a template, a backup), which
     /// leaves the session as it was. Returns the path written.
     pub fn save(&mut self, path: &Path, copy: bool) -> Result<PathBuf, CommandError> {
@@ -824,6 +840,9 @@ impl Session {
             let known: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
             return Err(format!("{id}: unknown parameter {unknown:?}; expected {known:?}").into());
         }
+        // A clip named by its id is found where it is now and handed to the command by position.
+        let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
+        let params = resolved.as_ref().unwrap_or(params);
         match spec.kind {
             CommandKind::Read
             | CommandKind::Transport
@@ -862,7 +881,12 @@ impl Session {
                     self.open_step = None;
                 }
                 let before = self.project.clone();
-                let result = (spec.run)(self, params).and_then(|value| match self.project.validate() {
+                let result = (spec.run)(self, params).and_then(|value| {
+                    // A lane, clip or scene the command added without an id gets one now.
+                    self.project.assign_ids()?;
+                    Ok(value)
+                });
+                let result = result.and_then(|value| match self.project.validate() {
                     Ok(()) => Ok(value),
                     Err(errors) => Err(CommandError(format!("{id} would leave an invalid project: {errors:?}"))),
                 });
@@ -962,16 +986,27 @@ impl Session {
 
     fn undo(&mut self) -> bool {
         let Some(previous) = self.undo.pop() else { return false };
-        self.redo.push(std::mem::replace(&mut self.project, previous));
+        let undone = std::mem::replace(&mut self.project, previous);
+        self.keep_counter(&undone);
+        self.redo.push(undone);
         self.changes = self.changes.wrapping_add(1);
         true
     }
 
     fn redo(&mut self) -> bool {
         let Some(next) = self.redo.pop() else { return false };
-        self.undo.push(std::mem::replace(&mut self.project, next));
+        let undone = std::mem::replace(&mut self.project, next);
+        self.keep_counter(&undone);
+        self.undo.push(undone);
         self.changes = self.changes.wrapping_add(1);
         true
+    }
+
+    /// Keeps the id counter of the project an undo or redo stepped away from: an id handed out
+    /// before the step stays used, so an object added after an undo never gets the id of the one
+    /// the undo took away (ADR 0025).
+    fn keep_counter(&mut self, left: &Project) {
+        self.project.next_id = self.project.next_id.max(left.next_id);
     }
 }
 

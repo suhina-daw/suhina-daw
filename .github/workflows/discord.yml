@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The base branch, for the script; never the pull request's head.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Post to Discord
@@ -72,7 +72,7 @@ jobs:
     # Two renames of a thread in ten minutes; the script waits out a rate limit.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Mark the testing thread merged

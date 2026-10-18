@@ -2,17 +2,20 @@
 description: Why clips, arrangement lanes and scenes gain an id, what an id is, why ids need not be globally unique, and the four steps that make every command address objects by id instead of by position
 read_when: object id, ClipId, clip identity, positional addressing, clip.move, duplicated clips, make unique, project file version, ParamType::Clip, merge, version diff
 type: decision
-status: draft
-last_verified: 2026-10-15
+status: current
+last_verified: 2026-10-17
 covers:
   - crates/model/src/lib.rs
+  - crates/model/src/ids.rs
   - crates/session/src/commands.rs
+  - crates/session/src/lib.rs
   - crates/project-file/src/lib.rs
+  - crates/als/src/lib.rs
 ---
 
 # 0025: Object identity in the model
 
-- **Status:** proposed
+- **Status:** accepted (2026-10-17, implemented in [#568](https://github.com/suhina-daw/suhina-daw/issues/568))
 - **Date:** 2026-10-15
 
 ## Context
@@ -82,7 +85,15 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
    moves between parents.
 
 2. **An id is a monotonic counter stored in the project, and a value is never reused.** The project
-   keeps the next value to hand out; deleting an object does not return its id to the pool. A
+   keeps the next value to hand out (`Project::next_id`, written as `next_id` in the file); deleting
+   an object does not return its id to the pool, and neither does an undo: a session keeps the
+   counter where it got to when it steps back through its history, so an object added after an
+   undo never gets the id of the one the undo took away. **Clips, lanes and scenes share the one
+   counter**, so a value names at most one object of the three kinds; that is cheaper than a type
+   tag and leaves one block of values to reserve (decision 3). The values run from 1 to
+   `u32::MAX − 1`: 0 is "no id yet" (an object built in code, a file written before ids), and the
+   largest value is never handed out, so the counter can always name the next one; a project that
+   reaches it can still be opened and edited, only not given new objects. A
    deleted-then-recreated object must not inherit an identity, because an id that can be resurrected
    silently aliases two different objects — which is exactly the failure that makes a diff
    untrustworthy. This also keeps ids short, ordered and readable in a file and in `project.clips`,
@@ -99,7 +110,18 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
    > ([ADR 0007](0007-several-open-projects.md) › Not decided yet).
 
    Collisions are therefore confined to objects that have no ancestor in common, and those are
-   precisely the objects that must be given fresh ids anyway. **Peer-scoped or globally unique ids
+   precisely the objects that must be given fresh ids anyway.
+
+   **Repeated merges with the same guest: id blocks.** Renumbering on import needs a mapping per
+   guest per merge, or a clip the guest made in version 3 looks new again in version 5. The host
+   avoids it by **reserving a block of its counter for the guest** when it invites one or exports a
+   package (a million values, say): the host moves its own `next_id` past the block, and the guest
+   starts its counter at the block's first value. The objects the guest makes then keep their ids
+   when they come back, no mapping is needed, and the ids stay short and readable. Renumbering
+   stays the fallback for two folders that meet with no common origin. One shared counter
+   (decision 2) is what makes a single block enough. The block is a counter value and a length,
+   nothing in the model changes; the invitation and the package that carry it are
+   [ADR 0023](0023-collaboration-and-project-versions.md)'s and [ADR 0026](0026-project-folder-and-package.md)'s. **Peer-scoped or globally unique ids
    are not needed for asynchronous merge across a package or a repository**, and they are deferred
    until — and only if — simultaneous multi-writer editing of one project is ever wanted, which the
    host-authoritative session model deliberately avoids ([ADR 0023](0023-collaboration-and-project-versions.md)).
@@ -112,9 +134,28 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
      copy/paste and the sub-row layout. Still no command or file change.
    - **C.** Command parameters take an id, and **`index` is still accepted during a deprecation
      window**, documented in each command's own description so it reaches the CLI help, the MCP tool
-     list and the generated `docs/commands.md` without a second place to remember.
+     list and the generated `docs/commands.md` without a second place to remember. **The window
+     ends with the project format's next version** (ADR 0026's bump): the change that makes ids
+     required in the file removes `index` (and `track` where it only served `index`) from the clip
+     commands, so the two meanings are never both live for longer than one format version.
    - **D.** The file format gains a version and keeps reading v1. **The version bump itself is
      [ADR 0026](0026-project-folder-and-package.md)'s decision**, not this one.
+
+   **As implemented** (one pull request, [#568](https://github.com/suhina-daw/suhina-daw/issues/568),
+   steps A to C; of step D, the reading side, while the version bump waits for ADR 0026): ids live in `crates/model/src/ids.rs`; `Project::assign_ids` gives every object
+   without one the next ids in document order (each arrangement lane and then its clips, then the
+   scenes, then the slots' clips column by column), which is how a file without ids, the `.als`
+   reader and a session opening any project get them, and how a command that adds an object
+   without allocating its id gets one. A command that must report the new id allocates it itself
+   (`Project::new_clip_id` and its neighbours). A copy (paste, duplicate, a duplicated scene, the
+   second part of a split, the part of a covered clip after one placed over it) is a new clip with a
+   new id; a moved, trimmed or edited clip keeps its id. For step D, the file stays **version 1**:
+   `id` and `next_id` are optional fields that a reader without them ignores, and a reader with them
+   derives what is missing ([`docs/spec/suhina-format.md`](../spec/suhina-format.md)). The
+   commands resolve a `clip` id (or a name only one clip has) to the clip's place in the project as
+   it is when the command runs, in one place before any command sees its parameters
+   (`commands::resolve_clip_ids`), so every command that names a clip by `track` with `index` or
+   `scene` takes `clip` too, the `note.*` commands and `transport.play` included.
 
 5. **The parameter type is `ParamType::Clip`, and it is not new machinery.** `ParamType::Track`
    already exists (`crates/session/src/commands.rs:106`, `const TRACK`) and its JSON Schema is
@@ -205,6 +246,10 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
 
 ## Not decided yet
 
+- **Tracks, channels and contents still allocate `max + 1`.** Their ids are as old as the model and
+  are left as they are here; moving them to the same never-reused counter is the next step when a
+  merge needs it (issue 05 of the collaboration plan), and the literal ids of a blank project
+  (`crates/session/src/blank.rs`) go with it.
 - **Whether content becomes content-addressed.** A `ClipContent` is already shared through the pool,
   so a content hash is a natural identity for it — but that is a statement about assets, packages
   and blobs, and it belongs to [ADR 0026](0026-project-folder-and-package.md).
@@ -212,11 +257,13 @@ The same reasoning applies to the release of `.locr` (its own decision, not this
   Today all of them are `u32` newtypes, and a `ClipId` cannot be passed where a `TrackId` is wanted
   — which may be enough, and the question is whether a wire format or a command parameter needs the
   same guarantee in a place the compiler cannot check.
-- **How ids appear in an imported `.als`.** Its own id space is separate and its object-id counter
-  is not ours to reinterpret; the importer allocates fresh ids and keeps whatever it read in
-  `Extensions`, as it does for everything it cannot map ([ADR 0001](0001-daw-neutral-model.md) › 2).
 - **Whether the derived-in-document-order rule is the v1 read path forever**, or only until a v2 file
-  carries ids explicitly.
+  carries ids explicitly. Decided as far as it goes: a file without ids keeps opening; ADR 0026's
+  version decides whether a newer file may leave them out.
+
+Decided since: **an imported `.als` gets fresh ids.** Its own id space is separate and its object-id
+counter is not ours to reinterpret; the importer gives every lane, clip and scene a new id in
+document order and keeps nothing of the set's ids.
 
 ## Note on independent evidence
 

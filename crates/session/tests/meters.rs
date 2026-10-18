@@ -14,6 +14,13 @@ const SR: u32 = 48_000;
 
 /// Two tracks, "Lead" and "Quiet" (at -inf, so never heard), each playing an A4 for 16 beats.
 fn project(volume: f64) -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built(volume);
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built(volume: f64) -> Project {
     let track = |id: u32, name: &str| Track {
         content: ContentKinds { notes: true, audio: false },
         channel: Some(ChannelId(id)),
@@ -36,7 +43,12 @@ fn project(volume: f64) -> Project {
         arrangement: Arrangement {
             lanes: [1, 2]
                 .iter()
-                .map(|&t| ArrangementLane { name: format!("l{t}"), track: Some(TrackId(t)), clips: vec![clip.clone()] })
+                .map(|&t| ArrangementLane {
+                    id: Default::default(),
+                    name: format!("l{t}"),
+                    track: Some(TrackId(t)),
+                    clips: vec![clip.clone()],
+                })
                 .collect(),
             markers: Vec::new(),
         },

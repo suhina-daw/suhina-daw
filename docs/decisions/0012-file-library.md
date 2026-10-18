@@ -33,9 +33,10 @@ or full of odd names.
    index, the pins, the recent items and the tags. `Projects` holds it, as it holds the plug-in
    library, and the `library.*` commands run on it. It depends on `media` only for what a file
    is (kinds by extension) and does no decoding of its own: durations, tempo and key are read
-   on demand through `media` (`library.info`), never while indexing. The browser's view of the
-   installed plug-ins is kept here too (`library.setPluginsView`, `plugins_view` in
-   `browser.json`; [the plug-in browsing spec](../spec/plugin-browsing.md)).
+   on demand through `media` (`library.info`), never while indexing. Which installed
+   plug-ins the browser's Plug-ins category lists (instruments or effects) is kept here too
+   (`library.setPluginsView`, `plugins_view` in `browser.json`;
+   [the plug-in browsing spec](../spec/plugin-browsing.md)).
 2. **The index lists names, not contents.** Per file: its path below the folder, kind, size
    and modification time; per sub-folder: its modification time. Searching runs over this list
    in memory on the calling thread (a linear scan over at most 200 000 entries per folder takes

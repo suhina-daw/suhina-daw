@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::scan::{PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, parse_scan};
+use crate::scan::{PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, hung_message, parse_scan};
 
 /// How long a file a shell may take: one file that carries many plug-ins (a vendor's shell
 /// file) loads each of them, which takes minutes in any host.
@@ -142,7 +142,7 @@ impl Worker {
                 Err(RecvTimeoutError::Timeout) => {
                     let _ = self.child.kill();
                     let _ = self.child.wait();
-                    return Err(format!("hung: no answer within {} s", timeout.as_secs()));
+                    return Err(hung_message(timeout));
                 }
                 Err(RecvTimeoutError::Disconnected) => return Err(self.ended("crashed while loading")),
             }
@@ -229,6 +229,31 @@ pub fn scan_files(
         .into_iter()
         .map(|r| r.unwrap_or_else(|| Scanned::Failed("not scanned".into())))
         .collect()
+}
+
+/// [`scan_files`], then the files that failed read once more, one at a time, by a single
+/// worker: a failure can be passing (a plug-in that waits for a lock another process of its
+/// vendor holds gives no factory or hangs), and side-by-side loads make that more likely. The
+/// second result is the one kept. Also returns the indices of the files read twice.
+pub fn scan_files_retrying(
+    host: &Path,
+    files: &[String],
+    workers: usize,
+    timeout: &(dyn Fn(&str) -> Duration + Sync),
+) -> (Vec<Scanned>, Vec<usize>) {
+    let mut results = scan_files(host, files, workers, timeout);
+    let failed: Vec<usize> =
+        results.iter().enumerate().filter(|(_, r)| matches!(r, Scanned::Failed(_))).map(|(i, _)| i).collect();
+    if failed.is_empty() {
+        return (results, failed);
+    }
+    let again: Vec<String> = failed.iter().filter_map(|&i| files.get(i).cloned()).collect();
+    for (&index, scanned) in failed.iter().zip(scan_files(host, &again, 1, timeout)) {
+        if let Some(slot) = results.get_mut(index) {
+            *slot = scanned;
+        }
+    }
+    (results, failed)
 }
 
 /// `normal`, or [`SHELL_TIMEOUT`] for a shell.

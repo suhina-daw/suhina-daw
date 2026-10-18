@@ -1,6 +1,6 @@
 ---
 description: The MCP server for agents: tools, file roots, errors and how to run it
-read_when: MCP, agents, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
+read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
 last_verified: 2026-10-16
@@ -12,6 +12,8 @@ covers:
   - crates/automation/src/render.rs
   - crates/engine/src/cpu.rs
   - apps/suhina-cli/src/main.rs
+  - crates/automation/src/attach.rs
+  - crates/automation/src/endpoint.rs
 ---
 
 # MCP server
@@ -144,17 +146,30 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Saving.** `project.save { path?, copy? }` (through `command_run`) writes the project as a
   Suhina project (`.suhina`, [spec](spec/suhina-format.md)) with its plug-ins' state as it is now;
-  without a path, to the project file it came from (a `.locr` from before October 2026 stays `.locr`); `copy: true` writes a copy (a template) and the
+  without a path, to the project file it came from; `copy: true` writes a copy (a template) and the
   project keeps its own file. `project.info` reports `unsaved_changes`, which a change made only in
   a plug-in's editor sets too, within about a minute (two state reads that agree). `project_open` opens
-  `.suhina` (and older `.locr`) files as well as Live Sets.
+  `.suhina` files as well as Live Sets.
 - **Backups.** `project.autosave { now?, interval?, clean_up? }` reports where the active
   project's backups go, its last one and whether one is due ([spec](spec/backups.md));
   `now: true` writes one into `.backup` beside the project's file, which must be below the write
   root. Agents cannot choose `interval: "critical"`, which would write there unasked; the server
   writes no timed backups.
 
-- **Clips.** `project.clips` lists each arrangement clip with its start, length and fades
+- **Clips by id.** Every clip has an `id`, a whole number that stays the same when the clip is
+  moved, trimmed or edited, and never comes back once the clip is deleted
+  ([ADR 0025](decisions/0025-object-identity.md)). `project.clips` and `project.launcher` report
+  it, and every command that acts on a clip takes it as `clip` (or a name only one clip has),
+  `{ "clip": id }` in a `clips` list, so an agent can read a project, change it, and still name
+  the clip it meant: `clip.move {clip, start}`, `note.add {clip, notes}`. Commands that make
+  clips (`clip.paste`, `clip.duplicate`, `clip.split`, `clip.create`, `clip.consolidate`,
+  `clip.addFiles`) return the new clips' ids. The older form, `track` with `index` (an
+  arrangement clip's place on its track) or `scene`, still works and is **deprecated**: an index
+  changes whenever a clip before it moves, and it is accepted only until the project format's
+  next version. The examples below show the positional form where it is still the only way to
+  name a slot (`scene`).
+
+- **Clips.** `project.clips` lists each arrangement clip with its id, start, length and fades
   (lengths, shapes and curves); `clip.move`, `clip.duplicate`, `clip.delete`, `clip.copy`,
   `clip.cut`, `clip.paste`, `clip.setGain` and `clip.setFades` (fade-in and fade-out in beats,
   `inShape`/`outShape` and `inCurve`/`outCurve`) edit them through
@@ -337,7 +352,12 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Plug-ins.** `plugins.scan`, `plugins.list` and `plugins.folders` (through `command_run`)
   find and list installed plug-ins; a scan loads each new or changed plug-in file in a process
-  of its own ([ADR 0006](decisions/0006-plug-in-hosting.md)). `plugins.check` lists an open
+  of its own and tries files that failed again ([ADR 0006](decisions/0006-plug-in-hosting.md)).
+  `plugins.list` with `ignored: true` also lists the files that hold no plug-ins; it always lists
+  the files built for another processor (`incompatible`), and each plug-in's type and whether it
+  is switched on. `plugins.setEnabled` switches a plug-in off (not offered, not loaded) or on,
+  `plugins.scanFile` reads one listed file again, and `plugins.setFolderEnabled` switches a
+  plug-in folder off or on for scans. `plugins.check` lists an open
   project's plug-in devices with the installed plug-in found for each (also a VST3 version
   standing in for a VST2 one), how it was found and whether its settings carry over. `plugins.addFolder` and
   `plugins.removeFolder` are refused for agents, since a folder decides whose code a scan runs;
@@ -366,7 +386,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 | Tool | What it does |
 |---|---|
-| `project_open` | Open a Suhina project (`.suhina`, or `.locr` from before) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
+| `project_open` | Open a Suhina project (`.suhina`) or a `.als` Live Set below the read root as a new, active project; returns its `project` id, a summary and import warnings. |
 | `project_inspect` | Summary, tracks (volume, pan, mute, devices) and arrangement clips as JSON; optional `project`. |
 | `command_list` | Command ids with description, kind (`read`, `edit`, `history`, `transport`, `projects`, `plugins`, `plugin`, `library`, `audio`) and parameter schema; optional `filter`. |
 | `command_run` | Run one command: `{"id": "track.setPan", "params": {"tracks": ["Bass"], "pan": -1}}`; optional `project`. |
@@ -376,6 +396,46 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 Commands are defined once in `suhina-session` (ADR 0002); the MCP server, the CLI and the
 desktop app all run the same ones. [`commands.md`](commands.md) lists every command with its
 parameters; it is generated from the registry, so a new command needs no edit there.
+
+## Attached to the app
+
+`suhina-cli mcp --attach` works on the projects open in the running desktop app instead of
+projects of its own ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)): the person sees each
+change as it is made, and each editing command is one step in the undo history of its tab
+(`edit.undo` and the window's Ctrl+Z walk the same history).
+
+```sh
+suhina-cli mcp --attach
+```
+
+- **Which app.** The app of the same build: both executables sit in one folder, and the app
+  listens on a named pipe (Windows) or a Unix domain socket named from that folder, never a
+  network port. Test builds in different folders do not meet. Starting a build's `suhina` while it
+  runs opens the project as a tab in the running window instead (`suhina --new-instance` starts
+  another window, which serves no agents).
+- **The person lets agents in.** Nothing listens until **Settings › General › Agents › Let agents
+  work on open projects** is on. Each connection then waits: the window asks whether to allow the
+  client (by the name it gives at `initialize`), and tool calls wait for the answer; Deny ends the
+  connection. The control bar shows each agent let in with a **Disconnect** button.
+- **Tabs.** The agent works on the window's tabs: `projects.list`, `projects.switch` and the
+  `project` argument act on them. `project_open` is refused (the person opens projects), and so is
+  `projects.close`: closing loses a tab's unsaved changes and its undo history.
+- **Files.** The agent writes only in the folder of the project it acts on (`project.save`,
+  `project_render`, `project.autosave` with `now`), and reads that folder and the browser's
+  library folders. Relative paths start in the project's folder. A project never saved has no
+  folder: the agent can edit it but writes nothing until the person saves it once.
+- **Settings.** Commands that change the app's settings or the person's library rather than a
+  project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
+  `midi.setInput`, `plugins.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
+  `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
+  `project.autosave` with `interval` or `clean_up`. Transport commands play on the window's output.
+- **Plug-ins.** `plugins.setEnabled` and `plugins.setFolderEnabled` change the person's plug-in
+  library and are refused. So are `plugins.scan` and `plugins.scanFile`: a scan would run on the
+  window's thread while plug-ins load; the person scans from the plug-in manager. `project_render`
+  takes its snapshot with the window's projects and renders on a thread of its own, so the window
+  keeps drawing.
+- **Errors.** With no app of the build running, or with agents not let in, `--attach` says which
+  and exits.
 
 ## Errors
 
@@ -388,4 +448,10 @@ parameters; it is generated from the registry, so a new command needs no edit th
 
 ```sh
 claude mcp add suhina -- /path/to/suhina-cli mcp --read-root /path/to/projects --write-root /path/to/renders
+```
+
+Or, to work on the projects open in the running app:
+
+```sh
+claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 ```

@@ -76,7 +76,7 @@ crates/
            and the clip launcher; no file I/O
   als      L1 Live Set (.als) reader into model; later one crate per format (dawproject)
   flp      L1 FL Studio project (.flp) container and event stream; no model mapping yet (epic #271)
-  project-file L1 Suhina's own project file (.suhina, versioned JSON; .locr still read): reads and writes the model (ADR 0010)
+  project-file L1 Suhina's own project file (.suhina, versioned JSON): reads and writes the model (ADR 0010)
   media    L2 finds and decodes a project's audio files (symphonia) into the engine's AudioPool;
            reads MIDI files, file metadata (tempo, key) and detects tempo
   library  L2 the browser's library: added folders, an index kept on disk and watched, search, pins,
@@ -87,7 +87,8 @@ crates/
   session  L2 open projects (tabs, ADR 0007), undo history, the command registry (ADR 0002), the
            attached player, each project's decoded audio and previews (ADR 0011), backups
            (autosave and the offer after a crash, ADR 0010)
-  automation L3 MCP server (rmcp) over a session, file roots, WAV rendering (docs/mcp.md)
+  automation L3 MCP server (rmcp) over a session, file roots, WAV rendering (docs/mcp.md); the app's
+           endpoints: one instance per build, agents attached to the open projects (ADR 0028)
   output   L3 the audio device: lists hosts and devices (cpal; ASIO with the `asio` feature), opens the one
            chosen (WASAPI exclusive through `wasapi`), plays an engine in blocks of the chosen buffer;
            opens the input device chosen beside it for the tracks' audio inputs (ADR 0017)

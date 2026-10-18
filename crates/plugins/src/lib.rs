@@ -17,6 +17,7 @@
 //! instances loaded into the earlier process then report [`Health::Crashed`], and their own
 //! restart loads them into the new process.
 
+pub mod arch;
 pub mod library;
 pub mod matching;
 pub mod offline;

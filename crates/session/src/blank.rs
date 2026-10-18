@@ -49,7 +49,7 @@ pub fn blank_project() -> Project {
             extensions: Extensions::default(),
         });
         project.channels.push(channel(ChannelId(id), name, ChannelRole::Regular, Some(main)));
-        lanes.push(ArrangementLane { name: name.into(), track: Some(TrackId(id)), clips: Vec::new() });
+        lanes.push(ArrangementLane { name: name.into(), track: Some(TrackId(id)), ..ArrangementLane::default() });
         columns.push(LauncherColumn { track: TrackId(id), slots: vec![Slot { clip: None, has_stop: true }; SCENES] });
     }
     for (offset, (id, name)) in returns.into_iter().enumerate() {
@@ -74,6 +74,8 @@ pub fn blank_project() -> Project {
         columns,
         mappings: Vec::new(),
     };
+    // Its lanes and scenes get ids in order; a handful of objects cannot use up the counter.
+    let _ = project.assign_ids();
     project
 }
 

@@ -20,8 +20,11 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
        suhina-cli fm-synth voices <file.syx>
        suhina-cli commands [--markdown]
        suhina-cli mcp [--read-root <dir>] [--write-root <dir>] [--audio]
+       suhina-cli mcp --attach
        suhina-cli audio devices
-       suhina-cli plugins (scan [--all] | list | folders | add-folder <dir> | remove-folder <dir>
+       suhina-cli plugins (scan [--all] | scan-file <file> | list [--ignored] | folders
+                             | add-folder <dir> [--format (any | vst3 | clap)] | remove-folder <dir>
+                             | (folder-on | folder-off) <dir> | (enable | disable) <plug-in>
                              | check <project.als> | set-hosting <plug-in> (binary | vendor | instance))
        suhina-cli plugin run <plug-in> (<in-audio> | -) <out.wav> [--tail <seconds>] [--state <file>]
        suhina-cli plugin run-device <project.als> <device> (<in-audio> | -) <out.wav> [--tail <seconds>]
@@ -38,12 +41,17 @@ commands:
   mcp       serve the Model Context Protocol on stdin/stdout for agents; files can be read only
             below --read-root and written only below --write-root (no root, no access); with
             --audio, opened projects play on the default output so agents can launch clips,
-            and audio.setOutput chooses another
+            and audio.setOutput chooses another; with --attach, the agent works on the
+            projects open in the running suhina app of this build instead, once the app
+            lets agents in (Settings › General) and the person allows the connection
   audio     audio devices: list the audio hosts (WASAPI, ASIO, ALSA...) and each one's output
             devices with their sample rates and buffer sizes
   plugins   find installed plug-ins: scan looks in the standard folders and the added ones
-            (only new and changed files, or every file with --all), list shows what was found,
-            folders shows where scans look, add-folder and remove-folder change that; check
+            (new and changed files and failed ones again, or every file with --all; scan-file
+            reads one file again), list shows what was found, what failed and what is built for
+            another processor (--ignored: also the files that hold no plug-ins), folders shows
+            where scans look, add-folder, remove-folder, folder-on and folder-off change that;
+            enable and disable switch a plug-in on or off (off: not offered, not loaded); check
             lists a project's plug-ins and the installed plug-in found for each, or none;
             set-hosting chooses whether a plug-in's instances share a process per file (the
             default), per vendor, or each run in one of their own
@@ -61,7 +69,7 @@ commands:
             its window is closed, then --save writes the state it has to a file
 
 options:
-  <project.als>      a Live Set to import, or a Suhina project (.suhina, or .locr from before) to open
+  <project.als>      a Live Set to import, or a Suhina project (.suhina) to open
   --demo             use the built-in demo project instead
   -o, --output       output WAV path (render only)
   --cue <cue.wav>    render only: also write the cue (the tracks whose cue is on, after their
@@ -329,7 +337,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool), String> {
     let (project, audio) = match &args.source {
         Source::Demo => (demo_project(), AudioPool::new()),
         Source::Als(path) => {
-            // A Suhina project (.suhina or .locr) or a Live Set to import.
+            // A Suhina project (.suhina) or a Live Set to import.
             let (session, warnings) = suhina_session::Session::open(path).map_err(|e| e.0)?;
             let folder = path.parent().unwrap_or(std::path::Path::new("."));
             let started = std::time::Instant::now();
@@ -652,8 +660,19 @@ fn plugins(args: &[String]) -> Result<(), String> {
         ["scan"] => ("plugins.scan", serde_json::json!({})),
         ["scan", "--all"] => ("plugins.scan", serde_json::json!({ "all": true })),
         ["list"] => ("plugins.list", serde_json::json!({})),
+        ["list", "--ignored"] => ("plugins.list", serde_json::json!({ "ignored": true })),
         ["folders"] => ("plugins.folders", serde_json::json!({})),
         ["add-folder", folder] => ("plugins.addFolder", serde_json::json!({ "folder": folder })),
+        ["add-folder", folder, "--format", format] => {
+            ("plugins.addFolder", serde_json::json!({ "folder": folder, "format": format }))
+        }
+        ["folder-on", folder] => ("plugins.setFolderEnabled", serde_json::json!({ "folder": folder, "enabled": true })),
+        ["folder-off", folder] => {
+            ("plugins.setFolderEnabled", serde_json::json!({ "folder": folder, "enabled": false }))
+        }
+        ["enable", plugin] => ("plugins.setEnabled", serde_json::json!({ "plugin": plugin, "enabled": true })),
+        ["disable", plugin] => ("plugins.setEnabled", serde_json::json!({ "plugin": plugin, "enabled": false })),
+        ["scan-file", file] => ("plugins.scanFile", serde_json::json!({ "file": file })),
         ["remove-folder", folder] => ("plugins.removeFolder", serde_json::json!({ "folder": folder })),
         ["set-hosting", plugin, hosting] => {
             ("plugins.setHosting", serde_json::json!({ "plugin": plugin, "hosting": hosting }))
@@ -666,7 +685,7 @@ fn plugins(args: &[String]) -> Result<(), String> {
             ));
         }
     };
-    if id == "plugins.scan" {
+    if id == "plugins.scan" || id == "plugins.scanFile" {
         eprintln!("scanning for plug-ins; each new or changed file is loaded in a process of its own");
     }
     let result = projects.execute(id, &params).map_err(|e| e.0)?;
@@ -821,14 +840,30 @@ fn mcp(args: &[String]) -> Result<(), String> {
     let mut read_root = None;
     let mut write_root = None;
     let mut audio = false;
+    let mut attach = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--read-root" => read_root = Some(PathBuf::from(it.next().ok_or("--read-root needs a folder")?)),
             "--write-root" => write_root = Some(PathBuf::from(it.next().ok_or("--write-root needs a folder")?)),
             "--audio" => audio = true,
+            "--attach" => attach = true,
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
+    }
+    if attach {
+        if read_root.is_some() || write_root.is_some() || audio {
+            return Err("--attach takes no other arguments: the app decides what an agent may read and write, \
+                        and plays on its own output"
+                .into());
+        }
+        let folder = suhina_automation::endpoint::build_folder()
+            .map_err(|e| format!("could not find this program's folder: {e}"))?;
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("could not start the async runtime: {e}"))?;
+        return runtime.block_on(suhina_automation::attach::attach_stdio(&folder));
     }
     let workspace = Workspace::new(read_root.as_deref(), write_root.as_deref())?;
     let library = suhina_library::Library::new(suhina_plugins::library::settings_folder());
@@ -891,6 +926,7 @@ fn demo_project() -> Project {
         scale: None,
     };
     let clip = |content: u32, start: f64| Clip {
+        id: Default::default(),
         content: ContentId(content),
         start,
         length: 4.0,
@@ -916,11 +952,13 @@ fn demo_project() -> Project {
         arrangement: Arrangement {
             lanes: vec![
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Bass".into(),
                     track: Some(TrackId(1)),
                     clips: vec![clip(1, 0.0), clip(1, 4.0)],
                 },
                 ArrangementLane {
+                    id: Default::default(),
                     name: "Chords".into(),
                     track: Some(TrackId(2)),
                     clips: vec![clip(2, 0.0), clip(2, 4.0)],

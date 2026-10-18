@@ -13,7 +13,7 @@ use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui
 use serde_json::{Value, json};
 use suhina_device_api::{ParamInfo, ParamKind, Unit};
 use suhina_engine::model::automation::{MUTE, PAN, VOLUME};
-use suhina_engine::model::{AutomationLane, AutomationPoint, DeviceKind, Project, Rgb, TrackId};
+use suhina_engine::model::{AutomationLane, AutomationPoint, ClipId, DeviceKind, Project, Rgb, TrackId};
 
 use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, Action};
@@ -73,7 +73,7 @@ pub enum Scale {
     /// A built-in device parameter, placed as its knob turns.
     Device(ParamInfo),
     /// A data-only device parameter, placed linearly or logarithmically as its control requires.
-    Sd { min: f64, max: f64, control: suhina_device_sdk::ParameterControl, unit: String, options: Vec<String> },
+    Sd(Box<suhina_device_sdk::Parameter>),
 }
 
 impl Scale {
@@ -84,7 +84,7 @@ impl Scale {
             Self::Pan => (value + 1.0) / 2.0,
             Self::Mute => value,
             Self::Device(info) => info.to_normalized(value),
-            Self::Sd { min, max, control, .. } => sd_position(value, *min, *max, *control),
+            Self::Sd(parameter) => sd_position(parameter, value),
         };
         if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 }
     }
@@ -97,7 +97,7 @@ impl Scale {
             Self::Pan => (position * 2.0 - 1.0).clamp(-1.0, 1.0),
             Self::Mute => position.round(),
             Self::Device(info) => info.from_normalized(position),
-            Self::Sd { min, max, control, .. } => sd_value(position, *min, *max, *control),
+            Self::Sd(parameter) => sd_value(parameter, position),
         }
     }
 
@@ -119,7 +119,7 @@ impl Scale {
             Self::Pan => round(value, 1000.0),
             Self::Mute => value.round(),
             Self::Device(info) => info.clamp(value),
-            Self::Sd { min, max, control, .. } => sd_clamp(value, *min, *max, *control),
+            Self::Sd(parameter) => parameter.clamp(value),
         }
     }
 
@@ -132,7 +132,7 @@ impl Scale {
             Self::Pan => (value + delta).clamp(-1.0, 1.0),
             Self::Mute => (value + delta).clamp(0.0, 1.0).round(),
             Self::Device(info) => info.clamp(value + delta),
-            Self::Sd { min, max, control, .. } => sd_clamp(value + delta, *min, *max, *control),
+            Self::Sd(parameter) => parameter.clamp(value + delta),
         }
     }
 
@@ -141,7 +141,7 @@ impl Scale {
         match self {
             Self::Mute => true,
             Self::Device(info) => matches!(info.kind, ParamKind::Toggle | ParamKind::Choice(_)),
-            Self::Sd { control, .. } => control.is_stepped(),
+            Self::Sd(parameter) => parameter.control.is_stepped(),
             Self::Volume | Self::Pan => false,
         }
     }
@@ -168,56 +168,55 @@ impl Scale {
                     Unit::None => format!("{value:.2}"),
                 },
             },
-            Self::Sd { min, control, unit, options, .. } => match control {
+            Self::Sd(parameter) => match parameter.control {
                 suhina_device_sdk::ParameterControl::Toggle | suhina_device_sdk::ParameterControl::Button => {
                     if value >= 0.5 { "On" } else { "Off" }.into()
                 }
                 suhina_device_sdk::ParameterControl::Choice | suhina_device_sdk::ParameterControl::Radio => {
-                    let index = (value.round() - *min).max(0.0) as usize;
-                    options.get(index).cloned().unwrap_or_else(|| format!("{}", value.round()))
+                    // A loaded point outside the graph's range names its nearest option.
+                    let value = parameter.clamp(value);
+                    let index = (value - parameter.min).max(0.0) as usize;
+                    parameter.ui.options.get(index).cloned().unwrap_or_else(|| format!("{value}"))
                 }
                 suhina_device_sdk::ParameterControl::Integer => format!("{}", value.round()),
-                _ if !unit.is_empty() => format!("{value:.2} {unit}"),
+                _ if !parameter.unit.is_empty() => format!("{value:.2} {}", parameter.unit),
                 _ => format!("{value:.2}"),
             },
         }
     }
 }
 
-fn sd_clamp(value: f64, min: f64, max: f64, control: suhina_device_sdk::ParameterControl) -> f64 {
-    let value = if value.is_finite() { value.clamp(min, max) } else { min };
-    if control.is_stepped() { value.round().clamp(min, max) } else { value }
+/// Whether a log control places `parameter` logarithmically (only over a positive range).
+fn sd_log(parameter: &suhina_device_sdk::Parameter) -> bool {
+    matches!(
+        parameter.control,
+        suhina_device_sdk::ParameterControl::LogSlider | suhina_device_sdk::ParameterControl::LogKnob
+    ) && parameter.min > 0.0
 }
 
-fn sd_position(value: f64, min: f64, max: f64, control: suhina_device_sdk::ParameterControl) -> f64 {
-    let value = sd_clamp(value, min, max, control);
+fn sd_position(parameter: &suhina_device_sdk::Parameter, value: f64) -> f64 {
+    let (min, max) = (parameter.min, parameter.max);
+    let value = parameter.clamp(value);
     if min >= max {
         0.5
-    } else if matches!(
-        control,
-        suhina_device_sdk::ParameterControl::LogSlider | suhina_device_sdk::ParameterControl::LogKnob
-    ) && min > 0.0
-    {
+    } else if sd_log(parameter) {
         (value.ln() - min.ln()) / (max.ln() - min.ln())
     } else {
         (value - min) / (max - min)
     }
 }
 
-fn sd_value(position: f64, min: f64, max: f64, control: suhina_device_sdk::ParameterControl) -> f64 {
+fn sd_value(parameter: &suhina_device_sdk::Parameter, position: f64) -> f64 {
+    let (min, max) = (parameter.min, parameter.max);
     let position = position.clamp(0.0, 1.0);
     let value = if min >= max {
         min
-    } else if matches!(
-        control,
-        suhina_device_sdk::ParameterControl::LogSlider | suhina_device_sdk::ParameterControl::LogKnob
-    ) && min > 0.0
-    {
+    } else if sd_log(parameter) {
         (min.ln() + position * (max.ln() - min.ln())).exp()
     } else {
         min + position * (max - min)
     };
-    sd_clamp(value, min, max, control)
+    parameter.clamp(value)
 }
 
 fn round(value: f64, per: f64) -> f64 {
@@ -327,13 +326,7 @@ impl Params {
                                 key: LaneKey { device: Some(index), param: spec.id.clone() },
                                 name: spec.name.clone(),
                                 device_name: Some(device.name.clone()),
-                                scale: Scale::Sd {
-                                    min: spec.min,
-                                    max: spec.max,
-                                    control: spec.control,
-                                    unit: spec.unit.clone(),
-                                    options: spec.ui.options.clone(),
-                                },
+                                scale: Scale::Sd(Box::new(spec.clone())),
                                 enabled: lane.as_ref().is_none_or(|l| l.enabled),
                                 points: lane.map(|l| l.points).unwrap_or_default(),
                             });
@@ -415,7 +408,7 @@ pub struct LanesState {
     curve_drag: Option<CurveDrag>,
     box_drag: Option<BoxDrag>,
     /// The clip selected in the view last frame: selecting a clip ends a selection of points.
-    clip: Option<(TrackId, usize)>,
+    clip: Option<(TrackId, ClipId)>,
 }
 
 impl LanesState {
@@ -481,7 +474,7 @@ impl LanesState {
 
     /// Called once a frame before the lanes are drawn: a clip selected since the last frame ends
     /// the selection of points.
-    pub fn follow_clip(&mut self, clip: Option<(TrackId, usize)>) {
+    pub fn follow_clip(&mut self, clip: Option<(TrackId, ClipId)>) {
         if clip.is_some() && clip != self.clip {
             self.selection = None;
         }
@@ -1225,9 +1218,20 @@ mod tests {
         let params = Params::build(&project);
         let frequency = params.param(track, &LaneKey { device: Some(0), param: "frequency".into() });
         assert_eq!(frequency.map(Param::label).as_deref(), Some("Test Filter: Frequency"));
-        let Some(Scale::Sd { .. }) = frequency.map(|p| &p.scale) else { panic!("expected .sd scale") };
+        let Some(Scale::Sd(_)) = frequency.map(|p| &p.scale) else { panic!("expected .sd scale") };
         assert_eq!(frequency.map(|p| p.scale.text(1_000.0)).as_deref(), Some("1000.00 Hz"));
         let position = (1_000.0_f64.ln() - 20.0_f64.ln()) / (20_000.0_f64.ln() - 20.0_f64.ln());
         assert!((frequency.map_or(0.0, |p| p.scale.position(1_000.0)) - position).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_sd_choice_point_outside_its_range_names_the_nearest_option() {
+        let mut shape = suhina_device_sdk::Parameter::new("shape", "Shape", (1.0, 3.0), 1.0);
+        shape.control = suhina_device_sdk::ParameterControl::Choice;
+        shape.ui.options = vec!["Sine".into(), "Square".into(), "Saw".into()];
+        let scale = Scale::Sd(Box::new(shape));
+        assert_eq!(scale.text(2.0), "Square");
+        assert_eq!(scale.text(9.0), "Saw");
+        assert_eq!(scale.text(-4.0), "Sine");
     }
 }

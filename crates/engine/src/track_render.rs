@@ -53,6 +53,8 @@ fn alone(project: &Project, track: TrackId) -> Project {
     let channel = ChannelId(0);
     let source = project.tracks.iter().find(|t| t.id == track);
     Project {
+        // The clips keep their ids, so the counter stays past them.
+        next_id: project.next_id,
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
         tracks: vec![Track {
@@ -141,6 +143,7 @@ mod tests {
             }],
             arrangement: Arrangement {
                 lanes: vec![suhina_model::ArrangementLane {
+                    id: Default::default(),
                     name: "Audio".into(),
                     track: Some(track),
                     clips: vec![suhina_model::Clip {

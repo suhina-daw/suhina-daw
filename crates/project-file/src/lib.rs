@@ -9,9 +9,6 @@
 //! { "format": "suhina", "version": 1, "project": { "transport": { … }, "tracks": [ … ], … } }
 //! ```
 //!
-//! Files saved before October 2026 end in `.locr` and name the format `"locr"`; they are the
-//! same format and still open ([`OLD_EXTENSION`], [`is_project_file`]).
-//!
 //! Binary data (plug-in state, extensions) is base64. Audio files are referred to by path,
 //! relative to the project file; [`rebase_audio`] moves those paths when a project is saved
 //! somewhere else.
@@ -25,23 +22,19 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Channel, ChannelId,
-    ChannelRole, Clip, ClipContent, ContentId, ContentKinds, ContentLane, Device, DeviceKind, DeviceParam, Extension,
-    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData, LaunchMapping, LaunchMode,
-    LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL,
-    MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor,
-    Note, Project, Rgb, Scale, ScaleMode, Scene, Send, Slot, StretchMode, TempoPoint, TimeSignature,
-    TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, valid_bpm,
+    ChannelRole, Clip, ClipContent, ClipId, ContentId, ContentKinds, ContentLane, Device, DeviceKind, DeviceParam,
+    Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, InputChannels, LaneData, LaneId,
+    LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
+    MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, MappingSource, MappingTarget,
+    Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene, SceneId, Send, Slot,
+    StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
+    valid_bpm,
 };
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = "suhina";
-/// The extension of project files saved before October 2026, without the dot: the same format,
-/// still read, never chosen for a new file.
-pub const OLD_EXTENSION: &str = "locr";
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
-/// The `format` files saved before October 2026 name; read as [`FORMAT`].
-const OLD_FORMAT: &str = "locr";
 /// The version this crate writes, and the newest it reads.
 pub const VERSION: u64 = 1;
 /// A larger file is refused before it is parsed.
@@ -71,10 +64,9 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension: `.suhina`, or `.locr` from before
-/// October 2026 (either case).
+/// Whether `path` names a project file by its extension, `.suhina` in either case.
 pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION) || e.eq_ignore_ascii_case(OLD_EXTENSION))
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))
 }
 
 /// Reads a project file.
@@ -111,13 +103,19 @@ pub fn to_json(project: &Project) -> String {
     serde_json::to_string_pretty(&file).unwrap_or_default()
 }
 
-/// Reads the text of a `.suhina` file, or of a `.locr` one saved before October 2026. The
-/// project must validate (ids unique, references resolve), as an imported one must.
+/// Reads the text of a `.suhina` file. The project must validate (ids unique, references
+/// resolve), as an imported one must.
 pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     let root = serde_json::from_str::<Value>(text).map_err(|e| format!("the project is not JSON: {e}"))?;
     let root = root.as_object().ok_or("a project file is a JSON object")?;
-    if !matches!(root.get("format").and_then(Value::as_str), Some(FORMAT | OLD_FORMAT)) {
-        return Err("this is not a Suhina project (its format is not \"suhina\")".to_string().into());
+    match root.get("format") {
+        Some(Value::String(format)) if format == FORMAT => {}
+        Some(Value::String(format)) => {
+            // Named in the message, cut short: the text is the file's, so it may be anything.
+            let found: String = format.chars().take(40).collect();
+            return Err(format!("this is not a Suhina project: its format is \"{found}\", not \"{FORMAT}\"").into());
+        }
+        _ => return Err(format!("this is not a Suhina project: it does not name the format \"{FORMAT}\"").into()),
     }
     let version = root.get("version").and_then(Value::as_u64).ok_or("the project's version is missing")?;
     if version == 0 || version > VERSION {
@@ -237,11 +235,15 @@ fn project_value(p: &Project) -> Value {
     out.insert("tracks".into(), p.tracks.iter().map(track_value).collect());
     out.insert("channels".into(), p.channels.iter().map(channel_value).collect());
     out.insert("contents".into(), p.contents.iter().map(content_value).collect());
-    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| json!({
-        "name": lane.name,
-        "track": lane.track.map(|t| t.0),
-        "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
-    })).collect::<Vec<_>>() });
+    let mut arrangement = json!({ "lanes": p.arrangement.lanes.iter().map(|lane| {
+        let mut out = json!({
+            "name": lane.name,
+            "track": lane.track.map(|t| t.0),
+            "clips": lane.clips.iter().map(clip_value).collect::<Vec<_>>(),
+        });
+        with_id(&mut out, lane.id.0);
+        out
+    }).collect::<Vec<_>>() });
     // Left out when there are none, so a project without markers is written as before.
     if !p.arrangement.markers.is_empty() {
         arrangement["markers"] =
@@ -264,8 +266,34 @@ fn project_value(p: &Project) -> Value {
     if let Some(scale) = p.default_scale {
         out.insert("default_scale".into(), scale_value(scale));
     }
+    // The counter the ids came from, so an id is never handed out twice (ADR 0025); left out
+    // while nothing has an id.
+    if p.next_id != 0 {
+        out.insert("next_id".into(), json!(p.next_id));
+    }
     with_extensions(&mut out, &p.extensions);
     Value::Object(out)
+}
+
+/// Writes an object's `id`, unless it has none yet (0): a reader gives it one then.
+fn with_id(value: &mut Value, id: u32) {
+    if let (Some(map), true) = (value.as_object_mut(), id != 0) {
+        map.insert("id".into(), json!(id));
+    }
+}
+
+/// An object's `id`, or 0 (none: [`Project::assign_ids`] gives it one) when it is missing, as in
+/// a file written before ids. An id is from 1 to `u32::MAX - 1`; the largest value is never one,
+/// so the counter can always name the next.
+fn read_id(o: &Obj, at: &str) -> Result<u32, ProjectFileError> {
+    match o.get("id") {
+        None | Some(Value::Null) => Ok(0),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|&n| n != 0 && n != u32::MAX)
+            .ok_or_else(|| ProjectFileError(format!("{at}.id: expected a whole number from 1 to {}", u32::MAX - 1))),
+    }
 }
 
 fn track_value(t: &Track) -> Value {
@@ -488,6 +516,7 @@ fn clip_value(c: &Clip) -> Value {
         "fade_out_shape": c.fade_out_curve.shape.name(),
         "fade_out_curve": number(c.fade_out_curve.curve),
     });
+    with_id(&mut out, c.id.0);
     if let Some(map) = out.as_object_mut() {
         if c.follow_action != FollowAction::default() {
             map.insert("follow".into(), follow_value(&c.follow_action));
@@ -647,6 +676,7 @@ fn extensions(o: &Obj, at: &str) -> Result<Extensions, ProjectFileError> {
 
 fn scene_value(s: &Scene) -> Value {
     let mut scene = json!({ "name": s.name, "tempo_bpm": s.tempo_bpm.map(number) });
+    with_id(&mut scene, s.id.0);
     if let (Some(ts), Some(object)) = (s.time_signature, scene.as_object_mut()) {
         object.insert("time_signature".into(), json!([ts.numerator, ts.denominator]));
     }
@@ -797,6 +827,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                     .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
                     .collect::<Result<_, _>>()?;
                 lanes.push(ArrangementLane {
+                    id: LaneId(read_id(lane, &at)?),
                     name: text(lane, "name", &at)?,
                     track: optional_whole(lane, "track", &at)?.map(TrackId),
                     clips,
@@ -826,6 +857,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 let at = format!("project.launcher.scenes[{i}]");
                 let s = object(v, &at)?;
                 scenes.push(Scene {
+                    id: SceneId(read_id(s, &at)?),
                     name: text(s, "name", &at)?,
                     tempo_bpm: optional_float(s, "tempo_bpm", &at)?,
                     time_signature: read_signature(s.get("time_signature"), &format!("{at}.time_signature"))?,
@@ -861,7 +893,7 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
             Launcher { scenes, columns, mappings }
         }
     };
-    Ok(Project {
+    let mut project = Project {
         transport,
         tracks,
         channels,
@@ -870,7 +902,13 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
         launcher,
         extensions: extensions(p, "project")?,
         default_scale: read_scale(p, "default_scale", "project")?,
-    })
+        next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
+    };
+    // A file written before ids, or an object added by hand without one: the objects without an
+    // id get the next ones in document order, so the same file always reads with the same ids.
+    // A stale `next_id` moves past the ids in use.
+    project.assign_ids().map_err(|e| ProjectFileError(format!("project: {e}")))?;
+    Ok(project)
 }
 
 fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
@@ -1170,6 +1208,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         Some(_) => return Err(format!("{at}.loop: expected [start, end]").into()),
     };
     Ok(Clip {
+        id: ClipId(read_id(c, at)?),
         content: ContentId(whole(c, "content", at)?),
         start: float(c, "start", at)?,
         length: float(c, "length", at)?,

@@ -9,6 +9,7 @@ covers:
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/model/src/lib.rs
+  - crates/model/src/overlap.rs
   - crates/engine/src/audio.rs
   - crates/engine/src/fade_cost_tests.rs
   - crates/engine/src/launcher.rs
@@ -32,6 +33,15 @@ covers:
 How arrangement clips behave when they are moved. The familiar behaviour (observed in Live 12.4,
 which this follows) is that a clip placed over others **replaces** what it covers. Some users come
 from pattern-based DAWs where clips **stack** and all play; two settings allow that.
+
+`arrangement.audioOverlaps {track?}` lists the pairs of audio clips that sound together on one
+track: their spans share time, by their start and end. Clips that only touch (one ends within
+1e-9 beats of where the next starts, as the sub-rows count it) do not overlap, and clips that play
+notes are left out. Each pair has the track, the shared span (`start`, `end`, in beats), `kind`
+(`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
+(what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
+there were more. ARA's first version refuses such overlaps for the clips it edits
+([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Moving a clip
 

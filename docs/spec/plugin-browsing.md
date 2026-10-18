@@ -1,6 +1,6 @@
 ---
-description: How the browser shows installed plug-ins: grouped by vendor or by type, or as one flat list with sortable columns; and how each format's own categories map to Suhina's groups
-read_when: plug-in views, browser plug-ins, group by type, vendor, flat list, sorting, columns, VST3 sub-categories, CLAP features, favourites, tags
+description: How the browser shows installed plug-ins: the Plug-ins category lists the instruments or the effects by name and format, the other categories keep them under their vendors; and how each format's own categories map to Suhina's groups
+read_when: plug-in views, browser plug-ins, instruments, effects, vendor, sorting, columns, name column, narrow browser, VST3 sub-categories, CLAP features, favourites, tags
 type: spec
 status: current
 last_verified: 2026-10-14
@@ -20,29 +20,39 @@ in the tree under the **Plug-ins** heading, in the **Plug-ins** category
 (the **Show Plug-ins** filter), and in searches, pins and tag filters like any other item
 ([browser](browser.md) › Commands, `library.search`).
 
-## The three views
+## Instruments and Effects
 
-When the category is **Plug-ins**, a switch above the results chooses how they are shown, as
-the List | Map switch does for the sample map:
+When the category is **Plug-ins** (and no place, search or tag narrows it), a switch above the
+results chooses **Instruments** (the default) or **Effects**, and the results are one list of
+those plug-ins, no headings: Suhina's own built-in instruments and effects are not in it (they
+are under the **Instruments** and **Effects** categories). The list has two columns, **Name**
+and **Format** (`vst3`, `clap`, and `vst2` once VST2 plug-ins are hosted). The vendor, version,
+file and the rest are the plug-in manager's ([plug-in manager](plugin-manager.md)).
 
-| View | What it shows |
-|---|---|
-| **Grouped** (default) | The tree as ever: a **Plug-ins** heading, the vendors under it in natural order (unknown vendors last), each vendor's plug-ins under the vendor, by name. |
-| **By type** | Two headings, **Instruments** and **Effects**; under each, Suhina's groups (the tables below); under each group, that group's plug-ins by name. A plug-in appears once, under the first of its groups the tables give; a plug-in with no group sits under **Other**. |
-| **All** | One flat list of every plug-in, no headings: columns **Name**, **Vendor**, **Type** (`instrument`/`effect`), **Format** (`vst3`, `clap`), and **Modified** (the date the scan read the file, from the catalog). |
+Each column heading is a button: clicking it sorts by that column, clicking again reverses; the
+name sorts in natural order, the format by its text, the name breaking ties. The choice of
+Instruments or Effects is kept with the library (browser.json, `plugins_view`), so it is there
+on the next start; a value an earlier version kept (`grouped`, `type`, `flat`) reads as
+Instruments. The sorting choice is the window's own and is not kept.
 
-Rows behave the same in every view: select, drag onto a track (one row, or several with the
-modifiers), pin, tag, right-click menu. In the flat list every column heading is a button:
-clicking it sorts by that column, clicking again reverses; the name column sorts in natural
-order, the others by their text (vendor and format), type (instrument before effect) and date.
-The choice of view is kept with the library (browser.json, `plugins_view`), so it is there on
-the next start; the sorting choice is the window's own and is not kept.
+**The name always shows.** The format column sits at the right edge and the name takes the
+rest. When the browser is narrowed, from either edge and whichever side of the window it is on,
+the name keeps at least 96 points: a column that would leave it less drops, the rightmost first,
+before the name is cut. Rows say nothing else at their right end (no "plug-in" note), so a
+column never shares its place with other text.
 
-The views replace the tree only where the plug-ins are listed alone (the **Plug-ins**
-category). In **All**, **Instruments** and **Effects** categories the plug-ins stay in the
-tree, grouped by vendor, as today.
+Rows behave the same in the list and in the tree: select, drag onto a track (one row, or
+several with the modifiers), pin, tag, right-click menu.
+
+In the **All**, **Instruments** and **Effects** categories the plug-ins stay in the tree under a
+**Plug-ins** heading, grouped by vendor (unknown vendors last), each vendor's plug-ins by name;
+in **Instruments** and **Effects** only that type. Plug-ins switched off in the plug-in manager
+are in neither the list nor the tree.
 
 ## Suhina's groups, and how each format's categories map to them
+
+The groups name a plug-in's kind for searches (`library.search` details) and for a later
+grouping; the browser does not show them as headings now.
 
 A plug-in's type is `instrument` or `effect` (`suhina_session::is_instrument`: any of its
 features containing "instrument"). Under the type, the plug-in's own sub-categories name its
@@ -72,10 +82,11 @@ a format's category is used only to pick the group.
 
 ## Where the choice is kept
 
-`library.setPluginsView { view: "grouped" | "type" | "flat" }` sets it; the reply says the view
+`library.setPluginsView { view: "instruments" | "effects" }` sets it; the reply says the view
 chosen. It is saved in `browser.json` as `plugins_view`
 ([browser](browser.md) › Where it is kept), read with the same rules as the rest of the file: a
-missing or unknown value falls back to `grouped` with a warning, never a failure.
+missing value, or one an earlier version kept, is `instruments` quietly; any other falls back to
+`instruments` with a warning, never a failure.
 
 ## Favourites and tags
 

@@ -462,6 +462,8 @@ impl Session {
                     crate::files::place_clip(p, take.track, source, None, take.start.max(0.0), false)?;
                 }
             }
+            // The take's clip, and the second part of a clip it split, get their ids (ADR 0025).
+            p.assign_ids()?;
             p.validate().map_err(|errors| CommandError(format!("the take would leave an invalid project: {errors:?}")))
         })();
         if let Err(e) = result {

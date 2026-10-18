@@ -49,9 +49,9 @@ impl Recent {
         let Some(file) = &self.file else { return Ok(()) };
         let text: String = self.paths.iter().map(|p| format!("{}\n", p.display())).collect();
         if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("could not save the recent projects: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| crate::save_error::message("the recent projects", &e))?;
         }
-        std::fs::write(file, text).map_err(|e| format!("could not save the recent projects: {e}"))
+        std::fs::write(file, text).map_err(|e| crate::save_error::message("the recent projects", &e))
     }
 
     /// The ones that are still there, newest first.
@@ -116,13 +116,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("suhina-templates-{}", std::process::id()));
         let _fresh = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap_or_default();
-        // `.locr` is how projects were saved before October 2026; they are listed too.
-        for name in ["b.suhina", "A.als", "notes.txt", "c.LOCR", "d.locr"] {
+        for name in ["b.suhina", "A.als", "notes.txt", "c.SUHINA"] {
             std::fs::write(dir.join(name), "x").unwrap_or_default();
         }
         let names: Vec<String> =
             templates(&dir).iter().filter_map(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).collect();
-        assert_eq!(names, ["A.als", "b.suhina", "c.LOCR", "d.locr"]);
+        assert_eq!(names, ["A.als", "b.suhina", "c.SUHINA"]);
         assert!(templates(&dir.join("missing")).is_empty());
         let _clean = std::fs::remove_dir_all(&dir);
     }

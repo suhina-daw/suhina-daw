@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(kind_of(Path::new("groove.MID")), Some(FileKind::Midi));
         assert_eq!(kind_of(Path::new("bank.syx")), Some(FileKind::Preset));
         assert_eq!(kind_of(Path::new("song.suhina")), Some(FileKind::Project));
-        assert_eq!(kind_of(Path::new("old song.LOCR")), Some(FileKind::Project));
+        assert_eq!(kind_of(Path::new("old song.SUHINA")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("set.als")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("effects/gain.SD")), Some(FileKind::Effect));
         assert_eq!(kind_of(Path::new("readme.txt")), None);
