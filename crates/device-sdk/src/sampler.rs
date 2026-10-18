@@ -169,6 +169,7 @@ pub struct Sampler {
     lfo_cycle: u32,
     bend: f64,
     gain: f64,
+    grain_gain: f64,
     pan: f64,
 }
 impl Default for Sampler {
@@ -195,6 +196,7 @@ impl Sampler {
             lfo_cycle: 0,
             bend: 0.,
             gain: 1.,
+            grain_gain: 1.,
             pan: 0.,
         }
     }
@@ -289,6 +291,7 @@ impl Device for Sampler {
         self.lfo_cycle = 0;
         self.bend = 0.;
         self.gain = 10f64.powf(self.values[18] / 20.);
+        self.grain_gain = 1. / (self.values[23] * self.values[22] / 1000. * 0.5).clamp(1., 16.);
         self.pan = self.values[19];
     }
     fn set_param(&mut self, index: usize, value: f64) {
@@ -420,7 +423,7 @@ impl Device for Sampler {
                 grain.length = 0;
             }
         }
-        let grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
+        let target_grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
         let target_gain = 10f64.powf(p[18] / 20.);
         for frame in buffer.as_chunks_mut::<2>().0 {
             let mut out = [0.; 2];
@@ -436,6 +439,7 @@ impl Device for Sampler {
             let lfo = modulation * p[38];
             let volume = 1. - p[54] * (modulation + 1.) * 0.5;
             self.gain += (target_gain - self.gain) * (1. / (0.005 * self.rate));
+            self.grain_gain += (target_grain_gain - self.grain_gain) * (1. / (0.005 * self.rate));
             self.pan += (p[19] - self.pan) * (1. / (0.005 * self.rate));
             for (index, v) in self.voices.iter_mut().enumerate() {
                 if !v.active {
@@ -567,8 +571,8 @@ impl Device for Sampler {
                         let position = start + (g.position - start).rem_euclid(end - start);
                         let data = read(self.source.as_ref().as_ref(), self.channels, position);
                         let window = window * source_fade(position, start, end, p[57], p[58], self.source_rate);
-                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) * grain_gain;
-                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) * grain_gain;
+                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) * self.grain_gain;
+                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) * self.grain_gain;
                         g.age += 1;
                         g.position += g.step;
                     }
@@ -780,6 +784,32 @@ fn grain_window(table: &[f64; 2049], phase: f64) -> f64 {
 
 #[cfg(test)]
 mod grain_window_tests {
+    #[test]
+    fn grain_normalization_smooths_voice_count_changes_independently_of_master_gain() {
+        use suhina_device_api::{Device, NoteEvent, ProcessContext};
+        let mut sampler = super::Sampler::new();
+        sampler.load_sample(48000, 1, vec![0.25; 48000].into());
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [("mode", 1.), ("poly", 32.), ("size", 500.), ("density", 100.)] {
+            sampler.set_param(super::INFO.param_index(id).unwrap(), value);
+        }
+        for key in 48..56 {
+            sampler.event(NoteEvent::On { key, velocity: 1. });
+        }
+        let context = ProcessContext::default();
+        sampler.process(&context, &mut [0.; 4800]);
+        let before = sampler.grain_gain;
+        let master = sampler.gain;
+        sampler.event(NoteEvent::On { key: 56, velocity: 1. });
+        sampler.process(&context, &mut [0.; 2]);
+        let target = 1. / 14.;
+        assert!(sampler.grain_gain > before && sampler.grain_gain < target);
+        assert!((sampler.grain_gain - before) < (target - before) * 0.01);
+        assert_eq!(sampler.gain, master);
+        sampler.process(&context, &mut [0.; 4800]);
+        assert!((sampler.grain_gain - target).abs() < 1e-6);
+    }
+
     #[test]
     fn many_grain_voices_share_one_bounded_budget() {
         use suhina_device_api::{Device, NoteEvent, ProcessContext};

@@ -233,3 +233,6 @@ linear interpolation and an absolute error below 0.000001 against the cosine for
 Grain mode shares a budget of 256 active grains across sounding voices, up to 32
 per voice. Increasing polyphony reduces the per-voice grain limit; discarded grains
 are ended rather than resumed later. Normalization follows the active grain limit.
+
+Grain normalization follows a separate 5 ms ramp when density, grain size or the
+voice budget changes; it does not share the master gain ramp.
