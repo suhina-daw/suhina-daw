@@ -3499,7 +3499,8 @@ impl App {
         };
         match (target, pointer, self.detail_drop) {
             (None, Some(pointer), Some((detail, track)))
-                if detail.contains(pointer) && items.iter().any(|i| i.kind.is_device()) =>
+                if detail.contains(pointer)
+                    && items.iter().any(|i| i.kind.is_device() || i.kind == drop::ItemKind::Sample) =>
             {
                 Some(DropTarget::Track(track))
             }
@@ -4486,6 +4487,77 @@ mod tests {
         // Where the map's window cannot tell (no pointer over it yet), nothing is under the drag.
         app.map_window.drag = Some(RemoteDrag { screen: None, released: false, escape: false, ctrl: false });
         assert_eq!(drag_pointer_in(&app, main, None), None);
+    }
+
+    #[test]
+    fn sample_drops_into_empty_device_area_load_sampler() {
+        #[derive(Debug)]
+        struct TestFile(PathBuf);
+        impl egui::DroppedFile for TestFile {
+            fn path(&self) -> &Path {
+                &self.0
+            }
+            fn bytes(&self) -> Result<Vec<u8>, String> {
+                Ok(Vec::new())
+            }
+        }
+        let path = std::env::temp_dir().join(format!("suhina-device-drop-{}.wav", std::process::id()));
+        let mut writer = hound::WavWriter::create(
+            &path,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 8000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..800 {
+            writer.write_sample(1000i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        for system in [true, false] {
+            let mut app = App::new();
+            app.set_session(Session::new(suhina_session::blank_project()), &[]);
+            app.view.selected = Some(TrackId(1));
+            app.detail_open = true;
+            app.detail_showing = detail_view::Showing::Devices;
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(Vec2::new(1280., 800.))
+                .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+            harness.run();
+            let target = harness.state().detail_drop.unwrap().0.center();
+            harness.hover_at(target);
+            harness.step();
+            if system {
+                harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile(path.clone())));
+            } else {
+                harness.drag_at(target);
+                harness.step();
+                harness.state_mut().browser.drag = Some(vec![drop::system_file(&path).unwrap()]);
+                harness.drop_at(target);
+            }
+            harness.step();
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while std::time::Instant::now() < end {
+                harness.step();
+                if harness.state().session().unwrap().project().channels[0]
+                    .devices
+                    .first()
+                    .is_some_and(|d| d.sample_file().is_some())
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let session = harness.state().session().unwrap();
+            let devices = &session.project().channels[0].devices;
+            assert_eq!(devices.len(), 1, "system={system}: {:?}", harness.state().status);
+            assert_eq!(devices[0].kind, suhina_engine::model::DeviceKind::Builtin("sampler".into()));
+            assert!(devices[0].sample_file().is_some());
+            assert!(session.project().arrangement.lanes[0].clips.is_empty());
+        }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
