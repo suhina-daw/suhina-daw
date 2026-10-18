@@ -449,6 +449,29 @@ mod imp {
         with_state(id, |s| s.size).unwrap_or(Size { width: 0, height: 0 })
     }
 
+    /// The plug-in is taking text: the key's window is a system text field (an Edit or RichEdit
+    /// control, which VSTGUI and others open to type in) or this thread shows a text caret. A
+    /// space typed there is the plug-in's. A field a plug-in draws itself without a caret is not
+    /// seen here.
+    fn typing(hwnd: HWND) -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GUITHREADINFO, GetClassNameW, GetGUIThreadInfo};
+        let mut class = [0u16; 32];
+        // SAFETY: the buffer and its length are this array's.
+        let length = unsafe { GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32) };
+        let class = String::from_utf16_lossy(&class[..usize::try_from(length).unwrap_or(0)]).to_lowercase();
+        if class == "edit" || class.starts_with("richedit") {
+            return true;
+        }
+        // SAFETY: a zeroed info with its size set is what the call fills; thread 0 is this one's.
+        let mut info: GUITHREADINFO = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+        // SAFETY: no arguments; this thread's id.
+        let thread = unsafe { GetCurrentThreadId() };
+        // SAFETY: as above.
+        let found = unsafe { GetGUIThreadInfo(thread, &mut info) };
+        found != 0 && !info.hwndCaret.is_null()
+    }
+
     thread_local! {
         /// The last Space press went to the engine, so its release does too.
         static SPACE_OURS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -475,7 +498,7 @@ mod imp {
                     state < 0
                 };
                 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_LWIN, VK_RWIN};
-                let ours = !(held(VK_CONTROL) || held(VK_LWIN) || held(VK_RWIN));
+                let ours = !(held(VK_CONTROL) || held(VK_LWIN) || held(VK_RWIN) || typing(message.hwnd));
                 SPACE_OURS.with(|s| s.set(ours));
                 if ours {
                     super::caught_space(message.lParam & (1 << 30) != 0);
@@ -838,8 +861,9 @@ mod imp {
     use std::cell::{Cell, RefCell};
     use std::ffi::c_void;
 
-    use objc2::MainThreadOnly;
     use objc2::rc::Retained;
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{ClassType, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEventMask, NSEventModifierFlags,
         NSEventType, NSFloatingWindowLevel, NSNormalWindowLevel, NSView, NSWindow, NSWindowStyleMask, NSWorkspace,
@@ -1017,10 +1041,17 @@ mod imp {
                     NSDefaultRunLoopMode,
                     true,
                 ) {
-                    // Space (key code 49) without ⌘, ⌃ or ⌥ goes to the engine, not the plug-in.
+                    // Space (key code 49) without ⌘, ⌃ or ⌥ goes to the engine, not the plug-in,
+                    // unless the plug-in is typing in a system text field (its window's first
+                    // responder is a text view, the field editor AppKit text fields use).
                     let kind = event.r#type();
+                    let typing = event
+                        .window(app.mtm())
+                        .and_then(|w| w.firstResponder())
+                        .is_some_and(|r| r.isKindOfClass(objc2_app_kit::NSText::class()));
                     if (kind == NSEventType::KeyDown || kind == NSEventType::KeyUp)
                         && event.keyCode() == 49
+                        && !typing
                         && !event.modifierFlags().intersects(
                             NSEventModifierFlags::Command
                                 | NSEventModifierFlags::Control

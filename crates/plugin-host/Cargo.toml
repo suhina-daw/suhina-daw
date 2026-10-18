@@ -52,7 +52,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 # The editors' windows (AppKit): one NSWindow per open editor, its content view the plug-in's
 # view attaches into; the host's main loop pumps the application's events.
 objc2 = "0.6"  # MIT OR Apache-2.0 OR Zlib
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent", "NSGraphics", "NSResponder", "NSRunningApplication", "NSView", "NSWindow", "NSWorkspace"] }  # MIT OR Apache-2.0 OR Zlib
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSEvent", "NSGraphics", "NSResponder", "NSRunningApplication", "NSText", "NSView", "NSWindow", "NSWorkspace"] }  # MIT OR Apache-2.0 OR Zlib
 objc2-foundation = { version = "0.3", features = ["NSDate", "NSRunLoop", "NSString"] }  # MIT OR Apache-2.0 OR Zlib
 
 # The workspace lints, except that this crate may use `unsafe` to load plug-ins (ADR 0006). It

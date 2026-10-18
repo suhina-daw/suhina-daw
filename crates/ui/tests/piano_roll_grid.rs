@@ -18,6 +18,7 @@ use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
 use suhina_ui::detail::piano_roll_grid::{GridMode, PianoGrid, Width};
 use suhina_ui::settings::Settings;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 800.0);
@@ -163,26 +164,26 @@ fn the_menu_ticks_the_chosen_entries_and_changes_the_grid() {
     h.run();
     let toggled =
         |h: &Harness<'static, App>, label: &str| format!("{:?}", h.get_by_label(label).accesskit_node().toggled());
-    assert_eq!(toggled(&h, "Snap to grid (Ctrl+4)"), "Some(True)");
+    assert_eq!(toggled(&h, &format!("Snap to grid ({})", shown("Ctrl+4"))), "Some(True)");
     assert_eq!(toggled(&h, "1/16"), "Some(True)");
     assert_eq!(toggled(&h, "1/8"), "Some(False)");
     assert_eq!(toggled(&h, "Adaptive medium"), "Some(False)");
-    assert_eq!(toggled(&h, "Triplet grid (Ctrl+3)"), "Some(False)");
+    assert_eq!(toggled(&h, &format!("Triplet grid ({})", shown("Ctrl+3"))), "Some(False)");
     // Each entry with a key shows it, and its label carries it.
-    for entry in
-        ["Narrow grid (Ctrl+1)", "Widen grid (Ctrl+2)", "Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"]
-    {
+    let narrow = format!("Narrow grid ({})", shown("Ctrl+1"));
+    let widen = format!("Widen grid ({})", shown("Ctrl+2"));
+    for entry in [narrow.as_str(), widen.as_str(), "Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"] {
         assert!(h.query_by_label(entry).is_some(), "{entry} is in the menu");
     }
     h.get_by_label("1/8").click_accesskit();
     h.run();
     assert_eq!(grid_label(&h), "Grid value 1/8");
-    pick(&mut h, "Triplet grid (Ctrl+3)");
+    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
     assert_eq!(grid_label(&h), "Grid value 1/8T");
     pick(&mut h, "Adaptive wide");
     assert_eq!(grid_label(&h), "Grid value Adaptive T");
-    pick(&mut h, "Triplet grid (Ctrl+3)");
-    pick(&mut h, "Snap to grid (Ctrl+4)");
+    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
+    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
     assert_eq!(grid_label(&h), "Grid value Adaptive off");
 }
 
@@ -222,7 +223,7 @@ fn a_drawn_note_follows_the_chosen_value() {
 fn snap_off_lets_a_drawn_note_start_off_the_grid() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    pick(&mut h, "Snap to grid (Ctrl+4)");
+    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
     assert_eq!(grid_label(&h), "Grid value 1/16 off");
     let keys = empty_keys(&h);
     let start = notes(&h)[1].time.floor() + 1.0;
@@ -292,7 +293,7 @@ fn following_the_control_bar_the_menu_sets_its_value_and_greys_out_the_rest() {
     assert_eq!(quantization(&h), Quantization::Beats(0.5));
     assert_eq!(grid_label(&h), "Grid value 1/8");
     // Snap off is the control bar's none.
-    pick(&mut h, "Snap to grid (Ctrl+4)");
+    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
     assert_eq!(quantization(&h), Quantization::None);
     assert_eq!(grid_label(&h), "Grid value 1/16 off");
     // Picking a value snaps again.

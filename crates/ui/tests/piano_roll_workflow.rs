@@ -15,6 +15,7 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
 use suhina_ui::settings::Settings;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::keymap::{Keymap, Preset};
 use suhina_ui::settings::workflow::{Setting, Workflow};
 use suhina_ui::{App, kit::theme};
@@ -351,7 +352,7 @@ fn the_duplicate_setting_in_the_menu_moves_the_key() {
     assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
     assert_eq!(keymap.binding_text("view.browser").as_deref(), Some("Ctrl+Shift+B"));
     // The toolbar's Duplicate button shows the key it has now.
-    assert!(h.query_by_label("Duplicate (Ctrl+B)").is_some());
+    assert!(h.query_by_label(&format!("Duplicate ({})", shown("Ctrl+B"))).is_some());
 }
 
 #[test]

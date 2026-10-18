@@ -16,6 +16,7 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::{Tool, key_name};
 use suhina_ui::kit::widgets::Action;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::keymap::{Keymap, Preset};
 use suhina_ui::settings::{PianoRollTop, Settings};
 use suhina_ui::{App, kit::theme};
@@ -578,7 +579,7 @@ fn shift_and_draw_repeats_the_last_notes_length() {
 }
 
 /// Clicks one of the toolbar's note clipboard buttons by name; their label is the name and the
-/// key they have ("Copy (Ctrl+C)"), so a button whose key the keymap has moved is still found.
+/// key they have ("Copy (Ctrl+C)", "Copy (⌘C)" on macOS), so a button whose key the keymap has moved is still found.
 fn clipboard(h: &mut Harness<'static, App>, name: &str) {
     let action = match name {
         "Cut" => "selection.cut",
@@ -599,8 +600,8 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     let mut h = piano_app(&mut renderer, Settings::default());
     let start = notes(&h).len();
     // The buttons show the key they run.
-    assert!(h.query_by_label("Copy (Ctrl+C)").is_some(), "Copy names its key");
-    assert!(h.query_by_label("Cut (Ctrl+X)").is_some(), "Cut names its key");
+    assert!(h.query_by_label(&format!("Copy ({})", shown("Ctrl+C"))).is_some(), "Copy names its key");
+    assert!(h.query_by_label(&format!("Cut ({})", shown("Ctrl+X"))).is_some(), "Cut names its key");
     // Nothing selected: the clipboard buttons are greyed out, so a click does nothing.
     clipboard(&mut h, "Copy");
     assert_eq!(notes(&h).len(), start, "nothing to copy");

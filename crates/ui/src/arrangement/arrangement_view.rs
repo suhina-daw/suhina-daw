@@ -1193,7 +1193,11 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         if body.secondary_clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
-            state.menu_beat = Some(f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width).max(0.0));
+            // On the grid cell under the pointer, as a double-click makes a clip (Alt: free).
+            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width).max(0.0);
+            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
+            let free = ui.input(|i| i.modifiers.alt) || !grid.snaps;
+            state.menu_beat = Some(if free { raw } else { ((raw / grid.step).floor() * grid.step).max(0.0) });
         }
         body.context_menu(|ui| {
             empty_lane_menu(ui, clips_lane.track, clips_lane.notes, state, actions);

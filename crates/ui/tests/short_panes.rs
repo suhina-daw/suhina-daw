@@ -16,6 +16,7 @@ use suhina_engine::model::{LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
+use suhina_ui::settings::keymap::shown;
 use suhina_ui::settings::{DeviceLayout, Settings};
 use suhina_ui::{App, kit::theme};
 
@@ -366,7 +367,7 @@ fn the_x_at_the_end_of_the_toolbar_closes_the_editor() {
     assert!(x.bottom() <= grid.top(), "in the toolbar, above the grid");
     let tooltip =
         h.query_all_by_label_contains("Hide editor").find_map(|n| n.accesskit_node().label()).unwrap_or_default();
-    assert!(tooltip.contains("Ctrl+Shift+E"), "its name says its key: {tooltip}");
+    assert!(tooltip.contains(&shown("Ctrl+Shift+E")), "its name says its key: {tooltip}");
     click(&mut h, x.center());
     assert!(!piano_shows(&h), "the editor is closed");
     assert!(h.state().selected_clip().is_some(), "the clip stays selected");
