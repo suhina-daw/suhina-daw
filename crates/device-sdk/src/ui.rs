@@ -3,6 +3,7 @@
 
 //! Data-only drawing programs, image resources and input bindings for custom panels.
 use crate::{DeviceSdkError, Parameter};
+mod author;
 mod widgets;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};

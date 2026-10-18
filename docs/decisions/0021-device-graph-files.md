@@ -68,6 +68,12 @@ authoring fields are accepted.
 
 ## Consequences
 
+- Rust authors may use the additive `author::GraphBuilder` and standard `CustomControl`
+  constructors instead of manipulating vectors directly. Builder handles are scoped to one
+  append-only graph, connection errors are reported during authoring, and `finish` still uses
+  the existing full validator. These helpers emit the same `.sd` data; they add neither an
+  executable language nor an alternative runtime. See [checked authoring](../device-sdk.md#checked-rust-authoring).
+
 - SDK authors compose effects, MIDI effects and monophonic instruments from supported primitives and distribute one self-contained
   `.sd` file, with generated parameter UI and a read-only node list.
 - Node contracts are available in the SDK's JSON catalog and the read command `devices.sdNodes`

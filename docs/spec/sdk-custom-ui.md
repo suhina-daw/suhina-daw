@@ -5,6 +5,7 @@ type: spec
 status: current
 last_verified: 2026-10-15
 covers:
+  - crates/device-sdk/src/ui/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
@@ -14,6 +15,41 @@ covers:
 ---
 
 # Custom device panels
+
+## Rust control constructors
+
+`CustomControl` provides `number`, `dial`, `toggle`, `set_button`, `menu`, `value_menu`,
+`label` and `separator` constructors. They construct the existing serialized controls, with
+standard defaults for gestures, bindings and drawings; the host interaction and theme paths
+are unchanged. `widget` is the lower-level passive-widget constructor for custom composition.
+Number/dial controls bind the vertical axis; toggle, set-button and menu controls bind X.
+Number/dial defaults include the standard precision/reset tooltip and a default accessible
+name, which authors should override when the parameter id is not a meaningful label.
+
+Configure a control before inserting it; no operation implicitly edits the panel's last control:
+
+```rust
+let control = CustomControl::number("time_left", [64., 48., 50., 24.])
+    .name("Left delay time")
+    .logarithmic(true)
+    .visible_when(UiValue::parameter("sync_left", false).equals(0.));
+ui.controls.push(control);
+```
+
+Chainable `id`, `name`, `tooltip`, `visible_when` and `logarithmic` setters retain ordinary
+`CustomControl` fields for specialized widget formatting and custom X/Y bindings. `UiBinding`
+also provides `logarithmic`. `UiValue::equals` constructs the existing bounded equality expression.
+
+`parameter_metadata(&parameter)` reuses the name and the declared linear/logarithmic control
+mapping for matching bindings, leaving other parameter bindings unchanged. Units and choice
+labels continue to resolve from parameter metadata in the host. It never guesses a scale from
+the id/unit, changes a control id, hides stock parameter rows, or edits a parameter declaration.
+Several controls may bind one parameter, but must have distinct control ids; use `.id(...)`
+when the default parameter-based identity would collide. Label/separator ids are supplied explicitly.
+Set-buttons default to `<parameter>_<value>`; toggles, numbers, dials and menus default to the
+parameter id. Bounds, expressions, parameter references and widget contracts still pass through
+the existing device UI validator when the graph is saved or compiled. Keyboard operation,
+accessibility and gesture-based command/undo behavior are shared with manually built controls.
 
 The `custom_panel` example writes `custom-panel.sd`, whose `device.name` is **Velvet Volume**.
 It demonstrates that the file name and the inserted device's name may differ, using a standard

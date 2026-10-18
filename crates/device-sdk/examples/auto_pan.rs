@@ -2,46 +2,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Build the auto-pan effect as a self-contained .sd file.
-use suhina_device_sdk::{DeviceGraph, DeviceRole, Node as N, NodeKind as K, Waveform};
+use suhina_device_sdk::{
+    DeviceGraph, DeviceRole, NodeKind as K, Parameter, ParameterControl, Waveform, author::GraphBuilder,
+};
 
 pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
-    let mut g = DeviceGraph::new("org.example.auto-pan", "auto-pan", DeviceRole::Effect);
-    g.nodes = vec![N::audio_input("in"), N::audio_output("out")];
+    let mut g = GraphBuilder::new("org.example.auto-pan", "auto-pan", DeviceRole::Effect);
+    let input = g.node("in", K::AudioInput)?;
+    let output = g.node("out", K::AudioOutput)?;
 
-    parameter(&mut g, "rate", (0.01, 20.0), 1.0, "Hz", true);
-    g.nodes.extend([N::new("lfo", K::Oscillator { shape: Waveform::Sine }), N::new("pan", K::Pan)]);
-    wire(&mut g, "rate", "lfo", "frequency");
-    wire(&mut g, "lfo", "pan", "balance");
-    wire(&mut g, "in", "pan", "in");
-    wire(&mut g, "pan", "out", "in");
+    let rate = g.parameter_signal(
+        Parameter::new("rate", "rate", (0.01, 20.0), 1.0).unit("Hz").control(ParameterControl::LogKnob),
+    )?;
+    let lfo = g.op("lfo", K::Oscillator { shape: Waveform::Sine }, &[("frequency", rate.out())])?;
+    let pan = g.op("pan", K::Pan, &[("balance", lfo.out()), ("in", input.out())])?;
+    g.connect(pan.out(), output.input("in"))?;
 
-    finish(g)
+    finish(g.finish()?)
 }
 
 #[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     save(build()?, "auto-pan")
-}
-
-fn parameter(
-    graph: &mut suhina_device_sdk::DeviceGraph,
-    id: &str,
-    range: (f64, f64),
-    default: f64,
-    unit: &str,
-    logarithmic: bool,
-) {
-    let mut p = suhina_device_sdk::Parameter::new(id, id, range, default);
-    p.unit = unit.into();
-    if logarithmic {
-        p.control = suhina_device_sdk::ParameterControl::LogSlider;
-    }
-    graph.parameters.push(p);
-    graph.nodes.push(suhina_device_sdk::Node::new(id, suhina_device_sdk::NodeKind::Parameter { parameter: id.into() }));
-}
-
-fn wire(graph: &mut suhina_device_sdk::DeviceGraph, from: &str, to: &str, port: &str) {
-    graph.connections.push(suhina_device_sdk::Connection::ports(from, "out", to, port));
 }
 
 fn style_parameter(parameter: &mut suhina_device_sdk::Parameter) {
@@ -63,12 +45,6 @@ fn finish(mut g: suhina_device_sdk::DeviceGraph) -> Result<suhina_device_sdk::De
         node.visible = false;
     }
     for p in &mut g.parameters {
-        p.control = match p.id.as_str() {
-            "cutoff" | "rate" | "time" => suhina_device_sdk::ParameterControl::LogKnob,
-            "drive" | "feedback" | "width" => suhina_device_sdk::ParameterControl::Knob,
-            "ratio" | "attack" | "release" => suhina_device_sdk::ParameterControl::Number,
-            _ => p.control,
-        };
         style_parameter(p);
         p.ui.tooltip = format!("{} ({})", p.name, p.unit);
         if !g.ui.as_ref().is_some_and(|ui| ui.hidden_parameters.contains(&p.id)) {

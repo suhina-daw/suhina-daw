@@ -3,210 +3,267 @@
 
 //! Stereo delay with an embedded control panel.
 use suhina_device_sdk::{
-    Connection, DeviceGraph, DeviceRole, FilterMode, Node as N, NodeKind as K, ParameterControl as C, Waveform,
+    DeviceGraph, DeviceRole, FilterMode, NodeKind as K, ParameterControl as C, Waveform,
+    author::{GraphBuilder, NodeRef},
 };
-fn op(g: &mut DeviceGraph, id: &str, kind: K, inputs: &[(&str, &str)]) {
-    g.nodes.push(N::new(id, kind));
-    for (port, source) in inputs {
-        wire(g, source, id, port);
-    }
-}
-fn binary(g: &mut DeviceGraph, id: &str, kind: K, a: &str, b: &str) {
-    op(g, id, kind, &[("a", a), ("b", b)]);
-}
 pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
-    let mut g = DeviceGraph::new("org.example.delay", "Delay", DeviceRole::Effect);
-    g.nodes = vec![N::audio_input("in"), N::audio_output("out")];
-    for (id, lo, hi, value, unit, log) in [
-        ("feedback", 0., 95., 50., "%", false),
-        ("wet", 0., 100., 50., "%", false),
-        ("time_left", 1., 4000., 250., "ms", true),
-        ("time_right", 1., 4000., 250., "ms", true),
-        ("sync_left", 0., 1., 1., "", false),
-        ("sync_right", 0., 1., 1., "", false),
-        ("division_left", 1., 16., 3., "", false),
-        ("division_right", 1., 16., 3., "", false),
-        ("offset_left", -33.3, 33.3, 0., "%", false),
-        ("offset_right", -33.3, 33.3, 0., "%", false),
-        ("link", 0., 1., 1., "", false),
-        ("filter_on", 0., 1., 1., "", false),
-        ("cutoff", 50., 18000., 1000., "Hz", true),
-        ("width", 0.5, 9., 8., "", false),
-        ("ping_pong", 0., 1., 0., "", false),
-        ("freeze", 0., 1., 0., "", false),
-        ("mode", 0., 2., 0., "", false),
-        ("mod_delay", 0., 100., 0., "%", false),
-        ("mod_filter", 0., 100., 0., "%", false),
-        ("mod_rate", 0.01, 20., 0.5, "Hz", true),
-        ("mod_shape", 0., 6., 0., "", false),
-        ("mod_rate_mode", 0., 5., 0., "", false),
-        ("mod_time", 1., 20000., 2000., "ms", true),
-        ("mod_division", 1., 64., 4., "", false),
-        ("mod_morph", 0., 100., 0., "%", false),
-    ] {
-        parameter(&mut g, id, (lo, hi), value, unit, log);
-        if let Some(p) = g.parameters.last_mut() {
-            p.smoothing_ms = 0.;
-            p.control = if matches!(id, "sync_left" | "sync_right" | "link" | "filter_on" | "ping_pong" | "freeze") {
-                C::Toggle
-            } else if id.starts_with("division")
-                || matches!(id, "mode" | "mod_shape" | "mod_division" | "mod_rate_mode")
-            {
-                C::Integer
-            } else if log {
-                C::LogKnob
-            } else {
-                C::Knob
-            };
-        }
-    }
-    let mut expanded = suhina_device_sdk::Parameter::new("lfo_expanded", "LFO details", (0., 1.), 1.);
-    expanded.control = C::Toggle;
-    expanded.smoothing_ms = 0.;
-    g.parameters.push(expanded);
-    for (id, labels) in [
-        ("mod_shape", vec!["Sine", "Triangle", "Ramp Up", "Ramp Down", "Square", "S&H", "Wander"]),
-        ("mod_rate_mode", vec!["Hz", "Time", "Synced", "Triplet", "Dotted", "16th steps"]),
-    ] {
-        if let Some(p) = g.parameters.iter_mut().find(|p| p.id == id) {
-            p.control = C::Choice;
-            p.ui.options = labels.into_iter().map(str::to_string).collect();
-        }
-    }
-    for side in ["left", "right"] {
-        let peer = if side == "left" { "right" } else { "left" };
-        for kind in ["sync", "division", "offset", "time"] {
-            if let Some(p) = g.parameters.iter_mut().find(|p| p.id == format!("{kind}_{side}")) {
-                p.ui.link = Some(suhina_device_sdk::ParameterLink {
-                    enabled_by: "link".into(),
-                    peer: format!("{kind}_{peer}"),
-                });
-            }
-        }
-    }
-    for (id, value) in [
-        ("zero", 0.),
-        ("one", 1.),
-        ("two", 2.),
-        ("four", 4.),
-        ("sixty", 60.),
-        ("percent", 0.01),
-        ("millisecond", 0.001),
-    ] {
-        g.nodes.push(N::new(id, K::Constant { value }));
-    }
-    op(&mut g, "tempo", K::Tempo, &[]);
-    binary(&mut g, "beat_time", K::Divide, "sixty", "tempo");
-    binary(&mut g, "sixteenth", K::Divide, "beat_time", "four");
-    for side in ["left", "right"] {
-        binary(&mut g, &format!("seconds_{side}"), K::Multiply, &format!("time_{side}"), "millisecond");
-        binary(&mut g, &format!("sync_time_{side}"), K::Multiply, "sixteenth", &format!("division_{side}"));
-        op(
-            &mut g,
-            &format!("chosen_{side}"),
-            K::Select,
-            &[
-                ("a", &format!("seconds_{side}")),
-                ("b", &format!("sync_time_{side}")),
-                ("condition", &format!("sync_{side}")),
-            ],
-        );
-        binary(&mut g, &format!("offset_fraction_{side}"), K::Multiply, &format!("offset_{side}"), "percent");
-        binary(
-            &mut g,
-            &format!("effective_offset_{side}"),
-            K::Multiply,
-            &format!("offset_fraction_{side}"),
-            &format!("sync_{side}"),
-        );
-        binary(&mut g, &format!("offset_scale_{side}"), K::Add, "one", &format!("effective_offset_{side}"));
-        binary(
-            &mut g,
-            &format!("base_{side}"),
-            K::Multiply,
-            &format!("chosen_{side}"),
-            &format!("offset_scale_{side}"),
-        );
-    }
-    op(&mut g, "right_time", K::Select, &[("a", "base_right"), ("b", "base_left"), ("condition", "link")]);
-    op(&mut g, "stereo_time", K::Stereo, &[("left", "base_left"), ("right", "right_time")]);
-    op(
-        &mut g,
+    let mut g = GraphBuilder::new("org.example.delay", "Delay", DeviceRole::Effect);
+    let input = g.node("in", K::AudioInput)?;
+    let output = g.node("out", K::AudioOutput)?;
+    let feedback = g.parameter_signal(
+        Parameter::new("feedback", "feedback", (0.0, 95.0), 50.0).unit("%").control(C::Knob).smoothing_ms(0.),
+    )?;
+    let wet = g.parameter_signal(
+        Parameter::new("wet", "wet", (0.0, 100.0), 50.0).unit("%").control(C::Knob).smoothing_ms(0.),
+    )?;
+    let time_left = g.parameter_signal(
+        Parameter::new("time_left", "time_left", (1.0, 4000.0), 250.0)
+            .unit("ms")
+            .control(C::LogKnob)
+            .smoothing_ms(0.)
+            .linked("time_right", "link"),
+    )?;
+    let time_right = g.parameter_signal(
+        Parameter::new("time_right", "time_right", (1.0, 4000.0), 250.0)
+            .unit("ms")
+            .control(C::LogKnob)
+            .smoothing_ms(0.)
+            .linked("time_left", "link"),
+    )?;
+    let sync_left = g.parameter_signal(
+        Parameter::new("sync_left", "sync_left", (0.0, 1.0), 1.0)
+            .unit("")
+            .control(C::Toggle)
+            .smoothing_ms(0.)
+            .linked("sync_right", "link"),
+    )?;
+    let sync_right = g.parameter_signal(
+        Parameter::new("sync_right", "sync_right", (0.0, 1.0), 1.0)
+            .unit("")
+            .control(C::Toggle)
+            .smoothing_ms(0.)
+            .linked("sync_left", "link"),
+    )?;
+    let division_left = g.parameter_signal(
+        Parameter::new("division_left", "division_left", (1.0, 16.0), 3.0)
+            .unit("")
+            .control(C::Integer)
+            .smoothing_ms(0.)
+            .linked("division_right", "link"),
+    )?;
+    let division_right = g.parameter_signal(
+        Parameter::new("division_right", "division_right", (1.0, 16.0), 3.0)
+            .unit("")
+            .control(C::Integer)
+            .smoothing_ms(0.)
+            .linked("division_left", "link"),
+    )?;
+    let offset_left = g.parameter_signal(
+        Parameter::new("offset_left", "offset_left", (-33.3, 33.3), 0.0)
+            .unit("%")
+            .control(C::Knob)
+            .smoothing_ms(0.)
+            .linked("offset_right", "link"),
+    )?;
+    let offset_right = g.parameter_signal(
+        Parameter::new("offset_right", "offset_right", (-33.3, 33.3), 0.0)
+            .unit("%")
+            .control(C::Knob)
+            .smoothing_ms(0.)
+            .linked("offset_left", "link"),
+    )?;
+    let link = g.parameter_signal(
+        Parameter::new("link", "link", (0.0, 1.0), 1.0).unit("").control(C::Toggle).smoothing_ms(0.),
+    )?;
+    let filter_on = g.parameter_signal(
+        Parameter::new("filter_on", "filter_on", (0.0, 1.0), 1.0).unit("").control(C::Toggle).smoothing_ms(0.),
+    )?;
+    let cutoff = g.parameter_signal(
+        Parameter::new("cutoff", "cutoff", (50.0, 18000.0), 1000.0).unit("Hz").control(C::LogKnob).smoothing_ms(0.),
+    )?;
+    let width = g.parameter_signal(
+        Parameter::new("width", "width", (0.5, 9.0), 8.0).unit("").control(C::Knob).smoothing_ms(0.),
+    )?;
+    let ping_pong = g.parameter_signal(
+        Parameter::new("ping_pong", "ping_pong", (0.0, 1.0), 0.0).unit("").control(C::Toggle).smoothing_ms(0.),
+    )?;
+    let freeze = g.parameter_signal(
+        Parameter::new("freeze", "freeze", (0.0, 1.0), 0.0).unit("").control(C::Toggle).smoothing_ms(0.),
+    )?;
+    let mode = g.parameter_signal(
+        Parameter::new("mode", "mode", (0.0, 2.0), 0.0).unit("").control(C::Integer).smoothing_ms(0.),
+    )?;
+    let mod_delay = g.parameter_signal(
+        Parameter::new("mod_delay", "mod_delay", (0.0, 100.0), 0.0).unit("%").control(C::Knob).smoothing_ms(0.),
+    )?;
+    let mod_filter = g.parameter_signal(
+        Parameter::new("mod_filter", "mod_filter", (0.0, 100.0), 0.0).unit("%").control(C::Knob).smoothing_ms(0.),
+    )?;
+    let mod_rate = g.parameter_signal(
+        Parameter::new("mod_rate", "mod_rate", (0.01, 20.0), 0.5).unit("Hz").control(C::LogKnob).smoothing_ms(0.),
+    )?;
+    let mod_shape = g.parameter_signal(
+        Parameter::new("mod_shape", "mod_shape", (0.0, 6.0), 0.0)
+            .unit("")
+            .control(C::Choice)
+            .smoothing_ms(0.)
+            .options(["Sine", "Triangle", "Ramp Up", "Ramp Down", "Square", "S&H", "Wander"]),
+    )?;
+    let mod_rate_mode = g.parameter_signal(
+        Parameter::new("mod_rate_mode", "mod_rate_mode", (0.0, 5.0), 0.0)
+            .unit("")
+            .control(C::Choice)
+            .smoothing_ms(0.)
+            .options(["Hz", "Time", "Synced", "Triplet", "Dotted", "16th steps"]),
+    )?;
+    let mod_time = g.parameter_signal(
+        Parameter::new("mod_time", "mod_time", (1.0, 20000.0), 2000.0).unit("ms").control(C::LogKnob).smoothing_ms(0.),
+    )?;
+    let mod_division = g.parameter_signal(
+        Parameter::new("mod_division", "mod_division", (1.0, 64.0), 4.0).unit("").control(C::Integer).smoothing_ms(0.),
+    )?;
+    let mod_morph = g.parameter_signal(
+        Parameter::new("mod_morph", "mod_morph", (0.0, 100.0), 0.0).unit("%").control(C::Knob).smoothing_ms(0.),
+    )?;
+    g.parameter(
+        Parameter::new("lfo_expanded", "LFO details", (0.0, 1.0), 1.0).unit("").control(C::Toggle).smoothing_ms(0.),
+    )?;
+    let zero = g.constant("zero", 0.0)?;
+    let one = g.constant("one", 1.0)?;
+    let two = g.constant("two", 2.0)?;
+    let four = g.constant("four", 4.0)?;
+    let sixty = g.constant("sixty", 60.0)?;
+    let percent = g.constant("percent", 0.01)?;
+    let millisecond = g.constant("millisecond", 0.001)?;
+    let tempo = g.op("tempo", K::Tempo, &[])?;
+    let beat_time = g.binary("beat_time", K::Divide, sixty.out(), tempo.out())?;
+    let sixteenth = g.binary("sixteenth", K::Divide, beat_time.out(), four.out())?;
+    let timing_scales = [&millisecond, &sixteenth, &percent, &one];
+    let base_left = timing(&mut g, "left", [&time_left, &division_left, &sync_left, &offset_left], timing_scales)?;
+    let base_right =
+        timing(&mut g, "right", [&time_right, &division_right, &sync_right, &offset_right], timing_scales)?;
+    let right_time =
+        g.op("right_time", K::Select, &[("a", base_right.out()), ("b", base_left.out()), ("condition", link.out())])?;
+    let stereo_time = g.op("stereo_time", K::Stereo, &[("left", base_left.out()), ("right", right_time.out())])?;
+    let mod_frequency = g.op(
         "mod_frequency",
         K::LfoRate,
         &[
-            ("rate", "mod_rate"),
-            ("time", "mod_time"),
-            ("division", "mod_division"),
-            ("mode", "mod_rate_mode"),
-            ("tempo", "tempo"),
+            ("rate", mod_rate.out()),
+            ("time", mod_time.out()),
+            ("division", mod_division.out()),
+            ("mode", mod_rate_mode.out()),
+            ("tempo", tempo.out()),
         ],
-    );
-    let shapes =
-        [Waveform::Sine, Waveform::Triangle, Waveform::SawUp, Waveform::SawDown, Waveform::Square, Waveform::Random];
-    for (i, shape) in shapes.into_iter().enumerate() {
-        op(&mut g, &format!("wave{i}"), K::Oscillator { shape }, &[("frequency", "mod_frequency")]);
-        if i > 0 {
-            g.nodes.push(N::new(format!("shape_threshold{i}"), K::Constant { value: (i - 1) as f64 }));
-            binary(&mut g, &format!("shape_active{i}"), K::Greater, "mod_shape", &format!("shape_threshold{i}"));
-            let prev = if i == 1 { "wave0".into() } else { format!("shape_mix{}", i - 1) };
-            op(
-                &mut g,
-                &format!("shape_mix{i}"),
-                K::Select,
-                &[("a", &prev), ("b", &format!("wave{i}")), ("condition", &format!("shape_active{i}"))],
-            );
+    )?;
+    let wave0 = g.op("wave0", K::Oscillator { shape: Waveform::Sine }, &[("frequency", mod_frequency.out())])?;
+    let mut selected = wave0.clone();
+    let mut random = wave0.clone();
+    for (i, shape) in [Waveform::Triangle, Waveform::SawUp, Waveform::SawDown, Waveform::Square, Waveform::Random]
+        .into_iter()
+        .enumerate()
+    {
+        let index = i + 1;
+        let wave = g.op(format!("wave{index}"), K::Oscillator { shape }, &[("frequency", mod_frequency.out())])?;
+        if shape == Waveform::Random {
+            random = wave.clone();
         }
+        let threshold = g.constant(format!("shape_threshold{index}"), i as f64)?;
+        let active = g.binary(format!("shape_active{index}"), K::Greater, mod_shape.out(), threshold.out())?;
+        selected = g.op(
+            format!("shape_mix{index}"),
+            K::Select,
+            &[("a", selected.out()), ("b", wave.out()), ("condition", active.out())],
+        )?;
     }
-    g.nodes.push(N::new("wander_time", K::Constant { value: 0.2 }));
-    g.nodes.push(N::new("wander_threshold", K::Constant { value: 5.0 }));
-    op(&mut g, "wander", K::Smooth, &[("in", "wave5"), ("time", "wander_time")]);
-    binary(&mut g, "wander_active", K::Greater, "mod_shape", "wander_threshold");
-    op(&mut g, "selected_wave", K::Select, &[("a", "shape_mix5"), ("b", "wander"), ("condition", "wander_active")]);
-    binary(&mut g, "morph_amount", K::Multiply, "mod_morph", "percent");
-    op(&mut g, "lfo", K::Mix, &[("a", "selected_wave"), ("b", "wave0"), ("amount", "morph_amount")]);
-    binary(&mut g, "delay_amount", K::Multiply, "mod_delay", "percent");
-    binary(&mut g, "delay_motion", K::Multiply, "lfo", "delay_amount");
-    binary(&mut g, "delay_scale", K::Add, "one", "delay_motion");
-    binary(&mut g, "delay_time", K::Multiply, "stereo_time", "delay_scale");
-    binary(&mut g, "filter_amount", K::Multiply, "mod_filter", "percent");
-    binary(&mut g, "filter_motion", K::Multiply, "lfo", "filter_amount");
-    binary(&mut g, "filter_octaves", K::Multiply, "filter_motion", "four");
-    binary(&mut g, "filter_scale", K::Power, "two", "filter_octaves");
-    binary(&mut g, "filter_center", K::Multiply, "cutoff", "filter_scale");
-    binary(&mut g, "half_width", K::Divide, "width", "two");
-    binary(&mut g, "band_ratio", K::Power, "two", "half_width");
-    binary(&mut g, "low_edge", K::Divide, "filter_center", "band_ratio");
-    binary(&mut g, "high_edge", K::Multiply, "filter_center", "band_ratio");
-    binary(&mut g, "input_amount", K::Subtract, "one", "freeze");
-    op(&mut g, "ping_input", K::Stereo, &[("left", "in"), ("right", "zero")]);
-    op(&mut g, "source", K::Select, &[("a", "in"), ("b", "ping_input"), ("condition", "ping_pong")]);
-    binary(&mut g, "feed", K::Multiply, "source", "input_amount");
-    op(&mut g, "sum", K::Add, &[("a", "feed"), ("b", "feedback_audio")]);
-    op(&mut g, "delay", K::Delay { max_seconds: 4. }, &[("in", "sum"), ("time", "delay_time"), ("mode", "mode")]);
-    op(&mut g, "highpass", K::Filter { mode: FilterMode::Highpass }, &[("in", "delay"), ("frequency", "low_edge")]);
-    op(&mut g, "lowpass", K::Filter { mode: FilterMode::Lowpass }, &[("in", "highpass"), ("frequency", "high_edge")]);
-    op(&mut g, "filtered", K::Mix, &[("a", "delay"), ("b", "lowpass"), ("amount", "filter_on")]);
-    g.nodes.push(N::new("swapped", K::Stereo));
-    g.connections.push(Connection::ports("filtered", "right", "swapped", "left"));
-    g.connections.push(Connection::ports("filtered", "left", "swapped", "right"));
-    op(&mut g, "return_audio", K::Select, &[("a", "filtered"), ("b", "swapped"), ("condition", "ping_pong")]);
-    binary(&mut g, "feedback_fraction", K::Multiply, "feedback", "percent");
-    binary(&mut g, "wet_fraction", K::Multiply, "wet", "percent");
-    op(&mut g, "feedback_amount", K::Select, &[("a", "feedback_fraction"), ("b", "one"), ("condition", "freeze")]);
-    binary(&mut g, "feedback_audio", K::Multiply, "return_audio", "feedback_amount");
-    op(&mut g, "mix", K::Mix, &[("a", "in"), ("b", "filtered"), ("amount", "wet_fraction")]);
-    wire(&mut g, "mix", "out", "in");
+    let wander_time = g.constant("wander_time", 0.2)?;
+    let wander_threshold = g.constant("wander_threshold", 5.0)?;
+    let wander = g.op("wander", K::Smooth, &[("in", random.out()), ("time", wander_time.out())])?;
+    let wander_active = g.binary("wander_active", K::Greater, mod_shape.out(), wander_threshold.out())?;
+    let selected_wave = g.op(
+        "selected_wave",
+        K::Select,
+        &[("a", selected.out()), ("b", wander.out()), ("condition", wander_active.out())],
+    )?;
+    let morph_amount = g.binary("morph_amount", K::Multiply, mod_morph.out(), percent.out())?;
+    let lfo = g.op("lfo", K::Mix, &[("a", selected_wave.out()), ("b", wave0.out()), ("amount", morph_amount.out())])?;
+    let delay_amount = g.binary("delay_amount", K::Multiply, mod_delay.out(), percent.out())?;
+    let delay_motion = g.binary("delay_motion", K::Multiply, lfo.out(), delay_amount.out())?;
+    let delay_scale = g.binary("delay_scale", K::Add, one.out(), delay_motion.out())?;
+    let delay_time = g.binary("delay_time", K::Multiply, stereo_time.out(), delay_scale.out())?;
+    let filter_amount = g.binary("filter_amount", K::Multiply, mod_filter.out(), percent.out())?;
+    let filter_motion = g.binary("filter_motion", K::Multiply, lfo.out(), filter_amount.out())?;
+    let filter_octaves = g.binary("filter_octaves", K::Multiply, filter_motion.out(), four.out())?;
+    let filter_scale = g.binary("filter_scale", K::Power, two.out(), filter_octaves.out())?;
+    let filter_center = g.binary("filter_center", K::Multiply, cutoff.out(), filter_scale.out())?;
+    let half_width = g.binary("half_width", K::Divide, width.out(), two.out())?;
+    let band_ratio = g.binary("band_ratio", K::Power, two.out(), half_width.out())?;
+    let low_edge = g.binary("low_edge", K::Divide, filter_center.out(), band_ratio.out())?;
+    let high_edge = g.binary("high_edge", K::Multiply, filter_center.out(), band_ratio.out())?;
+    let input_amount = g.binary("input_amount", K::Subtract, one.out(), freeze.out())?;
+    let ping_input = g.op("ping_input", K::Stereo, &[("left", input.out()), ("right", zero.out())])?;
+    let source =
+        g.op("source", K::Select, &[("a", input.out()), ("b", ping_input.out()), ("condition", ping_pong.out())])?;
+    let feed = g.binary("feed", K::Multiply, source.out(), input_amount.out())?;
+    let sum = g.node("sum", K::Add)?;
+    g.connect(feed.out(), sum.input("a"))?;
+    let delay = g.op(
+        "delay",
+        K::Delay { max_seconds: 4.0 },
+        &[("in", sum.out()), ("time", delay_time.out()), ("mode", mode.out())],
+    )?;
+    let highpass = g.op(
+        "highpass",
+        K::Filter { mode: FilterMode::Highpass },
+        &[("in", delay.out()), ("frequency", low_edge.out())],
+    )?;
+    let lowpass = g.op(
+        "lowpass",
+        K::Filter { mode: FilterMode::Lowpass },
+        &[("in", highpass.out()), ("frequency", high_edge.out())],
+    )?;
+    let filtered =
+        g.op("filtered", K::Mix, &[("a", delay.out()), ("b", lowpass.out()), ("amount", filter_on.out())])?;
+    let swapped = g.op("swapped", K::Stereo, &[("left", filtered.right()), ("right", filtered.left())])?;
+    let return_audio = g.op(
+        "return_audio",
+        K::Select,
+        &[("a", filtered.out()), ("b", swapped.out()), ("condition", ping_pong.out())],
+    )?;
+    let feedback_fraction = g.binary("feedback_fraction", K::Multiply, feedback.out(), percent.out())?;
+    let wet_fraction = g.binary("wet_fraction", K::Multiply, wet.out(), percent.out())?;
+    let feedback_amount = g.op(
+        "feedback_amount",
+        K::Select,
+        &[("a", feedback_fraction.out()), ("b", one.out()), ("condition", freeze.out())],
+    )?;
+    let feedback_audio = g.binary("feedback_audio", K::Multiply, return_audio.out(), feedback_amount.out())?;
+    let mix = g.op("mix", K::Mix, &[("a", input.out()), ("b", filtered.out()), ("amount", wet_fraction.out())])?;
+    g.connect(feedback_audio.out(), sum.input("b"))?;
+    g.connect(mix.out(), output.input("in"))?;
+    let mut g = g.finish()?;
     g.ui = Some(build_panel(&g.parameters));
-    for node in &mut g.nodes {
-        node.visible = false;
-    }
-    let mut g = finish(g)?;
-    for node in &mut g.nodes {
-        node.visible = false;
-    }
-    Ok(g)
+    finish(g)
 }
+fn timing(
+    g: &mut GraphBuilder,
+    side: &str,
+    [time, division, sync, offset]: [&NodeRef; 4],
+    [millisecond, sixteenth, percent, one]: [&NodeRef; 4],
+) -> Result<NodeRef, suhina_device_sdk::DeviceSdkError> {
+    let seconds = g.binary(format!("seconds_{side}"), K::Multiply, time.out(), millisecond.out())?;
+    let sync_time = g.binary(format!("sync_time_{side}"), K::Multiply, sixteenth.out(), division.out())?;
+    let chosen = g.op(
+        format!("chosen_{side}"),
+        K::Select,
+        &[("a", seconds.out()), ("b", sync_time.out()), ("condition", sync.out())],
+    )?;
+    let fraction = g.binary(format!("offset_fraction_{side}"), K::Multiply, offset.out(), percent.out())?;
+    let effective = g.binary(format!("effective_offset_{side}"), K::Multiply, fraction.out(), sync.out())?;
+    let scale = g.binary(format!("offset_scale_{side}"), K::Add, one.out(), effective.out())?;
+    g.binary(format!("base_{side}"), K::Multiply, chosen.out(), scale.out())
+}
+
 #[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     save(build()?, "delay")
@@ -216,81 +273,22 @@ use suhina_device_sdk::{Parameter, ui::*};
 // Widget text is resolved against the host palette at render time.
 const TEXT: [u8; 4] = [236, 232, 225, 255];
 fn equal(id: &str, v: u16) -> UiValue {
-    UiValue::Expression(Box::new(UiExpression::Equal { a: UiValue::parameter(id, false), b: (v as f32).into() }))
+    UiValue::parameter(id, false).equals(v as f32)
 }
-fn button(ui: &mut DeviceUi, id: &str, value: Option<u16>, label: &str, bounds: [f32; 4]) {
-    ui.controls.push(CustomControl {
-        widget: Some(Widget::Button { label: label.into(), off_label: None, indicator: false }),
-        id: format!("{id}_{}", value.unwrap_or(99)),
-        name: label.into(),
-        tooltip: format!("{id}: {label}"),
-        bounds,
-        visible_when: None,
-        gesture: value.map_or(UiGesture::Toggle, UiGesture::Set),
-        x: Some(UiBinding::new(id)),
-        y: None,
-        drawing: vec![],
+fn number(id: &str, bounds: [f32; 4], decimals: usize, log: bool, color: [u8; 4], center: bool) -> CustomControl {
+    let mut control = CustomControl::number(id, bounds).logarithmic(log);
+    control.widget = Some(Widget::Number {
+        decimals,
+        format: if id == "cutoff" { TextFormat::Frequency } else { TextFormat::Number },
+        color,
+        center,
+        bordered: true,
+        prefix: String::new(),
+        suffix: String::new(),
     });
+    control
 }
-fn when(ui: &mut DeviceUi, id: &str, value: u16) {
-    if let Some(c) = ui.controls.last_mut() {
-        c.visible_when = Some(equal(id, value));
-    }
-}
-fn number(ui: &mut DeviceUi, id: &str, bounds: [f32; 4], decimals: usize, log: bool, color: [u8; 4], center: bool) {
-    ui.controls.push(CustomControl {
-        widget: Some(Widget::Number {
-            decimals,
-            format: if id == "cutoff" { TextFormat::Frequency } else { TextFormat::Number },
-            color,
-            center,
-            bordered: true,
-            prefix: String::new(),
-            suffix: String::new(),
-        }),
-        id: id.into(),
-        name: id.replace('_', " "),
-        tooltip: "Drag vertically; Shift for precision; double click resets".into(),
-        bounds,
-        visible_when: None,
-        gesture: UiGesture::Drag,
-        x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
-        drawing: vec![],
-    });
-}
-fn dial(ui: &mut DeviceUi, id: &str, label: &str, bounds: [f32; 4], log: bool) {
-    ui.controls.push(CustomControl {
-        widget: Some(Widget::Dial { label: label.into(), decimals: 0, format: TextFormat::Number }),
-        id: id.into(),
-        name: if label.is_empty() {
-            if id == "feedback" { "Feedback".into() } else { "Mix".into() }
-        } else {
-            label.replace('\n', " ")
-        },
-        tooltip: "Drag vertically; Shift for precision; double click resets".into(),
-        bounds,
-        visible_when: None,
-        gesture: UiGesture::Drag,
-        x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
-        drawing: vec![],
-    });
-}
-fn caption(ui: &mut DeviceUi, id: &str, label: &str, bounds: [f32; 4]) {
-    ui.controls.push(CustomControl {
-        widget: Some(Widget::Label { label: label.into() }),
-        id: id.into(),
-        name: label.into(),
-        tooltip: String::new(),
-        bounds,
-        visible_when: None,
-        gesture: UiGesture::Drag,
-        x: None,
-        y: None,
-        drawing: vec![],
-    });
-}
+
 fn build_panel(parameters: &[Parameter]) -> DeviceUi {
     let mut ui = DeviceUi {
         size: [944., 168.],
@@ -301,77 +299,69 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
     for (label, x, width) in
         [("TIME", 14., 80.), ("FEEDBACK", 289., 74.), ("MIX", 872., 40.), ("TONE", 384., 80.), ("MOTION", 579., 90.)]
     {
-        caption(&mut ui, label, label, [x, 6., width, 16.]);
+        ui.controls.push(CustomControl::label(label, label, [x, 6., width, 16.]));
     }
     for x in [275., 367., 563., 851.] {
-        ui.controls.push(CustomControl {
-            widget: Some(Widget::Separator),
-            id: format!("divider_{x}"),
-            name: "Section divider".into(),
-            tooltip: String::new(),
-            bounds: [x - 4., 6., 8., 160.],
-            visible_when: None,
-            gesture: UiGesture::Drag,
-            x: None,
-            y: None,
-            drawing: vec![],
-        });
+        ui.controls.push(CustomControl::separator(format!("divider_{x}"), [x - 4., 6., 8., 160.]));
     }
     for (side, x) in [("left", 14.), ("right", 164.)] {
         let title = if side == "left" { "Left" } else { "Right" };
-        caption(&mut ui, &format!("{side}_label"), title, [x, 28., 100., 16.]);
+        ui.controls.push(CustomControl::label(format!("{side}_label"), title, [x, 28., 100., 16.]));
         let sync = format!("sync_{side}");
-        button(&mut ui, &sync, None, "Beats", [x, 48., 42., 24.]);
-        if let Some(c) = ui.controls.last_mut() {
-            c.name = format!("{title} timing mode");
-            c.widget = Some(Widget::Button { label: "Beats".into(), off_label: Some("ms".into()), indicator: false });
-            c.tooltip = "Choose beat-synchronized notes or milliseconds".into();
-        }
+        let mut timing_mode = CustomControl::toggle(&sync, "Beats", [x, 48., 42., 24.])
+            .id(format!("{sync}_99"))
+            .name(format!("{title} timing mode"))
+            .tooltip("Choose beat-synchronized notes or milliseconds");
+        timing_mode.widget =
+            Some(Widget::Button { label: "Beats".into(), off_label: Some("ms".into()), indicator: false });
+        ui.controls.push(timing_mode);
         let choices = (1..=16)
             .map(|steps| {
                 let divisor = (1..=16).rev().find(|d| steps % d == 0 && 16 % d == 0).unwrap_or(1);
                 (steps, format!("{}/{}", steps / divisor, 16 / divisor))
             })
             .collect();
-        ui.controls.push(CustomControl {
-            widget: Some(Widget::ValueMenu { choices }),
-            id: format!("division_{side}"),
-            name: format!("{title} delay"),
-            tooltip: "Choose the delay length as a fraction of a whole note".into(),
-            bounds: [x + 50., 48., 50., 24.],
-            visible_when: Some(equal(&sync, 1)),
-            gesture: UiGesture::Menu,
-            x: Some(UiBinding::new(format!("division_{side}"))),
-            y: None,
-            drawing: vec![],
-        });
-        number(&mut ui, &format!("time_{side}"), [x + 50., 48., 50., 24.], 0, true, TEXT, false);
-        when(&mut ui, &sync, 0);
-        caption(&mut ui, &format!("{side}_offset_caption"), "Offset", [x, 80., 100., 16.]);
-        when(&mut ui, &sync, 1);
-        number(&mut ui, &format!("offset_{side}"), [x, 98., 100., 24.], 1, false, TEXT, false);
-        when(&mut ui, &sync, 1);
+        ui.controls.push(
+            CustomControl::value_menu(format!("division_{side}"), choices, [x + 50., 48., 50., 24.])
+                .name(format!("{title} delay"))
+                .tooltip("Choose the delay length as a fraction of a whole note")
+                .visible_when(equal(&sync, 1)),
+        );
+        ui.controls.push(
+            number(&format!("time_{side}"), [x + 50., 48., 50., 24.], 0, true, TEXT, false)
+                .visible_when(equal(&sync, 0)),
+        );
+        ui.controls.push(
+            CustomControl::label(format!("{side}_offset_caption"), "Offset", [x, 80., 100., 16.])
+                .visible_when(equal(&sync, 1)),
+        );
+        ui.controls.push(
+            number(&format!("offset_{side}"), [x, 98., 100., 24.], 1, false, TEXT, false).visible_when(equal(&sync, 1)),
+        );
     }
-    button(&mut ui, "link", None, "↔", [122., 48., 34., 24.]);
-    if let Some(c) = ui.controls.last_mut() {
-        c.name = "Link channels".into();
-        c.tooltip = "Link both channels; enabling copies the left timing to the right".into();
-    }
-    button(&mut ui, "ping_pong", None, "Ping Pong", [864., 140., 72., 22.]);
-    button(&mut ui, "freeze", None, "Freeze", [289., 140., 64., 22.]);
+    ui.controls.push(
+        CustomControl::toggle("link", "↔", [122., 48., 34., 24.])
+            .id("link_99")
+            .name("Link channels")
+            .tooltip("Link both channels; enabling copies the left timing to the right"),
+    );
+    ui.controls.push(
+        CustomControl::toggle("ping_pong", "Ping Pong", [864., 140., 72., 22.]).id(format!("{}_99", "ping_pong")),
+    );
+    ui.controls.push(CustomControl::toggle("freeze", "Freeze", [289., 140., 64., 22.]).id(format!("{}_99", "freeze")));
     for (i, label) in ["Repitch", "Fade", "Jump"].into_iter().enumerate() {
-        button(&mut ui, "mode", Some(i as u16), label, [14. + i as f32 * 86., 140., 78., 22.]);
+        ui.controls.push(CustomControl::set_button("mode", i as u16, label, [14. + i as f32 * 86., 140., 78., 22.]));
     }
-    dial(&mut ui, "feedback", "", [289., 48., 64., 86.], false);
-    dial(&mut ui, "wet", "", [872., 48., 56., 86.], false);
-    button(&mut ui, "filter_on", None, "Filter", [384.0, 32., 51., 26.]);
-    number(&mut ui, "cutoff", [444.0, 36., 56., 18.], 0, true, TEXT, false);
-    number(&mut ui, "width", [504.0, 36., 46., 18.], 2, false, TEXT, false);
-    if let Some(c) = ui.controls.last_mut()
-        && let Some(Widget::Number { prefix, .. }) = &mut c.widget
-    {
+    ui.controls.push(CustomControl::dial("feedback", "", [289., 48., 64., 86.]).name("Feedback"));
+    ui.controls.push(CustomControl::dial("wet", "", [872., 48., 56., 86.]).name("Mix"));
+    ui.controls
+        .push(CustomControl::toggle("filter_on", "Filter", [384.0, 32., 51., 26.]).id(format!("{}_99", "filter_on")));
+    ui.controls.push(number("cutoff", [444.0, 36., 56., 18.], 0, true, TEXT, false));
+    let mut width = number("width", [504.0, 36., 46., 18.], 2, false, TEXT, false);
+    if let Some(Widget::Number { prefix, .. }) = &mut width.widget {
         *prefix = "Oct: ".into();
     }
+    ui.controls.push(width);
     ui.controls.push(CustomControl {
         widget: Some(Widget::FilterBand { min_hz: 50., max_hz: 18000. }),
         id: "filter_graph".into(),
@@ -384,16 +374,17 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
         y: Some(UiBinding::new("width")),
         drawing: vec![],
     });
-    caption(&mut ui, "motion_mode_caption", "Mode", [579., 28., 32., 16.]);
-    button(&mut ui, "mod_rate_mode", None, "Rate", [615., 28., 90., 20.]);
-    if let Some(c) = ui.controls.last_mut() {
-        c.name = "Motion rate mode".into();
-        c.widget = Some(Widget::Menu);
-        c.gesture = UiGesture::Menu;
-    }
+    ui.controls.push(CustomControl::label("motion_mode_caption", "Mode", [579., 28., 32., 16.]));
+    ui.controls.push(
+        CustomControl::menu("mod_rate_mode", [615., 28., 90., 20.])
+            .id("mod_rate_mode_99")
+            .name("Motion rate mode")
+            .tooltip("mod_rate_mode: Rate"),
+    );
     for (id, mode, decimals, log) in [("mod_rate", 0, 2, true), ("mod_time", 1, 0, true)] {
-        number(&mut ui, id, [579., 50., 96., 20.], decimals, log, TEXT, false);
-        when(&mut ui, "mod_rate_mode", mode);
+        ui.controls.push(
+            number(id, [579., 50., 96., 20.], decimals, log, TEXT, false).visible_when(equal("mod_rate_mode", mode)),
+        );
     }
     for mode in 2..=5 {
         let choices = (1..=64)
@@ -409,20 +400,15 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
                 )
             })
             .collect();
-        ui.controls.push(CustomControl {
-            widget: Some(Widget::ValueMenu { choices }),
-            id: format!("motion_division_{mode}"),
-            name: "Motion rhythm".into(),
-            tooltip: "Choose the note length; T = triplet, D = dotted; 16th counts sixteenth-note steps".into(),
-            bounds: [579., 50., 96., 20.],
-            visible_when: Some(equal("mod_rate_mode", mode)),
-            gesture: UiGesture::Menu,
-            x: Some(UiBinding::new("mod_division")),
-            y: None,
-            drawing: vec![],
-        });
+        ui.controls.push(
+            CustomControl::value_menu("mod_division", choices, [579., 50., 96., 20.])
+                .id(format!("motion_division_{mode}"))
+                .name("Motion rhythm")
+                .tooltip("Choose the note length; T = triplet, D = dotted; 16th counts sixteenth-note steps")
+                .visible_when(equal("mod_rate_mode", mode)),
+        );
     }
-    caption(&mut ui, "shape_caption", "Shape", [739., 28., 60., 16.]);
+    ui.controls.push(CustomControl::label("shape_caption", "Shape", [739., 28., 60., 16.]));
     ui.controls.push(CustomControl {
         widget: Some(Widget::WaveformMenu),
         id: "mod_shape".into(),
@@ -435,44 +421,11 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
         y: None,
         drawing: vec![],
     });
-    dial(&mut ui, "mod_delay", "Delay\ndepth", [579.0, 78., 64., 86.], false);
-    dial(&mut ui, "mod_filter", "Filter\ndepth", [659., 78., 64., 86.], false);
-    dial(&mut ui, "mod_morph", "Morph", [739., 78., 64., 86.], false);
-    for control in &mut ui.controls {
-        if control.id.starts_with("offset_") {
-            control.widget = Some(Widget::Number {
-                decimals: 1,
-                format: suhina_device_sdk::ui::TextFormat::Number,
-                color: TEXT,
-                center: false,
-                bordered: true,
-                prefix: String::new(),
-                suffix: String::new(),
-            });
-        }
-    }
+    ui.controls.push(CustomControl::dial("mod_delay", "Delay\ndepth", [579.0, 78., 64., 86.]));
+    ui.controls.push(CustomControl::dial("mod_filter", "Filter\ndepth", [659., 78., 64., 86.]));
+    ui.controls.push(CustomControl::dial("mod_morph", "Morph", [739., 78., 64., 86.]));
+
     ui
-}
-
-fn parameter(
-    graph: &mut suhina_device_sdk::DeviceGraph,
-    id: &str,
-    range: (f64, f64),
-    default: f64,
-    unit: &str,
-    logarithmic: bool,
-) {
-    let mut p = suhina_device_sdk::Parameter::new(id, id, range, default);
-    p.unit = unit.into();
-    if logarithmic {
-        p.control = suhina_device_sdk::ParameterControl::LogSlider;
-    }
-    graph.parameters.push(p);
-    graph.nodes.push(suhina_device_sdk::Node::new(id, suhina_device_sdk::NodeKind::Parameter { parameter: id.into() }));
-}
-
-fn wire(graph: &mut suhina_device_sdk::DeviceGraph, from: &str, to: &str, port: &str) {
-    graph.connections.push(suhina_device_sdk::Connection::ports(from, "out", to, port));
 }
 
 fn style_parameter(parameter: &mut suhina_device_sdk::Parameter) {
@@ -494,12 +447,6 @@ fn finish(mut g: suhina_device_sdk::DeviceGraph) -> Result<suhina_device_sdk::De
         node.visible = false;
     }
     for p in &mut g.parameters {
-        p.control = match p.id.as_str() {
-            "cutoff" | "rate" | "time" => suhina_device_sdk::ParameterControl::LogKnob,
-            "drive" | "feedback" | "width" => suhina_device_sdk::ParameterControl::Knob,
-            "ratio" | "attack" | "release" => suhina_device_sdk::ParameterControl::Number,
-            _ => p.control,
-        };
         style_parameter(p);
         p.ui.tooltip = format!("{} ({})", p.name, p.unit);
         if !g.ui.as_ref().is_some_and(|ui| ui.hidden_parameters.contains(&p.id)) {
