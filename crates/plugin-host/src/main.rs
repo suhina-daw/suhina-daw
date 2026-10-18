@@ -261,6 +261,14 @@ impl Loaded {
         }
     }
 
+    /// Brings a plug-in's ARA document in line with the track's clips.
+    fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
+        match self {
+            Self::Vst3(plugin) => plugin.ara_update(document),
+            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
+        }
+    }
+
     /// Tells a plug-in bound to an ARA document which region the engine has selected.
     fn ara_select(&self, region: Option<&str>) {
         if let Self::Vst3(plugin) = self {
@@ -559,6 +567,13 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
                 loaded.place_editor(placement);
             }
             return None;
+        }
+        Message::AraUpdate { instance, document } => {
+            match instances.get_mut(&instance).map(|l| l.ara_update(&document)) {
+                Some(Ok(())) => Message::AraUpdated { instance },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
         }
         Message::AraSelect { instance, region } => {
             if let Some(loaded) = instances.get(&instance) {

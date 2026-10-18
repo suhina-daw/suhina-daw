@@ -614,6 +614,8 @@ enum Done {
     Saved(Option<SavedState>),
     /// It was stopped; its last state, for when it starts again.
     Stopped(Option<SavedState>),
+    /// Its ARA document was brought in line with its track's clips.
+    AraUpdated(Result<(), String>),
 }
 
 /// A control half back from a thread, or (stopped) only what it left.
@@ -656,10 +658,14 @@ struct Instance {
     ara_layout: Option<crate::ara::Layout>,
     /// The audio sources of the ARA document it was loaded with, kept for as long as it runs;
     /// empty without a document.
-    ara_sources: Vec<suhina_plugins::AudioSource>,
-    /// Since when its track's clips differ from its layout: it is loaded again with them once
-    /// they have stayed put for [`REBIND_AFTER`].
+    /// By audio pool key; a file's samples go there once and stay while it runs.
+    ara_sources: Vec<(String, suhina_plugins::AudioSource)>,
+    /// Since when its track's clips differ from its layout, for a plug-in loaded without a
+    /// document (its track had no audio clips): it is loaded again with them once they have
+    /// stayed put for [`REBIND_AFTER`]. One bound to a document is updated at once instead.
     ara_changed: Option<Instant>,
+    /// An update of its document failed: it is loaded again with the clips instead.
+    ara_failed: bool,
     /// The region its ARA editor was last told is selected (`None`: not told yet).
     ara_selection_sent: Option<Option<String>>,
 }
@@ -685,6 +691,7 @@ impl Instance {
             ara_layout: None,
             ara_sources: Vec::new(),
             ara_changed: None,
+            ara_failed: false,
             ara_selection_sent: None,
         }
     }
@@ -915,6 +922,13 @@ impl Rack {
                                 notices.push(format!("{name}: its editor did not close ({why})"));
                             }
                         }
+                        Done::AraUpdated(Ok(())) => {}
+                        Done::AraUpdated(Err(why)) => {
+                            notices.push(format!(
+                                "{name}: its clips could not be updated ({why}); it loads again with them"
+                            ));
+                            instance.ara_failed = true;
+                        }
                         Done::Saved(_) | Done::Stopped(_) => {}
                     }
                     instance.control = Some(control);
@@ -1104,19 +1118,45 @@ impl Rack {
     /// still there come back with it (ADR 0028). Returns whether one was stopped.
     fn follow_clips(&mut self, project: &Project, audio: &AudioPool, devices: &[suhina_engine::PluginDevice]) -> bool {
         let mut rebind = Vec::new();
+        let mut updates = Vec::new();
         for found in devices {
             let Some(instance) = self.instances.get_mut(&found.key) else { continue };
             let (Some(layout), Some(track)) = (&instance.ara_layout, found.track) else { continue };
             if instance.status != PluginStatus::Running || instance.control.is_none() {
                 continue;
             }
-            if crate::ara::Layout::of(project, audio, track) == *layout {
+            if instance.ara_failed {
+                rebind.push(found.key);
+                continue;
+            }
+            let now = crate::ara::Layout::of(project, audio, track);
+            if now == *layout {
                 instance.ara_changed = None;
+                continue;
+            }
+            // Bound to a document: the change goes to it at once, as an edit (ADR 0028
+            // decision 3). Moved and trimmed clips change in place; nothing reloads.
+            if !instance.ara_sources.is_empty()
+                && let Some(document) = now.document_with(audio, &mut instance.ara_sources)
+            {
+                instance.ara_layout = Some(now);
+                // The regions may be new: the editor is told the selection again.
+                instance.ara_selection_sent = None;
+                updates.push((found.key, document));
                 continue;
             }
             let since = *instance.ara_changed.get_or_insert_with(Instant::now);
             if since.elapsed() >= REBIND_AFTER {
                 rebind.push(found.key);
+            }
+        }
+        for (key, document) in updates {
+            let lent = self
+                .lend(key, move |control| Done::AraUpdated(control.ara_update(document).map_err(|e| e.to_string())));
+            if lent.is_err()
+                && let Some(instance) = self.instances.get_mut(&key)
+            {
+                instance.ara_failed = true;
             }
         }
         for key in &rebind {
@@ -1502,7 +1542,7 @@ pub struct OfflinePlugins {
     pub plugins: Plugins,
     controls: Vec<Plugin>,
     /// The audio sources of the ARA documents plug-ins were loaded with (ADR 0028).
-    _ara_sources: Vec<suhina_plugins::AudioSource>,
+    _ara_sources: Vec<(String, suhina_plugins::AudioSource)>,
     /// What the user should hear about: missing plug-ins, ones that could not start or did not
     /// take their state.
     pub notices: Vec<String>,

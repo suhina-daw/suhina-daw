@@ -45,7 +45,7 @@ use interprocess::local_socket::{
 pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome};
 use suhina_ipc::{IpcError, Link};
 
-use protocol::{MAX_LINE, Message, VERSION};
+use protocol::{AraDocument, MAX_LINE, Message, VERSION};
 pub use protocol::{ParamInfo, Placement};
 
 /// Blocks in a row without an answer after which a running host counts as hung.
@@ -822,6 +822,19 @@ impl Plugin {
         let process = group.process.as_mut().ok_or_else(|| PluginError::Protocol("the host is not running".into()))?;
         process.send(&Message::PlaceEditor { instance: self.instance, placement })?;
         Ok(true)
+    }
+
+    /// Brings the ARA document of a plug-in loaded with one in line with `document`, its
+    /// track's clips as they are now (moved, trimmed, added or removed), without loading it
+    /// again. Waits for the answer.
+    pub fn ara_update(&mut self, document: AraDocument) -> Result<(), PluginError> {
+        let instance = self.instance;
+        self.request(
+            &Message::AraUpdate { instance, document },
+            "ara_update",
+            |m| matches!(m, Message::AraUpdated { instance: i } if *i == instance),
+        )?;
+        Ok(())
     }
 
     /// Tells a plug-in bound to an ARA document which region (`clip-<id>`) the engine has

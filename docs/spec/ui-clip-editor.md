@@ -70,7 +70,9 @@ lane, the grid and zoom, and the `note.*` commands.
   works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The clip's
   right-click menu has **Open in** and the plug-in's name, and **Ctrl+Shift+A** (`view.araEditor`)
   does the same for the selected clip: it selects **Clip**, opens the detail area and the editor.
-  When the plug-in is loaded again with moved clips, an editor that was open opens again.
+  Moving or trimming the clip changes it in the editor at once, the editor staying open; when the
+  plug-in has to be loaded again (it was added to a track with no audio clips yet), an editor
+  that was open opens again.
 
   The switch is window state, like Shift+Tab: not a command, not an undo step, not saved. It
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or

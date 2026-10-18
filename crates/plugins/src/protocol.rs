@@ -6,8 +6,8 @@
 //!
 //! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `ara_select`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
-//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `error`. Every
+//! `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `error`. Every
 //! message is answered, except `place_editor`, `ara_select` and `quit` (so the engine never
 //! waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
@@ -305,6 +305,18 @@ pub enum Message {
         instance: u32,
         region: Option<String>,
     },
+    /// Bring the ARA document of a plug-in loaded with one (ADR 0028) in line with `document`,
+    /// its track's clips as they are now: moved or trimmed clips are updated in place, new
+    /// ones added, gone ones taken out, matched by their persistent ids. Answered with
+    /// `AraUpdated`, or an error after which the document is as it was or partly changed (the
+    /// engine then loads the plug-in again).
+    AraUpdate {
+        instance: u32,
+        document: AraDocument,
+    },
+    AraUpdated {
+        instance: u32,
+    },
     /// The plug-in gave its editor a new size (unasked, in both modes).
     EditorResized {
         instance: u32,
@@ -350,6 +362,8 @@ impl Message {
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
             | Self::AraSelect { instance, .. }
+            | Self::AraUpdate { instance, .. }
+            | Self::AraUpdated { instance }
             | Self::EditorResized { instance, .. }
             | Self::LatencyChanged { instance, .. }
             | Self::CloseEditor { instance }
@@ -402,6 +416,10 @@ impl Message {
             Self::PlaceEditor { instance, placement } => {
                 json!({ "op": "place_editor", "instance": instance, "placement": placement.to_json() })
             }
+            Self::AraUpdate { instance, document } => {
+                json!({ "op": "ara_update", "instance": instance, "document": document.to_json() })
+            }
+            Self::AraUpdated { instance } => json!({ "op": "ara_updated", "instance": instance }),
             Self::AraSelect { instance, region } => {
                 json!({ "op": "ara_select", "instance": instance, "region": region })
             }
@@ -499,6 +517,10 @@ impl Message {
             "place_editor" => {
                 Self::PlaceEditor { instance: instance()?, placement: Placement::from_json(value.get("placement")?)? }
             }
+            "ara_update" => {
+                Self::AraUpdate { instance: instance()?, document: AraDocument::from_json(value.get("document")?)? }
+            }
+            "ara_updated" => Self::AraUpdated { instance: instance()? },
             "ara_select" => Self::AraSelect {
                 instance: instance()?,
                 region: match value.get("region") {
@@ -643,6 +665,8 @@ mod tests {
             },
             Message::AraSelect { instance: 6, region: Some("clip-7".into()) },
             Message::AraSelect { instance: 6, region: None },
+            Message::AraUpdate { instance: 6, document: ara_document() },
+            Message::AraUpdated { instance: 6 },
             Message::EditorResized { instance: 6, width: 1, height: 16_384 },
             Message::LatencyChanged { instance: 6, latency: 0 },
             Message::LatencyChanged { instance: u32::MAX, latency: u32::MAX },
@@ -708,6 +732,9 @@ mod tests {
             r#"{"op":"place_editor","instance":1,"placement":{"x":3000000000,"y":0,"clip_x":0,"clip_y":0,"clip_width":1,"clip_height":1}}"#,
             r#"{"op":"editor_resized","instance":1,"height":2}"#,
             r#"{"op":"ara_select","region":"clip-1"}"#,
+            r#"{"op":"ara_update","instance":1}"#,
+            r#"{"op":"ara_update","instance":1,"document":{}}"#,
+            r#"{"op":"ara_updated"}"#,
             r#"{"op":"ara_select","instance":1,"region":7}"#,
             r#"{"op":"close_editor","instance":"1"}"#,
             r#"{"op":"latency_changed","instance":1}"#,

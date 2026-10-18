@@ -77,28 +77,50 @@ impl Layout {
     /// The document, with each file's samples put in shared memory from `audio`. The sources
     /// must live as long as the plug-in does. `None` when there are no regions, or a file's
     /// samples cannot be shared.
-    pub(crate) fn document(&self, audio: &AudioPool) -> Option<(AraDocument, Vec<AudioSource>)> {
+    pub(crate) fn document(&self, audio: &AudioPool) -> Option<(AraDocument, Vec<(String, AudioSource)>)> {
         if self.is_empty() {
             return None;
         }
         let mut sources = Vec::with_capacity(self.files.len());
+        let document = self.document_with(audio, &mut sources)?;
+        Some((document, sources))
+    }
+
+    /// The document for a plug-in already bound to one, for an update: the files `kept` holds
+    /// in shared memory (by audio pool key) are named as they are, and the others are put
+    /// there from `audio` and added to `kept`. It may have no regions (every clip gone).
+    /// `None` when a file's samples cannot be shared.
+    pub(crate) fn document_with(
+        &self,
+        audio: &AudioPool,
+        kept: &mut Vec<(String, AudioSource)>,
+    ) -> Option<AraDocument> {
         let mut described = Vec::with_capacity(self.files.len());
         for (key, name) in &self.files {
-            let data = audio.files.get(key)?;
-            let made =
-                AudioSource::from_interleaved(&data.samples, u32::from(data.channels), f64::from(data.sample_rate))
+            let address = match kept.iter().find(|(k, _)| k == key) {
+                Some((_, source)) => source.address(),
+                None => {
+                    let data = audio.files.get(key)?;
+                    let made = AudioSource::from_interleaved(
+                        &data.samples,
+                        u32::from(data.channels),
+                        f64::from(data.sample_rate),
+                    )
                     .ok()?;
-            described.push(AraSource { id: key.clone(), name: name.clone(), address: made.address() });
-            sources.push(made);
+                    let address = made.address();
+                    kept.push((key.clone(), made));
+                    address
+                }
+            };
+            described.push(AraSource { id: key.clone(), name: name.clone(), address });
         }
-        let document = AraDocument {
+        Some(AraDocument {
             name: self.name.clone(),
             sequence: self.name.clone(),
             tempo_bpm: self.tempo_bpm,
             sources: described,
             regions: self.regions.clone(),
-        };
-        Some((document, sources))
+        })
     }
 }
 
@@ -243,5 +265,25 @@ mod tests {
         assert_ne!(Layout::of(&project, &audio, TrackId(1)), before);
         project.arrangement.lanes[0].clips.iter_mut().for_each(|c| c.enabled = false);
         assert!(Layout::of(&project, &audio, TrackId(1)).is_empty());
+    }
+
+    #[test]
+    fn an_update_names_the_files_already_shared_and_shares_only_new_ones() {
+        let (mut project, audio) = project();
+        let (first, mut kept) = Layout::of(&project, &audio, TrackId(1)).document(&audio).unwrap();
+        let shared = kept.len();
+        let addresses: Vec<_> = first.sources.iter().map(|s| s.address.clone()).collect();
+        // A moved clip: the same files, at the same addresses, nothing shared again.
+        project.arrangement.lanes[0].clips[0].start += 4.0;
+        let moved = Layout::of(&project, &audio, TrackId(1)).document_with(&audio, &mut kept).unwrap();
+        assert_eq!(kept.len(), shared);
+        assert_eq!(moved.sources.iter().map(|s| s.address.clone()).collect::<Vec<_>>(), addresses);
+        assert_ne!(moved.regions[0].start, first.regions[0].start);
+        assert_eq!(moved.regions[0].id, first.regions[0].id);
+        // Every clip gone: a document with no regions, for the update that takes them out.
+        project.arrangement.lanes[0].clips.clear();
+        let empty = Layout::of(&project, &audio, TrackId(1)).document_with(&audio, &mut kept).unwrap();
+        assert!(empty.regions.is_empty());
+        assert_eq!(kept.len(), shared, "the files stay shared, for an undo");
     }
 }

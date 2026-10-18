@@ -934,6 +934,38 @@ impl Vst3Plugin {
         Ok(size)
     }
 
+    /// Brings its ARA document in line with `document`, the track's clips as they are now.
+    /// Moved or trimmed clips change in place while it plays; adding or taking out regions
+    /// needs its renderers changed, which ARA allows only while it does not render, so its
+    /// processing stops for that and starts again, as for a latency change.
+    pub(crate) fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
+        let edited = self.ara.as_mut().ok_or("the plug-in is not bound to an ARA document")?.edit(document)?;
+        if edited.changes_renderers() {
+            self.flush.store(true, Ordering::Release);
+            if !self.stop_audio(crate::UNLOAD_WAIT) {
+                return Err("its audio thread does not stop".into());
+            }
+            let served =
+                self.audio.take().ok_or("it has no audio thread")?.join().map_err(|_| "its audio thread failed")?;
+            let processor = self.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
+            // SAFETY: a live component; processing has stopped.
+            let _ = unsafe { self.component.setActive(0) };
+            if let Some(ara) = &self.ara {
+                ara.renderers(&edited);
+            }
+            // SAFETY: as above, set up as when it loaded.
+            let active = ok(unsafe { self.component.setActive(1) });
+            self.start_audio(processor, served)?;
+            if !active {
+                return Err("the plug-in did not activate again".into());
+            }
+        }
+        if let Some(ara) = self.ara.as_mut() {
+            ara.destroy(&edited);
+        }
+        Ok(())
+    }
+
     /// Tells the plug-in's ARA editor view which region the engine has selected, when it is
     /// bound to a document.
     pub(crate) fn ara_select(&self, region: Option<&str>) {

@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use suhina_ipc::AudioSource;
-use suhina_plugins::protocol::AraDocument;
+use suhina_plugins::protocol::{AraDocument, AraRegion};
 use vst3::ComPtr;
 use vst3::Steinberg::Vst::IComponent;
 use vst3::Steinberg::{FUnknown, FUnknownVtbl, TUID, kResultOk};
@@ -184,7 +184,10 @@ pub(crate) fn unwrap_state(data: &[u8]) -> (&[u8], Option<(String, &[u8])>) {
 /// Boxed, so its address (handed to the plug-in) stays put.
 struct Host {
     instance: ARADocumentControllerHostInstance,
-    sources: Vec<Source>,
+    /// Boxed, so each stays where it is when more are added: the plug-in's readers point at
+    /// them.
+    #[allow(clippy::vec_box, reason = "readers hold pointers to the sources, which must not move")]
+    sources: Vec<Box<Source>>,
     /// The plug-in said its document data changed (ARA 2.3), so the project has unsaved edits.
     changed: AtomicBool,
 }
@@ -196,10 +199,17 @@ pub(crate) struct Document {
     context: ARAMusicalContextRef,
     sequence: ARARegionSequenceRef,
     sources: Vec<ARAAudioSourceRef>,
+    /// The persistent id of each source, in the same order (its audio pool key).
+    source_ids: Vec<String>,
     modifications: Vec<ARAAudioModificationRef>,
+    /// The persistent id of each modification, in the same order (`content-<id>`).
+    modification_ids: Vec<String>,
     regions: Vec<ARAPlaybackRegionRef>,
-    /// The persistent id of each region, in the same order (`clip-<id>`).
-    region_ids: Vec<String>,
+    /// Each region as it was last described, in the same order (its id is `clip-<id>`, its
+    /// `source` an index into `sources`).
+    region_described: Vec<AraRegion>,
+    /// The plug-in's extension instance, whose renderers play and show the regions.
+    extension: *const ARAPlugInExtensionInstance,
     /// The plug-in's editor view, told which region the host has selected; `None` when the
     /// plug-in has none.
     editor_view: Option<(ARAEditorViewRef, *const ARAEditorViewInterface)>,
@@ -246,7 +256,7 @@ impl Document {
         let sources = document
             .sources
             .iter()
-            .map(|s| AudioSource::open(&s.address).map(|audio| Source { audio }))
+            .map(|s| AudioSource::open(&s.address).map(|audio| Box::new(Source { audio })))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("an audio source could not be opened: {e}"))?;
         let mut host = Box::new(Host {
@@ -285,9 +295,12 @@ impl Document {
             context: std::ptr::null_mut(),
             sequence: std::ptr::null_mut(),
             sources: Vec::new(),
+            source_ids: Vec::new(),
             modifications: Vec::new(),
+            modification_ids: Vec::new(),
             regions: Vec::new(),
-            region_ids: Vec::new(),
+            region_described: Vec::new(),
+            extension: std::ptr::null(),
             editor_view: None,
             factory,
             _texts: Vec::new(),
@@ -299,11 +312,11 @@ impl Document {
         };
         // SAFETY: a live document controller, on its model thread (this one).
         unsafe { begin(dc.reference) };
-        let built = made.build(&dc, document, &mut text);
+        let built = made.build(&dc, document);
         // SAFETY: as above, closing the edit `begin` opened.
         unsafe { end(dc.reference) };
         built?;
-        made._texts = texts;
+        made._texts.extend(texts);
 
         // Every role, through the newer entry point when the plug-in has it.
         let roles =
@@ -323,20 +336,9 @@ impl Document {
         let extension = unsafe { extension.as_ref() }.ok_or("the plug-in did not bind to the document")?;
         made.editor_view = (!extension.editorViewRef.is_null() && !extension.editorViewInterface.is_null())
             .then_some((extension.editorViewRef, extension.editorViewInterface));
-        // SAFETY: the renderers' tables, valid with the extension instance, or null.
-        let playback = unsafe { extension.playbackRendererInterface.as_ref() };
-        // SAFETY: as above.
-        let editor = unsafe { extension.editorRendererInterface.as_ref() };
-        for &region in &made.regions {
-            if let Some(add) = playback.and_then(|p| p.addPlaybackRegion) {
-                // SAFETY: a live renderer and a region of its document, on the model thread.
-                unsafe { add(extension.playbackRendererRef, region) };
-            }
-            if let Some(add) = editor.and_then(|e| e.addPlaybackRegion) {
-                // SAFETY: as above, for the editor renderer.
-                unsafe { add(extension.editorRendererRef, region) };
-            }
-        }
+        made.extension = extension;
+        let all = Edited { added: made.regions.clone(), removed: Vec::new() };
+        made.renderers(&all);
         Ok(made)
     }
 
@@ -349,7 +351,7 @@ impl Document {
         let interface = unsafe { &*interface };
         let Some(notify) = interface.notifySelection else { return false };
         let selected: Vec<ARAPlaybackRegionRef> = region
-            .and_then(|id| self.region_ids.iter().position(|r| r == id))
+            .and_then(|id| self.region_described.iter().position(|r| r.id == id))
             .and_then(|index| self.regions.get(index).copied())
             .into_iter()
             .collect();
@@ -448,19 +450,14 @@ impl Document {
 
     /// Makes the musical context, the region sequence, the sources, their modifications and
     /// the playback regions, inside the edit `bind` opened.
-    fn build(
-        &mut self,
-        dc: &Controller,
-        document: &AraDocument,
-        text: &mut impl FnMut(&str) -> *const std::ffi::c_char,
-    ) -> Result<(), String> {
+    fn build(&mut self, dc: &Controller, document: &AraDocument) -> Result<(), String> {
         let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut self.host).cast();
         let i = &dc.interface;
         let missing = |what: &str| format!("the document controller cannot make {what}");
         let make_context = i.createMusicalContext.ok_or_else(|| missing("a musical context"))?;
         let context = ARAMusicalContextProperties {
             structSize: size_of::<ARAMusicalContextProperties>(),
-            name: text(&document.name),
+            name: self.text(&document.name),
             orderIndex: 0,
             color: std::ptr::null(),
         };
@@ -470,85 +467,278 @@ impl Document {
         let make_sequence = i.createRegionSequence.ok_or_else(|| missing("a region sequence"))?;
         let sequence = ARARegionSequenceProperties {
             structSize: size_of::<ARARegionSequenceProperties>(),
-            name: text(&document.sequence),
+            name: self.text(&document.sequence),
             orderIndex: 0,
             musicalContextRef: self.context,
             color: std::ptr::null(),
         };
         // SAFETY: as above.
         self.sequence = unsafe { make_sequence(dc.reference, host_ref.cast(), &sequence) };
-        let make_source = i.createAudioSource.ok_or_else(|| missing("an audio source"))?;
         for (index, described) in document.sources.iter().enumerate() {
-            let Some(source) = self.host.sources.get(index) else { break };
-            // Not moved again: the list is not changed once the document is built.
-            let source_ref: *const Source = source;
-            let properties = ARAAudioSourceProperties {
-                structSize: size_of::<ARAAudioSourceProperties>(),
-                name: text(&described.name),
-                persistentID: text(&described.id),
-                sampleCount: i64::try_from(source.audio.frames()).unwrap_or(i64::MAX),
-                sampleRate: source.audio.sample_rate(),
-                channelCount: i32::try_from(source.audio.channels()).unwrap_or(2),
-                merits64BitSamples: 0,
-                channelArrangementDataType: kARAChannelArrangementUndefined as ARAChannelArrangementDataType,
-                channelArrangement: std::ptr::null(),
-            };
-            // SAFETY: as above; the source's host ref is its boxed `Source`, which lives as
-            // long as the document.
-            let made = unsafe { make_source(dc.reference, source_ref.cast_mut().cast(), &properties) };
-            if made.is_null() {
-                return Err(format!("the plug-in refused the audio source {:?}", described.name));
-            }
-            if let Some(enable) = i.enableAudioSourceSamplesAccess {
-                // SAFETY: as above, for a source just made.
-                unsafe { enable(dc.reference, made, 1) };
-            }
-            self.sources.push(made);
+            self.add_source(dc, index, &described.id, &described.name)?;
         }
-        let make_modification = i.createAudioModification.ok_or_else(|| missing("an audio modification"))?;
-        let make_region = i.createPlaybackRegion.ok_or_else(|| missing("a playback region"))?;
-        let mut by_id: Vec<(&str, ARAAudioModificationRef)> = Vec::new();
         for region in &document.regions {
-            let Some(&source) = self.sources.get(region.source) else { continue };
-            let modification = match by_id.iter().find(|(id, _)| *id == region.modification) {
-                Some(&(_, made)) => made,
-                None => {
-                    let properties = ARAAudioModificationProperties {
-                        structSize: size_of::<ARAAudioModificationProperties>(),
-                        name: text(&region.name),
-                        persistentID: text(&region.modification),
-                    };
-                    // SAFETY: as above, for a source of this document.
-                    let made = unsafe { make_modification(dc.reference, source, host_ref.cast(), &properties) };
-                    if made.is_null() {
-                        return Err(format!("the plug-in refused the audio modification of {:?}", region.name));
-                    }
-                    self.modifications.push(made);
-                    by_id.push((&region.modification, made));
-                    made
-                }
-            };
-            let properties = ARAPlaybackRegionProperties {
-                structSize: size_of::<ARAPlaybackRegionProperties>(),
-                transformationFlags: 0,
-                startInModificationTime: region.offset,
-                durationInModificationTime: region.duration,
-                startInPlaybackTime: region.start,
-                durationInPlaybackTime: region.duration,
-                musicalContextRef: self.context,
-                regionSequenceRef: self.sequence,
-                name: text(&region.name),
-                color: std::ptr::null(),
-            };
-            // SAFETY: as above, for a modification of this document.
-            let made = unsafe { make_region(dc.reference, modification, host_ref.cast(), &properties) };
-            if made.is_null() {
-                return Err(format!("the plug-in refused the playback region {:?}", region.name));
-            }
-            self.regions.push(made);
-            self.region_ids.push(region.id.clone());
+            self.add_region(dc, region)?;
         }
         Ok(())
+    }
+
+    /// Keeps `value` for as long as the document and returns it as a C string for the plug-in.
+    fn text(&mut self, value: &str) -> *const std::ffi::c_char {
+        let owned = CString::new(value.replace('\0', " ")).unwrap_or_default();
+        let pointer = owned.as_ptr();
+        self._texts.push(owned);
+        pointer
+    }
+
+    /// Makes the audio source of `self.host.sources[index]`, persistent id `id`, inside an
+    /// edit, and turns on its sample access.
+    fn add_source(&mut self, dc: &Controller, index: usize, id: &str, name: &str) -> Result<(), String> {
+        let make = dc.interface.createAudioSource.ok_or("the document controller cannot make an audio source")?;
+        let source_ref: *const Source = &**self.host.sources.get(index).ok_or("an audio source is missing")?;
+        // SAFETY: the box lives as long as the document and does not move.
+        let audio = unsafe { &(*source_ref).audio };
+        let properties = ARAAudioSourceProperties {
+            structSize: size_of::<ARAAudioSourceProperties>(),
+            name: self.text(name),
+            persistentID: self.text(id),
+            sampleCount: i64::try_from(audio.frames()).unwrap_or(i64::MAX),
+            sampleRate: audio.sample_rate(),
+            channelCount: i32::try_from(audio.channels()).unwrap_or(2),
+            merits64BitSamples: 0,
+            channelArrangementDataType: kARAChannelArrangementUndefined as ARAChannelArrangementDataType,
+            channelArrangement: std::ptr::null(),
+        };
+        // SAFETY: a live controller inside an edit, on its model thread; the source's host ref
+        // is its boxed `Source`, which lives as long as the document.
+        let made = unsafe { make(dc.reference, source_ref.cast_mut().cast(), &properties) };
+        if made.is_null() {
+            return Err(format!("the plug-in refused the audio source {name:?}"));
+        }
+        if let Some(enable) = dc.interface.enableAudioSourceSamplesAccess {
+            // SAFETY: as above, for a source just made.
+            unsafe { enable(dc.reference, made, 1) };
+        }
+        self.sources.push(made);
+        self.source_ids.push(id.to_string());
+        Ok(())
+    }
+
+    /// The modification `region` plays, made inside an edit the first time it is asked for.
+    fn modification_for(&mut self, dc: &Controller, region: &AraRegion) -> Result<ARAAudioModificationRef, String> {
+        if let Some(index) = self.modification_ids.iter().position(|id| *id == region.modification) {
+            return self.modifications.get(index).copied().ok_or_else(|| "a modification is missing".into());
+        }
+        let source = *self.sources.get(region.source).ok_or("a region names a source the document lacks")?;
+        let make =
+            dc.interface.createAudioModification.ok_or("the document controller cannot make an audio modification")?;
+        let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut self.host).cast();
+        let properties = ARAAudioModificationProperties {
+            structSize: size_of::<ARAAudioModificationProperties>(),
+            name: self.text(&region.name),
+            persistentID: self.text(&region.modification),
+        };
+        // SAFETY: a live controller inside an edit, for a source of this document.
+        let made = unsafe { make(dc.reference, source, host_ref.cast(), &properties) };
+        if made.is_null() {
+            return Err(format!("the plug-in refused the audio modification of {:?}", region.name));
+        }
+        self.modifications.push(made);
+        self.modification_ids.push(region.modification.clone());
+        Ok(made)
+    }
+
+    /// A region's properties as ARA takes them.
+    fn region_properties(&mut self, region: &AraRegion) -> ARAPlaybackRegionProperties {
+        ARAPlaybackRegionProperties {
+            structSize: size_of::<ARAPlaybackRegionProperties>(),
+            transformationFlags: 0,
+            startInModificationTime: region.offset,
+            durationInModificationTime: region.duration,
+            startInPlaybackTime: region.start,
+            durationInPlaybackTime: region.duration,
+            musicalContextRef: self.context,
+            regionSequenceRef: self.sequence,
+            name: self.text(&region.name),
+            color: std::ptr::null(),
+        }
+    }
+
+    /// Makes the playback region `region` inside an edit; returns it.
+    fn add_region(&mut self, dc: &Controller, region: &AraRegion) -> Result<ARAPlaybackRegionRef, String> {
+        let modification = self.modification_for(dc, region)?;
+        let make = dc.interface.createPlaybackRegion.ok_or("the document controller cannot make a playback region")?;
+        let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut self.host).cast();
+        let properties = self.region_properties(region);
+        // SAFETY: a live controller inside an edit, for a modification of this document.
+        let made = unsafe { make(dc.reference, modification, host_ref.cast(), &properties) };
+        if made.is_null() {
+            return Err(format!("the plug-in refused the playback region {:?}", region.name));
+        }
+        self.regions.push(made);
+        self.region_described.push(region.clone());
+        Ok(made)
+    }
+
+    /// Brings the document in line with `document`, the track's clips as they are now, in one
+    /// edit: sources and modifications it lacks are made (none goes: their edits stay in the
+    /// archive), regions that moved or changed length are updated, new ones made. Regions
+    /// that are gone, or play another modification now, are left in the document for
+    /// [`Document::renderers`] and [`Document::destroy`]; the result names them and the ones
+    /// made.
+    pub(crate) fn edit(&mut self, document: &AraDocument) -> Result<Edited, String> {
+        // New sources are opened first, so a source that cannot be read changes nothing.
+        let mut new_sources = Vec::new();
+        for described in &document.sources {
+            if !self.source_ids.contains(&described.id) && !new_sources.iter().any(|(id, _, _)| *id == described.id) {
+                let audio = AudioSource::open(&described.address)
+                    .map_err(|e| format!("an audio source could not be opened: {e}"))?;
+                new_sources.push((described.id.clone(), described.name.clone(), Box::new(Source { audio })));
+            }
+        }
+        let dc = self.controller().ok_or("the plug-in has no document controller")?;
+        let (Some(begin), Some(end)) = (dc.interface.beginEditing, dc.interface.endEditing) else {
+            return Err("the document controller cannot be edited".into());
+        };
+        // SAFETY: a live document controller, on its model thread (this one).
+        unsafe { begin(dc.reference) };
+        let edited = self.apply(&dc, document, new_sources);
+        // SAFETY: as above, closing the edit `begin` opened.
+        unsafe { end(dc.reference) };
+        edited
+    }
+
+    /// [`Document::edit`]'s changes, inside the edit it opened.
+    fn apply(
+        &mut self,
+        dc: &Controller,
+        document: &AraDocument,
+        new_sources: Vec<(String, String, Box<Source>)>,
+    ) -> Result<Edited, String> {
+        for (id, name, source) in new_sources {
+            self.host.sources.push(source);
+            self.add_source(dc, self.host.sources.len() - 1, &id, &name)?;
+        }
+        // The described regions' sources as indices into this document's sources.
+        let mut regions = Vec::with_capacity(document.regions.len());
+        for region in &document.regions {
+            let id = &document.sources.get(region.source).ok_or("a region names a source the document lacks")?.id;
+            let source = self.source_ids.iter().position(|s| s == id).ok_or("a source is missing")?;
+            regions.push(AraRegion { source, ..region.clone() });
+        }
+        let mut edited = Edited::default();
+        // Gone, or playing another modification (a region's modification cannot change).
+        for (index, old) in self.region_described.iter().enumerate() {
+            let keeps = regions.iter().any(|r| r.id == old.id && r.modification == old.modification);
+            if !keeps && let Some(&region) = self.regions.get(index) {
+                edited.removed.push(region);
+            }
+        }
+        for region in &regions {
+            let found = self
+                .region_described
+                .iter()
+                .position(|old| old.id == region.id && old.modification == region.modification)
+                .filter(|&index| self.regions.get(index).is_some_and(|r| !edited.removed.contains(r)));
+            match found {
+                Some(index) if self.region_described.get(index) == Some(region) => {}
+                Some(index) => {
+                    let update = dc
+                        .interface
+                        .updatePlaybackRegionProperties
+                        .ok_or("the document controller cannot update a playback region")?;
+                    let made = *self.regions.get(index).ok_or("a region is missing")?;
+                    let properties = self.region_properties(region);
+                    // SAFETY: a live controller inside an edit, for a region of this document.
+                    unsafe { update(dc.reference, made, &properties) };
+                    if let Some(old) = self.region_described.get_mut(index) {
+                        *old = region.clone();
+                    }
+                }
+                None => edited.added.push(self.add_region(dc, region)?),
+            }
+        }
+        Ok(edited)
+    }
+
+    /// Takes the removed regions out of the plug-in's renderers and puts the added ones in.
+    /// ARA allows this only while the plug-in does not render, so the caller stops its
+    /// processing around it.
+    pub(crate) fn renderers(&self, edited: &Edited) {
+        // SAFETY: the plug-in's extension instance, valid while it is bound, or null.
+        let Some(extension) = (unsafe { self.extension.as_ref() }) else { return };
+        // SAFETY: the renderers' tables, valid with the extension instance, or null.
+        let playback = unsafe { extension.playbackRendererInterface.as_ref() };
+        // SAFETY: as above.
+        let editor = unsafe { extension.editorRendererInterface.as_ref() };
+        for &region in &edited.removed {
+            if let Some(remove) = playback.and_then(|p| p.removePlaybackRegion) {
+                // SAFETY: a live renderer and a region of its document it holds, on the model
+                // thread.
+                unsafe { remove(extension.playbackRendererRef, region) };
+            }
+            if let Some(remove) = editor.and_then(|e| e.removePlaybackRegion) {
+                // SAFETY: as above, for the editor renderer.
+                unsafe { remove(extension.editorRendererRef, region) };
+            }
+        }
+        for &region in &edited.added {
+            if let Some(add) = playback.and_then(|p| p.addPlaybackRegion) {
+                // SAFETY: a live renderer and a region of its document, on the model thread.
+                unsafe { add(extension.playbackRendererRef, region) };
+            }
+            if let Some(add) = editor.and_then(|e| e.addPlaybackRegion) {
+                // SAFETY: as above, for the editor renderer.
+                unsafe { add(extension.editorRendererRef, region) };
+            }
+        }
+    }
+
+    /// Destroys the regions [`Document::edit`] found gone, in one edit, once the renderers no
+    /// longer hold them.
+    pub(crate) fn destroy(&mut self, edited: &Edited) {
+        if edited.removed.is_empty() {
+            return;
+        }
+        let Some(dc) = self.controller() else { return };
+        let (Some(begin), Some(end), Some(destroy)) =
+            (dc.interface.beginEditing, dc.interface.endEditing, dc.interface.destroyPlaybackRegion)
+        else {
+            return;
+        };
+        // SAFETY: a live document controller, on its model thread.
+        unsafe { begin(dc.reference) };
+        for &region in &edited.removed {
+            // SAFETY: a region of this document that no renderer holds, destroyed once.
+            unsafe { destroy(dc.reference, region) };
+        }
+        // SAFETY: closing the edit opened above.
+        unsafe { end(dc.reference) };
+        let mut index = 0;
+        while index < self.regions.len() {
+            if self.regions.get(index).is_some_and(|r| edited.removed.contains(r)) {
+                self.regions.remove(index);
+                if index < self.region_described.len() {
+                    self.region_described.remove(index);
+                }
+            } else {
+                index += 1;
+            }
+        }
+    }
+}
+
+/// What [`Document::edit`] changed in the regions the plug-in's renderers hold.
+#[derive(Debug, Default)]
+pub(crate) struct Edited {
+    added: Vec<ARAPlaybackRegionRef>,
+    removed: Vec<ARAPlaybackRegionRef>,
+}
+
+impl Edited {
+    /// Whether the renderers must change, which needs the plug-in's processing stopped.
+    pub(crate) fn changes_renderers(&self) -> bool {
+        !self.added.is_empty() || !self.removed.is_empty()
     }
 }
 

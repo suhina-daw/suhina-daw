@@ -217,11 +217,21 @@ the list below, in a first form). Where it differs from the decisions above it i
   blob, so save, autosave, backups and a restart keep them as they keep any plug-in's state. On
   load the archive goes back with `restoreObjectsFromArchive` in an edit, once the document is
   built; an archive of a kind the plug-in does not read is refused with the reason.
-- **Clip edits** (decision 3), *interim*: instead of edit batches, a change in the track's clips
-  (moved, trimmed, added, removed, a tempo change) that stays put for 0.75 s stops the plug-in,
-  takes its state with its edits, and loads it again with the new document; the edits of the
-  clips still there come back by their ids. The sound pauses while it reloads, and an editor that
-  was open opens again.
+- **Clip edits** (decision 3). When the track's clips change (moved, trimmed, added, removed,
+  muted, a tempo change, an undo of any of these), the session sends the plug-in the whole new
+  document at once (`ara_update`, answered `ara_updated`): the samples of files already shared
+  are not shared again, only a new file's. The host matches it with what it holds by persistent
+  id and changes it in one edit: a new source or modification is made, none goes (their edits
+  stay in the archive, so an undo brings a deleted clip back with its edits), a region that moved
+  or changed length is updated in place (`updatePlaybackRegionProperties`), a new one made, and
+  one that is gone, or plays another content now, is taken out of the renderers and destroyed.
+  Moving and trimming change nothing else, so the plug-in plays on and its editor stays open.
+  Adding or taking out regions changes the renderers, which ARA allows only while the plug-in
+  does not render: its processing stops for that and starts again, as for a latency change, a
+  gap of a few blocks. Where an update fails, and for a plug-in loaded without a document (its
+  track had no audio clips), the change instead loads it again with the new document once the
+  clips have stayed put for 0.75 s, the edits of the clips still there coming back by their ids
+  and an editor that was open opening again.
 - **The editor in the clip's place** (stage 7, first part,
   [#594](https://github.com/suhina-daw/suhina-daw/issues/594)). An arrangement audio clip on a
   track whose plug-in is bound shows that plug-in's editor in the detail area's Clip view, where a

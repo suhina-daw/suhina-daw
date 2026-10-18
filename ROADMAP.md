@@ -572,8 +572,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - A plug-in that edits clips (ARA, such as a pitch editor) on an audio track is loaded with the
   track's arrangement audio clips: its editor shows them and it plays its edited version of them
-  in time with the song. Its edits are saved with the project, and when the clips move or change
-  it is loaded again with them, keeping the edits of the clips still there. Warped and looped
+  in time with the song. Its edits are saved with the project, and it follows the clips as they
+  are moved, trimmed, added or deleted while it plays, without loading again; an undo brings a
+  deleted clip back with its edits. Warped and looped
   clips and the overlap guard come later ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - Selecting an audio clip on such a track shows the plug-in's editor in the detail area, where a
   MIDI clip has its piano roll, with that clip shown in it; the clip's menu (**Open in** the
