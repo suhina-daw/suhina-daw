@@ -146,3 +146,18 @@ fn several_clips_move_together_without_replacing_each_other() {
         run(&mut session, "clip.moveMany", json!({ "clips": [{ "track": 2, "index": 0 }], "beats": -10.0 })).is_err()
     );
 }
+
+#[test]
+fn copying_clips_by_drag_leaves_them_and_places_copies_of_their_own() {
+    let mut session = Session::new(project());
+    let clips = json!([{ "track": 1, "index": 0 }, { "track": 2, "index": 0 }]);
+    run(&mut session, "clip.moveMany", json!({ "clips": clips, "beats": 8.0, "copy": true })).unwrap();
+    for track in BOTH {
+        assert_eq!(spans(&session, track), [(0.0, 4.0), (8.0, 4.0)], "the original stays, the copy goes");
+    }
+    let p = session.project();
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    assert_ne!(lane.clips[0].content, lane.clips[1].content, "the copy plays a content of its own");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 4.0)], "one undo step");
+}

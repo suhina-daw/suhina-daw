@@ -364,7 +364,7 @@ impl Default for Settings {
             at_start: AtStart::Panel,
             start_template: String::new(),
             stop: StopReturn::Marker,
-            play_from: PlayFrom::Marker,
+            play_from: PlayFrom::Clip,
             device_layout: DeviceLayout::Row,
             select_on_launch: true,
             view: crate::settings::view_settings::ViewSettings::default(),
@@ -999,12 +999,13 @@ map_window_rect = 10, 20, 800, 600
 
     #[test]
     fn play_from_reads_marker_or_clip_and_nothing_else() {
-        assert_eq!(Settings::default().play_from, PlayFrom::Marker);
+        // The selected clip by default, as Ableton Live plays from it.
+        assert_eq!(Settings::default().play_from, PlayFrom::Clip);
         assert_eq!(Settings::from_text("play_from = clip\n").0.play_from, PlayFrom::Clip);
         assert_eq!(Settings::from_text("play_from = marker\n").0.play_from, PlayFrom::Marker);
         let (settings, warnings) = Settings::from_text("play_from = selection\n");
-        assert_eq!((settings.play_from, warnings.len()), (PlayFrom::Marker, 1));
-        assert!(Settings::default().to_text().contains("play_from = marker\n"));
+        assert_eq!((settings.play_from, warnings.len()), (PlayFrom::Clip, 1));
+        assert!(Settings::default().to_text().contains("play_from = clip\n"));
     }
 
     #[test]

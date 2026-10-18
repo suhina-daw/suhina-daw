@@ -776,6 +776,11 @@ static COMMANDS: &[CommandSpec] = &[
                 "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
             ),
             optional(
+                "copy",
+                ParamType::Bool,
+                "true leaves the clips where they are and puts copies (each with a content of its own) where they would have gone",
+            ),
+            optional(
                 "stack",
                 ParamType::Bool,
                 "true leaves clips under them as they are; false (default) replaces them",

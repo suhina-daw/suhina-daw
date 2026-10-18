@@ -107,9 +107,13 @@ clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track ba
 track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
 headers are tinted with their track's colour, deeper while selected.
 
-On a lane at least 36 px tall, a clip's 16 px name bar moves it (a hand cursor) and the body
-under it selects time (a text cursor), as in Ableton Live; with *Ctrl+drag selects time over
-clips* on, a plain drag anywhere moves it.
+On a lane at least 36 px tall, a drag from a clip's upper half moves it (a hand cursor; the
+16 px name bar is drawn inside it) and one from its lower half selects time (a text cursor), as
+in Ableton Live; with *Ctrl+drag selects time over clips* on, a plain drag anywhere moves it.
+Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
+they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
+with `copy`), the cursor showing the copy sign. A time selection is drawn in the accent over
+the clips with a line at each edge, and as a bar along the ruler.
 
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
 where they were, an empty row between them staying until the rows above it empty too.
@@ -490,8 +494,9 @@ pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay
 
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
-Play button pass the setting **Play from** (Settings › General): **Marker** (default) or
-**Selected clip**, saved as `play_from = marker | clip`. With **Selected clip** and a clip
+Play button pass the setting **Play from** (Settings › General): **Selected clip** (default,
+as Ableton Live plays from the clip clicked) or **Marker**, saved as `play_from = clip | marker`.
+A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
 clip selected, or while the Session view is shown (where the selection is not seen), they play
 from the marker. **Shift+Space** (`transport.playFromSelection` in the keymap) plays from the

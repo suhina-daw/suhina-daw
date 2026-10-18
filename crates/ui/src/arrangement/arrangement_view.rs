@@ -113,6 +113,9 @@ struct ClipDrag {
     target: TrackId,
     /// Where the dragged clip started: the other selected clips move by as much as it does.
     origin: f64,
+    /// Ctrl (Cmd) was held as the drag began (Shift with Ctrl+drag selecting time): the clips
+    /// are copied rather than moved, as Ableton Live's Ctrl-drag does.
+    copy: bool,
 }
 
 /// Which grip of a clip's edges is dragged: its left or right edge, or the loop handle at its
@@ -1120,6 +1123,20 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // A click on the ruler moves the play start marker there, on the clip grid (Alt: free); while
     // playing, playback jumps there (`docs/spec/arrangement-editing.md` › Play position).
+    // The time selection shows along the ruler as well: which span is selected now.
+    if let Some(selection) = &state.time_selection {
+        let x = |beat: f64| time.left() + beat as f32 * state.beat_width - state.scroll.x;
+        let span = egui::Rangef::new(x(selection.start), x(selection.end)).intersection(time.x_range());
+        if span.span() > 0.0 {
+            let band = Rect::from_x_y_ranges(span, egui::Rangef::new(ruler.bottom() - 6.0, ruler.bottom()));
+            painter.rect_filled(band, 0.0, theme::accent());
+            painter.rect_filled(
+                Rect::from_x_y_ranges(span, ruler.y_range()),
+                0.0,
+                theme::accent().gamma_multiply(0.18),
+            );
+        }
+    }
     let ruler_response = ui.interact(ruler, Id::new("arrangement-ruler"), Sense::click_and_drag());
     ruler_response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Ruler"));
     if ruler_response.clicked()
@@ -1419,11 +1436,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             if span.span() <= 0.0 {
                 break;
             }
-            lanes_painter.rect_filled(
-                Rect::from_x_y_ranges(span, row.y_range()),
-                0.0,
-                theme::accent().gamma_multiply(0.1),
-            );
+            // Plainly over the clips too: the accent, and a line at each edge.
+            let lit = Rect::from_x_y_ranges(span, row.y_range());
+            lanes_painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(0.38));
+            let edge = egui::Stroke::new(1.5, theme::accent());
+            lanes_painter.vline(lit.left(), lit.y_range(), edge);
+            lanes_painter.vline(lit.right(), lit.y_range(), edge);
         }
     }
     // The selection rectangle: the clips it touches are selected when the button goes up, and
@@ -1947,15 +1965,16 @@ fn clip_box<'a>(
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
     let response =
         ui.interact(visible, Id::new(("arrangement-clip", lane.track.0, clip.index)), Sense::click_and_drag());
-    // The cursor says what a drag does: the name bar moves the clip (a hand), the body under it
-    // selects time (a text cursor), as Ableton Live's do.
-    if !state.time_select_ctrl
-        && let Some(bar) = clip_name_bar(visible)
-        && response.hover_pos().is_some_and(|p| p.y > bar.bottom())
-    {
+    // The cursor says what a drag does: the upper half moves the clip (a hand; with the copy key
+    // held, the copy cursor), the lower half selects time (a text cursor), as Ableton Live's do.
+    let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
+    let in_body = |y: f32| !state.time_select_ctrl && clip_grab_area(visible).is_some_and(|grab| y > grab.bottom());
+    if state.clip_drag.is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+    } else if response.hover_pos().is_some_and(|p| in_body(p.y)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     } else if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
@@ -1996,7 +2015,7 @@ fn clip_box<'a>(
             if state.time_select_ctrl {
                 command
             } else {
-                !command && clip_name_bar(visible).is_some_and(|bar| origin.y > bar.bottom())
+                clip_grab_area(visible).is_some_and(|grab| origin.y > grab.bottom())
             }
         });
     if selects_time {
@@ -2023,6 +2042,7 @@ fn clip_box<'a>(
             start: clip.start,
             target: lane.track,
             origin: clip.start,
+            copy: copy_key,
         });
     }
     if response.dragged_by(egui::PointerButton::Primary)
@@ -2041,7 +2061,26 @@ fn clip_box<'a>(
         let start = snapped(drag.start);
         let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
         let moved = drag.target != lane.track || (start - clip.start).abs() > 1e-9;
-        if state.selected.len() > 1 && state.is_selected(key) {
+        // Copied: the clips stay, and copies (each playing a content of its own) go where they
+        // were dropped; a selection is copied whole.
+        let copying = drag.copy || copy_key;
+        if copying {
+            let chosen: Vec<(TrackId, usize)> =
+                if state.is_selected(key) && state.selected.len() > 1 { state.selected.clone() } else { vec![key] };
+            let clips: Vec<Value> =
+                chosen.iter().map(|(track, index)| json!({ "track": track.0, "index": index })).collect();
+            let mut params = json!({ "clips": clips, "beats": start - clip.start, "copy": true });
+            if drag.target != lane.track && chosen.iter().all(|(track, _)| *track == lane.track) {
+                params["to_track"] = json!(drag.target.0);
+                params["color"] = json!(hex(clip.color));
+            }
+            if stack {
+                params["stack"] = json!(true);
+            }
+            if moved {
+                actions.push(Action::new("clip.moveMany", params));
+            }
+        } else if state.selected.len() > 1 && state.is_selected(key) {
             // The whole selection moves by as much, at once; to another track only when all of
             // it is on this one.
             let clips: Vec<Value> =
@@ -2559,12 +2598,18 @@ fn paint_clip(
         }
     }
     if selected {
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::text_primary()), StrokeKind::Inside);
+        painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, theme::text_primary()), StrokeKind::Inside);
     }
 }
 
-/// The bar along a clip's top that carries its name and moves it, on a lane tall enough to have
-/// a body under it for selecting time (Ableton Live's title bar).
+/// The part of a clip a drag moves it from: its upper half, on a lane tall enough to have a body
+/// under it for selecting time; `None` when the whole clip moves it.
+fn clip_grab_area(rect: Rect) -> Option<Rect> {
+    (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.center().y)))
+}
+
+/// The bar along a clip's top that carries its name, on a lane tall enough to have a body under
+/// it (Ableton Live's title bar); the drag that moves the clip takes the whole upper half.
 fn clip_name_bar(rect: Rect) -> Option<Rect> {
     (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_size(rect.min, Vec2::new(rect.width(), CLIP_NAME_BAR)))
 }

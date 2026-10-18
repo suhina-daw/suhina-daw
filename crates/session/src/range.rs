@@ -210,6 +210,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     let chosen = clip_list(&session.project, params)?;
     let beats = number(params, "beats")?;
     let stack = params.get("stack").and_then(Value::as_bool).unwrap_or(false);
+    let copy = params.get("copy").and_then(Value::as_bool).unwrap_or(false);
     let to = match params.get("to_track") {
         Some(_) => Some(track_at(&session.project, params, "to_track")?),
         None => None,
@@ -228,7 +229,9 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     order.sort_by_key(|c| std::cmp::Reverse(c.1));
     for (track, index) in order {
         let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)).ok_or("the track has no lane")?;
-        let clip = lane.clips.remove(index);
+        // Copied, the clip stays where it is; its copy plays a content of its own.
+        let clip =
+            if copy { lane.clips.get(index).cloned().ok_or("the clip is missing")? } else { lane.clips.remove(index) };
         if clip.start + beats < -1e-9 {
             return Err(format!("a clip would start at beat {}, before the start", clip.start + beats).into());
         }
@@ -250,6 +253,14 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             if (kinds.0 && !target.content.notes) || (kinds.1 && !target.content.audio) {
                 return Err(format!("track {:?} cannot hold these clips", target.name).into());
             }
+        }
+    }
+    if copy {
+        for (_, clip) in &mut taken {
+            let id = new_content_id(p)?;
+            let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
+            p.contents.push(ClipContent { id, ..content });
+            clip.content = id;
         }
     }
     let mut placed = Vec::with_capacity(taken.len());

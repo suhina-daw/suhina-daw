@@ -755,13 +755,13 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
         render_a_block(renderer);
     };
 
-    // By default Play starts from the marker, a selected clip or not.
+    // By default Play starts from the selected clip, as Ableton Live's does.
     harness.get_by_label("Clip Beat B on Drums at bar 17").click();
     harness.run();
     harness.get_by_label("Play").click();
     harness.run_steps(2);
     render_a_block(&mut renderer);
-    assert_eq!((monitor.running(), monitor.start_beat()), (true, 0.0));
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
     stop(&mut harness, &mut renderer);
 
     // Shift+Space plays from the selected clip's start (bar 17, beat 64), and Stop returns there.
@@ -779,6 +779,8 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
     harness.get_by_label("Settings page: Transport").click();
+    harness.run();
+    harness.get_by_label("Play from: Marker").click();
     harness.run();
     harness.get_by_label("Play from: Selected clip").click();
     harness.run();
@@ -4509,6 +4511,37 @@ fn touching_a_short_clips_edge_with_a_coarse_grid_changes_nothing() {
     harness.drop_at(edge + egui::vec2(2.0, 0.0));
     harness.run();
     assert_eq!(length(&harness), before);
+}
+
+#[test]
+fn ctrl_dragging_a_clip_copies_it_and_leaves_the_original() {
+    let mut harness = arrangement_app();
+    let starts = |h: &Harness<'static, App>| {
+        let p = h.state().session().unwrap().project();
+        let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+        p.arrangement.lanes.iter().find(|l| l.track == track).unwrap().clips.iter().map(|c| c.start).collect::<Vec<_>>()
+    };
+    let before = starts(&harness);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 8.0);
+    let to = from + egui::vec2(256.0, 0.0);
+    harness.hover_at(from);
+    harness.run();
+    // Ctrl (Cmd) held through the drag.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(from + egui::vec2(128.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::default()));
+    harness.run();
+    let after = starts(&harness);
+    // (The copy replaces what it lands on, as a moved clip does.)
+    assert!(after.contains(&64.0), "the original stays at bar 17: {before:?} -> {after:?}");
+    assert!(after.contains(&96.0), "the copy is 8 bars later");
 }
 
 #[test]
