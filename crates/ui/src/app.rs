@@ -1321,9 +1321,15 @@ impl App {
         // The CPU load the control bar shows, from the engine's monitor, in per mille.
         let cpu = self.session().and_then(|s| s.player()).map(|p| p.cpu_monitor().load_milli());
         // The program's own RAM, the control bar shows it beside the CPU: measured once a
-        // second, not every frame.
+        // second, not every frame. The plug-in host processes report their own once a second,
+        // and their share is added: the number is what Suhina and its hosts use together.
         if self.next_ram.is_none_or(|at| ui.ctx().time() >= at) {
-            self.ram = memory_stats::memory_stats().map(|s| s.physical_mem as u64);
+            let own = memory_stats::memory_stats().map(|s| s.physical_mem as u64);
+            let mut hosts: Option<u64> = None;
+            for bytes in suhina_plugins::host_memory() {
+                hosts = Some(hosts.unwrap_or(0).saturating_add(bytes));
+            }
+            self.ram = own.map_or(hosts, |own| Some(own.saturating_add(hosts.unwrap_or(0)))).or(hosts);
             self.next_ram = Some(ui.ctx().time() + 1.0);
         }
         let ram = self.ram;

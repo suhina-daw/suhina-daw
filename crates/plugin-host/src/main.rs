@@ -61,6 +61,8 @@ const EDITOR_TICK: Duration = Duration::from_millis(1);
 /// How long unloading waits for an instance's audio thread to stop; one still running then is
 /// stuck in the plug-in, and the instance is left behind rather than taking the process with it.
 pub(crate) const UNLOAD_WAIT: Duration = Duration::from_secs(1);
+/// How often the process reports its RAM to the engine's control bar.
+const MEMORY_EVERY: Duration = Duration::from_secs(1);
 /// Most instances one process runs.
 const MAX_INSTANCES: usize = 1024;
 
@@ -420,9 +422,18 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut writer = stream.try_clone()?;
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();
+    let mut last_memory = Instant::now();
     loop {
         // Between messages: the plug-ins' main-thread callbacks and their editors' windows.
         window::pump();
+        // The engine's control bar adds this process's RAM to the program's; report it without
+        // being asked, off the control thread, once a second.
+        if last_memory.elapsed() >= MEMORY_EVERY {
+            if let Some(stats) = memory_stats::memory_stats() {
+                send(&mut writer, &Message::Memory { bytes: stats.physical_mem as u64 })?;
+            }
+            last_memory = Instant::now();
+        }
         for (instance, loaded) in &mut instances {
             loaded.tick();
             if let Some(latency) = loaded.latency_changed() {

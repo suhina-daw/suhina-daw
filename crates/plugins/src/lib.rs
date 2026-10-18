@@ -361,6 +361,9 @@ struct Group {
     resized_editors: Vec<(u32, (u32, u32))>,
     /// Instances whose plug-in reported another latency (the latest), not yet taken in.
     latencies: Vec<(u32, u32)>,
+    /// The process's resident memory, in bytes, the host last reported; gone once the
+    /// process ends, so a dead host is never counted.
+    ram: Option<u64>,
     next_ping: u64,
 }
 
@@ -372,6 +375,7 @@ impl Group {
             closed_editors: Vec::new(),
             resized_editors: Vec::new(),
             latencies: Vec::new(),
+            ram: None,
             next_ping: 0,
         }
     }
@@ -388,6 +392,7 @@ impl Group {
         self.closed_editors.clear();
         self.resized_editors.clear();
         self.latencies.clear();
+        self.ram = None;
     }
 
     /// Ends the current process and starts a new one for the group.
@@ -430,6 +435,11 @@ impl Group {
                 if self.latencies.len() < MAX_CLOSED_EDITORS {
                     self.latencies.push((*instance, *latency));
                 }
+            }
+            Message::Memory { bytes } => {
+                // Only a process that is still there reports; the host sends it once a second,
+                // so the latest is what the control bar adds.
+                self.ram = Some(*bytes);
             }
             _ => {}
         }
@@ -553,11 +563,18 @@ static GROUPS: Mutex<BTreeMap<GroupKey, Weak<Mutex<Group>>>> = Mutex::new(BTreeM
 
 /// The group `launch` asks for: the shared one for its host and group name, or one of its own.
 fn group_for_launch(launch: &Launch) -> Arc<Mutex<Group>> {
-    let Some(name) = &launch.group else {
-        return Arc::new(Mutex::new(Group::new()));
-    };
     let mut groups = lock(&GROUPS);
     groups.retain(|_, group| group.strong_count() > 0);
+    let Some(name) = &launch.group else {
+        // A group of its own is still one host process whose RAM the control bar counts, so it
+        // is tracked like the named ones, under a key no other group takes. The last instance
+        // dropping its half drops the entry with it (the register keeps weak references).
+        static UNNAMED: AtomicU64 = AtomicU64::new(0);
+        let key = (launch.host.clone(), format!("instance:{}", UNNAMED.fetch_add(1, Ordering::Relaxed)));
+        let group = Arc::new(Mutex::new(Group::new()));
+        groups.insert(key, Arc::downgrade(&group));
+        return group;
+    };
     let key = (launch.host.clone(), name.clone());
     if let Some(group) = groups.get(&key).and_then(Weak::upgrade) {
         return group;
@@ -992,6 +1009,32 @@ pub fn parse_address(address: &str) -> Result<(String, Name<'static>), PluginErr
     Ok((address.to_string(), name))
 }
 
+/// The resident memory, in bytes, of every host process that has reported it and still runs,
+/// once per process (the instances of one group share a process). Reads what the hosts sent;
+/// never waits: a group busy with a sibling's load keeps its last report for next time. The
+/// control bar adds these to the program's own RAM.
+pub fn host_memory() -> Vec<u64> {
+    let mut groups = lock(&GROUPS);
+    groups.retain(|_, group| group.strong_count() > 0);
+    groups
+        .values()
+        .filter_map(Weak::upgrade)
+        .filter_map(|group| {
+            let mut group = try_lock(&group)?;
+            // What is waiting is taken in here and now, so an editor's events still reach the
+            // instances on their next request.
+            group.drain();
+            // A process that has gone may have reported before it did; its report is stale.
+            if group.alive() {
+                group.ram
+            } else {
+                group.ram = None;
+                None
+            }
+        })
+        .collect()
+}
+
 /// Reads messages from `stream` on a thread of its own, so replies can be waited for with a
 /// timeout. Unknown lines are skipped; the channel closes when the stream ends.
 pub fn read_lines(stream: Stream) -> Receiver<Message> {
@@ -1020,4 +1063,80 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
 pub fn connect(address: &str) -> Result<Stream, PluginError> {
     let (_, name) = parse_address(address)?;
     Ok(Stream::connect(name)?)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
+    use super::*;
+    use std::sync::mpsc::Sender;
+
+    /// A host process that is alive but runs nothing: a real child and a control socket, with
+    /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
+    fn living_process() -> (HostProcess, Sender<Message>) {
+        let (address, name) = control_name().unwrap();
+        let listener =
+            ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).create_sync().unwrap();
+        let remote = thread::spawn({
+            let address = address.clone();
+            move || connect(&address).unwrap()
+        });
+        let started = Instant::now();
+        let control = loop {
+            match listener.accept() {
+                Ok(stream) => break stream,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => panic!("the listener gave up: {e}"),
+            }
+            assert!(started.elapsed() < Duration::from_secs(2), "the remote half never connected");
+            thread::sleep(Duration::from_millis(1));
+        };
+        remote.join().unwrap();
+        // A child that lives on and ends by itself. `timeout` waits for a key and errors when
+        // there is no console to take it from; a ping to no host waits without input.
+        let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
+        if cfg!(windows) {
+            child.args(["/c", "ping", "-n", "11", "127.0.0.1", ">nul"]);
+        } else {
+            child.arg("10");
+        }
+        let child = child.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        let (feed, replies) = mpsc::channel();
+        (HostProcess { child, control, replies }, feed)
+    }
+
+    #[test]
+    fn a_host_that_reports_memory_is_counted_and_one_that_died_is_not() {
+        let (process, feed) = living_process();
+        let mut group = Group::new();
+        group.process = Some(process);
+        let group = Arc::new(Mutex::new(group));
+        lock(&GROUPS).insert((PathBuf::from("the test host"), "memory-test".into()), Arc::downgrade(&group));
+
+        // What the host sent is taken in and counted.
+        feed.send(Message::Memory { bytes: 300 }).unwrap();
+        assert_eq!(host_memory(), vec![300]);
+        // Reading does not consume the report; it stands until the next one.
+        assert_eq!(host_memory(), vec![300]);
+
+        // A process that has stopped is not counted, even with its last report in hand.
+        {
+            let mut locked = lock(&group);
+            if let Some(process) = locked.process.as_mut() {
+                let _ = process.child.kill();
+            }
+        }
+        // An ended child stays "running" its own last moment: let it be gone. (`alive` reaps
+        // what has gone, so the loop is what reads it.)
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while {
+            let mut locked = lock(&group);
+            locked.alive()
+        } {
+            assert!(Instant::now() < deadline, "the ended host still looks alive");
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(host_memory().is_empty(), "a dead host's report must not be counted");
+        assert_eq!(lock(&group).ram, None, "the dead host's report is let go of");
+    }
 }

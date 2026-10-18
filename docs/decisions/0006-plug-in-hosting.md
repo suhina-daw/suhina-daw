@@ -152,6 +152,8 @@ workspace forbids.
      with its automation yet.
    - **Messages** over a local socket or pipe, with a versioned protocol: load and unload,
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
+     version 9 (`memory` comes unasked once a second: the host's process reports its resident
+     memory, and `host_memory` reads the running hosts' reports for the control bar's total);
      version 8 (`latency_changed` comes unasked when a running plug-in reports another
      latency; see *Latency* below); version 7 (`open_editor` says whether the editor is `embedded` in the engine's window,
      `place_editor` puts it there and is not answered, and `editor_resized` comes unasked when

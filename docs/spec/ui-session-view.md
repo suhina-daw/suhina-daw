@@ -50,8 +50,10 @@ From top to bottom:
      button ([recording](recording.md) › In the window)
     - draw mode, computer-keyboard MIDI, MIDI and audio activity, sample rate, CPU load
       (**Suhina:** the CPU load is built, left of the view switch; `launcher.state`
-      reports it as `cpu`; the rest is not). Left of the CPU load, the program's own RAM
-      (its resident memory, in MB or GB), shown always
+      reports it as `cpu`; the rest is not). Left of the CPU load, the program's RAM
+      (its resident memory, in MB or GB), shown always; **Suhina:** the number adds
+      the resident memory every plug-in host process reports to the engine once
+      a second, so the readout is what Suhina and its hosts use together
     - view switches (Session / Arrangement). **Suhina:** the last control at the right end
       of the bar, with the CPU load and the RAM left of it. In a window too narrow for all
       of them the RAM, then the CPU load, is left out rather than overlap the position

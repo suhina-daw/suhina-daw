@@ -136,7 +136,10 @@ fn window_with_step(app: App, step: f32) -> Harness<'static, App> {
         .with_max_steps((1.0 / step).ceil() as u64)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    harness.run();
+    // Frames, not a run to rest: a window that repaints every frame while it settles (the
+    // sample map's grid building, an animation) would spend the run's max and fail, where
+    // these frames advance the same second.
+    harness.run_steps(((1.0_f64 / step as f64).ceil() as usize).max(1));
     harness
 }
 

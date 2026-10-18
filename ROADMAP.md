@@ -495,7 +495,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The control bar has tempo, launch quantisation, play, stop, the position, the CPU load
   (how much of the time the audio engine spends rendering, from the engine's monitor; hidden
   while no engine plays) and the program's RAM in megabytes or gigabytes (its resident
-  memory, measured once a second); Space plays and stops, Ctrl+Z and Ctrl+Shift+Z undo and
+  memory, measured once a second, with every plug-in host process's own added, which each
+  reports to the engine once a second); Space plays and stops, Ctrl+Z and Ctrl+Shift+Z undo and
   redo. Every click is a command, the same the CLI and MCP run.
 - Level meters for every track, group and return and the main output, in the Session mixer and
   the Arrangement headers: peak and RMS per side on the volume's dB scale, a held peak line and a

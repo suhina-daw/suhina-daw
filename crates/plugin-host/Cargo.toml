@@ -19,6 +19,8 @@ clack-plugin = "0.2"  # MIT OR Apache-2.0
 clack-extensions = { version = "0.2", features = ["clack-host", "clack-plugin", "audio-ports", "gui", "latency", "log", "params", "posix-fd", "state", "timer"] }  # MIT OR Apache-2.0
 vst3 = "0.3"  # MIT OR Apache-2.0; bindings generated from the VST 3 SDK (MIT)
 libloading = "0.8"  # ISC
+# The host's own RAM, reported to the control bar once a second.
+memory-stats.workspace = true
 # Real-time priority for the audio threads.
 suhina-realtime.workspace = true
 
