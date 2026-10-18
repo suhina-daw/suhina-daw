@@ -11,6 +11,7 @@ covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/group.rs
   - crates/session/src/devices.rs
+  - crates/session/src/device_groups.rs
 ---
 
 # Device groups

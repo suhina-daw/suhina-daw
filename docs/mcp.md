@@ -315,6 +315,24 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   Values are kept in the parameter's range once `device.pluginParams` has listed them.
   `track.devices` gives a plug-in's set values and any device's lanes (`automation`).
 
+- **Device groups.** A device inside a device group is named by a *device path*
+  ([spec](spec/device-groups.md)): a whole number is a device on the track, as before, and text
+  such as `"2/1/0"` is the device at index 2 (a group), its branch 1, device 0 there. Every
+  `device.*` command takes a path for `device`, and `device.add`, `device.addSd`,
+  `device.addPlugin` and `device.paste` a path for `position` (`"2/1/3"`: branch 1 of the group
+  at 2, before its device 3). `track.devices` gives each device its `path`, and a group its
+  `params` (`mix`, `gain`, `macro.1` … `macro.8`, set with `device.setParam`), `branches` (name,
+  volume, pan, mute, solo and their `devices`) and `macros`. `device.group {track, device, count?,
+  name?}` puts consecutive devices into a new group of one branch without changing the sound,
+  `device.ungroup` takes a group of one branch apart, `device.addGroup {track, position?}` adds an
+  empty one, `device.move {track, device, to}` moves a device along the chain, between branches or
+  into and out of a group, and `device.duplicate` copies a device or a whole group next to itself.
+  `branch.add`, `branch.remove`, `branch.duplicate`, `branch.rename`, `branch.setVolume {db}`,
+  `branch.setPan`, `branch.setMute` and `branch.setSolo` take the group's path as `device` and the
+  `branch` index. Each is one undo step. A group whose branches start with an instrument is the
+  track's instrument and goes first; an effect group goes anywhere an effect can. Automation of a
+  device inside a group is refused until the engine plays it.
+
 - **Automation.** `automation.addPoint`, `automation.movePoint`, `automation.deletePoint`,
   `automation.movePoints`, `automation.deletePoints` (several points of one lane in one undo
   step), `automation.clear`, `automation.setEnabled` and `automation.list` (through `command_run`) edit

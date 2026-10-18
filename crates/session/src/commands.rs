@@ -12,8 +12,8 @@ use suhina_model::{
 };
 
 use crate::{
-    CommandError, Session, automation, devices, editing, files, follow, launch, mapping, meters, note_tools, notes,
-    preview, tempo,
+    CommandError, Session, automation, device_groups, devices, editing, files, follow, launch, mapping, meters,
+    note_tools, notes, preview, tempo,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +60,7 @@ impl ParamType {
             Self::Notes => "notes",
             Self::Numbers => "numbers",
             Self::Clips => "clips",
+            Self::DevicePath => "device path",
         }
     }
 }
@@ -105,6 +106,9 @@ pub enum ParamType {
     Numbers,
     /// A list of arrangement clips, each `{ "track": …, "index": n }`.
     Clips,
+    /// A device on a track: its index (an integer), or a path through device groups as text,
+    /// `"2/1/0"` (docs/spec/device-groups.md).
+    DevicePath,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,9 +139,23 @@ const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (
 const RANGE_START: Param =
     param("start", ParamType::Number, "where the time selection starts, in beats from the beginning, at least 0");
 const RANGE_END: Param = param("end", ParamType::Number, "where the time selection ends, in beats, after start");
-const DEVICE: Param = param("device", ParamType::Integer, "device index on the track, from 0, as in track.devices");
-const DEVICES: Param =
-    param("devices", ParamType::Integers, "device indices on the track, from 0, as in track.devices; at least one");
+const DEVICE: Param = param(
+    "device",
+    ParamType::DevicePath,
+    "device index on the track, from 0, or a path through device groups such as \"2/1/0\" (device 2, its branch 1, device 0 there), as in track.devices",
+);
+const GROUP: Param = param("device", ParamType::DevicePath, "a device group: its index or path, as in track.devices");
+const BRANCH: Param = param("branch", ParamType::Integer, "branch index in the group, from 0, as in track.devices");
+const POSITION: Param = optional(
+    "position",
+    ParamType::DevicePath,
+    "where in the chain, from 0, or inside a group as a path such as \"2/1/3\" (branch 1 of the group at 2, before its device 3); the end when left out",
+);
+const DEVICES: Param = param(
+    "devices",
+    ParamType::Integers,
+    "device indices on the track, from 0, or paths through groups such as \"2/1/0\", as in track.devices; at least one",
+);
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
 const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
 /// A note command's clip: an arrangement clip by index, or a launcher clip by scene.
@@ -256,7 +274,7 @@ impl<T> CommandSpec<T> {
                 ParamType::Number => json!("number"),
                 ParamType::Integer => json!("integer"),
                 ParamType::Bool => json!("boolean"),
-                ParamType::Track => json!(["integer", "string"]),
+                ParamType::Track | ParamType::DevicePath => json!(["integer", "string"]),
                 ParamType::Decibels => json!(["number", "string"]),
                 ParamType::Text => json!("string"),
             };
@@ -1365,8 +1383,8 @@ static COMMANDS: &[CommandSpec] = &[
             ),
             optional(
                 "position",
-                ParamType::Integer,
-                "where in the chain, from 0 (default: last; an instrument is always first)",
+                ParamType::DevicePath,
+                "where in the chain, from 0 (default: last; an instrument is always first), or inside a group as a path such as \"2/1/3\"",
             ),
             optional("preset", ParamType::Text, "a preset file to load: DX7 voice data (.syx) for the FM synth"),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
@@ -1380,7 +1398,11 @@ static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             param("path", ParamType::Text, "path to a validated .sd AudioEffect graph"),
-            optional("position", ParamType::Integer, "where in the chain, from 0 (default: last)"),
+            optional(
+                "position",
+                ParamType::DevicePath,
+                "where in the chain, from 0 (default: last), or inside a group as a path such as \"2/1/3\"",
+            ),
         ],
         kind: CommandKind::Edit,
         run: devices::add_sd,
@@ -1553,9 +1575,123 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.paste",
         label: "Put the copied devices into a track's chain, in the order they were copied, as one undo step",
-        params: &[TRACK, optional("position", ParamType::Integer, "where in the chain, from 0; the end when left out")],
+        params: &[TRACK, POSITION],
         kind: CommandKind::Edit,
         run: devices::paste,
+    },
+    CommandSpec {
+        id: "device.group",
+        label: "Put consecutive devices of a track (or of a group's branch) into a new device group of one branch, in the place of the first; the sound does not change",
+        params: &[
+            TRACK,
+            DEVICE,
+            optional("count", ParamType::Integer, "how many consecutive devices from that one, at least 1 (default 1)"),
+            optional("name", ParamType::Text, "the group's name (default: the device's, or Group)"),
+        ],
+        kind: CommandKind::Edit,
+        run: device_groups::group,
+    },
+    CommandSpec {
+        id: "device.ungroup",
+        label: "Put the devices of a device group of one branch in its place",
+        params: &[TRACK, GROUP],
+        kind: CommandKind::Edit,
+        run: device_groups::ungroup,
+    },
+    CommandSpec {
+        id: "device.addGroup",
+        label: "Add an empty device group (one empty branch, a clean passthrough) to a track or inside a group",
+        params: &[TRACK, POSITION, optional("name", ParamType::Text, "the group's name (default Group)")],
+        kind: CommandKind::Edit,
+        run: device_groups::add_group,
+    },
+    CommandSpec {
+        id: "device.move",
+        label: "Move a device along a track's chain, between a group's branches, or into or out of a group",
+        params: &[
+            TRACK,
+            DEVICE,
+            param(
+                "to",
+                ParamType::DevicePath,
+                "the position to move it before: an index on the track, or a path such as \"2/1/0\" into a group's branch",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: device_groups::move_device,
+    },
+    CommandSpec {
+        id: "device.duplicate",
+        label: "Copy a device (a group with everything in it) next to itself; a plug-in's copy starts with its state as it is now",
+        params: &[TRACK, DEVICE],
+        kind: CommandKind::Edit,
+        run: device_groups::duplicate,
+    },
+    CommandSpec {
+        id: "branch.add",
+        label: "Add an empty branch to a device group",
+        params: &[
+            TRACK,
+            GROUP,
+            optional("position", ParamType::Integer, "where among the branches, from 0 (default: last)"),
+            optional("name", ParamType::Text, "the branch's name (default Branch N)"),
+        ],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_add,
+    },
+    CommandSpec {
+        id: "branch.remove",
+        label: "Remove a branch of a device group with its devices; the last branch stays",
+        params: &[TRACK, GROUP, BRANCH],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_remove,
+    },
+    CommandSpec {
+        id: "branch.duplicate",
+        label: "Copy a branch of a device group next to itself",
+        params: &[TRACK, GROUP, BRANCH],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_duplicate,
+    },
+    CommandSpec {
+        id: "branch.rename",
+        label: "Rename a branch of a device group",
+        params: &[TRACK, GROUP, BRANCH, param("name", ParamType::Text, "the new name")],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_rename,
+    },
+    CommandSpec {
+        id: "branch.setVolume",
+        label: "Set a branch's volume in a device group, as track.setVolume",
+        params: &[
+            TRACK,
+            GROUP,
+            BRANCH,
+            param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
+        ],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_set_volume,
+    },
+    CommandSpec {
+        id: "branch.setPan",
+        label: "Set a branch's pan in a device group, as track.setPan",
+        params: &[TRACK, GROUP, BRANCH, param("pan", ParamType::Number, "-1 hard left, 0 centre, 1 hard right")],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_set_pan,
+    },
+    CommandSpec {
+        id: "branch.setMute",
+        label: "Mute or unmute a branch of a device group; its devices keep running",
+        params: &[TRACK, GROUP, BRANCH, param("mute", ParamType::Bool, "true mutes the branch")],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_set_mute,
+    },
+    CommandSpec {
+        id: "branch.setSolo",
+        label: "Solo a branch within its device group: while any branch is soloed only soloed branches sound",
+        params: &[TRACK, GROUP, BRANCH, param("solo", ParamType::Bool, "true solos the branch")],
+        kind: CommandKind::Edit,
+        run: device_groups::branch_set_solo,
     },
     CommandSpec {
         id: "device.setEnabled",
@@ -1760,8 +1896,8 @@ static COMMANDS: &[CommandSpec] = &[
             param("plugin", ParamType::Text, "plug-in name, id or file, from plugins.list"),
             optional(
                 "position",
-                ParamType::Integer,
-                "where in the chain, from 0 (default: last; an instrument is always first)",
+                ParamType::DevicePath,
+                "where in the chain, from 0 (default: last; an instrument is always first), or inside a group as a path such as \"2/1/3\"",
             ),
         ],
         kind: CommandKind::Edit,
@@ -2435,11 +2571,11 @@ pub(crate) fn with_override(mut answer: Value, off: bool) -> Value {
 
 /// The loudest a track's volume can be, in dB, and the floor `track.adjustVolume` stops at
 /// (silence starts below it).
-const MAX_VOLUME_DB: f64 = 6.0;
+pub(crate) const MAX_VOLUME_DB: f64 = 6.0;
 const MIN_VOLUME_DB: f64 = -150.0;
 
 /// A volume in dB as a linear gain: silence at or below [`MIN_VOLUME_DB`].
-fn gain_of_db(db: f64) -> f64 {
+pub(crate) fn gain_of_db(db: f64) -> f64 {
     if db < MIN_VOLUME_DB { 0.0 } else { 10f64.powf(db / 20.0) }
 }
 
@@ -4264,7 +4400,7 @@ pub(crate) fn number(params: &Value, name: &str) -> Result<f64, CommandError> {
 }
 
 /// Like [`number`], but also accepts the string "-inf".
-fn number_or_neg_infinity(params: &Value, name: &str) -> Result<f64, CommandError> {
+pub(crate) fn number_or_neg_infinity(params: &Value, name: &str) -> Result<f64, CommandError> {
     match params.get(name) {
         Some(Value::String(s)) if s == "-inf" => Ok(f64::NEG_INFINITY),
         _ => number(params, name),

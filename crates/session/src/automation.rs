@@ -122,7 +122,7 @@ impl Target {
                     if value.is_finite() { value.clamp(min, max) } else { return Err("value must be finite".into()) };
                 Ok(if control.is_stepped() { value.round().clamp(min, max) } else { value })
             }
-            Kind::Plugin(id) => plugin_value(session, self.track, self.device.unwrap_or(0), id, value),
+            Kind::Plugin(id) => plugin_value(session, self.track, &[self.device.unwrap_or(0)], id, value),
         }
     }
 
