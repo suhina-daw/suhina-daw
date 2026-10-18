@@ -115,6 +115,41 @@ struct ClipDrag {
     origin: f64,
 }
 
+/// Which grip of a clip's edges is dragged: its left or right edge, or the loop handle at its
+/// lower right (Studio One's), which turns the loop on as it makes the clip longer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EdgeGrab {
+    Left,
+    Right,
+    Loop,
+}
+
+/// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far.
+#[derive(Debug, Clone, Copy)]
+struct EdgeDrag {
+    key: (TrackId, usize),
+    grab: EdgeGrab,
+    raw: f64,
+}
+
+/// Where a clip's edges are while `drag` moves one: on the grid (free with `free`), kept at
+/// least a grid step (or a 16th of a beat) long, its left edge no earlier than its content's
+/// start and its right edge no later than its audio's end, as `clip.trim` keeps them; the loop
+/// handle has no end limit.
+fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64, f64) {
+    let least = if free || !grid.snaps { 1.0 / 16.0 } else { grid.step.max(1.0 / 16.0) };
+    let beat = grid.place(drag.raw, free);
+    let end = clip.start + clip.length;
+    match drag.grab {
+        EdgeGrab::Left => (beat.max(clip.earliest_start).min(end - least).max(0.0), end),
+        EdgeGrab::Right => {
+            let to = beat.max(clip.start + least);
+            (clip.start, clip.latest_end.map_or(to, |last| to.min(last.max(clip.start + least))))
+        }
+        EdgeGrab::Loop => (clip.start, beat.max(clip.start + least)),
+    }
+}
+
 /// Which end of a clip a fade belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FadeEdge {
@@ -257,6 +292,9 @@ pub struct ArrangementViewState {
     /// held (as FL Studio does) when true; from the clip's lower half (as Ableton Live does) when
     /// false. A drag on empty lanes or on the ruler selects time either way.
     pub time_select_ctrl: bool,
+    /// Alt held while an audio clip's edge is dragged stretches its audio to the new length
+    /// (Settings › Arrangement › Alt-drag on an edge stretches audio).
+    pub stretch_alt: bool,
     /// A double-click on an empty spot of a lane does nothing (Settings › Arrangement ›
     /// Double-click makes a clip is off); by default it makes an empty clip of the track's kind.
     pub double_click_does_nothing: bool,
@@ -273,6 +311,8 @@ pub struct ArrangementViewState {
     time_selection: Option<TimeSelection>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
     ruler_select: Option<f64>,
+    /// A clip's edge being dragged.
+    edge_drag: Option<EdgeDrag>,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     menu_beat: Option<f64>,
     clip_drag: Option<ClipDrag>,
@@ -340,6 +380,7 @@ impl Default for ArrangementViewState {
             stack_audio: false,
             stack_midi: false,
             time_select_ctrl: false,
+            stretch_alt: true,
             double_click_does_nothing: false,
             header_width: HEADER_COLUMN,
             heights: HashMap::new(),
@@ -348,6 +389,7 @@ impl Default for ArrangementViewState {
             marquee: None,
             time_selection: None,
             ruler_select: None,
+            edge_drag: None,
             menu_beat: None,
             clip_drag: None,
             value_drag: None,
@@ -2058,6 +2100,77 @@ fn clip_box<'a>(
         }
     }
 
+    // A clip's edges: the left or right edge dragged moves it (on the grid; Shift: free), the
+    // content staying where it plays; with Alt an audio clip's audio stretches to the new length
+    // instead. The handle at the lower right turns the loop on and makes the clip longer
+    // (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges). An
+    // audio clip keeps its top corners for the fade handles.
+    let edge_rect = clip_rect(space, clip.start, clip.length, x_of);
+    if state.clip_drag.is_none_or(|d| !mine(&d)) && edge_rect.width() >= 12.0 {
+        const ZONE: f32 = 5.0;
+        const CORNER: f32 = 10.0;
+        let top = edge_rect.top() + if clip.audio { FADE_HANDLE + 2.0 } else { 2.0 };
+        let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
+        for grab in [EdgeGrab::Left, EdgeGrab::Right, EdgeGrab::Loop] {
+            let hit = match grab {
+                EdgeGrab::Left => Rect::from_min_max(
+                    Pos2::new(edge_rect.left(), top),
+                    Pos2::new(edge_rect.left() + ZONE, edge_rect.bottom()),
+                ),
+                EdgeGrab::Right => Rect::from_min_max(
+                    Pos2::new(edge_rect.right() - ZONE, top),
+                    Pos2::new(edge_rect.right(), edge_rect.bottom() - CORNER),
+                ),
+                EdgeGrab::Loop => Rect::from_min_max(
+                    Pos2::new(edge_rect.right() - CORNER, edge_rect.bottom() - CORNER),
+                    edge_rect.max,
+                ),
+            }
+            .intersect(row.clip);
+            if hit.width() <= 0.0 || hit.height() <= 0.0 {
+                continue;
+            }
+            let id = Id::new(("clip-edge", lane.track.0, clip.index, grab as u8));
+            let response = ui.interact(hit, id, Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            let what = match grab {
+                EdgeGrab::Left => "Left edge",
+                EdgeGrab::Right => "Right edge",
+                EdgeGrab::Loop => "Loop handle",
+            };
+            let label = format!("{what} of {name} on {}", lane.name);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label));
+            let mine_edge = |d: &EdgeDrag| d.key == key && d.grab == grab;
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                let raw = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
+                state.edge_drag = Some(EdgeDrag { key, grab, raw });
+            }
+            if response.dragged_by(egui::PointerButton::Primary)
+                && let Some(drag) = state.edge_drag.as_mut().filter(|d| mine_edge(d))
+            {
+                drag.raw += f64::from(response.drag_delta().x / state.beat_width);
+            }
+            if response.drag_stopped_by(egui::PointerButton::Primary)
+                && let Some(drag) = state.edge_drag.take_if(|d| mine_edge(d))
+            {
+                let (from, to) = edge_extent(clip, drag, &grid, shift);
+                let beat = if grab == EdgeGrab::Left { from } else { to };
+                let stretch = alt && state.stretch_alt && clip.audio && grab != EdgeGrab::Loop;
+                let mut params = json!({ "track": lane.track.0, "index": clip.index });
+                params[if grab == EdgeGrab::Left { "start" } else { "end" }] = json!(beat);
+                if grab == EdgeGrab::Loop {
+                    params["loop"] = json!(true);
+                }
+                if (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi) {
+                    params["stack"] = json!(true);
+                }
+                let old = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
+                if (beat - old).abs() > 1e-9 || grab == EdgeGrab::Loop {
+                    actions.push(Action::new(if stretch { "clip.stretch" } else { "clip.trim" }, params));
+                }
+            }
+        }
+    }
+
     // Fade handles at the top corners of an audio clip, while it is hovered or selected: a
     // horizontal drag sets the fade (its end on the grid, free with Alt), a double-click
     // removes it, a right-click chooses its shape.
@@ -2214,9 +2327,19 @@ fn clip_box<'a>(
         Some(drag) if mine(&drag) && drag.target != lane.track => Some((lane, clip, snapped(drag.start))),
         drag => {
             let start = drag.filter(mine).map_or(clip.start, |d| snapped(d.start));
-            let rect = clip_rect(space, start, clip.length, x_of);
+            // An edge being dragged: the clip is drawn at the length it has so far, its content
+            // where it plays.
+            let shift = ui.input(|i| i.modifiers.shift);
+            let (rect, clip_area) = match state.edge_drag.filter(|d| d.key == key) {
+                Some(edge) => {
+                    let (from, to) = edge_extent(clip, edge, &grid, shift);
+                    let rect = clip_rect(space, from, to - from, x_of);
+                    (rect, row.clip.intersect(rect))
+                }
+                None => (clip_rect(space, start, clip.length, x_of), row.clip),
+            };
             paint_clip(
-                &painter.with_clip_rect(row.clip),
+                &painter.with_clip_rect(clip_area),
                 rect,
                 lane,
                 clip,

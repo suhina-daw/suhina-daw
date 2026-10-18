@@ -96,6 +96,29 @@ audio clip its waveform the same way ([components](../design/components.md) › 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
 
+## Clip edges
+
+A clip's left and right edges are handles (below the fade handles of an audio clip). Dragging one
+moves that edge on the grid (Shift: free) and the clip is drawn at its new length as it goes; it
+never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Let go, it is
+`clip.trim {track, index, start?, end?}`:
+
+- The left edge moves the content with it, so what plays stays where it was; it goes no earlier
+  than the content's start.
+- A clip that does not loop ends at most where its audio ends; a MIDI clip can be made as long as
+  wanted, its content growing with it.
+- A looping clip goes on as far as its edge is dragged, its loop repeating, as in Ableton Live.
+- The handle at a clip's lower right corner (Studio One's loop tool) turns the loop on over what
+  the clip plays now and makes the clip longer (`clip.trim` with `loop: true`).
+
+With Alt held (Settings › Arrangement › *Alt-drag on an edge stretches audio*, on by default) an
+audio clip's edge stretches its audio to the new length, its pitch kept, as Studio One's Alt-drag
+does: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
+clip is warped first) and gives the clip a content of its own when another clip plays the same.
+
+A time selection over a clip and empty time, consolidated (Ctrl+J), becomes one clip over the
+whole span, its empty part silent.
+
 ## Time selection
 
 A time selection is a span of beats over some tracks; the keys then act on what plays inside it,

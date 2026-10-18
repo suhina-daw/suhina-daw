@@ -1649,6 +1649,7 @@ impl App {
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
+        self.arrangement.stretch_alt = self.settings.view.stretch_alt;
         // Any press ends a device panel's hold on Delete and the mute key; a click on a panel
         // takes it again when the button comes up, whether or not the detail area is shown.
         if ui.input(|i| i.pointer.primary_pressed()) {
@@ -3369,7 +3370,15 @@ impl App {
                         ));
                     }
                     _ => {
-                        for track in tracks {
+                        // Each track of the span with something in it: the new clip runs over the
+                        // whole span, its empty part silent, as Ableton Live consolidates.
+                        let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
+                        let playing = |track: u32| {
+                            timeline.and_then(|t| t.lanes.iter().find(|l| l.track.0 == track)).is_some_and(|l| {
+                                l.clips.iter().any(|c| c.start < span.end && c.start + c.length > span.start)
+                            })
+                        };
+                        for track in tracks.into_iter().filter(|t| playing(*t)) {
                             actions.push(Action::new(
                                 "clip.consolidate",
                                 json!({ "track": track, "start": span.start, "end": span.end }),

@@ -79,6 +79,10 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
     let looped = clip.loop_range.is_some();
     let old_end = clip.start + clip.length;
     let (mut new_start, mut new_end) = (start.unwrap_or(clip.start), end.unwrap_or(old_end));
+    // The left edge stops short of the right one: a clip never gets shorter than the least.
+    if start.is_some() {
+        new_start = new_start.min(new_end - MIN_LENGTH).max(0.0);
+    }
     // The left edge: the content moves with it, no earlier than its start.
     let mut offset = clip.offset + (new_start - clip.start) * rate;
     if offset < 0.0 {

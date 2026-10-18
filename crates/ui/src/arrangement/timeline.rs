@@ -86,6 +86,12 @@ pub struct ClipBox {
     /// overlap (stacked), so each stays visible.
     pub row: usize,
     pub rows: usize,
+    /// How early the clip's left edge can go: where its content starts (the song's start for a
+    /// looping clip), as `clip.trim` allows.
+    pub earliest_start: f64,
+    /// How late its right edge can go: where its audio ends, for an audio clip that does not
+    /// loop; `None` when it can go on (a MIDI or looping clip).
+    pub latest_end: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -257,7 +263,14 @@ impl Timeline {
                         .enumerate()
                         .map(|(index, clip)| {
                             let content = project.content(clip.content);
+                            let looped = clip.loop_range.is_some();
+                            let audio =
+                                content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
                             ClipBox {
+                                earliest_start: if looped { 0.0 } else { (clip.start - clip.offset).max(0.0) },
+                                latest_end: content
+                                    .filter(|_| audio && !looped)
+                                    .map(|c| clip.start - clip.offset + c.length),
                                 index,
                                 start: clip.start,
                                 length: clip.length,

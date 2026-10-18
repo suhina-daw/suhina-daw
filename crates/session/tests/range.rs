@@ -120,6 +120,14 @@ fn a_range_with_nothing_in_it_or_backwards_is_an_error() {
 }
 
 #[test]
+fn consolidating_a_span_with_empty_time_makes_one_clip_over_all_of_it() {
+    let mut session = Session::new(project());
+    // The 4-beat clip and 4 empty beats after it become one 8-beat clip.
+    run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 8.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 8.0)]);
+}
+
+#[test]
 fn several_clips_move_together_without_replacing_each_other() {
     let mut session = Session::new(project());
     // Two clips side by side on track 1: moving both right by their length must keep both.

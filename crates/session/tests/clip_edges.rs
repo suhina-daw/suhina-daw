@@ -94,6 +94,17 @@ fn a_looping_audio_clip_goes_on_as_far_as_it_is_dragged() {
 }
 
 #[test]
+fn an_edge_dragged_past_the_other_leaves_the_least_length() {
+    let mut session = Session::new(project());
+    run(&mut session, "clip.trim", json!({ "track": 1, "index": 0, "start": 10.0 })).unwrap();
+    let clip = first(&session, 1);
+    assert!(clip.length > 0.0 && clip.length < 0.1, "never negative: {}", clip.length);
+    assert!((clip.start + clip.length - 4.0).abs() < 1e-9, "the right edge stays");
+    run(&mut session, "clip.trim", json!({ "track": 3, "index": 0, "end": 0.0 })).unwrap();
+    assert!(first(&session, 3).length > 0.0);
+}
+
+#[test]
 fn a_midi_clip_widens_and_its_content_with_it() {
     let mut session = Session::new(project());
     run(&mut session, "clip.trim", json!({ "track": 1, "index": 0, "end": 16.0 })).unwrap();

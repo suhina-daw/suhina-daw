@@ -4436,6 +4436,32 @@ fn dragging_one_of_several_selected_clips_moves_them_all() {
 }
 
 #[test]
+fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
+    let mut harness = arrangement_app();
+    let beat_b = |h: &Harness<'static, App>| {
+        let p = h.state().session().unwrap().project();
+        let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+        let lane = p.arrangement.lanes.iter().find(|l| l.track == track).unwrap();
+        lane.clips.iter().find(|c| (c.start - 64.0).abs() < 1e-6).map(|c| c.length).unwrap()
+    };
+    let before = beat_b(&harness);
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    // One bar: 32 points at 8 points a beat.
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b(&harness), before + 4.0, "a bar longer");
+}
+
+#[test]
 fn a_drag_on_the_ruler_selects_time_and_delete_removes_only_what_is_inside() {
     let mut harness = arrangement_app();
     let drums = |h: &Harness<'static, App>| {

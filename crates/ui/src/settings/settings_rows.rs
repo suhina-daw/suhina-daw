@@ -255,6 +255,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Clips",
+        "Alt-drag on an edge stretches audio",
+        "An audio clip's edge dragged with Alt held time-stretches its audio to the new length, its pitch kept, as in Studio One; off, Alt does nothing there",
+        &["stretch_alt_drag"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stretch_alt),
+    ),
+    row(
+        Page::Arrangement,
         "Tracks",
         "Track headers",
         "Which side of the timeline they are on",
