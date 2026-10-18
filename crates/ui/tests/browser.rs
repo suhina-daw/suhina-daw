@@ -881,70 +881,103 @@ fn with_no_project_open_samples_are_browsed_and_previewed() {
 }
 
 #[test]
-fn the_plug_ins_flat_list_sorts_by_its_columns() {
-    let (settings, folder) = (temp("flat-settings"), temp("flat"));
+fn the_plug_ins_category_lists_the_instruments_or_the_effects_by_name_and_format() {
+    let (settings, folder) = (temp("listed-settings"), temp("listed"));
     let mut harness = window_with_plugins(&settings, &folder);
     harness.get_by_label("Show Plug-ins").click();
     harness.run();
-    // The Grouped view is the default: the vendors sit under the Plug-ins heading, which
-    // starts closed.
-    harness.get_by_label(&row("Plug-ins")).click();
+    // The instruments first: no headings, the built-in effects and instruments not among them,
+    // and only the name and format columns.
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_some());
+    assert!(harness.query_by_label(&row("Alpha Verb")).is_none(), "an effect");
+    assert!(harness.query_by_label(&row("Instruments")).is_none(), "no built-in heading");
+    assert!(harness.query_by_label(&row("Effects")).is_none(), "no built-in heading");
+    assert!(harness.query_by_label("Sort by Format").is_some());
+    assert!(harness.query_by_label("Sort by Vendor").is_none() && harness.query_by_label("Sort by Modified").is_none());
+    // The effects, in name order; the name heading again reverses them.
+    harness.get_by_label("Show plug-in effects").click();
     harness.run();
-    assert!(harness.query_by_label(&row("Alpha")).is_some(), "a vendor heading");
-    harness.get_by_label("Show plug-ins All").click();
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_none(), "an instrument");
+    assert!(row_y(&harness, "Alpha Delay") < row_y(&harness, "Alpha Verb"));
+    harness.get_by_label("Sort by Name").click();
     harness.run();
-    // No headings, the columns' header on top, the rows in name order.
-    assert!(harness.query_by_label(&row("Alpha")).is_none(), "no vendor heading in the flat list");
-    assert!(harness.query_by_label("Sort by Modified").is_some(), "the columns' header");
-    assert!(
-        row_y(&harness, "Alpha Delay") < row_y(&harness, "Alpha Verb")
-            && row_y(&harness, "Alpha Verb") < row_y(&harness, "Zeta Synth")
-    );
-    // By type: the instrument first, then the effects in name order; again for the reverse.
-    harness.get_by_label("Sort by Type").click();
+    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "the same column again reverses");
+    // The choice is kept for the next start: it is a library command, not the window's.
+    let mut view = Library::new(Some(settings.to_path_buf()));
+    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Effects);
+    // Other categories keep the plug-ins in the tree under their vendors.
+    harness.get_by_label("Show All").click();
     harness.run();
-    assert!(row_y(&harness, "Zeta Synth") < row_y(&harness, "Alpha Delay"));
-    harness.get_by_label("Sort by Type").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Delay") < row_y(&harness, "Zeta Synth"), "the same column again reverses");
-    // By the date the scan read the files: the verb's file was read first, so it is first.
-    harness.get_by_label("Sort by Modified").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "by the date modified");
-    // The sort choice is the window's own: it stays across a switch of the view.
-    harness.get_by_label("Show plug-ins Grouped").click();
-    harness.run();
-    harness.get_by_label("Show plug-ins All").click();
-    harness.run();
-    assert!(row_y(&harness, "Alpha Verb") < row_y(&harness, "Alpha Delay"), "the sort stays across a view switch");
+    assert!(harness.query_by_label(&row("Plug-ins")).is_some(), "the Plug-ins heading in the tree");
+    assert!(harness.query_by_label(&row("Alpha Verb")).is_none(), "under a closed heading");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
 
 #[test]
-fn plug_ins_group_by_type() {
-    let (settings, folder) = (temp("type-settings"), temp("type"));
+fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
+    let (settings, folder) = (temp("place-settings"), temp("place"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_some(), "a second click keeps the place");
+    harness.get_by_label("Show everything").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none(), "the cross lets go of it");
+    // A recent group brings its category; another category lets go of the group.
+    harness.get_by_label("Place MIDI").click();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::Midi);
+    harness.get_by_label("Show Instruments").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none(), "MIDI's recent items are not instruments");
+    // The chosen category clicked again shows its whole tree.
+    harness.get_by_label("Place Pinned").click();
+    harness.run();
+    harness.get_by_label("Show Instruments").click();
+    harness.run();
+    assert!(harness.state().browser.place.is_none());
+    // The sample map is a button of its own in the category row.
+    harness.get_by_label("Show the samples laid out by how they sound").click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::Other);
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_plug_in_manager_switches_a_plug_in_off_and_the_browser_no_longer_offers_it() {
+    let (settings, folder) = (temp("manager-settings"), temp("manager"));
     let mut harness = window_with_plugins(&settings, &folder);
     harness.get_by_label("Show Plug-ins").click();
     harness.run();
-    harness.get_by_label("Show plug-ins By type").click();
-    harness.run();
-    // Two type headings; under each, Suhina's groups from the format's categories.
-    harness.get_by_label(&row("Instruments")).click();
-    harness.run();
-    assert!(harness.query_by_label(&row("Synth")).is_some(), "Zeta Synth's group");
-    harness.get_by_label(&row("Synth")).click();
-    harness.run();
     assert!(harness.query_by_label(&row("Zeta Synth")).is_some());
-    harness.get_by_label(&row("Effects")).click();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    assert!(harness.query_by_label(&row("Reverb")).is_some() && harness.query_by_label(&row("Delay")).is_some());
-    harness.get_by_label(&row("Reverb")).click();
+    harness.get_by_label("Settings page: Plug-ins").click();
     harness.run();
-    assert!(harness.query_by_label(&row("Alpha Verb")).is_some());
-    // The choice is kept for the next start: it is a library command, not the window's.
-    let mut view = Library::new(Some(settings.to_path_buf()));
-    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Type);
+    harness.get_by_label("Open the plug-in manager").click();
+    harness.run();
+    // Every plug-in in one table, sortable by its columns.
+    assert!(harness.query_by_label("Sort the plug-ins by Vendor").is_some());
+    assert!(harness.query_by_label("Use Alpha Verb").is_some());
+    harness.get_by_label("Use Zeta Synth").click();
+    harness.run();
+    let mut plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), PathBuf::from("no-host"));
+    let spec = plugins.catalog().find("Zeta Synth").map(|p| p.spec()).unwrap();
+    assert!(!plugins.is_enabled(&spec), "switched off, and kept so");
+    harness.get_by_label("Close the plug-in manager").click();
+    harness.run();
+    assert!(harness.query_by_label("Settings page: Plug-ins").is_some(), "Settings shows again");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_none(), "the browser no longer offers it");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -987,23 +1020,14 @@ fn a_plugin_drags_to_a_track_from_every_view() {
         })
     };
     let to = harness.get_by_label("Track Bass").rect().center();
-    // From the flat list.
-    harness.get_by_label("Show plug-ins All").click();
-    harness.run();
-    assert!(harness.query_by_label(&row("Zeta Synth")).is_some(), "the flat list lists it");
+    // From the Plug-ins category's list.
+    assert!(harness.query_by_label(&row("Zeta Synth")).is_some(), "the instruments' list lists it");
     let before = devices(harness.state());
     let from = harness.get_by_label(&row("Zeta Synth")).rect().center();
-    harness.hover_at(from);
-    harness.run();
-    harness.drag_at(from);
-    harness.step();
-    harness.hover_at(from + egui::vec2(40.0, 0.0));
-    harness.step();
-    eprintln!("DRAG CARRIED: {}", harness.state().browser.drag.is_some());
     drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the flat list");
-    // From the grouped tree.
-    harness.get_by_label("Show plug-ins Grouped").click();
+    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the plug-ins' list");
+    // From the tree, under the vendor.
+    harness.get_by_label("Show All").click();
     harness.run();
     harness.get_by_label(&row("Plug-ins")).click();
     harness.run();
@@ -1012,18 +1036,7 @@ fn a_plugin_drags_to_a_track_from_every_view() {
     let before = devices(harness.state());
     let from = harness.get_by_label(&row("Alpha Verb")).rect().center();
     drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the grouped tree");
-    // From the tree by type.
-    harness.get_by_label("Show plug-ins By type").click();
-    harness.run();
-    harness.get_by_label(&row("Instruments")).click();
-    harness.run();
-    harness.get_by_label(&row("Synth")).click();
-    harness.run();
-    let before = devices(harness.state());
-    let from = harness.get_by_label(&row("Zeta Synth")).rect().center();
-    drag(&mut harness, from, to);
-    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the tree by type");
+    assert!(until(&mut harness, |app| devices(app) == before + 1), "from the tree");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

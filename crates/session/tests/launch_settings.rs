@@ -17,6 +17,13 @@ const BEAT: usize = SR as usize / 2;
 /// Two tracks: Drums with a one-beat loop in scene 1, and an empty slot in scene 2; Bass with
 /// an empty slot without a stop button in scene 1 and a loop in scene 2.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
         content: ContentKinds { notes: true, audio: false },
         channel: Some(ChannelId(id)),

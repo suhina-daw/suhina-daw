@@ -15,6 +15,13 @@ const BEAT: usize = SR as usize / 2;
 
 /// One track, "Drums", with a one-beat looping clip in scenes 1 and 2 and an empty scene 3.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let clip = |content: u32| Clip {
         loop_range: Some(LoopRange { start: 0.0, end: 1.0 }),
         ..Clip::new(ContentId(content), 0.0, 1.0)

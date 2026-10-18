@@ -3,12 +3,13 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-10-16
+last_verified: 2026-10-18
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/model/src/lib.rs
+  - crates/model/src/overlap.rs
   - crates/engine/src/audio.rs
   - crates/engine/src/fade_cost_tests.rs
   - crates/engine/src/launcher.rs
@@ -32,6 +33,15 @@ covers:
 How arrangement clips behave when they are moved. The familiar behaviour (observed in Live 12.4,
 which this follows) is that a clip placed over others **replaces** what it covers. Some users come
 from pattern-based DAWs where clips **stack** and all play; two settings allow that.
+
+`arrangement.audioOverlaps {track?}` lists the pairs of audio clips that sound together on one
+track: their spans share time, by their start and end. Clips that only touch (one ends within
+1e-9 beats of where the next starts, as the sub-rows count it) do not overlap, and clips that play
+notes are left out. Each pair has the track, the shared span (`start`, `end`, in beats), `kind`
+(`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
+(what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
+there were more. ARA's first version refuses such overlaps for the clips it edits
+([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Moving a clip
 

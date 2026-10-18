@@ -51,6 +51,34 @@ fn tempo_points_are_added_in_order_moved_and_deleted() {
 }
 
 #[test]
+fn one_beat_holds_a_glide_and_a_jump() {
+    let mut session = Session::new(Project::default());
+    // The jump first, then the glide into it: the glide is listed first either way.
+    run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 100 })).unwrap();
+    run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 140, "ramp": true })).unwrap();
+    assert_eq!(beats(&session), [(16.0, 140.0, true), (16.0, 100.0, false)]);
+    // The tempo glides from 120 to 140 and jumps to 100 on beat 16.
+    let t = &session.project().transport;
+    let map = TempoMap::new(t.tempo_bpm, &t.tempo_changes, 1.0);
+    assert!((map.bpm_at(15.999) - 140.0).abs() < 0.01, "{}", map.bpm_at(15.999));
+    assert_eq!(map.bpm_at(16.0), 100.0);
+    // A point of the same kind on that beat replaces only its own kind.
+    run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 90 })).unwrap();
+    assert_eq!(beats(&session), [(16.0, 140.0, true), (16.0, 90.0, false)]);
+    run(&mut session, "tempo.addPoint", json!({ "beat": 16, "bpm": 150, "ramp": true })).unwrap();
+    assert_eq!(beats(&session), [(16.0, 150.0, true), (16.0, 90.0, false)]);
+    // The glide made a jump replaces the jump; a third point never joins the beat.
+    run(&mut session, "tempo.movePoint", json!({ "point": 1, "ramp": false })).unwrap();
+    assert_eq!(beats(&session), [(16.0, 150.0, false)]);
+    // A jump moved onto a beat with only a glide joins it after the glide.
+    run(&mut session, "tempo.addPoint", json!({ "beat": 8, "bpm": 130, "ramp": true })).unwrap();
+    run(&mut session, "tempo.movePoint", json!({ "point": 2, "beat": 8 })).unwrap();
+    assert_eq!(beats(&session), [(8.0, 130.0, true), (8.0, 150.0, false)]);
+    let text = suhina_project_file::to_json(session.project());
+    assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
+}
+
+#[test]
 fn time_signature_changes_are_added_moved_and_deleted() {
     let mut session = Session::new(Project::default());
     let listed = run(&mut session, "timeSignature.add", json!({ "bar": 9, "numerator": 7, "denominator": 8 })).unwrap();

@@ -45,7 +45,12 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
         arrangement: Arrangement {
             lanes: players
                 .iter()
-                .map(|&t| ArrangementLane { name: format!("l{t}"), track: Some(TrackId(t)), clips: vec![clip.clone()] })
+                .map(|&t| ArrangementLane {
+                    id: Default::default(),
+                    name: format!("l{t}"),
+                    track: Some(TrackId(t)),
+                    clips: vec![clip.clone()],
+                })
                 .collect(),
             markers: Vec::new(),
         },
@@ -246,6 +251,7 @@ fn nested(devices: [Vec<Device>; 3]) -> Project {
     }
     project.arrangement.lanes = (1..=4)
         .map(|t| ArrangementLane {
+            id: Default::default(),
             name: format!("l{t}"),
             track: Some(TrackId(t)),
             clips: project.arrangement.lanes[0].clips.clone(),

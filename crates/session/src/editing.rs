@@ -34,16 +34,19 @@ pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value,
         return Err(format!("at must be inside the clip, between beats {} and {end}, got {at}", clip.start).into());
     }
     let rate = content_rate(p, &clip);
-    let (first, second) = split(&clip, at, rate);
+    let (first, mut second) = split(&clip, at, rate);
+    // The first part is the clip, shortened; the second is a new clip.
+    second.id = p.new_clip_id()?;
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
     if let Some(slot) = lane.clips.get_mut(index) {
         *slot = first.clone();
     }
     lane.clips.push(second.clone());
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let first = lane.clips.iter().position(|c| *c == first).unwrap_or_default();
-    let second = lane.clips.iter().position(|c| *c == second).unwrap_or_default();
-    Ok(json!({ "first": first, "second": second, "at": at }))
+    let (first_id, second_id) = (first.id, second.id);
+    let first = lane.clips.iter().position(|c| c.id == first_id).unwrap_or_default();
+    let second = lane.clips.iter().position(|c| c.id == second_id).unwrap_or_default();
+    Ok(json!({ "first": first, "second": second, "first_clip": first_id.0, "second_clip": second_id.0, "at": at }))
 }
 
 /// The two parts of `clip` cut at song position `at` (inside it). The second part plays the
@@ -144,6 +147,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         scale,
     });
     let clip = Clip {
+        id: p.new_clip_id()?,
         content: id,
         start,
         length: end - start,
@@ -162,8 +166,10 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
     make_room(&mut lane.clips, start, end);
     lane.clips.push(clip.clone());
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let index = lane.clips.iter().position(|c| *c == clip).unwrap_or_default();
-    Ok(json!({ "track": track.0, "index": index, "start": start, "length": end - start, "file": file }))
+    let index = lane.clips.iter().position(|c| c.id == clip.id).unwrap_or_default();
+    Ok(
+        json!({ "clip": clip.id.0, "track": track.0, "index": index, "start": start, "length": end - start, "file": file }),
+    )
 }
 
 /// The notes the clips play between `start` and `end`, as one content from `start`: each note

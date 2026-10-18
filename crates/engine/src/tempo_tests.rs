@@ -49,11 +49,16 @@ fn project(lane: LaneData, length: f64) -> Project {
             scale: None,
         }],
         arrangement: Arrangement {
-            lanes: vec![ArrangementLane { name: "l".into(), track: Some(TrackId(1)), clips: vec![clip(0.0, length)] }],
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "l".into(),
+                track: Some(TrackId(1)),
+                clips: vec![clip(0.0, length)],
+            }],
             markers: Vec::new(),
         },
         launcher: Launcher {
-            scenes: vec![Scene { name: "1".into(), tempo_bpm: None, time_signature: None }],
+            scenes: vec![Scene { id: Default::default(), name: "1".into(), tempo_bpm: None, time_signature: None }],
             columns: vec![LauncherColumn {
                 track: TrackId(1),
                 slots: vec![Slot {

@@ -135,9 +135,9 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         (GhostSource::Together, ClipRef::Arrangement(..)) => {
             for lane in &project.arrangement.lanes {
                 let Some(track) = lane.track else { continue };
-                for (index, clip) in lane.clips.iter().enumerate() {
+                for clip in &lane.clips {
                     if clip.enabled && overlaps(clip, window) {
-                        add(ClipRef::Arrangement(track, index), false);
+                        add(ClipRef::Arrangement(track, clip.id), false);
                     }
                 }
             }
@@ -151,8 +151,8 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         }
         (GhostSource::Track, ClipRef::Arrangement(track, _)) => {
             let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(track));
-            for index in 0..lane.map_or(0, |l| l.clips.len()) {
-                add(ClipRef::Arrangement(track, index), true);
+            for clip in lane.map_or(&[][..], |l| &l.clips) {
+                add(ClipRef::Arrangement(track, clip.id), true);
             }
         }
         (GhostSource::Track, ClipRef::Slot(track, _)) => {
@@ -312,8 +312,8 @@ fn overlaps(clip: &Clip, window: Window) -> bool {
 
 fn clip_at(project: &Project, at: ClipRef) -> Option<&Clip> {
     match at {
-        ClipRef::Arrangement(track, index) => {
-            project.arrangement.lanes.iter().find(|l| l.track == Some(track))?.clips.get(index)
+        ClipRef::Arrangement(track, id) => {
+            project.arrangement.lanes.iter().find(|l| l.track == Some(track))?.clips.iter().find(|c| c.id == id)
         }
         ClipRef::Slot(track, scene) => {
             project.launcher.columns.iter().find(|c| c.track == track)?.slots.get(scene)?.clip.as_ref()
@@ -347,8 +347,8 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
     let mut out = Vec::new();
     for lane in &project.arrangement.lanes {
         let Some(track) = lane.track else { continue };
-        for (index, clip) in lane.clips.iter().enumerate() {
-            let at = ClipRef::Arrangement(track, index);
+        for clip in &lane.clips {
+            let at = ClipRef::Arrangement(track, clip.id);
             if at == edited || out.len() >= MAX_CHOICES {
                 continue;
             }
@@ -583,19 +583,27 @@ mod tests {
         assert!(mapped(at(0.0, f64::NAN, 0.0, None), at(0.0, 4.0, 0.0, None), &notes).is_empty());
     }
 
-    /// The demo clip at bar 17 on Drums (index 1 on its lane).
-    const BEAT_B: ClipRef = ClipRef::Arrangement(TrackId(1), 1);
+    /// The demo clip at bar 17 on Drums (the second on its lane).
+    fn beat_b() -> ClipRef {
+        arranged(&demo_project(), 1, 1)
+    }
+
+    /// The arrangement clip at `index` on track `track`'s lane.
+    fn arranged(project: &Project, track: u32, index: usize) -> ClipRef {
+        let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(track))).unwrap();
+        ClipRef::Arrangement(TrackId(track), lane.clips[index].id)
+    }
 
     #[test]
     fn playing_together_shows_the_overlapping_clips_of_other_tracks() {
         let project = demo_project();
-        let got = ghosts(&project, BEAT_B, GhostSource::Together);
+        let got = ghosts(&project, beat_b(), GhostSource::Together);
         // Walk on Bass, Chords 1 on Keys (both at 64): a one-bar figure each in the first pass.
         assert_eq!(got.sources, vec!["Bass".to_string(), "Keys".to_string()]);
         let bass: Vec<(f64, u8)> = got.notes.iter().filter(|g| g.source == 0).map(|g| (g.start, g.key)).collect();
         assert_eq!(bass, vec![(0.0, 40), (1.0, 47), (2.0, 43), (3.0, 45)]);
         assert!(got.notes.iter().all(|g| g.length == 0.5));
-        assert!(!got.choices.iter().any(|c| c.clip == BEAT_B));
+        assert!(!got.choices.iter().any(|c| c.clip == beat_b()));
         assert!(got.choices.iter().any(|c| c.name == "Walk on Bass at bar 17"));
         assert!(got.choices.iter().any(|c| c.name == "Walk on Bass in scene 2"));
     }
@@ -603,16 +611,16 @@ mod tests {
     #[test]
     fn none_this_track_and_one_clip() {
         let project = demo_project();
-        assert!(ghosts(&project, BEAT_B, GhostSource::None).notes.is_empty());
+        assert!(ghosts(&project, beat_b(), GhostSource::None).notes.is_empty());
         // The other three clips on Drums, each from the edited clip's start.
-        let track = ghosts(&project, BEAT_B, GhostSource::Track);
+        let track = ghosts(&project, beat_b(), GhostSource::Track);
         assert_eq!(track.sources, vec!["Drums".to_string()]);
         assert_eq!(track.notes.len(), 12);
-        let vox = ghosts(&project, BEAT_B, GhostSource::Clip(ClipRef::Slot(TrackId(4), 2)));
+        let vox = ghosts(&project, beat_b(), GhostSource::Clip(ClipRef::Slot(TrackId(4), 2)));
         assert_eq!(vox.sources, vec!["Vox".to_string()]);
         assert_eq!(vox.notes.iter().map(|g| g.key).collect::<Vec<_>>(), vec![67, 74, 70, 72]);
         // The edited clip itself is never its own ghost.
-        assert!(ghosts(&project, BEAT_B, GhostSource::Clip(BEAT_B)).notes.is_empty());
+        assert!(ghosts(&project, beat_b(), GhostSource::Clip(beat_b())).notes.is_empty());
     }
 
     #[test]

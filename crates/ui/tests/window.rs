@@ -1595,6 +1595,7 @@ fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui::kit::wavef
         scale: None,
     });
     let clip = Clip {
+        id: Default::default(),
         content: ContentId(300),
         start: 0.0,
         length: 16.0,
@@ -1610,6 +1611,7 @@ fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui::kit::wavef
         extensions: Extensions::default(),
     };
     project.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
         name: "Loop".into(),
         track: Some(TrackId(30)),
         clips: vec![clip],
@@ -2015,6 +2017,36 @@ fn keys_copy_paste_and_delete_the_selected_clip() {
     harness.run();
     assert_eq!(spans(&harness).len(), before - 1);
     assert!(!spans(&harness).contains(&(0.0, 64.0)));
+}
+
+/// The selection names a clip by its id (ADR 0025): when a clip before it moves away, the
+/// selected clip's index changes, and the key still acts on the clip that was clicked.
+#[test]
+fn the_selected_clip_stays_selected_when_a_clip_before_it_moves() {
+    let mut harness = arrangement_app();
+    let drums = |h: &Harness<'static, App>| {
+        h.state().session().map(|s| s.project().arrangement.lanes[0].clips.clone()).unwrap_or_default()
+    };
+    harness.get_by_label("Clip Fill on Drums at bar 29").click();
+    harness.run();
+    let fill = drums(&harness).iter().find(|c| c.start == 112.0).map(|c| c.id).unwrap();
+    assert_eq!(harness.state().selected_clip(), Some((TrackId(1), fill)));
+    let index = |h: &Harness<'static, App>| drums(h).iter().position(|c| c.id == fill);
+    let before = index(&harness);
+
+    // Beat A, the first clip on Drums, moves to the end: Fill is one place earlier on the lane.
+    let beat_a = drums(&harness)[0].id;
+    harness.state_mut().run(&Action::new("clip.move", json!({ "clip": beat_a.0, "start": 400 })));
+    harness.run();
+    assert_eq!(index(&harness), before.map(|i| i - 1));
+    assert_eq!(harness.state().selected_clip(), Some((TrackId(1), fill)), "still Fill");
+
+    // Delete takes away Fill, not the clip that is now where Fill was.
+    harness.key_press(Key::Delete);
+    harness.run();
+    let left = drums(&harness);
+    assert!(left.iter().all(|c| c.id != fill), "Fill is gone");
+    assert!(left.iter().any(|c| c.id == beat_a), "Beat A is still there");
 }
 
 #[test]
@@ -2902,15 +2934,10 @@ fn a_double_click_on_an_empty_spot_of_a_midi_lane_makes_a_bar_long_clip_on_the_g
     let p = session.project();
     let keys = p.tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).unwrap();
     let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(keys)).unwrap();
-    let (index, made) = lane
-        .clips
-        .iter()
-        .enumerate()
-        .find(|(_, c)| p.content(c.content).is_some_and(|x| x.name == "MIDI clip"))
-        .unwrap();
+    let made = lane.clips.iter().find(|c| p.content(c.content).is_some_and(|x| x.name == "MIDI clip")).unwrap();
     assert_eq!(made.length, 4.0, "one bar of 4/4");
     assert_eq!(made.start % 4.0, 0.0, "on the bar grid at this zoom: {}", made.start);
-    assert_eq!(harness.state().selected_clip(), Some((keys, index)), "the new clip is selected");
+    assert_eq!(harness.state().selected_clip(), Some((keys, made.id)), "the new clip is selected");
 }
 
 #[test]
@@ -3491,7 +3518,7 @@ fn browse_buttons_ask_for_the_systems_dialog_and_fill_their_fields() {
     harness.run();
     let request = harness.state_mut().take_pick_request().unwrap_or_else(|| panic!("no dialog asked for"));
     assert_eq!(request.field, PickField::StartTemplate);
-    assert_eq!(request.field.extensions(), ["suhina", "locr", "als"]);
+    assert_eq!(request.field.extensions(), ["suhina", "als"]);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
 

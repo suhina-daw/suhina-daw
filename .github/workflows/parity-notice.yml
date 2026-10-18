@@ -22,7 +22,7 @@ jobs:
   notice:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # A pull request is checked out as a merge commit; its first parent is the base.
           fetch-depth: 2

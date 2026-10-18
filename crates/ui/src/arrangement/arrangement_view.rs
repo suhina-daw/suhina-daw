@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, StrokeKind, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::Quantization;
-use suhina_engine::model::{FadeCurve, FadeShape, Project, TrackId};
+use suhina_engine::model::{ClipId, FadeCurve, FadeShape, Project, TrackId};
 
 use crate::arrangement::automation_lanes::{self as automation, LanesState};
 use crate::arrangement::timeline::{ClipBox, Folds, Lane, Timeline, inside_lanes};
@@ -108,7 +108,7 @@ enum Control {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ClipDrag {
     track: TrackId,
-    index: usize,
+    clip: ClipId,
     start: f64,
     target: TrackId,
 }
@@ -124,7 +124,7 @@ enum FadeEdge {
 /// snapping.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FadeDrag {
-    key: (TrackId, usize),
+    key: (TrackId, ClipId),
     edge: FadeEdge,
     raw: f64,
 }
@@ -133,7 +133,7 @@ struct FadeDrag {
 /// below the handle's centre the pointer took hold of it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CurveDrag {
-    key: (TrackId, usize),
+    key: (TrackId, ClipId),
     edge: FadeEdge,
     curve: f64,
     grab: f32,
@@ -258,12 +258,12 @@ pub struct ArrangementViewState {
     heights: HashMap<TrackId, f32>,
     /// The selected clips, in the order they were picked, and the one clicked last: a Shift-click
     /// takes the run of clips from it, and the other views work on it.
-    selected: Vec<(TrackId, usize)>,
-    anchor: Option<(TrackId, usize)>,
+    selected: Vec<(TrackId, ClipId)>,
+    anchor: Option<(TrackId, ClipId)>,
     clip_drag: Option<ClipDrag>,
     value_drag: Option<ValueDrag>,
     /// A clip gain being dragged, and its value so far.
-    gain_drag: Option<((TrackId, usize), f64)>,
+    gain_drag: Option<((TrackId, ClipId), f64)>,
     fade_drag: Option<FadeDrag>,
     curve_drag: Option<CurveDrag>,
     /// The beat a clip was last right-clicked on, where its menu's Split here cuts.
@@ -360,17 +360,17 @@ impl Default for ArrangementViewState {
 
 impl ArrangementViewState {
     /// The clip the views work on: the one clicked last.
-    pub fn selected_clip(&self) -> Option<(TrackId, usize)> {
+    pub fn selected_clip(&self) -> Option<(TrackId, ClipId)> {
         self.anchor
     }
 
     /// The selected clips, in the order they were picked.
-    pub fn selected_clips(&self) -> &[(TrackId, usize)] {
+    pub fn selected_clips(&self) -> &[(TrackId, ClipId)] {
         &self.selected
     }
 
     /// Whether the clip at `key` is selected.
-    fn is_selected(&self, key: (TrackId, usize)) -> bool {
+    fn is_selected(&self, key: (TrackId, ClipId)) -> bool {
         self.selected.contains(&key)
     }
 
@@ -380,7 +380,7 @@ impl ArrangementViewState {
     }
 
     /// Selects every clip in `keys`, as Ctrl+A does.
-    pub fn select_clips(&mut self, keys: Vec<(TrackId, usize)>) {
+    pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
         self.anchor = keys.first().copied();
         self.selected = keys;
     }
@@ -388,14 +388,14 @@ impl ArrangementViewState {
     /// Picks the clip at `key` the way a click on it does: Shift takes the run of clips between
     /// the last one picked and this one (in the order the lanes draw them), Ctrl (Cmd) adds it or
     /// takes it away, and a plain click leaves it the only one.
-    fn pick_clip(&mut self, key: (TrackId, usize), shift: bool, command: bool, order: &[(TrackId, usize)]) {
+    fn pick_clip(&mut self, key: (TrackId, ClipId), shift: bool, command: bool, order: &[(TrackId, ClipId)]) {
         if shift
             && let Some(anchor) = self.anchor
             && let (Some(from), Some(to)) =
                 (order.iter().position(|k| *k == anchor), order.iter().position(|k| *k == key))
         {
             let (from, to) = if from <= to { (from, to) } else { (to, from) };
-            self.selected = order.get(from..=to).map(<[(TrackId, usize)]>::to_vec).unwrap_or_default();
+            self.selected = order.get(from..=to).map(<[(TrackId, ClipId)]>::to_vec).unwrap_or_default();
             return;
         }
         if command {
@@ -476,8 +476,8 @@ impl ArrangementViewState {
     }
 
     /// The clip being dragged with the mouse, if any: its track and index.
-    pub fn dragged_clip(&self) -> Option<(TrackId, usize)> {
-        self.clip_drag.map(|d| (d.track, d.index))
+    pub fn dragged_clip(&self) -> Option<(TrackId, ClipId)> {
+        self.clip_drag.map(|d| (d.track, d.clip))
     }
 
     /// Ends a clip's drag without moving it, as when the window carries it to the other view.
@@ -485,9 +485,9 @@ impl ArrangementViewState {
         self.clip_drag = None;
     }
 
-    /// Selects a clip: its track and index.
-    pub fn select_clip(&mut self, track: TrackId, index: usize) {
-        self.select_clips(vec![(track, index)]);
+    /// Selects a clip: its track and id.
+    pub fn select_clip(&mut self, track: TrackId, clip: ClipId) {
+        self.select_clips(vec![(track, clip)]);
     }
 
     /// Sets a lane's height, as dragging its lower edge does.
@@ -522,7 +522,7 @@ impl ArrangementViewState {
 
     /// What the clip at `key` shows: the project's gain and fades, or the value of a drag in
     /// progress on it (fade ends on `grid`, or free when it is `None`).
-    fn shown(&self, key: (TrackId, usize), clip: &ClipBox, grid: Option<Grid>) -> Shown {
+    fn shown(&self, key: (TrackId, ClipId), clip: &ClipBox, grid: Option<Grid>) -> Shown {
         let mut shown = Shown::of(clip);
         if let Some((k, v)) = self.gain_drag
             && k == key
@@ -1111,14 +1111,14 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // The clips and the tracks in the order the view draws them: what a Shift-click takes its run
     // of clips or of tracks from.
-    let mut clip_order: Vec<(TrackId, usize)> = Vec::new();
+    let mut clip_order: Vec<(TrackId, ClipId)> = Vec::new();
     let mut track_order: Vec<TrackId> = Vec::new();
     for shown in &drawn {
         if let Some(lane) = timeline.lanes.get(shown.lane) {
             track_order.push(lane.track);
         }
         let Some(clips_lane) = timeline.lanes.get(shown.clips) else { continue };
-        clip_order.extend(clips_lane.clips.iter().map(|clip| (clips_lane.track, clip.index)));
+        clip_order.extend(clips_lane.clips.iter().map(|clip| (clips_lane.track, clip.id)));
     }
 
     // Lanes.
@@ -1698,12 +1698,12 @@ fn clip_box<'a>(
     bar_beats: f64,
     lane_at: &dyn Fn(Pos2) -> Option<TrackId>,
     waveforms: &Waveforms,
-    clip_order: &[(TrackId, usize)],
+    clip_order: &[(TrackId, ClipId)],
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) -> Option<(&'a Lane, &'a ClipBox, f64)> {
-    let key = (lane.track, clip.index);
-    let mine = |drag: &ClipDrag| (drag.track, drag.index) == key;
+    let key = (lane.track, clip.id);
+    let mine = |drag: &ClipDrag| (drag.track, drag.clip) == key;
     // A moved clip starts on a grid line, or where it is let go with Alt held.
     let grid = Grid::new(state.grid, state.beat_width, bar_beats);
     let free = ui.input(|i| i.modifiers.alt);
@@ -1721,7 +1721,7 @@ fn clip_box<'a>(
     let bar = (clip.start / bar_beats).floor() as u64 + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
     let response = ui
-        .interact(visible, Id::new(("arrangement-clip", lane.track.0, clip.index)), Sense::click_and_drag())
+        .interact(visible, Id::new(("arrangement-clip", clip.id.0)), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::Grab);
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
@@ -1737,15 +1737,15 @@ fn clip_box<'a>(
     }
     let split_at = state.split_at;
     // The menu acts on the whole selection when this clip is part of it, else on this clip alone.
-    let menu_clips: Vec<(TrackId, usize)> = if state.is_selected(key) { state.selected.clone() } else { vec![key] };
+    let menu_clips: Vec<(TrackId, ClipId)> = if state.is_selected(key) { state.selected.clone() } else { vec![key] };
     // The menu stays open on a click inside: the rename's field and button live here. When it
     // is not open, its rename's draft dies: a reopen starts from the name as it is now.
     if !response.context_menu_opened() {
-        ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("clip-rename", key.0, key.1))));
+        ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
-        menus::clip_edit_menu(ui, lane.track, clip.index, (clip.start, clip.length), split_at, actions);
+        menus::clip_edit_menu(ui, lane.track, clip.id, (clip.start, clip.length), split_at, actions);
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     if response.clicked() {
@@ -1760,12 +1760,11 @@ fn clip_box<'a>(
         state.targeted = Some(lane.track);
     }
     if response.drag_started_by(egui::PointerButton::Primary) {
-        state.clip_drag =
-            Some(ClipDrag { track: lane.track, index: clip.index, start: clip.start, target: lane.track });
+        state.clip_drag = Some(ClipDrag { track: lane.track, clip: clip.id, start: clip.start, target: lane.track });
     }
     if response.dragged_by(egui::PointerButton::Primary)
         && let Some(drag) = state.clip_drag.as_mut()
-        && (drag.track, drag.index) == key
+        && (drag.track, drag.clip) == key
     {
         drag.start += f64::from(response.drag_delta().x / state.beat_width);
         if let Some(target) = response.interact_pointer_pos().and_then(lane_at) {
@@ -1774,10 +1773,10 @@ fn clip_box<'a>(
     }
     if response.drag_stopped_by(egui::PointerButton::Primary)
         && let Some(drag) = state.clip_drag.take()
-        && (drag.track, drag.index) == key
+        && (drag.track, drag.clip) == key
     {
         let start = snapped(drag.start);
-        let mut params = json!({ "track": lane.track.0, "index": clip.index, "start": start });
+        let mut params = json!({ "clip": clip.id.0, "start": start });
         if drag.target != lane.track {
             params["to_track"] = json!(drag.target.0);
         }
@@ -1826,7 +1825,7 @@ fn clip_box<'a>(
             let response = widgets::value_area(
                 ui,
                 field.intersect(row.clip),
-                Id::new(("clip-gain", lane.track.0, clip.index)),
+                Id::new(("clip-gain", clip.id.0)),
                 &label,
                 widgets::format_db(shown.gain_db),
             );
@@ -1841,10 +1840,7 @@ fn clip_box<'a>(
                     state.gain_drag = None;
                     committed = Some(v);
                     let db = if v <= CLIP_GAIN_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-                    actions.push(Action::new(
-                        "clip.setGain",
-                        json!({ "track": lane.track.0, "index": clip.index, "db": db }),
-                    ));
+                    actions.push(Action::new("clip.setGain", json!({ "clip": clip.id.0, "db": db })));
                 }
                 Drag::None => {}
             }
@@ -1880,7 +1876,7 @@ fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade", lane.track.0, clip.index, edge == FadeEdge::In));
+            let id = Id::new(("clip-fade", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
@@ -1918,7 +1914,7 @@ fn clip_box<'a>(
                 && (v - current).abs() > 1e-9
             {
                 let param = if edge == FadeEdge::In { "in" } else { "out" };
-                let mut params = json!({ "track": lane.track.0, "index": clip.index });
+                let mut params = json!({ "clip": clip.id.0 });
                 params[param] = json!((v * 1e6).round() / 1e6);
                 actions.push(Action::new("clip.setFades", params));
             }
@@ -1932,7 +1928,7 @@ fn clip_box<'a>(
                 for choice in FadeShape::ALL {
                     if ui.radio(choice == shape, shape_label(choice)).clicked() {
                         let param = if edge == FadeEdge::In { "inShape" } else { "outShape" };
-                        let mut params = json!({ "track": lane.track.0, "index": clip.index });
+                        let mut params = json!({ "clip": clip.id.0 });
                         params[param] = json!(choice.name());
                         actions.push(Action::new("clip.setFades", params));
                         ui.close();
@@ -1954,7 +1950,7 @@ fn clip_box<'a>(
                 continue;
             }
             let label = format!("{which} curve of {name} on {}", lane.name);
-            let id = Id::new(("clip-fade-curve", lane.track.0, clip.index, edge == FadeEdge::In));
+            let id = Id::new(("clip-fade-curve", clip.id.0, edge == FadeEdge::In));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
             response.widget_info(|| {
@@ -1995,7 +1991,7 @@ fn clip_box<'a>(
                 let v = (v * 1000.0).round() / 1000.0;
                 if (v - stored).abs() > 1e-9 {
                     let param = if edge == FadeEdge::In { "inCurve" } else { "outCurve" };
-                    let mut params = json!({ "track": lane.track.0, "index": clip.index });
+                    let mut params = json!({ "clip": clip.id.0 });
                     params[param] = json!(v);
                     actions.push(Action::new("clip.setFades", params));
                 }
@@ -2900,7 +2896,7 @@ mod tests {
     #[test]
     fn a_dragged_gain_or_fade_is_what_the_clip_shows() {
         let clip = audio_clip();
-        let key = (TrackId(1), 0);
+        let key = (TrackId(1), ClipId(1));
         let mut state = ArrangementViewState::default();
         let linear = FadeCurve::default();
         assert_eq!(
@@ -2915,7 +2911,11 @@ mod tests {
         // The waveform is drawn with the gain being dragged, not the one in the project.
         state.gain_drag = Some((key, -12.0));
         assert_eq!(state.shown(key, &clip, Some(beats(1.0))).gain_db, -12.0);
-        assert_eq!(state.shown((TrackId(1), 1), &clip, Some(beats(1.0))).gain_db, 0.0, "only on the dragged clip");
+        assert_eq!(
+            state.shown((TrackId(1), ClipId(2)), &clip, Some(beats(1.0))).gain_db,
+            0.0,
+            "only on the dragged clip"
+        );
         // A fade being dragged: on the grid, or free with Alt.
         state.fade_drag = Some(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6 });
         assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out, 3.0);

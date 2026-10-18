@@ -18,11 +18,11 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::TrackId;
+use suhina_engine::model::{ClipId, TrackId};
 use suhina_session::{CommandKind, ProjectId, Projects, Session};
 
 use crate::app::project_dialog::{
-    AboutChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
+    AboutChoice, AgentChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
 };
 use crate::app::start_panel::{AudioSummary, StartChoice, StartState};
 use crate::arrangement::arrangement_view::{self, ArrangementViewState};
@@ -128,7 +128,7 @@ struct Carry {
 enum CarryFrom {
     Arrangement {
         track: TrackId,
-        index: usize,
+        clip: ClipId,
     },
     /// Scene from 0.
     Slot {
@@ -301,6 +301,12 @@ pub struct App {
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     switch_hover: Option<(View, f64)>,
+    /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
+    /// the agents let in, and those the person disconnected, for the app.
+    agent_asks: Vec<(u64, String)>,
+    agent_answers: Vec<(u64, bool)>,
+    agents: Vec<(u64, String)>,
+    agent_disconnects: Vec<u64>,
 }
 
 impl Default for App {
@@ -385,7 +391,44 @@ impl App {
             next_ram: None,
             carry: None,
             switch_hover: None,
+            agent_asks: Vec::new(),
+            agent_answers: Vec::new(),
+            agents: Vec::new(),
+            agent_disconnects: Vec::new(),
         }
+    }
+
+    /// Asks the person whether to let `client`, an agent that has connected as `connection`,
+    /// work on the open projects (ADR 0028); the answer comes back from
+    /// [`App::take_agent_answers`].
+    pub fn ask_agent(&mut self, connection: u64, client: String) {
+        self.agent_asks.push((connection, client));
+    }
+
+    /// A connection ended: its question, if still open, goes away.
+    pub fn agent_gone(&mut self, connection: u64) {
+        self.agent_asks.retain(|(c, _)| *c != connection);
+    }
+
+    /// The person's answers to [`App::ask_agent`] since the last call: allowed or not.
+    pub fn take_agent_answers(&mut self) -> Vec<(u64, bool)> {
+        std::mem::take(&mut self.agent_answers)
+    }
+
+    /// The agents the person has let in, which the control bar shows.
+    pub fn set_agents(&mut self, agents: Vec<(u64, String)>) {
+        self.agents = agents;
+    }
+
+    /// The agents the person disconnected from the control bar since the last call.
+    pub fn take_agent_disconnects(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.agent_disconnects)
+    }
+
+    /// The projects changed outside the window's own commands (an agent's, ADR 0028): what the
+    /// views keep from them is read again.
+    pub fn note_outside_change(&mut self) {
+        self.revision += 1;
     }
 
     /// Uses `library` for the browser and the `library.*` commands (ADR 0012); the app gives
@@ -669,8 +712,8 @@ impl App {
         self.shown
     }
 
-    /// The clip selected in the Arrangement view: its track and index.
-    pub fn selected_clip(&self) -> Option<(TrackId, usize)> {
+    /// The clip selected in the Arrangement view: its track and id.
+    pub fn selected_clip(&self) -> Option<(TrackId, ClipId)> {
         self.arrangement.selected_clip()
     }
 
@@ -692,15 +735,13 @@ impl App {
         let clip =
             (selected || self.settings.play_from == PlayFrom::Clip).then(|| self.selected_arrangement_clip()).flatten();
         match clip {
-            Some((track, index)) => {
-                Action::new("transport.play", json!({ "from": "clip", "track": track.0, "index": index }))
-            }
+            Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
         }
     }
 
     /// The clip selected in the Arrangement view, while that view is shown.
-    fn selected_arrangement_clip(&self) -> Option<(TrackId, usize)> {
+    fn selected_arrangement_clip(&self) -> Option<(TrackId, ClipId)> {
         if self.shown == View::Arrangement { self.arrangement.selected_clip() } else { None }
     }
 
@@ -1012,8 +1053,8 @@ impl App {
         self.saved_path.take()
     }
 
-    /// Saves the active project: to its own project file (`.suhina`, or the `.locr` it was
-    /// opened from), or, the first time and when `ask`, to a name and folder the user gives.
+    /// Saves the active project: to its own `.suhina` file, or, the first time and when `ask`,
+    /// to a name and folder the user gives.
     fn save_active(&mut self, ask: bool) {
         let Some(id) = self.projects.active() else { return };
         match self.own_file(id) {
@@ -1030,8 +1071,7 @@ impl App {
         }
     }
 
-    /// The project's own file (`.suhina`, or the `.locr` it was opened from), once it has been
-    /// saved or was opened from one.
+    /// The project's own `.suhina` file, once it has been saved or was opened from one.
     fn own_file(&self, id: ProjectId) -> Option<PathBuf> {
         self.projects.get(id)?.source().filter(|s| suhina_session::is_project_file(s)).map(Path::to_path_buf)
     }
@@ -1134,6 +1174,27 @@ impl App {
                     self.status = Status::Done(format!("Copied {line}"));
                 }
                 Some(AboutChoice::Close) => self.about_open = false,
+                None => {}
+            }
+        }
+        // The agent prompt waits for every other dialog, About and Settings among them.
+        let other_dialog = other_dialog
+            || self.unsaved_prompt.is_some()
+            || !self.recovery.is_empty()
+            || self.about_open
+            || self.settings_open;
+        if !other_dialog && let Some((connection, client)) = self.agent_asks.first().cloned() {
+            match project_dialog::show_agent(ui, window, &client) {
+                Some(AgentChoice::Allow) => {
+                    self.agent_asks.remove(0);
+                    self.agent_answers.push((connection, true));
+                    self.status = Status::Done(format!("{client} may work on the open projects"));
+                }
+                Some(AgentChoice::Deny) => {
+                    self.agent_asks.remove(0);
+                    self.agent_answers.push((connection, false));
+                    self.status = Status::Done(format!("{client} was not let in"));
+                }
                 None => {}
             }
         }
@@ -1251,8 +1312,9 @@ impl App {
                     && let Some(track) = result["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
-                    match (at("index"), at("scene").and_then(|s| s.checked_sub(1))) {
-                        (Some(index), _) => self.arrangement.select_clip(track, index),
+                    let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
+                    match (clip.filter(|_| at("scene").is_none()), at("scene").and_then(|s| s.checked_sub(1))) {
+                        (Some(clip), _) => self.arrangement.select_clip(track, clip),
                         (None, Some(scene)) => self.view.select_slot(track, scene),
                         (None, None) => self.view.selected = Some(track),
                     }
@@ -1998,8 +2060,8 @@ impl App {
         let control_bar = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
         let quantization = suhina_session::parse_quantization(control_bar).ok()?;
         let mut piano = match clip? {
-            detail_view::ClipRef::Arrangement(track, index) => {
-                piano_roll::arrangement_clip(self.session()?.project(), track, index, quantization)?
+            detail_view::ClipRef::Arrangement(track, clip) => {
+                piano_roll::arrangement_clip(self.session()?.project(), track, clip, quantization)?
             }
             detail_view::ClipRef::Slot(track, scene) => {
                 piano_roll::launcher_clip(self.session()?.project(), track, scene, quantization)?
@@ -2170,33 +2232,55 @@ impl App {
         }
     }
 
-    /// Reads the plug-in library through its commands, for the Settings page.
+    /// Reads the plug-in library through its commands, for the Settings page and the plug-in
+    /// manager.
     fn read_plugins(&mut self) {
         self.plugins_read = true;
         let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
-        let list = |v: &serde_json::Value| v.as_array().map(|a| a.iter().map(text).collect()).unwrap_or_default();
+        let empty = Vec::new();
         match self.projects.execute("plugins.folders", &json!({})) {
             Ok(folders) => {
-                self.plugins.standard = list(&folders["standard"]);
-                self.plugins.added = list(&folders["added"]);
+                self.plugins.folders = folders["folders"]
+                    .as_array()
+                    .unwrap_or(&empty)
+                    .iter()
+                    .map(|f| settings_view::FolderRow {
+                        path: text(&f["folder"]),
+                        format: text(&f["format"]),
+                        enabled: f["enabled"].as_bool().unwrap_or(true),
+                        standard: f["standard"].as_bool().unwrap_or(false),
+                    })
+                    .collect();
             }
             Err(e) => self.status = Status::Error(e.0),
         }
         match self.projects.execute("plugins.list", &json!({})) {
             Ok(found) => {
-                let empty = Vec::new();
                 self.plugins.found = found["plugins"]
                     .as_array()
                     .unwrap_or(&empty)
                     .iter()
-                    .map(|p| [text(&p["name"]), text(&p["vendor"]), text(&p["format"]), text(&p["version"])])
+                    .map(|p| {
+                        let file = text(&p["file"]);
+                        let format = text(&p["format"]);
+                        let spec = format!("{format}:{file}#{}", text(&p["id"]));
+                        settings_view::PluginRow {
+                            name: text(&p["name"]),
+                            vendor: text(&p["vendor"]),
+                            kind: text(&p["type"]),
+                            format,
+                            version: text(&p["version"]),
+                            file,
+                            spec,
+                            enabled: p["enabled"].as_bool().unwrap_or(true),
+                        }
+                    })
                     .collect();
-                self.plugins.failed = found["failed"]
-                    .as_array()
-                    .unwrap_or(&empty)
-                    .iter()
-                    .map(|f| (text(&f["file"]), text(&f["reason"])))
-                    .collect();
+                let reasons = |list: &serde_json::Value| -> Vec<(String, String)> {
+                    list.as_array().unwrap_or(&empty).iter().map(|f| (text(&f["file"]), text(&f["reason"]))).collect()
+                };
+                self.plugins.failed = reasons(&found["failed"]);
+                self.plugins.incompatible = reasons(&found["incompatible"]);
             }
             Err(e) => self.status = Status::Error(e.0),
         }
@@ -2206,13 +2290,74 @@ impl App {
     /// commands; a scan runs `Library::scan` (what `plugins.scan` runs) on a copy of the library
     /// on another thread, so the window keeps drawing, and the result replaces the library.
     fn plugin_request(&mut self, request: PluginRequest) {
+        // A scan's result replaces the library, so a folder or switch changed meanwhile would be lost.
+        if self.plugins.scanning
+            && matches!(
+                request,
+                PluginRequest::AddFolder(..)
+                    | PluginRequest::RemoveFolder(..)
+                    | PluginRequest::SetFolderEnabled(..)
+                    | PluginRequest::SetEnabled(..)
+            )
+        {
+            self.status =
+                Status::Error("Wait for the scan to finish before changing plug-in folders or switches".into());
+            return;
+        }
         match request {
-            PluginRequest::AddFolder(folder) => {
-                match self.projects.execute("plugins.addFolder", &json!({ "folder": folder })) {
+            PluginRequest::AddFolder(folder, format) => {
+                let params = json!({ "folder": folder, "format": format.name() });
+                match self.projects.execute("plugins.addFolder", &params) {
                     Ok(_) => self.plugins.new_folder.clear(),
                     Err(e) => self.status = Status::Error(e.0),
                 }
                 self.plugins_read = false;
+            }
+            PluginRequest::SetFolderEnabled(folder, enabled) => {
+                let params = json!({ "folder": folder, "enabled": enabled });
+                if let Err(e) = self.projects.execute("plugins.setFolderEnabled", &params) {
+                    self.status = Status::Error(e.0);
+                } else {
+                    self.status = Status::Hint(format!(
+                        "{folder} is {}; the next scan {}",
+                        if enabled { "on" } else { "off" },
+                        if enabled { "looks in it" } else { "drops its plug-ins" }
+                    ));
+                }
+                self.plugins_read = false;
+            }
+            PluginRequest::SetEnabled(spec, enabled) => {
+                match self.projects.execute("plugins.setEnabled", &json!({ "plugin": spec, "enabled": enabled })) {
+                    Ok(result) => {
+                        let name = result["plugin"].as_str().unwrap_or_default().to_string();
+                        self.status = Status::Done(if enabled {
+                            format!("{name} is on")
+                        } else {
+                            format!("{name} is off: not offered, and not loaded")
+                        });
+                        // The browser lists what sessions see, so it is listed again.
+                        self.browser.relist();
+                    }
+                    Err(e) => self.status = Status::Error(e.0),
+                }
+                self.plugins_read = false;
+            }
+            PluginRequest::ScanFile(file) => {
+                let mut library = self.projects.library_mut().clone();
+                let (done, receive) = std::sync::mpsc::channel();
+                let started = std::thread::Builder::new().name("suhina-plugin-scan".into()).spawn(move || {
+                    let report =
+                        library.scan_file_again(std::path::Path::new(&file)).map(|r| (r.read.len(), r.failed.len()));
+                    let _unheard = done.send(ScanDone { library, report });
+                });
+                match started {
+                    Ok(_) => {
+                        self.scan = Some(receive);
+                        self.plugins.scanning = true;
+                        self.status = Status::Hint("Scanning the file again".into());
+                    }
+                    Err(e) => self.status = Status::Error(format!("could not start the scan: {e}")),
+                }
             }
             PluginRequest::RemoveFolder(folder) => {
                 if let Err(e) = self.projects.execute("plugins.removeFolder", &json!({ "folder": folder })) {
@@ -2388,7 +2533,25 @@ impl App {
                     SETTINGS_SIZE.y.min(window.height() - 2.0 * PAD),
                 );
                 let panel = Rect::from_center_size(window.center(), size);
-                ui.scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| self.settings_page(ui));
+                if self.plugins.manager.open {
+                    // The plug-in manager takes the dialog's place until it is closed.
+                    if !self.plugins_read {
+                        self.read_plugins();
+                    }
+                    let out = ui
+                        .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
+                            crate::settings::plugin_manager::show(ui, panel, &mut self.plugins)
+                        })
+                        .inner;
+                    if out.close {
+                        self.plugins.manager.open = false;
+                    }
+                    if let Some(request) = out.request {
+                        self.plugin_request(request);
+                    }
+                } else {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| self.settings_page(ui));
+                }
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
             },
         );
@@ -2687,7 +2850,10 @@ impl App {
     /// keyboard (`docs/spec/ui-session-view.md` › Launch keys). A key held when that ends, or
     /// when the window loses focus, is released.
     fn launch_keys(&mut self, ui: &Ui, actions: &mut Vec<Action>) {
-        let dialog = self.project_dialog.is_some() || self.save_prompt.is_some() || self.unsaved_prompt.is_some();
+        let dialog = self.project_dialog.is_some()
+            || self.save_prompt.is_some()
+            || self.unsaved_prompt.is_some()
+            || !self.agent_asks.is_empty();
         let session_view = self.shown == View::Session && !self.sample_map.view.large;
         // A clicked slot or button keeps the focus; only a text field takes the keys away.
         let focused = session_view && !dialog && !self.settings_open && !ui.ctx().text_edit_focused();
@@ -2747,6 +2913,7 @@ impl App {
             || self.save_prompt.is_some()
             || self.unsaved_prompt.is_some()
             || self.about_open
+            || !self.agent_asks.is_empty()
             || self.updates.open;
         if ui.ctx().egui_wants_keyboard_input() || dialog || (self.settings_open && self.page.capture.is_some()) {
             return;
@@ -2920,7 +3087,7 @@ impl App {
                 actions.push(Action::new(id, params));
             }
             "selection.split" | "selection.consolidate" => {
-                let Some((track, index)) = self.arrangement.selected_clip() else {
+                let Some((track, id)) = self.arrangement.selected_clip() else {
                     self.status = Status::Hint("Select a clip in the Arrangement first".into());
                     return;
                 };
@@ -2928,7 +3095,7 @@ impl App {
                 let beat = timeline.map_or(0.0, |t| t.beat);
                 let clip = timeline
                     .and_then(|t| t.lanes.iter().find(|l| l.track == track))
-                    .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                    .and_then(|l| l.clips.iter().find(|c| c.id == id))
                     .map(|c| (c.start, c.length));
                 let Some((start, length)) = clip else { return };
                 if action == "selection.consolidate" {
@@ -2937,7 +3104,7 @@ impl App {
                     let params = json!({ "track": track.0, "start": start, "end": start + length });
                     actions.push(Action::new("clip.consolidate", params));
                 } else if beat > start && beat < start + length {
-                    actions.push(Action::new("clip.split", json!({ "track": track.0, "index": index, "at": beat })));
+                    actions.push(Action::new("clip.split", json!({ "clip": id.0, "at": beat })));
                 } else {
                     self.status = Status::Hint("Move the playhead into the selected clip to split it there".into());
                 }
@@ -2953,7 +3120,7 @@ impl App {
                 actions.push(Action::new("clip.setEnabled", json!({ "clips": clips, "enabled": !enabled })));
             }
             "selection.selectAll" => {
-                let clips: Vec<(TrackId, usize)> = self
+                let clips: Vec<(TrackId, ClipId)> = self
                     .session()
                     .map(|session| {
                         session
@@ -2961,8 +3128,8 @@ impl App {
                             .arrangement
                             .lanes
                             .iter()
-                            .filter_map(|lane| lane.track.map(|track| (track, lane.clips.len())))
-                            .flat_map(|(track, count)| (0..count).map(move |index| (track, index)))
+                            .filter_map(|lane| lane.track.map(|track| (track, &lane.clips)))
+                            .flat_map(|(track, clips)| clips.iter().map(move |clip| (track, clip.id)))
                             .collect()
                     })
                     .unwrap_or_default();
@@ -2972,9 +3139,9 @@ impl App {
                 // After the selected clip, or at the playhead on the selected track.
                 let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                 let target = match self.arrangement.selected_clip() {
-                    Some((track, index)) => timeline
+                    Some((track, id)) => timeline
                         .and_then(|t| t.lanes.iter().find(|l| l.track == track))
-                        .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                        .and_then(|l| l.clips.iter().find(|c| c.id == id))
                         .map(|c| (track, c.start + c.length)),
                     None => self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.beat))),
                 };
@@ -3037,23 +3204,19 @@ impl App {
 
     /// The clips the Arrangement view has selected, as `clip.*` commands name them.
     fn selected_clip_list(&self) -> Vec<serde_json::Value> {
-        self.arrangement
-            .selected_clips()
-            .iter()
-            .map(|(track, index)| json!({ "track": track.0, "index": index }))
-            .collect()
+        self.arrangement.selected_clips().iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect()
     }
 
     /// Whether any selected clip plays now. The window reads the clips it drew; a clip it cannot
     /// find counts as playing, so the first key press turns the selection off.
     fn any_selected_clip_plays(&self) -> bool {
         let Some((_, _, timeline)) = self.timeline.as_ref() else { return true };
-        self.arrangement.selected_clips().iter().any(|(track, index)| {
+        self.arrangement.selected_clips().iter().any(|(track, id)| {
             timeline
                 .lanes
                 .iter()
                 .find(|l| l.track == *track)
-                .and_then(|l| l.clips.iter().find(|c| c.index == *index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| c.enabled)
         })
     }
@@ -3066,12 +3229,12 @@ impl App {
         if selected.is_empty() {
             return false;
         }
-        selected.iter().all(|(track, index)| {
+        selected.iter().all(|(track, id)| {
             timeline
                 .lanes
                 .iter()
                 .find(|l| l.track == *track)
-                .and_then(|l| l.clips.iter().find(|c| c.index == *index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == *id))
                 .is_none_or(|c| self.stacks(c.audio))
         })
     }
@@ -3514,18 +3677,18 @@ impl App {
         }
         self.switch_hover = None;
         if self.carry.is_none()
-            && let Some((track, index)) = self.arrangement.dragged_clip()
+            && let Some((track, id)) = self.arrangement.dragged_clip()
         {
             let name = self
                 .timeline
                 .as_ref()
                 .and_then(|(_, _, t)| t.lanes.iter().find(|l| l.track == track))
-                .and_then(|l| l.clips.iter().find(|c| c.index == index))
+                .and_then(|l| l.clips.iter().find(|c| c.id == id))
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
             self.arrangement.cancel_clip_drag();
             ctx.stop_dragging();
-            self.carry = Some(Carry { from: CarryFrom::Arrangement { track, index }, name });
+            self.carry = Some(Carry { from: CarryFrom::Arrangement { track, clip: id }, name });
         }
         self.shown = view;
         self.close_large_map();
@@ -3687,7 +3850,7 @@ impl App {
             }
         }
         let copy = match carry.from {
-            CarryFrom::Arrangement { track, index } => json!({ "clips": [{ "track": track.0, "index": index }] }),
+            CarryFrom::Arrangement { clip, .. } => json!({ "clips": [{ "clip": clip.0 }] }),
             CarryFrom::Slot { track, scene } => json!({ "track": track.0, "scene": scene + 1 }),
         };
         let mut paste = match target {
@@ -4135,7 +4298,26 @@ impl App {
                 }
                 let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
                 painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
+                right = rect.left() - PAD;
             }
+        }
+        // Left of that, each agent the person let in (ADR 0028), lit; a click disconnects it.
+        for (connection, client) in self.agents.clone() {
+            let text = format!("Disconnect {client}");
+            let galley = widgets::fitted(&painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
+            let size = galley.size();
+            if !fits(right, size.x) {
+                break;
+            }
+            let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
+            let response = widgets::button_area(ui, rect, Id::new(("agent", connection)), text.clone());
+            if response.clicked() {
+                self.agent_disconnects.push(connection);
+                self.status = Status::Done(format!("Disconnected {client}"));
+            }
+            let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
+            painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
+            right = rect.left() - PAD;
         }
         self.hover_switch(ui.ctx(), hovered_switch);
         // The underline slides to the view that was picked.

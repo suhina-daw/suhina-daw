@@ -5,7 +5,9 @@
 
 use egui::{Id, Key, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::{AudioInput, InputChannels, MidiInput, MidiPort, Monitor, Rgb, TimeSignature, TrackId};
+use suhina_engine::model::{
+    AudioInput, ClipId, InputChannels, MidiInput, MidiPort, Monitor, Rgb, TimeSignature, TrackId,
+};
 
 use crate::interaction::colour_picker;
 use crate::kit::theme;
@@ -225,7 +227,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
 /// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now.
 pub fn clip_menu(
     ui: &mut Ui,
-    clips: &[(TrackId, usize)],
+    clips: &[(TrackId, ClipId)],
     stack: bool,
     enabled: bool,
     name: &str,
@@ -234,13 +236,12 @@ pub fn clip_menu(
     if clips.is_empty() {
         return;
     }
-    let list: Vec<serde_json::Value> =
-        clips.iter().map(|(track, index)| json!({ "track": track.0, "index": index })).collect();
+    let list: Vec<serde_json::Value> = clips.iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect();
     ui.set_min_width(140.0);
     // One clip in the menu (a click on it, or the only one selected): a field renames it,
     // applied with Enter or Rename, as a slot's clip's is.
-    if let [(track, index)] = clips {
-        let id = Id::new(("clip-rename", track, index));
+    if let [(_, clip)] = clips {
+        let id = Id::new(("clip-rename", clip.0));
         let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
         let field = ui.add(egui::TextEdit::singleline(&mut draft).id(id).desired_width(140.0));
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
@@ -250,7 +251,7 @@ pub fn clip_menu(
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
         if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
-            actions.push(Action::new("clip.rename", json!({ "track": track.0, "index": index, "name": draft.trim() })));
+            actions.push(Action::new("clip.rename", json!({ "clip": clip.0, "name": draft.trim() })));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();
         }
@@ -284,7 +285,7 @@ pub fn clip_menu(
 pub fn clip_edit_menu(
     ui: &mut Ui,
     track: TrackId,
-    index: usize,
+    clip: ClipId,
     span: (f64, f64),
     at: Option<f64>,
     actions: &mut Vec<Action>,
@@ -295,7 +296,7 @@ pub fn clip_edit_menu(
     if ui.add_enabled(inside.is_some(), egui::Button::new("Split here")).clicked()
         && let Some(beat) = inside
     {
-        actions.push(Action::new("clip.split", json!({ "track": track.0, "index": index, "at": beat })));
+        actions.push(Action::new("clip.split", json!({ "clip": clip.0, "at": beat })));
         ui.close();
     }
     if ui.add(egui::Button::new("Consolidate").shortcut_text("Ctrl+J")).clicked() {

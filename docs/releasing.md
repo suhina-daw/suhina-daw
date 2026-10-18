@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-10-18
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -18,6 +18,9 @@ covers:
   - scripts/discord_test_build.py
   - scripts/discord_test_build_backfill.py
   - scripts/discord_api.py
+  - apps/suhina/build.rs
+  - apps/suhina-cli/build.rs
+  - crates/plugin-host/build.rs
 ---
 
 # Releasing
@@ -57,6 +60,14 @@ becomes the latest.
 
 Running the workflow by hand (Actions › Release › Run workflow) builds the same packages as
 workflow artifacts without creating a release, to test the pipeline.
+
+On Windows the three executables carry version information, which the file's Properties ›
+Details and Task Manager show: the product name Suhina, what each program is (Suhina, Suhina
+command line, Suhina plug-in host), the workspace version and the copyright. Their build scripts
+(`build.rs` in `apps/suhina`, `apps/suhina-cli` and `crates/plugin-host`) write it with
+`winresource`, so every build has it, nightlies and test builds too. Code signing checks the
+product name and version later ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)); the
+binaries are not signed yet.
 
 ## Nightly
 

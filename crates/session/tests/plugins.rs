@@ -44,6 +44,21 @@ fn folders_are_added_listed_removed_and_kept() {
     let listed = run(&mut later, "plugins.folders", json!({})).unwrap();
     assert_eq!(listed["added"].as_array().unwrap().len(), 1);
 
+    // Each folder with its format and whether it is on; switching it off keeps it listed.
+    let entry = |listed: &Value| {
+        listed["folders"].as_array().unwrap().iter().find(|f| f["standard"] == false).cloned().unwrap()
+    };
+    assert_eq!((entry(&listed)["format"].clone(), entry(&listed)["enabled"].clone()), (json!("any"), json!(true)));
+    let off = run(&mut later, "plugins.setFolderEnabled", json!({ "folder": folder, "enabled": false })).unwrap();
+    assert_eq!(off["changed"], true);
+    let listed = run(&mut later, "plugins.folders", json!({})).unwrap();
+    assert_eq!(entry(&listed)["enabled"], false);
+    // Added again for CLAP only, it keeps its place with the new format.
+    let clap = run(&mut later, "plugins.addFolder", json!({ "folder": folder, "format": "clap" })).unwrap();
+    assert_eq!(clap["added"], true);
+    let listed = run(&mut later, "plugins.folders", json!({})).unwrap();
+    assert_eq!(entry(&listed)["format"], "clap");
+
     let removed = run(&mut later, "plugins.removeFolder", json!({ "folder": folder })).unwrap();
     assert_eq!((removed["removed"].clone(), removed["folders"].clone()), (json!(true), json!([])));
     let not_there = run(&mut later, "plugins.removeFolder", json!({ "folder": folder })).unwrap();
@@ -59,14 +74,77 @@ fn bad_folders_and_parameters_are_errors() {
     assert!(run(&mut p, "plugins.addFolder", json!({ "folder": 5 })).is_err());
     assert!(run(&mut p, "plugins.scan", json!({ "all": "yes" })).is_err());
     assert!(run(&mut p, "plugins.list", json!({ "extra": 1 })).is_err());
+    let folder = dir.join("plugins");
+    let vst2 = run(&mut p, "plugins.addFolder", json!({ "folder": folder, "format": "vst2" })).unwrap_err();
+    assert!(vst2.contains("VST2"), "{vst2}");
+    assert!(run(&mut p, "plugins.addFolder", json!({ "folder": folder, "format": "dll" })).is_err());
+    assert!(run(&mut p, "plugins.setFolderEnabled", json!({ "folder": folder, "enabled": false })).is_err());
+    assert!(run(&mut p, "plugins.setFolderEnabled", json!({ "folder": folder })).is_err());
+    assert!(run(&mut p, "plugins.setEnabled", json!({ "plugin": "nothing", "enabled": false })).is_err());
+    assert!(run(&mut p, "plugins.scanFile", json!({ "file": "" })).is_err());
 }
 
 #[test]
 fn nothing_scanned_lists_nothing_and_a_missing_host_is_an_error() {
     let (mut p, _) = projects("empty");
-    assert_eq!(run(&mut p, "plugins.list", json!({})).unwrap(), json!({ "plugins": [], "failed": [] }));
+    assert_eq!(
+        run(&mut p, "plugins.list", json!({})).unwrap(),
+        json!({ "plugins": [], "failed": [], "incompatible": [] })
+    );
     let error = run(&mut p, "plugins.scan", json!({})).unwrap_err();
     assert!(error.contains("plug-in host") && error.contains("missing"), "{error}");
+}
+
+#[test]
+fn files_that_hold_no_plugins_are_listed_only_when_asked() {
+    let dir = std::env::temp_dir().join(format!("suhina-plugin-commands-ignored-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("settings")).unwrap();
+    let catalog = r#"{"version":3,"entries":[
+        {"path":"/vst3/Empty.vst3","modified":1,"size":0,"tried":5,"plugins":[]},
+        {"path":"/vst3/Broken.vst3","modified":1,"size":9,"tried":5,"failed":"the plug-in has no factory"}]}"#;
+    std::fs::write(dir.join("settings").join("plugin-catalog.json"), catalog).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(dir.join("settings")), dir.join("no-such-host")));
+    let file = |path: &str| std::path::Path::new(path).display().to_string();
+
+    let listed = run(&mut p, "plugins.list", json!({})).unwrap();
+    assert_eq!(
+        listed["failed"],
+        json!([{ "file": file("/vst3/Broken.vst3"), "reason": "the plug-in has no factory" }])
+    );
+    assert!(listed.get("ignored").is_none(), "{listed}");
+    let all = run(&mut p, "plugins.list", json!({ "ignored": true })).unwrap();
+    assert_eq!(all["ignored"], json!([{ "file": file("/vst3/Empty.vst3"), "reason": "the file holds no plug-ins" }]));
+    assert_eq!(all["failed"], listed["failed"]);
+    assert!(run(&mut p, "plugins.list", json!({ "ignored": "yes" })).is_err());
+}
+
+#[test]
+fn plugins_are_switched_off_and_on_and_files_for_another_processor_are_listed() {
+    let dir = std::env::temp_dir().join(format!("suhina-plugin-commands-enabled-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("settings")).unwrap();
+    let catalog = r#"{"version":3,"entries":[
+        {"path":"/clap/Echo.clap","modified":1,"size":9,"tried":5,"plugins":[
+            {"id":"com.example.echo","name":"Echo","vendor":"Example","version":"1","features":["audio-effect"]}]},
+        {"path":"/vst3/Old.vst3","modified":1,"size":9,"tried":5,"incompatible":"built for x86_64 only; Suhina runs on arm64"}]}"#;
+    std::fs::write(dir.join("settings").join("plugin-catalog.json"), catalog).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(dir.join("settings")), dir.join("no-such-host")));
+
+    let listed = run(&mut p, "plugins.list", json!({})).unwrap();
+    assert_eq!(listed["plugins"][0]["enabled"], true);
+    assert_eq!(listed["plugins"][0]["type"], "effect");
+    assert_eq!(listed["incompatible"][0]["reason"], "built for x86_64 only; Suhina runs on arm64");
+    assert_eq!(listed["failed"], json!([]), "built for another processor is not a failure");
+
+    let off = run(&mut p, "plugins.setEnabled", json!({ "plugin": "Echo", "enabled": false })).unwrap();
+    assert_eq!(off["enabled"], false);
+    let listed = run(&mut p, "plugins.list", json!({})).unwrap();
+    assert_eq!(listed["plugins"][0]["enabled"], false, "still listed, switched off");
+    assert_eq!(p.plugin_env().catalog.plugins().count(), 0, "sessions do not see it");
+    let spec = listed["plugins"][0]["file"].as_str().map(|f| format!("clap:{f}#com.example.echo")).unwrap();
+    run(&mut p, "plugins.setEnabled", json!({ "plugin": spec, "enabled": true })).unwrap();
+    assert_eq!(p.plugin_env().catalog.plugins().count(), 1);
 }
 
 #[test]
@@ -133,6 +211,13 @@ fn a_projects_plugins_are_matched_to_the_installed_ones() {
     assert!(devices[2].get("found").is_none());
     assert_eq!(run(&mut p, "plugins.check", json!({})).unwrap(), checked);
     assert!(run(&mut p, "plugins.check", json!({ "project": 99 })).is_err());
+
+    // Switched off, the plug-in is missing to the project, as sessions load it.
+    run(&mut p, "plugins.setEnabled", json!({ "plugin": "Gain 3", "enabled": false })).unwrap();
+    let off = run(&mut p, "plugins.check", json!({})).unwrap();
+    assert_eq!((off["plugins"].clone(), off["missing"].clone()), (json!(3), json!(3)));
+    run(&mut p, "plugins.setEnabled", json!({ "plugin": "Gain 3", "enabled": true })).unwrap();
+    assert_eq!(run(&mut p, "plugins.check", json!({})).unwrap(), checked);
 }
 
 #[test]

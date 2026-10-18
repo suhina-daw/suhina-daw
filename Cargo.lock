@@ -4304,6 +4304,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "spirv"
 version = "0.4.0+sdk-1.4.341.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4349,6 +4359,7 @@ dependencies = [
  "eframe",
  "raw-window-handle",
  "rfd",
+ "suhina-automation",
  "suhina-engine",
  "suhina-library",
  "suhina-media",
@@ -4359,6 +4370,7 @@ dependencies = [
  "suhina-ui",
  "suhina-update",
  "winit",
+ "winresource",
  "zip",
 ]
 
@@ -4406,6 +4418,7 @@ dependencies = [
  "suhina-plugins",
  "suhina-session",
  "tokio",
+ "winresource",
 ]
 
 [[package]]
@@ -4602,6 +4615,7 @@ dependencies = [
  "suhina-session",
  "vst3",
  "windows-sys 0.61.2",
+ "winresource",
  "x11rb",
 ]
 
@@ -5051,8 +5065,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
+ "libc",
+ "mio",
  "pin-project-lite",
+ "socket2",
  "tokio-macros",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6292,6 +6310,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]

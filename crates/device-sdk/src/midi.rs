@@ -10,13 +10,25 @@ enum Op {
     Transpose { semitones: i8, parameter: Option<usize> },
 }
 
+/// What a MIDI effect knows of one input key.
+#[derive(Clone, Copy, PartialEq)]
+enum Key {
+    /// No note-on for it has passed since the effect was made: a release is mapped as it comes,
+    /// so a note that started before the effect (a chain rebuilt while a key is down) still ends.
+    Unseen,
+    /// Sounding downstream as this key.
+    Held(u8),
+    /// Released, or its note-on fell outside the key range: a release has nothing to end.
+    Idle,
+}
+
 /// A compiled MIDI effect. Keep one output buffer allocated outside the audio callback and
 /// pass it to [`process`](Self::process); event offsets are preserved exactly.
 pub struct PreparedMidiEffect {
     ops: Vec<Op>,
     parameters: Vec<Parameter>,
     values: Vec<f64>,
-    held: [Option<u8>; 128],
+    keys: [Key; 128],
 }
 
 impl PreparedMidiEffect {
@@ -43,7 +55,7 @@ impl PreparedMidiEffect {
                 _ => {}
             }
         }
-        Ok(Self { ops, parameters, values, held: [None; 128] })
+        Ok(Self { ops, parameters, values, keys: [Key::Unseen; 128] })
     }
 
     /// Update a prepared transpose control without allocating or rebuilding the graph.
@@ -54,67 +66,82 @@ impl PreparedMidiEffect {
     }
 
     /// Transforms events in order. Returns the number written; if the output is too small,
-    /// processing stops without writing beyond it. Caller should size for twice the input event cap.
+    /// processing stops without writing beyond it. A key pressed again first ends the note it
+    /// sounds; with room for only one event the release goes out and the press is dropped, so no
+    /// note is left hanging. Caller should size for twice the input event cap.
     pub fn process(&mut self, input: &[(usize, NoteEvent)], output: &mut [(usize, NoteEvent)]) -> usize {
         let mut written = 0;
-        'events: for &(frame, mut event) in input {
-            if written >= output.len() {
-                break;
-            }
-            if let NoteEvent::On { key, velocity: 0.0 } = event {
-                event = NoteEvent::Off { key, velocity: 0.0 };
-            }
-            if let NoteEvent::Off { key, velocity } = event {
-                let Some(mapped) = self.held.get_mut(usize::from(key)).and_then(Option::take) else { continue };
-                if let Some(slot) = output.get_mut(written) {
-                    *slot = (frame, NoteEvent::Off { key: mapped, velocity });
-                    written += 1;
-                }
-                continue;
-            }
-            let original = match event {
-                NoteEvent::On { key, .. } => {
-                    if let Some(held) = self.held.get_mut(usize::from(key)) {
-                        if held.is_some() && output.len().saturating_sub(written) < 2 {
-                            break;
-                        }
-                        if let Some(mapped) = held.take() {
-                            output[written] = (frame, NoteEvent::Off { key: mapped, velocity: 0.0 });
-                            written += 1;
-                        }
+        for &(frame, event) in input {
+            let Some(slot) = output.get_mut(written) else { break };
+            let event = match event {
+                NoteEvent::On { key, velocity: 0.0 } => NoteEvent::Off { key, velocity: 0.0 },
+                event => event,
+            };
+            match event {
+                NoteEvent::Off { key, velocity } => {
+                    if let Some(mapped) = self.release(key) {
+                        *slot = (frame, NoteEvent::Off { key: mapped, velocity });
+                        written += 1;
                     }
-                    Some(key)
+                }
+                NoteEvent::On { key, velocity } => {
+                    if let Some(Key::Held(mapped)) = self.keys.get(usize::from(key)).copied() {
+                        *slot = (frame, NoteEvent::Off { key: mapped, velocity: 0.0 });
+                        written += 1;
+                        self.set_key(key, Key::Idle);
+                    }
+                    let Some(slot) = output.get_mut(written) else { break };
+                    let mapped = self.transpose(key);
+                    self.set_key(key, mapped.map_or(Key::Idle, Key::Held));
+                    if let Some(mapped) = mapped {
+                        *slot = (frame, NoteEvent::On { key: mapped, velocity });
+                        written += 1;
+                    }
                 }
                 NoteEvent::AllNotesOff => {
-                    self.held.fill(None);
-                    None
+                    self.keys.fill(Key::Idle);
+                    *slot = (frame, event);
+                    written += 1;
                 }
-                _ => None,
-            };
-            for op in &self.ops {
-                let Op::Transpose { semitones, parameter } = *op;
-                let semitones = parameter
-                    .and_then(|index| self.values.get(index))
-                    .map_or(f64::from(semitones), |value| *value)
-                    .round()
-                    .clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
-                if let NoteEvent::On { key, velocity } = event {
-                    let Some(key) = i16::from(key).checked_add(i16::from(semitones)).filter(|k| (0..=127).contains(k))
-                    else {
-                        continue 'events;
-                    };
-                    event = NoteEvent::On { key: key as u8, velocity };
+                event => {
+                    *slot = (frame, event);
+                    written += 1;
                 }
             }
-            let Some(slot) = output.get_mut(written) else { break };
-            if let (Some(original), NoteEvent::On { key, .. }) = (original, event)
-                && let Some(held) = self.held.get_mut(usize::from(original))
-            {
-                *held = Some(key);
-            }
-            *slot = (frame, event);
-            written += 1;
         }
         written
+    }
+
+    /// The downstream key a release of `key` ends, if any, and forgets it.
+    fn release(&mut self, key: u8) -> Option<u8> {
+        match self.keys.get(usize::from(key)).copied()? {
+            Key::Held(mapped) => {
+                self.set_key(key, Key::Idle);
+                Some(mapped)
+            }
+            Key::Idle => None,
+            Key::Unseen => self.transpose(key),
+        }
+    }
+
+    fn set_key(&mut self, key: u8, state: Key) {
+        if let Some(current) = self.keys.get_mut(usize::from(key)) {
+            *current = state;
+        }
+    }
+
+    /// `key` through every transpose step, or `None` once a step leaves the key range.
+    fn transpose(&self, key: u8) -> Option<u8> {
+        let mut key = i16::from(key);
+        for op in &self.ops {
+            let Op::Transpose { semitones, parameter } = *op;
+            let semitones = parameter
+                .and_then(|index| self.values.get(index))
+                .map_or(f64::from(semitones), |value| *value)
+                .round()
+                .clamp(f64::from(i8::MIN), f64::from(i8::MAX)) as i8;
+            key = key.checked_add(i16::from(semitones)).filter(|k| (0..=127).contains(k))?;
+        }
+        u8::try_from(key).ok()
     }
 }

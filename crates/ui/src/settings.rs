@@ -5,6 +5,7 @@
 //! (`key = value` lines, so a person can read and fix it). The app decides where the file lives.
 
 pub mod keymap;
+pub mod plugin_manager;
 mod settings_rows;
 pub mod settings_view;
 pub mod themes;
@@ -349,6 +350,9 @@ pub struct Settings {
     /// (`docs/spec/backups.md`).
     pub backup: suhina_session::backup::Interval,
     pub backup_clean_up: bool,
+    /// Agents may connect over MCP and work on the open projects (ADR 0028); off until the person
+    /// turns it on.
+    pub agents: bool,
 }
 
 impl Default for Settings {
@@ -402,6 +406,7 @@ impl Default for Settings {
             zoom: ZOOM,
             backup: suhina_session::backup::Interval::default(),
             backup_clean_up: true,
+            agents: false,
         }
     }
 }
@@ -546,6 +551,7 @@ impl Settings {
             },
             piano_toolbar = self.toolbar_size.param(),
         ) + &self.view.to_text()
+            + &format!("agents = {}\n", if self.agents { "on" } else { "off" })
             + &self.updates.to_text()
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
     }
@@ -571,6 +577,7 @@ impl Settings {
             match (key, value) {
                 ("animations", "on" | "off") => settings.animations = value == "on",
                 ("sample_stacking", "on" | "off") => settings.sample_stacking = value == "on",
+                ("agents", "on" | "off") => settings.agents = value == "on",
                 ("midi_stacking", "on" | "off") => settings.midi_stacking = value == "on",
                 ("track_headers", "left") => settings.track_headers = Side::Left,
                 ("track_headers", "right") => settings.track_headers = Side::Right,
@@ -871,6 +878,7 @@ midi_input_off = Keys
             map_window_rect: Some([-1600, 40, 900, 700]),
             backup: suhina_session::backup::Interval::Minutes(240),
             backup_clean_up: false,
+            agents: true,
         };
         assert_eq!(Settings::from_text(&settings.to_text()), (settings, Vec::new()));
         assert_eq!(Settings::from_text(&Settings::default().to_text()).0, Settings::default());

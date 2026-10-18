@@ -144,7 +144,13 @@ pub(crate) fn insert_track(
     p.tracks.insert(at, track);
     let slots = p.launcher.scenes.len();
     p.launcher.columns.push(LauncherColumn { track: id, slots: vec![Slot { clip: None, has_stop: true }; slots] });
-    p.arrangement.lanes.push(ArrangementLane { name: name.to_string(), track: Some(id), clips: Vec::new() });
+    let lane_id = p.new_lane_id()?;
+    p.arrangement.lanes.push(ArrangementLane {
+        id: lane_id,
+        name: name.to_string(),
+        track: Some(id),
+        clips: Vec::new(),
+    });
     Ok(id)
 }
 
@@ -541,10 +547,11 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
     };
     let at = start.unwrap_or(0.0);
     let mut done = place_clip(&mut session.project, track, source, scene, at, stack)?;
-    // An arrangement clip is found again by its index on the track, as project.clips gives it.
+    // The result names the clip by its id; an arrangement clip also by where it is on the track.
+    let id = done["clip"].as_u64().and_then(|n| u32::try_from(n).ok()).map(suhina_model::ClipId);
     if scene.is_none()
-        && let Some(lane) = session.project.arrangement.lanes.iter().find(|l| l.track == Some(track))
-        && let Some(index) = lane.clips.iter().rposition(|c| c.start == at && c.length == length)
+        && let Some(place) = id.and_then(|id| session.project.clip_place(id))
+        && let suhina_model::ClipPlace::Lane { index, .. } = place
     {
         done["index"] = json!(index);
     }
@@ -573,7 +580,9 @@ pub(crate) fn place_clip(
         extensions: Default::default(),
         scale,
     });
+    let clip_id = p.new_clip_id()?;
     let mut clip = Clip {
+        id: clip_id,
         content: id,
         start: 0.0,
         length,
@@ -591,7 +600,8 @@ pub(crate) fn place_clip(
     match row {
         Some(row) => {
             while p.launcher.scenes.len() <= row {
-                p.launcher.scenes.push(Scene::default());
+                let scene_id = p.new_scene_id()?;
+                p.launcher.scenes.push(Scene { id: scene_id, ..Scene::default() });
                 for column in &mut p.launcher.columns {
                     column.slots.push(Slot { clip: None, has_stop: true });
                 }
@@ -603,7 +613,7 @@ pub(crate) fn place_clip(
                 p.launcher.columns.iter_mut().find(|c| c.track == track).ok_or("the track has no clip slots")?;
             let slot = column.slots.get_mut(row).ok_or("the slot is missing")?;
             slot.clip = Some(clip);
-            Ok(json!({ "track": track.0, "scene": row + 1, "name": source.name, "length": length }))
+            Ok(json!({ "clip": clip_id.0, "track": track.0, "scene": row + 1, "name": source.name, "length": length }))
         }
         None => {
             clip.start = at;
@@ -611,7 +621,13 @@ pub(crate) fn place_clip(
                 Some(lane) => lane,
                 None => {
                     let name = p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default();
-                    p.arrangement.lanes.push(ArrangementLane { name, track: Some(track), clips: Vec::new() });
+                    let lane_id = p.new_lane_id()?;
+                    p.arrangement.lanes.push(ArrangementLane {
+                        id: lane_id,
+                        name,
+                        track: Some(track),
+                        clips: Vec::new(),
+                    });
                     p.arrangement.lanes.len() - 1
                 }
             };
@@ -621,7 +637,7 @@ pub(crate) fn place_clip(
             }
             lane.clips.push(clip);
             lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-            Ok(json!({ "track": track.0, "start": at, "name": source.name, "length": length }))
+            Ok(json!({ "clip": clip_id.0, "track": track.0, "start": at, "name": source.name, "length": length }))
         }
     }
 }

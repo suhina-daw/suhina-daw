@@ -44,9 +44,10 @@ fn length(value: Option<&Value>, key: &str) -> Result<f64, CommandError> {
     Ok(length)
 }
 
-/// The params that name the clip at `at` in a result: `index` or `scene` (from 1).
-fn address(at: ClipAt) -> Map<String, Value> {
+/// What names the clip `id` at `at` in a result: its `clip` id, and `index` or `scene` (from 1).
+fn address(at: ClipAt, id: suhina_model::ClipId) -> Map<String, Value> {
     let mut out = Map::new();
+    out.insert("clip".into(), json!(id.0));
     match at {
         ClipAt::Arrangement(_, index) => out.insert("index".into(), json!(index)),
         ClipAt::Slot(_, slot) => out.insert("scene".into(), json!(slot.saturating_add(1))),
@@ -117,7 +118,7 @@ pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, C
         }
     };
     clip.loop_range = range;
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("loop".into(), json!(range.is_some()));
     if let Some(range) = range {
         out.insert("start".into(), json!(range.start));
@@ -135,7 +136,7 @@ pub(crate) fn set_length(session: &mut Session, params: &Value) -> Result<Value,
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
     clip.length = length;
     clip.fit_fades();
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("length".into(), json!(length));
     Ok(Value::Object(out))
 }
@@ -173,7 +174,7 @@ pub(crate) fn set_start(session: &mut Session, params: &Value) -> Result<Value, 
         clip.length = length;
         clip.fit_fades();
     }
-    let mut out = address(at);
+    let mut out = address(at, clip.id);
     out.insert("offset".into(), json!(offset));
     out.insert("length".into(), json!(clip.length));
     Ok(Value::Object(out))

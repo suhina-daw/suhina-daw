@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-16
+last_verified: 2026-10-18
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -52,7 +52,7 @@ project.
 | Stems file | `.stem.mp4` `.stem.m4a` (a master and its stems, [spec](stems-format.md)) | Samples |
 | MIDI file | `.mid` `.midi` | MIDI |
 | Preset | `.syx` (DX7 voice data: one voice, or a bank of 32; [spec](dx7-voice-format.md)) | Presets |
-| Project | `.suhina`, `.locr` (saved before October 2026), `.als` | All only |
+| Project | `.suhina`, `.als` | All only |
 | Device effect | `.sd` (data-only Suhina graph) | All, Effects |
 
 Other files are not listed. Extensions are matched without regard to case.
@@ -63,9 +63,11 @@ From top to bottom (sizes in components.md › Browser):
 
 1. **Search** with the shortcut hint (Ctrl+F).
 2. **Category filters**, a wrapping row of buttons: All, Samples, MIDI, Instruments, Effects,
-   Presets, Plug-ins. One is selected; All at first.
-3. **Sidebar** (left part) and **results** (right part). Above the results a **List | Map**
-   switch shows them as the list or as the sample map ([`sample-map.md`](sample-map.md)).
+   Presets, Plug-ins, then **Sample map**, which shows the results as the sample map
+   ([`sample-map.md`](sample-map.md)). One is selected; All at first. Choosing a category shows
+   the list again; choosing the category already selected shows its whole tree (lets go of the
+   place); a category lets go of a recent group's place of another kind, which it would empty.
+3. **Sidebar** (left part) and **results** (right part).
 4. **Preview strip** for the selected sample or MIDI file.
 5. **Footer:** the tags (dots that filter) and the count ("312 items", "3 selected").
 
@@ -93,7 +95,11 @@ Three sections, each title in small hint text:
   A folder dragged from the system onto the window is added too (and the browser shows). A folder's right-click menu
   has Refresh, Pin and Remove from the browser.
 
-At most one place is selected. Clicking the selected place again clears it.
+At most one place is selected. Clicking the selected place again keeps it; a **×** at the
+right of the selected place lets go of it (the whole tree shows again), as does clicking the
+selected category. Choosing a recent group (Samples, MIDI, Instruments, Effects, Plug-ins,
+Presets) also chooses its category, so the category never hides everything the place lists;
+the Pinned place, the recent projects and the folders hold any kind and keep the category.
 
 ## Results
 
@@ -378,7 +384,7 @@ the CLI can do the same.
 | `library.setTag` | `name?`, `color?`, `rename?`, `limit?` | adds a tag, or changes one's colour or name; `limit` sets the most tags there may be |
 | `library.removeTag` | `name` | removes a tag from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item |
-| `library.setPluginsView` | `view` | how the browser shows the installed plug-ins: `grouped` (default), `type` or `flat` ([plug-in browsing](plugin-browsing.md)) |
+| `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |
 | `library.findFiles` | `names`, `folder?` | finds files by name for missing files: in the folders' index and the active project's folder, or by walking `folder` ([missing files](missing-files.md)) |
 
 **Project** (on the active project, one undo step each):

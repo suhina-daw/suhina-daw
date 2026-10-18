@@ -8,6 +8,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod recent;
+mod save_error;
 mod theme_files;
 
 use std::path::{Path, PathBuf};
@@ -23,16 +24,21 @@ use suhina_ui::{App, NewProject, OpenAs, Status};
 
 const USAGE: &str = "\
 usage: suhina [<project.suhina> | <project.als> | --demo] [--renderer wgpu|glow] [--no-animations]
+              [--new-instance]
 
-  <project.suhina>   a Suhina project to open (or .locr, from before October 2026),
-                     or a Live Set (.als) to import
+  <project.suhina>   a Suhina project to open, or a Live Set (.als) to import
   --demo             open a small built-in project
   --renderer         how the window is drawn this time: wgpu or glow (OpenGL); the
                      default is the one chosen in Options > Settings
   --no-animations    turn the interface's animations off this time
+  --new-instance     start another window even though this build is running (for
+                     development); it serves no agents
+While this build of Suhina is running, starting it again opens the project in the running
+window as a tab instead. Agents reach the running window with suhina-cli mcp --attach once
+Options > Settings > General > Let agents work on open projects is on.
 Without a project the window opens what Options > Settings > General > At start says (the
-New or open dialog unless changed); Ctrl+T makes a new one or opens one, and a .suhina,
-.locr or .als file dropped on it opens.
+New or open dialog unless changed); Ctrl+T makes a new one or opens one, and a .suhina
+or .als file dropped on it opens.
 Settings are kept in settings.txt, the keys in keymap.json and themes in themes/<name>.json,
 in Suhina's folder of the user's app data.";
 
@@ -58,6 +64,47 @@ struct Args {
     /// Chosen on the command line for this run, over the saved setting.
     renderer: Option<eframe::Renderer>,
     animations: bool,
+    /// Start even though this build is running (ADR 0028).
+    new_instance: bool,
+}
+
+/// The build's endpoints (ADR 0028), or `None` when another app of this build is running and has
+/// taken the project, so this one exits. A start with `--new-instance`, or one whose endpoints
+/// cannot be made, runs without them.
+fn endpoints(
+    args: &Args,
+    repaint: &std::sync::Arc<std::sync::OnceLock<eframe::egui::Context>>,
+) -> Result<Option<suhina_automation::AppEndpoints>, ()> {
+    if args.new_instance {
+        return Ok(None);
+    }
+    let Ok(folder) = suhina_automation::endpoint::build_folder() else { return Ok(None) };
+    let repaint = std::sync::Arc::clone(repaint);
+    let wake: suhina_automation::Wake = std::sync::Arc::new(move || {
+        if let Some(ctx) = repaint.get() {
+            ctx.request_repaint();
+        }
+    });
+    match suhina_automation::AppEndpoints::start(&folder, wake) {
+        Ok(endpoints) => Ok(Some(endpoints)),
+        Err(suhina_automation::StartError::Running(running)) => {
+            let files: Vec<PathBuf> = match &args.source {
+                Source::Als(path) => vec![path.clone()],
+                Source::Nothing | Source::Demo => Vec::new(),
+            };
+            match running.hand_over(&files) {
+                Ok(()) => Err(()),
+                Err(e) => {
+                    eprintln!("warning: Suhina is running but did not take the project ({e}); starting another window");
+                    Ok(None)
+                }
+            }
+        }
+        Err(suhina_automation::StartError::Io(e)) => {
+            eprintln!("warning: agents cannot connect this time: {e}");
+            Ok(None)
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -72,6 +119,9 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // One app per build: a second start hands its project to the first and exits.
+    let repaint = std::sync::Arc::new(std::sync::OnceLock::new());
+    let Ok(agents) = endpoints(&args, &repaint) else { return ExitCode::SUCCESS };
     // Settings kept under the program's old name are copied to the new one on the first start.
     let old_folders = [
         (suhina_plugins::library::old_settings_folder(), suhina_plugins::library::new_settings_folder()),
@@ -97,6 +147,7 @@ fn main() -> ExitCode {
     let recent = recent::Recent::load(eframe::storage_dir(app_id()).map(|d| d.join(RECENT_FILE)));
     let mut window = Window {
         app: App::new(),
+        agents,
         graphics_now,
         editors_embeddable: false,
         themes,
@@ -140,6 +191,8 @@ fn main() -> ExitCode {
         app_id(),
         options,
         Box::new(move |cc| {
+            // Agents' work and later starts' projects ask the window for a frame through it.
+            let _ = repaint.set(cc.egui_ctx.clone());
             suhina_ui::kit::theme::install(&cc.egui_ctx);
             let owner = native_window(cc);
             window.editors_embeddable = owner.is_some();
@@ -166,12 +219,16 @@ fn main() -> ExitCode {
 
 /// `Ok(None)` asks for the usage text.
 fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
-    let mut parsed = Args { source: Source::Nothing, renderer: None, animations: true };
+    let mut parsed = Args { source: Source::Nothing, renderer: None, animations: true, new_instance: false };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let source = match arg.as_str() {
             "--help" | "-h" => return Ok(None),
             "--demo" => Source::Demo,
+            "--new-instance" => {
+                parsed.new_instance = true;
+                continue;
+            }
             "--no-animations" => {
                 parsed.animations = false;
                 continue;
@@ -197,6 +254,9 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
 
 struct Window {
     app: App,
+    /// The build's endpoints: later starts' projects, and agents working on the open projects
+    /// (ADR 0028); `None` with `--new-instance`.
+    agents: Option<suhina_automation::AppEndpoints>,
     /// Shown over the first frames while Suhina starts; gone once it has faded out.
     splash: Option<Splash>,
     /// What starting does once the splash is on screen.
@@ -235,7 +295,9 @@ impl eframe::App for Window {
             let _shown = splash.show(ui);
             return;
         }
+        self.serve_agents(ui.ctx());
         self.app.ui(ui);
+        self.answer_agents();
         if let Some((path, how)) = self.app.take_open_request() {
             self.open(&path, how);
         }
@@ -323,6 +385,44 @@ impl eframe::App for Window {
 }
 
 impl Window {
+    /// Before drawing (ADR 0028): opens the projects later starts of this build handed over,
+    /// passes on what agents ask, and runs their work on the open projects, so this frame shows
+    /// it.
+    fn serve_agents(&mut self, ctx: &eframe::egui::Context) {
+        let Some(agents) = self.agents.as_ref() else { return };
+        agents.set_enabled(self.app.settings().agents);
+        let opens = agents.take_opens();
+        for event in agents.take_events() {
+            match event {
+                suhina_automation::AppEvent::Ask { connection, client } => self.app.ask_agent(connection, client),
+                suhina_automation::AppEvent::Gone { connection } => self.app.agent_gone(connection),
+            }
+        }
+        if agents.run_jobs(self.app.projects_mut()) > 0 {
+            self.app.note_outside_change();
+        }
+        self.app.set_agents(agents.connected());
+        // A later start comes forward here, with its project if it had one.
+        if let Some(files) = opens {
+            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Focus);
+            for path in files {
+                self.open(&path, OpenAs::NewTab);
+            }
+        }
+    }
+
+    /// After drawing: the person's answers to agents and the agents they disconnected.
+    fn answer_agents(&mut self) {
+        let Some(agents) = self.agents.as_ref() else { return };
+        for (connection, allow) in self.app.take_agent_answers() {
+            agents.answer(connection, allow);
+        }
+        for connection in self.app.take_agent_disconnects() {
+            agents.disconnect(connection);
+        }
+    }
+
     /// Starts the browser's library and the sample map, and opens the project asked for, or what
     /// Settings › General › At start says without one.
     fn start(&mut self, start_up: StartUp) {
@@ -610,8 +710,8 @@ fn load_keymap() -> (Keymap, Vec<String>) {
 /// Writes one of Suhina's files in its app-data folder.
 fn save_file(name: &str, text: &str) -> Result<(), String> {
     let dir = eframe::storage_dir(app_id()).ok_or("there is no folder to keep settings in")?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not save {name}: {e}"))?;
-    std::fs::write(dir.join(name), text).map_err(|e| format!("could not save {name}: {e}"))
+    std::fs::create_dir_all(&dir).map_err(|e| save_error::message(name, &e))?;
+    std::fs::write(dir.join(name), text).map_err(|e| save_error::message(name, &e))
 }
 
 #[cfg(test)]
@@ -639,5 +739,13 @@ mod tests {
         assert_eq!(args.map(|a| a.animations), Some(false));
         assert!(parse(&["--renderer", "metal"]).is_err());
         assert!(parse(&["--renderer"]).is_err());
+    }
+
+    #[test]
+    fn a_new_instance_is_asked_for_by_its_flag() {
+        assert_eq!(parse(&["set.als"]).ok().flatten().map(|a| a.new_instance), Some(false));
+        let args = parse(&["--new-instance", "set.als"]).ok().flatten();
+        assert_eq!(args.as_ref().map(|a| a.new_instance), Some(true));
+        assert_eq!(args.map(|a| a.source), Some(Source::Als("set.als".into())));
     }
 }

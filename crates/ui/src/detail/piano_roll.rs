@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use egui::{Align2, Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::Quantization;
-use suhina_engine::model::{Clip, LaneData, Note, Project, Scale, TrackId};
+use suhina_engine::model::{Clip, ClipId, LaneData, Note, Project, Scale, TrackId};
 
 use crate::detail::midi_tools::ToolSettings;
 use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
@@ -167,26 +167,22 @@ impl Placement {
     }
 }
 
-/// The piano roll for the arrangement clip `index` on `track`, with the grid `quantization`;
+/// The piano roll for the arrangement clip `id` on `track`, with the grid `quantization`;
 /// `None` when the clip is missing or plays audio.
 pub fn arrangement_clip(
     project: &Project,
     track: TrackId,
-    index: usize,
+    id: ClipId,
     quantization: Quantization,
 ) -> Option<PianoClip> {
     let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(track))?;
-    let clip = lane.clips.get(index)?;
+    let clip = lane.clips.iter().find(|c| c.id == id)?;
     let mut piano = piano_clip_from(project, track, clip, quantization)?;
-    piano.address = json!({ "track": track.0, "index": index });
+    // The note commands name the clip by its id; the track is there for what reads it.
+    piano.address = json!({ "track": track.0, "clip": id.0 });
     // Up to the next clip on the lane, as `clip.setLength` allows.
-    let next = lane
-        .clips
-        .iter()
-        .enumerate()
-        .filter(|(i, c)| *i != index && c.start > clip.start)
-        .map(|(_, c)| c.start)
-        .fold(f64::INFINITY, f64::min);
+    let next =
+        lane.clips.iter().filter(|c| c.id != id && c.start > clip.start).map(|c| c.start).fold(f64::INFINITY, f64::min);
     piano.shape.room = next.is_finite().then_some(next - clip.start);
     Some(piano)
 }
