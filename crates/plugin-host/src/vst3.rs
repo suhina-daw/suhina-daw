@@ -599,6 +599,9 @@ pub(crate) struct Vst3Plugin {
     /// The plug-in's name, for its editor's window.
     name: String,
     editor: Option<crate::vst3_editor::Editor>,
+    /// The ARA document it is bound to, when it was loaded with one (ADR 0028); let go of
+    /// before the component is terminated.
+    ara: Option<crate::ara::Document>,
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
@@ -614,7 +617,13 @@ impl Vst3Plugin {
     /// Loads the plug-in `spec` names, activates it for the link's block size at `sample_rate`
     /// and starts serving blocks from `served` on an audio thread, as instance `instance` of
     /// the process.
-    pub(crate) fn load(spec: &str, instance: u32, served: Served, sample_rate: f64) -> Result<Self, String> {
+    pub(crate) fn load(
+        spec: &str,
+        instance: u32,
+        served: Served,
+        sample_rate: f64,
+        ara: Option<suhina_plugins::protocol::AraDocument>,
+    ) -> Result<Self, String> {
         let (module, wanted) = open(spec)?;
         let classes = module.audio_classes()?;
         let (cid, name) = match wanted {
@@ -663,6 +672,7 @@ impl Vst3Plugin {
             pending,
             name,
             editor: None,
+            ara: None,
             component,
             _handler: handler,
             _host: host,
@@ -676,6 +686,11 @@ impl Vst3Plugin {
             // SAFETY: a live controller and a handler that outlives it (it is let go of in
             // `drop` before the controller is terminated).
             let _ = unsafe { controller.setComponentHandler(handler.as_ptr()) };
+        }
+
+        // ARA binds before processing is set up (the ARA SDK's order).
+        if let Some(document) = &ara {
+            plugin.ara = Some(crate::ara::Document::bind(&plugin.component, document)?);
         }
 
         let processor = plugin.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
@@ -858,7 +873,8 @@ impl Vst3Plugin {
         if !ok(unsafe { self.component.getState(raw.as_ptr()) }) {
             return Err("the plug-in did not give its state".into());
         }
-        Ok(stream.bytes())
+        // Bound to an ARA document, its edits there are part of its state (ADR 0028).
+        Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_ref().and_then(crate::ara::Document::store)))
     }
 
     /// The controller's own state, when it is a separate object that gives one.
@@ -875,6 +891,7 @@ impl Vst3Plugin {
     /// in for a VST2 one reads the VST2 bank here (ADR 0006, decision 8); a bank of programs
     /// is also set as parameters, since not every plug-in reads one.
     pub(crate) fn set_state(&mut self, data: &[u8], controller_state: Option<&[u8]>) -> Result<(), String> {
+        let (data, archive) = crate::ara::unwrap_state(data);
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
@@ -896,6 +913,11 @@ impl Vst3Plugin {
                 // its own state still has the component's, so this is not an error.
                 let _ = unsafe { controller.setState(own_raw.as_ptr()) };
             }
+        }
+        // Its ARA edits go back to the clips they were made on; without a document (the track
+        // has no audio clips now) they wait in the project for one.
+        if let (Some(document), Some((id, bytes))) = (&self.ara, archive) {
+            document.restore(&id, bytes)?;
         }
         Ok(())
     }
@@ -1049,6 +1071,7 @@ impl Drop for Vst3Plugin {
         }
         // SAFETY: a live component; processing has stopped.
         let _ = unsafe { self.component.setActive(0) };
+        self.ara = None;
         if let Some((a, b)) = self.connections.take() {
             // SAFETY: the two connection points connected in `connect`.
             let _ = unsafe { a.disconnect(b.as_ptr()) };
@@ -1203,6 +1226,34 @@ impl Vst3Block {
     }
 }
 
+/// Puts the song's place the engine sent with the block (ADR 0028) into the plug-in's process
+/// context: playing or stopped, the arrangement position in samples and as beats, the tempo.
+/// A block without it leaves the context as it was, counting on from the last block.
+fn follow_song(context: &mut ProcessContext, events: &[suhina_ipc::Event]) {
+    use suhina_ipc::EventKind;
+    use vst3::Steinberg::Vst::ProcessContext_::{StatesAndFlags, StatesAndFlags_ as Flags};
+    #[allow(clippy::unnecessary_cast, reason = "the flags are signed on Windows")]
+    let bits = |flag: StatesAndFlags| flag as u32;
+    for event in events {
+        match event.kind {
+            EventKind::Transport { playing, position } => {
+                context.projectTimeSamples = i64::try_from(position).unwrap_or(i64::MAX);
+                let playing_flag = bits(Flags::kPlaying);
+                context.state = if playing { context.state | playing_flag } else { context.state & !playing_flag };
+            }
+            EventKind::Tempo { bpm } => {
+                context.tempo = f64::from(bpm);
+                context.state |= bits(Flags::kTempoValid);
+            }
+            _ => {}
+        }
+    }
+    if context.sampleRate > 0.0 && context.tempo > 0.0 {
+        context.projectTimeMusic = context.projectTimeSamples as f64 / context.sampleRate * context.tempo / 60.0;
+        context.state |= bits(Flags::kProjectTimeMusicValid);
+    }
+}
+
 impl crate::audio::Block for Vst3Block {
     fn process(&mut self, input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
         let link_channels = self.link_channels;
@@ -1220,6 +1271,7 @@ impl crate::audio::Block for Vst3Block {
                 }
             }
         }
+        follow_song(&mut self.context, events);
         let mapping = &self.mapping;
         let mut data = ProcessData {
             processMode: ProcessModes_::kRealtime as int32,

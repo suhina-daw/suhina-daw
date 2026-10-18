@@ -49,7 +49,7 @@ fn size(channels: u32, max_frames: u32) -> Option<usize> {
 }
 
 /// Where new regions go.
-fn directory() -> PathBuf {
+pub(crate) fn directory() -> PathBuf {
     let shm = Path::new("/dev/shm");
     if cfg!(target_os = "linux") && shm.is_dir() { shm.to_path_buf() } else { std::env::temp_dir() }
 }

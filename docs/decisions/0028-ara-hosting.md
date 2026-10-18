@@ -9,6 +9,15 @@ covers:
   - crates/session/src/commands.rs
   - crates/plugins/src/scan.rs
   - crates/plugins/src/scan_pool.rs
+  - crates/plugins/src/protocol.rs
+  - crates/ipc/src/source.rs
+  - crates/ipc/src/events.rs
+  - crates/plugin-host/src/ara.rs
+  - crates/plugin-host/src/ara_sys.rs
+  - crates/session/src/ara.rs
+  - crates/session/src/rack.rs
+  - scripts/ara_bindings.sh
+  - third_party/ara-api
 ---
 
 # 0028: ARA hosting
@@ -87,8 +96,8 @@ protocol (`crates/plugins/src/protocol.rs`).
    the scan worker without making any object. The catalog keeps it (version 4; an older
    catalog's VST3 files are read again so installed ARA plug-ins are found). `plugins.setHosting
    ... instance` is refused for such a plug-in, and an `instance` choice saved before its
-   support was known starts it in its file's process. The factory itself (the plug-in name it
-   gives, its API generations) is read with the ARA bindings in the next stage.
+   support was known starts it in its file's process. The factory's API generations are checked
+   when an instance is bound (below, *Built so far*).
 
 3. **The engine drives the document with edit batches.** Each command that changes what the
    document describes (adding, moving, trimming, splitting, deleting a clip; a tempo change; undo
@@ -168,6 +177,56 @@ protocol (`crates/plugins/src/protocol.rs`).
     into `suhina-plugin-host` as `test:vst3` is, records what it is told and reads audio, so CI
     runs the whole path without a commercial plug-in. The SDK's example plug-ins come next, then
     real plug-ins, by hand, per system.
+
+### Built so far
+
+What runs now, in [#667](https://github.com/suhina-daw/suhina-daw/pull/667) (stages 3 to 6 of
+the list below, in a first form). Where it differs from the decisions above it is marked
+*interim*; the decision stays the goal.
+
+- **Bindings.** The ARA headers (2.3, Apache-2.0) are vendored in `third_party/ara-api`
+  (`VENDORED.md` names the commit). `scripts/ara_bindings.sh` generates
+  `crates/plugin-host/src/ara_sys.rs` from them with bindgen, with its layout checks, so a
+  struct that does not match the C headers fails to compile. The three VST3 interfaces of
+  `ARAVST3.h` are declared by hand in `crates/plugin-host/src/ara.rs`. The headers pack structs
+  to 1 byte on x86 and to 8 on ARM; the bindings are generated for x86-64, and an ARM build
+  needs them generated there.
+- **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
+  name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
+  (clip id, content id, start, length and offset in seconds). The host queries the component for
+  `IPlugInEntryPoint`, requires ARA 2.0 Final, initialises the factory once per process, makes a
+  document controller with the host interfaces, builds a musical context, one region sequence,
+  the sources (sample access on), one audio modification per content and one playback region per
+  clip in one edit, and binds the instance in every role (`IPlugInEntryPoint2` when there is one)
+  before processing is set up. The plug-in's renderers get every region. On unload the objects
+  go in one edit, then the document controller, as ARA prescribes. A plug-in that cannot be bound
+  does not load, and the reason is the device's (`... could not start: the plug-in does not
+  support ARA`).
+- **Persistent ids.** A source's id is its audio pool key, a modification's is `content-<id>`, a
+  region's is `clip-<id>` ([#568](https://github.com/suhina-daw/suhina-daw/issues/568)).
+- **Audio** (decision 4). `suhina_ipc::AudioSource` writes a file's decoded samples once, planar
+  32-bit floats after a checked header, into a region the host maps read only; `readAudioSamples`
+  copies from it in chunks, as 32- or 64-bit samples, with silence outside the source.
+- **Transport.** An ARA plug-in renders by the song position, so the engine sends a `Transport`
+  event (playing, position in samples) and a `Tempo` event with every block to a plug-in loaded
+  with a document, and the VST3 host turns them into the block's process context.
+- **The project keeps the edits** (decision 7). The device's state is the component's state and
+  the document archive (`storeObjectsToArchive`, with the factory's `documentArchiveID`) in one
+  blob, so save, autosave, backups and a restart keep them as they keep any plug-in's state. On
+  load the archive goes back with `restoreObjectsFromArchive` in an edit, once the document is
+  built; an archive of a kind the plug-in does not read is refused with the reason.
+- **Clip edits** (decision 3), *interim*: instead of edit batches, a change in the track's clips
+  (moved, trimmed, added, removed, a tempo change) that stays put for 0.75 s stops the plug-in,
+  takes its state with its edits, and loads it again with the new document; the edits of the
+  clips still there come back by their ids. The editor closes and the sound pauses while it
+  reloads.
+- **Other interim limits.** One document per instance, not per plug-in product (decision 2).
+  Warped clips are described at their file's speed (their start and end follow the song), loops
+  are not repeated, and the overlap guard and suspension (decision 6) are not built: overlapping
+  clips are both in the document. Offline renders load the plug-in with the same document. The
+  `notifyDocumentDataChanged` flag is kept but not read yet: the edits are noticed when the
+  state is read. `test:ara` (decision 10) does not exist yet; the test VST3 plug-in, listed as an
+  ARA one, checks that a document reaches the host and that a refusal is reported.
 
 ## Alternatives considered
 

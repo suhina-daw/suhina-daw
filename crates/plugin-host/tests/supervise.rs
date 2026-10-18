@@ -26,6 +26,7 @@ fn launch(plugin: &str) -> Launch {
         sample_rate: 48_000.0,
         timeout: PATIENT,
         group: None,
+        ara: None,
     }
 }
 

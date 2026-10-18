@@ -42,7 +42,7 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
-pub use suhina_ipc::{Event, EventKind, MAX_EVENTS, Outcome};
+pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome};
 use suhina_ipc::{IpcError, Link};
 
 use protocol::{MAX_LINE, Message, VERSION};
@@ -108,6 +108,9 @@ pub struct Launch {
     /// (ADR 0006: by default one per plug-in file; see [`library::group_for`]). `None` gives
     /// the instance a process of its own.
     pub group: Option<String>,
+    /// The ARA document to bind the plug-in to as it loads, for an ARA plug-in on a track
+    /// (ADR 0028); `None` for every other plug-in.
+    pub ara: Option<protocol::AraDocument>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -521,6 +524,7 @@ impl Group {
             plugin: launch.plugin.clone(),
             link: link.address(),
             sample_rate: launch.sample_rate,
+            ara: launch.ara.clone(),
         };
         let loaded = self.request(
             Some(instance),

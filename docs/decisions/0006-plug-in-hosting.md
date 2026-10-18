@@ -130,7 +130,10 @@ workspace forbids.
      *Built:* each block carries up to 1024 events (note on and off, MIDI controller, pitch
      bend, parameter value) as fixed 16-byte records with their frame (`crates/ipc/src/events.rs`, region
      version 2; version 3 adds the block's followers, decision 2); the host reads them into a
-     list made beforehand, so neither side allocates.
+     list made beforehand, so neither side allocates. Two more kinds carry the song: `Transport`
+     (playing, position in samples) and `Tempo`, sent with every block to a plug-in that follows
+     the song (one loaded with an ARA document, [ADR 0028](0028-ara-hosting.md)), which a VST3
+     host puts in the block's process context.
      A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers
      and pitch bend as parameter changes at their frame through the plug-in's `IMidiMapping`
      (asked for the first MIDI channel only: some plug-ins crash when asked about the second); a
@@ -154,7 +157,7 @@ workspace forbids.
      with its automation yet.
    - **Messages** over a local socket or pipe, with a versioned protocol: load and unload,
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
-     version 8 (`latency_changed` comes unasked when a running plug-in reports another
+     version 9 (`load` may carry an ARA document, [ADR 0028](0028-ara-hosting.md)); version 8 (`latency_changed` comes unasked when a running plug-in reports another
      latency; see *Latency* below); version 7 (`open_editor` says whether the editor is `embedded` in the engine's window,
      `place_editor` puts it there and is not answered, and `editor_resized` comes unasked when
      a plug-in gives its editor a new size, decision 10); version 6: `open_editor` names the

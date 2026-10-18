@@ -5,6 +5,7 @@
 //! goes through a command (see `docs/decisions/0002-commands.md`), so the CLI, the MCP server and
 //! later the UI all drive the project the same way.
 
+mod ara;
 pub mod audio;
 mod automation;
 pub mod backup;
@@ -582,7 +583,7 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
-        self.plugins.sync(&self.project, self.player.as_mut())
+        self.plugins.sync(&self.project, &self.audio, self.player.as_mut())
     }
 
     /// The window plug-in editors open over, owned by it (a Win32 `HWND`, an X11 window id):
@@ -617,7 +618,7 @@ impl Session {
     /// Waits up to `timeout` until none of the project's plug-ins is still starting.
     pub fn wait_for_plugins(&mut self, timeout: std::time::Duration) -> Vec<String> {
         match self.player.as_mut() {
-            Some(player) => self.plugins.wait_started(&self.project, player, timeout),
+            Some(player) => self.plugins.wait_started(&self.project, &self.audio, player, timeout),
             None => Vec::new(),
         }
     }

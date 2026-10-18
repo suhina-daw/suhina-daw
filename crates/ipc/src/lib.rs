@@ -27,8 +27,10 @@
 mod doorbell;
 mod events;
 mod region;
+mod source;
 
 pub use events::{Event, EventKind, MAX_EVENTS};
+pub use source::{AudioSource, MAX_SOURCE_FRAMES};
 
 use std::fmt;
 use std::path::Path;

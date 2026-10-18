@@ -942,6 +942,8 @@ fn push_event(buffer: &mut EventBuffer, event: &Event) {
             let (low, high) = ((bend & 0x7F) as u8, (bend >> 7) as u8);
             buffer.push(&MidiEvent::new(event.frame, 0, [0xE0 | (channel & 0x0F), low, high]));
         }
+        // The song's place goes to VST3 renderers that follow it (ADR 0028); not a CLAP event.
+        EventKind::Transport { .. } | EventKind::Tempo { .. } => {}
     }
 }
 

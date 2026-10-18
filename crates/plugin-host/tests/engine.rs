@@ -155,7 +155,7 @@ fn max_diff(a: &[f32], b: &[f32]) -> f32 {
 #[test]
 fn an_offline_render_runs_a_projects_plug_in_effect() {
     let p = project(2.0, false, vec![plugin_device("gain")]);
-    let started = suhina_session::start_offline(&p, &env(), SR);
+    let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
     assert_eq!(started.running(), 1, "{:?}", started.notices);
     let wet = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, started.plugins).unwrap();
     // Without the plug-in (not installed) the sound passes; the test gain halves it. The chain
@@ -175,7 +175,7 @@ fn an_offline_render_plays_notes_on_a_plug_in_instrument() {
     let mut device = plugin_device("vst3");
     device.state = Some(1.0f32.to_le_bytes().to_vec());
     let p = project(2.0, true, vec![device]);
-    let started = suhina_session::start_offline(&p, &env(), SR);
+    let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
     assert!(started.notices.is_empty(), "{:?}", started.notices);
     let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 256, started.plugins).unwrap();
     let left: Vec<f32> = out.chunks(2).map(|f| f[0]).collect();
@@ -208,6 +208,7 @@ fn start(spec: &str) -> (Plugin, Hosted) {
         sample_rate: f64::from(SR),
         timeout: PATIENT,
         group: None,
+        ara: None,
     };
     let (plugin, audio) = Plugin::start(launch).unwrap();
     (plugin, Hosted::new(audio))
@@ -677,7 +678,7 @@ fn plug_ins_sharing_a_process_render_the_same_as_each_in_its_own() {
     let p = project(2.0, true, devices);
     let render = |group: suhina_session::ProcessGroup| {
         let env = PluginEnv { catalog: catalog(), host: host(), group };
-        let started = suhina_session::start_offline(&p, &env, SR);
+        let started = suhina_session::start_offline(&p, &AudioPool::new(), &env, SR);
         assert_eq!(started.running(), 4, "{:?}", started.notices);
         let processes = started.process_ids();
         let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, started.plugins).unwrap();

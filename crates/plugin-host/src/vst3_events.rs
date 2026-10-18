@@ -49,7 +49,10 @@ impl MidiMapping {
             EventKind::PitchBend { value, .. } => (129, (f64::from(value) + 1.0) / 2.0),
             // A parameter's own value, kept within VST3's normalized range.
             EventKind::Param { id, value } => return Some((id, event.frame as i32, f64::from(value).clamp(0.0, 1.0))),
-            EventKind::NoteOn { .. } | EventKind::NoteOff { .. } => return None,
+            EventKind::NoteOn { .. }
+            | EventKind::NoteOff { .. }
+            | EventKind::Transport { .. }
+            | EventKind::Tempo { .. } => return None,
         };
         let id = (*self.0.get(number)?)?;
         Some((id, event.frame as i32, value.clamp(0.0, 1.0)))
@@ -155,7 +158,11 @@ fn note(event: &LinkEvent) -> Option<Event> {
                 },
             };
         }
-        EventKind::Controller { .. } | EventKind::PitchBend { .. } | EventKind::Param { .. } => return None,
+        EventKind::Controller { .. }
+        | EventKind::PitchBend { .. }
+        | EventKind::Param { .. }
+        | EventKind::Transport { .. }
+        | EventKind::Tempo { .. } => return None,
     }
     Some(out)
 }

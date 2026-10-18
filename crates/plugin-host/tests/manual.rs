@@ -30,6 +30,7 @@ fn launch() -> Option<Launch> {
         sample_rate: 48_000.0,
         timeout: Duration::from_secs(120),
         group: None,
+        ara: None,
     })
 }
 

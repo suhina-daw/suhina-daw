@@ -21,7 +21,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 8;
+pub const VERSION: u64 = 9;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -118,6 +118,99 @@ impl Placement {
     }
 }
 
+/// Most audio sources, and playback regions, one ARA document describes.
+pub const MAX_ARA_OBJECTS: usize = 4096;
+/// Longest name or id in an ARA document, in bytes.
+pub const MAX_ARA_TEXT: usize = 1024;
+
+/// The ARA document a plug-in instance is bound to as it loads ([ADR 0028]): the audio sources
+/// it may read and the playback regions it renders and edits, on one region sequence (the
+/// track) at one tempo. Ids are persistent: built from the project's stable ids, never from
+/// positions.
+///
+/// [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AraDocument {
+    pub name: String,
+    /// The region sequence's name: the track's.
+    pub sequence: String,
+    pub tempo_bpm: f64,
+    pub sources: Vec<AraSource>,
+    pub regions: Vec<AraRegion>,
+}
+
+/// An audio file's decoded samples, in a region the host maps read only
+/// ([`suhina_ipc::AudioSource`]); its channels, length and rate are in the region's header.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AraSource {
+    pub id: String,
+    pub name: String,
+    pub address: String,
+}
+
+/// A clip as an ARA playback region: it plays `duration` seconds of source `source` (an index
+/// into [`AraDocument::sources`]) from `offset` seconds into it, at `start` seconds of the song,
+/// through the audio modification `modification` (shared by clips that share their content).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AraRegion {
+    pub id: String,
+    pub name: String,
+    pub source: usize,
+    pub modification: String,
+    pub start: f64,
+    pub duration: f64,
+    pub offset: f64,
+}
+
+impl AraDocument {
+    fn to_json(&self) -> Value {
+        json!({
+            "name": self.name, "sequence": self.sequence, "tempo_bpm": self.tempo_bpm,
+            "sources": self.sources.iter().map(|s| json!({ "id": s.id, "name": s.name, "address": s.address }))
+                .collect::<Vec<_>>(),
+            "regions": self.regions.iter().map(|r| json!({
+                "id": r.id, "name": r.name, "source": r.source, "modification": r.modification,
+                "start": r.start, "duration": r.duration, "offset": r.offset,
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Reads a document, refusing one with more objects or longer texts than the limits, a
+    /// region whose source is not in the list, or times that are not finite and in order.
+    fn from_json(value: &Value) -> Option<Self> {
+        let text = |v: &Value, key: &str| {
+            v.get(key).and_then(Value::as_str).filter(|t| t.len() <= MAX_ARA_TEXT).map(str::to_string)
+        };
+        let time = |v: &Value, key: &str| v.get(key).and_then(Value::as_f64).filter(|t| t.is_finite());
+        let list = |key: &str| value.get(key).and_then(Value::as_array).filter(|l| l.len() <= MAX_ARA_OBJECTS);
+        let sources = list("sources")?
+            .iter()
+            .map(|s| Some(AraSource { id: text(s, "id")?, name: text(s, "name")?, address: text(s, "address")? }))
+            .collect::<Option<Vec<_>>>()?;
+        let regions = list("regions")?
+            .iter()
+            .map(|r| {
+                let source = usize::try_from(r.get("source")?.as_u64()?).ok().filter(|&i| i < sources.len())?;
+                let (start, duration, offset) = (time(r, "start")?, time(r, "duration")?, time(r, "offset")?);
+                if start < 0.0 || duration <= 0.0 || offset < 0.0 {
+                    return None;
+                }
+                Some(AraRegion {
+                    id: text(r, "id")?,
+                    name: text(r, "name")?,
+                    source,
+                    modification: text(r, "modification")?,
+                    start,
+                    duration,
+                    offset,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let tempo_bpm = time(value, "tempo_bpm").filter(|t| *t > 0.0)?;
+        Some(Self { name: text(value, "name")?, sequence: text(value, "sequence")?, tempo_bpm, sources, regions })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     Hello {
@@ -130,6 +223,8 @@ pub enum Message {
         plugin: String,
         link: String,
         sample_rate: f64,
+        /// For an ARA plug-in (ADR 0028): the document to bind it to before it is activated.
+        ara: Option<AraDocument>,
     },
     Loaded {
         instance: u32,
@@ -259,9 +354,15 @@ impl Message {
     pub fn encode(&self) -> String {
         let value = match self {
             Self::Hello { version } => json!({ "op": "hello", "version": version }),
-            Self::Load { instance, plugin, link, sample_rate } => json!({
-                "op": "load", "instance": instance, "plugin": plugin, "link": link, "sample_rate": sample_rate,
-            }),
+            Self::Load { instance, plugin, link, sample_rate, ara } => {
+                let mut value = json!({
+                    "op": "load", "instance": instance, "plugin": plugin, "link": link, "sample_rate": sample_rate,
+                });
+                if let Some(document) = ara {
+                    value["ara"] = document.to_json();
+                }
+                value
+            }
             Self::Loaded { instance, latency } => json!({ "op": "loaded", "instance": instance, "latency": latency }),
             Self::Unload { instance } => json!({ "op": "unload", "instance": instance }),
             Self::Unloaded { instance } => json!({ "op": "unloaded", "instance": instance }),
@@ -328,6 +429,10 @@ impl Message {
                 plugin: text("plugin")?,
                 link: text("link")?,
                 sample_rate: value.get("sample_rate").and_then(Value::as_f64).filter(|r| r.is_finite() && *r > 0.0)?,
+                ara: match value.get("ara") {
+                    None | Some(Value::Null) => None,
+                    Some(document) => Some(AraDocument::from_json(document)?),
+                },
             },
             "loaded" => Self::Loaded { instance: instance()?, latency: small("latency")? },
             "unload" => Self::Unload { instance: instance()? },
@@ -411,6 +516,51 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    fn ara_document() -> AraDocument {
+        AraDocument {
+            name: "Song".into(),
+            sequence: "Vocal".into(),
+            tempo_bpm: 120.0,
+            sources: vec![AraSource { id: "content-7".into(), name: "take.wav".into(), address: "/dev/shm/a".into() }],
+            regions: vec![AraRegion {
+                id: "clip-12".into(),
+                name: "take".into(),
+                source: 0,
+                modification: "content-7".into(),
+                start: 2.0,
+                duration: 4.0,
+                offset: 0.5,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_malformed_ara_document_refuses_the_load() {
+        let load = |document: Value| {
+            let line = json!({ "op": "load", "instance": 1, "plugin": "vst3:/T.vst3", "link": "/dev/shm/x",
+                "sample_rate": 48000.0, "ara": document })
+            .to_string();
+            Message::decode(&line)
+        };
+        let good = ara_document().to_json();
+        assert!(load(good.clone()).is_some());
+        let mut bad_source = good.clone();
+        bad_source["regions"][0]["source"] = json!(1);
+        assert!(load(bad_source).is_none(), "a region of a source not in the list");
+        let mut backwards = good.clone();
+        backwards["regions"][0]["duration"] = json!(-1.0);
+        assert!(load(backwards).is_none());
+        let mut endless = good.clone();
+        endless["tempo_bpm"] = json!(0.0);
+        assert!(load(endless).is_none());
+        let mut long = good.clone();
+        long["name"] = json!("x".repeat(MAX_ARA_TEXT + 1));
+        assert!(load(long).is_none());
+        let mut many = good;
+        many["sources"] = json!(vec![json!({ "id": "a", "name": "a", "address": "a" }); MAX_ARA_OBJECTS + 1]);
+        assert!(load(many).is_none());
+    }
+
     fn gain() -> ParamInfo {
         ParamInfo {
             id: 0,
@@ -430,10 +580,23 @@ mod tests {
 
     #[test]
     fn every_message_round_trips() {
-        assert_eq!(VERSION, 8);
+        assert_eq!(VERSION, 9);
         let messages = [
             Message::Hello { version: VERSION },
-            Message::Load { instance: 3, plugin: "test:gain".into(), link: "/dev/shm/x".into(), sample_rate: 44_100.0 },
+            Message::Load {
+                instance: 3,
+                plugin: "test:gain".into(),
+                link: "/dev/shm/x".into(),
+                sample_rate: 44_100.0,
+                ara: None,
+            },
+            Message::Load {
+                instance: 4,
+                plugin: "vst3:/Tune.vst3#ABCDEF0123456789ABCDEF0123456789".into(),
+                link: "/dev/shm/y".into(),
+                sample_rate: 48_000.0,
+                ara: Some(ara_document()),
+            },
             Message::Loaded { instance: u32::MAX, latency: 64 },
             Message::Unload { instance: 0 },
             Message::Unloaded { instance: 7 },

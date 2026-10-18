@@ -101,7 +101,7 @@ fn project() -> Project {
 /// with: the render's peak over the peak without the plug-in.
 fn render(project: &Project) -> f32 {
     let peak = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    let started = start_offline(project, &env(), SR);
+    let started = start_offline(project, &AudioPool::new(), &env(), SR);
     assert_eq!(started.running(), 1, "{:?}", started.notices);
     let wet = render_offline_with_plugins(project, &AudioPool::new(), SR, 256, started.plugins).unwrap();
     let dry = render_offline(project, SR, 256).unwrap();

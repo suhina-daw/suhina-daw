@@ -19,8 +19,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use suhina_engine::{
-    DeviceEvent, Followed, Joint, MAX_BLOCK_FRAMES, MAX_BLOCK_PARAMS, ParamEvent, PluginProcessor, PluginSlotInfo,
-    Plugins, Sent, model::DeviceKind, plugin_devices,
+    AudioPool, DeviceEvent, Followed, Joint, MAX_BLOCK_FRAMES, MAX_BLOCK_PARAMS, ParamEvent, PluginProcessor,
+    PluginSlotInfo, Plugins, Sent, model::DeviceKind, plugin_devices,
 };
 use suhina_model::{Device, Project};
 use suhina_plugins::library::{Hosting, group_for};
@@ -44,6 +44,9 @@ const SAVE_EVERY: Duration = Duration::from_secs(30);
 /// How long saving a project waits for its plug-ins to give their state.
 const SAVE_WAIT: Duration = Duration::from_secs(1);
 /// MIDI controller numbers an all-notes-off is sent as.
+/// How long a track's clips must stay put before a plug-in that edits them is loaded again
+/// with them, so dragging a clip does not reload it at every step.
+const REBIND_AFTER: Duration = Duration::from_millis(750);
 const ALL_NOTES_OFF: u8 = 123;
 const SUSTAIN: u8 = 64;
 
@@ -215,6 +218,10 @@ pub struct Hosted {
     /// plug-ins before it waits for this one's answer (#151), so the round trip is timed from
     /// here, not from the wait.
     sent_at: Option<std::time::Instant>,
+    /// Whether the plug-in is told where the song is with every block (an ARA renderer,
+    /// ADR 0028), and what it is told for the next one.
+    follows_song: bool,
+    transport: (bool, u64, f64),
 }
 
 impl Hosted {
@@ -230,7 +237,16 @@ impl Hosted {
             carried: Vec::with_capacity(MAX_EVENTS),
             counts: Arc::new(BlockCounts::default()),
             sent_at: None,
+            follows_song: false,
+            transport: (false, 0, 120.0),
         }
+    }
+
+    /// Tells the plug-in where the song is with every block it is given
+    /// ([`PluginProcessor::transport`]), as an ARA renderer needs (ADR 0028).
+    pub fn following_song(mut self) -> Self {
+        self.follows_song = true;
+        self
     }
 
     /// The counts this keeps while the engine runs it.
@@ -332,6 +348,12 @@ impl Hosted {
         }
         for &(frame, event) in events {
             push_event(&mut self.notes, u32::try_from(frame).unwrap_or(u32::MAX), event);
+        }
+        if self.follows_song {
+            let (playing, position, tempo) = self.transport;
+            let tempo = if tempo.is_finite() { tempo.clamp(1.0, 999.0) as f32 } else { 120.0 };
+            self.params.push(Event::transport(playing, position));
+            self.params.push(Event::tempo(tempo));
         }
         let room = self.params.capacity().saturating_sub(self.params.len());
         let automated = self.automated.len().min(room);
@@ -464,6 +486,10 @@ impl PluginProcessor for Hosted {
             }
             carry_releases(&self.events, &mut self.carried);
         }
+    }
+
+    fn transport(&mut self, playing: bool, position: u64, tempo: f64) {
+        self.transport = (playing, position, tempo);
     }
 
     fn automate(&mut self, params: &[ParamEvent]) {
@@ -623,6 +649,14 @@ struct Instance {
     counts: Option<Arc<BlockCounts>>,
     /// Its parameters' ids and ranges (lowest, highest), once listed ([`Rack::params`]).
     ranges: Option<Vec<(u32, f64, f64)>>,
+    /// For a plug-in that edits clips (ADR 0028): its track's clips as it was loaded with them.
+    ara_layout: Option<crate::ara::Layout>,
+    /// The audio sources of the ARA document it was loaded with, kept for as long as it runs;
+    /// empty without a document.
+    ara_sources: Vec<suhina_plugins::AudioSource>,
+    /// Since when its track's clips differ from its layout: it is loaded again with them once
+    /// they have stayed put for [`REBIND_AFTER`].
+    ara_changed: Option<Instant>,
 }
 
 impl Instance {
@@ -643,6 +677,9 @@ impl Instance {
             reopen_editor: false,
             force_floating: false,
             counts: None,
+            ara_layout: None,
+            ara_sources: Vec::new(),
+            ara_changed: None,
         }
     }
 
@@ -678,6 +715,9 @@ pub struct Rack {
     notices: Vec<String>,
     /// The states read compared with the ones last saved: changes made in plug-in editors.
     pub(crate) edits: PluginEdits,
+    /// Plug-ins that edit clips, stopped to be loaded again with their track's new clips: each
+    /// starts again once its state is back ([`Rack::follow_clips`]).
+    rebinding: std::collections::HashSet<u64>,
 }
 
 impl Default for Rack {
@@ -700,6 +740,7 @@ impl Default for Rack {
             owner: None,
             embed: false,
             edits: PluginEdits::default(),
+            rebinding: std::collections::HashSet::new(),
         }
     }
 }
@@ -823,6 +864,8 @@ impl Rack {
                 self.edits.read(key, state);
             }
             if let Done::Stopped(state) = done {
+                // A plug-in loaded again with new clips starts with this state.
+                self.rebinding.remove(&key);
                 if let Some(state) = state {
                     self.edits.read(key, &state);
                     self.kept.insert(key, state);
@@ -946,7 +989,7 @@ impl Rack {
     /// Brings the running plug-ins in line with `project`: starts the ones new devices need
     /// (in the background), stops the ones whose devices are gone, takes in the ones that have
     /// started and looks after their health. Returns what the user should hear about.
-    pub fn sync(&mut self, project: &Project, player: Option<&mut Player>) -> Vec<String> {
+    pub fn sync(&mut self, project: &Project, audio: &AudioPool, player: Option<&mut Player>) -> Vec<String> {
         let mut notices = std::mem::take(&mut self.notices);
         let Some(player) = player else {
             self.stop_all();
@@ -970,10 +1013,11 @@ impl Rack {
                 changed = true;
             }
         }
+        changed |= self.follow_clips(project, audio, &devices);
         // New ones.
         let mut missing = Vec::new();
         for found in &devices {
-            if self.instances.contains_key(&found.key) {
+            if self.instances.contains_key(&found.key) || self.rebinding.contains(&found.key) {
                 continue;
             }
             let Some(device) =
@@ -988,6 +1032,10 @@ impl Rack {
                 continue;
             };
             let state = self.kept.remove(&found.key).or_else(|| saved_state(device));
+            // A plug-in that edits clips gets its track's audio clips (ADR 0028).
+            let layout = found.track.filter(|_| matched.plugin.ara).map(|t| crate::ara::Layout::of(project, audio, t));
+            let ara = layout.as_ref().and_then(|l| l.document(audio));
+            let (ara, ara_sources) = ara.map_or((None, Vec::new()), |(document, sources)| (Some(document), sources));
             let launch = Launch {
                 host: env.host.clone(),
                 plugin: matched.plugin.spec(),
@@ -996,12 +1044,15 @@ impl Rack {
                 sample_rate: f64::from(sample_rate),
                 timeout: START_TIMEOUT,
                 group: (env.group)(matched.plugin),
+                ara,
             };
             self.next_generation += 1;
             let generation = self.next_generation;
             let plugin = Some((matched.plugin.name.clone(), matched.plugin.vendor.clone(), matched.how.name()));
             let mut instance = Instance::new(PluginStatus::Loading, plugin, generation);
             instance.info = PluginSlotInfo { instrument, latency: 0 };
+            instance.ara_layout = layout;
+            instance.ara_sources = ara_sources;
             self.instances.insert(found.key, instance);
             spawn_start(self.sender.clone(), found.key, generation, launch, state);
         }
@@ -1020,6 +1071,36 @@ impl Rack {
             }
         }
         notices
+    }
+
+    /// Notices plug-ins that edit clips whose track's clips changed (moved, cut, added or
+    /// removed): once the clips have stayed put a moment, each is stopped and, when its state
+    /// with its edits is back, loaded again with the new clips; the edits of clips that are
+    /// still there come back with it (ADR 0028). Returns whether one was stopped.
+    fn follow_clips(&mut self, project: &Project, audio: &AudioPool, devices: &[suhina_engine::PluginDevice]) -> bool {
+        let mut rebind = Vec::new();
+        for found in devices {
+            let Some(instance) = self.instances.get_mut(&found.key) else { continue };
+            let (Some(layout), Some(track)) = (&instance.ara_layout, found.track) else { continue };
+            if instance.status != PluginStatus::Running || instance.control.is_none() {
+                continue;
+            }
+            if crate::ara::Layout::of(project, audio, track) == *layout {
+                instance.ara_changed = None;
+                continue;
+            }
+            let since = *instance.ara_changed.get_or_insert_with(Instant::now);
+            if since.elapsed() >= REBIND_AFTER {
+                rebind.push(found.key);
+            }
+        }
+        for key in &rebind {
+            if let Some(control) = self.instances.remove(key).and_then(|i| i.control) {
+                self.rebinding.insert(*key);
+                self.stop(*key, control);
+            }
+        }
+        !rebind.is_empty()
     }
 
     /// Takes in plug-ins that have started: hands each one's audio half to the engine. Returns
@@ -1046,7 +1127,9 @@ impl Rack {
                         changed = true;
                     }
                     instance.state_refused = refused;
+                    // A plug-in with an ARA document plays its regions at the song's position.
                     let hosted = Hosted::new(audio);
+                    let hosted = if instance.ara_sources.is_empty() { hosted } else { hosted.following_song() };
                     instance.counts = Some(hosted.counts());
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,
@@ -1279,12 +1362,18 @@ impl Rack {
 
     /// Waits until no plug-in is starting any more, taking each in as it comes (tests, and
     /// callers that need every plug-in before going on), at most `timeout`.
-    pub fn wait_started(&mut self, project: &Project, player: &mut Player, timeout: Duration) -> Vec<String> {
+    pub fn wait_started(
+        &mut self,
+        project: &Project,
+        audio: &AudioPool,
+        player: &mut Player,
+        timeout: Duration,
+    ) -> Vec<String> {
         let deadline = Instant::now() + timeout;
-        let mut notices = self.sync(project, Some(player));
+        let mut notices = self.sync(project, audio, Some(player));
         while self.instances.values().any(|i| i.status == PluginStatus::Loading) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(5));
-            notices.extend(self.sync(project, Some(player)));
+            notices.extend(self.sync(project, audio, Some(player)));
         }
         notices
     }
@@ -1356,6 +1445,8 @@ pub struct OfflinePlugins {
     /// For the renderer.
     pub plugins: Plugins,
     controls: Vec<Plugin>,
+    /// The audio sources of the ARA documents plug-ins were loaded with (ADR 0028).
+    _ara_sources: Vec<suhina_plugins::AudioSource>,
     /// What the user should hear about: missing plug-ins, ones that could not start or did not
     /// take their state.
     pub notices: Vec<String>,
@@ -1364,7 +1455,7 @@ pub struct OfflinePlugins {
 impl OfflinePlugins {
     /// No plug-ins: a render without a catalog passes plug-in devices through.
     pub fn none() -> Self {
-        Self { plugins: Plugins::new(), controls: Vec::new(), notices: Vec::new() }
+        Self { plugins: Plugins::new(), controls: Vec::new(), _ara_sources: Vec::new(), notices: Vec::new() }
     }
 
     /// Plug-ins running for this render.
@@ -1380,9 +1471,9 @@ impl OfflinePlugins {
 }
 
 /// Starts every plug-in device of `project` that is installed, at `sample_rate`, and waits for
-/// each.
-pub fn start_offline(project: &Project, env: &PluginEnv, sample_rate: u32) -> OfflinePlugins {
-    let mut offline = OfflinePlugins { plugins: Plugins::new(), controls: Vec::new(), notices: Vec::new() };
+/// each. A plug-in that edits clips is given its track's audio clips from `audio` (ADR 0028).
+pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, sample_rate: u32) -> OfflinePlugins {
+    let mut offline = OfflinePlugins::none();
     let mut missing = Vec::new();
     for found in plugin_devices(project) {
         let Some(device) =
@@ -1394,6 +1485,15 @@ pub fn start_offline(project: &Project, env: &PluginEnv, sample_rate: u32) -> Of
             missing.push(device.name.clone());
             continue;
         };
+        let ara = found
+            .track
+            .filter(|_| matched.plugin.ara)
+            .and_then(|t| crate::ara::Layout::of(project, audio, t).document(audio));
+        let follows_song = ara.is_some();
+        let ara = ara.map(|(document, sources)| {
+            offline._ara_sources.extend(sources);
+            document
+        });
         let launch = Launch {
             host: env.host.clone(),
             plugin: matched.plugin.spec(),
@@ -1402,6 +1502,7 @@ pub fn start_offline(project: &Project, env: &PluginEnv, sample_rate: u32) -> Of
             sample_rate: f64::from(sample_rate),
             timeout: START_TIMEOUT,
             group: (env.group)(matched.plugin),
+            ara,
         };
         match start(launch, saved_state(device)) {
             Ok((control, audio, refused)) => {
@@ -1409,7 +1510,8 @@ pub fn start_offline(project: &Project, env: &PluginEnv, sample_rate: u32) -> Of
                     offline.notices.push(format!("{} did not take its saved settings ({why})", device.name));
                 }
                 let info = PluginSlotInfo { instrument, latency: control.latency() };
-                offline.plugins.insert(found.key, info, Box::new(Hosted::new(audio)));
+                let hosted = if follows_song { Hosted::new(audio).following_song() } else { Hosted::new(audio) };
+                offline.plugins.insert(found.key, info, Box::new(hosted));
                 offline.controls.push(control);
             }
             Err(e) => offline.notices.push(format!("{} could not start: {e}", device.name)),
