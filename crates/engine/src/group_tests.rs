@@ -200,3 +200,48 @@ fn an_edit_to_a_branch_keeps_the_group_playing() {
     assert!(peak(&reference[settled..]) > 0.05);
     assert!(max_diff(&out[settled..], &half) < 1e-4, "{}", max_diff(&out[settled..], &half));
 }
+
+fn overdrive_dry() -> Device {
+    // At mix 0 the overdrive passes its input, delayed by its latency (31 frames).
+    device("overdrive", &[("mix", 0.0)])
+}
+
+#[test]
+fn a_branch_with_latency_lines_up_with_a_dry_branch() {
+    let single = render(vec![device("utility", &[]), overdrive_dry()]);
+    let doubled = scaled(&single, 2.0);
+    let grouped = render(vec![device("utility", &[]), group(vec![branch(vec![overdrive_dry()]), branch(vec![])], &[])]);
+    let len = single.len().min(grouped.len());
+    assert!(peak(&single) > 0.1);
+    // Without compensation the dry branch would come 31 frames early and comb-filter the sum.
+    assert!(max_diff(&grouped[..len], &doubled[..len]) < 1e-4, "{}", max_diff(&grouped[..len], &doubled[..len]));
+    // The dry signal of the mix waits as long.
+    let half_dry = render(vec![device("utility", &[]), group(vec![branch(vec![overdrive_dry()])], &[("mix", 0.5)])]);
+    let len = single.len().min(half_dry.len());
+    assert!(max_diff(&half_dry[..len], &single[..len]) < 1e-4, "{}", max_diff(&half_dry[..len], &single[..len]));
+}
+
+#[test]
+fn a_nested_group_reports_its_latency_to_the_outer_one() {
+    let single = render(vec![device("utility", &[]), overdrive_dry()]);
+    let inner = group(vec![branch(vec![overdrive_dry()])], &[]);
+    let outer = group(vec![branch(vec![inner]), branch(vec![])], &[]);
+    let out = render(vec![device("utility", &[]), outer]);
+    let len = single.len().min(out.len());
+    let doubled = scaled(&single, 2.0);
+    assert!(max_diff(&out[..len], &doubled[..len]) < 1e-4, "{}", max_diff(&out[..len], &doubled[..len]));
+
+    let assets = crate::DeviceAssets::new();
+    let builder = crate::group::Builder { sample_rate: SR, assets: &assets };
+    let nested = group(vec![branch(vec![group(vec![branch(vec![overdrive_dry(), overdrive_dry()])], &[])])], &[]);
+    let built = nested.as_group().and_then(|g| builder.group(&nested, g, 0));
+    assert_eq!(built.map(|b| b.latency), Some(62));
+}
+
+#[test]
+fn compensation_is_cut_at_two_seconds() {
+    use crate::group::compensation;
+    assert_eq!(compensation([31, 0, 10].into_iter(), 96_000), (31, vec![0, 31, 21]));
+    assert_eq!(compensation([200_000, 0].into_iter(), 96_000), (96_000, vec![0, 96_000]));
+    assert_eq!(compensation(std::iter::empty(), 96_000), (0, vec![]));
+}

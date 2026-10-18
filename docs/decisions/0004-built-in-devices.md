@@ -173,7 +173,11 @@ decision 9.
     counts as the chain's instrument and has no dry signal. A graph swap keeps a group's running
     devices when the identity it compares, its branches' device ids in order, is the same, and
     takes the new branch gains and parameter values, so an edit to one value never restarts a
-    sound. A switched-off group is not in the chain, like a switched-off device.
+    sound. A switched-off group is not in the chain, like a switched-off device. Latency is
+    compensated inside the group as across tracks in 10: a branch's latency is the sum of its
+    devices', the group's the largest of its branches' (cut at 2 s), every branch is delayed by
+    what it lacks of that and the dry signal by all of it, with delay lines made with the graph,
+    and the group reports its latency to its chain like any device.
 
 ## Not decided yet
 

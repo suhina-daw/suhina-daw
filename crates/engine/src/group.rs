@@ -10,6 +10,10 @@
 //! over 20 ms, and so are the branches' gains. A muted branch, or one left out while another is soloed, still runs its devices
 //! and adds nothing. Every buffer is made when the graph is built, so running a group never
 //! allocates, locks or waits beyond what its plug-ins do.
+//!
+//! Latency: a branch's is the sum of its devices', the group's the largest of its branches' (at
+//! most 2 s). Each branch is delayed by what it lacks of the group's, the dry signal by the
+//! group's, so all of them line up, and the group reports its latency to the chain it is in.
 
 use std::time::Instant;
 
@@ -18,6 +22,7 @@ use suhina_model::{DeviceKind, DeviceParam};
 
 use crate::automation::DeviceLanes;
 use crate::chain::{MAX_BLOCK, Slot};
+use crate::plugin::Delay;
 
 /// The parameters of a device group, by their stable ids, in index order: `(id, min, max,
 /// default)`. `mix` is a fraction, `gain` decibels (at or below [`SILENT_DB`] silent), the
@@ -105,6 +110,8 @@ pub(crate) struct BranchRun {
     right: Smoothed,
     /// The delay its devices add together, in frames.
     pub(crate) latency: u32,
+    /// Delays its output by what it lacks of the group's latency, so every branch lines up.
+    delay: Delay,
 }
 
 /// A device group in a chain.
@@ -116,6 +123,9 @@ pub(crate) struct GroupSlot {
     values: Vec<f64>,
     /// Whether its branches start with an instrument: it plays the notes and has no dry signal.
     pub(crate) instrument: bool,
+    /// The dry signal of the current span, delayed by the group's latency.
+    dry: Vec<f32>,
+    dry_delay: Delay,
     events: Vec<(usize, NoteEvent)>,
     span_events: Vec<(usize, NoteEvent)>,
     midi_scratch: Vec<(usize, NoteEvent)>,
@@ -224,6 +234,7 @@ impl Builder<'_> {
                 left: Smoothed::new(0.0, self.sample_rate),
                 right: Smoothed::new(0.0, self.sample_rate),
                 latency: 0,
+                delay: Delay::new(0),
             };
             for device in &branch.devices {
                 if let Some(built) = self.device(device, depth + 1) {
@@ -242,7 +253,11 @@ impl Builder<'_> {
         let mix = values.get(MIX).copied().unwrap_or(1.0);
         let gain = values.get(GAIN).copied().unwrap_or(0.0);
         let instrument = branches.iter().any(|b| b.slots.first().is_some_and(is_instrument));
-        let latency = branches.iter().map(|b| b.latency).max().unwrap_or(0);
+        let cap = self.sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS);
+        let (latency, delays) = compensation(branches.iter().map(|b| b.latency), cap);
+        for (branch, delay) in branches.iter_mut().zip(delays) {
+            branch.delay = Delay::new(delay as usize);
+        }
         let slot = GroupSlot {
             branches,
             // An instrument group has no dry signal.
@@ -250,6 +265,8 @@ impl Builder<'_> {
             gain: Smoothed::new(db_to_gain(gain), self.sample_rate),
             values: values.clone(),
             instrument,
+            dry: vec![0.0; MAX_BLOCK * 2],
+            dry_delay: Delay::new(if instrument { 0 } else { latency as usize }),
             events: Vec::with_capacity(MAX_EVENTS),
             span_events: Vec::with_capacity(MAX_EVENTS),
             midi_scratch: Vec::with_capacity(MAX_EVENTS),
@@ -257,6 +274,15 @@ impl Builder<'_> {
         };
         Some(Built { slot: Slot::Group(Box::new(slot)), id: format!("group[{}]", ids.join("|")), values, latency })
     }
+}
+
+/// The latency of a group whose branches have `latencies`, at most `cap` frames, and the delay
+/// each branch needs to line up with it: the slowest branch gets none. A branch slower than the
+/// cap is cut to it and is not fully compensated.
+pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u32, Vec<u32>) {
+    let latencies: Vec<u32> = latencies.map(|l| l.min(cap)).collect();
+    let most = latencies.iter().copied().max().unwrap_or(0);
+    (most, latencies.iter().map(|&l| most - l).collect())
 }
 
 /// A branch's gains while `any_solo` says whether a branch of its group is soloed: 0 while it
@@ -320,6 +346,8 @@ impl GroupSlot {
     /// gains, mute and solo, mix and gain (smoothed from where they are), and its devices'
     /// parameter values. Its own running devices stay. Never allocates.
     pub(crate) fn adopt(&mut self, fresh: &mut GroupSlot) {
+        std::mem::swap(&mut self.dry_delay, &mut fresh.dry_delay);
+        self.dry_delay.adopt(&mut fresh.dry_delay);
         self.mix.target = fresh.mix.target;
         self.gain.target = fresh.gain.target;
         for (value, &new) in self.values.iter_mut().zip(&fresh.values) {
@@ -328,6 +356,10 @@ impl GroupSlot {
         for (running, new) in self.branches.iter_mut().zip(fresh.branches.iter_mut()) {
             running.left.target = new.left.target;
             running.right.target = new.right.target;
+            // A plug-in's latency can change without its identity: take the new delay line,
+            // with what the old one holds when it is as long.
+            std::mem::swap(&mut running.delay, &mut new.delay);
+            running.delay.adopt(&mut new.delay);
             for ((slot, values), new_slot) in running.slots.iter_mut().zip(&new.values).zip(new.slots.iter_mut()) {
                 match (slot, new_slot) {
                     (Slot::Device(device), _) => {
@@ -367,8 +399,11 @@ impl GroupSlot {
         if to <= from {
             return;
         }
-        let Self { branches, events, span_events, midi_scratch, lanes, mix, gain, .. } = self;
+        let Self { branches, events, span_events, midi_scratch, lanes, mix, gain, dry, dry_delay, .. } = self;
         let Some(input) = buffer.get(from * 2..to * 2) else { return };
+        let Some(dry) = dry.get_mut(from * 2..to * 2) else { return };
+        dry.copy_from_slice(input);
+        dry_delay.run(dry);
         for branch in branches.iter_mut() {
             let Some(span) = branch.buffer.get_mut(from * 2..to * 2) else { continue };
             span.copy_from_slice(input);
@@ -376,6 +411,9 @@ impl GroupSlot {
             events.extend_from_slice(pending.get(..pending.len().min(MAX_EVENTS)).unwrap_or_default());
             let run = Span { from, to, context, deadline };
             run_slots(&mut branch.slots, &mut branch.buffer, events, span_events, midi_scratch, lanes, run);
+            if let Some(span) = branch.buffer.get_mut(from * 2..to * 2) {
+                branch.delay.run(span);
+            }
         }
         for (frame, at) in (from..to).enumerate() {
             let (mut left, mut right) = (0.0f32, 0.0f32);
@@ -388,14 +426,14 @@ impl GroupSlot {
             }
             let mix = mix.next();
             let gain = gain.next();
-            let Some([dry_left, dry_right]) = buffer
-                .get_mut((from + frame) * 2..(from + frame) * 2 + 2)
-                .and_then(|s| <&mut [f32; 2]>::try_from(s).ok())
-            else {
+            let (Some([out_left, out_right]), Some(&[dry_left, dry_right])) = (
+                buffer.get_mut(at * 2..at * 2 + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok()),
+                dry.get(frame * 2..frame * 2 + 2).and_then(|s| <&[f32; 2]>::try_from(s).ok()),
+            ) else {
                 continue;
             };
-            *dry_left = (*dry_left * (1.0 - mix) + left * mix) * gain;
-            *dry_right = (*dry_right * (1.0 - mix) + right * mix) * gain;
+            *out_left = (dry_left * (1.0 - mix) + left * mix) * gain;
+            *out_right = (dry_right * (1.0 - mix) + right * mix) * gain;
         }
     }
 }
