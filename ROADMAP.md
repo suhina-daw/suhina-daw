@@ -131,6 +131,9 @@ Session clips do not fit ARA's linear timeline; Session view later. ADR before i
 - **Device SDK authoring:** checked Rust graph handles, parameter-source helpers and standard
   panel-control constructors produce the same data-only `.sd` devices and use the existing runtime.
 
+- **SDK panel composition:** numeric formatting chains, inherited parameter metadata and local
+  control-group coordinates simplify panels without changing their saved format or runtime.
+
 - Stock instruments and effects are generated as validated `.sd` files during
   application builds and embedded for startup; DSP uses registered Rust implementations.
 

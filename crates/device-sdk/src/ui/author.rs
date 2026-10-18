@@ -5,6 +5,40 @@
 use super::*;
 use crate::ParameterControl;
 
+/// An authoring-only origin shared by controls with local bounds. Rebuild the panel after moving it.
+#[derive(Debug, Clone, Copy)]
+pub struct ControlGroup {
+    origin: [f32; 2],
+}
+
+impl ControlGroup {
+    pub fn new(origin: [f32; 2]) -> Result<Self, DeviceSdkError> {
+        if origin.iter().any(|v| !v.is_finite() || !(0.0..=8192.0).contains(v)) {
+            return Err(DeviceSdkError("control group origin must be finite and within 0..8192".into()));
+        }
+        Ok(Self { origin })
+    }
+
+    /// Flatten local control bounds into canvas bounds, preserving drawing coordinates and order.
+    pub fn place(&self, mut control: CustomControl) -> Result<CustomControl, DeviceSdkError> {
+        let [x, y, width, height] = control.bounds;
+        let left = self.origin[0] + x;
+        let top = self.origin[1] + y;
+        if control.bounds.iter().any(|v| !v.is_finite())
+            || x < 0.
+            || y < 0.
+            || width < 8.
+            || height < 8.
+            || left + width > 8192.
+            || top + height > 8192.
+        {
+            return Err(DeviceSdkError(format!("control {:?}: invalid group-local bounds", control.id)));
+        }
+        control.bounds = [left, top, width, height];
+        Ok(control)
+    }
+}
+
 impl UiValue {
     pub fn equals(self, value: impl Into<UiValue>) -> Self {
         Self::Expression(Box::new(UiExpression::Equal { a: self, b: value.into() }))
@@ -19,6 +53,48 @@ impl UiBinding {
 }
 
 impl CustomControl {
+    pub fn bounds(mut self, bounds: [f32; 4]) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Numeric setters reject incompatible widgets instead of silently ignoring authoring mistakes.
+    pub fn decimals(mut self, precision: usize) -> Result<Self, DeviceSdkError> {
+        if precision > 8 {
+            return Err(DeviceSdkError("control precision must be within 0..8".into()));
+        }
+        match &mut self.widget {
+            Some(Widget::Number { decimals, .. } | Widget::Dial { decimals, .. } | Widget::Stepper { decimals }) => {
+                *decimals = precision
+            }
+            _ => return Err(DeviceSdkError(format!("control {:?}: widget does not support precision", self.id))),
+        }
+        Ok(self)
+    }
+
+    pub fn format(mut self, value: TextFormat) -> Result<Self, DeviceSdkError> {
+        match &mut self.widget {
+            Some(Widget::Number { format, .. } | Widget::Dial { format, .. }) => *format = value,
+            _ => return Err(DeviceSdkError(format!("control {:?}: widget does not support a text format", self.id))),
+        }
+        Ok(self)
+    }
+
+    pub fn prefix(mut self, value: impl Into<String>) -> Result<Self, DeviceSdkError> {
+        match &mut self.widget {
+            Some(Widget::Number { prefix, .. }) => *prefix = value.into(),
+            _ => return Err(DeviceSdkError(format!("control {:?}: widget does not support a prefix", self.id))),
+        }
+        Ok(self)
+    }
+
+    pub fn off_label(mut self, value: impl Into<String>) -> Result<Self, DeviceSdkError> {
+        match &mut self.widget {
+            Some(Widget::Button { off_label, .. }) => *off_label = Some(value.into()),
+            _ => return Err(DeviceSdkError(format!("control {:?}: widget does not support an off label", self.id))),
+        }
+        Ok(self)
+    }
     /// A passive widget. Interactive constructors below add the matching gesture and binding.
     pub fn widget(id: impl Into<String>, name: impl Into<String>, widget: Widget, bounds: [f32; 4]) -> Self {
         Self {
@@ -147,6 +223,20 @@ impl CustomControl {
         }
         if matched {
             self.name = parameter.name.clone();
+            match &mut self.widget {
+                Some(Widget::Number { decimals, format, .. } | Widget::Dial { decimals, format, .. }) => {
+                    *decimals = parameter.ui.decimals;
+                    *format = if matches!(parameter.control, ParameterControl::Choice | ParameterControl::Radio) {
+                        TextFormat::Choice
+                    } else if parameter.unit == "Hz" {
+                        TextFormat::Frequency
+                    } else {
+                        TextFormat::Number
+                    };
+                }
+                Some(Widget::Stepper { decimals }) => *decimals = parameter.ui.decimals,
+                _ => {}
+            }
         }
         self
     }

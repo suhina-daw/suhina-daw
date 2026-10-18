@@ -75,6 +75,11 @@ and sound are regression-tested against pre-migration `.sd` fixtures. The Delay 
 explicit about its node references; the main reduction in repetition is in its panel construction.
 No new file format, runtime or executable extension is introduced.
 
+UI authors can configure numeric `format`/`decimals` and button labels before insertion,
+inherit parameter names, mapping and numeric formatting with `parameter_metadata`, and place
+controls relative to a shared `ControlGroup` origin. These are Rust authoring conveniences;
+the saved panel remains flat. See [control constructors and groups](spec/sdk-custom-ui.md#rust-control-constructors).
+
 Native sample instruments can also use `sampler::Sampler` from the SDK and author
 their panel with `ui::DeviceUi`; `devices/sampler` is the built-in example. This
 route uses the native Device contract, not a serialized sample DSP node. The host

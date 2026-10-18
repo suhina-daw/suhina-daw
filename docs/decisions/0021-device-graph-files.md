@@ -73,6 +73,9 @@ authoring fields are accepted.
   append-only graph, connection errors are reported during authoring, and `finish` still uses
   the existing full validator. These helpers emit the same `.sd` data; they add neither an
   executable language nor an alternative runtime. See [checked authoring](../device-sdk.md#checked-rust-authoring).
+  Numeric control setters and parameter-derived formatting are likewise authoring-only;
+  shared local group origins flatten to the same absolute panel bounds without serializing
+  a layout tree or changing draw/focus order.
 
 - SDK authors compose effects, MIDI effects and monophonic instruments from supported primitives and distribute one self-contained
   `.sd` file, with generated parameter UI and a read-only node list.

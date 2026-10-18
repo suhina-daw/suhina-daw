@@ -5,6 +5,7 @@
 use crate::{DeviceSdkError, Parameter};
 mod author;
 mod widgets;
+pub use author::ControlGroup;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io::Cursor, path::Path};

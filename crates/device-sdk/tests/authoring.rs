@@ -93,6 +93,72 @@ fn ui_constructors_preserve_metadata_identity_and_independent_conditions() {
 }
 
 #[test]
+fn numeric_options_and_metadata_are_checked_and_can_be_overridden() {
+    let mut parameter = Parameter::new("frequency", "Frequency", (20., 20000.), 1000.).unit("Hz").control(C::LogKnob);
+    parameter.ui.decimals = 2;
+    let control = CustomControl::number("frequency", [0., 0., 80., 24.]).parameter_metadata(&parameter);
+    assert!(matches!(control.widget, Some(Widget::Number { decimals: 2, format: TextFormat::Frequency, .. })));
+    let customized = control
+        .clone()
+        .format(TextFormat::Number)
+        .unwrap()
+        .decimals(1)
+        .unwrap()
+        .prefix("Hz: ")
+        .unwrap()
+        .bounds([10., 20., 90., 24.]);
+    assert!(
+        matches!(&customized.widget, Some(Widget::Number { decimals: 1, format: TextFormat::Number, prefix, .. }) if prefix == "Hz: ")
+    );
+    assert_eq!(customized.bounds, [10., 20., 90., 24.]);
+    assert!(customized.y.as_ref().unwrap().logarithmic);
+    assert!(control.clone().decimals(9).is_err());
+    assert!(control.off_label("off").is_err());
+    let label = CustomControl::label("label", "Label", [0., 0., 40., 16.]);
+    assert!(label.clone().format(TextFormat::Number).is_err());
+    assert!(label.clone().decimals(0).is_err());
+    assert!(label.prefix("prefix").is_err());
+    let toggle = CustomControl::toggle("enabled", "On", [0., 0., 40., 24.]).off_label("Off").unwrap();
+    assert!(matches!(toggle.widget, Some(Widget::Button { off_label: Some(ref label), .. }) if label == "Off"));
+    let unrelated = CustomControl::number("other", [0., 0., 80., 24.]);
+    assert_eq!(unrelated.clone().parameter_metadata(&parameter), unrelated);
+    let choice = Parameter::new("shape", "Shape", (0., 1.), 0.).control(C::Choice).options(["Sine", "Square"]);
+    let readout = CustomControl::number("shape", [0., 0., 80., 24.]).parameter_metadata(&choice);
+    assert!(matches!(readout.widget, Some(Widget::Number { format: TextFormat::Choice, .. })));
+}
+
+#[test]
+fn groups_move_controls_together_without_changing_bindings_drawings_or_order() {
+    let a = CustomControl::number("cutoff", [0., 0., 80., 24.]);
+    let b = CustomControl::label("label", "Frequency", [0., 30., 80., 16.]);
+    let group = ControlGroup::new([10., 20.]).unwrap();
+    let moved = ControlGroup::new([110., 120.]).unwrap();
+    for control in [a.clone(), b.clone()] {
+        let first = group.place(control.clone()).unwrap();
+        let second = moved.place(control.clone()).unwrap();
+        assert_eq!(second.bounds[0] - first.bounds[0], 100.);
+        assert_eq!(second.bounds[1] - first.bounds[1], 100.);
+        let mut restored = first;
+        restored.bounds = control.bounds;
+        assert_eq!(restored, control);
+    }
+    let mut graph = DeviceGraph::from_sd(include_str!("fixtures/authoring/filter.sd")).unwrap();
+    graph.ui =
+        Some(DeviceUi { controls: vec![group.place(a).unwrap(), group.place(b).unwrap()], ..DeviceUi::default() });
+    let saved = graph.to_sd().unwrap();
+    assert_eq!(DeviceGraph::from_sd(&saved).unwrap(), graph);
+    assert!(!saved.contains("origin"));
+    assert!(ControlGroup::new([f32::NAN, 0.]).is_err());
+    assert!(ControlGroup::new([-1., 0.]).is_err());
+    assert!(ControlGroup::new([8193., 0.]).is_err());
+    for bounds in [[f32::INFINITY, 0., 80., 24.], [-1., 0., 80., 24.], [0., 0., 0., 24.], [8190., 0., 80., 24.]] {
+        assert!(group.place(CustomControl::number("cutoff", bounds)).is_err());
+    }
+    graph.ui.as_mut().unwrap().size = [40., 40.];
+    assert!(graph.to_sd().is_err()); // Final bounds are also checked against the actual canvas.
+}
+
+#[test]
 fn migrated_examples_preserve_serialized_contracts_and_offline_renders() {
     for (name, text) in [
         ("filter", include_str!("fixtures/authoring/filter.sd")),

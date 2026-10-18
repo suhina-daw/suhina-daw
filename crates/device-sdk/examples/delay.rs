@@ -242,7 +242,7 @@ pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
     g.connect(feedback_audio.out(), sum.input("b"))?;
     g.connect(mix.out(), output.input("in"))?;
     let mut g = g.finish()?;
-    g.ui = Some(build_panel(&g.parameters));
+    g.ui = Some(build_panel(&g.parameters)?);
     finish(g)
 }
 fn timing(
@@ -270,51 +270,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 use suhina_device_sdk::{Parameter, ui::*};
-// Widget text is resolved against the host palette at render time.
-const TEXT: [u8; 4] = [236, 232, 225, 255];
 fn equal(id: &str, v: u16) -> UiValue {
     UiValue::parameter(id, false).equals(v as f32)
 }
-fn number(id: &str, bounds: [f32; 4], decimals: usize, log: bool, color: [u8; 4], center: bool) -> CustomControl {
-    let mut control = CustomControl::number(id, bounds).logarithmic(log);
-    control.widget = Some(Widget::Number {
-        decimals,
-        format: if id == "cutoff" { TextFormat::Frequency } else { TextFormat::Number },
-        color,
-        center,
-        bordered: true,
-        prefix: String::new(),
-        suffix: String::new(),
-    });
-    control
-}
 
-fn build_panel(parameters: &[Parameter]) -> DeviceUi {
+fn build_panel(parameters: &[Parameter]) -> Result<DeviceUi, suhina_device_sdk::DeviceSdkError> {
+    let parameter = |id: &str| {
+        parameters
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| suhina_device_sdk::DeviceSdkError(format!("panel: missing parameter {id:?}")))
+    };
+    let time = ControlGroup::new([14., 0.])?;
+    let feedback = ControlGroup::new([289., 0.])?;
+    let mix = ControlGroup::new([864., 0.])?;
+    let tone = ControlGroup::new([384., 0.])?;
+    let motion = ControlGroup::new([579., 0.])?;
     let mut ui = DeviceUi {
         size: [944., 168.],
         viewport_size: Some([944., 168.]),
         hidden_parameters: parameters.iter().map(|p| p.id.clone()).collect(),
         ..DeviceUi::default()
     };
-    for (label, x, width) in
-        [("TIME", 14., 80.), ("FEEDBACK", 289., 74.), ("MIX", 872., 40.), ("TONE", 384., 80.), ("MOTION", 579., 90.)]
-    {
-        ui.controls.push(CustomControl::label(label, label, [x, 6., width, 16.]));
+    for (label, group, x, width) in [
+        ("TIME", time, 0., 80.),
+        ("FEEDBACK", feedback, 0., 74.),
+        ("MIX", mix, 8., 40.),
+        ("TONE", tone, 0., 80.),
+        ("MOTION", motion, 0., 90.),
+    ] {
+        ui.controls.push(group.place(CustomControl::label(label, label, [x, 6., width, 16.]))?);
     }
     for x in [275., 367., 563., 851.] {
         ui.controls.push(CustomControl::separator(format!("divider_{x}"), [x - 4., 6., 8., 160.]));
     }
-    for (side, x) in [("left", 14.), ("right", 164.)] {
+    for (side, x) in [("left", 0.), ("right", 150.)] {
         let title = if side == "left" { "Left" } else { "Right" };
-        ui.controls.push(CustomControl::label(format!("{side}_label"), title, [x, 28., 100., 16.]));
+        ui.controls.push(time.place(CustomControl::label(format!("{side}_label"), title, [x, 28., 100., 16.]))?);
         let sync = format!("sync_{side}");
-        let mut timing_mode = CustomControl::toggle(&sync, "Beats", [x, 48., 42., 24.])
-            .id(format!("{sync}_99"))
-            .name(format!("{title} timing mode"))
-            .tooltip("Choose beat-synchronized notes or milliseconds");
-        timing_mode.widget =
-            Some(Widget::Button { label: "Beats".into(), off_label: Some("ms".into()), indicator: false });
-        ui.controls.push(timing_mode);
+        ui.controls.push(
+            time.place(
+                CustomControl::toggle(&sync, "Beats", [x, 48., 42., 24.])
+                    .parameter_metadata(parameter(&sync)?)
+                    .off_label("ms")?
+                    .id(format!("{sync}_99"))
+                    .name(format!("{title} timing mode"))
+                    .tooltip("Choose beat-synchronized notes or milliseconds"),
+            )?,
+        );
         let choices = (1..=16)
             .map(|steps| {
                 let divisor = (1..=16).rev().find(|d| steps % d == 0 && 16 % d == 0).unwrap_or(1);
@@ -322,68 +325,142 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
             })
             .collect();
         ui.controls.push(
-            CustomControl::value_menu(format!("division_{side}"), choices, [x + 50., 48., 50., 24.])
-                .name(format!("{title} delay"))
-                .tooltip("Choose the delay length as a fraction of a whole note")
-                .visible_when(equal(&sync, 1)),
+            time.place(
+                CustomControl::value_menu(format!("division_{side}"), choices, [x + 50., 48., 50., 24.])
+                    .parameter_metadata(parameter(&format!("division_{side}"))?)
+                    .name(format!("{title} delay"))
+                    .tooltip("Choose the delay length as a fraction of a whole note")
+                    .visible_when(equal(&sync, 1)),
+            )?,
+        );
+        let id = format!("time_{side}");
+        ui.controls.push(
+            time.place(
+                CustomControl::number(&id, [x + 50., 48., 50., 24.])
+                    .parameter_metadata(parameter(&id)?)
+                    .name(id.replace('_', " "))
+                    .decimals(0)?
+                    .visible_when(equal(&sync, 0)),
+            )?,
         );
         ui.controls.push(
-            number(&format!("time_{side}"), [x + 50., 48., 50., 24.], 0, true, TEXT, false)
-                .visible_when(equal(&sync, 0)),
+            time.place(
+                CustomControl::label(format!("{side}_offset_caption"), "Offset", [x, 80., 100., 16.])
+                    .visible_when(equal(&sync, 1)),
+            )?,
         );
+        let id = format!("offset_{side}");
         ui.controls.push(
-            CustomControl::label(format!("{side}_offset_caption"), "Offset", [x, 80., 100., 16.])
-                .visible_when(equal(&sync, 1)),
-        );
-        ui.controls.push(
-            number(&format!("offset_{side}"), [x, 98., 100., 24.], 1, false, TEXT, false).visible_when(equal(&sync, 1)),
+            time.place(
+                CustomControl::number(&id, [x, 98., 100., 24.])
+                    .parameter_metadata(parameter(&id)?)
+                    .name(id.replace('_', " "))
+                    .decimals(1)?
+                    .visible_when(equal(&sync, 1)),
+            )?,
         );
     }
     ui.controls.push(
-        CustomControl::toggle("link", "↔", [122., 48., 34., 24.])
-            .id("link_99")
-            .name("Link channels")
-            .tooltip("Link both channels; enabling copies the left timing to the right"),
+        time.place(
+            CustomControl::toggle("link", "↔", [108., 48., 34., 24.])
+                .parameter_metadata(parameter("link")?)
+                .id("link_99")
+                .name("Link channels")
+                .tooltip("Link both channels; enabling copies the left timing to the right"),
+        )?,
     );
     ui.controls.push(
-        CustomControl::toggle("ping_pong", "Ping Pong", [864., 140., 72., 22.]).id(format!("{}_99", "ping_pong")),
+        mix.place(
+            CustomControl::toggle("ping_pong", "Ping Pong", [0., 140., 72., 22.])
+                .parameter_metadata(parameter("ping_pong")?)
+                .id("ping_pong_99")
+                .name("Ping Pong"),
+        )?,
     );
-    ui.controls.push(CustomControl::toggle("freeze", "Freeze", [289., 140., 64., 22.]).id(format!("{}_99", "freeze")));
+    ui.controls.push(
+        feedback.place(
+            CustomControl::toggle("freeze", "Freeze", [0., 140., 64., 22.])
+                .parameter_metadata(parameter("freeze")?)
+                .id("freeze_99")
+                .name("Freeze"),
+        )?,
+    );
     for (i, label) in ["Repitch", "Fade", "Jump"].into_iter().enumerate() {
-        ui.controls.push(CustomControl::set_button("mode", i as u16, label, [14. + i as f32 * 86., 140., 78., 22.]));
+        ui.controls.push(
+            time.place(
+                CustomControl::set_button("mode", i as u16, label, [i as f32 * 86., 140., 78., 22.])
+                    .parameter_metadata(parameter("mode")?)
+                    .name(label),
+            )?,
+        );
     }
-    ui.controls.push(CustomControl::dial("feedback", "", [289., 48., 64., 86.]).name("Feedback"));
-    ui.controls.push(CustomControl::dial("wet", "", [872., 48., 56., 86.]).name("Mix"));
-    ui.controls
-        .push(CustomControl::toggle("filter_on", "Filter", [384.0, 32., 51., 26.]).id(format!("{}_99", "filter_on")));
-    ui.controls.push(number("cutoff", [444.0, 36., 56., 18.], 0, true, TEXT, false));
-    let mut width = number("width", [504.0, 36., 46., 18.], 2, false, TEXT, false);
-    if let Some(Widget::Number { prefix, .. }) = &mut width.widget {
-        *prefix = "Oct: ".into();
-    }
-    ui.controls.push(width);
-    ui.controls.push(CustomControl {
+    ui.controls.push(
+        feedback.place(
+            CustomControl::dial("feedback", "", [0., 48., 64., 86.])
+                .parameter_metadata(parameter("feedback")?)
+                .name("Feedback")
+                .decimals(0)?,
+        )?,
+    );
+    ui.controls.push(
+        mix.place(
+            CustomControl::dial("wet", "", [8., 48., 56., 86.])
+                .parameter_metadata(parameter("wet")?)
+                .name("Mix")
+                .decimals(0)?,
+        )?,
+    );
+    ui.controls.push(
+        tone.place(
+            CustomControl::toggle("filter_on", "Filter", [0., 32., 51., 26.])
+                .parameter_metadata(parameter("filter_on")?)
+                .id("filter_on_99")
+                .name("Filter"),
+        )?,
+    );
+    ui.controls.push(tone.place(
+        CustomControl::number("cutoff", [60., 36., 56., 18.]).parameter_metadata(parameter("cutoff")?).decimals(0)?,
+    )?);
+    ui.controls.push(
+        tone.place(
+            CustomControl::number("width", [120., 36., 46., 18.])
+                .parameter_metadata(parameter("width")?)
+                .decimals(2)?
+                .prefix("Oct: ")?,
+        )?,
+    );
+    ui.controls.push(tone.place(CustomControl {
         widget: Some(Widget::FilterBand { min_hz: 50., max_hz: 18000. }),
         id: "filter_graph".into(),
         name: "Filter frequency and width".into(),
         tooltip: "Drag horizontally for frequency, vertically for width".into(),
-        bounds: [384.0, 74., 166., 80.],
+        bounds: [0., 74., 166., 80.],
         visible_when: None,
         gesture: UiGesture::Position,
-        x: Some(UiBinding { parameter: "cutoff".into(), logarithmic: true, drag_scale: 1. }),
+        x: Some(UiBinding::new("cutoff").logarithmic(true)),
         y: Some(UiBinding::new("width")),
         drawing: vec![],
-    });
-    ui.controls.push(CustomControl::label("motion_mode_caption", "Mode", [579., 28., 32., 16.]));
+    })?);
+    ui.controls.push(motion.place(CustomControl::label("motion_mode_caption", "Mode", [0., 28., 32., 16.]))?);
     ui.controls.push(
-        CustomControl::menu("mod_rate_mode", [615., 28., 90., 20.])
-            .id("mod_rate_mode_99")
-            .name("Motion rate mode")
-            .tooltip("mod_rate_mode: Rate"),
+        motion.place(
+            CustomControl::menu("mod_rate_mode", [36., 28., 90., 20.])
+                .parameter_metadata(parameter("mod_rate_mode")?)
+                .id("mod_rate_mode_99")
+                .name("Motion rate mode")
+                .tooltip("mod_rate_mode: Rate"),
+        )?,
     );
-    for (id, mode, decimals, log) in [("mod_rate", 0, 2, true), ("mod_time", 1, 0, true)] {
+    for (id, mode, decimals) in [("mod_rate", 0, 2), ("mod_time", 1, 0)] {
         ui.controls.push(
-            number(id, [579., 50., 96., 20.], decimals, log, TEXT, false).visible_when(equal("mod_rate_mode", mode)),
+            motion.place(
+                CustomControl::number(id, [0., 50., 96., 20.])
+                    .parameter_metadata(parameter(id)?)
+                    .name(id.replace('_', " "))
+                    .format(TextFormat::Number)?
+                    .decimals(decimals)?
+                    .visible_when(equal("mod_rate_mode", mode)),
+            )?,
         );
     }
     for mode in 2..=5 {
@@ -401,31 +478,36 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
             })
             .collect();
         ui.controls.push(
-            CustomControl::value_menu("mod_division", choices, [579., 50., 96., 20.])
-                .id(format!("motion_division_{mode}"))
-                .name("Motion rhythm")
-                .tooltip("Choose the note length; T = triplet, D = dotted; 16th counts sixteenth-note steps")
-                .visible_when(equal("mod_rate_mode", mode)),
+            motion.place(
+                CustomControl::value_menu("mod_division", choices, [0., 50., 96., 20.])
+                    .parameter_metadata(parameter("mod_division")?)
+                    .id(format!("motion_division_{mode}"))
+                    .name("Motion rhythm")
+                    .tooltip("Choose the note length; T = triplet, D = dotted; 16th counts sixteenth-note steps")
+                    .visible_when(equal("mod_rate_mode", mode)),
+            )?,
         );
     }
-    ui.controls.push(CustomControl::label("shape_caption", "Shape", [739., 28., 60., 16.]));
-    ui.controls.push(CustomControl {
-        widget: Some(Widget::WaveformMenu),
-        id: "mod_shape".into(),
-        name: "Motion waveform".into(),
-        tooltip: "Choose the waveform".into(),
-        bounds: [739., 46., 60., 22.],
-        visible_when: None,
-        gesture: UiGesture::Menu,
-        x: Some(UiBinding::new("mod_shape")),
-        y: None,
-        drawing: vec![],
-    });
-    ui.controls.push(CustomControl::dial("mod_delay", "Delay\ndepth", [579.0, 78., 64., 86.]));
-    ui.controls.push(CustomControl::dial("mod_filter", "Filter\ndepth", [659., 78., 64., 86.]));
-    ui.controls.push(CustomControl::dial("mod_morph", "Morph", [739., 78., 64., 86.]));
-
-    ui
+    ui.controls.push(motion.place(CustomControl::label("shape_caption", "Shape", [160., 28., 60., 16.]))?);
+    let mut shape = CustomControl::menu("mod_shape", [160., 46., 60., 22.])
+        .parameter_metadata(parameter("mod_shape")?)
+        .name("Motion waveform")
+        .tooltip("Choose the waveform");
+    shape.widget = Some(Widget::WaveformMenu);
+    ui.controls.push(motion.place(shape)?);
+    for (id, label, x) in
+        [("mod_delay", "Delay\ndepth", 0.), ("mod_filter", "Filter\ndepth", 80.), ("mod_morph", "Morph", 160.)]
+    {
+        ui.controls.push(
+            motion.place(
+                CustomControl::dial(id, label, [x, 78., 64., 86.])
+                    .parameter_metadata(parameter(id)?)
+                    .name(label.replace('\n', " "))
+                    .decimals(0)?,
+            )?,
+        );
+    }
+    Ok(ui)
 }
 
 fn style_parameter(parameter: &mut suhina_device_sdk::Parameter) {
