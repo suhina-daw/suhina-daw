@@ -22,7 +22,8 @@ use suhina_model::{DeviceKind, DeviceParam};
 
 use crate::automation::DeviceLanes;
 use crate::chain::{MAX_BLOCK, Slot};
-use crate::plugin::Delay;
+use crate::plugin::{Delay, PluginDevice, PluginSlot, Plugins};
+use crate::plugin_params::SlotParams;
 
 /// The parameters of a device group, by their stable ids, in index order: `(id, min, max,
 /// default)`. `mix` is a fraction, `gain` decibels (at or below [`SILENT_DB`] silent), the
@@ -132,10 +133,15 @@ pub(crate) struct GroupSlot {
     lanes: DeviceLanes,
 }
 
-/// What builds the devices inside a group: the sample rate and the files of file-backed devices.
+/// What builds the devices inside a group: the sample rate, the files of file-backed devices, the
+/// plug-ins (their slots and processors, by the keys of the channel's plug-in devices).
 pub(crate) struct Builder<'a> {
     pub(crate) sample_rate: u32,
     pub(crate) assets: &'a crate::DeviceAssets,
+    pub(crate) plugins: &'a mut Plugins,
+    pub(crate) keys: &'a [PluginDevice],
+    pub(crate) channel: suhina_model::ChannelId,
+    pub(crate) frames_per_beat: f64,
 }
 
 /// A slot built for a stored device: the slot, its identity for graph swaps, its parameter
@@ -148,21 +154,40 @@ pub(crate) struct Built {
 }
 
 impl Builder<'_> {
-    /// The slot of a device inside a group, or `None` for one that does not run there: switched
-    /// off, unknown, not compiling, or a plug-in (not yet run inside groups). Allocates.
-    pub(crate) fn device(&self, stored: &suhina_model::Device, depth: usize) -> Option<Built> {
+    /// The slot of the device at `path` on the channel, inside a group, or `None` for one that
+    /// does not run there: switched off, unknown, not compiling, or a plug-in that is not
+    /// installed. A switched-off plug-in keeps its slot, and its process, and passes the sound.
+    /// Allocates.
+    pub(crate) fn device(&mut self, stored: &suhina_model::Device, depth: usize, path: &[usize]) -> Option<Built> {
+        if matches!(stored.kind, DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. }) {
+            return self.plugin(stored, path);
+        }
         if !stored.enabled {
             return None;
         }
         match &stored.kind {
             DeviceKind::Builtin(id) => self.builtin(id, stored),
             DeviceKind::Sd => self.sd(stored),
-            DeviceKind::Group(group) => self.group(stored, group, depth),
-            DeviceKind::Clap { .. }
-            | DeviceKind::Vst3 { .. }
-            | DeviceKind::Vst2 { .. }
-            | DeviceKind::Foreign { .. } => None,
+            DeviceKind::Group(group) => self.group(stored, group, depth, path),
+            _ => None,
         }
+    }
+
+    /// A plug-in's slot, by its key: it takes its processor from the plug-ins, or waits for one.
+    fn plugin(&mut self, stored: &suhina_model::Device, path: &[usize]) -> Option<Built> {
+        let key = self.keys.iter().find(|d| d.channel == self.channel && d.path == path)?.key;
+        let info = *self.plugins.info.get(&key)?;
+        let slot = PluginSlot {
+            key,
+            processor: self.plugins.processors.remove(&key),
+            instrument: info.instrument,
+            latency: info.latency,
+            enabled: stored.enabled,
+            missed: 0,
+            params: SlotParams::new(stored, self.frames_per_beat),
+        };
+        let latency = if stored.enabled { info.latency } else { 0 };
+        Some(Built { slot: Slot::Plugin(slot), id: format!("plugin:{key:016x}"), values: Vec::new(), latency })
     }
 
     fn builtin(&self, id: &str, stored: &suhina_model::Device) -> Option<Built> {
@@ -210,14 +235,15 @@ impl Builder<'_> {
         Some(Built { slot, id: format!("sd:{}:{:016x}", graph.id, hasher.finish()), values, latency: 0 })
     }
 
-    /// A group of the stored `group`, with its branches built; `depth` is how many groups it is
-    /// in. A group never runs deeper than the model allows, so a malformed one cannot recurse
-    /// without end.
+    /// A group of the stored `group` at `path` on the channel, with its branches built; `depth`
+    /// is how many groups it is in. A group never runs deeper than the model allows, so a
+    /// malformed one cannot recurse without end.
     pub(crate) fn group(
-        &self,
+        &mut self,
         stored: &suhina_model::Device,
         group: &suhina_model::DeviceGroup,
         depth: usize,
+        path: &[usize],
     ) -> Option<Built> {
         if depth >= suhina_model::MAX_DEVICE_GROUP_DEPTH {
             return None;
@@ -225,7 +251,7 @@ impl Builder<'_> {
         let any_solo = group.branches.iter().any(|b| b.solo);
         let mut branches = Vec::with_capacity(group.branches.len());
         let mut ids = Vec::with_capacity(group.branches.len());
-        for branch in group.branches.iter().take(suhina_model::MAX_BRANCHES) {
+        for (b, branch) in group.branches.iter().enumerate().take(suhina_model::MAX_BRANCHES) {
             let mut run = BranchRun {
                 slots: Vec::new(),
                 values: Vec::new(),
@@ -236,8 +262,10 @@ impl Builder<'_> {
                 latency: 0,
                 delay: Delay::new(0),
             };
-            for device in &branch.devices {
-                if let Some(built) = self.device(device, depth + 1) {
+            for (i, device) in branch.devices.iter().enumerate() {
+                let mut inner = path.to_vec();
+                inner.extend([b, i]);
+                if let Some(built) = self.device(device, depth + 1, &inner) {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.ids.push(built.id);
@@ -373,6 +401,7 @@ impl GroupSlot {
                         }
                     }
                     (Slot::Group(group), Slot::Group(new_group)) => group.adopt(new_group),
+                    (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
                     _ => {}
                 }
             }
@@ -434,6 +463,64 @@ impl GroupSlot {
             };
             *out_left = (dry_left * (1.0 - mix) + left * mix) * gain;
             *out_right = (dry_right * (1.0 - mix) + right * mix) * gain;
+        }
+    }
+}
+
+/// The plug-in slots among a chain's slots, inside device groups too, depth-first, without
+/// allocating: a fixed stack of the lists being walked, deep enough for the deepest group.
+pub(crate) struct PluginSlots<'a> {
+    stack: [Option<Frame<'a>>; STACK],
+    len: usize,
+}
+
+/// One list being walked: slots, or a group's branches.
+enum Frame<'a> {
+    Slots(std::slice::IterMut<'a, Slot>),
+    Branches(std::slice::IterMut<'a, BranchRun>),
+}
+
+/// Lists walked at once at most: the chain's slots, then branches and slots for each group.
+const STACK: usize = 2 + 2 * suhina_model::MAX_DEVICE_GROUP_DEPTH;
+
+impl<'a> PluginSlots<'a> {
+    pub(crate) fn new(slots: &'a mut [Slot]) -> Self {
+        let mut stack: [Option<Frame<'a>>; STACK] = std::array::from_fn(|_| None);
+        stack[0] = Some(Frame::Slots(slots.iter_mut()));
+        Self { stack, len: 1 }
+    }
+
+    fn push(&mut self, frame: Frame<'a>) {
+        // A tree deeper than the model allows is not walked further.
+        if let Some(place) = self.stack.get_mut(self.len) {
+            *place = Some(frame);
+            self.len += 1;
+        }
+    }
+}
+
+impl<'a> Iterator for PluginSlots<'a> {
+    type Item = &'a mut PluginSlot;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let top = self.len.checked_sub(1)?;
+            let next = match self.stack.get_mut(top)?.as_mut()? {
+                Frame::Slots(slots) => slots.next().map(Ok),
+                Frame::Branches(branches) => branches.next().map(Err),
+            };
+            match next {
+                Some(Ok(Slot::Plugin(plugin))) => return Some(plugin),
+                Some(Ok(Slot::Group(group))) => self.push(Frame::Branches(group.branches.iter_mut())),
+                Some(Ok(_)) => {}
+                Some(Err(branch)) => self.push(Frame::Slots(branch.slots.iter_mut())),
+                None => {
+                    if let Some(frame) = self.stack.get_mut(top) {
+                        *frame = None;
+                    }
+                    self.len = top;
+                }
+            }
         }
     }
 }

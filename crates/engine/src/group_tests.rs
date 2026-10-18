@@ -232,9 +232,17 @@ fn a_nested_group_reports_its_latency_to_the_outer_one() {
     assert!(max_diff(&out[..len], &doubled[..len]) < 1e-4, "{}", max_diff(&out[..len], &doubled[..len]));
 
     let assets = crate::DeviceAssets::new();
-    let builder = crate::group::Builder { sample_rate: SR, assets: &assets };
+    let mut plugins = crate::Plugins::new();
+    let mut builder = crate::group::Builder {
+        sample_rate: SR,
+        assets: &assets,
+        plugins: &mut plugins,
+        keys: &[],
+        channel: ChannelId(1),
+        frames_per_beat: 24_000.0,
+    };
     let nested = group(vec![branch(vec![group(vec![branch(vec![overdrive_dry(), overdrive_dry()])], &[])])], &[]);
-    let built = nested.as_group().and_then(|g| builder.group(&nested, g, 0));
+    let built = nested.as_group().and_then(|g| builder.group(&nested, g, 0, &[0]));
     assert_eq!(built.map(|b| b.latency), Some(62));
 }
 

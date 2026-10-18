@@ -285,6 +285,20 @@ pub(crate) struct PluginSlot {
 }
 
 impl PluginSlot {
+    /// Takes the settings of `fresh`, the slot built for the same plug-in after an edit, and its
+    /// processor when one reached it (a restart), which then gets the set values again. Never
+    /// allocates.
+    pub(crate) fn adopt(&mut self, fresh: &mut PluginSlot) {
+        self.enabled = fresh.enabled;
+        self.instrument = fresh.instrument;
+        self.latency = fresh.latency;
+        self.params.adopt(&mut fresh.params);
+        if fresh.processor.is_some() {
+            std::mem::swap(&mut self.processor, &mut fresh.processor);
+            self.params.restart();
+        }
+    }
+
     /// Hands the processor the parameter events of the block's frames `from..to`, the span it
     /// runs next; whether there are any. Never allocates.
     pub(crate) fn automate(&mut self, from: usize, to: usize) -> bool {

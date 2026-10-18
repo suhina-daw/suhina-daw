@@ -867,7 +867,7 @@ impl Session {
                 .channels
                 .iter_mut()
                 .find(|c| c.id == device.channel)
-                .and_then(|c| c.devices.get_mut(device.position));
+                .and_then(|c| suhina_model::device_at_mut(&mut c.devices, &device.path));
             if let Some(slot) = slot {
                 slot.state = Some(state.data.clone());
                 slot.extensions.0.retain(|e| e.key != "Vst3ControllerState");

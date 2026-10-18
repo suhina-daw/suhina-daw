@@ -232,8 +232,15 @@ impl Chain {
                     if !stored.enabled {
                         continue;
                     }
-                    let builder = crate::group::Builder { sample_rate, assets };
-                    let Some(built) = builder.group(stored, group, 0) else { continue };
+                    let mut builder = crate::group::Builder {
+                        sample_rate,
+                        assets,
+                        plugins: &mut *plugins,
+                        keys: &keys,
+                        channel: channel.id,
+                        frames_per_beat,
+                    };
+                    let Some(built) = builder.group(stored, group, 0, &[position]) else { continue };
                     latency = latency.saturating_add(built.latency);
                     slots.push(built.slot);
                     positions.push(position);
@@ -895,18 +902,7 @@ impl Chain {
                         effect.set_parameter(index, value);
                     }
                 }
-                (Slot::Plugin(running), Slot::Plugin(fresh)) => {
-                    running.enabled = fresh.enabled;
-                    running.instrument = fresh.instrument;
-                    running.latency = fresh.latency;
-                    running.params.adopt(&mut fresh.params);
-                    // A processor that reached the new graph's slot (a restart) wins, and gets
-                    // the set values again.
-                    if fresh.processor.is_some() {
-                        std::mem::swap(&mut running.processor, &mut fresh.processor);
-                        running.params.restart();
-                    }
-                }
+                (Slot::Plugin(running), Slot::Plugin(fresh)) => running.adopt(fresh),
                 (Slot::Plugin(_), _) => {}
                 (Slot::Group(running), Slot::Group(fresh)) => running.adopt(fresh),
                 (Slot::Group(_), _) => {}
@@ -919,16 +915,10 @@ impl Chain {
         true
     }
 
-    /// The plug-in slots, for processors to find theirs.
-    pub(crate) fn plugin_slots(&mut self) -> impl Iterator<Item = &mut PluginSlot> {
-        self.slots.iter_mut().filter_map(|slot| match slot {
-            Slot::Plugin(plugin) => Some(plugin),
-            Slot::Device(_) => None,
-            Slot::Sd(_) => None,
-            Slot::InstrumentSd(_) => None,
-            Slot::MidiSd(_) => None,
-            Slot::Group(_) => None,
-        })
+    /// The plug-in slots, inside device groups too, for processors to find theirs. Never
+    /// allocates.
+    pub(crate) fn plugin_slots(&mut self) -> crate::group::PluginSlots<'_> {
+        crate::group::PluginSlots::new(&mut self.slots)
     }
 
     /// Puts `processor` into the slot of plug-in `key`, if this chain has it, and returns the
