@@ -3,7 +3,7 @@ description: Suhina's own project file (.suhina): versioned JSON of the model, w
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/project-file
   - crates/session/src/lib.rs

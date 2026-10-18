@@ -3,7 +3,7 @@ description: Why clips, arrangement lanes and scenes gain an id, what an id is, 
 read_when: object id, ClipId, clip identity, positional addressing, clip.move, duplicated clips, make unique, project file version, ParamType::Clip, merge, version diff
 type: decision
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-10-18
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/ids.rs

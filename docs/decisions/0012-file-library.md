@@ -3,7 +3,7 @@ description: How the browser's folders are indexed, kept on disk and kept up to 
 read_when: file index, library index, folder scan, watching folders, notify, inotify, polling, network drive, browser.json, library crate, search speed
 type: decision
 status: current
-last_verified: 2026-10-14
+last_verified: 2026-10-18
 covers:
   - crates/library/**
   - crates/session/src/library.rs

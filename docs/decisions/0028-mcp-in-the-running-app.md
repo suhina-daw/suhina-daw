@@ -3,7 +3,7 @@ description: Why the desktop app serves MCP for the projects it has open, how an
 read_when: MCP in the app, attach, suhina-cli mcp --attach, live agent edits, agent and window share a project, shared undo, agent connection, allow agent, consent, named pipe, unix socket, control channel, single instance, one instance per build, --new-instance, open file in running app, agent roots
 type: decision
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-10-18
 covers:
   - crates/automation/src/attach.rs
   - crates/automation/src/endpoint.rs

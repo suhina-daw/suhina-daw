@@ -3,7 +3,7 @@ description: Musical time (beats) is the model's only time base; tempo and time 
 read_when: tempo map, tempo change, tempo ramp, time signature change, musical time, beats, tick, frames_per_beat, transport, scene tempo, warp markers, tempo point, merge, issue 402
 type: decision
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/tempo.rs

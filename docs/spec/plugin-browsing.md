@@ -3,7 +3,7 @@ description: How the browser shows installed plug-ins: the Plug-ins category lis
 read_when: plug-in views, browser plug-ins, instruments, effects, vendor, sorting, columns, name column, narrow browser, VST3 sub-categories, CLAP features, favourites, tags
 type: spec
 status: current
-last_verified: 2026-10-14
+last_verified: 2026-10-18
 covers:
   - crates/ui/src/browser.rs
   - crates/ui/src/browser/browser_view.rs

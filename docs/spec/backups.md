@@ -3,7 +3,7 @@ description: Backups (autosave) of open projects - when they are written (an int
 read_when: backup, backups, autosave, auto save, recovery, crash, lost work, .backup folder, project.autosave, critical operation, clean-up, power cut
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/session/src/backup.rs
   - crates/ui/src/app/project_dialog.rs

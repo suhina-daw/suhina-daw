@@ -3,7 +3,7 @@ description: The shape of collaboration and project versions in Suhina — three
 read_when: collaboration, peer-to-peer, P2P, shared session, host and guest, project versions, version browser, merge, content addressing, blob, manifest, project folder, relay, no server, extension or core
 type: decision
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/model/src/lib.rs
   - crates/session/src/lib.rs
