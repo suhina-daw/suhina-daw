@@ -107,12 +107,15 @@ clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track ba
 track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
 headers are tinted with their track's colour, deeper while selected.
 
-On a lane at least 36 px tall, a drag from a clip's upper half moves it (a hand cursor; the
-16 px name bar is drawn inside it) and one from its lower half selects time (a text cursor), as
-in Ableton Live; with *Ctrl+drag selects time over clips* on, a plain drag anywhere moves it.
+As in Studio One, a lane and its clips are split in two: a drag from the upper half paints a
+time selection (a text cursor) over the tracks it crosses, clips or not; from the lower half it
+moves a clip (a hand cursor) or, on an empty spot, draws a rectangle that picks whole clips and
+paints no time. A clip on a lane under 36 px moves from anywhere. With *Ctrl+drag selects time
+over clips* on, a plain drag moves clips and Ctrl paints time.
 Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
 they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
-with `copy`), the cursor showing the copy sign. A time selection is drawn in the accent over
+with `copy`), the cursor showing the copy sign; while dragging, the originals stay drawn and the
+copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the accent over
 the clips with a line at each edge, and as a bar along the ruler.
 
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others

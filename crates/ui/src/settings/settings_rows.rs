@@ -249,7 +249,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Clips",
         "Ctrl+drag selects time over clips",
-        "As in FL Studio; off, a drag from a clip's lower half selects time, as in Ableton Live. A drag on empty lanes or the ruler always does",
+        "As in FL Studio; off, a drag from a lane's or a clip's upper half paints time and from the lower half moves clips or picks them, as in Studio One. A drag on the ruler always selects time",
         &["time_select"],
         |cx, r| cx.on_off(r, |s| &mut s.view.time_select_ctrl),
     ),

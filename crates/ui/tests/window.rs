@@ -291,7 +291,7 @@ fn arrangement_app() -> Harness<'static, App> {
 #[test]
 fn dragging_a_clip_moves_it_on_the_bar_grid() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
     // 8 points a beat by default, so 64 points are two bars.
     let to = from + egui::vec2(64.0, 0.0);
     harness.hover_at(from);
@@ -320,7 +320,7 @@ fn moving_the_view_with_the_middle_button_over_a_clip_leaves_the_clip_alone() {
         h.state().session().map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect::<Vec<_>>())
     };
     let before = starts(&harness);
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
     let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
         pos,
         button: egui::PointerButton::Middle,
@@ -343,8 +343,8 @@ fn moving_the_view_with_the_middle_button_over_a_clip_leaves_the_clip_alone() {
 
 /// Drags the clip labelled `label` by `by` points in the Arrangement view.
 fn drag_clip(harness: &mut Harness<'static, App>, label: &str, by: egui::Vec2) {
-    // By its name bar: the body under it selects time.
-    let from = harness.get_by_label(label).rect().center_top() + egui::vec2(0.0, 8.0);
+    // By its lower half: the upper half paints time.
+    let from = harness.get_by_label(label).rect().center_bottom() - egui::vec2(0.0, 8.0);
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -381,7 +381,7 @@ fn a_dropped_clip_replaces_what_it_covers_unless_midi_stacking_is_on() {
 #[test]
 fn dragging_a_clip_down_moves_it_to_the_next_track() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
     // Lanes are 48 points high with a line between them.
     let to = from + egui::vec2(0.0, 49.0);
     harness.hover_at(from);
@@ -3523,8 +3523,8 @@ fn zoom_in_at_beat_b(harness: &mut Harness<'static, App>) -> f32 {
 /// view when zoomed in.
 fn drag_beat_b(harness: &mut Harness<'static, App>, by: egui::Vec2) {
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
-    // By its name bar: the body under it selects time.
-    let from = egui::pos2(clip.left() + 16.0, clip.top() + 8.0);
+    // By its lower half: the upper half paints time.
+    let from = egui::pos2(clip.left() + 16.0, clip.bottom() - 8.0);
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -4023,7 +4023,7 @@ fn wait_over(harness: &mut Harness<'static, App>, at: egui::Pos2) {
 #[test]
 fn an_arrangement_clip_dragged_over_the_session_switch_drops_into_a_slot() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_bottom() - egui::vec2(0.0, 8.0);
     let switch = harness.get_by_label("Session view").rect().center();
     harness.hover_at(from);
     harness.step();
@@ -4561,7 +4561,7 @@ fn ctrl_dragging_a_clip_copies_it_and_leaves_the_original() {
         p.arrangement.lanes.iter().find(|l| l.track == track).unwrap().clips.iter().map(|c| c.start).collect::<Vec<_>>()
     };
     let before = starts(&harness);
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
     let to = from + egui::vec2(256.0, 0.0);
     harness.hover_at(from);
     harness.run();

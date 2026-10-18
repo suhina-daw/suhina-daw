@@ -327,6 +327,9 @@ pub struct ArrangementViewState {
     /// Where a drag over empty lanes started: the selection rectangle runs from there to the
     /// pointer until the button is let go.
     marquee: Option<Pos2>,
+    /// The drag that started `marquee` paints time (a lane's or a clip's upper half, as Studio
+    /// One's range does) rather than drawing a rectangle that picks whole clips (the lower half).
+    marquee_time: bool,
     /// The span the last selection rectangle covered: its tracks and its beats.
     time_selection: Option<TimeSelection>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
@@ -409,6 +412,7 @@ impl Default for ArrangementViewState {
             selected: Vec::new(),
             anchor: None,
             marquee: None,
+            marquee_time: false,
             time_selection: None,
             ruler_select: None,
             edge_drag: None,
@@ -1328,9 +1332,21 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         );
         // A folded group's row stands for the track whose clips it shows.
         rows_seen.push((clips_lane.track, row.clip));
-        // A drag from an empty spot draws the selection rectangle (#649).
-        if body.drag_started_by(egui::PointerButton::Primary) {
-            state.marquee = ui.input(|i| i.pointer.press_origin());
+        // A drag from an empty spot (#649): from the lane's upper half it paints a time selection
+        // over the tracks it crosses, from the lower half it draws a rectangle that picks whole
+        // clips, as Studio One's lanes do (with Ctrl+drag selecting time, Ctrl paints instead).
+        if body.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        {
+            state.marquee = Some(origin);
+            state.marquee_time =
+                if state.time_select_ctrl { ui.input(|i| i.modifiers.command) } else { origin.y < row.time.center().y };
+        }
+        if !state.time_select_ctrl
+            && state.marquee.is_none()
+            && body.hover_pos().is_some_and(|p| p.y < row.time.center().y)
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
         }
         if body.secondary_clicked()
             && let Some(pointer) = body.interact_pointer_pos()
@@ -1454,12 +1470,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         && let Some(now) = ui.ctx().pointer_latest_pos()
     {
         let rect = Rect::from_two_pos(origin, now).intersect(lanes_area).intersect(time);
-        lanes_painter.rect_filled(rect, 0.0, theme::accent().gamma_multiply(0.12));
-        lanes_painter.rect_stroke(rect, 0.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
-        if ui.input(|i| !i.pointer.primary_down()) {
-            state.marquee = None;
-            let picked: Vec<(TrackId, usize)> =
-                clip_rects.iter().filter(|(_, r)| r.intersects(rect)).map(|(key, _)| *key).collect();
+        let done = ui.input(|i| !i.pointer.primary_down());
+        if state.marquee_time {
+            // Painting time: the selection follows the pointer, on the grid (Alt: free), over the
+            // tracks the drag crosses; the clips' selection is left alone.
             let grid = Grid::new(state.grid, state.beat_width, bar_beats);
             let free = ui.input(|i| i.modifiers.alt);
             let beat_of = |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free);
@@ -1468,11 +1482,28 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             state.time_selection =
                 (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end });
-            if picked.is_empty() {
-                state.selected.clear();
-                state.anchor = None;
-            } else {
-                state.select_clips(picked);
+            if done {
+                state.marquee = None;
+                if state.time_selection.is_some() {
+                    state.selected.clear();
+                    state.anchor = None;
+                }
+            }
+        } else {
+            // A rectangle that picks the clips it touches, whole.
+            lanes_painter.rect_filled(rect, 0.0, theme::accent().gamma_multiply(0.12));
+            lanes_painter.rect_stroke(rect, 0.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
+            if done {
+                state.marquee = None;
+                state.time_selection = None;
+                let picked: Vec<(TrackId, usize)> =
+                    clip_rects.iter().filter(|(_, r)| r.intersects(rect)).map(|(key, _)| *key).collect();
+                if picked.is_empty() {
+                    state.selected.clear();
+                    state.anchor = None;
+                } else {
+                    state.select_clips(picked);
+                }
             }
         }
     }
@@ -1972,7 +2003,7 @@ fn clip_box<'a>(
     // The cursor says what a drag does: the upper half moves the clip (a hand; with the copy key
     // held, the copy cursor), the lower half selects time (a text cursor), as Ableton Live's do.
     let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
-    let in_body = |y: f32| !state.time_select_ctrl && clip_grab_area(visible).is_some_and(|grab| y > grab.bottom());
+    let in_body = |y: f32| !state.time_select_ctrl && clip_grab_area(visible).is_some_and(|grab| y < grab.top());
     if state.clip_drag.is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
     } else if response.hover_pos().is_some_and(|p| in_body(p.y)) {
@@ -2019,11 +2050,12 @@ fn clip_box<'a>(
             if state.time_select_ctrl {
                 command
             } else {
-                clip_grab_area(visible).is_some_and(|grab| origin.y > grab.bottom())
+                clip_grab_area(visible).is_some_and(|grab| origin.y < grab.top())
             }
         });
     if selects_time {
         state.marquee = ui.input(|i| i.pointer.press_origin());
+        state.marquee_time = true;
     } else if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
         // Clips picked by a click or moved: the time selection gives way to them.
         state.time_selection = None;
@@ -2410,10 +2442,37 @@ fn clip_box<'a>(
         }
     }
 
+    // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
+    let copying = state.clip_drag.is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
+    let paint_at = |start: f64| {
+        paint_clip(
+            &painter.with_clip_rect(row.clip),
+            clip_rect(space, start, clip.length, x_of),
+            lane,
+            clip,
+            shown,
+            start,
+            x_of,
+            state.beat_width,
+            waveforms,
+            selected,
+        );
+    };
     let result = match state.clip_drag {
-        Some(drag) if mine(&drag) && drag.target != lane.track => Some((lane, clip, snapped(drag.start))),
-        drag => {
-            let start = drag.filter(mine).map_or(clip.start, |d| snapped(d.start));
+        Some(drag) if mine(&drag) && drag.target != lane.track => {
+            if drag.copy || copy_key {
+                paint_at(clip.start);
+            }
+            Some((lane, clip, snapped(drag.start)))
+        }
+        _ if copying => {
+            paint_at(clip.start);
+            paint_at(at);
+            None
+        }
+        _ => {
+            // Where the drag puts it (the dragged clip and the rest of its selection alike).
+            let start = at;
             // An edge being dragged: the clip is drawn at the length it has so far, its content
             // where it plays.
             let shift = ui.input(|i| i.modifiers.shift);
@@ -2611,10 +2670,10 @@ fn paint_clip(
     }
 }
 
-/// The part of a clip a drag moves it from: its upper half, on a lane tall enough to have a body
-/// under it for selecting time; `None` when the whole clip moves it.
+/// The part of a clip a drag moves it from: its lower half, on a lane tall enough to have an
+/// upper half for painting time (Studio One's range); `None` when the whole clip moves it.
 fn clip_grab_area(rect: Rect) -> Option<Rect> {
-    (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.center().y)))
+    (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_max(Pos2::new(rect.left(), rect.center().y), rect.max))
 }
 
 /// The bar along a clip's top that carries its name, on a lane tall enough to have a body under
