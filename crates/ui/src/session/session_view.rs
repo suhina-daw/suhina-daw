@@ -33,8 +33,6 @@ const LAUNCH_WIDTH: f32 = PAD + CLIP_MARK + PAD;
 const EMPTY_MARK: f32 = 3.0;
 /// The play and stop glyph size in a scene row, where the glyph sits on the row's fill.
 const SLOT_GLYPH: f32 = 4.5;
-/// How dim a muted track's lane is.
-const MUTED_ALPHA: f32 = 0.55;
 /// The band that takes the pointer to resize the mixer, either side of its top line.
 const MIXER_EDGE: f32 = 3.0;
 
@@ -173,14 +171,13 @@ fn column_width(column: &Column) -> f32 {
     if column.kind == ColumnKind::Return { theme::RETURN_COLUMN } else { theme::TRACK_COLUMN }
 }
 
-/// Fill for a muted track's lane: the same colour, dimmer.
-fn lane(color: Color32, muted: bool) -> Color32 {
-    if muted { color.gamma_multiply(MUTED_ALPHA) } else { color }
-}
-
 fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
     Color32::from_rgb(color.0, color.1, color.2)
 }
+
+/// How much of the track's colour an empty slot shows: the whole column reads as the track's,
+/// as Ableton Live's Session view does.
+const EMPTY_TINT: f32 = 0.12;
 
 /// Draws the Session view in the space left in `ui` and adds what the user asked for to
 /// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
@@ -892,6 +889,10 @@ fn slot_cell(
     selected: bool,
 ) {
     let track_color = rgb(column.color);
+    // A clip slot is filled with the clip's colour (its track's unless it has its own).
+    let clip_color = slot.color.map_or(track_color, rgb);
+    let empty =
+        motion::mix(theme::window_background(), track_color, if column.mute { EMPTY_TINT / 2.0 } else { EMPTY_TINT });
     let mark_rect =
         |size: f32| Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - size / 2.0), Vec2::splat(size));
     let name_rect = Rect::from_min_max(
@@ -901,21 +902,20 @@ fn slot_cell(
     let font = theme::ui_font(theme::TEXT);
     match slot.state {
         SlotState::Empty => {
-            painter.rect_filled(rect, 0.0, theme::window_background());
+            painter.rect_filled(rect, 0.0, empty);
         }
         SlotState::EmptyStop => {
-            painter.rect_filled(rect, 0.0, motion::mix(theme::window_background(), theme::panel_background(), hover));
+            painter.rect_filled(rect, 0.0, motion::mix(empty, theme::panel_background(), hover));
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, theme::slot_empty());
         }
         SlotState::Stopped | SlotState::Queued => {
-            let fill = if selected {
-                theme::control_active()
-            } else {
-                motion::mix(theme::control_background(), theme::control_hover(), hover)
-            };
-            painter.rect_filled(rect, 0.0, lane(fill, column.mute));
+            // The clip in its colour, lighter under the pointer; a deactivated clip is grey.
+            let base = if slot.enabled { clip_color } else { theme::control_background() };
+            let fill = motion::mix(base, Color32::WHITE, 0.14 * hover);
+            let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
+            painter.rect_filled(rect, 0.0, fill);
             let (mark, text) = if slot.enabled {
-                (track_color, theme::text_value())
+                (theme::text_on(fill), theme::text_on(fill))
             } else {
                 (theme::text_hint(), theme::text_hint())
             };
@@ -934,34 +934,36 @@ fn slot_cell(
                         box_rect.center() + Vec2::new(5.0, 0.0),
                         box_rect.center() + Vec2::new(-3.0, 5.0),
                     ],
-                    lane(mark, column.mute),
+                    mark,
                     egui::Stroke::NONE,
                 ));
             }
-            let text = if column.mute { theme::text_hint() } else { text };
             widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &slot.name, font, text);
         }
         SlotState::Playing => {
-            painter.rect_filled(rect, 0.0, lane(theme::control_playing(), column.mute));
+            // A playing clip keeps its colour, brighter, so the column still reads as its track.
+            let fill = motion::mix(clip_color, Color32::WHITE, 0.10 + 0.14 * hover);
+            let fill = if column.mute { motion::mix(theme::control_background(), fill, 0.45) } else { fill };
+            painter.rect_filled(rect, 0.0, fill);
+            let ink = theme::text_on(fill);
             // The mark is the shape its click does: a stop square while playing. A stopped
             // clip's mark is the play triangle the same way, for its click's launch.
             painter.rect_filled(
                 Rect::from_center_size(mark_rect(CLIP_MARK).center(), Vec2::splat(CLIP_MARK - 2.0)),
                 0.0,
-                lane(track_color, column.mute),
+                ink,
             );
-            let text = if column.mute { theme::text_hint() } else { theme::text_playing() };
-            widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &slot.name, font, text);
+            widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &slot.name, font, ink);
             let done = progress.unwrap_or(1.0).clamp(0.0, 1.0);
             let line =
-                Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() - 2.0), Vec2::new(rect.width() * done, 2.0));
-            painter.rect_filled(line, 0.0, theme::accent());
+                Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() - 3.0), Vec2::new(rect.width() * done, 3.0));
+            painter.rect_filled(line, 0.0, ink);
         }
     }
     // A selected clip is outlined as a selected arrangement clip is; a queued one keeps its
     // breathing outline.
     if selected && slot.state != SlotState::Queued {
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::text_primary()), StrokeKind::Inside);
+        painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, theme::text_primary()), StrokeKind::Inside);
     }
 }
 

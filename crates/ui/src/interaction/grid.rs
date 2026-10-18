@@ -62,6 +62,8 @@ pub struct Slot {
     pub length: f64,
     /// The clip's launch settings; `None` for an empty slot.
     pub launch: Option<LaunchSettings>,
+    /// The clip's own colour; `None` takes its track's.
+    pub color: Option<Rgb>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -229,7 +231,14 @@ impl Grid {
                 (ColumnKind::Return, _) => Vec::new(),
                 (_, None) => {
                     vec![
-                        Slot { state: SlotState::Empty, name: String::new(), enabled: true, length: 0.0, launch: None };
+                        Slot {
+                            state: SlotState::Empty,
+                            name: String::new(),
+                            enabled: true,
+                            length: 0.0,
+                            launch: None,
+                            color: None
+                        };
                         scene_count
                     ]
                 }
@@ -253,6 +262,7 @@ impl Grid {
                             enabled: clip.is_none_or(|c| c.enabled),
                             length: clip.map_or(0.0, |c| c.loop_range.map_or(c.length, |r| r.end - r.start)),
                             launch: clip.map(|c| c.launch),
+                            color: clip.and_then(|c| c.color),
                         }
                     })
                     .collect(),

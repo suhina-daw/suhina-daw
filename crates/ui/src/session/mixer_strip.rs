@@ -223,7 +223,13 @@ pub fn show(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
-    painter.rect_filled(rect, 0.0, theme::panel_background());
+    // The strip in a shade of its track's colour, as the column above it.
+    let tint = motion::mix(
+        theme::panel_background(),
+        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+        0.16,
+    );
+    painter.rect_filled(rect, 0.0, tint);
     // The strip's own background, under its controls: a double-click shows the track's devices.
     let strip = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip"), Sense::click());
     strip.widget_info(|| {
