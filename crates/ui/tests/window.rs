@@ -1921,6 +1921,9 @@ fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar_and_t
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
     assert!(harness.query_by_label("Show automation of A Reverb").is_some(), "its automation lanes button");
+    // A track's header has a send knob to the return, as its strip has.
+    assert!(harness.query_by_label("Drums send to A Reverb").is_some(), "a track's send knob");
+    assert!(harness.query_by_label("A Reverb send to A Reverb").is_none(), "no send on a return");
     // Main: a bar a drag sets, one undo step.
     let main = |h: &Harness<'static, App>| {
         let p = h.state().session().unwrap().project();

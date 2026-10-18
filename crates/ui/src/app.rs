@@ -2639,12 +2639,11 @@ impl App {
         let response =
             ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
-        if response.double_clicked() && pullable {
-            self.detail_max = !self.detail_max;
-        } else if response.double_clicked() {
-            // Elsewhere a double-click puts the detail area back to its default size.
-            self.detail_height = DETAIL_HEIGHT;
-            self.detail_width = detail_view::STACK_WIDTH;
+        // A double-click closes the detail area, as a double-click on a split view's divider does
+        // on macOS; a double-click on the closed splitter opens it at its default size.
+        if response.double_clicked() {
+            self.detail_max = false;
+            self.hide_editor();
         }
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
@@ -2874,6 +2873,11 @@ impl App {
             .interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+        if response.double_clicked() {
+            self.show_editor();
+            self.detail_height = DETAIL_HEIGHT;
+            self.detail_width = detail_view::STACK_WIDTH;
+        }
         if response.dragged_by(egui::PointerButton::Primary) {
             let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
             self.detail_drag = Some(height);

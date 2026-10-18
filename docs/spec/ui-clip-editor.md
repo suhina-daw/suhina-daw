@@ -283,7 +283,9 @@ track's devices, or the hint.
 **Built ([#442](https://github.com/suhina-daw/suhina-daw/issues/442)):** while the piano roll shows a
 clip under the Arrangement view, its splitter can be dragged all the way up. Past the view's least
 height (160 px) the piano roll snaps to the top; dragged down again past that height, the view comes
-back at the height the drag reaches. A double-click on the splitter takes it to the top and back.
+back at the height the drag reaches. A double-click on the splitter closes the detail area, as a
+double-click on a split view's divider does on macOS; a double-click on the closed splitter opens it
+again at its default size.
 What stays above it is a setting, Settings › Clip editor › Piano roll › **Pulled to the top**:
 
 - **Edited track** (default): the Arrangement view keeps its ruler and the lane of the track whose

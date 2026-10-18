@@ -307,6 +307,22 @@ fn the_detail_area_sits_beside_the_browser_or_spans_the_full_width() {
     assert!(harness.query_by_label("Device Utility").is_some(), "the chain still shows");
 }
 
+/// A double-click on the detail area's splitter closes the area; one on the closed splitter opens
+/// it again at its default size.
+#[test]
+fn a_double_click_on_the_splitter_closes_the_detail_area_and_opens_it_again() {
+    let mut harness = window_with(Settings::default(), false);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    assert!(harness.query_by_label("Device Utility").is_some(), "the chain shows");
+    let splitter = harness.get_by_label("Detail area splitter").rect().center();
+    double_click_at(&mut harness, splitter);
+    assert!(harness.query_by_label("Device Utility").is_none(), "closed");
+    let closed = harness.get_by_label("Detail area splitter").rect().center();
+    double_click_at(&mut harness, closed);
+    assert!(harness.query_by_label("Device Utility").is_some(), "open again");
+}
+
 /// A double-click at `at`, after a second without clicks.
 fn double_click_at(harness: &mut Harness<'static, App>, at: Pos2) {
     harness.hover_at(at);

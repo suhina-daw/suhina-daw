@@ -45,6 +45,9 @@ const HEADER_PAD_Y: f32 = 5.0;
 const HEADER_ROW: f32 = 15.0;
 const FIELD: f32 = 16.0;
 const PAN_FIELD: f32 = 46.0;
+/// The gap between a header's send knobs, and the least width its volume bar keeps beside them.
+const SEND_GAP: f32 = 3.0;
+const LEAST_VOLUME: f32 = 60.0;
 const ON_TOGGLE: f32 = 30.0;
 const SOLO: f32 = 18.0;
 /// A group's fold triangle at the start of its header row.
@@ -347,6 +350,8 @@ pub struct ArrangementViewState {
     gain_drag: Option<((TrackId, ClipId), f64)>,
     /// The main track's volume being dragged, and its value so far.
     main_drag: Option<f64>,
+    /// A header's send knob being dragged: the track, the return and the level so far (dB).
+    send_drag: Option<(TrackId, TrackId, f64)>,
     /// The main row's height, its top edge dragged to change it (a row by default).
     main_height: f32,
     fade_drag: Option<FadeDrag>,
@@ -428,6 +433,7 @@ impl Default for ArrangementViewState {
             value_drag: None,
             gain_drag: None,
             main_drag: None,
+            send_drag: None,
             main_height: ROW,
             fade_drag: None,
             curve_drag: None,
@@ -3092,8 +3098,19 @@ fn track_header(
     if rect.height() >= SHOWS_MIXER {
         let top = row.bottom() + PAD;
         let pan = Rect::from_min_max(Pos2::new(inner.right() - PAN_FIELD, top), Pos2::new(inner.right(), top + FIELD));
-        let volume = Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(pan.left() - 4.0, top + FIELD));
+        // The sends, a knob per return before the pan, as many as leave the volume bar its room
+        // (Ableton Live's track header has them too).
+        let step = FIELD + SEND_GAP;
+        let room = ((pan.left() - 4.0 - inner.left() - LEAST_VOLUME) / step).floor().max(0.0) as usize;
+        let shown = lane.sends.len().min(room);
+        let sends_left = pan.left() - 4.0 - step * shown as f32;
+        let volume = Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(sends_left, top + FIELD));
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
+        for (index, send) in lane.sends.iter().take(shown).enumerate() {
+            let knob =
+                Rect::from_min_size(Pos2::new(sends_left + SEND_GAP + step * index as f32, top), Vec2::splat(FIELD));
+            send_knob(ui, painter, knob, clip, lane, send, id, state, actions);
+        }
         value_control(ui, painter, pan, clip, lane, Control::Pan, false, id, state, actions);
     }
 
@@ -3132,6 +3149,84 @@ fn track_header(
             let height = (state.height(lane) + if upward { -dy } else { dy }).clamp(MIN_LANE, MAX_LANE);
             state.heights.insert(lane.track, height);
         }
+    }
+}
+
+/// A header's send knob to one return: dragged up or down for the level (`track.setSend`, sent
+/// when let go), double-click for none, right-click for before or after the fader
+/// (`track.setSendMode`), as the Session view's strip's.
+#[allow(clippy::too_many_arguments)]
+fn send_knob(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    clip: Rect,
+    lane: &Lane,
+    send: &crate::interaction::grid::SendKnob,
+    id: Id,
+    state: &mut ArrangementViewState,
+    actions: &mut Vec<Action>,
+) {
+    if !rect.intersects(clip) {
+        return;
+    }
+    let track = lane.track;
+    let mode = if send.pre_fader { "pre" } else { "post" };
+    let response = widgets::value_area(
+        ui,
+        rect.intersect(clip),
+        id.with(("send", send.target.0)),
+        format!("{} send to {}", lane.name, send.name),
+        format!("{} {mode}", widgets::format_db(send.level_db)),
+    );
+    let mut preview = match state.send_drag {
+        Some((t, r, v)) if t == track && r == send.target => Some(v),
+        _ => None,
+    };
+    let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
+    let mut committed = None;
+    match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
+        Drag::Moving(v) => state.send_drag = Some((track, send.target, v)),
+        Drag::Done(v) => {
+            state.send_drag = None;
+            committed = Some(v);
+            let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
+            actions
+                .push(Action::new("track.setSend", json!({ "track": track.0, "return": send.target.0, "level": db })));
+        }
+        Drag::None => {}
+    }
+    response.context_menu(|ui| {
+        for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {
+            if ui.radio(send.pre_fader == pre, label).clicked() {
+                let mode = if pre { "pre" } else { "post" };
+                actions.push(Action::new(
+                    "track.setSendMode",
+                    json!({ "track": track.0, "return": send.target.0, "mode": mode }),
+                ));
+                ui.close();
+            }
+        }
+    });
+    let shown = match state.send_drag {
+        Some((t, r, v)) if t == track && r == send.target => v,
+        _ => committed.unwrap_or(level),
+    };
+    let position = ((shown - VOLUME_RANGE.0) / (VOLUME_RANGE.1 - VOLUME_RANGE.0)) as f32;
+    let pointer = motion::mix(theme::text_value(), theme::text_primary(), widgets::hover(ui, &response));
+    widgets::knob(painter, rect.center(), FIELD, position, pointer);
+    // The return's letter in the knob, and a dot under it when the send is before the fader.
+    let letter = send.name.chars().next().map(String::from).unwrap_or_default();
+    widgets::text_in(
+        painter,
+        rect,
+        Align2::CENTER_CENTER,
+        &letter,
+        theme::mono_font(theme::TEXT_SMALL - 2.0),
+        theme::text_hint(),
+    );
+    if send.pre_fader {
+        painter.circle_filled(Pos2::new(rect.center().x, rect.bottom() + 1.5), 1.5, theme::text_value());
     }
 }
 
@@ -3481,6 +3576,7 @@ mod tests {
             audio_input: Default::default(),
             volume_db: 0.0,
             pan: 0.0,
+            sends: Vec::new(),
             output: None,
             column: None,
             overrides: false,

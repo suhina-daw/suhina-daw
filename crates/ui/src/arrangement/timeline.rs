@@ -131,6 +131,9 @@ pub struct Lane {
     pub audio_input: suhina_engine::model::AudioInput,
     pub volume_db: f64,
     pub pan: f64,
+    /// The track's sends, one per return track in track order (none on a return), as the
+    /// Session view's strip has them.
+    pub sends: Vec<crate::interaction::grid::SendKnob>,
     /// The group track this track plays into; `None` is the main output.
     pub output: Option<TrackId>,
     /// The track's column in the launcher, for the engine's per-track state.
@@ -265,6 +268,14 @@ impl Timeline {
         let marks = ruler_marks(project, &meter);
         let mut lanes = Vec::new();
         let mut returns = Vec::new();
+        let return_tracks: Vec<&suhina_engine::model::Track> = project
+            .tracks
+            .iter()
+            .filter(|t| {
+                let channel = t.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+                channel.is_some_and(|c| c.role == ChannelRole::Effect)
+            })
+            .collect();
         for (position, track) in project.tracks.iter().enumerate() {
             let channel = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
             let kind = match channel.map(|c| c.role) {
@@ -337,6 +348,21 @@ impl Timeline {
                 audio_input: track.audio_input,
                 volume_db: channel.map_or(0.0, |c| gain_to_db(c.volume)),
                 pan: channel.map_or(0.0, |c| c.pan),
+                sends: match (kind, channel) {
+                    (ColumnKind::Return, _) | (_, None) => Vec::new(),
+                    (_, Some(channel)) => return_tracks
+                        .iter()
+                        .map(|r| {
+                            let send = channel.sends.iter().find(|s| Some(s.target) == r.channel);
+                            crate::interaction::grid::SendKnob {
+                                target: r.id,
+                                name: r.name.clone(),
+                                level_db: send.map_or(f64::NEG_INFINITY, |s| gain_to_db(s.level)),
+                                pre_fader: send.is_some_and(|s| s.pre_fader),
+                            }
+                        })
+                        .collect(),
+                },
                 output: channel
                     .and_then(|c| c.output)
                     .and_then(|id| project.tracks.iter().find(|t| t.channel == Some(id)))
