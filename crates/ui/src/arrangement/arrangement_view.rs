@@ -51,8 +51,6 @@ const SOLO: f32 = 18.0;
 const FOLD: f32 = 12.0;
 /// The track colour's band down a header's left edge.
 const COLOUR_BAND: f32 = 6.0;
-/// The volume field on a return or main row.
-const FIXED_FIELD: f32 = 90.0;
 /// Points per beat: the default and the zoom range.
 const DEFAULT_BEAT_WIDTH: f32 = 8.0;
 /// From a whole song on screen to single samples of a short sound: at 4 000 points a beat, a beat
@@ -344,6 +342,8 @@ pub struct ArrangementViewState {
     value_drag: Option<ValueDrag>,
     /// A clip gain being dragged, and its value so far.
     gain_drag: Option<((TrackId, usize), f64)>,
+    /// The main track's volume being dragged, and its value so far.
+    main_drag: Option<f64>,
     fade_drag: Option<FadeDrag>,
     curve_drag: Option<CurveDrag>,
     /// The beat a clip was last right-clicked on, where its menu's Split here cuts.
@@ -421,6 +421,7 @@ impl Default for ArrangementViewState {
             clip_drag: None,
             value_drag: None,
             gain_drag: None,
+            main_drag: None,
             fade_drag: None,
             curve_drag: None,
             split_at: None,
@@ -652,12 +653,12 @@ impl ArrangementViewState {
     }
 
     fn height(&self, lane: &Lane) -> f32 {
-        self.lane_height(lane.track)
+        if lane.kind == ColumnKind::Return { self.return_height(lane.track) } else { self.lane_height(lane.track) }
     }
 
     /// How tall a return track's row is: a row's height until its edge is dragged.
     fn return_height(&self, track: TrackId) -> f32 {
-        self.heights.get(&track).copied().unwrap_or(ROW)
+        self.heights.get(&track).copied().unwrap_or(SHOWS_MIXER)
     }
 
     /// How tall `track`'s lane is.
@@ -980,7 +981,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     };
     // Each return its own height (a row by default, its bottom edge dragged to change it), the
     // main track a row.
-    let fixed_height = returns.iter().map(|l| state.return_height(l.track) + 1.0).sum::<f32>()
+    let fixed_height = returns
+        .iter()
+        .map(|l| state.return_height(l.track) + 1.0 + state.automation.height(l.track, &timeline.automation))
+        .sum::<f32>()
         + if main_volume_db.is_some() { ROW + 1.0 } else { 0.0 };
     let fixed_top = (area.bottom() - fixed_height).max(marker_row.bottom() + 1.0);
     let fixed = Rect::from_min_max(Pos2::new(area.left(), fixed_top), area.max);
@@ -1268,7 +1272,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let height = state.return_height(lane.track);
         let lane_time = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(y, y + height));
         rows.push(Row { track: lane.track, clips: lane.track, time: lane_time, clip: lane_time.intersect(fixed) });
-        y += height + 1.0;
+        y += height + 1.0 + state.automation.height(lane.track, &timeline.automation);
     }
     let row_of = |track: TrackId| rows.iter().find(|r| r.track == track).copied();
     let row_of_clips = |track: TrackId| rows.iter().find(|r| r.clips == track).copied();
@@ -1558,8 +1562,28 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 ghost = ghost.or(found);
             }
         }
+        // A return's header is a track's: volume and pan, mute, solo, its menu, its height.
         let header = Rect::from_x_y_ranges(headers, row.time.y_range());
-        fixed_row(ui, &fixed_painter, header, fixed, lane, state, actions);
+        let nest = Nest { places: &places, groups: &groups };
+        let order = HeaderOrder { children: 0, tracks: &[] };
+        track_header(ui, &fixed_painter, header, fixed, lane, 0, &nest, &order, timeline, state, actions);
+        // Its automation lanes, under it, as a track's.
+        let fixed_geometry = automation::Geometry { visible: fixed, ..geometry };
+        let lanes = automation::TrackLanes {
+            track: lane.track,
+            name: &lane.name,
+            color: lane.color,
+            top: row.time.bottom() + 1.0,
+        };
+        automation::show(
+            ui,
+            &fixed_painter,
+            &fixed_geometry,
+            &lanes,
+            &timeline.automation,
+            &mut state.automation,
+            actions,
+        );
         fixed_painter.hline(area.x_range(), row.time.bottom() + 0.5, theme::hairline(theme::border()));
     }
     if let Some(db) = main_volume_db {
@@ -1573,8 +1597,30 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         );
         let font = theme::ui_font(theme::TEXT);
         widgets::text_in(&fixed_painter, inner, Align2::LEFT_CENTER, "Main", font, theme::text_primary());
-        let field = Rect::from_min_max(Pos2::new(inner.right() - FIXED_FIELD, inner.top()), inner.max);
-        volume_text(&fixed_painter, field, db, 0.0);
+        // The main volume as a track's: a bar that a drag sets (heard while dragging, one undo
+        // step), a double-click back to 0 dB.
+        let field = Rect::from_min_max(Pos2::new(inner.left() + inner.width() * 0.45, inner.top()), inner.max);
+        let response = widgets::value_area(
+            ui,
+            field.intersect(fixed),
+            Id::new("arrangement-main-volume"),
+            "Main volume",
+            widgets::format_db(state.main_drag.unwrap_or(db)),
+        );
+        let mut preview = state.main_drag;
+        match widgets::drag_value(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
+            Drag::Moving(v) => {
+                let first = state.main_drag.is_none();
+                state.main_drag = Some(v);
+                actions.push(Action::new("main.setVolume", json!({ "db": v, "continue": !first })));
+            }
+            Drag::Done(v) => {
+                state.main_drag = None;
+                actions.push(Action::new("main.setVolume", json!({ "db": v, "continue": true })));
+            }
+            Drag::None => {}
+        }
+        volume_field(&fixed_painter, field, state.main_drag.unwrap_or(db), widgets::hover(ui, &response));
         let at = lying_meter(field.left() - PAD, inner.center().y);
         let level = state.meters.main;
         meter::show(ui, &fixed_painter, at, "Main", meter::Source::Main, &level, actions);
@@ -2793,53 +2839,6 @@ fn lying_meter(right: f32, y: f32) -> Rect {
     Rect::from_min_max(Pos2::new(right - LYING_METER, y - meter::WIDTH / 2.0), Pos2::new(right, y + meter::WIDTH / 2.0))
 }
 
-/// A return track's row: its name, its meter and its volume.
-fn fixed_row(
-    ui: &Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    clip: Rect,
-    lane: &Lane,
-    state: &mut ArrangementViewState,
-    actions: &mut Vec<Action>,
-) {
-    let id = Id::new(("arrangement-header", lane.track.0));
-    // A click selects the return, so the detail area shows its devices; its controls, added
-    // after, take their own clicks.
-    let body = ui.interact(rect.intersect(clip), id.with("body"), Sense::click());
-    body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", lane.name)));
-    if body.clicked() {
-        state.targeted = Some(lane.track);
-        let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
-        state.pick_track(lane.track, shift, command, &[]);
-    }
-    let selected = state.selected_tracks.contains(&lane.track);
-    let tint = if selected { 0.42 } else { 0.26 };
-    painter.rect_filled(rect, 0.0, motion::mix(theme::panel_background(), rgb(lane.color), tint));
-    let band = colour_band(ui, painter, rect, clip, lane, id, actions);
-    let inner = Rect::from_min_max(Pos2::new(band.right() + PAD, rect.top() + 2.0), rect.max - Vec2::new(PAD, 2.0));
-    let field = Rect::from_min_max(Pos2::new(inner.right() - FIXED_FIELD, inner.top()), inner.max);
-    let level = state.meters.track(lane.track);
-    let at = lying_meter(field.left() - PAD, inner.center().y);
-    meter::show(ui, painter, at.intersect(clip), &lane.name, meter::Source::Track(lane.track), &level, actions);
-    let name = Rect::from_min_max(inner.min, Pos2::new(at.left() - PAD, inner.bottom()));
-    let color = if lane.mute { theme::text_hint() } else { theme::text_primary() };
-    widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(theme::TEXT), color);
-    value_control(ui, painter, field, clip, lane, Control::Volume, true, id, state, actions);
-    // The bottom edge sets the row's height.
-    let edge =
-        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 3.0), Pos2::new(rect.right(), rect.bottom() + 2.0));
-    if edge.intersects(clip) {
-        let response = ui
-            .interact(edge.intersect(clip), id.with("resize"), Sense::drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
-        if response.dragged_by(egui::PointerButton::Primary) {
-            let height = (state.return_height(lane.track) + response.drag_delta().y).clamp(ROW, MAX_LANE);
-            state.heights.insert(lane.track, height);
-        }
-    }
-}
-
 /// A header's colour band: the track's colour down its left edge, the full height of the header
 /// (dimmed while the track is off). A click opens the palette; gives the band's rectangle.
 fn colour_band(
@@ -2996,7 +2995,7 @@ fn track_header(
         lane.armable.then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(SOLO, HEADER_ROW)));
     // The automation button at the end of the row shows and hides the track's lanes.
     let lanes_button = Rect::from_min_size(Pos2::new(row.right() - SOLO, row.top()), Vec2::new(SOLO, HEADER_ROW));
-    if lane.kind != ColumnKind::Return && lanes_button.intersects(clip) {
+    if lanes_button.intersects(clip) {
         automation::header_button(
             ui,
             painter,

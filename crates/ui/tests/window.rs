@@ -1882,6 +1882,36 @@ fn two_projects() -> Harness<'static, App> {
 }
 
 #[test]
+fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar() {
+    let mut harness = arrangement_app();
+    // A return's header is a track's: volume and pan, its on switch, its automation lanes.
+    for label in ["A Reverb volume", "A Reverb pan", "Turn A Reverb off"] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+    assert!(harness.query_by_label("Show automation of A Reverb").is_some(), "its automation lanes button");
+    // Main: a bar a drag sets, one undo step.
+    let main = |h: &Harness<'static, App>| {
+        let p = h.state().session().unwrap().project();
+        p.channels.iter().find(|c| c.role == suhina_engine::model::ChannelRole::Master).map(|c| c.volume).unwrap()
+    };
+    let bar = harness.get_by_label("Main volume").rect().center();
+    harness.hover_at(bar);
+    harness.step();
+    harness.drag_at(bar);
+    harness.step();
+    for y in [10.0, 20.0, 40.0] {
+        harness.hover_at(bar + egui::vec2(0.0, y));
+        harness.step();
+    }
+    harness.drop_at(bar + egui::vec2(0.0, 40.0));
+    harness.run_steps(3);
+    assert!(main(&harness) < 1.0, "dragged down, quieter: {}", main(&harness));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(3);
+    assert!((main(&harness) - 1.0).abs() < 1e-9, "one undo step");
+}
+
+#[test]
 fn ctrl_tab_shows_the_open_projects_and_switches_when_ctrl_is_let_go() {
     let mut app = App::new();
     for _ in 0..3 {

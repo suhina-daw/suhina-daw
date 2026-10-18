@@ -121,8 +121,11 @@ the clips with a line at each edge, and as a bar along the ruler.
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
 where they were, an empty row between them staying until the rows above it empty too.
 
-Return tracks, along the bottom, are selected with a click on their header (the detail area
-shows their devices) and made taller or shorter by dragging their bottom edge.
+Return tracks, along the bottom, have a track's header: volume and pan, the on switch and solo,
+the menu, automation lanes under them (shown with the header's button), a click to select them
+(the detail area shows their devices) and a bottom edge that sets their height (tall enough for
+volume and pan by default). The main track's row has a volume bar that a drag sets
+(`main.setVolume`, heard while dragging, one undo step).
 
 ## Clip edges
 
