@@ -238,10 +238,12 @@ pub fn show(
     if strip.double_clicked() {
         state.open_devices = Some(column.track);
     }
-    // A click on the strip selects its track, a return's too.
+    // A click on the strip selects its track, a return's too; a slot selected on that track stays.
     if strip.clicked() {
         state.selected = Some(column.track);
-        state.selected_slot = None;
+        if state.selected_slot.is_some_and(|(track, _)| track != column.track) {
+            state.selected_slot = None;
+        }
     }
     // The track's colour down the left edge, at every height; a click opens the palette.
     let band = Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()));
