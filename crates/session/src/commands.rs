@@ -132,6 +132,9 @@ const CONTINUE: Param = optional(
      when no other edit came between (one drag, one step)",
 );
 const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (ids or names), at least one");
+const RANGE_START: Param =
+    param("start", ParamType::Number, "where the time selection starts, in beats from the beginning, at least 0");
+const RANGE_END: Param = param("end", ParamType::Number, "where the time selection ends, in beats, after start");
 const DEVICE: Param = param("device", ParamType::Integer, "device index on the track, from 0, as in track.devices");
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
 const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
@@ -660,6 +663,66 @@ static COMMANDS: &[CommandSpec] = &[
         params: &[CLIPS, param("enabled", ParamType::Bool, "true plays the clips, false silences them")],
         kind: CommandKind::Edit,
         run: set_clip_enabled,
+    },
+    CommandSpec {
+        id: "range.split",
+        label: "Split the clips of some tracks at both edges of a time selection, so the span is clips of its own; answers with the clips inside it",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::split_range,
+    },
+    CommandSpec {
+        id: "range.delete",
+        label: "Delete what plays inside a time selection on some tracks: clips crossing an edge keep their parts outside it, and the gap stays",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::delete_range,
+    },
+    CommandSpec {
+        id: "range.copy",
+        label: "Copy what plays inside a time selection on some tracks, cut to it, for clip.paste; a paste with no track puts each part back on its own track",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Read,
+        run: crate::range::copy_range,
+    },
+    CommandSpec {
+        id: "range.cut",
+        label: "Copy what plays inside a time selection for clip.paste and delete it, as one undo step",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::cut_range,
+    },
+    CommandSpec {
+        id: "range.duplicate",
+        label: "Put a copy of what plays inside a time selection right after it, on the same tracks",
+        params: &[
+            TRACKS,
+            RANGE_START,
+            RANGE_END,
+            optional(
+                "stack",
+                ParamType::Bool,
+                "true leaves clips under the copy as they are; false (default) replaces them",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::range::duplicate_range,
+    },
+    CommandSpec {
+        id: "clip.moveMany",
+        label: "Move several arrangement clips by the same number of beats at once, so none replaces another on the way; to_track takes clips of one track to another",
+        params: &[
+            param("clips", ParamType::Clips, "the clips to move, each {track, index} from project.clips"),
+            param("beats", ParamType::Number, "how far to move them, in beats; negative is earlier"),
+            optional("to_track", ParamType::Track, "track to move them to, when they are all on one track"),
+            optional(
+                "stack",
+                ParamType::Bool,
+                "true leaves clips under them as they are; false (default) replaces them",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::range::move_clips,
     },
     CommandSpec {
         id: "clip.split",
@@ -2574,7 +2637,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
 
 /// The clips `params.clips` names, each `{ "track": …, "index": n }` as `project.clips` lists
 /// them: at least one, without duplicates, every one of them there.
-fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
+pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
     let list = params.get("clips").and_then(Value::as_array).ok_or("clips must be a list of {track, index}")?;
     let mut out: Vec<(TrackId, usize)> = Vec::new();
     for entry in list {
@@ -2780,6 +2843,7 @@ fn set_clip_fades(session: &mut Session, params: &Value) -> Result<Value, Comman
 fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let mut copied: Vec<(Clip, ClipContent)> = Vec::new();
+    let mut from: Vec<TrackId> = Vec::new();
     match (params.get("clips"), params.get("scene")) {
         (Some(_), None) => {
             if params.get("track").is_some() {
@@ -2796,6 +2860,7 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
                     .ok_or("the clip is missing")?;
                 let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
                 copied.push((clip, content));
+                from.push(track);
             }
         }
         (None, Some(_)) => {
@@ -2810,11 +2875,12 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     }
     let names: Vec<String> = copied.iter().map(|(_, content)| content.name.clone()).collect();
     session.clipboard = copied;
+    session.clipboard_tracks = from;
     Ok(json!({ "copied": names }))
 }
 
 /// An id no clip content of `p` has yet.
-fn new_content_id(p: &Project) -> Result<suhina_model::ContentId, CommandError> {
+pub(crate) fn new_content_id(p: &Project) -> Result<suhina_model::ContentId, CommandError> {
     let id = p.contents.iter().map(|c| c.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many clips")?;
     Ok(suhina_model::ContentId(id))
 }
@@ -2856,6 +2922,12 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
+    // No track: each copied clip goes back to the track it came from.
+    if params.get("track").is_none()
+        && let PasteAt::Beat(start) = at
+    {
+        return crate::range::paste_to_sources(session, start, stack);
+    }
     let track = track_id(&session.project, params)?;
     {
         let p = &session.project;

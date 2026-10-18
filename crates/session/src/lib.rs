@@ -27,6 +27,7 @@ mod plugins;
 mod preview;
 mod projects;
 mod rack;
+mod range;
 mod record_writer;
 mod recording;
 mod relink;
@@ -265,6 +266,9 @@ pub struct Session {
     quantization: Quantization,
     /// The arrangement clips copied for `clip.paste`, with the content each plays.
     clipboard: Vec<(suhina_model::Clip, suhina_model::ClipContent)>,
+    /// The track each copied clip came from, when the copy knows it (arrangement clips and time
+    /// selections); a paste with no track puts each clip back on its own.
+    clipboard_tracks: Vec<suhina_model::TrackId>,
     /// Notes copied from a MIDI clip, for `note.paste`.
     note_clipboard: Option<notes::NoteClipboard>,
     /// Set by an edit command whose changes are device parameters.
@@ -322,6 +326,7 @@ impl Session {
             player: None,
             quantization: Quantization::Bars(1),
             clipboard: Vec::new(),
+            clipboard_tracks: Vec::new(),
             note_clipboard: None,
             param_edits: Vec::new(),
             param_gesture: None,
@@ -359,6 +364,13 @@ impl Session {
     /// How many arrangement clips are copied for `clip.paste`.
     pub fn copied_clips(&self) -> usize {
         self.clipboard.len()
+    }
+
+    /// Whether the copied clips came from more than one track, so a paste puts each back on its
+    /// own track rather than all on one.
+    pub fn copied_from_tracks(&self) -> bool {
+        self.clipboard_tracks.len() == self.clipboard.len()
+            && self.clipboard_tracks.iter().any(|t| Some(t) != self.clipboard_tracks.first())
     }
 
     /// The project's decoded audio, which players are started with (ADR 0011).
