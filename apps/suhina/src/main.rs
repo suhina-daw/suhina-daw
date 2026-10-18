@@ -286,6 +286,7 @@ impl eframe::App for Window {
             && let Some(start_up) = self.start_up.take()
         {
             self.start(start_up);
+            self.app.check_updates_at_start(ui.ctx());
         }
         if let Some(splash) = self.splash.as_mut()
             && !splash.started()
@@ -374,6 +375,12 @@ impl eframe::App for Window {
     /// left to offer next time.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let _finished_in_time = self.app.finish_backups();
+        // Restart now, after an update: the new build starts as this one closes.
+        if self.app.restart_wanted()
+            && let Err(e) = suhina_update::relaunch()
+        {
+            eprintln!("error: {e}");
+        }
     }
 }
 

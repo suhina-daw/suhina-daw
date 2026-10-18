@@ -3606,6 +3606,22 @@ fn help_about_shows_the_version_and_copies_it() {
 }
 
 #[test]
+fn help_check_for_updates_opens_the_dialog_and_offers_no_gh_on_the_nightly_channel() {
+    let mut harness = window(demo_app());
+    harness.get_by_label("Help").click();
+    harness.run();
+    harness.get_by_label_contains("Check for updates").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Check for updates now").is_some());
+    // The GitHub CLI is only offered for test builds, and only connected on a click.
+    assert!(harness.query_by_label("Connect Suhina to your gh").is_none());
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(harness.query_by_label("Check for updates now").is_none());
+}
+
+#[test]
 fn a_slots_menu_copies_its_clip_and_pastes_once_something_is_copied() {
     let mut harness = view();
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();

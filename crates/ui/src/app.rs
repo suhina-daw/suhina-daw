@@ -11,6 +11,7 @@ pub mod missing_files;
 pub mod project_dialog;
 pub mod splash;
 pub mod start_panel;
+pub mod updates;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -269,6 +270,10 @@ pub struct App {
     save_prompt: Option<SavePrompt>,
     /// Help › About Suhina is open.
     about_open: bool,
+    /// The update check, Help › Check for updates… and the start panel's update line.
+    updates: crate::app::updates::Updates,
+    /// Restart now was pressed: the window starts the updated build as it closes.
+    restart: bool,
     new_request: Option<NewProject>,
     /// A project file saved since the app last asked, for its recent list.
     saved_path: Option<PathBuf>,
@@ -374,6 +379,8 @@ impl App {
             pick_request: None,
             save_prompt: None,
             about_open: false,
+            updates: crate::app::updates::Updates::default(),
+            restart: false,
             new_request: None,
             saved_path: None,
             default_folders: (PathBuf::from("Projects"), PathBuf::from("Templates")),
@@ -881,6 +888,27 @@ impl App {
         }
     }
 
+    /// Checks for updates as Settings › General › Updates says; the desktop app calls it once
+    /// the window is up, tests never do (`docs/spec/updates.md`).
+    pub fn check_updates_at_start(&mut self, ctx: &egui::Context) {
+        self.updates.at_start(ctx, &self.settings.updates);
+    }
+
+    /// Restart now was pressed and the window is closing: the updated build is to be started.
+    pub fn restart_wanted(&self) -> bool {
+        self.restart
+    }
+
+    fn updates_wanted(&mut self, ctx: &egui::Context, wanted: crate::app::updates::Wanted) {
+        match wanted {
+            crate::app::updates::Wanted::Restart => {
+                self.restart = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            crate::app::updates::Wanted::Open(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
+        }
+    }
+
     /// The start panel, in the view's place while no project is open; its lists are read again
     /// each time it appears.
     fn start_panel(&mut self, ui: &mut Ui) {
@@ -900,7 +928,14 @@ impl App {
         let area = ui.max_rect();
         let now = std::time::SystemTime::now();
         let version = env!("CARGO_PKG_VERSION");
-        match start_panel::show(ui, area, &mut self.start, &self.project_lists, &audio, version, now) {
+        let notice = self.updates.notice();
+        match start_panel::show(ui, area, &mut self.start, &self.project_lists, &audio, version, notice.as_ref(), now) {
+            Some(StartChoice::Update) => {
+                if let Some(wanted) = self.updates.notice_pressed(ui.ctx()) {
+                    self.updates_wanted(ui.ctx(), wanted);
+                }
+            }
+            Some(StartChoice::UpdatePage(url)) => ui.ctx().open_url(egui::OpenUrl::new_tab(url)),
             Some(StartChoice::NewBlank) => self.new_request = Some(NewProject::Blank),
             Some(StartChoice::NewFromTemplate(path)) => self.new_request = Some(NewProject::Template(path)),
             Some(StartChoice::Open(path)) => self.request_open(path),
@@ -1133,6 +1168,11 @@ impl App {
                 None => {}
             }
         }
+        if self.updates.open
+            && let Some(wanted) = self.updates.show(ui, window, &self.settings.updates)
+        {
+            self.updates_wanted(ui.ctx(), wanted);
+        }
         if self.about_open {
             match project_dialog::show_about(ui, window) {
                 Some(AboutChoice::Copy) => {
@@ -1175,7 +1215,8 @@ impl App {
             match project_dialog::show_unsaved(ui, window, &name, doing) {
                 Some(UnsavedChoice::Save) => self.save_and_leave(leaving),
                 Some(UnsavedChoice::DontSave) => self.leave(leaving),
-                Some(UnsavedChoice::Cancel) => {}
+                // Restart now waits for the next Restart now once the quit is called off.
+                Some(UnsavedChoice::Cancel) => self.restart = false,
                 None => self.unsaved_prompt = Some(leaving),
             }
         }
@@ -2918,6 +2959,9 @@ impl App {
                 }
             });
             ui.menu_button("Help", |ui| {
+                if ui.button("Check for updates…").clicked() {
+                    self.updates.open_dialog();
+                }
                 if ui.add(egui::Button::new("About Suhina").shortcut_text(keys("help.about"))).clicked() {
                     self.about_open = true;
                 }
@@ -3047,7 +3091,8 @@ impl App {
             || self.save_prompt.is_some()
             || self.unsaved_prompt.is_some()
             || self.about_open
-            || !self.agent_asks.is_empty();
+            || !self.agent_asks.is_empty()
+            || self.updates.open;
         if ui.ctx().egui_wants_keyboard_input() || dialog || (self.settings_open && self.page.capture.is_some()) {
             return;
         }

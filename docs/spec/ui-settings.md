@@ -34,6 +34,7 @@ is on exactly one page, under one heading.
 | General | Backups | Backups, Clean up backups, Last backup (read only) |
 | General | Agents | Let agents work on open projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
 | General | Dropping files | Several files, Warp mode |
+| General | Updates | Check for updates, Channel (Test builds only in developer mode), Developer mode ([spec](updates.md)) |
 | Audio | Output | Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
 | Audio | Cue | Cue output, Cue volume |
 | Audio | Now | Output, Latency, Key to sound, Input now (read only), List devices again |

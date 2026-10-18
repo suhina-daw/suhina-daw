@@ -344,6 +344,9 @@ the wheel over it, as far as its last row and no further.
 | General › Backups | Last backup | The active project's newest backup, its time and file, as the row's note; "None written for this project yet" |
 | General › Dropping files | Several files | One track (default), One each; Ctrl while dropping does the other ([browser spec](../spec/browser.md) › Files) |
 | General › Dropping files | Warp mode | Rhythmic (default), Tonal, Texture, Smooth, High quality, Re-pitch: how a dropped sample with a known tempo is stretched |
+| General › Updates | Check for updates | On (default): once per start, asks GitHub whether a newer build is out ([spec](../spec/updates.md)); Off |
+| General › Updates | Channel | Nightly (default); Test builds as well while developer mode is on |
+| General › Updates | Developer mode | Off (default); On lists test builds of pull requests as a channel |
 | Audio › Output | Driver | Default (the host's own), then each host (WASAPI, ASIO, …): a 260 px dropdown |
 | Audio › Output | Device | Default (the host's default device), then the host's devices; a saved device that is gone says so and the default plays |
 | Audio › Output | Sample rate | The device's own (default), then the rates the device offers |
