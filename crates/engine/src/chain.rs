@@ -27,7 +27,7 @@
 
 use std::time::{Duration, Instant};
 
-use suhina_device_api::{Device, NoteEvent, ProcessContext, Role};
+use suhina_device_api::{Device, NoteEvent, ProcessContext};
 use suhina_model::{DeviceKind, Project, TrackId};
 
 use crate::automation::{DeviceLanes, MixLanes};
@@ -53,6 +53,8 @@ pub(crate) enum Slot {
     InstrumentSd(suhina_device_sdk::PreparedEffect),
     MidiSd(suhina_device_sdk::PreparedMidiEffect),
     Plugin(PluginSlot),
+    /// A device group: branches of slots summed (`docs/spec/device-groups.md`).
+    Group(Box<crate::group::GroupSlot>),
 }
 
 pub(crate) struct Chain {
@@ -189,7 +191,7 @@ impl Chain {
                         match &mut slot {
                             Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
                             Slot::MidiSd(effect) => effect.set_parameter(index, value),
-                            Slot::Device(_) | Slot::Plugin(_) => {}
+                            Slot::Device(_) | Slot::Plugin(_) | Slot::Group(_) => {}
                         }
                         values.push(stored_value);
                     }
@@ -224,6 +226,19 @@ impl Chain {
                     positions.push(position);
                     ids.push(format!("plugin:{key:016x}"));
                     params.push(Vec::new());
+                    continue;
+                }
+                DeviceKind::Group(group) => {
+                    if !stored.enabled {
+                        continue;
+                    }
+                    let builder = crate::group::Builder { sample_rate, assets };
+                    let Some(built) = builder.group(stored, group, 0) else { continue };
+                    latency = latency.saturating_add(built.latency);
+                    slots.push(built.slot);
+                    positions.push(position);
+                    ids.push(built.id);
+                    params.push(built.values);
                     continue;
                 }
                 _ => continue,
@@ -267,12 +282,7 @@ impl Chain {
             }
             params.push(values);
         }
-        let instrument = slots.iter().any(|slot| match slot {
-            Slot::Device(device) => device.info().role == Role::Instrument,
-            Slot::Plugin(slot) => slot.instrument,
-            Slot::InstrumentSd(_) => true,
-            Slot::Sd(_) | Slot::MidiSd(_) => false,
-        });
+        let instrument = slots.iter().any(crate::group::is_instrument);
         (!slots.is_empty()).then(|| Self {
             track,
             column,
@@ -442,6 +452,10 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context);
+                    *stage += 1;
+                }
+                Slot::Group(group) => {
+                    group.run(buffer, from, to, pending, context, *deadline);
                     *stage += 1;
                 }
                 Slot::Sd(effect) => {
@@ -689,6 +703,10 @@ impl Chain {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context);
                     index += 1;
                 }
+                Slot::Group(group) => {
+                    group.run(buffer, from, to, pending, context, *deadline);
+                    index += 1;
+                }
                 Slot::Sd(effect) => {
                     run_sd_effect(effect, index, buffer, device_lanes, SdRun { from, to, context });
                     index += 1;
@@ -829,6 +847,14 @@ impl Chain {
                     *slot = value;
                 }
             }
+            Some(Slot::Group(group)) => {
+                group.set_param(param, value);
+                if let (Some(slot), Some(&set)) =
+                    (self.params.get_mut(index).and_then(|values| values.get_mut(param)), group.values().get(param))
+                {
+                    *slot = set;
+                }
+            }
             None => {}
         }
     }
@@ -882,6 +908,8 @@ impl Chain {
                     }
                 }
                 (Slot::Plugin(_), _) => {}
+                (Slot::Group(running), Slot::Group(fresh)) => running.adopt(fresh),
+                (Slot::Group(_), _) => {}
             }
         }
         self.held = old.held;
@@ -899,6 +927,7 @@ impl Chain {
             Slot::Sd(_) => None,
             Slot::InstrumentSd(_) => None,
             Slot::MidiSd(_) => None,
+            Slot::Group(_) => None,
         })
     }
 
@@ -1095,7 +1124,7 @@ pub(crate) enum Placed {
 /// split where a note event or a change of a parameter that follows a lane falls; at one frame
 /// the parameter changes before the note.
 #[allow(clippy::too_many_arguments)]
-fn run_device(
+pub(crate) fn run_device(
     device: &mut Box<dyn Device>,
     slot: usize,
     buffer: &mut [f32],
@@ -1127,13 +1156,13 @@ fn run_device(
 }
 
 #[derive(Clone, Copy)]
-struct SdRun<'a> {
-    from: usize,
-    to: usize,
-    context: &'a ProcessContext,
+pub(crate) struct SdRun<'a> {
+    pub(crate) from: usize,
+    pub(crate) to: usize,
+    pub(crate) context: &'a ProcessContext,
 }
 
-fn run_sd_effect(
+pub(crate) fn run_sd_effect(
     effect: &mut suhina_device_sdk::PreparedEffect,
     slot: usize,
     buffer: &mut [f32],
@@ -1154,7 +1183,7 @@ fn run_sd_effect(
     }
 }
 
-fn run_sd_instrument(
+pub(crate) fn run_sd_instrument(
     instrument: &mut suhina_device_sdk::PreparedEffect,
     slot: usize,
     buffer: &mut [f32],
@@ -1195,7 +1224,7 @@ fn run_sd_instrument_span(
     }
 }
 
-fn run_sd_midi(
+pub(crate) fn run_sd_midi(
     effect: &mut suhina_device_sdk::PreparedMidiEffect,
     slot: usize,
     events: &[(usize, NoteEvent)],

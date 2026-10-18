@@ -30,6 +30,9 @@ mod fade_tests;
 mod follow;
 #[cfg(test)]
 mod follow_tests;
+mod group;
+#[cfg(test)]
+mod group_tests;
 mod input;
 #[cfg(test)]
 mod input_tests;
@@ -77,6 +80,7 @@ use audio::{AudioEvent, Fades};
 use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK, run_as_answered};
 pub use cpu::CpuMonitor;
 pub use cue::MAX_CUE_GAIN;
+pub use group::{GROUP_PARAMS, SILENT_DB, group_param_index, group_param_values};
 pub use input::MAX_INPUT_CHANNELS;
 use launcher::Launcher;
 pub use launcher::{

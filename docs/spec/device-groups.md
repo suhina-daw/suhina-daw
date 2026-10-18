@@ -9,6 +9,7 @@ covers:
   - crates/model/src/groups.rs
   - crates/project-file/src/lib.rs
   - crates/engine/src/chain.rs
+  - crates/engine/src/group.rs
   - crates/session/src/devices.rs
 ---
 

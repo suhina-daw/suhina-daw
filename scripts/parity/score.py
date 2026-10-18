@@ -190,9 +190,10 @@ CHAPTERS = [
      "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
      "and automated from the engine. Missing AU, VST2 hosting, "
      "configure mode, VST preset banks, sidechain parameters."),
-    (25, "Instrument, Drum and Effect Racks", 20, 0.03, "absent",
-     "A track's device chain is a single serial chain. No parallel chains, macros, key/velocity/"
-     "chain zones, drum pads or rack presets."),
+    (25, "Instrument, Drum and Effect Racks", 20, 0.12, "partial",
+     "Device groups run in the engine: parallel branches with volume, pan, mute and solo, a mix "
+     "against the dry signal and an output gain, instruments layered on the same notes, groups "
+     "nested four deep. No macros, key/velocity/chain zones, drum pads or group presets."),
     (26, "Automation and Editing Envelopes", 22, 0.46, "partial",
      "Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints "
      "with curved segments and jumps, saved, played in playback and renders (64-frame steps, ramped "

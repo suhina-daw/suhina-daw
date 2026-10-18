@@ -1,0 +1,202 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Device groups in the chain (`docs/spec/device-groups.md`): branches summed at their volume
+//! and pan, mute and solo, the mix and the gain, instruments layered, nesting, block sizes.
+
+use suhina_model::*;
+
+use crate::chain_tests::{SR, blocks, device, max_diff, note, peak, project};
+use crate::{Renderer, render_offline};
+
+/// -6.0206 dB: half the amplitude.
+const HALF_DB: f64 = -6.0206;
+
+fn branch(devices: Vec<Device>) -> Branch {
+    Branch { devices, ..Branch::new("B") }
+}
+
+fn group(branches: Vec<Branch>, params: &[(&str, f64)]) -> Device {
+    Device {
+        params: params.iter().map(|(p, v)| DeviceParam::new(*p, *v)).collect(),
+        ..Device::group("G", DeviceGroup::with_branches(branches))
+    }
+}
+
+fn half() -> Device {
+    device("utility", &[("gain", HALF_DB)])
+}
+
+fn render(devices: Vec<Device>) -> Vec<f32> {
+    render_offline(&project(vec![note(0.0, 2.0, 69)], 2.0, devices), SR, 512).unwrap_or_default()
+}
+
+fn scaled(signal: &[f32], by: f32) -> Vec<f32> {
+    signal.iter().map(|s| s * by).collect()
+}
+
+/// The sound of the notes through a neutral chain, to compare against.
+fn reference() -> Vec<f32> {
+    render(vec![device("utility", &[])])
+}
+
+#[test]
+fn a_group_of_one_branch_sounds_exactly_like_its_devices() {
+    let plain = render(vec![half()]);
+    let grouped = render(vec![group(vec![branch(vec![half()])], &[])]);
+    assert_eq!(plain, grouped, "bit for bit");
+    let empty = render(vec![device("utility", &[]), group(vec![branch(vec![])], &[])]);
+    assert_eq!(empty, reference(), "an empty branch is a clean passthrough");
+}
+
+#[test]
+fn branches_add_up() {
+    let two_halves = render(vec![group(vec![branch(vec![half()]), branch(vec![half()])], &[])]);
+    let whole = reference();
+    assert!(max_diff(&two_halves, &whole) < 1e-4, "{}", max_diff(&two_halves, &whole));
+    assert!(peak(&whole) > 0.1);
+}
+
+#[test]
+fn a_muted_branch_adds_nothing_and_a_soloed_one_is_all_that_sounds() {
+    let whole = reference();
+    let mut muted = branch(vec![device("utility", &[])]);
+    muted.mute = true;
+    let with_mute = render(vec![group(vec![branch(vec![half()]), muted], &[])]);
+    assert!(max_diff(&with_mute, &scaled(&whole, 0.5)) < 1e-4);
+
+    let mut soloed = branch(vec![half()]);
+    soloed.solo = true;
+    let with_solo = render(vec![group(vec![soloed, branch(vec![device("utility", &[])])], &[])]);
+    assert!(max_diff(&with_solo, &scaled(&whole, 0.5)) < 1e-4);
+
+    // Mute wins over solo; every branch muted leaves the dry part of the mix only.
+    let mut both = branch(vec![device("utility", &[])]);
+    both.solo = true;
+    both.mute = true;
+    let silent = render(vec![device("utility", &[]), group(vec![both], &[])]);
+    assert!(peak(&silent) < 1e-6);
+    let mut all_muted = branch(vec![device("utility", &[])]);
+    all_muted.mute = true;
+    let dry_half = render(vec![device("utility", &[]), group(vec![all_muted], &[("mix", 0.5)])]);
+    assert!(max_diff(&dry_half, &scaled(&whole, 0.5)) < 1e-4);
+}
+
+#[test]
+fn the_mix_crossfades_the_dry_signal_and_the_branches_linearly() {
+    let whole = reference();
+    for (mix, expected) in [(0.0, 1.0), (0.5, 0.75), (1.0, 0.5)] {
+        let out = render(vec![device("utility", &[]), group(vec![branch(vec![half()])], &[("mix", mix)])]);
+        assert!(
+            max_diff(&out, &scaled(&whole, expected)) < 1e-4,
+            "mix {mix}: {}",
+            max_diff(&out, &scaled(&whole, expected))
+        );
+    }
+}
+
+#[test]
+fn the_output_gain_scales_the_group() {
+    let whole = reference();
+    let out = render(vec![device("utility", &[]), group(vec![branch(vec![])], &[("gain", HALF_DB)])]);
+    assert!(max_diff(&out, &scaled(&whole, 0.5)) < 1e-4);
+    let silent = render(vec![device("utility", &[]), group(vec![branch(vec![])], &[("gain", SILENT_DB_FOR_TESTS)])]);
+    assert!(peak(&silent) < 1e-9);
+}
+
+const SILENT_DB_FOR_TESTS: f64 = crate::SILENT_DB;
+
+#[test]
+fn a_branch_pans_with_the_channel_law() {
+    let mut right = branch(vec![]);
+    right.pan = 1.0;
+    let out = render(vec![device("utility", &[]), group(vec![right], &[])]);
+    let (l, r): (Vec<f32>, Vec<f32>) = out.as_chunks::<2>().0.iter().map(|[l, r]| (*l, *r)).unzip();
+    assert!(peak(&l) < 1e-6 && peak(&r) > 0.1);
+    let whole = reference();
+    let whole_right: Vec<f32> = whole.as_chunks::<2>().0.iter().map(|[_, r]| *r).collect();
+    // Hard right is √2 louder on the right than centred, as a channel's pan.
+    assert!(max_diff(&r, &scaled(&whole_right, std::f32::consts::SQRT_2)) < 1e-4);
+}
+
+#[test]
+fn a_nested_group_runs_inside_a_branch() {
+    let inner = group(vec![branch(vec![half()]), branch(vec![half()])], &[]);
+    let outer = group(vec![branch(vec![inner]), branch(vec![])], &[("gain", HALF_DB)]);
+    let out = render(vec![device("utility", &[]), outer]);
+    // (x + x) × ½ = x.
+    let whole = reference();
+    assert!(max_diff(&out, &whole) < 1e-4, "{}", max_diff(&out, &whole));
+}
+
+#[test]
+fn a_switched_off_group_passes_its_input() {
+    let mut off = group(vec![branch(vec![half()])], &[("gain", HALF_DB)]);
+    off.enabled = false;
+    assert_eq!(render(vec![device("utility", &[]), off]), reference());
+}
+
+#[test]
+fn the_sound_does_not_depend_on_the_block_size() {
+    let mut muted = branch(vec![half()]);
+    muted.mute = true;
+    let devices = vec![
+        device("utility", &[]),
+        group(vec![branch(vec![device("overdrive", &[("drive", 0.7)])]), muted, branch(vec![])], &[("mix", 0.6)]),
+    ];
+    let p = project(vec![note(0.0, 2.0, 69), note(0.5, 1.0, 76)], 2.0, devices);
+    let big = render_offline(&p, SR, 512).unwrap_or_default();
+    for frames in [64, 100, 1024] {
+        let small = render_offline(&p, SR, frames).unwrap_or_default();
+        assert!(max_diff(&small, &big) < 1e-5, "{frames}: {}", max_diff(&small, &big));
+    }
+}
+
+#[test]
+fn instruments_in_a_group_are_layered_and_hear_every_note() {
+    let notes = vec![note(0.0, 1.0, 60), note(0.5, 1.0, 67)];
+    let one = render_offline(&project(notes.clone(), 2.0, vec![device("fm-synth", &[])]), SR, 512).unwrap_or_default();
+    // The mix is fixed at 1 in an instrument group: the 0 here changes nothing.
+    let layered =
+        group(vec![branch(vec![device("fm-synth", &[])]), branch(vec![device("fm-synth", &[])])], &[("mix", 0.0)]);
+    let two = render_offline(&project(notes, 2.0, vec![layered]), SR, 512).unwrap_or_default();
+    assert!(peak(&one) > 0.01);
+    let len = one.len().min(two.len());
+    let doubled = scaled(&one[..len], 2.0);
+    assert!(max_diff(&two[..len], &doubled) < 1e-4, "{}", max_diff(&two[..len], &doubled));
+}
+
+#[test]
+fn group_parameters_are_read_in_their_ranges() {
+    let values = crate::group_param_values(&[DeviceParam::new("mix", 3.0), DeviceParam::new("gain", f64::NAN)]);
+    assert_eq!(values.first(), Some(&1.0));
+    assert_eq!(values.get(1), Some(&0.0));
+    assert_eq!(values.len(), crate::GROUP_PARAMS.len());
+    assert_eq!(crate::group_param_index("macro.8"), Some(9));
+    assert_eq!(crate::group_param_index("width"), None);
+}
+
+#[test]
+fn an_edit_to_a_branch_keeps_the_group_playing() {
+    let layered = group(vec![branch(vec![device("fm-synth", &[])])], &[]);
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![layered]);
+    let mut edited = p.clone();
+    if let Some(g) = edited.channels[0].devices[0].as_group_mut() {
+        g.branches[0].volume = 0.5;
+    }
+    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480);
+    controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
+    out.extend(blocks(&mut renderer, 100, 480));
+    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let reference = blocks(&mut untouched, 150, 480);
+    // The note carries on through the swap (no new attack), and after the 20 ms ramp the branch
+    // plays at half its level.
+    let at = 50 * 480;
+    assert_eq!(max_diff(&out[..at * 2], &reference[..at * 2]), 0.0);
+    let settled = (at + 2_400) * 2;
+    let half = scaled(&reference[settled..], 0.5);
+    assert!(peak(&reference[settled..]) > 0.05);
+    assert!(max_diff(&out[settled..], &half) < 1e-4, "{}", max_diff(&out[settled..], &half));
+}
