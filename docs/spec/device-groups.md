@@ -6,6 +6,8 @@ status: planned
 last_verified: 2026-10-15
 covers:
   - crates/model/src/lib.rs
+  - crates/model/src/groups.rs
+  - crates/project-file/src/lib.rs
   - crates/engine/src/chain.rs
   - crates/session/src/devices.rs
 ---

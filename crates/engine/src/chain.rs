@@ -204,7 +204,7 @@ impl Chain {
                 }
                 DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. } => {
                     let Some(key) =
-                        keys.iter().find(|d| d.channel == channel.id && d.position == position).map(|d| d.key)
+                        keys.iter().find(|d| d.channel == channel.id && d.path == [position]).map(|d| d.key)
                     else {
                         continue;
                     };

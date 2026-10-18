@@ -432,6 +432,7 @@ fn chain(
                         DeviceKind::Vst3 { .. } => "VST3".into(),
                         DeviceKind::Vst2 { .. } => "VST2".into(),
                         DeviceKind::Foreign { format, .. } => format!("Not supported ({format})"),
+                        DeviceKind::Group(_) => "Group".into(),
                     },
                     enabled: d.enabled,
                     params: d.params.iter().map(|p| (p.id.clone(), format_value(p.value))).collect(),

@@ -194,6 +194,30 @@ twelve `note.fitToScale` already knew, now one list in the model that the comman
 file and the piano roll share. A source format that keeps a clip's scale maps onto it: the `.als`
 reader does not read one yet (a follow-up), and a format without scales leaves it `None`.
 
+## Amendment: device groups (2026-10-18)
+
+A `DeviceKind` can be a `Group(Box<DeviceGroup>)`: a device on a channel's chain that holds other
+devices in one to 16 parallel `Branch`es, each a serial chain with its own volume, pan, mute and
+solo, with eight `Macro`s whose `MacroMapping`s name parameters inside the group
+([device groups spec](../spec/device-groups.md)). A kind rather than a field on every device,
+because a group never has `state` and a plug-in never has branches, so the type rules out the
+combinations that mean nothing. The group's own values (`mix`, `gain`, `macro.1` … `macro.8`) are
+ordinary `Device::params`, so setting, saving and automating them needs nothing new.
+
+A device inside groups is found by a *device path*: its index on the channel, then branch and index
+for each group on the way (`device_at`, `walk_devices`). The limits count every depth: at most 64
+devices on a channel (`MAX_DEVICES`, the groups themselves included) and groups at most four deep.
+`Project::validate` reports a group without one to 16 branches or without eight macros, one too
+deep, a channel over the device limit, a branch volume that is negative or not finite or a pan
+outside -1 to 1, a mapping that does not resolve or has a range outside 0 to 1, and a parameter
+mapped twice, each as its own `ValidationError`. Whether a group is an instrument group depends on
+which devices are instruments, which only the device registry and the plug-in catalog know, so
+those rules are checked by the commands that build groups, not by the model.
+
+The project file writes a group as a device of `"type": "group"` and is version 2 only when a
+project holds one ([`.suhina` format](../spec/suhina-format.md)), so a project without groups
+still opens in a Suhina from before them.
+
 ## Consequences
 
 - Importers do real conversion work instead of copying a file's structure, and every importer

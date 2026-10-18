@@ -183,7 +183,7 @@ fn found<'a>(catalog: &'a Catalog, kind: &DeviceKind, name: &str) -> Option<Opti
         DeviceKind::Vst3 { id } => Some(catalog.match_vst3(id, name)),
         DeviceKind::Vst2 { id } => Some(catalog.match_vst2(*id, name)),
         DeviceKind::Clap { id } => Some(catalog.match_clap(id, name)),
-        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } => None,
+        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } | DeviceKind::Group(_) => None,
     }
 }
 
@@ -205,6 +205,7 @@ fn device_format(kind: &DeviceKind) -> (&'static str, String) {
         DeviceKind::Builtin(id) => ("builtin", id.clone()),
         DeviceKind::Sd => ("sd", String::new()),
         DeviceKind::Foreign { id, .. } => ("foreign", id.clone()),
+        DeviceKind::Group(_) => ("group", String::new()),
     }
 }
 
@@ -215,7 +216,8 @@ fn check(projects: &mut Projects, params: &Value) -> Result<Value, CommandError>
         .project()
         .channels
         .iter()
-        .flat_map(|c| c.devices.iter().map(|d| (c.name.clone(), d.clone())))
+        // Plug-ins inside device groups too.
+        .flat_map(|c| suhina_model::walk_devices(&c.devices).into_iter().map(|(_, d)| (c.name.clone(), d.clone())))
         .collect();
     let catalog = projects.library_mut().catalog();
     let mut missing = 0;

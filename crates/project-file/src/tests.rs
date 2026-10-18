@@ -348,7 +348,7 @@ fn a_file_names_the_suhina_format() {
     let text = to_json(&Project::default());
     let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
     assert_eq!(root.get("format").and_then(Value::as_str), Some("suhina"));
-    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION));
+    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION_WITHOUT_GROUPS));
 }
 
 #[test]
@@ -386,9 +386,9 @@ fn what_is_not_a_project_is_refused() {
     assert!(refused(r#"{ "version": 1, "project": {} }"#), "no format");
     assert!(refused(r#"{ "format": "als", "version": 1, "project": {} }"#));
     assert!(refused(r#"{ "format": "suhina", "project": {} }"#), "no version");
-    assert!(refused(r#"{ "format": "suhina", "version": 2, "project": {} }"#), "a newer version");
+    assert!(refused(r#"{ "format": "suhina", "version": 3, "project": {} }"#), "a newer version");
     assert!(refused(r#"{ "format": "suhina", "version": 1 }"#), "no project");
-    assert!(refused(r#"{ "format": "locr", "version": 2, "project": {} }"#), "a newer version, old name");
+    assert!(refused(r#"{ "format": "locr", "version": 3, "project": {} }"#), "a newer version, old name");
     assert_eq!(from_json(r#"{ "format": "suhina", "version": 1, "project": {} }"#), Ok(Project::default()));
     assert_eq!(from_json(r#"{ "format": "locr", "version": 1, "project": {} }"#), Ok(Project::default()));
 }
@@ -818,4 +818,136 @@ fn a_bad_scale_is_an_error_naming_where_it_is() {
     // `null` is the same as no scale.
     let read = with(&content("null")).unwrap();
     assert_eq!(read.contents.first().and_then(|c| c.scale), None);
+}
+
+/// A channel whose chain holds a device group with two branches, one holding a nested group,
+/// mapped macros and extensions on the group and a branch.
+fn with_a_group() -> Project {
+    let ext = Extensions(vec![Extension { format: "als".into(), key: "Rack".into(), data: vec![9, 8] }]);
+    let compressor = Device::new("Compressor", DeviceKind::Builtin("compressor".into()));
+    let mut inner = Device::group("Inner", DeviceGroup::default());
+    if let Some(g) = inner.as_group_mut() {
+        g.branches[0].devices.push(Device {
+            state: Some(vec![1, 2, 3]),
+            ..Device::new("Synth", DeviceKind::Clap { id: "com.example.synth".into() })
+        });
+    }
+    let branches = vec![
+        Branch { name: "Dry".into(), ..Branch::new("") },
+        Branch {
+            name: "Crushed".into(),
+            volume: 0.5,
+            pan: -0.25,
+            mute: true,
+            solo: true,
+            devices: vec![compressor, inner],
+            extensions: ext.clone(),
+        },
+    ];
+    let mut group = DeviceGroup::with_branches(branches);
+    group.macros[0].name = "Crush".into();
+    group.macros[0].mappings.push(MacroMapping { device: vec![1, 0], param: "threshold".into(), min: 0.8, max: 0.2 });
+    group.macros[1].mappings.push(MacroMapping { device: vec![1, 1], param: "macro.1".into(), min: 0.0, max: 1.0 });
+    let mut device = Device::group("Parallel crush", group);
+    device.params = vec![DeviceParam::new("mix", 0.75), DeviceParam::new("macro.1", 0.4)];
+    device.extensions = ext;
+    let mut channel = Channel::new(ChannelId(1), "Drums");
+    channel.devices = vec![Device::new("EQ", DeviceKind::Builtin("dj-eq".into())), device];
+    Project { channels: vec![channel], ..Project::default() }
+}
+
+#[test]
+fn a_device_group_survives_a_round_trip_as_version_2() {
+    let project = with_a_group();
+    let text = to_json(&project);
+    let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
+    assert_eq!(root.get("version").and_then(Value::as_u64), Some(2));
+    assert_eq!(from_json(&text), Ok(project));
+}
+
+#[test]
+fn a_project_without_groups_is_written_as_version_1() {
+    let mut project = with_a_group();
+    project.channels[0].devices.truncate(1);
+    assert_eq!(version_of(&project), VERSION_WITHOUT_GROUPS);
+    assert_eq!(version_of(&with_a_group()), VERSION);
+}
+
+#[test]
+fn a_group_reads_from_the_spec_example_with_defaults_filled_in() {
+    let text = r#"{ "format": "suhina", "version": 2, "project": { "channels": [ { "id": 1, "devices": [ {
+        "name": "Parallel crush",
+        "kind": { "type": "group",
+          "branches": [ { "name": "Dry", "devices": [] },
+                        { "name": "Crushed", "volume": 0.5, "devices": [ { "name": "Compressor", "kind": { "type": "builtin", "id": "compressor" } } ] } ],
+          "macros": [ { "name": "Crush", "mappings": [ { "device": [1, 0], "param": "threshold", "min": 0.8, "max": 0.2 } ] },
+                      { "name": "Macro 2" }, { "name": "Macro 3" }, { "name": "Macro 4" },
+                      { "name": "Macro 5" }, { "name": "Macro 6" }, { "name": "Macro 7" }, { "name": "Macro 8" } ] },
+        "params": [ { "id": "mix", "value": 1.0 } ] } ] } ] } }"#;
+    let project = from_json(text).expect("the spec's example reads");
+    let group = project.channels[0].devices[0].as_group().cloned().unwrap_or_default();
+    assert_eq!(group.branches.len(), 2);
+    assert_eq!((group.branches[0].volume, group.branches[0].pan, group.branches[0].mute), (1.0, 0.0, false));
+    assert_eq!(group.branches[1].volume, 0.5);
+    assert_eq!(group.macros[0].mappings[0].device, vec![1, 0]);
+    assert_eq!(group.macros[1].mappings, vec![]);
+}
+
+#[test]
+fn malformed_groups_are_errors_not_crashes() {
+    let with = |kind: &str| {
+        from_json(&format!(
+            r#"{{ "format": "suhina", "version": 2, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "kind": {kind} }} ] }} ] }} }}"#
+        ))
+    };
+    let eight = r#"[ {}, {}, {}, {}, {}, {}, {}, {} ]"#;
+    let fine = format!(r#"{{ "type": "group", "branches": [ {{ "devices": [] }} ], "macros": {eight} }}"#);
+    assert!(with(&fine).is_ok(), "{:?}", with(&fine));
+    let mapped = |mapping: &str, devices: &str| {
+        format!(
+            r#"{{ "type": "group", "branches": [ {{ "devices": {devices} }} ], "macros": [ {{ "mappings": [ {mapping} ] }}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}}, {{}} ] }}"#
+        )
+    };
+    let one = r#"[ { "kind": { "type": "sd" } } ]"#;
+    for bad in [
+        r#"{ "type": "group" }"#.to_string(),
+        r#"{ "type": "group", "branches": "two", "macros": [] }"#.to_string(),
+        format!(r#"{{ "type": "group", "branches": [], "macros": {eight} }}"#),
+        r#"{ "type": "group", "branches": [ { } ], "macros": [ {} ] }"#.to_string(),
+        format!(r#"{{ "type": "group", "branches": [ {{ "volume": -1 }} ], "macros": {eight} }}"#),
+        format!(r#"{{ "type": "group", "branches": [ {{ "volume": "loud" }} ], "macros": {eight} }}"#),
+        format!(r#"{{ "type": "group", "branches": [ {{ "pan": 2 }} ], "macros": {eight} }}"#),
+        format!(r#"{{ "type": "group", "branches": [ {{ "mute": 1 }} ], "macros": {eight} }}"#),
+        format!(
+            r#"{{ "type": "group", "branches": [ {{ "devices": [ {{ "kind": {{ "type": "warp-drive" }} }} ] }} ], "macros": {eight} }}"#
+        ),
+        mapped(r#"{ "device": [0, 0], "param": "gain" }"#, "[]"),
+        mapped(r#"{ "device": [-1], "param": "gain" }"#, one),
+        mapped(r#"{ "device": "0/0", "param": "gain" }"#, one),
+        mapped(r#"{ "device": [0, 0] }"#, one),
+        mapped(r#"{ "device": [0, 0], "param": "a", "min": 2 }"#, one),
+    ] {
+        assert!(with(&bad).is_err(), "{bad}");
+    }
+    assert!(with(&mapped(r#"{ "device": [0, 0], "param": "a" }"#, one)).is_ok());
+}
+
+#[test]
+fn a_device_a_newer_suhina_knows_is_refused_by_name() {
+    let text = r#"{ "format": "suhina", "version": 2, "project": { "channels": [ { "id": 1, "devices": [ { "kind": { "type": "hologram" } } ] } ] } }"#;
+    let error = from_json(text).err().map(|e| e.0).unwrap_or_default();
+    assert!(error.contains("this project uses a device a newer Suhina knows"), "{error}");
+}
+
+#[test]
+fn groups_nested_past_the_parsers_limit_are_an_error() {
+    // Deeper than serde_json reads at all: the parser refuses it before the reader recurses.
+    let mut kind = r#"{ "type": "builtin", "id": "utility" }"#.to_string();
+    for _ in 0..200 {
+        kind = format!(r#"{{ "type": "group", "branches": [ {{ "devices": [ {{ "kind": {kind} }} ] }} ] }}"#);
+    }
+    let text = format!(
+        r#"{{ "format": "suhina", "version": 2, "project": {{ "channels": [ {{ "id": 1, "devices": [ {{ "kind": {kind} }} ] }} ] }} }}"#
+    );
+    assert!(from_json(&text).is_err());
 }
