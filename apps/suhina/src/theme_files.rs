@@ -96,8 +96,9 @@ impl ThemeFiles {
             return Err(format!("{id} cannot name a theme file"));
         }
         let path = folder.join(format!("{id}.json"));
-        std::fs::create_dir_all(folder).map_err(|e| format!("could not save the theme {id}: {e}"))?;
-        std::fs::write(&path, theme.to_json()).map_err(|e| format!("could not save the theme {id}: {e}"))?;
+        let failed = |e: std::io::Error| crate::save_error::message(&format!("the theme {id}"), &e);
+        std::fs::create_dir_all(folder).map_err(failed)?;
+        std::fs::write(&path, theme.to_json()).map_err(failed)?;
         if let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified()) {
             self.seen.insert(id.to_string(), modified);
         }

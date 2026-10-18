@@ -49,9 +49,9 @@ impl Recent {
         let Some(file) = &self.file else { return Ok(()) };
         let text: String = self.paths.iter().map(|p| format!("{}\n", p.display())).collect();
         if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("could not save the recent projects: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| crate::save_error::message("the recent projects", &e))?;
         }
-        std::fs::write(file, text).map_err(|e| format!("could not save the recent projects: {e}"))
+        std::fs::write(file, text).map_err(|e| crate::save_error::message("the recent projects", &e))
     }
 
     /// The ones that are still there, newest first.

@@ -8,6 +8,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod recent;
+mod save_error;
 mod theme_files;
 
 use std::path::{Path, PathBuf};
@@ -603,8 +604,8 @@ fn load_keymap() -> (Keymap, Vec<String>) {
 /// Writes one of Suhina's files in its app-data folder.
 fn save_file(name: &str, text: &str) -> Result<(), String> {
     let dir = eframe::storage_dir(app_id()).ok_or("there is no folder to keep settings in")?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not save {name}: {e}"))?;
-    std::fs::write(dir.join(name), text).map_err(|e| format!("could not save {name}: {e}"))
+    std::fs::create_dir_all(&dir).map_err(|e| save_error::message(name, &e))?;
+    std::fs::write(dir.join(name), text).map_err(|e| save_error::message(name, &e))
 }
 
 #[cfg(test)]
