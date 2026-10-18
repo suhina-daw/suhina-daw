@@ -348,8 +348,8 @@ fn the_duplicate_setting_in_the_menu_moves_the_key() {
     h.run();
     let keymap = h.state().keymap();
     assert_eq!(keymap.preset(), Preset::Custom);
-    assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+B"));
-    assert_eq!(keymap.label("view.browser").as_deref(), Some("Ctrl+Shift+B"));
+    assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
+    assert_eq!(keymap.binding_text("view.browser").as_deref(), Some("Ctrl+Shift+B"));
     // The toolbar's Duplicate button shows the key it has now.
     assert!(h.query_by_label("Duplicate (Ctrl+B)").is_some());
 }

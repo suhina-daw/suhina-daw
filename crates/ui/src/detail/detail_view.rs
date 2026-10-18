@@ -1060,7 +1060,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        ui.scope_builder(egui::UiBuilder::new().max_rect(body.intersect(ui.clip_rect())), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             egui::ScrollArea::both().auto_shrink([false,false]).id_salt(("sd-controls",track.0,device.index)).show(ui, |ui| {
                 let hidden = graph.canvas.as_ref().map_or(&[][..],|c|c.hidden_parameters.as_slice());
                 let cells = parameter_layout(&graph.parameters,body.width(),hidden);

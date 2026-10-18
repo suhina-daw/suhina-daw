@@ -1626,6 +1626,11 @@ impl App {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        // Any press ends a device panel's hold on Delete and the mute key; a click on a panel
+        // takes it again when the button comes up, whether or not the detail area is shown.
+        if ui.input(|i| i.pointer.primary_pressed()) {
+            self.device_focus = false;
+        }
         self.follow_active();
         self.poll_scan(ui.ctx());
         self.poll_plugins(ui.ctx());
@@ -2156,9 +2161,6 @@ impl App {
             )
         };
 
-        if ui.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| view.contains(p))) {
-            self.device_focus = false;
-        }
         // The splitter: dragged to make the detail area bigger or smaller; under the
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
@@ -3392,7 +3394,7 @@ impl App {
                         let grid = self.session().map(|s| Grid::build(s.project(), None))?;
                         let slot = grid.columns.iter().find(|c| c.track == track)?.slots.get(scene)?;
                         (slot.state != crate::interaction::grid::SlotState::Empty)
-                            .then(|| (json!({ "track": track.0, "scene": scene }), slot.name.clone()))
+                            .then(|| (json!({ "track": track.0, "scene": scene + 1 }), slot.name.clone()))
                     }),
                 };
                 match target {
@@ -4460,8 +4462,14 @@ impl App {
         widgets::text_in(&painter, ts_rect, Align2::CENTER_CENTER, &signature, mono.clone(), theme::text_secondary());
         x = ts_rect.right() + PAD;
         let small = theme::ui_font(theme::TEXT_SMALL);
-        let grid_caption = row(x, 26.0);
-        widgets::text_in(&painter, grid_caption, Align2::LEFT_CENTER, "Grid", small.clone(), theme::text_hint());
+        // At narrow widths the captions go, then the count-in and the metronome (the main strip
+        // has one too), so nothing runs under the transport in the middle.
+        let transport_left = bar.center().x - (28.0 * 3.0 + 2.0 + PAD + 64.0) / 2.0 - PAD;
+        let captions = x + 26.0 + 64.0 + PAD + 50.0 + 64.0 + PAD + 28.0 <= transport_left;
+        let grid_caption = row(x, if captions { 26.0 } else { 0.0 });
+        if captions {
+            widgets::text_in(&painter, grid_caption, Align2::LEFT_CENTER, "Grid", small.clone(), theme::text_hint());
+        }
         let quant_rect = row(grid_caption.right(), 64.0);
         // One value for both: when launched clips start, and the Arrangement view's grid.
         let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
@@ -4487,13 +4495,17 @@ impl App {
         if chosen != current {
             actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
         }
-        let count_caption = row(quant_rect.right() + PAD, 50.0);
-        widgets::text_in(&painter, count_caption, Align2::LEFT_CENTER, "Count-in", small, theme::text_hint());
+        let count_caption = row(quant_rect.right() + PAD, if captions { 50.0 } else { 0.0 });
+        if captions {
+            widgets::text_in(&painter, count_caption, Align2::LEFT_CENTER, "Count-in", small, theme::text_hint());
+        }
         let count_in = row(count_caption.right(), 64.0);
-        let bars = self.session().map_or(0, |s| s.count_in_bars());
-        crate::session::record_controls::count_in_menu(ui, count_in, bars, actions);
         let metronome = row(count_in.right() + PAD, 28.0);
-        crate::session::record_controls::metronome_button(ui, &painter, metronome, grid.metronome, actions);
+        if metronome.right() <= transport_left {
+            let bars = self.session().map_or(0, |s| s.count_in_bars());
+            crate::session::record_controls::count_in_menu(ui, count_in, bars, actions);
+            crate::session::record_controls::metronome_button(ui, &painter, metronome, grid.metronome, actions);
+        }
 
         // Centre: play, stop, record, position.
         let transport_width = 28.0 * 3.0 + 2.0 + PAD + 64.0;
@@ -4871,6 +4883,17 @@ fn ram_text(bytes: u64) -> String {
     if mib >= 1024.0 { format!("{:.1} GB", mib / 1024.0) } else { format!("{mib:.0} MB") }
 }
 
+/// One menu of the menu bar. While another of the bar's menus is open, the pointer over this
+/// one's title opens it, as system menu bars do.
+fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
+    let shown = ui.menu_button(title, content);
+    let id = egui::Popup::default_response_id(&shown.response);
+    if shown.response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
+        egui::Popup::open_id(ui.ctx(), id);
+    }
+    shown
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4948,15 +4971,4 @@ mod tests {
         // The measurement itself answers on this machine.
         assert!(memory_stats::memory_stats().is_some_and(|s| s.physical_mem > 0));
     }
-}
-
-/// One menu of the menu bar. While another of the bar's menus is open, the pointer over this
-/// one's title opens it, as system menu bars do.
-fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let shown = ui.menu_button(title, content);
-    let id = egui::Popup::default_response_id(&shown.response);
-    if shown.response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
-        egui::Popup::open_id(ui.ctx(), id);
-    }
-    shown
 }

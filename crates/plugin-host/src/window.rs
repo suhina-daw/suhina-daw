@@ -449,6 +449,11 @@ mod imp {
         with_state(id, |s| s.size).unwrap_or(Size { width: 0, height: 0 })
     }
 
+    thread_local! {
+        /// The last Space press went to the engine, so its release does too.
+        static SPACE_OURS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
     /// Handles the window messages waiting for this thread's windows (the editors' and the
     /// plug-ins' own). Called from the host's main loop.
     pub(crate) fn pump() {
@@ -457,14 +462,27 @@ mod imp {
         // SAFETY: the message is filled by the call; null asks for any window of this thread.
         while unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
             // Space goes to the engine, not the plug-in: its press (bit 30 of lParam is set on
-            // an auto-repeat) and its release are kept from the window.
+            // an auto-repeat) and its release are kept from the window. With Ctrl or the Windows
+            // key held it is the plug-in's (Alt+Space is a system key, never seen here); its
+            // release goes where its press went.
             const WM_KEYDOWN: u32 = 0x0100;
             const WM_KEYUP: u32 = 0x0101;
             const VK_SPACE: usize = 0x20;
-            if (message.message == WM_KEYDOWN || message.message == WM_KEYUP) && message.wParam == VK_SPACE {
-                if message.message == WM_KEYDOWN {
+            if message.wParam == VK_SPACE && message.message == WM_KEYDOWN {
+                let held = |key: u16| {
+                    // SAFETY: reads this thread's keyboard state; no pointers.
+                    let state = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(i32::from(key)) };
+                    state < 0
+                };
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_LWIN, VK_RWIN};
+                let ours = !(held(VK_CONTROL) || held(VK_LWIN) || held(VK_RWIN));
+                SPACE_OURS.with(|s| s.set(ours));
+                if ours {
                     super::caught_space(message.lParam & (1 << 30) != 0);
+                    continue;
                 }
+            } else if message.wParam == VK_SPACE && message.message == WM_KEYUP && SPACE_OURS.with(std::cell::Cell::get)
+            {
                 continue;
             }
             // SAFETY: a message just taken from the queue.

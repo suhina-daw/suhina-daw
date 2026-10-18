@@ -363,6 +363,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
                 .filter(|i| {
                     changed.iter().any(|(_, m)| m.key == notes[*i].key && (m.time - notes[*i].time).abs() < EPSILON)
                 })
+                .filter(|_| beats.abs() >= EPSILON || semitones != 0)
                 .collect()
         } else {
             Vec::new()

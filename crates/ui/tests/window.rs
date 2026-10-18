@@ -1987,7 +1987,7 @@ fn a_key_set_in_settings_runs_its_action_and_is_saved() {
     harness.run();
     harness.key_press(Key::A);
     harness.run();
-    assert_eq!(harness.state().keymap().label("view.arrangement").as_deref(), Some("A"));
+    assert_eq!(harness.state().keymap().binding_text("view.arrangement").as_deref(), Some("A"));
     assert!(harness.state_mut().take_changed_keymap().is_some());
 
     harness.get_by_label("Close settings").click();
@@ -4372,7 +4372,8 @@ fn rename_in_a_slots_menu_asks_for_the_name_and_ctrl_r_does_too() {
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
     harness.run();
     assert!(harness.query_by_label_contains("Rename clip Walk").is_none(), "no field in the menu by default");
-    harness.get_by_label("Rename").click();
+    // The item's label carries its key too ("Rename" and Ctrl+R).
+    harness.get_by_label_contains("Rename").click();
     harness.run();
     assert!(harness.query_by_label("Clip name").is_some(), "Rename asks for the name");
     harness.get_by_label("Cancel").click();
@@ -4384,4 +4385,13 @@ fn rename_in_a_slots_menu_asks_for_the_name_and_ctrl_r_does_too() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
     harness.run();
     assert!(harness.query_by_label("Clip name").is_some(), "Ctrl+R asks for the selected clip's name");
+    // The name given goes to that slot's clip (scenes are numbered from 1 in commands).
+    harness.get_by_label("Clip name").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Clip name").type_text("Riff");
+    harness.run();
+    harness.get_by_label("Rename").click();
+    harness.run();
+    assert!(harness.query_by_label("Launch Riff on Bass (scene 2)").is_some(), "the selected slot's clip is renamed");
 }

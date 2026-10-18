@@ -359,6 +359,7 @@ fn the_metronome_is_a_transport_command() {
     assert_eq!(wood["sound"], "wood");
     assert_eq!(run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap()["sound"], "wood");
     assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": "cowbell" })).is_err());
+    assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": 5 })).is_err());
 }
 
 #[test]

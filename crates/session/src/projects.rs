@@ -241,17 +241,6 @@ impl Projects {
         if let Ok(player) = session.player_mut() {
             transport.restore(player)?;
         }
-        // The metronome's level and sound, which the engine's monitor does not keep.
-        let (on, db, sound) = session.metronome;
-        if let Ok(player) = session.player_mut() {
-            let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
-            player
-                .send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) })
-                .map_err(|e| CommandError(format!("{e}")))?;
-            player
-                .send(suhina_engine::LaunchCommand::SetMetronomeSound(sound))
-                .map_err(|e| CommandError(format!("{e}")))?;
-        }
         // Plug-ins that could not carry over (a new sample rate) start again.
         session.sync_plugins();
         Ok(notice)

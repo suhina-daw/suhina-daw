@@ -169,6 +169,24 @@ fn moving_shifts_time_and_pitch_together() {
 }
 
 #[test]
+fn a_moved_note_with_replace_takes_the_place_of_the_one_it_lands_on() {
+    let mut session = Session::new(project());
+    let before = notes(&session, 1);
+    // Note 1 (beat 1, key 64) onto note 2 (beat 2, key 67).
+    let moved = json!({ "track": 1, "index": 0, "notes": [1], "beats": 1.0, "semitones": 3, "replace": true });
+    assert_eq!(run(&mut session, "note.move", moved).unwrap(), json!({ "notes": [1], "replaced": [2] }));
+    assert_eq!(notes(&session, 1).len(), before.len() - 1);
+    undoes(&mut session, 1, &before);
+    // Without replace they stack; a "move" by nothing then covers nothing.
+    run(&mut session, "note.move", json!({ "track": 1, "index": 0, "notes": [1], "beats": 1.0, "semitones": 3 }))
+        .unwrap();
+    let stacked = notes(&session, 1);
+    let still = json!({ "track": 1, "index": 0, "notes": [1], "beats": 0.0, "replace": true });
+    assert_eq!(run(&mut session, "note.move", still).unwrap()["replaced"], json!([]));
+    assert_eq!(notes(&session, 1), stacked);
+}
+
+#[test]
 fn resizing_sets_or_changes_lengths() {
     let mut session = Session::new(project());
     let before = notes(&session, 1);

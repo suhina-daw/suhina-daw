@@ -510,6 +510,11 @@ impl Session {
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
         let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.quantization));
+        // Its metronome too: on or off, level and sound, as this session has them.
+        let (on, db, sound) = self.metronome;
+        let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();

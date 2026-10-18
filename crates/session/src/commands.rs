@@ -3257,12 +3257,13 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
             Some(if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) })
         }
     };
-    let sound = match params.get("sound").and_then(Value::as_str) {
-        None => None,
-        Some(name) => Some(
+    let sound = match params.get("sound") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(
             suhina_engine::ClickSound::from_name(name)
                 .ok_or_else(|| CommandError(format!("sound must be beep, wood or soft, got {name}")))?,
         ),
+        Some(other) => return Err(format!("sound must be beep, wood or soft, got {other}").into()),
     };
     send(session, LaunchCommand::SetMetronome { on, gain: gain.map(|g| g as f32) })?;
     if let Some(sound) = sound {

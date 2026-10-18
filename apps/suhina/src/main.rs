@@ -165,7 +165,7 @@ fn main() -> ExitCode {
             window.share_about();
             #[cfg(target_os = "macos")]
             {
-                window.mac_menu = mac_menu::install(&suhina_ui::settings::keymap::actions());
+                window.mac_menu = mac_menu::install(&suhina_ui::settings::keymap::actions(), cc.egui_ctx.clone());
             }
             Ok(Box::new(window))
         }),

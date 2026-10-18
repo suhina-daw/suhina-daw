@@ -312,7 +312,8 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     ] {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
-    for label in ["Amp Modeler: bypass", "Amp Modeler: eq", "Amp Modeler: hq"] {
+    assert!(harness.query_by_label("Amp Modeler: device on").is_some(), "the power button, not a bypass");
+    for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     // The pack row with its steppers and the file row with its own; the pack is listed.
@@ -338,7 +339,9 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     ] {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
-    for label in ["Cab Loader: bypass", "Cab Loader: phase", "Cab Loader: hp"] {
+    // The cab is switched off from its header, as other devices are; it has no bypass of its own.
+    assert!(harness.query_by_label("Cab Loader: bypass").is_none(), "no bypass toggle");
+    for label in ["Cab Loader: phase", "Cab Loader: hp"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     for label in [
@@ -352,12 +355,13 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
 
-    // One click on the Bypass's button turns it on through device.setParam.
-    harness.get_by_label("Amp Modeler: bypass").click();
+    // One click on the power button switches the device off (device.setEnabled), and another on.
+    harness.get_by_label("Amp Modeler: device on").click();
     harness.run();
-    let project = project_now(&harness);
-    let bypassed = project.channels[0].devices[0].params.iter().find(|p| p.id == "bypass").unwrap();
-    assert_eq!(bypassed.value, 1.0, "the bypass click turned it on");
+    assert!(!project_now(&harness).channels[0].devices[0].enabled, "the power click switched it off");
+    harness.get_by_label("Amp Modeler: device off").click();
+    harness.run();
+    assert!(project_now(&harness).channels[0].devices[0].enabled, "and on again from the same button");
     // One click on the EQ's button turns it on through device.setParam.
     harness.get_by_label("Amp Modeler: eq").click();
     harness.run();

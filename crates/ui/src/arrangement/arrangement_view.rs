@@ -1184,7 +1184,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Id::new(("arrangement-lane", lane.track.0)),
             Sense::click_and_drag(),
         );
-        rows_seen.push((lane.track, row.clip));
+        // A folded group's row stands for the track whose clips it shows.
+        rows_seen.push((clips_lane.track, row.clip));
         // A drag from an empty spot draws the selection rectangle (#649).
         if body.drag_started_by(egui::PointerButton::Primary) {
             state.marquee = ui.input(|i| i.pointer.press_origin());
@@ -1195,7 +1196,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.menu_beat = Some(f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width).max(0.0));
         }
         body.context_menu(|ui| {
-            empty_lane_menu(ui, lane.track, lane.notes, state, actions);
+            empty_lane_menu(ui, clips_lane.track, clips_lane.notes, state, actions);
         });
         body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Lane {}", lane.name)));
         if body.clicked() {
@@ -1235,7 +1236,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         }
         for clip in &clips_lane.clips {
             let span = egui::Rangef::new(x_of(clip.start), x_of(clip.start + clip.length));
-            clip_rects.push(((clips_lane.track, clip.index), Rect::from_x_y_ranges(span, row.clip.y_range())));
+            // A stacked clip is hit only in its own row, as it is drawn.
+            let space = if clip.rows > 1 { sub_row(row.time, clip.row, clip.rows) } else { row.time };
+            clip_rects.push(((clips_lane.track, clip.index), Rect::from_x_y_ranges(span, space.y_range())));
             if clip.start + clip.length >= first_beat && clip.start <= last_beat {
                 let found = clip_box(
                     ui,
@@ -2862,6 +2865,43 @@ fn pan_field(painter: &egui::Painter, rect: Rect, pan: f64, hover: f32) {
     );
 }
 
+/// The menu of an empty spot of a lane: a new empty MIDI clip where it was right-clicked (on a
+/// notes track), and, with a time selection, looping it and consolidating it on this track.
+fn empty_lane_menu(ui: &mut Ui, track: TrackId, notes: bool, state: &ArrangementViewState, actions: &mut Vec<Action>) {
+    ui.set_min_width(180.0);
+    let beat = state.menu_beat.unwrap_or(0.0);
+    if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {
+        let stack = state.stack_midi;
+        actions.push(Action::new("clip.create", json!({ "track": track.0, "start": beat, "stack": stack })));
+        ui.close();
+    }
+    let selection = state.time_selection.as_ref();
+    ui.separator();
+    if ui
+        .add_enabled(
+            selection.is_some(),
+            egui::Button::new("Loop selection").shortcut_text(crate::settings::keymap::shown("Ctrl+L")),
+        )
+        .clicked()
+        && let Some(s) = selection
+    {
+        actions.push(Action::new("transport.setLoop", json!({ "start": s.start, "end": s.end, "enabled": true })));
+        ui.close();
+    }
+    let here = selection.filter(|s| s.tracks.contains(&track));
+    if ui
+        .add_enabled(
+            here.is_some(),
+            egui::Button::new("Consolidate selection").shortcut_text(crate::settings::keymap::shown("Ctrl+J")),
+        )
+        .clicked()
+        && let Some(s) = here
+    {
+        actions.push(Action::new("clip.consolidate", json!({ "track": track.0, "start": s.start, "end": s.end })));
+        ui.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3239,42 +3279,5 @@ mod tests {
         assert_eq!(ruler_beat(2.1337, sixteenths, true), 2.134);
         assert_eq!(ruler_beat(-3.0, bars, true), 0.0);
         assert_eq!(ruler_beat(f64::NAN, bars, false), 0.0);
-    }
-}
-
-/// The menu of an empty spot of a lane: a new empty MIDI clip where it was right-clicked (on a
-/// notes track), and, with a time selection, looping it and consolidating it on this track.
-fn empty_lane_menu(ui: &mut Ui, track: TrackId, notes: bool, state: &ArrangementViewState, actions: &mut Vec<Action>) {
-    ui.set_min_width(180.0);
-    let beat = state.menu_beat.unwrap_or(0.0);
-    if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {
-        let stack = state.stack_midi;
-        actions.push(Action::new("clip.create", json!({ "track": track.0, "start": beat, "stack": stack })));
-        ui.close();
-    }
-    let selection = state.time_selection.as_ref();
-    ui.separator();
-    if ui
-        .add_enabled(
-            selection.is_some(),
-            egui::Button::new("Loop selection").shortcut_text(crate::settings::keymap::shown("Ctrl+L")),
-        )
-        .clicked()
-        && let Some(s) = selection
-    {
-        actions.push(Action::new("transport.setLoop", json!({ "start": s.start, "end": s.end, "enabled": true })));
-        ui.close();
-    }
-    let here = selection.filter(|s| s.tracks.contains(&track));
-    if ui
-        .add_enabled(
-            here.is_some(),
-            egui::Button::new("Consolidate selection").shortcut_text(crate::settings::keymap::shown("Ctrl+J")),
-        )
-        .clicked()
-        && let Some(s) = here
-    {
-        actions.push(Action::new("clip.consolidate", json!({ "track": track.0, "start": s.start, "end": s.end })));
-        ui.close();
     }
 }

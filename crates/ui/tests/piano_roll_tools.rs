@@ -643,7 +643,7 @@ fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
     h.get_by_label("Preset: Draw-first").click();
     h.run();
     assert_eq!(h.state().keymap().preset(), Preset::DrawFirst);
-    assert_eq!(h.state().keymap().label("selection.duplicate").as_deref(), Some("Ctrl+B"));
+    assert_eq!(h.state().keymap().binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
     // The choice is saved with the keymap.
     let saved = h.state_mut().take_changed_keymap().unwrap_or_else(|| panic!("the keymap changed"));
     assert!(saved.to_json().contains("\"preset\": \"Draw-first\""));
