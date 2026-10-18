@@ -198,8 +198,14 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     ui.data_mut(|d| d.insert_temp(id, text));
 
     // Colour: the palette every colour choice offers.
+    // A colour picked with several tracks selected colours them all.
     if let Some(colour) = colour_picker::swatch_row(ui, Some(menu.colour)) {
-        if colour != menu.colour {
+        let several = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
+        if several {
+            for track in menu.selection {
+                actions.push(colour_picker::set_colour(*track, colour));
+            }
+        } else if colour != menu.colour {
             actions.push(colour_picker::set_colour(menu.track, colour));
         }
         ui.close();
@@ -294,6 +300,23 @@ pub fn clip_menu(
     let list: Vec<serde_json::Value> =
         clips.iter().map(|(track, index)| json!({ "track": track.0, "index": index })).collect();
     ui.set_min_width(140.0);
+    // The clips' colour: a swatch or any colour, or back to their tracks' colour.
+    if let Some(colour) = colour_picker::swatch_row(ui, None) {
+        for (track, index) in clips {
+            actions.push(Action::new(
+                "clip.setColor",
+                json!({ "track": track.0, "index": index, "color": colour_picker::hex(colour) }),
+            ));
+        }
+        ui.close();
+    }
+    if ui.button("Track colour").clicked() {
+        for (track, index) in clips {
+            actions.push(Action::new("clip.setColor", json!({ "track": track.0, "index": index, "color": "none" })));
+        }
+        ui.close();
+    }
+    ui.separator();
     // One clip in the menu (a click on it, or the only one selected): Rename, or with the
     // setting on a field that renames it, applied with Enter or Rename, as a slot's clip's is.
     if let [(track, index)] = clips

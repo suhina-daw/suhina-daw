@@ -2737,7 +2737,7 @@ fn routing(
 ) {
     let current = lane.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
     let label = Rect::from_min_size(rect.min, Vec2::new(18.0, rect.height()));
-    widgets::text_in(painter, label, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), theme::text_hint());
+    widgets::text_in(painter, label, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), theme::text_value());
     let field = Rect::from_min_max(Pos2::new(label.right(), rect.top()), rect.max);
     let mut picked = None;
     let response =
@@ -2777,7 +2777,7 @@ fn midi_input(
         Align2::LEFT_CENTER,
         "MIDI",
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_hint(),
+        theme::text_value(),
     );
     let field = Rect::from_min_max(Pos2::new(label.right(), rect.top()), rect.max);
     let response = widgets::button_area(
@@ -2808,7 +2808,7 @@ fn audio_input(
         Align2::LEFT_CENTER,
         "Audio",
         theme::ui_font(theme::TEXT_SMALL),
-        theme::text_hint(),
+        theme::text_value(),
     );
     let field = Rect::from_min_max(Pos2::new(label.right(), rect.top()), rect.max);
     let response = widgets::button_area(
