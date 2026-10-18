@@ -96,6 +96,27 @@ audio clip its waveform the same way ([components](../design/components.md) › 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
 
+## Clip colours
+
+A clip is drawn in its colour: the name bar along its top in full colour, the body a lighter
+shade of it, its notes or waveform in ink that reads on it (dark on a light colour). A clip with
+no colour of its own (`Clip::color` is `None`) shows its track's, so a new clip takes the
+track's colour and follows it. Moved to another track, a clip keeps the colour it showed
+(`clip.move` and `clip.moveMany` take `color`). The track menu's *Assign track color to all
+clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track back to the
+track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
+headers are tinted with their track's colour, deeper while selected.
+
+On a lane at least 36 px tall, a clip's 16 px name bar moves it (a hand cursor) and the body
+under it selects time (a text cursor), as in Ableton Live; with *Ctrl+drag selects time over
+clips* on, a plain drag anywhere moves it.
+
+Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
+where they were, an empty row between them staying until the rows above it empty too.
+
+Return tracks, along the bottom, are selected with a click on their header (the detail area
+shows their devices) and made taller or shorter by dragging their bottom edge.
+
 ## Clip edges
 
 A clip's left and right edges are handles (below the fade handles of an audio clip). Dragging one

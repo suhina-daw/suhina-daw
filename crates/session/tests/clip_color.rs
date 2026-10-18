@@ -1,0 +1,79 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Clips' colours and names as their track's (`docs/spec/arrangement-editing.md` › Clip colours).
+#![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
+
+use serde_json::{Value, json};
+use suhina_model::*;
+use suhina_session::{Session, blank_project};
+
+fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
+    session.execute(id, &params).map_err(|e| e.0)
+}
+
+/// The blank project with two notes clips on track 1 and none on track 2.
+fn project() -> Project {
+    let mut p = blank_project();
+    for id in [1, 2] {
+        p.contents.push(ClipContent {
+            id: ContentId(id),
+            name: format!("Clip {id}"),
+            length: 4.0,
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(Vec::new()) }],
+            extensions: Extensions::default(),
+            scale: None,
+        });
+    }
+    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap().clips =
+        vec![Clip::new(ContentId(1), 0.0, 4.0), Clip::new(ContentId(2), 8.0, 4.0)];
+    p
+}
+
+fn clips(session: &Session, track: u32) -> Vec<Clip> {
+    let p = session.project();
+    p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(track))).unwrap().clips.clone()
+}
+
+#[test]
+fn a_new_clip_shows_its_tracks_colour_and_a_moved_one_keeps_what_it_showed() {
+    let mut session = Session::new(project());
+    assert!(clips(&session, 1).iter().all(|c| c.color.is_none()), "a new clip follows its track");
+    // Moved to track 2, it keeps the colour it showed on track 1.
+    run(&mut session, "clip.move", json!({ "track": 1, "index": 0, "start": 0.0, "to_track": 2, "color": "#3366CC" }))
+        .unwrap();
+    assert_eq!(clips(&session, 2)[0].color, Some(Rgb(0x33, 0x66, 0xCC)));
+    // Moved along its own track, the colour is not taken.
+    run(&mut session, "clip.move", json!({ "track": 1, "index": 0, "start": 16.0, "color": "#3366CC" })).unwrap();
+    assert!(clips(&session, 1)[0].color.is_none());
+}
+
+#[test]
+fn a_tracks_clips_take_its_colour_and_name_again() {
+    let mut session = Session::new(project());
+    run(&mut session, "clip.setColor", json!({ "track": 1, "index": 1, "color": "#FF0000" })).unwrap();
+    assert_eq!(clips(&session, 1)[1].color, Some(Rgb(255, 0, 0)));
+    // The track menu's "Assign track color to all clips".
+    run(&mut session, "clip.setColor", json!({ "track": 1, "color": "none" })).unwrap();
+    assert!(clips(&session, 1).iter().all(|c| c.color.is_none()));
+    // "Rename all clips": the track's name.
+    let track = session.project().tracks.iter().find(|t| t.id == TrackId(1)).unwrap().name.clone();
+    run(&mut session, "track.renameClips", json!({ "track": 1 })).unwrap();
+    for content in [ContentId(1), ContentId(2)] {
+        assert_eq!(session.project().content(content).unwrap().name, track);
+    }
+    assert!(run(&mut session, "clip.setColor", json!({ "track": 1, "color": "blue" })).is_err());
+}
+
+#[test]
+fn a_clips_colour_survives_saving() {
+    let mut p = project();
+    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap().clips[0].color = Some(Rgb(1, 2, 3));
+    let path = std::env::temp_dir().join(format!("suhina-clip-color-{}.suhina", std::process::id()));
+    suhina_project_file::write_file(&path, &p).unwrap();
+    let read = suhina_project_file::read_file(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let lane = read.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    assert_eq!(lane.clips[0].color, Some(Rgb(1, 2, 3)));
+    assert_eq!(lane.clips[1].color, None);
+}

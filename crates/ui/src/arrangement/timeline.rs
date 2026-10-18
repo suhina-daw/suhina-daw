@@ -92,6 +92,11 @@ pub struct ClipBox {
     /// How late its right edge can go: where its audio ends, for an audio clip that does not
     /// loop; `None` when it can go on (a MIDI or looping clip).
     pub latest_end: Option<f64>,
+    /// The colour it shows: its own, or its track's.
+    pub color: Rgb,
+    /// What the clip is known by from one build to the next (its content and its start), so a
+    /// stacked clip keeps its sub-row when another goes.
+    pub stack_key: (u32, u64),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -154,6 +159,9 @@ pub struct LoopBrace {
 pub struct Timeline {
     /// Tracks in project order, then return tracks.
     pub lanes: Vec<Lane>,
+    /// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`]: the next
+    /// build keeps them there, so deleting one clip of a stack leaves the others where they are.
+    pub stack_rows: std::collections::HashMap<(TrackId, (u32, u64)), usize>,
     /// The MIDI input ports there are, for the tracks' MIDI inputs; set by the app.
     pub midi_ports: Vec<String>,
     /// The channels of the audio input device open now (0 when none is); set by the app.
@@ -237,6 +245,16 @@ fn ruler_marks(project: &Project, meter: &Meter) -> Vec<RulerMark> {
 
 impl Timeline {
     pub fn build(project: &Project, monitor: Option<&LauncherMonitor>) -> Self {
+        Self::build_after(project, monitor, &std::collections::HashMap::new())
+    }
+
+    /// [`Timeline::build`], with the sub-rows the previous build gave stacked clips kept.
+    pub fn build_after(
+        project: &Project,
+        monitor: Option<&LauncherMonitor>,
+        rows_before: &std::collections::HashMap<(TrackId, (u32, u64)), usize>,
+    ) -> Self {
+        let mut stack_rows = std::collections::HashMap::new();
         let ts = project.transport.time_signature;
         let bar_beats =
             if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };
@@ -252,6 +270,7 @@ impl Timeline {
                 Some(ChannelRole::Submix) => ColumnKind::Group,
                 _ => ColumnKind::Track,
             };
+            let track_color = track.color.unwrap_or_else(|| default_track_colour(position));
             let clips = project
                 .arrangement
                 .lanes
@@ -267,6 +286,8 @@ impl Timeline {
                             let audio =
                                 content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
                             ClipBox {
+                                color: clip.color.unwrap_or(track_color),
+                                stack_key: (clip.content.0, clip.start.to_bits()),
                                 earliest_start: if looped { 0.0 } else { (clip.start - clip.offset).max(0.0) },
                                 latest_end: content
                                     .filter(|_| audio && !looped)
@@ -291,7 +312,7 @@ impl Timeline {
                         .collect()
                 })
                 .unwrap_or_default();
-            let clips = sub_rows(clips);
+            let clips = sub_rows(clips, track.id, rows_before, &mut stack_rows);
             let lane = Lane {
                 track: track.id,
                 name: track.name.clone(),
@@ -348,6 +369,7 @@ impl Timeline {
         let main_volume_db =
             project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| gain_to_db(c.volume));
         let mut timeline = Self {
+            stack_rows,
             midi_ports: Vec::new(),
             input_channels: 0,
             lanes,
@@ -517,31 +539,61 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
     })
 }
 
-/// Puts each clip in the first sub-row free where it starts; every clip learns the lane's count.
-fn sub_rows(mut clips: Vec<ClipBox>) -> Vec<ClipBox> {
-    let mut ends: Vec<f64> = Vec::new();
+/// Puts overlapping clips in sub-rows: each clip in the row it had in the build before (`before`)
+/// while that row is free where it plays, the others in the first row free where they start;
+/// every clip learns the lane's count, and `after` what each got. A row left empty between others
+/// stays, so the clips under it do not move up.
+fn sub_rows(
+    mut clips: Vec<ClipBox>,
+    track: TrackId,
+    before: &std::collections::HashMap<(TrackId, (u32, u64)), usize>,
+    after: &mut std::collections::HashMap<(TrackId, (u32, u64)), usize>,
+) -> Vec<ClipBox> {
+    let mut rows: Vec<Vec<(f64, f64)>> = Vec::new();
+    let free = |rows: &Vec<Vec<(f64, f64)>>, row: usize, from: f64, to: f64| {
+        rows.get(row).is_none_or(|spans| spans.iter().all(|(s, e)| to <= *s + 1e-9 || from >= *e - 1e-9))
+    };
     let mut order: Vec<usize> = (0..clips.len()).collect();
     let start = |i: &usize| clips.get(*i).map_or(0.0, |c| c.start);
     order.sort_by(|a, b| start(a).total_cmp(&start(b)));
-    for i in order {
+    let mut placed = vec![false; clips.len()];
+    // Where they were, first.
+    for &i in &order {
         let Some(clip) = clips.get_mut(i) else { continue };
-        let end = clip.start + clip.length;
-        match ends.iter().position(|e| *e <= clip.start + 1e-9) {
-            Some(row) => {
-                clip.row = row;
-                if let Some(e) = ends.get_mut(row) {
-                    *e = end;
-                }
+        let (from, to) = (clip.start, clip.start + clip.length);
+        if let Some(&row) = before.get(&(track, clip.stack_key))
+            && free(&rows, row, from, to)
+        {
+            if rows.len() <= row {
+                rows.resize(row + 1, Vec::new());
             }
-            None => {
-                clip.row = ends.len();
-                ends.push(end);
-            }
+            rows[row].push((from, to));
+            clip.row = row;
+            placed[i] = true;
         }
     }
-    let rows = ends.len().max(1);
+    // The rest in the first row free.
+    for &i in &order {
+        if placed[i] {
+            continue;
+        }
+        let Some(clip) = clips.get_mut(i) else { continue };
+        let (from, to) = (clip.start, clip.start + clip.length);
+        let row = (0..=rows.len()).find(|&r| free(&rows, r, from, to)).unwrap_or(rows.len());
+        if rows.len() <= row {
+            rows.resize(row + 1, Vec::new());
+        }
+        rows[row].push((from, to));
+        clip.row = row;
+    }
+    // Empty rows on top go; the ones between stay.
+    while rows.last().is_some_and(Vec::is_empty) {
+        rows.pop();
+    }
+    let count = rows.len().max(1);
     for clip in &mut clips {
-        clip.rows = rows;
+        clip.rows = count;
+        after.insert((track, clip.stack_key), clip.row);
     }
     clips
 }
@@ -650,6 +702,29 @@ mod tests {
         assert_eq!(rows[0], (0, 2));
         assert_eq!(rows[1], (1, 2));
         assert!(Timeline::build(&demo_project(), None).lanes.iter().flat_map(|l| &l.clips).all(|c| c.rows == 1));
+    }
+
+    #[test]
+    fn a_stacked_clip_deleted_leaves_the_others_in_their_rows() {
+        // Three clips of the first lane stacked over the first one's span.
+        let mut project = demo_project();
+        let lane = &mut project.arrangement.lanes[0];
+        let first = lane.clips[0].clone();
+        lane.clips = vec![first.clone(), first.clone(), first.clone()];
+        for (i, clip) in lane.clips.iter_mut().enumerate() {
+            clip.start = first.start + i as f64 * 1e-3;
+        }
+        let before = Timeline::build(&project, None);
+        let rows = |t: &Timeline| t.lanes[0].clips.iter().map(|c| (c.row, c.rows)).collect::<Vec<_>>();
+        assert_eq!(rows(&before), [(0, 3), (1, 3), (2, 3)]);
+        // The middle one goes: the top keeps row 0, the bottom stays in row 2, the gap stays.
+        project.arrangement.lanes[0].clips.remove(1);
+        let after = Timeline::build_after(&project, None, &before.stack_rows);
+        assert_eq!(rows(&after), [(0, 3), (2, 3)]);
+        // The bottom one goes too: the empty rows under the top one go with it.
+        project.arrangement.lanes[0].clips.remove(1);
+        let last = Timeline::build_after(&project, None, &after.stack_rows);
+        assert_eq!(rows(&last), [(0, 1)]);
     }
 
     #[test]

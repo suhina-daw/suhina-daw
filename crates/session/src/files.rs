@@ -621,6 +621,7 @@ pub(crate) fn place_clip(
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Default::default(),
     };
     match row {

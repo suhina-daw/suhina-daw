@@ -157,6 +157,16 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
     }
 }
 
+/// The height of a clip's name bar, and the least a clip's height must be to have a body under
+/// it for selecting time.
+const CLIP_NAME_BAR: f32 = 16.0;
+const CLIP_BODY_LEAST: f32 = 36.0;
+
+/// `#RRGGBB`, as colour parameters take it.
+fn hex(suhina_engine::model::Rgb(r, g, b): suhina_engine::model::Rgb) -> String {
+    format!("#{r:02X}{g:02X}{b:02X}")
+}
+
 /// Which end of a clip a fade belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FadeEdge {
@@ -635,6 +645,11 @@ impl ArrangementViewState {
         self.lane_height(lane.track)
     }
 
+    /// How tall a return track's row is: a row's height until its edge is dragged.
+    fn return_height(&self, track: TrackId) -> f32 {
+        self.heights.get(&track).copied().unwrap_or(ROW)
+    }
+
     /// How tall `track`'s lane is.
     pub fn lane_height(&self, track: TrackId) -> f32 {
         self.heights.get(&track).copied().unwrap_or(DEFAULT_LANE)
@@ -952,8 +967,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             .into_iter()
             .collect(),
     };
-    let fixed_rows = returns.len() + usize::from(main_volume_db.is_some());
-    let fixed_height = fixed_rows as f32 * (ROW + 1.0);
+    // Each return its own height (a row by default, its bottom edge dragged to change it), the
+    // main track a row.
+    let fixed_height = returns.iter().map(|l| state.return_height(l.track) + 1.0).sum::<f32>()
+        + if main_volume_db.is_some() { ROW + 1.0 } else { 0.0 };
     let fixed_top = (area.bottom() - fixed_height).max(marker_row.bottom() + 1.0);
     let fixed = Rect::from_min_max(Pos2::new(area.left(), fixed_top), area.max);
     let lanes_area =
@@ -1223,9 +1240,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     }
     let mut y = fixed.top();
     for lane in &returns {
-        let lane_time = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(y, y + ROW));
+        let height = state.return_height(lane.track);
+        let lane_time = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(y, y + height));
         rows.push(Row { track: lane.track, clips: lane.track, time: lane_time, clip: lane_time.intersect(fixed) });
-        y += ROW + 1.0;
+        y += height + 1.0;
     }
     let row_of = |track: TrackId| rows.iter().find(|r| r.track == track).copied();
     let row_of_clips = |track: TrackId| rows.iter().find(|r| r.clips == track).copied();
@@ -1927,9 +1945,18 @@ fn clip_box<'a>(
     }
     let bar = (clip.start / bar_beats).floor() as u64 + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
-    let response = ui
-        .interact(visible, Id::new(("arrangement-clip", lane.track.0, clip.index)), Sense::click_and_drag())
-        .on_hover_cursor(egui::CursorIcon::Grab);
+    let response =
+        ui.interact(visible, Id::new(("arrangement-clip", lane.track.0, clip.index)), Sense::click_and_drag());
+    // The cursor says what a drag does: the name bar moves the clip (a hand), the body under it
+    // selects time (a text cursor), as Ableton Live's do.
+    if !state.time_select_ctrl
+        && let Some(bar) = clip_name_bar(visible)
+        && response.hover_pos().is_some_and(|p| p.y > bar.bottom())
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    } else if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
     let label = format!("Clip {name} on {} at bar {bar}", lane.name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
     let stack = if clip.audio { state.stack_audio } else { state.stack_midi };
@@ -1969,7 +1996,7 @@ fn clip_box<'a>(
             if state.time_select_ctrl {
                 command
             } else {
-                !command && visible.height() >= 36.0 && origin.y > visible.center().y
+                !command && clip_name_bar(visible).is_some_and(|bar| origin.y > bar.bottom())
             }
         });
     if selects_time {
@@ -2022,6 +2049,7 @@ fn clip_box<'a>(
             let mut params = json!({ "clips": clips, "beats": start - clip.start });
             if drag.target != lane.track && state.selected.iter().all(|(track, _)| *track == lane.track) {
                 params["to_track"] = json!(drag.target.0);
+                params["color"] = json!(hex(lane.color));
             }
             if stack {
                 params["stack"] = json!(true);
@@ -2033,6 +2061,7 @@ fn clip_box<'a>(
             let mut params = json!({ "track": lane.track.0, "index": clip.index, "start": start });
             if drag.target != lane.track {
                 params["to_track"] = json!(drag.target.0);
+                params["color"] = json!(hex(clip.color));
             }
             if stack {
                 params["stack"] = json!(true);
@@ -2430,11 +2459,22 @@ fn paint_clip(
     if !rect.intersects(view) {
         return;
     }
-    let dim = |c: Color32| if lane.mute || !clip.enabled { c.gamma_multiply(0.55) } else { c };
-    painter.rect_filled(rect, 0.0, if selected { theme::control_active() } else { theme::control_background() });
-    let color = if clip.enabled { rgb(lane.color) } else { theme::text_hint() };
-    painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, dim(color));
-    let text_color = if clip.enabled && !lane.mute { theme::text_value() } else { theme::text_hint() };
+    // The clip in its colour (its own, or its track's): the name bar in full colour, the body a
+    // shade of it, and its notes or waveform in ink that reads on both. Off or muted, it greys.
+    let off = lane.mute || !clip.enabled;
+    let base = if off { motion::mix(rgb(clip.color), theme::text_hint(), 0.7) } else { rgb(clip.color) };
+    let body = motion::mix(theme::window_background(), base, if selected { 0.85 } else { 0.62 });
+    painter.rect_filled(rect, 0.0, body);
+    let bar = clip_name_bar(rect);
+    if let Some(bar) = bar {
+        painter.rect_filled(bar, 0.0, base);
+    } else {
+        painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, base);
+    }
+    let ink = ink_on(body);
+    let dim = |_: Color32| ink;
+    let color = ink;
+    let text_color = ink_on(if bar.is_some() { base } else { body });
     // The name's place, for a rename in place (Ctrl+R).
     let strip = Rect::from_min_max(
         Pos2::new(rect.left().max(view.left()), rect.top()),
@@ -2521,6 +2561,19 @@ fn paint_clip(
     if selected {
         painter.rect_stroke(rect, 0.0, theme::hairline(theme::text_primary()), StrokeKind::Inside);
     }
+}
+
+/// The bar along a clip's top that carries its name and moves it, on a lane tall enough to have
+/// a body under it for selecting time (Ableton Live's title bar).
+fn clip_name_bar(rect: Rect) -> Option<Rect> {
+    (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_size(rect.min, Vec2::new(rect.width(), CLIP_NAME_BAR)))
+}
+
+/// Text and marks that read on `background`: dark on a light colour, light on a dark one.
+fn ink_on(background: Color32) -> Color32 {
+    let [r, g, b, _] = background.to_array();
+    let light = 0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b);
+    if light > 150.0 { Color32::from_black_alpha(200) } else { Color32::from_white_alpha(225) }
 }
 
 /// The output dropdown: "→ Main" or a group; picking one runs `track.setOutput`.
@@ -2637,8 +2690,19 @@ fn fixed_row(
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
-    painter.rect_filled(rect, 0.0, theme::panel_background());
     let id = Id::new(("arrangement-header", lane.track.0));
+    // A click selects the return, so the detail area shows its devices; its controls, added
+    // after, take their own clicks.
+    let body = ui.interact(rect.intersect(clip), id.with("body"), Sense::click());
+    body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", lane.name)));
+    if body.clicked() {
+        state.targeted = Some(lane.track);
+        let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        state.pick_track(lane.track, shift, command, &[]);
+    }
+    let selected = state.selected_tracks.contains(&lane.track);
+    let tint = if selected { 0.42 } else { 0.26 };
+    painter.rect_filled(rect, 0.0, motion::mix(theme::panel_background(), rgb(lane.color), tint));
     let band = colour_band(ui, painter, rect, clip, lane, id, actions);
     let inner = Rect::from_min_max(Pos2::new(band.right() + PAD, rect.top() + 2.0), rect.max - Vec2::new(PAD, 2.0));
     let field = Rect::from_min_max(Pos2::new(inner.right() - FIXED_FIELD, inner.top()), inner.max);
@@ -2649,6 +2713,18 @@ fn fixed_row(
     let color = if lane.mute { theme::text_hint() } else { theme::text_primary() };
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(theme::TEXT), color);
     value_control(ui, painter, field, clip, lane, Control::Volume, true, id, state, actions);
+    // The bottom edge sets the row's height.
+    let edge =
+        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 3.0), Pos2::new(rect.right(), rect.bottom() + 2.0));
+    if edge.intersects(clip) {
+        let response = ui
+            .interact(edge.intersect(clip), id.with("resize"), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+        if response.dragged_by(egui::PointerButton::Primary) {
+            let height = (state.return_height(lane.track) + response.drag_delta().y).clamp(ROW, MAX_LANE);
+            state.heights.insert(lane.track, height);
+        }
+    }
 }
 
 /// A header's colour band: the track's colour down its left edge, the full height of the header
@@ -2744,7 +2820,9 @@ fn track_header(
         menus::track_menu(ui, &menu, actions);
     });
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    painter.rect_filled(rect, 0.0, if selected { theme::control_background() } else { theme::panel_background() });
+    // The header in its track's colour, deeper while selected.
+    let tint = if selected { 0.42 } else { 0.26 };
+    painter.rect_filled(rect, 0.0, motion::mix(theme::panel_background(), rgb(lane.color), tint));
     // The track's colour runs down the header's left edge; a click there opens the palette.
     let band = colour_band(ui, painter, rect, clip, lane, id, actions);
     // The meter stands at the right edge; the rows keep clear of it.

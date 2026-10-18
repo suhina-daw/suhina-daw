@@ -136,6 +136,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
                     fade_out_curve: Default::default(),
                     follow_action: Default::default(),
                     launch: Default::default(),
+                    color: None,
                     extensions: Extensions::default(),
                 }],
             }],

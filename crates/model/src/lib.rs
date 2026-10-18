@@ -465,6 +465,9 @@ pub struct Clip {
     pub follow_action: FollowAction,
     /// How the clip launches from a launcher slot: mode, legato and its own quantisation.
     pub launch: LaunchSettings,
+    /// The clip's own colour; `None` shows its track's, so a new clip takes the track's colour
+    /// and follows it. A clip moved to another track keeps the colour it had.
+    pub color: Option<Rgb>,
     pub extensions: Extensions,
 }
 

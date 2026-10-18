@@ -214,6 +214,10 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         Some(_) => Some(track_at(&session.project, params, "to_track")?),
         None => None,
     };
+    let keep = match params.get("color") {
+        None | Some(Value::Null) => None,
+        Some(_) => crate::clip_color::parse_color(params, "color")?,
+    };
     if to.is_some() && chosen.iter().any(|(track, _)| *track != chosen[0].0) {
         return Err("to_track moves clips of one track; these are on several".into());
     }
@@ -227,6 +231,10 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         let clip = lane.clips.remove(index);
         if clip.start + beats < -1e-9 {
             return Err(format!("a clip would start at beat {}, before the start", clip.start + beats).into());
+        }
+        let mut clip = clip;
+        if to.is_some_and(|to| to != track) && clip.color.is_none() {
+            clip.color = keep;
         }
         taken.push((to.unwrap_or(track), clip));
     }

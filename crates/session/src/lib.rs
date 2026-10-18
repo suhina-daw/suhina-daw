@@ -9,6 +9,7 @@ pub mod audio;
 mod automation;
 pub mod backup;
 mod blank;
+mod clip_color;
 mod clip_edges;
 mod clip_shape;
 mod commands;

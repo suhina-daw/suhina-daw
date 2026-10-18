@@ -1935,8 +1935,10 @@ impl App {
                                     timeline.follow(monitor);
                                     timeline
                                 }
-                                _ => {
-                                    let mut timeline = Timeline::build(session.project(), monitor);
+                                before => {
+                                    // Stacked clips keep the sub-rows the last build gave them.
+                                    let rows = before.map(|(_, _, t)| t.stack_rows).unwrap_or_default();
+                                    let mut timeline = Timeline::build_after(session.project(), monitor, &rows);
                                     for lane in &mut timeline.lanes {
                                         lane.armed = session.is_armed(lane.track);
                                     }

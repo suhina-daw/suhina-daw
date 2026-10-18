@@ -72,6 +72,7 @@ fn project() -> Project {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -508,6 +509,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         fade_in_curve: Default::default(),
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
+        color: None,
         extensions: Extensions::default(),
         launch: Default::default(),
     };
@@ -857,6 +859,7 @@ fn a_clip_is_renamed_by_scene_or_index_and_undo_brings_the_name_back() {
             fade_out_curve: Default::default(),
             follow_action: Default::default(),
             launch: Default::default(),
+            color: None,
             extensions: Default::default(),
         }],
     });

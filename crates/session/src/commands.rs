@@ -667,6 +667,28 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_clip_enabled,
     },
     CommandSpec {
+        id: "clip.setColor",
+        label: "Give a clip a colour of its own (by index), or every clip of a track one when no index is given; \"none\" makes them show the track's colour again",
+        params: &[
+            TRACK,
+            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's colour"),
+            optional(
+                "index",
+                ParamType::Integer,
+                "clip index on the track, from project.clips; every clip of the track when left out",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_color::set_clip_color,
+    },
+    CommandSpec {
+        id: "track.renameClips",
+        label: "Name every clip of a track, in the arrangement and in its slots, after the track",
+        params: &[TRACK],
+        kind: CommandKind::Edit,
+        run: crate::clip_color::rename_clips,
+    },
+    CommandSpec {
         id: "clip.trim",
         label: "Move an arrangement clip's edges (song beats), the content moving with the left one; an unlooped clip ends at most where its audio does, a looping one repeats as far as it goes, and loop turns the loop on first",
         params: &[
@@ -749,6 +771,11 @@ static COMMANDS: &[CommandSpec] = &[
             param("beats", ParamType::Number, "how far to move them, in beats; negative is earlier"),
             optional("to_track", ParamType::Track, "track to move them to, when they are all on one track"),
             optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
+            ),
+            optional(
                 "stack",
                 ParamType::Bool,
                 "true leaves clips under them as they are; false (default) replaces them",
@@ -820,6 +847,11 @@ static COMMANDS: &[CommandSpec] = &[
                 "stack",
                 ParamType::Bool,
                 "true leaves clips under it as they are (they all play); false (default) shortens, splits or removes them",
+            ),
+            optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour the clip shows now, which it keeps on another track when it has none of its own",
             ),
         ],
         kind: CommandKind::Edit,
@@ -3421,6 +3453,11 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         Some(_) => track_at(&session.project, params, "to_track")?,
         None => track,
     };
+    // The colour the clip shows on its track, kept when it goes to another (`color`).
+    let keep = match params.get("color") {
+        None | Some(Value::Null) => None,
+        Some(_) => crate::clip_color::parse_color(params, "color")?,
+    };
     let p = &mut session.project;
     let from_lane =
         p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the track has no arrangement lane")?;
@@ -3454,6 +3491,9 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     };
     let mut clip = p.arrangement.lanes.get_mut(from_lane).ok_or("the lane is missing")?.clips.remove(index);
     clip.start = start;
+    if to != track && clip.color.is_none() {
+        clip.color = keep;
+    }
     let lane = p.arrangement.lanes.get_mut(to_lane).ok_or("the lane is missing")?;
     if !stack {
         make_room(&mut lane.clips, start, start + clip.length);

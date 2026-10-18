@@ -204,6 +204,15 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         }
         ui.close();
     }
+    // The track's clips: back to the track's colour, or named after it.
+    if ui.button("Assign track color to all clips").clicked() {
+        actions.push(Action::new("clip.setColor", json!({ "track": track, "color": "none" })));
+        ui.close();
+    }
+    if ui.button("Rename all clips").clicked() {
+        actions.push(Action::new("track.renameClips", json!({ "track": track })));
+        ui.close();
+    }
     if let Some((input, channels)) = menu.audio {
         ui.menu_button(format!("Audio input: {}", audio_input_text(input)), |ui| {
             audio_input_choices(ui, menu.track, input, channels, actions);

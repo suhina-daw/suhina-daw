@@ -688,6 +688,7 @@ impl Reader {
             fade_out_curve: Default::default(),
             follow_action: Default::default(),
             launch: Default::default(),
+            color: None,
             extensions: Extensions::default(),
         })
     }

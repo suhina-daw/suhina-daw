@@ -24,6 +24,7 @@ fn clip(content: u32, start: f64) -> Clip {
         fade_in_curve: Default::default(),
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
+        color: None,
         extensions: Extensions::default(),
         launch: Default::default(),
     }
