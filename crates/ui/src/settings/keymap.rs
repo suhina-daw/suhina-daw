@@ -184,9 +184,11 @@ fn overlap(a: &str, b: &str) -> bool {
 }
 
 /// The detail area's own actions, listed with the window's, and their default keys.
-const DETAIL_ACTIONS: [(&str, &str, &str); 1] =
-    [("view.devices", "Show the selected clip's track devices, or the clip again", "View")];
-const DETAIL_DEFAULTS: [(&str, &[&str]); 1] = [("view.devices", &["Ctrl+Shift+D"])];
+const DETAIL_ACTIONS: [(&str, &str, &str); 2] = [
+    ("view.devices", "Show the selected clip's track devices, or the clip again", "View"),
+    ("view.plugin", "Open or close the selected track's plug-in editor", "View"),
+];
+const DETAIL_DEFAULTS: [(&str, &[&str]); 2] = [("view.devices", &["Ctrl+Shift+D"]), ("view.plugin", &["P"])];
 
 /// Every action a key can be bound to: the window's, then each command that needs no
 /// parameters.
@@ -1031,5 +1033,22 @@ mod tests {
         // Rebound and unbound like any other action, and read back from the file.
         let (keymap, warnings) = Keymap::from_json(r#"{ "view.devices": [] }"#);
         assert_eq!((keymap.keys("view.devices").len(), warnings.len()), (0, 0));
+    }
+
+    #[test]
+    fn the_plugin_toggle_has_its_own_key_under_every_preset() {
+        let action =
+            actions().into_iter().find(|a| a.id == "view.plugin").unwrap_or_else(|| panic!("the toggle is an action"));
+        assert_eq!(action.group, "View");
+        assert_eq!(Keymap::default().label("view.plugin").as_deref(), Some("P"));
+        for preset in Preset::ALL {
+            let mut keymap = Keymap::default();
+            keymap.set_preset(preset);
+            assert_eq!(keymap.label("view.plugin").as_deref(), Some("P"), "{preset:?}");
+            assert!(keymap.conflicts().is_empty(), "{preset:?}");
+        }
+        // Mappable like any other: unbound in the file, it stays unbound.
+        let (keymap, warnings) = Keymap::from_json(r#"{ "view.plugin": [] }"#);
+        assert_eq!((keymap.keys("view.plugin").len(), warnings.len()), (0, 0));
     }
 }

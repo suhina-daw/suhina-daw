@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
-use suhina_session::{CommandKind, ProjectId, Projects, Session};
+use suhina_session::{CommandKind, PluginStatus, ProjectId, Projects, Session};
 
 use crate::app::project_dialog::{
     AboutChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
@@ -1189,6 +1189,44 @@ impl App {
     /// A project file the user asked to open, and how, for the app to open.
     pub fn take_open_request(&mut self) -> Option<(PathBuf, OpenAs)> {
         self.open_request.take()
+    }
+
+    /// The shown track's plug-in: the panel's pick when it is one of the track's plug-ins, else
+    /// the first running plug-in in the chain. Its editor opens or closes, whichever state it
+    /// has (the command and the placement machinery do the rest).
+    fn toggle_plugin_editor(&mut self) {
+        let shown = match self.shown {
+            View::Session => self.view.selected,
+            View::Arrangement => self.arrangement.selected_tracks.first().copied(),
+        };
+        let Some(track) = shown else {
+            self.status = Status::Hint("Click a track first".into());
+            return;
+        };
+        // The first running plug-in in the chain is the one the key toggles. (Now that the
+        // device panel selects a device, the panel's pick can stand in its place; that comes
+        // with the device selection (#554).)
+        let target = {
+            let Ok(session) = self.projects.session_mut(None) else { return };
+            let chain = session
+                .project()
+                .tracks
+                .iter()
+                .find(|t| t.id == track)
+                .and_then(|t| t.channel)
+                .and_then(|c| session.project().channels.iter().find(|ch| ch.id == c))
+                .map_or(0, |c| c.devices.len());
+            (0..chain)
+                .filter_map(|index| Some((index, session.plugin_report(track, index)?)))
+                .find(|(_, report)| report.status == PluginStatus::Running)
+                .map(|(index, report)| (index, report.editor_open))
+        };
+        let Some((index, open)) = target else {
+            self.status = Status::Hint("The selected track has no running plug-in".into());
+            return;
+        };
+        let command = if open { "device.closeEditor" } else { "device.openEditor" };
+        self.run(&Action::new(command, json!({ "track": track.0, "device": index })));
     }
 
     /// Runs one command and shows its outcome in the status bar.
@@ -2778,6 +2816,7 @@ impl App {
             "view.editor" if self.shown_clip().is_some() => self.toggle_editor(),
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
+            "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.arrangement" => {
                 self.shown = View::Arrangement;

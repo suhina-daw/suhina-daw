@@ -321,7 +321,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   followed: Suhina hears of it, restarts the plug-in's processing as its format asks, and lines
   the tracks up again.
 - The device panel shows each plug-in's state (loading, running, missing, crashed) with Open
-  editor, Close editor or Restart; the same commands work from the CLI and MCP. Editors float
+  editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
+  closes the shown track's plug-in's editor (the device the chain panel selects, else the
+  track's first running one; mappable, Settings › Shortcuts). Editors float
   above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
   (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
   the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
