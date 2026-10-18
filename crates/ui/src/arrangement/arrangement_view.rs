@@ -663,6 +663,24 @@ impl Grid {
         if on_step >= next_bar - EPSILON || (next_bar - beat) < (beat - on_step).abs() { next_bar } else { on_step }
     }
 
+    /// The start of the grid cell `beat` is in (never before the start): the line at or before
+    /// it, counted from its bar line as `place` counts, so a step that does not fill the bar (a
+    /// two-beat step in 3/4) starts again at each bar. `beat` itself with `free` or no snapping.
+    pub fn cell(&self, beat: f64, free: bool) -> f64 {
+        if !beat.is_finite() {
+            return 0.0;
+        }
+        let beat = beat.max(0.0);
+        if free || !self.snaps || self.step <= 0.0 {
+            return beat;
+        }
+        if self.in_bars() {
+            return (beat / self.step + EPSILON).floor() * self.step;
+        }
+        let bar_start = (beat / self.bar_beats + EPSILON).floor() * self.bar_beats;
+        bar_start + ((beat - bar_start) / self.step + EPSILON).floor() * self.step
+    }
+
     /// The beats of the lines from `first` to `last` (both included), each with whether it is a
     /// bar line.
     /// At most `limit` lines, so a bad zoom can never draw without end.
@@ -1194,10 +1212,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && let Some(pointer) = body.interact_pointer_pos()
         {
             // On the grid cell under the pointer, as a double-click makes a clip (Alt: free).
-            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width).max(0.0);
+            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
             let grid = Grid::new(state.grid, state.beat_width, bar_beats);
-            let free = ui.input(|i| i.modifiers.alt) || !grid.snaps;
-            state.menu_beat = Some(if free { raw } else { ((raw / grid.step).floor() * grid.step).max(0.0) });
+            state.menu_beat = Some(grid.cell(raw, ui.input(|i| i.modifiers.alt)));
         }
         body.context_menu(|ui| {
             empty_lane_menu(ui, clips_lane.track, clips_lane.notes, state, actions);
@@ -1219,13 +1236,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && body.double_clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
-            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width).max(0.0);
+            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
             let grid = Grid::new(state.grid, state.beat_width, bar_beats);
-            let start = if ui.input(|i| i.modifiers.alt) || !grid.snaps {
-                raw
-            } else {
-                ((raw / grid.step).floor() * grid.step).max(0.0)
-            };
+            let start = grid.cell(raw, ui.input(|i| i.modifiers.alt));
             // The clip's kind follows the track, notes first, as the command decides it, and the
             // stacking setting follows.
             let stack = if lane.notes { state.stack_midi } else { state.stack_audio };
@@ -3252,6 +3265,21 @@ mod tests {
         let two_bars = Grid::new(Quantization::Bars(2), 8.0, 4.0);
         assert_eq!(two_bars.place(11.0, false), 8.0);
         assert_eq!(two_bars.place(13.0, false), 16.0);
+    }
+
+    #[test]
+    fn a_cell_starts_at_the_line_before_counted_from_its_bar() {
+        // In 3/4 a two-beat step has lines at 0 and 2 in each bar, then the bar line at 3: a
+        // click at 3.1 is in the cell that starts on the bar line, not at beat 2.
+        let grid = Grid::new(Quantization::Beats(2.0), 400.0, 3.0);
+        assert_eq!(grid.cell(3.1, false), 3.0);
+        assert_eq!(grid.cell(2.9, false), 2.0);
+        assert_eq!(grid.cell(5.5, false), 5.0);
+        assert_eq!(grid.cell(3.1, true), 3.1);
+        assert_eq!(grid.cell(-1.0, false), 0.0);
+        // Bars: whole steps from the start.
+        let two_bars = Grid::new(Quantization::Bars(2), 8.0, 4.0);
+        assert_eq!(two_bars.cell(15.9, false), 8.0);
     }
 
     #[test]
