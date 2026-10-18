@@ -3762,6 +3762,7 @@ impl App {
             |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
         if let [sample] = items
             && sample.kind == drop::ItemKind::Sample
+            && sample.path().is_some_and(|path| !suhina_media::stems::is_stems_path(&path))
             && let Some(track_id) = match target {
                 DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
                 _ => None,
@@ -4518,6 +4519,9 @@ mod tests {
                 ]
             );
         }
+        let stems = drop::system_file(Path::new("/test.stem.mp4")).unwrap();
+        let plan = app.plan_drop(&[stems], DropTarget::Lane { track: TrackId(1), beat: 0. }, false).unwrap();
+        assert_eq!(plan.commands[0].0, "clip.addFiles");
         app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
         assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
     }
