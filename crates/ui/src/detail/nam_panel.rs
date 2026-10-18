@@ -616,20 +616,9 @@ pub(crate) fn show_amp(
         ));
     }
     let controls = controls_rect(rect, top, bottom);
-    // The Bypass button at the controls' top left, over everything else.
-    toggle(
-        ui,
-        Rect::from_min_max(controls.left_top(), egui::pos2(controls.left() + 48.0, controls.top() + ROW_HEIGHT)),
-        track,
-        device.index,
-        &prefix,
-        amp_parameter("bypass"),
-        on_of(device, amp_parameter("bypass")),
-        actions,
-    );
     // The Gain and Volume columns at the sides; the middle holds the trio, the Mid Freq's
-    // line and the EQ button. Under the Bypass row, which tops the panel's controls.
-    let rows_top = controls.top() + ROW_HEIGHT + 2.0;
+    // line and the EQ button.
+    let rows_top = controls.top();
     let (left, right) = (60.0, 60.0);
     let gain_cell =
         Rect::from_min_max(egui::pos2(controls.left(), rows_top), egui::pos2(controls.left() + left, rows_top + 56.0));
@@ -792,8 +781,8 @@ pub(crate) fn show_cab(
     // The Ø and HP buttons.
     let toggles =
         Rect::from_min_max(middle_rect.left_top(), egui::pos2(middle_rect.right(), middle_rect.top() + ROW_HEIGHT));
-    let cells = split(toggles, 3);
-    for (cell, id) in cells.iter().zip(["bypass", "phase", "hpOn"]) {
+    let cells = split(toggles, 2);
+    for (cell, id) in cells.iter().zip(["phase", "hpOn"]) {
         let parameter = cab_parameter(id);
         toggle(
             ui,

@@ -812,11 +812,22 @@ fn device_panel(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
     );
+    // The square is the bypass ([docs/spec/nam-amp-and-cab.md] › The panels): lit accent while
+    // the device runs, an accent outline when it is bypassed and the sound passes it by.
+    let bypass = ui.interact(switch, egui::Id::new(("device-switch", track.0, device.index)), Sense::click());
     if device.enabled {
-        painter.rect_filled(switch, 0.0, theme::text_primary());
+        painter.rect_filled(switch, 0.0, theme::accent());
     } else {
-        painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
+        painter.rect_stroke(switch, 0.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
     }
+    if bypass.clicked() {
+        actions.push(Action::new(
+            "device.setEnabled",
+            serde_json::json!({ "track": track.0, "device": device.index, "enabled": !device.enabled }),
+        ));
+    }
+    bypass.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Bypass {}", device.name)));
+    bypass.on_hover_text("Bypass: the sound passes this device by");
     let name_color = if device.enabled { theme::text_primary() } else { theme::text_hint() };
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     let name = Rect::from_min_max(

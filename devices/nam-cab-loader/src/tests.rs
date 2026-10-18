@@ -229,27 +229,3 @@ fn a_longer_ir_convolves_finitely() {
     let level = level(frames(&s), 2_000.0, D + 4_800);
     assert!(level > 1e-4, "level {level}");
 }
-
-/// Bypassed, the device is the input itself, one chunk behind (the trail the whole device
-/// runs on), with no phase, high pass, cuts or convolution.
-#[test]
-fn bypassed_the_input_comes_out_one_chunk_behind() {
-    let input = sine(0.3, 131.0, 4 * CHUNK);
-    let mut bypassed = loader(None, &[(param::BYPASS, 1.0)]);
-    let mut out = input.clone();
-    bypassed.process(&ProcessContext::default(), &mut out);
-    for (k, pair) in frames(&out).iter().enumerate() {
-        let source = k.checked_sub(CHUNK).map(|s| frames(&input)[s][0]).unwrap_or(0.0);
-        assert!(
-            (pair[0] - source).abs() < 1e-6 && (pair[1] - source).abs() < 1e-6,
-            "frame {k}: bypassed output is the trail's input"
-        );
-    }
-    // Not bypassed, the stages stand between (the high pass runs by default).
-    let mut run = input.clone();
-    loader(None, &[]).process(&ProcessContext::default(), &mut run);
-    assert!(
-        frames(&run).iter().zip(frames(&out).iter()).any(|(a, b)| (a[0] - b[0]).abs() > 1e-6),
-        "the processed output differs from the bypassed trail"
-    );
-}

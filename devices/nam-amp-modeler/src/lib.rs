@@ -55,8 +55,7 @@ pub mod param {
     pub const DELAY: usize = 6;
     pub const HQ: usize = 7;
     pub const OUTPUT_VOLUME: usize = 8;
-    pub const BYPASS: usize = 9;
-    pub(crate) const COUNT: usize = 10;
+    pub(crate) const COUNT: usize = 9;
 }
 
 const PARAMS: [ParamInfo; param::COUNT] = [
@@ -69,7 +68,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("delay", "Delay", (0.0, 0.02), 0.0, Unit::Seconds, Scale::Linear),
     ParamInfo::toggle("hq", "HQ", false),
     ParamInfo::continuous("outputVolume", "Volume", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::toggle("bypass", "Bypass", false),
 ];
 
 pub const INFO: DeviceInfo =
@@ -311,12 +309,11 @@ impl NamAmp {
     /// The head stages of one incoming frame — the input trim, then the EQ — stored in the
     /// chunk. The trim's smoother moves once per frame, both sides mixed the same way.
     fn head(&mut self, sample: [f32; 2], slot: usize) {
-        let bypass = self.value(param::BYPASS) >= 0.5;
         let eq_on = self.value(param::EQ_ON) >= 0.5;
         let trim = f64::from(self.input_gain.next_value());
         for (side, x_in) in [(0usize, sample[0]), (1usize, sample[1])] {
-            let mut x = if bypass { f64::from(x_in) } else { f64::from(x_in) * trim };
-            if eq_on && !bypass {
+            let mut x = f64::from(x_in) * trim;
+            if eq_on {
                 let fields = &mut self.sides[side];
                 x = fields.bass.process(x);
                 x = fields.mid.process(x);
@@ -331,17 +328,9 @@ impl NamAmp {
     /// the tail stages per produced frame. Both sides produce the same number of frames; the
     /// tails run them in stream order at their own positions.
     fn complete_chunk(&mut self) {
-        let bypass = self.value(param::BYPASS) >= 0.5;
         let mut counts = [0usize; 2];
         for (side, count) in counts.iter_mut().enumerate() {
-            *count = if bypass {
-                for (k, staged) in self.chunk[side].iter().enumerate() {
-                    self.stage_out[side][k] = f64::from(*staged);
-                }
-                CHUNK
-            } else {
-                self.model_stage(side)
-            };
+            *count = self.model_stage(side);
         }
         let count = counts[0].min(counts[1]).min(RING);
         for k in 0..count {
@@ -351,8 +340,7 @@ impl NamAmp {
             for side in 0..2 {
                 self.delays[side].set_frames(f64::from(self.delay_frames.current()));
                 let delayed = self.delays[side].process(self.stage_out[side][k]);
-                // Bypassed: the raw trail out, the line warm for when it comes back.
-                let value = if bypass { self.stage_out[side][k] as f32 } else { (delayed * volume) as f32 };
+                let value = (delayed * volume) as f32;
                 let slot = ((self.produced_pos + k as u64) as usize) & (RING - 1);
                 if side == 0 {
                     self.ready_left[slot] = value;

@@ -45,8 +45,7 @@ pub mod param {
     pub const MID_FREQ: usize = 5;
     pub const DELAY: usize = 6;
     pub const VOLUME: usize = 7;
-    pub const BYPASS: usize = 8;
-    pub(crate) const COUNT: usize = 9;
+    pub(crate) const COUNT: usize = 8;
 }
 
 const PARAMS: [ParamInfo; param::COUNT] = [
@@ -58,7 +57,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("cutMidFreq", "Mid Freq", (200.0, 2_000.0), 600.0, Unit::Hertz, Scale::Logarithmic),
     ParamInfo::continuous("delay", "Delay", (0.0, 0.02), 0.0, Unit::Seconds, Scale::Linear),
     ParamInfo::continuous("volume", "Volume", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::toggle("bypass", "Bypass", false),
 ];
 
 pub const INFO: DeviceInfo =
@@ -226,14 +224,9 @@ impl CabLoader {
 impl CabLoader {
     /// The heads' stages of one incoming frame, and its store in the filling chunk.
     fn head(&mut self, sample: [f32; 2], slot: usize) {
-        let bypass = self.value(param::BYPASS) >= 0.5;
         let (hp_on, phase_on) = (self.value(param::HP) >= 0.5, self.value(param::PHASE) >= 0.5);
         for (side, x_in) in [(0usize, sample[0]), (1usize, sample[1])] {
             let mut x = f64::from(x_in);
-            if bypass {
-                self.chunk[side][slot] = x_in;
-                continue;
-            }
             if phase_on {
                 x = -x;
             }
@@ -252,12 +245,11 @@ impl CabLoader {
     /// The completed chunk's convolutions and tail stages: its frames, in stream order, ready
     /// where their deliveries will read them.
     fn complete_chunk(&mut self, base: u64) {
-        let bypass = self.value(param::BYPASS) >= 0.5;
         for side in 0..2 {
             self.conv_in[side].copy_from_slice(&self.chunk[side][..]);
             match self.convs[side].as_mut() {
-                Some(conv) if !bypass => conv.process(&self.conv_in[side], &mut self.conv_out[side]),
-                _ => self.conv_out[side].copy_from_slice(&self.conv_in[side]),
+                Some(conv) => conv.process(&self.conv_in[side], &mut self.conv_out[side]),
+                None => self.conv_out[side].copy_from_slice(&self.conv_in[side]),
             }
         }
         for index in 0..CHUNK {
@@ -266,12 +258,7 @@ impl CabLoader {
             for side in 0..2 {
                 self.delay[side].set_frames(f64::from(self.delay_frames.current()));
                 let delayed = self.delay[side].process(f64::from(self.conv_out[side][index]));
-                // Bypassed: the raw trail out, the line warm for when it comes back.
-                let value = if bypass {
-                    self.conv_out[side][index]
-                } else {
-                    (delayed * f64::from(self.volume.current())) as f32
-                };
+                let value = (delayed * f64::from(self.volume.current())) as f32;
                 let slot = ((base + index as u64) as usize) & (CHUNK - 1);
                 if side == 0 {
                     self.ready_left[slot] = value;

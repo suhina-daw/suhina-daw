@@ -189,27 +189,3 @@ fn hostile_numbers_stay_finite() {
         assert!(v.is_finite() || v == 0.0, "{v}");
     }
 }
-
-/// Bypassed, the device is the input itself, one chunk behind (the trail the whole device
-/// runs on), with no trims, EQ or model; and not bypassed, it is not that.
-#[test]
-fn bypassed_the_input_comes_out_one_chunk_behind() {
-    let input = sine(0.3, 131.0, 4 * CHUNK);
-    let mut amp = loader(Some(parsed(None)), &[(param::BYPASS, 1.0)]);
-    let mut out = input.clone();
-    amp.process(&ProcessContext::default(), &mut out);
-    for (k, pair) in frames(&out).iter().enumerate() {
-        let source = k.checked_sub(CHUNK).map(|s| frames(&input)[s][0]).unwrap_or(0.0);
-        assert!(
-            (pair[0] - source).abs() < 1e-6 && (pair[1] - source).abs() < 1e-6,
-            "frame {k}: bypassed output is the trail's input"
-        );
-    }
-    // Not bypassed, the model's processing stands between.
-    let mut run = input.clone();
-    loader(Some(parsed(None)), &[]).process(&ProcessContext::default(), &mut run);
-    assert!(
-        frames(&run).iter().zip(frames(&out).iter()).any(|(a, b)| (a[0] - b[0]).abs() > 1e-6),
-        "the model's output differs from the bypassed trail"
-    );
-}

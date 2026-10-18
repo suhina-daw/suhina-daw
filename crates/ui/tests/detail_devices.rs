@@ -312,7 +312,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     ] {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
-    for label in ["Amp Modeler: bypass", "Amp Modeler: eq", "Amp Modeler: hq"] {
+    for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     // The pack row with its steppers and the file row with its own; the pack is listed.
@@ -338,7 +338,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     ] {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
-    for label in ["Cab Loader: bypass", "Cab Loader: phase", "Cab Loader: hp"] {
+    for label in ["Cab Loader: phase", "Cab Loader: hp"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
     for label in [
@@ -352,12 +352,14 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         assert!(harness.query_by_label(label).is_some(), "missing {label}");
     }
 
-    // One click on the Bypass's button turns it on through device.setParam.
-    harness.get_by_label("Amp Modeler: bypass").click();
+    // The header's square is the bypass: one click takes the device off (the sound passes it
+    // by), another puts it back.
+    harness.get_by_label("Bypass NAM Amp Modeler").click();
     harness.run();
-    let project = project_now(&harness);
-    let bypassed = project.channels[0].devices[0].params.iter().find(|p| p.id == "bypass").unwrap();
-    assert_eq!(bypassed.value, 1.0, "the bypass click turned it on");
+    assert!(!project_now(&harness).channels[0].devices[0].enabled, "the square bypassed the amp");
+    harness.get_by_label("Bypass NAM Amp Modeler").click();
+    harness.run();
+    assert!(project_now(&harness).channels[0].devices[0].enabled, "the square put the amp back");
     // One click on the EQ's button turns it on through device.setParam.
     harness.get_by_label("Amp Modeler: eq").click();
     harness.run();

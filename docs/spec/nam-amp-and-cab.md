@@ -79,7 +79,6 @@ registry and the automation carry; ids are stable — projects store values by t
 | 6 | `delay` | Delay | continuous, linear | 0…0.02 | 0.0 | s (shown in ms) |
 | 7 | `hq` | HQ | toggle | — | off | |
 | 8 | `outputVolume` | Volume | continuous, linear | −24…+24 | 0.0 | dB |
-| 9 | `bypass` | Bypass | toggle | — | off | |
 
 Per side, the signal runs: the input gain (smoothed, 20 ms like the utility's), the EQ, — when
 the project's rate differs from the model's — the resampler into the model's rate, the model, a
@@ -100,10 +99,6 @@ EQ and delay still work.
 - **Delay** holds the output back by 0…20 ms, a straight delay line per side. It is part of the
   sound and is **not** latency-compensated: set it by ear against a parallel path.
 - **Volume** sets the output level, after the model.
-- **Bypass** — when on, the device is the input itself, still one chunk behind (the trail every
-  frame of the device runs on), with the trims, EQ, model, delay and volume all out. The
-  smoother states keep ticking while it is on, so turning it off is seamless; the chunk trail
-  keeps `latency()` at its 512 whatever the toggle does, so the engine's compensation stands.
 - **Latency:** the model adds none. The resampler adds its own few frames when it runs; the
   device reports them in `latency()` so the engine's compensation keeps parallel chains in
   phase. The **Delay** knob's frames are not reported.
@@ -120,7 +115,6 @@ EQ and delay still work.
 | 5 | `cutMidFreq` | Mid Freq | continuous, log | 200…2000 | 600.0 | Hz |
 | 6 | `delay` | Delay | continuous, linear | 0…0.02 | 0.0 | s (shown in ms) |
 | 7 | `volume` | Volume | continuous, linear | −24…+24 | 0.0 | dB |
-| 8 | `bypass` | Bypass | toggle | — | off | |
 
 Per side: the phase invert, a 2nd-order high pass at 100 Hz (when **HP** is on), the tone cuts —
 a low shelf below 100 Hz (`Bass`), a dip at `Mid Freq` (`Mid`) and a high shelf above 4 kHz
@@ -131,10 +125,6 @@ not a mix.
 
 - **Phase** (Ø) inverts the output's polarities.
 - **HP** takes the rumble out that a close mic records.
-- **Bypass** — when on, the device is the input itself, still one chunk behind (the trail every
-  frame of the device runs on), with the phase, high pass, cuts, convolution, delay and volume
-  all out. The smoother states keep ticking while it is on, so turning it off is seamless, and
-  `latency()` keeps its 512, so parallel chains stay in phase through the click.
 - **Latency:** the convolver reports its one partition (512 frames, 5.3 ms at 96 kHz) in
   `latency()`; the engine's compensation aligns a chain with the IR's start against parallel
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
@@ -270,10 +260,14 @@ are read and validated at command time) — never on the audio thread.
 
 ## The panels
 
-`crates/ui/src/detail` draws Suhina's first built-in device panels — the existing header (the
-square on/off switch, the name, "Suhina") is unchanged, the body is the devices' own drawing,
-laid out as the issue's sketch. Everything interactive is `device.*` commands; labels are as a
-user reads them, and the tests find the panels by them.
+`crates/ui/src/detail` draws Suhina's first built-in device panels — the header (the square
+on/off switch, the name, "Suhina") is as every device's, and its square is the bypass: a click
+runs `device.setEnabled`, the bypassed device passes the sound through, and its `latency()`
+drops out of the chain's compensation with it. The square is filled with the theme's accent
+while the device runs and an accent outline when bypassed; the name's text dims with it. The
+label a reader gets: "Bypass NAM Amp Modeler". The body is the devices' own drawing, laid out
+as the issue's sketch. Everything interactive is `device.*` commands; labels are as a user
+reads them, and the tests find the panels by them.
 
 Both panels, top to bottom:
 
@@ -290,16 +284,14 @@ Both panels, top to bottom:
 2. **The controls area** — knobs with a label over each and the value under it, drawn with the
    theme's tokens; a drag up or down turns, a double-click returns to the default, arrow keys
    step when a knob has focus.
-   - **The Bypass button** at the controls area's top left ("Amp Modeler: bypass" / "Cab
-     Loader: bypass"): lit when the device is bypassed ([States](#states)).
-   - Amp Modeler under it, left to right: **Gain**; **Bass / Mid / Treble** with the **Mid
-     Freq**'s line under them — a line with a diamond handle at the value's place, a drag
-     along it sets the frequency, a click jumps — and the **EQ** button under that; **HQ**,
-     **Delay** and **Volume** at the right, Volume last.
-   - Cab Loader: the **Phase** (Ø) and **HP** buttons beside the Bypass one; **Bass / Mid /
-     Treble** with **Mid Freq** under them; **Delay**; a vertical **Volume** slider.
-   - Toggles are lit when on: Bypass, EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler:
-     gain" … "Cab Loader: volume".
+   - Amp Modeler, left to right: **Gain**; **Bass / Mid / Treble** with the **Mid Freq**'s
+     line under them — a line with a diamond handle at the value's place, a drag along it sets
+     the frequency, a click jumps — and the **EQ** button under that; **HQ**, **Delay** and
+     **Volume** at the right, Volume last.
+   - Cab Loader: the **Phase** (Ø) and **HP** buttons; **Bass / Mid / Treble** with **Mid
+     Freq** under them; **Delay**; a vertical **Volume** slider.
+   - Toggles are lit when on: EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler: gain" …
+     "Cab Loader: volume".
 3. **The file row** — the file's own name ("FNDR BFSR VB Edge WRM2 CAB FREE.nam") in a dropdown
    with the same previous/next steppers; "Choose a model file…" when none is set. Its dropdown
    lists the current pack's files by their shown names. Labels: "Amp Modeler: model file",
