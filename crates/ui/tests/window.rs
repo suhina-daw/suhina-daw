@@ -136,7 +136,10 @@ fn window_with_step(app: App, step: f32) -> Harness<'static, App> {
         .with_max_steps((1.0 / step).ceil() as u64)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    harness.run();
+    // Frames, not a run to rest: a window that repaints every frame while it settles (the
+    // sample map's grid building, an animation) would spend the run's max and fail, where
+    // these frames advance the same second.
+    harness.run_steps(((1.0_f64 / step as f64).ceil() as usize).max(1));
     harness
 }
 
@@ -3545,13 +3548,16 @@ fn open_on_the_start_panel_shows_the_systems_dialog() {
 fn help_about_shows_the_version_and_copies_it() {
     let mut harness = window(demo_app());
     let version = suhina_ui::app::project_dialog::VERSION;
+    let build = suhina_ui::app::project_dialog::BUILD;
+    assert!(!build.is_empty(), "the build script sets the build string");
     assert!(harness.query_by_label_contains(version).is_none());
     harness.get_by_label("Help").click();
     harness.run();
     harness.get_by_label_contains("About Suhina").click();
     harness.run();
     let line = suhina_ui::app::project_dialog::version_line();
-    assert!(line.starts_with(&format!("Suhina {version} (")), "{line}");
+    assert!(line.starts_with(&format!("Suhina {version} build ")), "{line}");
+    assert!(line.contains(build), "the copied line carries the build string: {line}");
     harness.get_by_label(&format!("Copy version: {line}")).click();
     harness.run();
     assert_eq!(harness.state().status(), &Status::Done(format!("Copied {line}")));

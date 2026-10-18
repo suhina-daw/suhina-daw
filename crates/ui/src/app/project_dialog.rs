@@ -270,6 +270,10 @@ pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<Unsa
 /// `0.0.1-nightly.20261013+a15ad35` (docs/releasing.md › Nightly).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// What this build was, from `build.rs`: `2026_10_16_a15ad35`, the checked-out commit's date and
+/// abbreviated hash; a build with no git says `unknown` unless the release set the environment.
+pub const BUILD: &str = env!("SUHINA_BUILD");
+
 /// What was chosen in the About dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AboutChoice {
@@ -279,9 +283,9 @@ pub enum AboutChoice {
 }
 
 /// One line that names this build, to paste into a bug report:
-/// `Suhina 0.0.1-nightly.20261013+a15ad35 (linux x86_64)`.
+/// `Suhina 0.0.1 build 2026_10_16_a15ad35 (linux x86_64)`.
 pub fn version_line() -> String {
-    format!("Suhina {VERSION} ({})", platform())
+    format!("Suhina {VERSION} build {BUILD} ({})", platform())
 }
 
 fn platform() -> String {
@@ -303,7 +307,12 @@ pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
 fn draw_about(ui: &mut Ui, area: Rect) -> Option<AboutChoice> {
     let mut closed: Option<AboutChoice> = None;
     let platform = platform();
-    let facts = [("Version", VERSION), ("Platform", platform.as_str()), ("Licence", "GPL-3.0-or-later, free software")];
+    let facts = [
+        ("Version", VERSION),
+        ("Build", BUILD),
+        ("Platform", platform.as_str()),
+        ("Licence", "GPL-3.0-or-later, free software"),
+    ];
     let height = ROW + facts.len() as f32 * LINE + BUTTON.y + 3.0 * PAD;
     let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, height), "About Suhina", &mut closed);
     let painter = ui.painter_at(area);
