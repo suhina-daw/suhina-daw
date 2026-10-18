@@ -307,6 +307,11 @@ fn plugin_env() -> std::sync::Arc<suhina_session::PluginEnv> {
     let synth = plugin("Synth.clap", "com.vendor.synth", "Synth", &["instrument", "synthesizer"]);
     catalog.insert(verb.path.clone(), vec![verb]);
     catalog.insert(synth.path.clone(), vec![synth]);
+    let tune = PluginInfo {
+        ara: true,
+        ..plugin("Tune.vst3", "00112233445566778899AABBCCDDEEFF", "Tune", &["Fx|Pitch Shift"])
+    };
+    catalog.insert(tune.path.clone(), vec![tune]);
     std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into()))
 }
 
@@ -334,6 +339,25 @@ fn installed_plug_ins_are_added_from_the_catalog() {
     // One undo step each.
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().channels[0].devices.len(), 2);
+}
+
+#[test]
+fn a_plug_in_that_edits_clips_goes_first() {
+    let mut session = Session::new(project());
+    session.set_plugin_env(plugin_env());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    // Asked for after the utility, it goes before it, as it plays the clips from their files.
+    let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune", "position": 1 })).unwrap();
+    assert_eq!(
+        (tune["device"].clone(), tune["ara"].clone(), tune["moved_first"].clone()),
+        (json!(0), json!(true), json!(true))
+    );
+    let devices = &session.project().channels[0].devices;
+    assert_eq!(devices[0].name, "Tune");
+    // Without a position it goes first too, and says nothing moved.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
+    assert_eq!((tune["device"].clone(), tune["moved_first"].clone()), (json!(0), json!(false)));
 }
 
 #[test]

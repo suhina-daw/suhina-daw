@@ -56,7 +56,21 @@ lane, the grid and zoom, and the `note.*` commands.
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
   detail area first when it is hidden. An audio clip has no switch: its track's devices already
-  show beside its properties, and the key leaves it as it is.
+  show beside its properties, and the key leaves it as it is, unless its track has a plug-in that
+  edits clips (below).
+- **Built ([#594](https://github.com/suhina-daw/suhina-daw/issues/594)):** an **audio clip on a
+  track whose plug-in edits clips** (ARA, such as a pitch editor; [ADR
+  0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
+  roll: the clip column on the left, the editor in the rest, embedded in the window where editors
+  embed (Windows, X11 on Linux) and in a window of its own elsewhere, where the area says so with a
+  **Close editor** button. The plug-in is told which clip is selected, so its editor shows that
+  clip, and selecting another clip on the track shows that one. The editor opens on its own the
+  first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
+  clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The clip's
+  right-click menu has **Open in** and the plug-in's name, and **Ctrl+Shift+A** (`view.araEditor`)
+  does the same for the selected clip: it selects **Clip**, opens the detail area and the editor.
+  When the plug-in is loaded again with moved clips, an editor that was open opens again.
 
   The switch is window state, like Shift+Tab: not a command, not an undo step, not saved. It
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or

@@ -98,6 +98,8 @@ pub struct PluginBox {
     pub editor_open: bool,
     /// Its editor is open inside the panel: the size of it, in pixels.
     pub embedded: Option<(u32, u32)>,
+    /// It is bound to its track's audio clips (ARA), so its editor edits them.
+    pub ara: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +120,7 @@ impl PluginBox {
                 line: "Not running".into(),
                 editor_open: false,
                 embedded: None,
+                ara: false,
             };
         };
         let name = report.plugin.as_ref().map(|(name, vendor, _)| format!("{name} by {vendor}"));
@@ -140,7 +143,7 @@ impl PluginBox {
             PluginStatus::Crashed(why) => (PluginState::Crashed, format!("Crashed: {why}")),
             PluginStatus::Failed(why) => (PluginState::Crashed, format!("Could not start: {why}")),
         };
-        Self { state, line, editor_open: report.editor_open, embedded: report.editor_embedded }
+        Self { state, line, editor_open: report.editor_open, embedded: report.editor_embedded, ara: report.ara }
     }
 
     /// The size the embedded editor takes in the panel, in points.
@@ -534,7 +537,8 @@ fn chain_row(
         device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
-            places.push(editor_place(ui, area, rect, editor, chain.track, device));
+            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
+            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
         }
     }
 }
@@ -641,7 +645,8 @@ fn chain_stack(
         device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
-            places.push(editor_place(ui, area, rect, editor, chain.track, device));
+            let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
+            places.push(editor_place(ui, area, rect, editor, chain.track, device, origin));
         }
     }
 }
@@ -649,9 +654,16 @@ fn chain_stack(
 /// Where a plug-in's embedded editor of `editor` points goes under its line and button in the
 /// device's `rect`, as the host takes it: in the window's own pixels, with the part of the
 /// panel's `area` (and the device's box) that shows it; what falls outside is cut off.
-fn editor_place(ui: &Ui, area: Rect, rect: Rect, editor: Vec2, track: TrackId, device: &DeviceBox) -> EditorPlace {
+fn editor_place(
+    ui: &Ui,
+    area: Rect,
+    rect: Rect,
+    editor: Vec2,
+    track: TrackId,
+    device: &DeviceBox,
+    origin: Pos2,
+) -> EditorPlace {
     let scale = ui.ctx().pixels_per_point();
-    let origin = Pos2::new(rect.left() + PAD, rect.top() + EDITOR_TOP);
     let shown = Rect::from_min_size(origin, editor).intersect(rect).intersect(area);
     let pixel = |value: f32| (value * scale).round() as i32;
     let span = |from: f32, to: f32| u32::try_from(pixel(to).saturating_sub(pixel(from))).unwrap_or(0);
@@ -706,6 +718,72 @@ fn plugin_button(
     );
     if response.clicked() {
         actions.push(Action::new(command, json!({ "track": track.0, "device": device.index })));
+    }
+}
+
+/// The Clip part of an audio clip on a track whose plug-in edits clips (ARA, ADR 0028): the
+/// plug-in's editor in `area`, where a MIDI clip has its piano roll. Embedded, it lands there
+/// (`places`); in a window of its own, or closed, the area says so with a button to open or
+/// close it. `device` is the plug-in's index in `chain`.
+pub fn show_ara_editor(
+    ui: &mut Ui,
+    area: Rect,
+    chain: &Chain,
+    device: usize,
+    actions: &mut Vec<Action>,
+    places: &mut Vec<EditorPlace>,
+) {
+    ui.allocate_rect(area, Sense::hover());
+    let painter = ui.painter_at(area);
+    painter.rect_filled(area, 0.0, theme::window_background());
+    let Some(device) = chain.devices.iter().find(|d| d.index == device) else { return };
+    let Some(plugin) = &device.plugin else { return };
+    let response = ui.interact(area, egui::Id::new(("ara-editor", chain.track.0)), Sense::hover());
+    let label = format!("Clip editor {}", device.name);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+    if let Some(size) = plugin.editor_size(ui.ctx().pixels_per_point()) {
+        let rect = Rect::from_min_size(area.min + Vec2::splat(PAD), size);
+        places.push(editor_place(ui, area, rect.expand(PAD), size, chain.track, device, rect.min));
+        return;
+    }
+    let (text, button) = match plugin.state {
+        PluginState::Running if plugin.editor_open => {
+            (format!("{} is open in a window of its own", device.name), Some(("Close editor", "device.closeEditor")))
+        }
+        PluginState::Running => {
+            (format!("Open {} to edit this clip", device.name), Some(("Open editor", "device.openEditor")))
+        }
+        _ => (format!("{}: {}", device.name, plugin.line), None),
+    };
+    let centre = area.center();
+    painter.text(
+        centre - Vec2::new(0.0, BUTTON_HEIGHT),
+        Align2::CENTER_CENTER,
+        text,
+        theme::ui_font(theme::TEXT),
+        theme::text_hint(),
+    );
+    let Some((label, command)) = button else { return };
+    let rect = Rect::from_center_size(centre + Vec2::new(0.0, PAD), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
+    let response = widgets::button_area(
+        ui,
+        rect,
+        egui::Id::new(("ara-button", chain.track.0)),
+        format!("{label} {}", device.name),
+    );
+    let hover = widgets::hover(ui, &response);
+    painter.rect_filled(rect, 0.0, crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover));
+    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    widgets::text_in(
+        &painter,
+        rect,
+        Align2::CENTER_CENTER,
+        label,
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_primary(),
+    );
+    if response.clicked() {
+        actions.push(Action::new(command, json!({ "track": chain.track.0, "device": device.index })));
     }
 }
 
@@ -1577,6 +1655,7 @@ mod tests {
             longest_us: 0,
             no_time: 0,
             state_refused: None,
+            ara: false,
         }
     }
 
@@ -1615,6 +1694,51 @@ mod tests {
         // A built-in effect or instrument has no plug-in part.
         let Detail::Devices(chain) = build(&demo_project(), Some(TrackId(1)), None) else { panic!() };
         assert!(chain.devices.iter().all(|d| d.plugin.is_none()));
+    }
+
+    #[test]
+    fn a_clips_ara_editor_lands_in_the_clip_view_or_offers_to_open() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+        let project = with_plugin();
+        let chain_with = |report: PluginReport| {
+            let Detail::Devices(chain) = build_with(&project, Some(TrackId(1)), None, &mut |_, _| Some(report.clone()))
+            else {
+                panic!()
+            };
+            chain
+        };
+        let bound = PluginReport { ara: true, ..report(PluginStatus::Running, false) };
+        assert!(chain_with(bound.clone()).devices[0].plugin.as_ref().unwrap().ara);
+        // Embedded: it lands at the area's corner, the whole of it showing.
+        let embedded =
+            chain_with(PluginReport { editor_embedded: Some((300, 200)), ..report(PluginStatus::Running, true) });
+        let mut harness = Harness::builder().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, places: &mut Vec<EditorPlace>| {
+                places.clear();
+                let area = ui.available_rect_before_wrap();
+                show_ara_editor(ui, area, &embedded, 0, &mut Vec::new(), places);
+            },
+            Vec::new(),
+        );
+        harness.run();
+        let place = harness.state()[0];
+        assert_eq!((place.track, place.device), (TrackId(1), 0));
+        assert_eq!((place.placement.clip_width, place.placement.clip_height), (300, 200));
+        // Closed: the area offers to open it, and the button opens that plug-in's editor.
+        let closed = chain_with(bound);
+        let mut harness = Harness::builder().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let area = ui.available_rect_before_wrap();
+                show_ara_editor(ui, area, &closed, 0, actions, &mut Vec::new());
+            },
+            Vec::new(),
+        );
+        harness.run();
+        harness.get_by_label("Open editor Verb").click();
+        harness.run();
+        assert_eq!(harness.state()[0].id, "device.openEditor");
+        assert_eq!(harness.state()[0].params, json!({ "track": 1, "device": 0 }));
     }
 
     #[test]

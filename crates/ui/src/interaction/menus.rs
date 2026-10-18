@@ -306,6 +306,16 @@ pub fn clip_edit_menu(
     }
 }
 
+/// The part of an audio clip's menu on a track whose plug-in edits clips (ARA): open the clip
+/// in that plug-in's editor (`view.araEditor`, which the window does).
+pub fn ara_menu(ui: &mut Ui, track: TrackId, clip: ClipId, plugin: &str, actions: &mut Vec<Action>) {
+    ui.separator();
+    if ui.add(egui::Button::new(format!("Open in {plugin}")).shortcut_text("Ctrl+Shift+A")).clicked() {
+        actions.push(Action::new("view.araEditor", json!({ "track": track.0, "clip": clip.0 })));
+        ui.close();
+    }
+}
+
 /// What a scene's menu needs to know.
 pub struct SceneMenu<'a> {
     /// Counted from 1, as commands take it.
@@ -424,6 +434,21 @@ pub fn slot_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_audio_clip_opens_in_its_tracks_ara_plug_in() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+        let mut harness = Harness::builder().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", actions),
+            Vec::new(),
+        );
+        harness.run();
+        harness.get_by_label_contains("Open in Tune").click();
+        harness.run();
+        let action = &harness.state()[0];
+        assert_eq!((action.id, action.params.clone()), ("view.araEditor", json!({ "track": 2, "clip": 7 })));
+    }
 
     #[test]
     fn scene_fields_become_commands() {

@@ -824,6 +824,19 @@ impl Plugin {
         Ok(true)
     }
 
+    /// Tells a plug-in bound to an ARA document which region (`clip-<id>`) the engine has
+    /// selected, or none. Never waits, as [`Plugin::place_editor`]: returns `false` when the
+    /// host process was busy and it was not sent, so the caller sends it again later.
+    pub fn ara_select(&mut self, region: Option<&str>) -> Result<bool, PluginError> {
+        let Some(mut group) = try_lock(&self.group) else { return Ok(false) };
+        if group.generation != self.generation {
+            return Err(PluginError::Protocol("the host process was replaced; restart the plug-in".into()));
+        }
+        let process = group.process.as_mut().ok_or_else(|| PluginError::Protocol("the host is not running".into()))?;
+        process.send(&Message::AraSelect { instance: self.instance, region: region.map(str::to_string) })?;
+        Ok(true)
+    }
+
     /// Closes the plug-in's editor, if it is open.
     pub fn close_editor(&mut self) -> Result<(), PluginError> {
         let instance = self.instance;

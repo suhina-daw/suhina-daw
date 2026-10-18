@@ -217,6 +217,11 @@ pub struct App {
     /// The detail area's Clip / Devices switch: for a clip with an editor, the editor or its
     /// track's devices (`docs/spec/ui-clip-editor.md` › Where it opens). Window state.
     detail_showing: detail_view::Showing,
+    /// The arrangement clip the plug-ins that edit clips (ARA) on its track were last told is
+    /// selected, and the one whose ARA editor was last opened on its own when it was selected:
+    /// once per clip, so an editor the user closes stays closed.
+    ara_told: Option<(TrackId, Option<ClipId>)>,
+    ara_opened: Option<(TrackId, ClipId)>,
     /// The detail area is showing, and its height (in a row) or width (stacked).
     detail_open: bool,
     detail_height: f32,
@@ -341,6 +346,8 @@ impl App {
             keymap: Keymap::default(),
             keymap_changed: false,
             detail_showing: detail_view::Showing::Clip,
+            ara_told: None,
+            ara_opened: None,
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
             detail_max: false,
@@ -1531,6 +1538,26 @@ impl App {
                         self.session_view_done();
                     }
                     (Some(_), View::Arrangement) => {
+                        // The tracks whose plug-in edits clips: their audio clips' menus open
+                        // the clip in it.
+                        self.arrangement.ara_tracks = self.session().map_or_else(Vec::new, |s| {
+                            s.ara_tracks()
+                                .into_iter()
+                                .filter_map(|(track, device)| {
+                                    let project = s.project();
+                                    let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
+                                    let name = project
+                                        .channels
+                                        .iter()
+                                        .find(|c| c.id == channel)?
+                                        .devices
+                                        .get(device)?
+                                        .name
+                                        .clone();
+                                    Some((track, name))
+                                })
+                                .collect()
+                        });
                         if let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) {
                             self.arrangement.stack_audio = self.settings.sample_stacking;
                             self.arrangement.stack_midi = self.settings.midi_stacking;
@@ -1605,6 +1632,15 @@ impl App {
                 .flatten();
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
+            }
+            // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
+            if action.id == "view.araEditor" {
+                let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+                if let (Some(track), Some(clip)) = (id("track"), id("clip")) {
+                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
+                }
+                self.open_ara_editor();
+                continue;
             }
             if let Some(project) = closing
                 && self.unsaved(project)
@@ -1707,7 +1743,7 @@ impl App {
     /// The Clip / Devices switch's key and menu entry, for a clip with an editor: the other part,
     /// or the devices when the detail area is hidden, which opens it.
     fn toggle_devices(&mut self) {
-        if self.piano_clip(self.shown_clip()).is_none() {
+        if self.piano_clip(self.shown_clip()).is_none() && self.ara_clip().is_none() {
             return;
         }
         self.detail_showing = match self.detail_showing {
@@ -1716,6 +1752,48 @@ impl App {
             detail_view::Showing::Devices => detail_view::Showing::Clip,
         };
         self.show_editor();
+    }
+
+    /// The shown clip when its editor is a plug-in that edits clips (ARA, ADR 0028): an
+    /// arrangement audio clip whose track runs such a plug-in. Its track, id and the plug-in's
+    /// index in the track's chain.
+    fn ara_clip(&mut self) -> Option<(TrackId, ClipId, usize)> {
+        let ClipRef::Arrangement(track, clip) = self.shown_clip()? else { return None };
+        if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_some() {
+            return None;
+        }
+        let device = self.session()?.ara_device(track)?;
+        Some((track, clip, device))
+    }
+
+    /// Opens the selected clip in its track's plug-in that edits clips (ARA): the detail area
+    /// shows the clip with the plug-in's editor in it, and the plug-in shows that clip.
+    fn open_ara_editor(&mut self) {
+        let Some((track, clip, device)) = self.ara_clip() else {
+            self.status = Status::Hint(match self.shown_clip() {
+                Some(ClipRef::Arrangement(..)) => {
+                    "The clip's track has no running plug-in that edits clips (such as a pitch editor)".into()
+                }
+                _ => "Select an audio clip in the Arrangement first".into(),
+            });
+            return;
+        };
+        self.detail_showing = detail_view::Showing::Clip;
+        self.show_editor();
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.select_ara_clip(track, Some(clip));
+        }
+        self.ara_told = Some((track, Some(clip)));
+        self.ara_opened = Some((track, clip));
+        let open = self.session_mut_report(track, device).is_some_and(|r| r.editor_open);
+        if !open {
+            self.run(&Action::new("device.openEditor", json!({ "track": track.0, "device": device })));
+        }
+    }
+
+    /// Where the plug-in device `device` of `track` stands, in the active project.
+    fn session_mut_report(&mut self, track: TrackId, device: usize) -> Option<suhina_session::PluginReport> {
+        self.projects.session_mut(None).ok()?.plugin_report(track, device)
     }
 
     /// Lays out the detail area beside or under the view in `area`, draws it with its splitter,
@@ -1768,12 +1846,47 @@ impl App {
             piano.ghosts =
                 crate::detail::piano_roll_ghosts::ghosts(session.project(), clip, self.piano_roll.ghost_source);
         }
+        // An audio clip on a track whose plug-in edits clips (ARA) has that plug-in's editor in
+        // the piano roll's place: the plug-in is told the clip is selected, and its editor opens
+        // on its own the first time the clip is shown.
+        let ara = match clip {
+            Some(ClipRef::Arrangement(t, c)) if piano.is_none() => {
+                let mut found: Vec<_> =
+                    reports.iter().filter(|(_, r)| r.ara).map(|((_, i), r)| (*i, r.editor_open)).collect();
+                found.sort_unstable();
+                found.first().map(|&(device, open)| (t, c, device, open))
+            }
+            _ => None,
+        };
+        let told = ara.map(|(t, c, _, _)| (t, Some(c)));
+        if told != self.ara_told {
+            if let Ok(session) = self.projects.session_mut(None) {
+                // The track shown before shows nothing selected any more.
+                if let Some((before, _)) = self.ara_told.filter(|(t, _)| told.is_none_or(|(now, _)| now != *t)) {
+                    session.select_ara_clip(before, None);
+                }
+                if let Some((t, c)) = told {
+                    session.select_ara_clip(t, c);
+                }
+            }
+            self.ara_told = told;
+        }
+        if let Some((t, c, device, open)) = ara
+            && self.detail_showing == detail_view::Showing::Clip
+            && self.ara_opened != Some((t, c))
+        {
+            self.ara_opened = Some((t, c));
+            if !open {
+                actions.push(Action::new("device.openEditor", json!({ "track": t.0, "device": device })));
+            }
+        }
         let least = self.least_detail_height();
         let pullable = !stacked && piano.is_some() && self.shown == View::Arrangement;
         let pulled = pullable && self.detail_max;
         // With the switch on Devices the track's devices take the editor's place, and nothing is
         // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
-        let switch = piano.is_some().then_some(self.detail_showing);
+        let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
+        let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let (pullable, pulled) = (pullable && piano.is_some(), pulled && piano.is_some());
         let focus = match clip {
@@ -1921,6 +2034,10 @@ impl App {
                 }
                 let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead };
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
+                picked
+            } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
+                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked);
+                detail_view::show_ara_editor(ui, rest, chain, device, actions, &mut places);
                 picked
             } else if stacked {
                 detail_view::show_stack(ui, &shown, actions, &mut places)
@@ -2945,6 +3062,7 @@ impl App {
             "view.editor" if self.shown_clip().is_some() => self.toggle_editor(),
             "view.editor" => {}
             "view.devices" => self.toggle_devices(),
+            "view.araEditor" => self.open_ara_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
             "view.arrangement" => {
                 self.shown = View::Arrangement;

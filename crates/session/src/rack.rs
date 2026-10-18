@@ -151,6 +151,9 @@ pub struct PluginReport {
     pub no_time: u32,
     /// Why it runs with its own defaults, when it did not take the saved state.
     pub state_refused: Option<String>,
+    /// It is bound to an ARA document of its track's audio clips (ADR 0028), so its editor
+    /// edits them.
+    pub ara: bool,
 }
 
 /// How far a project's plug-ins have got with starting, for a dialog while they load.
@@ -657,6 +660,8 @@ struct Instance {
     /// Since when its track's clips differ from its layout: it is loaded again with them once
     /// they have stayed put for [`REBIND_AFTER`].
     ara_changed: Option<Instant>,
+    /// The region its ARA editor was last told is selected (`None`: not told yet).
+    ara_selection_sent: Option<Option<String>>,
 }
 
 impl Instance {
@@ -680,6 +685,7 @@ impl Instance {
             ara_layout: None,
             ara_sources: Vec::new(),
             ara_changed: None,
+            ara_selection_sent: None,
         }
     }
 
@@ -718,6 +724,11 @@ pub struct Rack {
     /// Plug-ins that edit clips, stopped to be loaded again with their track's new clips: each
     /// starts again once its state is back ([`Rack::follow_clips`]).
     rebinding: std::collections::HashSet<u64>,
+    /// Of those, the ones whose editor was open: it opens again once the plug-in runs.
+    reopen_after_rebind: std::collections::HashSet<u64>,
+    /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
+    /// plug-in device key; told to it whenever it runs ([`Rack::select_ara`]).
+    ara_selection: HashMap<u64, Option<String>>,
 }
 
 impl Default for Rack {
@@ -741,6 +752,8 @@ impl Default for Rack {
             embed: false,
             edits: PluginEdits::default(),
             rebinding: std::collections::HashSet::new(),
+            reopen_after_rebind: std::collections::HashSet::new(),
+            ara_selection: HashMap::new(),
         }
     }
 }
@@ -920,6 +933,17 @@ impl Rack {
     /// Tells the hosts where the window wants their embedded editors, where that has not been
     /// told yet (the control half was out when the window said).
     fn send_placements(&mut self) {
+        for (key, instance) in &mut self.instances {
+            let wanted = self.ara_selection.get(key).cloned().unwrap_or_default();
+            if instance.ara_sources.is_empty() || instance.ara_selection_sent.as_ref() == Some(&wanted) {
+                continue;
+            }
+            if let Some(control) = instance.control.as_mut()
+                && control.ara_select(wanted.as_deref()).unwrap_or(false)
+            {
+                instance.ara_selection_sent = Some(wanted);
+            }
+        }
         for instance in self.instances.values_mut() {
             let (Some(wanted), Some(control)) = (instance.placement_wanted, instance.control.as_mut()) else {
                 continue;
@@ -956,6 +980,7 @@ impl Rack {
             longest_us: instance.counts.as_ref().map_or(0, |c| c.longest_us()),
             no_time: instance.counts.as_ref().map_or(0, |c| c.no_time()),
             state_refused: instance.state_refused.clone(),
+            ara: !instance.ara_sources.is_empty(),
         })
     }
 
@@ -1095,7 +1120,11 @@ impl Rack {
             }
         }
         for key in &rebind {
-            if let Some(control) = self.instances.remove(key).and_then(|i| i.control) {
+            let Some(instance) = self.instances.remove(key) else { continue };
+            if instance.editor_open {
+                self.reopen_after_rebind.insert(*key);
+            }
+            if let Some(control) = instance.control {
                 self.rebinding.insert(*key);
                 self.stop(*key, control);
             }
@@ -1107,6 +1136,7 @@ impl Rack {
     /// whether what the graphs need to know changed (a latency).
     fn receive(&mut self, player: &mut Player, notices: &mut Vec<String>) -> bool {
         let mut changed = false;
+        let mut reopen = Vec::new();
         while let Ok(started) = self.receiver.try_recv() {
             let Some(instance) = self.instances.get_mut(&started.key) else { continue };
             if instance.generation != started.generation {
@@ -1136,11 +1166,21 @@ impl Rack {
                         Err(e) => instance.status = PluginStatus::Failed(e.0),
                     }
                     instance.control = Some(control);
+                    // Loaded again with its track's new clips: its editor was open, so it opens
+                    // again where it was.
+                    if self.reopen_after_rebind.remove(&started.key) && instance.status == PluginStatus::Running {
+                        reopen.push(started.key);
+                    }
                 }
                 Err(why) => {
                     notices.push(format!("{name} could not start: {why}"));
                     instance.status = PluginStatus::Failed(why);
                 }
+            }
+        }
+        for key in reopen {
+            if let Err(e) = self.open_editor(key) {
+                notices.push(format!("the editor did not open again: {}", e.0));
             }
         }
         changed
@@ -1313,6 +1353,22 @@ impl Rack {
             }
             None => self.running(key)?.open_editor().map(Some).map_err(|e| CommandError(e.to_string())),
         }
+    }
+
+    /// Whether the plug-in device `key` runs bound to an ARA document of its track's clips.
+    pub fn edits_clips(&self, key: u64) -> bool {
+        self.instances.get(&key).is_some_and(|i| i.status == PluginStatus::Running && !i.ara_sources.is_empty())
+    }
+
+    /// Which region (`clip-<id>`) the plug-in device `key`, one that edits clips, should show
+    /// as selected in its editor; `None` selects nothing. Told to it now where it can be, else
+    /// at the next [`Rack::sync`], and again whenever it is loaded again. Never waits.
+    pub fn select_ara(&mut self, key: u64, region: Option<String>) {
+        if self.ara_selection.get(&key) == Some(&region) {
+            return;
+        }
+        self.ara_selection.insert(key, region);
+        self.send_placements();
     }
 
     /// Where the window shows the embedded editors this frame, by plug-in device key; every

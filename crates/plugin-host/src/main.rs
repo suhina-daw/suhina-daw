@@ -261,6 +261,13 @@ impl Loaded {
         }
     }
 
+    /// Tells a plug-in bound to an ARA document which region the engine has selected.
+    fn ara_select(&self, region: Option<&str>) {
+        if let Self::Vst3(plugin) = self {
+            plugin.ara_select(region);
+        }
+    }
+
     /// A size the open editor got since this was last asked, to tell the engine.
     fn editor_resized(&mut self) -> Option<window::Size> {
         match self {
@@ -550,6 +557,12 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::PlaceEditor { instance, placement } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.place_editor(placement);
+            }
+            return None;
+        }
+        Message::AraSelect { instance, region } => {
+            if let Some(loaded) = instances.get(&instance) {
+                loaded.ara_select(region.as_deref());
             }
             return None;
         }

@@ -601,7 +601,7 @@ pub(crate) struct Vst3Plugin {
     editor: Option<crate::vst3_editor::Editor>,
     /// The ARA document it is bound to, when it was loaded with one (ADR 0028); let go of
     /// before the component is terminated.
-    ara: Option<crate::ara::Document>,
+    ara: Option<Box<crate::ara::Document>>,
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
@@ -690,7 +690,7 @@ impl Vst3Plugin {
 
         // ARA binds before processing is set up (the ARA SDK's order).
         if let Some(document) = &ara {
-            plugin.ara = Some(crate::ara::Document::bind(&plugin.component, document)?);
+            plugin.ara = Some(Box::new(crate::ara::Document::bind(&plugin.component, document)?));
         }
 
         let processor = plugin.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
@@ -874,7 +874,7 @@ impl Vst3Plugin {
             return Err("the plug-in did not give its state".into());
         }
         // Bound to an ARA document, its edits there are part of its state (ADR 0028).
-        Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_ref().and_then(crate::ara::Document::store)))
+        Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_deref().and_then(crate::ara::Document::store)))
     }
 
     /// The controller's own state, when it is a separate object that gives one.
@@ -932,6 +932,14 @@ impl Vst3Plugin {
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
+    }
+
+    /// Tells the plug-in's ARA editor view which region the engine has selected, when it is
+    /// bound to a document.
+    pub(crate) fn ara_select(&self, region: Option<&str>) {
+        if let Some(document) = &self.ara {
+            document.select(region);
+        }
     }
 
     /// Puts an embedded editor where the engine says.

@@ -610,6 +610,41 @@ impl Session {
         self.plugins.place_editors(&keyed);
     }
 
+    /// Tells the plug-ins on `track` that edit clips (ARA, ADR 0028) which of its arrangement
+    /// clips is selected, so their editors show it; `None` selects none. Never waits for a host.
+    pub fn select_ara_clip(&mut self, track: suhina_model::TrackId, clip: Option<suhina_model::ClipId>) {
+        let Some(channel) = self.project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel) else {
+            return;
+        };
+        let region = clip.map(|c| format!("clip-{}", c.0));
+        for device in suhina_engine::plugin_devices(&self.project).into_iter().filter(|d| d.channel == channel) {
+            self.plugins.select_ara(device.key, region.clone());
+        }
+    }
+
+    /// The first device on `track` that runs a plug-in bound to its audio clips (ARA), by its
+    /// index in the track's chain.
+    pub fn ara_device(&self, track: suhina_model::TrackId) -> Option<usize> {
+        self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
+    }
+
+    /// The tracks whose chain runs a plug-in bound to their audio clips (ARA), each with the
+    /// first such device's index in its chain.
+    pub fn ara_tracks(&self) -> Vec<(suhina_model::TrackId, usize)> {
+        let mut found: Vec<(suhina_model::TrackId, usize)> = Vec::new();
+        for device in suhina_engine::plugin_devices(&self.project) {
+            let Some(track) = device.track else { continue };
+            if !self.plugins.edits_clips(device.key) {
+                continue;
+            }
+            match found.iter_mut().find(|(t, _)| *t == track) {
+                Some(entry) => entry.1 = entry.1.min(device.position),
+                None => found.push((track, device.position)),
+            }
+        }
+        found
+    }
+
     /// How far the project's plug-ins have got with starting (all zero while it does not play).
     pub fn plugin_progress(&self) -> PluginProgress {
         self.plugins.progress()

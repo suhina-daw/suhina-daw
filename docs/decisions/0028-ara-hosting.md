@@ -16,6 +16,8 @@ covers:
   - crates/plugin-host/src/ara_sys.rs
   - crates/session/src/ara.rs
   - crates/session/src/rack.rs
+  - crates/session/src/devices.rs
+  - crates/ui/src/detail/detail_view.rs
   - scripts/ara_bindings.sh
   - third_party/ara-api
 ---
@@ -218,8 +220,19 @@ the list below, in a first form). Where it differs from the decisions above it i
 - **Clip edits** (decision 3), *interim*: instead of edit batches, a change in the track's clips
   (moved, trimmed, added, removed, a tempo change) that stays put for 0.75 s stops the plug-in,
   takes its state with its edits, and loads it again with the new document; the edits of the
-  clips still there come back by their ids. The editor closes and the sound pauses while it
-  reloads.
+  clips still there come back by their ids. The sound pauses while it reloads, and an editor that
+  was open opens again.
+- **The editor in the clip's place** (stage 7, first part,
+  [#594](https://github.com/suhina-daw/suhina-daw/issues/594)). An arrangement audio clip on a
+  track whose plug-in is bound shows that plug-in's editor in the detail area's Clip view, where a
+  MIDI clip has its piano roll ([clip editor](../spec/ui-clip-editor.md) › Where it opens). The
+  session tells the plug-in which clip is selected with `ara_select` (a message that is not
+  answered), and the host passes it to the editor view's `notifySelection`. The clip's menu
+  (**Open in** the plug-in) and Ctrl+Shift+A open it. The overlap marks and fixes, and the
+  question when the plug-in is removed, come with the overlap guard.
+- **An ARA plug-in goes first in its chain**, wherever it is dropped or `device.addPlugin` puts
+  it (the result says `moved_first`): it plays the clips from their files, so a device before it
+  would not be heard. Observed in another host, which moves it there too.
 - **Other interim limits.** One document per instance, not per plug-in product (decision 2).
   Warped clips are described at their file's speed (their start and end follow the song), loops
   are not repeated, and the overlap guard and suspension (decision 6) are not built: overlapping

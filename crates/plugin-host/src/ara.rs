@@ -198,6 +198,11 @@ pub(crate) struct Document {
     sources: Vec<ARAAudioSourceRef>,
     modifications: Vec<ARAAudioModificationRef>,
     regions: Vec<ARAPlaybackRegionRef>,
+    /// The persistent id of each region, in the same order (`clip-<id>`).
+    region_ids: Vec<String>,
+    /// The plug-in's editor view, told which region the host has selected; `None` when the
+    /// plug-in has none.
+    editor_view: Option<(ARAEditorViewRef, *const ARAEditorViewInterface)>,
     /// The plug-in's factory, valid while its module is loaded.
     factory: *const ARAFactory,
     /// The texts handed to the plug-in, kept for as long as the document.
@@ -282,6 +287,8 @@ impl Document {
             sources: Vec::new(),
             modifications: Vec::new(),
             regions: Vec::new(),
+            region_ids: Vec::new(),
+            editor_view: None,
             factory,
             _texts: Vec::new(),
             _entry: entry,
@@ -314,6 +321,8 @@ impl Document {
         };
         // SAFETY: the plug-in hands its extension instance, valid while it lives, or null.
         let extension = unsafe { extension.as_ref() }.ok_or("the plug-in did not bind to the document")?;
+        made.editor_view = (!extension.editorViewRef.is_null() && !extension.editorViewInterface.is_null())
+            .then_some((extension.editorViewRef, extension.editorViewInterface));
         // SAFETY: the renderers' tables, valid with the extension instance, or null.
         let playback = unsafe { extension.playbackRendererInterface.as_ref() };
         // SAFETY: as above.
@@ -329,6 +338,34 @@ impl Document {
             }
         }
         Ok(made)
+    }
+
+    /// Tells the plug-in's editor view which region the host has selected (`clip-<id>`), so its
+    /// editor shows it; `None`, or an id the document does not hold, selects nothing. Returns
+    /// whether the plug-in was told.
+    pub(crate) fn select(&self, region: Option<&str>) -> bool {
+        let Some((view, interface)) = self.editor_view else { return false };
+        // SAFETY: the plug-in's editor view table, valid with its extension instance.
+        let interface = unsafe { &*interface };
+        let Some(notify) = interface.notifySelection else { return false };
+        let selected: Vec<ARAPlaybackRegionRef> = region
+            .and_then(|id| self.region_ids.iter().position(|r| r == id))
+            .and_then(|index| self.regions.get(index).copied())
+            .into_iter()
+            .collect();
+        let sequences = if selected.is_empty() { Vec::new() } else { vec![self.sequence] };
+        let selection = ARAViewSelection {
+            structSize: size_of::<ARAViewSelection>(),
+            playbackRegionRefsCount: selected.len(),
+            playbackRegionRefs: selected.as_ptr(),
+            regionSequenceRefsCount: sequences.len(),
+            regionSequenceRefs: sequences.as_ptr(),
+            timeRange: std::ptr::null(),
+        };
+        // SAFETY: the plug-in's editor view, on the model thread; the selection and the lists it
+        // points to live for the call.
+        unsafe { notify(view, &selection) };
+        true
     }
 
     /// Whether the plug-in said its edits changed since this was last asked (ARA 2.3).
@@ -509,6 +546,7 @@ impl Document {
                 return Err(format!("the plug-in refused the playback region {:?}", region.name));
             }
             self.regions.push(made);
+            self.region_ids.push(region.id.clone());
         }
         Ok(())
     }
