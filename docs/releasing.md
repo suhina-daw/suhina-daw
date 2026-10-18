@@ -129,6 +129,10 @@ request there, and is grouped by its head repository and branch instead.
 | opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
 | anyone else's, from a fork or a branch | when a maintainer adds the `test-build` label, of the commit the label was added on |
 
+A pull request with the `test-build-windows` label is built for Windows only, which keeps the
+shared runners free while only that platform is being tried; its comment lists the other two as
+not built.
+
 Only a pull request that changes what goes into the binaries is built: `apps/`, `crates/`,
 `devices/`, `presets/`, `third_party/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` or `test-build.yml`
 itself. One that changes only documentation, scripts, other workflows or agent files has no new

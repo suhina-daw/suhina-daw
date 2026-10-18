@@ -1637,6 +1637,19 @@ impl App {
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
             }
+            // The ARA editor's Float and Dock: the window's own, not an undo step.
+            if action.id == "view.araFloat" {
+                let number = |key: &str| action.params[key].as_u64();
+                let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
+                let device = number("device").and_then(|d| usize::try_from(d).ok());
+                let float = action.params["float"].as_bool().unwrap_or(false);
+                if let (Some(track), Some(device), Ok(session)) = (track, device, self.projects.session_mut(None))
+                    && let Err(e) = session.set_ara_floating(track, device, float)
+                {
+                    self.status = Status::Error(e.0);
+                }
+                continue;
+            }
             // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
             if action.id == "view.araEditor" {
                 let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());

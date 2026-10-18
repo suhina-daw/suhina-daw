@@ -628,6 +628,18 @@ impl Session {
         self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
     }
 
+    /// Takes the editor of the plug-in device `device` on `track`, one that edits clips, out of
+    /// the window to float in one of its own, or back into the clip's place (`float` false).
+    pub fn set_ara_floating(
+        &mut self,
+        track: suhina_model::TrackId,
+        device: usize,
+        float: bool,
+    ) -> Result<(), CommandError> {
+        let key = plugin_key_at(&self.project, track, device).ok_or("no such plug-in device")?;
+        self.plugins.set_ara_floating(key, float)
+    }
+
     /// The installed plug-in a clip is opened in when its track has none that edits clips (ARA):
     /// its name, and what `device.addPlugin` takes for it. One the scan marked as ARA, Melodyne
     /// first; else Melodyne, which the host finds to support ARA when it loads. `None` without

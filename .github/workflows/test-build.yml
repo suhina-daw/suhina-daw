@@ -71,6 +71,7 @@ jobs:
       actions: read
     outputs:
       build: ${{ steps.decide.outputs.build }}
+      matrix: ${{ steps.decide.outputs.matrix }}
     steps:
       # Every branch and the pull request's merge commit, whose second parent is its head; no
       # code is built or run but scripts/branch_update.py.
@@ -87,7 +88,20 @@ jobs:
           ACTION: ${{ github.event.action }}
           BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # A pull request labelled `test-build-windows` is built for Windows only, to keep the
+          # shared runners free when only that platform is being tried.
+          WINDOWS_ONLY: ${{ contains(github.event.pull_request.labels.*.name, 'test-build-windows') }}
         run: |
+          # As release.yml: the oldest supported Ubuntu, so the binary runs on older glibc too;
+          # macOS builds both architectures, joined into one universal binary with lipo.
+          linux='{"name":"linux-x86_64","os":"ubuntu-22.04","targets":"x86_64-unknown-linux-gnu"}'
+          windows='{"name":"windows-x86_64","os":"windows-latest","targets":"x86_64-pc-windows-msvc"}'
+          macos='{"name":"macos-universal","os":"macos-latest","targets":"aarch64-apple-darwin,x86_64-apple-darwin"}'
+          if [ "$WINDOWS_ONLY" = true ]; then
+            echo "matrix={\"include\":[$windows]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":[$linux,$windows,$macos]}" >> "$GITHUB_OUTPUT"
+          fi
           build=true
           if [ "$ACTION" = "synchronize" ] && [ -n "$BEFORE" ]; then
             if python3 scripts/branch_update.py "$BEFORE" "$HEAD_SHA" origin/main; then
@@ -112,19 +126,8 @@ jobs:
     if: needs.decide.outputs.build == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # As release.yml: the oldest supported Ubuntu, so the binary runs on older glibc too.
-          - name: linux-x86_64
-            os: ubuntu-22.04
-            targets: x86_64-unknown-linux-gnu
-          - name: windows-x86_64
-            os: windows-latest
-            targets: x86_64-pc-windows-msvc
-          # Both architectures, joined into one universal binary with lipo.
-          - name: macos-universal
-            os: macos-latest
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # Linux, Windows and macOS, or Windows alone (`decide`).
+      matrix: ${{ fromJSON(needs.decide.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"

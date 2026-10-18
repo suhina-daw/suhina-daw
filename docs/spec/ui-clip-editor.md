@@ -61,9 +61,12 @@ lane, the grid and zoom, and the `note.*` commands.
 - **Built ([#594](https://github.com/suhina-daw/suhina-daw/issues/594)):** an **audio clip on a
   track whose plug-in edits clips** (ARA, such as a pitch editor; [ADR
   0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
-  roll: the clip column on the left, the editor in the rest, embedded in the window where editors
-  embed (Windows, X11 on Linux) and in a window of its own elsewhere, where the area says so with a
-  **Close editor** button. The plug-in is told which clip is selected, so its editor shows that
+  roll: the clip column on the left, the editor in the rest, embedded in the window whatever
+  Settings › Plug-ins says for other editors (Windows, X11 on Linux; macOS opens it in a window of
+  its own). **Float** above it takes it out to a window of its own; the area then says so, with
+  **Dock**, which brings it back, and **Close editor**. Its keys are its own while it has the
+  keyboard: a click in it gives it the keyboard, so Ctrl+Z there undoes the plug-in's edit, not
+  Suhina's last step. The plug-in is told which clip is selected, so its editor shows that
   clip, and selecting another clip on the track shows that one. The editor opens on its own the
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which

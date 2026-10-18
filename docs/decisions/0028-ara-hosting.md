@@ -237,7 +237,10 @@ the list below, in a first form). Where it differs from the decisions above it i
   track whose plug-in is bound shows that plug-in's editor in the detail area's Clip view, where a
   MIDI clip has its piano roll ([clip editor](../spec/ui-clip-editor.md) › Where it opens). The
   session tells the plug-in which clip is selected with `ara_select` (a message that is not
-  answered), and the host passes it to the editor view's `notifySelection`. The clip's menu
+  answered), and the host passes it to the editor view's `notifySelection`. The editor is
+  embedded whatever the embedding setting says for other editors; **Float** takes it out to a
+  window of its own and **Dock** back (`Session::set_ara_floating`). On Windows an editor's
+  window passes the keyboard focus on to the plug-in's view, so its keys (Ctrl+Z) are its own. The clip's menu
   (**Open in** the plug-in) and Alt+M open it. The overlap marks and fixes, and the
   question when the plug-in is removed, come with the overlap guard.
 - **Found when it loads, too.** The host tells the engine with `loaded` whether the plug-in

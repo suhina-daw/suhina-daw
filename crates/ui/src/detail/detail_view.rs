@@ -741,19 +741,39 @@ pub fn show_ara_editor(
     let response = ui.interact(area, egui::Id::new(("ara-editor", chain.track.0)), Sense::hover());
     let label = format!("Clip editor {}", device.name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+    let track = chain.track;
+    let device_params = json!({ "track": track.0, "device": device.index });
+    // Embedded: a row with Float above the editor, which takes it out to a window of its own.
     if let Some(size) = plugin.editor_size(ui.ctx().pixels_per_point()) {
-        let rect = Rect::from_min_size(area.min + Vec2::splat(PAD), size);
-        places.push(editor_place(ui, area, rect.expand(PAD), size, chain.track, device, rect.min));
+        let float = Rect::from_min_size(area.min + Vec2::splat(PAD), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
+        let params = json!({ "track": track.0, "device": device.index, "float": true });
+        ara_button(
+            ui,
+            &painter,
+            float,
+            (track, "float"),
+            "Float",
+            &device.name,
+            Action::new("view.araFloat", params),
+            actions,
+        );
+        let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, float.bottom() + PAD), size);
+        places.push(editor_place(ui, area, rect.expand(PAD), size, track, device, rect.min));
         return;
     }
-    let (text, button) = match plugin.state {
+    let mut buttons = Vec::new();
+    let text = match plugin.state {
         PluginState::Running if plugin.editor_open => {
-            (format!("{} is open in a window of its own", device.name), Some(("Close editor", "device.closeEditor")))
+            let params = json!({ "track": track.0, "device": device.index, "float": false });
+            buttons.push(("Dock", Action::new("view.araFloat", params)));
+            buttons.push(("Close editor", Action::new("device.closeEditor", device_params)));
+            format!("{} is open in a window of its own", device.name)
         }
         PluginState::Running => {
-            (format!("Open {} to edit this clip", device.name), Some(("Open editor", "device.openEditor")))
+            buttons.push(("Open editor", Action::new("device.openEditor", device_params)));
+            format!("Open {} to edit this clip", device.name)
         }
-        _ => (format!("{}: {}", device.name, plugin.line), None),
+        _ => format!("{}: {}", device.name, plugin.line),
     };
     let centre = area.center();
     painter.text(
@@ -763,19 +783,35 @@ pub fn show_ara_editor(
         theme::ui_font(theme::TEXT),
         theme::text_hint(),
     );
-    let Some((label, command)) = button else { return };
-    let rect = Rect::from_center_size(centre + Vec2::new(0.0, PAD), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
-    let response = widgets::button_area(
-        ui,
-        rect,
-        egui::Id::new(("ara-button", chain.track.0)),
-        format!("{label} {}", device.name),
-    );
+    let count = buttons.len() as f32;
+    let width = count * BUTTON_WIDTH + (count - 1.0).max(0.0) * PAD;
+    for (index, (label, action)) in buttons.into_iter().enumerate() {
+        let left = centre.x - width / 2.0 + index as f32 * (BUTTON_WIDTH + PAD);
+        let rect = Rect::from_min_size(Pos2::new(left, centre.y + PAD / 2.0), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
+        ara_button(ui, &painter, rect, (track, label), label, &device.name, action, actions);
+    }
+}
+
+/// A button of the ARA editor's area: `label`, named with the plug-in for screen readers; a
+/// click adds `action`.
+#[allow(clippy::too_many_arguments, reason = "one button's place, names and action")]
+fn ara_button(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: (TrackId, &str),
+    label: &str,
+    plugin: &str,
+    action: Action,
+    actions: &mut Vec<Action>,
+) {
+    let response =
+        widgets::button_area(ui, rect, egui::Id::new(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
     let hover = widgets::hover(ui, &response);
     painter.rect_filled(rect, 0.0, crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover));
     painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     widgets::text_in(
-        &painter,
+        painter,
         rect,
         Align2::CENTER_CENTER,
         label,
@@ -783,7 +819,7 @@ pub fn show_ara_editor(
         theme::text_primary(),
     );
     if response.clicked() {
-        actions.push(Action::new(command, json!({ "track": chain.track.0, "device": device.index })));
+        actions.push(action);
     }
 }
 
@@ -1714,17 +1750,25 @@ mod tests {
         let embedded =
             chain_with(PluginReport { editor_embedded: Some((300, 200)), ..report(PluginStatus::Running, true) });
         let mut harness = Harness::builder().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
-            |ui, places: &mut Vec<EditorPlace>| {
+            |ui, (places, actions): &mut (Vec<EditorPlace>, Vec<Action>)| {
                 places.clear();
                 let area = ui.available_rect_before_wrap();
-                show_ara_editor(ui, area, &embedded, 0, &mut Vec::new(), places);
+                show_ara_editor(ui, area, &embedded, 0, actions, places);
             },
-            Vec::new(),
+            (Vec::new(), Vec::new()),
         );
         harness.run();
-        let place = harness.state()[0];
+        let place = harness.state().0[0];
         assert_eq!((place.track, place.device), (TrackId(1), 0));
         assert_eq!((place.placement.clip_width, place.placement.clip_height), (300, 200));
+        // Float above it takes it out to a window of its own.
+        harness.get_by_label("Float Verb").click();
+        harness.run();
+        let float = &harness.state().1[0];
+        assert_eq!(
+            (float.id, float.params.clone()),
+            ("view.araFloat", json!({ "track": 1, "device": 0, "float": true }))
+        );
         // Closed: the area offers to open it, and the button opens that plug-in's editor.
         let closed = chain_with(bound);
         let mut harness = Harness::builder().with_size(egui::vec2(600.0, 300.0)).build_ui_state(

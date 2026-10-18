@@ -666,6 +666,9 @@ struct Instance {
     ara_changed: Option<Instant>,
     /// An update of its document failed: it is loaded again with the clips instead.
     ara_failed: bool,
+    /// Its ARA editor was taken out of the window to float in one of its own ([`Rack::set_ara_floating`]);
+    /// otherwise an ARA plug-in's editor opens embedded whatever the embedding setting says.
+    ara_float: bool,
     /// The region its ARA editor was last told is selected (`None`: not told yet).
     ara_selection_sent: Option<Option<String>>,
 }
@@ -692,6 +695,7 @@ impl Instance {
             ara_sources: Vec::new(),
             ara_changed: None,
             ara_failed: false,
+            ara_float: false,
             ara_selection_sent: None,
         }
     }
@@ -1362,6 +1366,8 @@ impl Rack {
         let to_move: Vec<u64> = self
             .instances
             .iter()
+            // An ARA plug-in's editor goes its own way ([`Rack::set_ara_floating`]).
+            .filter(|(_, i)| i.ara_sources.is_empty())
             .filter(|(_, i)| (i.editor_open && i.editor_embedded != embed) || (!embed && i.force_floating))
             .map(|(key, _)| *key)
             .collect();
@@ -1375,6 +1381,24 @@ impl Rack {
                 instance.reopen_editor = true;
             }
         }
+    }
+
+    /// Takes the editor of the plug-in device `key`, one that edits clips, out of the window to
+    /// float in one of its own (`float`), or back in. An open editor closes and opens again the
+    /// new way; a closed one opens that way next time.
+    pub fn set_ara_floating(&mut self, key: u64, float: bool) -> Result<(), CommandError> {
+        let instance = self.instances.get_mut(&key).ok_or("the device's plug-in is not running")?;
+        instance.ara_float = float;
+        if !float {
+            instance.force_floating = false;
+        }
+        if instance.editor_open && instance.editor_embedded == float {
+            self.close_editor(key)?;
+            if let Some(instance) = self.instances.get_mut(&key) {
+                instance.reopen_editor = true;
+            }
+        }
+        Ok(())
     }
 
     /// Opens the editor of the plug-in device `key`; returns the size of its inside. Over an
@@ -1404,7 +1428,12 @@ impl Rack {
         self.running(key)?;
         match self.owner {
             Some(owner) => {
-                let embed = self.embed && !self.instances.get(&key).is_some_and(|i| i.force_floating);
+                // A plug-in that edits clips opens in the clip's place in the window, as a host
+                // with a built-in pitch editor does, unless it was taken out to float.
+                let embed = self.instances.get(&key).is_some_and(|i| {
+                    let wanted = if i.ara_sources.is_empty() { self.embed } else { !i.ara_float };
+                    wanted && !i.force_floating
+                });
                 self.lend(key, move |control| {
                     let opened = if embed {
                         control.open_editor_embedded(owner)
