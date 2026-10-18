@@ -18,7 +18,7 @@ covers:
 
 - **Status:** accepted
 - **Date:** 2026-10-15
-- **Tasks:** #300, #406
+- **Tasks:** #300, #406, #679 (device panels)
 
 ## Context
 
@@ -45,6 +45,8 @@ authoring fields are accepted.
    graphs. Shared node implementations live under `crates/device-sdk/src/nodes/` and use
    `crates/dsp`; a heavy implementation may move to its own crate when size or independence
    warrants it.
+   How the wrappers are made, stored and shown is the
+   [device panels amendment](#amendment-device-panels-for-built-in-devices-2026-10-19).
 4. Version 2 supports sample-rate stereo signal graphs: branching, explicit input/output ports,
    arithmetic, channel operations, modulation, filters, envelope detection and delays. Delayed
    input edges break feedback cycles; undelayed cycles are rejected. MIDI-effect graphs are a
@@ -55,8 +57,10 @@ authoring fields are accepted.
    graph state and does not allocate. Validation caps file size, nodes, parameters, connections and total delay history.
    Delay history is budgeted at 384 kHz so accepted files fit every supported sample rate.
 6. `device.addSd` loads a validated effect onto a track according to its role. The project embeds
-   the graph JSON in the device state, independent of the source file. The engine compiles it while
-   building the renderer and swaps graphs through the existing edit path.
+   the graph JSON in the device state, independent of the source file (a built-in device's own wrapper
+   is not embedded: [device panels amendment](#amendment-device-panels-for-built-in-devices-2026-10-19)).
+   The engine compiles it while building the renderer and swaps graphs through the existing edit
+   path.
 7. Parameter declarations generate slider, logarithmic slider, integer and toggle controls in the device detail panel. The panel also
    draws the graph's visible nodes as a read-only signal-flow view. SDK authors can hide
    implementation nodes with `visible: false`; hidden nodes still run. Editing node connections in
@@ -91,3 +95,58 @@ An optional data-only [custom canvas](../spec/sdk-custom-ui.md) now packages emb
 images, vector drawing expressions and parameter input bindings. Authors program these with Rust
 SDK types; the file contains no executable extension. The UI caches parsed scenes and bounded
 image textures, performs decoding with allocation limits, and sends edits through `device.setParam`.
+
+## Amendment: device panels for built-in devices (2026-10-19)
+
+Item 3 says built-in devices are wrapped by `.sd` graphs; no wrapper exists yet, and the device
+panel shows a built-in's parameters as read-only text rows. This amendment decides how the
+wrappers are made, stored and shown (#679). Nothing of it is implemented yet.
+
+1. **A generated wrapper by default, a hand-made one optional.** Every built-in effect and
+   instrument gets a wrapper generated from its `DeviceInfo` and `ParamInfo`
+   ([ADR 0004](0004-built-in-devices.md) › 2), which lays out its parameters with the stock
+   `.sd` controls. A hand-made `.sd` panel replaces it when the device has one. No built-in is
+   missing from the browser for want of a panel, and the generated panel is what shows when a
+   hand-made one fails to load.
+2. **Parameters come from the native device.** A wrapper refers to parameters by their stable
+   ids and takes name, range, scale, unit and default from `ParamInfo`; it never declares them
+   again. A test fails when a wrapper refers to a parameter id its device does not have.
+3. **A project stores the id, not the wrapper.** A built-in stays `{ "type": "builtin", "id" }`
+   with its parameter values ([suhina-format.md](../spec/suhina-format.md)), and its panel is
+   loaded by id from the running Suhina. Item 6 (embedding the graph) applies to `.sd` files
+   only. An embedded copy would freeze the parameter list at the time the device was added and
+   go wrong when the device later changes; embedding exists so a project works without its
+   source file, and a built-in always ships with Suhina. The project format and the `.als`
+   import mapping do not change, panel fixes reach old projects without `device.updateSd`, and
+   the sound of an old project stays the same. A copy of a built-in's wrapper that a project already
+   carries is ignored on reading and left out on saving; its parameter values are kept by id.
+4. **DSP stays native.** The wrapper adds nothing to the audio path.
+5. **The compact panel has a fixed height and a free width.** Every device has a compact panel
+   for the device chain, a canvas 168 px high: the detail area's default 200 px less the 20 px
+   header and 6 px padding above and below. Its width is the author's, 260 px by default, and
+   the generated wrapper is always 260 px wide. The row layout already makes a device as wide as
+   its canvas plus 12 px (220 px at least, [sdk-custom-ui.md](../spec/sdk-custom-ui.md)); the
+   stacked column's default width becomes 272 px so a 260 px panel fits it. A smaller detail
+   area or column scrolls the panel, as now. No flexible or dynamic layout: plug-in editors are
+   fixed-size too, and ADR 0006 › 10 already lays the panel out around them.
+6. **An expanded panel is optional.** A device may also have one larger fixed-size panel with
+   more controls and larger displays (an equaliser's curve, a sampler's waveform), opened with a
+   button in the device's header; a device without one has no button. It opens over the main
+   area first, which the design brief's "One window, no pop-ups" allows as it is. A window of
+   its own, with **Window** and **Dock** as the sample map has
+   ([sample-map.md](../spec/sample-map.md)), may follow; the pull request that adds it adds that
+   window to the brief's exceptions. Both panels change the same parameters through
+   `device.setParam`, so automation, presets and undo do not depend on which is open.
+7. **Format version 5.** The expanded panel is a new optional field in `.sd` file version 5,
+   and the current `ui` becomes the compact panel. Older readers reject version 5, as they reject
+   version 4 now, rather than drop the field on saving. Built-in wrappers never meet an older
+   Suhina, since they are loaded by id from the Suhina that ships them.
+8. **The browser stays by role.** Instruments and Effects list built-in devices,
+   `.sd` files and plug-ins together by role, as [browser.md](../spec/browser.md) describes; a
+   built-in keeps its key `device:<id>`, so pins and Recent still find it. `.sd` files of every
+   role are listed, not only audio effects.
+
+Not decided here, and left to #679: how the generated wrapper arranges many parameters (a list,
+a grid, pages), a zoom factor for panels, wrappers made by others for a built-in device's DSP,
+the generated panel for a plug-in whose editor cannot open, and where Suhina's own wrappers are
+kept in the repository.
