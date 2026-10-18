@@ -18,6 +18,9 @@ covers:
   - scripts/discord_test_build.py
   - scripts/discord_test_build_backfill.py
   - scripts/discord_api.py
+  - apps/suhina/build.rs
+  - apps/suhina-cli/build.rs
+  - crates/plugin-host/build.rs
 ---
 
 # Releasing
@@ -57,6 +60,14 @@ becomes the latest.
 
 Running the workflow by hand (Actions › Release › Run workflow) builds the same packages as
 workflow artifacts without creating a release, to test the pipeline.
+
+On Windows the three executables carry version information, which the file's Properties ›
+Details and Task Manager show: the product name Suhina, what each program is (Suhina, Suhina
+command line, Suhina plug-in host), the workspace version and the copyright. Their build scripts
+(`build.rs` in `apps/suhina`, `apps/suhina-cli` and `crates/plugin-host`) write it with
+`winresource`, so every build has it, nightlies and test builds too. Code signing checks the
+product name and version later ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)); the
+binaries are not signed yet.
 
 ## Nightly
 
