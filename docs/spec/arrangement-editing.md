@@ -501,7 +501,7 @@ pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
 Play button pass the setting **Play from** (Settings › General): **Selected clip** (default,
-as Ableton Live plays from the clip clicked) or **Marker**, saved as `play_from = clip | marker`.
+as Ableton Live plays from the clip clicked) or **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked while stopped (a click, a rectangle, Ctrl+A), the play start marker also moves to the first of them.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
 clip selected, or while the Session view is shown (where the selection is not seen), they play

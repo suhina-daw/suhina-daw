@@ -334,7 +334,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Play and stop",
         "Play from",
         "Where Play starts: the play start marker, or the start of the clip selected in the Arrangement view",
-        &["play_from"],
+        &["play_start"],
         |cx, r| {
             let options = [("Marker", PlayFrom::Marker), ("Selected clip", PlayFrom::Clip)];
             cx.choose(r, &options, |s| &mut s.play_from);

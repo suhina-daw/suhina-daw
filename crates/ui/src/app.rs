@@ -331,6 +331,9 @@ pub struct App {
     /// The project switcher Ctrl+Tab opens: the open project picked so far (its place among
     /// them). It switches when Ctrl is let go, as Studio One's and most programs' do.
     tab_switcher: Option<usize>,
+    /// The Arrangement's clip selection last frame: when it changes while stopped, the play
+    /// start marker goes to its first clip.
+    clips_before: Vec<(TrackId, usize)>,
     /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top),
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
@@ -461,6 +464,7 @@ impl App {
             detail_cap: None,
             rename: None,
             tab_switcher: None,
+            clips_before: Vec::new(),
             detail_max: false,
             detail_drag: None,
             editor_closed: false,
@@ -2020,6 +2024,29 @@ impl App {
                                 .and_then(suhina_session::Player::output_info)
                                 .map_or(0, |i| i.input_channels);
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
+                            // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
+                            // paste): play starts from the first of them, as Ableton Live's does.
+                            let picked = self.arrangement.selected_clips();
+                            if picked != self.clips_before.as_slice() {
+                                let first = picked
+                                    .iter()
+                                    .filter_map(|(track, index)| {
+                                        timeline
+                                            .lanes
+                                            .iter()
+                                            .find(|l| l.track == *track)?
+                                            .clips
+                                            .iter()
+                                            .find(|c| c.index == *index)
+                                            .map(|c| c.start)
+                                    })
+                                    .fold(f64::INFINITY, f64::min);
+                                if !timeline.running && first.is_finite() && (first - timeline.start_beat).abs() > 1e-9
+                                {
+                                    actions.push(Action::new("transport.setPosition", json!({ "beats": first })));
+                                }
+                                self.clips_before = picked.to_vec();
+                            }
                             self.devices_asked();
                             self.timeline = Some((self.revision, self.arrangement.folds.clone(), timeline));
                             // The headers can be moved from the view itself; that is the setting too.
