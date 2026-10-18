@@ -568,14 +568,11 @@ fn envelope(
     let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
     let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
     let palette = crate::kit::theme::palette();
-    let background = palette.panel_background;
-    let darker = Color32::from_rgb(
-        (f32::from(background.r()) * 0.8) as u8,
-        (f32::from(background.g()) * 0.8) as u8,
-        (f32::from(background.b()) * 0.8) as u8,
-    );
     let painter = ui.painter_at(bounds.intersect(ui.clip_rect()));
-    painter.rect_filled(bounds, 0., darker);
+    painter.line_segment(
+        [plot.points[0], Pos2::new(plot.field.right(), plot.points[0].y)],
+        Stroke::new(1., palette.border),
+    );
     let count = if adsr { 5 } else { 3 };
     painter.add(egui::Shape::line(plot.points[..count].to_vec(), Stroke::new(1.2, palette.accent)));
     painter.circle_filled(plot.points[0], 2.5, palette.accent);
@@ -683,7 +680,11 @@ fn envelope(
         }
         let active = nearest == Some(index) || response.has_focus() || response.dragged();
         painter.circle_filled(plot.points[index], if active { 5. } else { 4.5 }, palette.accent);
-        painter.circle_stroke(plot.points[index], if active { 5. } else { 4.5 }, Stroke::new(0.75, darker));
+        painter.circle_stroke(
+            plot.points[index],
+            if active { 5. } else { 4.5 },
+            Stroke::new(0.75, palette.panel_background),
+        );
     }
 }
 
@@ -802,6 +803,8 @@ fn paint(painter: &egui::Painter, drawings: &[Draw], origin: Pos2, parameters: &
                             p.ui.options.get(p.value.round().max(0.0) as usize).cloned().unwrap_or_default()
                         }
                         TextFormat::Frequency if p.value >= 1000.0 => format!("{text}{:.2} kHz", p.value / 1000.0),
+                        TextFormat::Tempo if p.value <= 0. => format!("{text}Auto"),
+                        TextFormat::Tempo => format!("{text}{:.2} BPM", p.value),
                         TextFormat::Seconds if p.value < 1. => format!("{text}{:.0} ms", p.value * 1000.),
                         TextFormat::Seconds => format!("{text}{:.2} s", p.value),
                         TextFormat::Percent => format!("{text}{:.0}%", p.value * 100.),
@@ -910,7 +913,21 @@ pub(crate) fn show(
     };
     painter.rect_filled(rect, 0.0, background);
     paint(&painter, &canvas.layers, rect.min, parameters, &loaded);
+    let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
+        if sample_panel
+            && control
+                .x
+                .iter()
+                .chain(control.y.iter())
+                .any(|binding| matches!(binding.parameter.as_str(), "warp" | "warp_mode" | "warp_beats" | "source_bpm"))
+            && !ui
+                .ctx()
+                .data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)))
+                .is_some_and(|source| !source.samples.is_empty())
+        {
+            continue;
+        }
         if control.visible_when.as_ref().is_some_and(|v| {
             v.evaluate(&|id, norm, log| {
                 parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
@@ -950,13 +967,30 @@ pub(crate) fn show(
         if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
             continue;
         }
+        let tooltip = if sample_panel && control.y.as_ref().is_some_and(|b| b.parameter == "source_bpm") {
+            let source = parameters.iter().find(|p| p.id == "source_bpm").map_or(0., |p| p.value);
+            let enabled = parameters.iter().find(|p| p.id == "warp").is_some_and(|p| p.value > 0.);
+            let bpm = ui.ctx().data(|d| d.get_temp::<f64>(egui::Id::new("sampler-tempo"))).unwrap_or(120.);
+            format!(
+                "{}\nProject tempo: {bpm:.2} BPM. Source: {}. Warp {}.",
+                control.tooltip,
+                if source > 0. {
+                    format!("{source:.2} BPM; playback {:.2}×", bpm / source)
+                } else {
+                    "Auto / saved legacy length".into()
+                },
+                if enabled { "on" } else { "off" }
+            )
+        } else {
+            control.tooltip.clone()
+        };
         let response = ui
             .interact(
                 bounds,
                 egui::Id::new(("sd-custom", track.0, device, &control.id)),
                 if control.gesture == UiGesture::Menu { egui::Sense::click() } else { egui::Sense::click_and_drag() },
             )
-            .on_hover_text(&control.tooltip);
+            .on_hover_text(tooltip);
         let response = if control.gesture == UiGesture::Drag {
             response.on_hover_cursor(egui::CursorIcon::ResizeVertical)
         } else {
@@ -1377,6 +1411,21 @@ mod tests {
                 control: p.control,
             })
             .collect();
+        let empty_canvas = canvas.clone();
+        let empty_parameters = parameters.clone();
+        let mut empty = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                &empty_canvas,
+                &empty_parameters,
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+            );
+        });
+        empty.run_steps(2);
+        assert!(empty.query_by_label("warp").is_none());
         for (position, param, expected) in
             [(Pos2::new(120., 10.), "mode", 1.), (Pos2::new(850., 10.), "panel_view", 1.)]
         {
@@ -1506,6 +1555,8 @@ mod tests {
         ));
         assert!(!actions.iter().any(|a| a.params["param"] == "lfo_pitch"));
         parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+        let actions = click(&canvas, &parameters, Pos2::new(639., 95.));
+        assert!(actions.iter().any(|a| a.params["param"] == "warp" && a.params["value"] == 1.));
         let actions = pointer_gesture(&canvas, &parameters, Pos2::new(640., 136.), Some(Pos2::new(640., 126.)));
         assert!(
             actions
@@ -1602,6 +1653,7 @@ mod tests {
             (0., 1., "sampler-grain.png"),
             (2., 1., "sampler-lfo.png"),
         ] {
+            parameters.iter_mut().find(|p| p.id == "source_bpm").unwrap().value = 120.;
             parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = view;
             parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = mode;
             parameters.iter_mut().find(|p| p.id == "lfo_pitch").unwrap().value = 3.;
@@ -1656,6 +1708,15 @@ mod tests {
             });
             harness.run_steps(4);
             snapshot(&mut harness, filename);
+            if filename == "sampler-simple.png" {
+                assert!(harness.query_by_label("warp").is_some());
+                harness.get_by_label("warp mode").click();
+                harness.run_steps(4);
+                for mode in ["Repitch", "Rhythmic", "Tonal", "Texture", "Smooth", "HighQuality"] {
+                    assert!(harness.query_by_label(mode).is_some(), "{mode}");
+                }
+                snapshot(&mut harness, "sampler-warp-menu.png");
+            }
             crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
             if view == 2. {
                 harness.get_by_label("lfo shape").click();
@@ -1976,7 +2037,11 @@ mod tests {
                 });
             assert_eq!(visible, expected, "{id}");
         }
-        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(350., 95.), Some(Pos2::new(350., 75.)));
+        let sensitivity =
+            canvas.controls.iter().find(|c| c.y.as_ref().is_some_and(|b| b.parameter == "sensitivity")).unwrap();
+        let [x, y, w, h] = sensitivity.bounds;
+        let center = Pos2::new(x + w / 2., y + h / 2.);
+        let actions = pointer_gesture(&canvas, &parameters, center, Some(center - Vec2::new(0., 20.)));
         assert!(actions.iter().any(|a| a.params["param"] == "sensitivity"));
         let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
             crate::kit::theme::install(ui.ctx());
@@ -2214,6 +2279,12 @@ mod tests {
         clicks: usize,
     ) -> Vec<Action> {
         let ctx = egui::Context::default();
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                sample_source_id(TrackId(1), 0),
+                Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.; 1024] }),
+            )
+        });
         let mut actions = Vec::new();
         let mut frames = vec![(position, None), (position, Some(true))];
         if let Some(end) = drag_to {

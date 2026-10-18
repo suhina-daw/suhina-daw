@@ -271,16 +271,7 @@ impl PreparedEffect {
                     (Parameter { .. }, _) => output = [parameter; 2],
                     (Tempo, _) => output = [tempo; 2],
                     (LfoRate, _) => {
-                        let division = x[2][0].round().clamp(1., 64.);
-                        let bpm = x[4][0].clamp(1., 1000.);
-                        let hz = match x[3][0].round().clamp(0., 5.) as u8 {
-                            0 => x[0][0].clamp(0.01, 20.),
-                            1 => 1000. / x[1][0].clamp(1., 20000.),
-                            2 => bpm * division / 240.,
-                            3 => bpm * division / 160.,
-                            4 => bpm * division / 360.,
-                            _ => bpm / (15. * division),
-                        };
+                        let hz = crate::sampler::lfo_hz(x[0][0], x[1][0], x[2][0], x[3][0], x[4][0]);
                         output = [hz; 2];
                     }
                     (Beat, _) => output = [beat; 2],

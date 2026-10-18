@@ -24,7 +24,7 @@ There is no feedback, additional processing or arbitrary native code. A host
 prepares it through an explicitly supplied factory, checks role and parameter
 identity/order/ranges, and calls the same native Device implementation as before.
 Generic primitive compilation rejects this node without a factory. Saved Sampler
-wrappers from revisions 1-5 may omit the appended LFO destinations, shape and source fades (and the oldest
+wrappers from revisions 1-9 may omit the appended LFO destinations, shape and source fades, warp controls and LFO timing selectors (and the oldest
 may also omit `panel_view`). Those known historical parameter prefixes prepare
 with zero new modulation depths. Every declared audio parameter still matches
 exactly; arbitrary missing parameters or changed ranges/order remain errors.

@@ -76,6 +76,12 @@ mod tests {
     #[test]
     fn sampler_without_page_selector_still_prepares_but_audio_contract_changes_fail() {
         let mut graph = find("sampler").unwrap().graph().unwrap();
+        graph.parameters.truncate(83);
+        graph.ui = None;
+        assert!(graph.prepare_native_at(48000., &suhina_device_registry::create).is_ok());
+        graph.parameters.truncate(77);
+        graph.ui = None;
+        assert!(graph.prepare_native_at(48000., &suhina_device_registry::create).is_ok());
         graph.parameters.truncate(59);
         let playback = graph.parameters.iter_mut().find(|p| p.id == "playback").unwrap();
         playback.max = 2.;
@@ -98,7 +104,7 @@ mod tests {
     #[test]
     fn sampler_layout_revision_preserves_values_and_adds_only_page_default() {
         let graph = find("sampler").unwrap().graph().unwrap();
-        assert_eq!(graph.device_version, 8);
+        assert_eq!(graph.device_version, 12);
         let mut old: Vec<_> = graph
             .parameters
             .iter()
@@ -107,7 +113,20 @@ mod tests {
                     && p.id != "sensitivity"
                     && !matches!(
                         p.id.as_str(),
-                        "panel_view" | "lfo_filter" | "lfo_volume" | "lfo_pan" | "lfo_shape" | "fade_in" | "fade_out"
+                        "panel_view"
+                            | "lfo_filter"
+                            | "lfo_volume"
+                            | "lfo_pan"
+                            | "lfo_shape"
+                            | "fade_in"
+                            | "fade_out"
+                            | "warp"
+                            | "warp_mode"
+                            | "warp_beats"
+                            | "lfo_rate_mode"
+                            | "lfo_time"
+                            | "lfo_division"
+                            | "source_bpm"
                     )
             })
             .map(|p| (p.id.clone(), p.default))
@@ -119,7 +138,11 @@ mod tests {
         for id in ["lfo_filter", "lfo_volume", "lfo_pan", "lfo_shape", "fade_in", "fade_out"] {
             assert!(migrated.contains(&(id.into(), 0.)));
         }
-        assert_eq!(migrated.len(), old.len() + 25);
+        assert_eq!(migrated.len(), old.len() + 32);
+        assert!(migrated.contains(&("warp".into(), 0.)));
+        assert!(migrated.contains(&("warp_mode".into(), 1.)));
+        assert!(migrated.contains(&("warp_beats".into(), 4.)));
+        assert!(migrated.contains(&("source_bpm".into(), 0.)));
         assert!(migrated.contains(&("sensitivity".into(), 0.5)));
         assert!(migrated.contains(&("slice_by".into(), 0.)));
         assert!(migrated.contains(&("slice_1".into(), 1.)));

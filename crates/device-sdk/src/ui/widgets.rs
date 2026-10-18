@@ -296,9 +296,9 @@ impl Widget {
                     } else if let Some(off) = off_label {
                         let active = UiValue::normalized(id, false);
                         c.drawing = vec![
-                            rect(0., 0., w.into(), height, ACCENT),
+                            rect(0., 0., w.into(), height, DARK),
                             rect(0., 0., active.clone() * w.into(), height, ACCENT),
-                            conditional_text(w / 2., 0., off, INK, UiValue::from(1.) + active.clone() * (-1.).into()),
+                            conditional_text(w / 2., 0., off, TEXT, UiValue::from(1.) + active.clone() * (-1.).into()),
                             conditional_text(w / 2., 0., label, INK, active),
                         ];
                     }

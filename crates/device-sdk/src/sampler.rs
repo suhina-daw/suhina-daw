@@ -6,6 +6,9 @@ use std::sync::Arc;
 use suhina_device_api::{Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, Scale, Unit};
 use suhina_dsp::{Biquad, Coefficients};
 
+#[path = "sampler_warp.rs"]
+mod warp;
+
 const fn continuous(id: &'static str, name: &'static str, min: f64, max: f64, default: f64, unit: Unit) -> ParamInfo {
     ParamInfo::continuous(id, name, (min, max), default, unit, Scale::Linear)
 }
@@ -87,7 +90,31 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("slice_14", "Slice 14", 0., 1., 1., Unit::Percent),
     continuous("slice_15", "Slice 15", 0., 1., 1., Unit::Percent),
     continuous("slice_16", "Slice 16", 0., 1., 1., Unit::Percent),
+    ParamInfo::toggle("warp", "Warp", false),
+    ParamInfo::choice(
+        "warp_mode",
+        "Warp mode",
+        &["Repitch", "Rhythmic", "Tonal", "Texture", "Smooth", "HighQuality"],
+        1,
+    ),
+    continuous("warp_beats", "Source length (beats)", 0.25, 1024., 4., Unit::None),
+    ParamInfo::choice("lfo_rate_mode", "LFO rate mode", &["Hz", "Time", "Beat", "Triplet", "Dotted", "16th"], 0),
+    continuous("lfo_time", "LFO time (ms)", 1., 20000., 1000., Unit::None),
+    ParamInfo::integer("lfo_division", "LFO division", (1, 64), 4, Unit::None),
+    continuous("source_bpm", "Source BPM", 0., 999., 0., Unit::None),
 ];
+pub(crate) fn lfo_hz(rate: f64, time: f64, division: f64, mode: f64, tempo: f64) -> f64 {
+    let division = division.round().clamp(1., 64.);
+    let bpm = tempo.clamp(1., 1000.);
+    match mode.round().clamp(0., 5.) as u8 {
+        0 => rate.clamp(0.01, 20.),
+        1 => 1000. / time.clamp(1., 20000.),
+        2 => bpm * division / 240.,
+        3 => bpm * division / 160.,
+        4 => bpm * division / 360.,
+        _ => bpm / (15. * division),
+    }
+}
 pub const INFO: DeviceInfo = DeviceInfo { id: "sampler", name: "Sampler", role: Role::Instrument, params: PARAMS };
 
 #[derive(Clone, Copy, Default)]
@@ -163,6 +190,7 @@ pub struct Sampler {
     channels: usize,
     source: Arc<dyn AsRef<[f32]> + Send + Sync>,
     voices: Vec<Voice>,
+    warp: Vec<warp::Voice>,
     next_voice: usize,
     seed: u32,
     phase: f64,
@@ -190,6 +218,7 @@ impl Sampler {
             channels: 1,
             source: Arc::new(Vec::<f32>::new()),
             voices: vec![Voice::default(); 32],
+            warp: Vec::new(),
             next_voice: 0,
             seed: 1,
             phase: 0.,
@@ -275,16 +304,23 @@ impl Device for Sampler {
         self.source = samples;
         self.channels = usize::from(channels);
         self.source_rate = f64::from(rate);
+        self.warp = (0..32).map(|_| warp::Voice::new(self.rate)).collect();
         self.reset();
     }
     fn prepare(&mut self, rate: f64) -> Result<(), DeviceError> {
         suhina_device_api::check_sample_rate(rate)?;
         self.rate = rate;
+        if self.frames() > 0 {
+            self.warp = (0..32).map(|_| warp::Voice::new(rate)).collect();
+        }
         self.reset();
         Ok(())
     }
     fn reset(&mut self) {
         self.voices.fill(Voice::default());
+        for voice in &mut self.warp {
+            voice.restart();
+        }
         self.next_voice = 0;
         self.seed = 1;
         self.phase = 0.;
@@ -295,6 +331,12 @@ impl Device for Sampler {
         self.pan = self.values[19];
     }
     fn set_param(&mut self, index: usize, value: f64) {
+        if PARAMS.get(index).is_some_and(|p| p.id == "warp_beats")
+            && self.values.get(index).is_some_and(|old| *old != value)
+        {
+            self.values[83] = 0.;
+        }
+        let warp_enabled = self.values[77] > 0.;
         if let Some((p, v)) = PARAMS.get(index).zip(self.values.get_mut(index)) {
             let next = p.clamp(value);
             if p.id == "reverse" && next != *v {
@@ -305,8 +347,29 @@ impl Device for Sampler {
                     }
                 }
             }
+            if matches!(p.id, "reverse" | "mode") && next != *v {
+                for voice in &mut self.warp {
+                    voice.restart();
+                }
+            }
             if p.id == "playback" && next != *v {
                 self.voices.fill(Voice::default());
+                for voice in &mut self.warp {
+                    voice.restart();
+                }
+            }
+            let warp_transition =
+                p.id == "warp" && next != *v || p.id == "warp_mode" && (next == 0.) != (*v == 0.) && warp_enabled;
+            if warp_transition {
+                for voice in &mut self.voices {
+                    if voice.active {
+                        voice.fade_from = voice.last;
+                        voice.fade = 1.;
+                    }
+                }
+                for voice in &mut self.warp {
+                    voice.restart();
+                }
             }
             *v = next;
         }
@@ -362,6 +425,9 @@ impl Device for Sampler {
                         return;
                     }
                     let fade_from = v.last;
+                    if let Some(warp) = self.warp.get_mut(slot) {
+                        warp.restart();
+                    }
                     let fade = if v.active { 1. } else { 0. };
                     let direction = if p[10] > 0. { -1. } else { 1. };
                     *v = Voice {
@@ -427,7 +493,7 @@ impl Device for Sampler {
         let target_gain = 10f64.powf(p[18] / 20.);
         for frame in buffer.as_chunks_mut::<2>().0 {
             let mut out = [0.; 2];
-            let phase = self.phase + p[37] / self.rate;
+            let phase = self.phase + lfo_hz(p[37], p[81], p[82], p[80], self.tempo) / self.rate;
             if phase >= 1. {
                 self.lfo_cycle = self.lfo_cycle.wrapping_add(1);
             }
@@ -496,10 +562,43 @@ impl Device for Sampler {
                         v.active = false;
                         continue;
                     }
-                    signal = read(self.source.as_ref().as_ref(), self.channels, v.position);
+                    let speed = if p[83] > 0. {
+                        self.tempo / p[83]
+                    } else {
+                        (p[2] - p[1]) * total / self.source_rate * self.tempo / (60. * p[79])
+                    }
+                    .clamp(1e-6, 1e6);
+                    let warped = p[77] > 0.;
+                    let stretched = warped && p[78] > 0. && (0.25..=4.).contains(&speed);
+                    signal = if stretched {
+                        self.warp.get_mut(index).map_or([0.; 2], |warp| {
+                            warp.next(speed, v.step * self.rate / self.source_rate, |ahead| {
+                                let mut position = v.position + ahead * self.source_rate / self.rate * v.direction;
+                                if looping
+                                    && ((v.direction > 0. && position >= hi) || (v.direction < 0. && position < lo))
+                                {
+                                    let span = hi - lo;
+                                    if p[9] > 0. {
+                                        let phase = (position - lo).rem_euclid(2. * (span - 1.));
+                                        position =
+                                            lo + if phase < span - 1. { phase } else { 2. * (span - 1.) - phase };
+                                    } else if position >= hi || position < lo {
+                                        position = lo + (position - lo).rem_euclid(span);
+                                    }
+                                }
+                                if position < start || position >= end {
+                                    [0.; 2]
+                                } else {
+                                    read(self.source.as_ref().as_ref(), self.channels, position)
+                                }
+                            })
+                        })
+                    } else {
+                        read(self.source.as_ref().as_ref(), self.channels, v.position)
+                    };
                     let fade = source_fade(v.position, start, end, p[57], p[58], self.source_rate);
                     signal.iter_mut().for_each(|sample| *sample *= fade);
-                    if looping && p[9] == 0. {
+                    if looping && p[9] == 0. && !stretched {
                         let fade = (p[27] * self.source_rate / 1000.).min((hi - lo) * 0.5);
                         if fade > 0. && v.direction > 0. && v.position >= hi - fade && v.position < hi {
                             let blend = (v.position - (hi - fade)) / fade;
@@ -519,7 +618,8 @@ impl Device for Sampler {
                             }
                         }
                     }
-                    v.position += v.step * v.direction;
+                    v.position +=
+                        if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
                     let boundary = if p[9] > 0. { hi - 1. } else { hi };
                     if looping
                         && ((v.direction > 0. && v.position >= boundary) || (v.direction < 0. && v.position < lo))
@@ -531,7 +631,8 @@ impl Device for Sampler {
                             v.position = v.position.min(boundary);
                             v.direction *= if phase < length { 1. } else { -1. };
                         } else {
-                            let fade = (p[27] * self.source_rate / 1000.).min(length * 0.5);
+                            let fade =
+                                if stretched { 0. } else { (p[27] * self.source_rate / 1000.).min(length * 0.5) };
                             let span = (length - fade).max(1.);
                             v.position = if v.direction > 0. {
                                 lo + fade + (v.position - hi).rem_euclid(span)
@@ -772,6 +873,20 @@ mod shared_source_tests {
         drop(a);
         drop(b);
         assert_eq!(Arc::strong_count(&source), 1, "cache must not retain PCM");
+    }
+}
+
+#[cfg(test)]
+mod rate_tests {
+    #[test]
+    fn rate_modes_match_delay_and_follow_tempo() {
+        for (mode, expected) in [(0., 5.), (1., 2.), (2., 2.), (3., 3.), (4., 4. / 3.), (5., 2.)] {
+            let division = 4.;
+            assert!((super::lfo_hz(5., 500., division, mode, 120.) - expected).abs() < 1e-12);
+            if mode >= 2. {
+                assert!((super::lfo_hz(5., 500., division, mode, 60.) - expected / 2.).abs() < 1e-12);
+            }
+        }
     }
 }
 

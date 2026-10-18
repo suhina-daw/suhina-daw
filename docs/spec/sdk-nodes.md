@@ -132,7 +132,7 @@ The synchronized divisor describes 1/division of a whole note; the 16th mode cou
 sixteenth notes per cycle. Inputs are clamped before conversion. It has no state to reset,
 allocations, latency or signal-dependent processing.
 
-Native Sampler wrappers from revisions 1-5 may retain their original parameter
-prefix without the appended LFO destinations, shape and source fades; the oldest may also omit
+Native Sampler wrappers from revisions 1-8 may retain their original parameter
+prefix without the appended LFO destinations, shape, source fades and warp controls; the oldest may also omit
 `panel_view`. New depths and fades default to zero; shape defaults to Sine. All declared audio parameter contracts
 still match exactly; other omissions or changed native parameters remain errors.

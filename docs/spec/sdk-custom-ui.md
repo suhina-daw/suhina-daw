@@ -138,7 +138,7 @@ A serialized control referencing a declared continuous `cutoff` parameter:
 A custom control can set `visible_when` to a numeric expression. Values <=0 hide both the
 drawing and interaction; an omitted condition keeps the control visible. Conditions use the
 same bounded validation as drawing expressions. Control width and height are at least 8 pixels.
-Text supports `align: left|center` (default left) and `format: number|frequency|choice` (default number).
+Text supports `align: left|center` (default left) and `format: number|frequency|choice|tempo` (default number).
 Frequency formatting uses two decimal kHz at >=1000 Hz and the declared numeric precision below.
 The Delay example uses these fields for mutually exclusive tempo-step and millisecond controls.
 
@@ -192,6 +192,7 @@ theme at render time. No authored purple accent or device header is required.
 ## Reusable functional widgets
 
 Dial also accepts optional `decimals` (default 0) and `format` (default `number`).
+Format `tempo` displays BPM, or Auto for zero (a device may use that value to request tempo detection).
 Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seconds,
 fractional percentages, dB and centre/L/R respectively. Existing Dial definitions
 keep their previous readouts. The sampler uses these formats without changing
@@ -248,7 +249,8 @@ Release reference distinct time parameters starting at zero, with maxima at most
 60 seconds. With Release, Level is 0..1 sustain; without Release, Level straddles
 zero and controls a bipolar Attack/Decay peak. Missing/duplicate references and
 incompatible ranges are rejected. Bounds must be at least 40 by 32 pixels.
-The host draws only the graph's darker theme-derived surface, with 8-pixel padding,
+The host draws the graph on the panel background with a thin theme-border zero-level
+guide and no separate fill, with 8-pixel padding,
 9-pixel editable points and 22-pixel hit areas. A cumulative logarithmic time axis
 uses a 10 ms base and the sum of stage maxima; the ADSR note-hold segment occupies
 one quarter of the plot. Zero-length stages meet at the same x position.

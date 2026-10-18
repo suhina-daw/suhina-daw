@@ -53,8 +53,8 @@ pub fn definition(id: &str) -> Result<DeviceGraph, DeviceSdkError> {
         node.visible = false;
     }
     if id == "sampler" {
-        graph.device_version = 8;
-        for from_version in [1, 2, 3, 4, 5, 6, 7] {
+        graph.device_version = 12;
+        for from_version in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
             graph.migrations.push(suhina_device_sdk::DeviceMigration { from_version, parameter_ids: vec![] });
         }
     }

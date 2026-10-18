@@ -276,6 +276,7 @@ pub enum TextFormat {
     #[default]
     Number,
     Frequency,
+    Tempo,
     Seconds,
     Percent,
     Decibels,

@@ -93,7 +93,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
-| sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording |
+| sampler | own | single-source Simple/Grain instrument, SDK panel, source loading and recording, tempo-synchronised sample Warp with six selectable modes and automatically initialized, editable source BPM |
 | drum sampler | own | planned |
 | physical-modelling synth | Mutable Instruments Rings and Elements (MIT) | planned |
 
@@ -796,6 +796,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 
 - Sampler waveform: dynamic manual slice maps with double-click add/remove, draggable
   lines, gray areas outside S/E, anchored zoom and horizontal navigation.
+
+- Sampler LFO rate supports Hz, milliseconds, beat divisions, triplets, dotted notes and sixteenth-note counts.
 
 - Drop one audio file onto an empty MIDI track to add Sampler with that source.
 

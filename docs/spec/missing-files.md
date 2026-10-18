@@ -35,7 +35,7 @@ project opens and helps find the files again.
 1. The project's audio is decoded as before; files not found are collected (with how many clips
    use each).
 2. If any are missing, a bar shows under the control bar: "4 audio files are missing" with
-   **FindвЂ¦** and **Later**. Later hides the bar for this project; View вЂє **Missing files (4)вЂ¦**
+   **Find…** and **Later**. Later hides the bar for this project; View › **Missing files (4)…**
    opens the panel until nothing is missing.
 3. The browser's index is searched at once for candidates (instant: it is a list of names in
    memory), so the panel usually opens with most files found.
@@ -43,7 +43,7 @@ project opens and helps find the files again.
 ## The panel
 
 A dialog over the window, 600 px wide, as high as it needs (at most the window), titled
-"Missing files В· <project>". Escape or **Close** closes it; nothing changes until **Apply**.
+"Missing files · <project>". Escape or **Close** closes it; nothing changes until **Apply**.
 
 **Rows**, one per missing file. Each row shows three lines:
 
@@ -51,7 +51,7 @@ A dialog over the window, 600 px wide, as high as it needs (at most the window),
    is also the name's tooltip), the file name, how many clips use it, and at the right a
    **Locate** field for a file path: Enter takes it as the candidate.
 2. The path it had (hint text).
-3. "в†’" and the candidate it will be linked to: a drop-down of the candidates, best first
+3. "→" and the candidate it will be linked to: a drop-down of the candidates, best first
    (below), and *Leave it missing*.
 
 **Searching** (buttons above the rows):

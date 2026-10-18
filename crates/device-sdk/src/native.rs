@@ -66,7 +66,7 @@ impl DeviceGraph {
         let role = if info.role == Role::Instrument { DeviceRole::Instrument } else { DeviceRole::Effect };
         // Historic revisions retain their validated prefix; appended controls use defaults.
         let legacy_sampler_panel = id == "sampler"
-            && matches!(self.parameters.len(), 52 | 53 | 56 | 59)
+            && matches!(self.parameters.len(), 52 | 53 | 56 | 59 | 77 | 80 | 83)
             && crate::sampler::INFO.params.get(..self.parameters.len()).is_some_and(|prefix| {
                 self.parameters.iter().zip(prefix).all(|(a, b)| {
                     a.id == b.id

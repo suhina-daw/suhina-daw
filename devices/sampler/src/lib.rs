@@ -78,6 +78,7 @@ fn value(ui: &mut DeviceUi, id: &str, caption: &str, bounds: [f32; 4], view: Opt
             TextFormat::Percent
         }
         "cutoff" | "lfo_rate" => TextFormat::Frequency,
+        "source_bpm" => TextFormat::Tempo,
         "gain" => TextFormat::Decibels,
         "pan" => TextFormat::Balance,
         _ => TextFormat::Number,
@@ -86,7 +87,11 @@ fn value(ui: &mut DeviceUi, id: &str, caption: &str, bounds: [f32; 4], view: Opt
         ui,
         id,
         Widget::Number {
-            decimals: if matches!(id, "resonance" | "scan" | "lfo_rate" | "lfo_filter" | "lfo_pitch") { 2 } else { 0 },
+            decimals: if matches!(id, "resonance" | "scan" | "lfo_rate" | "lfo_filter" | "lfo_pitch" | "warp_beats") {
+                2
+            } else {
+                0
+            },
             format,
             color: ACCENT,
             center: false,
@@ -101,7 +106,7 @@ fn value(ui: &mut DeviceUi, id: &str, caption: &str, bounds: [f32; 4], view: Opt
     if let Some(c) = ui.controls.last_mut() {
         c.y = c.x.take();
         if let Some(binding) = &mut c.y {
-            binding.logarithmic = matches!(id, "cutoff" | "lfo_rate");
+            binding.logarithmic = matches!(id, "cutoff" | "lfo_rate" | "warp_beats");
         }
         c.tooltip = format!("{}: drag vertically; Shift for precision; double-click resets", id.replace('_', " "));
     }
@@ -198,14 +203,14 @@ pub fn panel() -> DeviceUi {
                 ("end", "End"),
                 ("loop_start", "Loop start"),
                 ("loop_end", "Loop end"),
+                ("crossfade", "Loop fade ms"),
                 ("fade_in", "Fade in ms"),
                 ("fade_out", "Fade out ms"),
-                ("crossfade", "Loop fade ms"),
             ]
         } else {
             vec![("start", "Start"), ("end", "End"), ("fade_in", "Fade in ms"), ("fade_out", "Fade out ms")]
         };
-        let width = 900. / fields.len() as f32;
+        let width = 604. / fields.len() as f32;
         for (i, (id, caption)) in fields.iter().enumerate() {
             value(&mut ui, id, caption, [8. + i as f32 * width, 86., width - 16., 18.], Some(0));
             if let Some(c) = ui.controls.last_mut() {
@@ -228,7 +233,7 @@ pub fn panel() -> DeviceUi {
     .iter()
     .enumerate()
     {
-        let bounds = [8. + i as f32 * 150., 86., 134., 18.];
+        let bounds = [8. + i as f32 * 100., 86., 92., 18.];
         if *id == "slice_by" {
             control(
                 &mut ui,
@@ -250,6 +255,35 @@ pub fn panel() -> DeviceUi {
         if let Some(c) = ui.controls.last_mut() {
             c.visible_when = Some(page(0) * slicing.clone());
         }
+    }
+    button(&mut ui, "warp", "Warp", [612., 86., 54., 18.], UiGesture::Toggle, Some(0));
+    if let Some(c) = ui.controls.last_mut() {
+        c.widget =
+            Some(Widget::Button { label: "Warp on".into(), off_label: Some("Warp off".into()), indicator: false });
+        c.tooltip =
+            "Warp on: fit the selected Start–End region to the project tempo. Source BPM is the original tempo of the loop."
+                .into();
+    }
+    control(
+        &mut ui,
+        "warp_mode",
+        Widget::ValueMenu {
+            choices: ["Repitch", "Rhythmic", "Tonal", "Texture", "Smooth", "HighQuality"]
+                .iter()
+                .enumerate()
+                .map(|(i, label)| (i as u16, (*label).into()))
+                .collect(),
+        },
+        [672., 86., 106., 18.],
+        UiGesture::Menu,
+        Some(0),
+    );
+    value(&mut ui, "source_bpm", "Source", [784., 86., 108., 18.], Some(0));
+    if let Some(c) = ui.controls.last_mut() {
+        if let Some(binding) = &mut c.y {
+            binding.drag_scale = 0.1;
+        }
+        c.tooltip = "Original tempo of this sample. Loading uses metadata, filename or detection; unknown tempo assumes the project BPM. With Warp on it follows the project BPM. Correct this value to the loop's original BPM if detection was wrong. Double-click re-detects the source tempo.".into();
     }
     for (i, (id, caption)) in [
         ("position", "Position"),
@@ -385,7 +419,43 @@ pub fn panel() -> DeviceUi {
         }
     }
     control(&mut ui, "lfo_shape", Widget::WaveformMenu, [56., 90., 112., 18.], UiGesture::Menu, Some(3));
-    value(&mut ui, "lfo_rate", "Rate", [274., 90., 202., 18.], Some(3));
+    control(&mut ui, "lfo_rate_mode", Widget::Menu, [174., 90., 96., 18.], UiGesture::Menu, Some(3));
+    for mode in 0..=5 {
+        let id = if mode == 0 {
+            "lfo_rate"
+        } else if mode == 1 {
+            "lfo_time"
+        } else {
+            "lfo_division"
+        };
+        if mode < 2 {
+            value(&mut ui, id, if mode == 0 { "Rate" } else { "ms" }, [274., 90., 202., 18.], Some(3));
+        } else {
+            let choices = (1..=64)
+                .map(|n| {
+                    (
+                        n,
+                        match mode {
+                            3 => format!("1/{n} T"),
+                            4 => format!("1/{n} D"),
+                            5 => format!("{n} x 1/16"),
+                            _ => format!("1/{n}"),
+                        },
+                    )
+                })
+                .collect();
+            control(&mut ui, id, Widget::ValueMenu { choices }, [274., 90., 202., 18.], UiGesture::Menu, Some(3));
+        }
+        if let Some(c) = ui.controls.last_mut() {
+            c.visible_when = Some(
+                page(3)
+                    * UiValue::Expression(Box::new(UiExpression::Equal {
+                        a: UiValue::parameter("lfo_rate_mode", false),
+                        b: (mode as f32).into(),
+                    })),
+            );
+        }
+    }
     section(&mut ui, "MODULATION", [490., 86., 410., 82.], Some(3));
     for (id, caption, bounds) in [
         ("lfo_pitch", "Pitch st", [502., 112., 182., 20.]),
@@ -428,6 +498,145 @@ mod tests {
             s.process(&ProcessContext::default(), chunk);
         }
         out
+    }
+    #[test]
+    fn warp_preserves_pitch_and_note_length_across_modes_and_blocks() {
+        let make = |mode, block: usize, tempo| {
+            let mut s = loaded();
+            s.prepare(48000.).unwrap();
+            for (id, value) in
+                [("warp", 1.), ("warp_mode", mode), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.), ("pitch", 12.)]
+            {
+                set(&mut s, id, value);
+            }
+            let context = ProcessContext { tempo, ..ProcessContext::default() };
+            s.set_context(&context);
+            note(&mut s, 60);
+            let mut out = vec![0.; 144000 * 2];
+            for chunk in out.chunks_mut(block * 2) {
+                s.process(&context, chunk);
+            }
+            out
+        };
+        for mode in 0..6 {
+            let a = make(f64::from(mode), 64, 120.);
+            assert_eq!(a, make(f64::from(mode), 127, 120.));
+            let crossings = a[24000 * 2..48000 * 2]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|f| f[0])
+                .collect::<Vec<_>>()
+                .windows(2)
+                .filter(|w| w[0] <= 0. && w[1] > 0.)
+                .count();
+            let expected = if mode == 0 { 55 } else { 220 };
+            assert!(crossings.abs_diff(expected) <= 3, "mode {mode}: {crossings}");
+            assert!(a[90000 * 2..94000 * 2].iter().any(|v| v.abs() > 0.01));
+            assert!(a[97000 * 2..].iter().all(|v| *v == 0.));
+        }
+        let fast = make(1., 64, 240.);
+        assert!(fast[49000 * 2..].iter().all(|v| *v == 0.));
+    }
+
+    #[test]
+    fn source_bpm_sets_speed_independently_of_loop_length_and_trim() {
+        for seconds in [2, 4, 16] {
+            let mut s = Sampler::new();
+            s.load_sample(
+                48000,
+                1,
+                (0..seconds * 48000)
+                    .map(|i| (i as f32 * std::f32::consts::TAU * 220. / 48000.).sin() * 0.2)
+                    .collect::<Vec<_>>()
+                    .into(),
+            );
+            for (id, value) in [("source_bpm", 120.), ("warp", 1.), ("attack", 0.), ("sustain", 1.)] {
+                set(&mut s, id, value);
+            }
+            note(&mut s, 60);
+            let out = render(&mut s, 4800, 64);
+            let crossings = out.as_chunks::<2>().0.windows(2).filter(|w| w[0][0] <= 0. && w[1][0] > 0.).count();
+            assert!(
+                crossings.abs_diff(22) <= 2,
+                "a {seconds}s loop must retain its 220 Hz pitch: {crossings} crossings"
+            );
+            assert!((s.sample_position().unwrap() - 0.1 / seconds as f32).abs() < 1e-6);
+            let before = s.sample_position().unwrap();
+            let context = ProcessContext { tempo: 60., ..ProcessContext::default() };
+            s.process(&context, &mut vec![0.; 9600]);
+            assert!((s.sample_position().unwrap() - before - 0.05 / seconds as f32).abs() < 1e-6);
+            set(&mut s, "start", 0.25);
+            set(&mut s, "end", 0.75);
+            note(&mut s, 60);
+            let before = s.sample_positions().into_iter().flatten().last().unwrap();
+            s.process(&context, &mut vec![0.; 9600]);
+            let after = s.sample_positions().into_iter().flatten().last().unwrap();
+            assert!((after - before - 0.05 / seconds as f32).abs() < 1e-6, "trimming must not alter the source tempo");
+        }
+    }
+
+    #[test]
+    fn changing_warp_during_a_held_note_keeps_its_head_and_audio() {
+        let mut s = loaded();
+        for (id, value) in [("playback", 2.), ("warp", 1.), ("attack", 0.), ("sustain", 1.)] {
+            set(&mut s, id, value);
+        }
+        note(&mut s, 60);
+        render(&mut s, 12000, 64);
+        for (id, value) in [
+            ("warp_mode", 2.),
+            ("warp_mode", 3.),
+            ("warp_mode", 4.),
+            ("warp_mode", 5.),
+            ("warp_mode", 0.),
+            ("warp_mode", 1.),
+            ("warp", 0.),
+            ("warp", 1.),
+        ] {
+            let position = s.sample_position().unwrap();
+            set(&mut s, id, value);
+            assert_eq!(s.sample_position(), Some(position), "{id}={value} must keep the held note");
+            let out = render(&mut s, 4800, 127);
+            assert!(s.sample_position().is_some());
+            for window in out.chunks(960) {
+                assert!(window.iter().any(|s| s.abs() > 0.005), "{id}={value}: silent 10 ms window");
+            }
+        }
+    }
+
+    #[test]
+    fn equivalent_pitch_preserving_modes_do_not_restart_the_stretcher() {
+        let make = |change| {
+            let mut s = loaded();
+            set(&mut s, "warp", 1.);
+            note(&mut s, 60);
+            render(&mut s, 12000, 64);
+            if change {
+                set(&mut s, "warp_mode", 5.);
+            }
+            render(&mut s, 4800, 127)
+        };
+        assert_eq!(make(false), make(true));
+    }
+
+    #[test]
+    fn warp_controls_share_the_fade_row_without_overlaps() {
+        let ui = panel();
+        let controls: Vec<_> = ui
+            .controls
+            .iter()
+            .filter(|c| {
+                c.x.iter()
+                    .chain(c.y.iter())
+                    .any(|b| matches!(b.parameter.as_str(), "warp" | "warp_mode" | "source_bpm"))
+            })
+            .collect();
+        assert_eq!(controls.len(), 3);
+        for c in &controls {
+            assert_eq!(c.bounds[1], 86.);
+        }
+        assert!(controls.windows(2).all(|w| w[0].bounds[0] + w[0].bounds[2] <= w[1].bounds[0]));
     }
     #[test]
     fn stolen_voices_are_continuous_and_heads_are_independent() {
@@ -532,7 +741,14 @@ mod tests {
             if p.id.starts_with("slice_")
                 || matches!(
                     p.id,
-                    "start" | "end" | "loop_start" | "loop_end" | "ping_pong" | "grain_env" | "envelope_tab"
+                    "start"
+                        | "end"
+                        | "loop_start"
+                        | "loop_end"
+                        | "ping_pong"
+                        | "grain_env"
+                        | "envelope_tab"
+                        | "warp_beats"
                 )
             {
                 continue;

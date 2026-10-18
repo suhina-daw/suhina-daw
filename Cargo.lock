@@ -4434,6 +4434,7 @@ dependencies = [
  "serde_json",
  "suhina-device-api",
  "suhina-dsp",
+ "suhina-stretch",
 ]
 
 [[package]]

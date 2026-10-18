@@ -6,6 +6,129 @@ use suhina_model::*;
 use suhina_session::Session;
 
 #[test]
+fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
+    let folder = std::env::temp_dir().join(format!("suhina-source-tempo-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut session = Session::new(Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: true, audio: false },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Keys")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Keys")],
+        ..Project::default()
+    });
+    session.execute("device.add", &json!({"track":1,"id":"sampler"})).unwrap();
+    let param =
+        |s: &Session, id: &str| s.project().channels[0].devices[0].params.iter().find(|p| p.id == id).unwrap().value;
+    for (name, seconds, bpm) in [("drums_120bpm.wav", 8, 120.), ("drums_90bpm.wav", 4, 90.), ("unknown.wav", 8, 120.)] {
+        let file = folder.join(name);
+        let mut writer = hound::WavWriter::create(
+            &file,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 48000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..seconds * 48000 {
+            writer.write_sample(1000i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        let before = session.project().clone();
+        let loaded = session.execute("device.loadSample", &json!({"track":1,"device":0,"path":file})).unwrap();
+        assert_eq!(loaded["source_bpm"], bpm);
+        assert_eq!(param(&session, "source_bpm"), bpm);
+        assert!((param(&session, "warp_beats") - seconds as f64 * bpm / 60.).abs() < 1e-6);
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":"warp","value":1})).unwrap();
+        assert_eq!(param(&session, "source_bpm"), bpm);
+        session.execute("edit.undo", &json!({})).unwrap();
+        session.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(session.project(), &before, "source and tempo undo together");
+        session.execute("edit.redo", &json!({})).unwrap();
+        let restored = suhina_project_file::from_json(&suhina_project_file::to_json(session.project())).unwrap();
+        assert_eq!(restored, *session.project());
+        assert_eq!(param(&session, "source_bpm"), bpm);
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","value":200.})).unwrap();
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","value":0.})).unwrap();
+        assert_eq!(param(&session, "source_bpm"), bpm, "Auto must re-detect the original BPM");
+        session.execute("edit.undo", &json!({})).unwrap();
+        session.execute("edit.undo", &json!({})).unwrap();
+        std::fs::remove_file(file).unwrap();
+    }
+    std::fs::remove_dir(folder).unwrap();
+}
+
+#[test]
+fn warp_changes_keep_music_playing_and_fit_beats_tracks_global_tempo() {
+    let mut session = Session::new(Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: true, audio: false },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Keys")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Keys")],
+        ..Project::default()
+    });
+    session.execute("device.add", &json!({"track":1,"id":"sampler"})).unwrap();
+    for (param, value) in [("playback", 2.), ("warp", 1.), ("source_bpm", 120.), ("attack", 0.), ("sustain", 1.)] {
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":param,"value":value})).unwrap();
+    }
+    let mut project = session.project().clone();
+    project.channels[0].devices[0].set_sample_file("source.wav");
+    let mut pool = suhina_engine::AudioPool::default();
+    pool.files.insert(
+        "source.wav".into(),
+        std::sync::Arc::new(suhina_engine::AudioData {
+            sample_rate: 48000,
+            channels: 1,
+            samples: (0..96000).map(|i| (i as f32 * std::f32::consts::TAU * 220. / 48000.).sin() * 0.2).collect(),
+        }),
+    );
+    let mut renderer = suhina_engine::Renderer::stopped(&project, &pool, 48000).unwrap();
+    let mut controller = renderer.controller();
+    let mut live = controller.take_live_input().unwrap();
+    let mut session = Session::new(project);
+    session.set_audio(pool);
+    session.attach_player(suhina_session::Player::new(controller, None));
+    session.execute("track.setArm", &json!({"track":1,"armed":true})).unwrap();
+    session.execute("transport.play", &json!({})).unwrap();
+    live.send(suhina_engine::LiveEvent::NoteOn { key: 60, velocity: 1. });
+    let mut block = [0.; 960];
+    for _ in 0..20 {
+        renderer.process(&mut block);
+    }
+    let head = |s: &Session| s.player().unwrap().meter_monitor().sample_positions(TrackId(1), 0)[0].unwrap();
+    for mode in [2., 5., 0., 1.] {
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":"warp_mode","value":mode})).unwrap();
+        let before = head(&session);
+        renderer.process(&mut block);
+        assert!(head(&session) > before, "mode {mode} must keep the held note advancing");
+        assert!(block.iter().any(|v| v.abs() > 0.005), "mode {mode} must remain audible");
+    }
+    session.execute("transport.setTempo", &json!({"bpm":60.})).unwrap();
+    for _ in 0..100 {
+        renderer.process(&mut block);
+        if session.player().unwrap().monitor().tempo_bpm() == 60. {
+            break;
+        }
+    }
+    assert_eq!(session.player().unwrap().monitor().tempo_bpm(), 60.);
+    let before = head(&session);
+    renderer.process(&mut block);
+    assert!(
+        (head(&session) - before - 0.0025).abs() < 1e-5,
+        "a two-second 120 BPM source lasts four seconds at 60 BPM"
+    );
+    session.execute("device.setParam", &json!({"track":1,"device":0,"param":"warp_beats","value":2.})).unwrap();
+    let before = head(&session);
+    renderer.process(&mut block);
+    assert!((head(&session) - before - 0.005).abs() < 1e-5, "2 beats at 60 BPM lasts 2 seconds");
+}
+
+#[test]
 fn sampler_loading_is_atomic_undoable_persistent_and_relinkable() {
     let folder = std::env::temp_dir().join(format!("suhina-sampler-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();

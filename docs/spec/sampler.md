@@ -7,6 +7,7 @@ last_verified: 2026-10-17
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sampler.rs
+  - crates/device-sdk/src/sampler_warp.rs
   - crates/ui/src/detail/device_canvas.rs
   - crates/ui/src/detail/detail_view.rs
 ---
@@ -32,7 +33,7 @@ active tab again returns to normal controls. Both keep the full-width waveform
 visible. Envelopes shows simultaneous amplitude/filter/pitch envelope editors;
 each ADSR stage has its own draggable point, with decay also adjusting sustain. The
 pitch peak adjusts attack and signed amount; its envelope remains attack/decay.
-LFO has its own large waveform preview and shared logarithmic rate in Hz, with
+LFO has its own large waveform preview and shared rate selectable as Hz, Time (milliseconds), Beat, Triplet, Dotted or 16th, with
 independent pitch, filter, volume and pan depths. Dragging the preview adjusts
 rate horizontally; destination fields edit their own depth. The preview shows
 the oscillator independently of destination depths. Switching tabs does not change sound parameters.
@@ -45,8 +46,8 @@ Reverse and Retrigger). Section surfaces, headings and borders use the active
 host theme and do not intercept pointer or keyboard input. The Grain row retains
 position, scan, size, density, jitter, spread and Freeze without a cloud preview.
 
-Definition revision 8 preserves existing sound parameters and migrations from
-revisions 1 through 7. New LFO destinations and source fades default to zero;
+Definition revision 12 preserves existing sound parameters and migrations from
+revisions 1 through 11. New LFO destinations and source fades default to zero;
 LFO shape defaults to Sine. `panel_view` persists Controls (0), Envelopes (1) or LFO (2); new devices
 default to Controls. Legacy `grain_env` and `envelope_tab` remain readable but no
 longer select an editor. Existing embedded definitions update explicitly through
@@ -220,6 +221,61 @@ retains detail. Source/loop markers, manual lines and voice heads share the same
 coordinate transform and clipping. Manual lines take precedence over navigation.
 
 Sampler receives block tempo before note events, so a Beat slice triggered at frame zero uses the current tempo. Decoded PCM and transient analysis are shared across graph preparations. Every panel control is a typed SDK widget, including the LFO WaveformPreview; the sampler definition contains no custom drawing primitives.
+
+## Tempo-synchronised sample playback
+
+In Sample mode, the source row keeps all controls on one line. Warp, the warp-mode
+selector and Source BPM sit to the right of Fade out; loop and slice controls use the
+space to their left. The three warp controls appear after a nonempty source is loaded
+and are hidden in Grain, Envelopes and LFO views.
+
+`warp` defaults off and `warp_mode` defaults to Rhythmic. Source BPM is the
+original tempo of the file. Loading a source initializes it from metadata or its
+filename, then the existing loop-tempo detector. If none is available, the current
+project/playback tempo is stored, so enabling Warp at that tempo keeps the original
+speed. Source replacement recalculates its tempo; source and tempo undo together
+and persist through save/reopen. With Warp on, speed is project BPM / Source BPM.
+For example, a 120 BPM loop plays at its original speed in a 120 BPM project and
+half speed in a 60 BPM project, regardless of its length or Start/End trimming.
+
+The editable Source BPM field replaces Fit beats in the same row. Set it to the
+loop's actual BPM to correct detection; double-click requests fresh detection.
+The tooltip shows both BPM values and their speed ratio. Warp on/off remains
+explicit in the button label. Source BPM has no timing effect with Warp off.
+Tempo detection can choose a half/double tempo; the visible original BPM makes
+that correction explicit. The SDK Tempo text format shows BPM, or Auto at zero.
+
+`source_bpm` is appended (range 0..999, default 0). Zero retains the historical
+`warp_beats` timing, preserving saved revisions 1..11. That legacy parameter is
+kept for automation and commands, but hidden in the new panel. A legacy sample
+without an explicit original tempo initializes it when Warp is enabled; explicit
+saved beat lengths are preserved. Editing legacy `warp_beats` clears Source BPM
+back to zero, so old command callers remain effective. Double-clicking Source BPM
+explicitly re-detects the tempo regardless of legacy beat-length settings.
+Repitch changes pitch together with speed and ignores tuning. Rhythmic, Tonal,
+Texture, Smooth and HighQuality all use the shared Signalsmith stretcher today;
+they preserve the tuning from MIDI key, transpose, bend, envelopes and LFO. Speed
+ratios outside 0.25..4 use Repitch, as arrangement clips do. Grain retains its
+existing independent scan and grain tuning; Warp applies only to Sample mode.
+
+The SDK allocates 32 stereo stretch voices and input/output buffers off the audio
+thread when loading a source or preparing a loaded instrument. A note resets its
+existing stretch state, primes it using bounded source lookahead, and streams in
+64-frame blocks without allocation. Source sample rates are converted to the output
+rate during lookahead. Forward, reverse, sliced and looping reads respect their
+source bounds. Stretched loops use the stretcher's continuous spectral overlap;
+Loop fade remains the direct-read loop crossfade. Changing project or source tempo re-primes
+the voice at its current source position. Changing Warp or its mode keeps active notes, source positions and envelopes.
+Switches between Repitch/direct reading and the stretcher use a 5 ms transition
+from the voice's last output. The five modes sharing Signalsmith keep the existing
+stretcher state unchanged when switched, with sample-identical output. Parameters persist and undo through the
+existing device parameter commands. Revision 8 wrappers remain playable with Warp
+off; updating their definition adds the new controls.
+
+LFO rhythmic modes use the same rate conversion as the SDK LfoRate node. Beat,
+Triplet and Dotted select a note divisor from 1 to 64; 16th selects a count of
+sixteenth notes. Tempo changes apply on the next audio block without resetting
+phase. Hz remains the default for older projects.
 
 A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)
 adds Sampler and loads its source without creating an audio clip. Tracks with devices

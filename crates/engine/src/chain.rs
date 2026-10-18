@@ -1278,6 +1278,33 @@ mod sd_tests {
 mod sampler_regressions {
     use super::*;
     #[test]
+    fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
+        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        sampler.load_sample(48000, 1, vec![0.2; 48000].into());
+        for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
+            sampler.set_param(sampler.info().param_index(id).unwrap(), value);
+        }
+        let mut buffer = vec![0.; 960];
+        let mut context = ProcessContext { tempo: 120., playing: true, ..ProcessContext::default() };
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            480,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+        );
+        assert!((sampler.sample_position().unwrap() - 0.005).abs() < 1e-6);
+        context.tempo = 60.;
+        run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context);
+        assert!((sampler.sample_position().unwrap() - 0.0075).abs() < 1e-6);
+        sampler.set_param(sampler.info().param_index("warp_beats").unwrap(), 2.);
+        run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context);
+        assert!((sampler.sample_position().unwrap() - 0.0125).abs() < 1e-6);
+    }
+    #[test]
     fn first_beat_slice_uses_context_before_frame_zero_note() {
         let mut sampler = suhina_device_registry::create("sampler").unwrap();
         let source =

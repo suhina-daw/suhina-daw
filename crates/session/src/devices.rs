@@ -16,6 +16,41 @@ use crate::{CommandError, ParamEdit, Session};
 /// Devices one track may hold.
 const MAX_DEVICES: usize = 64;
 
+fn source_tempo(path: &std::path::Path, audio: &suhina_engine::AudioData, fallback: f64) -> f64 {
+    crate::files::file_tempo(path, audio)
+        .map(|tempo| tempo.bpm)
+        .or_else(|| suhina_media::info::tempo_from_name(&path.to_string_lossy()))
+        .filter(|bpm| bpm.is_finite() && *bpm > 0. && *bpm <= 999.)
+        .unwrap_or(fallback.clamp(1., 999.))
+}
+
+fn initial_sampler_tempo(session: &mut Session, params: &Value, detect: bool) -> Result<Option<f64>, CommandError> {
+    let channel = channel_param(session, params)?;
+    let index = device_index(channel.devices.len(), params)?;
+    let device = channel.devices.get(index).ok_or("device is missing")?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
+        || (!detect && device.params.iter().any(|p| p.id == "source_bpm" && p.value > 0.))
+    {
+        return Ok(None);
+    }
+    let Some(file) = device.sample_file().map(str::to_owned) else {
+        return Ok(None);
+    };
+    let beats = (!detect).then(|| device.params.iter().find(|p| p.id == "warp_beats").map(|p| p.value)).flatten();
+    let start = device.params.iter().find(|p| p.id == "start").map_or(0., |p| p.value);
+    let end = device.params.iter().find(|p| p.id == "end").map_or(1., |p| p.value);
+    let Some(audio) = session.audio().files.get(&file) else {
+        return Ok(None);
+    };
+    let duration = audio.frames() as f64 / f64::from(audio.sample_rate.max(1));
+    let fallback = session.player().map_or(session.project().transport.tempo_bpm, |p| p.monitor().tempo_bpm());
+    let bpm = beats
+        .filter(|_| duration > 0. && end > start)
+        .map(|beats| (beats * 60. / (duration * (end - start))).clamp(1., 999.))
+        .unwrap_or_else(|| source_tempo(std::path::Path::new(&file), audio, fallback));
+    Ok(Some(bpm))
+}
+
 pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let path = params.get("path").and_then(Value::as_str).ok_or("path must be an audio file")?;
     let path = crate::files::absolute(std::path::Path::new(path));
@@ -29,9 +64,19 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
         return Err("sample needs at least two frames, 1..32 channels and a sample rate of 1000..384000 Hz".into());
     }
     let file = path.display().to_string();
+    let fallback = session.player().map_or(session.project().transport.tempo_bpm, |p| p.monitor().tempo_bpm());
+    let bpm = source_tempo(&path, &audio, fallback);
+    let beats = (audio.frames() as f64 / f64::from(audio.sample_rate) * bpm / 60.).clamp(0.25, 1024.);
     let device = channel_param(session, params)?.devices.get_mut(index).ok_or("device is missing")?;
     device.set_sample_file(&file);
-    Ok(json!({"device": index, "path": file, "frames": audio.frames()}))
+    for (id, value) in [("warp_beats", beats), ("source_bpm", bpm)] {
+        if let Some(p) = device.params.iter_mut().find(|p| p.id == id) {
+            p.value = value;
+        } else {
+            device.params.push(DeviceParam::new(id, value));
+        }
+    }
+    Ok(json!({"device": index, "path": file, "frames": audio.frames(), "source_bpm": bpm}))
 }
 
 pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -538,7 +583,12 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id, from devices.list")?;
-    let value = number(params, "value")?;
+    let mut value = number(params, "value")?;
+    let source_tempo =
+        if param == "warp" && value > 0. { initial_sampler_tempo(session, params, false)? } else { None };
+    if param == "source_bpm" && value == 0. {
+        value = initial_sampler_tempo(session, params, true)?.unwrap_or(0.);
+    }
     let track = track_id(&session.project, params)?;
     let channel = channel_param(session, params)?;
     let index = device_index(channel.devices.len(), params)?;
@@ -583,6 +633,12 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     };
     if edits.is_empty() {
         edits.push((param_index, param.to_string(), value));
+    }
+    if matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler")
+        && let Some(value) = source_tempo.or((param == "warp_beats").then_some(0.))
+        && let Some(index) = suhina_device_sdk::sampler::INFO.param_index("source_bpm")
+    {
+        edits.push((index, "source_bpm".into(), value));
     }
     let mut messages = Vec::new();
     let mut off = false;
