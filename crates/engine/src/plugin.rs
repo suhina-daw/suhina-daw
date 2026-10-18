@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use suhina_device_api::NoteEvent;
-use suhina_model::{ChannelId, DeviceKind, Project, TrackId};
+use suhina_model::{ChannelId, DeviceKind, Project, TrackId, walk_devices};
 
 use crate::plugin_params::{ParamEvent, SlotParams};
 
@@ -182,8 +182,12 @@ pub struct PluginSlotInfo {
 pub struct PluginDevice {
     pub key: u64,
     pub channel: ChannelId,
-    /// The device's index among the channel's devices.
+    /// The device's index among the channel's devices; for a device inside a device group, the
+    /// index of the outermost group.
     pub position: usize,
+    /// The device's path on the channel: its index, then branch and index for each device group
+    /// it is in (`suhina_model::device_at`).
+    pub path: Vec<usize>,
     /// The track whose channel it is on, if any.
     pub track: Option<TrackId>,
 }
@@ -196,7 +200,7 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
         DeviceKind::Clap { id } => (1, id.clone()),
         DeviceKind::Vst3 { id } => (2, id.clone()),
         DeviceKind::Vst2 { id } => (3, id.to_string()),
-        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } => return None,
+        DeviceKind::Builtin(_) | DeviceKind::Sd | DeviceKind::Foreign { .. } | DeviceKind::Group(_) => return None,
     };
     // FNV-1a: stable across runs and builds, unlike the standard library's hasher.
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -214,13 +218,17 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
     Some(hash)
 }
 
-/// Every plug-in device in `project`, channel by channel, in order.
+/// Every plug-in device in `project`, channel by channel, in order: depth-first through device
+/// groups, so "the nth of the same plug-in" counts the same way inside groups as outside, and
+/// moving a plug-in into or out of a group keeps its key while the order of identical plug-ins
+/// stays (`docs/spec/device-groups.md`).
 pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
     let mut list = Vec::new();
     for channel in &project.channels {
         let track = project.tracks.iter().find(|t| t.channel == Some(channel.id)).map(|t| t.id);
         let mut seen: Vec<(u64, u32)> = Vec::new();
-        for (position, device) in channel.devices.iter().enumerate() {
+        for (path, device) in walk_devices(&channel.devices) {
+            let position = path.first().copied().unwrap_or(0);
             let Some(first) = plugin_key(channel.id, &device.kind, 0) else { continue };
             let nth = match seen.iter_mut().find(|(k, _)| *k == first) {
                 Some((_, count)) => {
@@ -233,7 +241,7 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
                 }
             };
             if let Some(key) = plugin_key(channel.id, &device.kind, nth) {
-                list.push(PluginDevice { key, channel: channel.id, position, track });
+                list.push(PluginDevice { key, channel: channel.id, position, path, track });
             }
         }
     }
@@ -285,6 +293,20 @@ pub(crate) struct PluginSlot {
 }
 
 impl PluginSlot {
+    /// Takes the settings of `fresh`, the slot built for the same plug-in after an edit, and its
+    /// processor when one reached it (a restart), which then gets the set values again. Never
+    /// allocates.
+    pub(crate) fn adopt(&mut self, fresh: &mut PluginSlot) {
+        self.enabled = fresh.enabled;
+        self.instrument = fresh.instrument;
+        self.latency = fresh.latency;
+        self.params.adopt(&mut fresh.params);
+        if fresh.processor.is_some() {
+            std::mem::swap(&mut self.processor, &mut fresh.processor);
+            self.params.restart();
+        }
+    }
+
     /// Hands the processor the parameter events of the block's frames `from..to`, the span it
     /// runs next; whether there are any. Never allocates.
     pub(crate) fn automate(&mut self, from: usize, to: usize) -> bool {
@@ -502,6 +524,27 @@ mod tests {
         project.channels[0].devices.insert(0, plug(DeviceKind::Builtin("utility".into())));
         let after: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
         assert_eq!(after, found.iter().map(|d| d.key).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_plug_in_keeps_its_key_when_it_moves_into_a_device_group() {
+        use suhina_model::{Branch, DeviceGroup};
+        let vst3 = DeviceKind::Vst3 { id: "ABC".into() };
+        let mut project = crate::chain_tests::empty_project();
+        project.channels[0].devices =
+            vec![plug(vst3.clone()), plug(vst3.clone()), plug(DeviceKind::Clap { id: "c".into() })];
+        let before: Vec<u64> = plugin_devices(&project).iter().map(|d| d.key).collect();
+        // The second VST3 and the CLAP go into a group of two branches after the first VST3.
+        let (first, second, clap) = (plug(vst3.clone()), plug(vst3), plug(DeviceKind::Clap { id: "c".into() }));
+        let branches = vec![
+            Branch { devices: vec![second], ..Branch::new("A") },
+            Branch { devices: vec![clap], ..Branch::new("B") },
+        ];
+        project.channels[0].devices = vec![first, Device::group("G", DeviceGroup::with_branches(branches))];
+        let found = plugin_devices(&project);
+        assert_eq!(found.iter().map(|d| d.key).collect::<Vec<_>>(), before);
+        assert_eq!(found.iter().map(|d| d.path.clone()).collect::<Vec<_>>(), [vec![0], vec![1, 0, 0], vec![1, 1, 0]]);
+        assert_eq!(found.iter().map(|d| d.position).collect::<Vec<_>>(), [0, 1, 1]);
     }
 
     #[test]

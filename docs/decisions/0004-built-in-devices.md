@@ -160,6 +160,25 @@ decision 9.
     only supported node data; the engine prepares them off-thread and runs them in the same
     real-time-safe chain. Their parameter declarations generate UI controls.
 
+13. **A device group is one slot of a chain** (added 2026-10-18, #147; behaviour in the
+    [device groups spec](../spec/device-groups.md)). `Slot::Group` holds its branches, each a
+    list of slots with a buffer of its own, all made when the graph is built
+    (`crates/engine/src/group.rs`). Every branch gets a copy of the group's input and runs its
+    slots one after another over the same span the chain runs, with the same note events, so an
+    instrument in every branch plays every note at its frame. The branches are summed at their
+    volume and equal-power pan, centred at unity like a channel's, then crossfaded linearly with
+    the dry input by `mix` and scaled by `gain`; branch gains, mix and gain move to a new value
+    over 20 ms. A muted branch, or one left out by a solo in its group, still runs its devices
+    and adds nothing, as a muted track does in 9. A group whose branches start with an instrument
+    counts as the chain's instrument and has no dry signal. A graph swap keeps a group's running
+    devices when the identity it compares, its branches' device ids in order, is the same, and
+    takes the new branch gains and parameter values, so an edit to one value never restarts a
+    sound. A switched-off group is not in the chain, like a switched-off device. Latency is
+    compensated inside the group as across tracks in 10: a branch's latency is the sum of its
+    devices', the group's the largest of its branches' (cut at 2 s), every branch is delayed by
+    what it lacks of that and the dry signal by all of it, with delay lines made with the graph,
+    and the group reports its latency to its chain like any device.
+
 ## Not decided yet
 
 - **A chain on the master channel:** how it runs after every other chain, and how latency

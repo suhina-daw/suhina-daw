@@ -505,10 +505,37 @@ pub fn scene_field_action(field: &str, scene: usize, text: &str) -> Option<Actio
 /// from 1). Copy is greyed out on an empty slot, Paste while nothing has been copied.
 /// The menu of a device in a track's chain: removing it takes it off the track, settings and
 /// all.
-pub fn device_menu(ui: &mut Ui, track: TrackId, index: usize, actions: &mut Vec<Action>) {
-    ui.set_min_width(120.0);
+/// A device's menu in the detail area; `branches` is how many branches it has when it is a
+/// device group (`docs/spec/device-groups.md` › The device panel).
+pub fn device_menu(
+    ui: &mut Ui,
+    track: TrackId,
+    at: &crate::detail::detail_view::DeviceAt,
+    branches: Option<usize>,
+    actions: &mut Vec<Action>,
+) {
+    ui.set_min_width(140.0);
+    let device = at.value();
+    if ui.add(egui::Button::new("Group").shortcut_text(shown("Ctrl+G"))).clicked() {
+        actions.push(Action::new("device.group", json!({ "track": track.0, "device": device })));
+        ui.close();
+    }
+    if let Some(branches) = branches {
+        if ui.add_enabled(branches == 1, egui::Button::new("Ungroup").shortcut_text(shown("Ctrl+Shift+G"))).clicked() {
+            actions.push(Action::new("device.ungroup", json!({ "track": track.0, "device": device })));
+            ui.close();
+        }
+        if ui.button("Add branch").clicked() {
+            actions.push(Action::new("branch.add", json!({ "track": track.0, "device": device })));
+            ui.close();
+        }
+    }
+    if ui.button("Duplicate device").clicked() {
+        actions.push(Action::new("device.duplicate", json!({ "track": track.0, "device": device })));
+        ui.close();
+    }
     if ui.button("Remove device").clicked() {
-        actions.push(Action::new("device.remove", json!({ "track": track.0, "device": index })));
+        actions.push(Action::new("device.remove", json!({ "track": track.0, "device": device })));
         ui.close();
     }
 }

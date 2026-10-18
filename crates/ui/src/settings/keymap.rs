@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 67] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 68] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -146,7 +146,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 67] = [
     ("selection.selectAll", "Select every clip in the arrangement", "Edit"),
     ("selection.split", "Split the selected clip at the playhead", "Edit"),
     ("selection.consolidate", "Consolidate the selected clip into a new one", "Edit"),
-    ("selection.group", "Group the selected tracks", "Tracks"),
+    ("selection.group", "Group the selected tracks, or the picked devices into a device group", "Tracks"),
+    ("selection.ungroup", "Take the picked device group of one branch apart", "Edit"),
     ("track.addAudio", "Add an audio track", "Tracks"),
     ("track.addMidi", "Add a MIDI track", "Tracks"),
     ("clip.insertMidi", "Insert an empty MIDI clip over the time selection", "Edit"),
@@ -422,7 +423,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 68] = [
+const DEFAULTS: [(&str, &[&str]); 69] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -458,6 +459,7 @@ const DEFAULTS: [(&str, &[&str]); 68] = [
     ("selection.split", &["Ctrl+E"]),
     ("selection.consolidate", &["Ctrl+J"]),
     ("selection.group", &["Ctrl+G"]),
+    ("selection.ungroup", &["Ctrl+Shift+G"]),
     ("selection.launch", &["Enter"]),
     ("selection.up", &["Up"]),
     ("selection.down", &["Down"]),

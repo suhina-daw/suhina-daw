@@ -774,3 +774,130 @@ fn a_plug_in_with_parameter_events_runs_on_its_own_and_gets_them() {
     assert!(joint > 0);
     assert_eq!(trips.load(Ordering::SeqCst), joint + 2);
 }
+
+fn grouped(branches: Vec<Vec<Device>>) -> Device {
+    let branches = branches.into_iter().map(|devices| Branch { devices, ..Branch::new("B") }).collect();
+    Device::group("G", DeviceGroup::with_branches(branches))
+}
+
+#[test]
+fn a_plug_in_runs_in_a_group_branch_beside_a_dry_one() {
+    let notes = vec![note(0.0, 2.0, 69)];
+    let dry = render_offline(&project(notes.clone(), 2.0, vec![device("utility", &[])]), SR, 512).unwrap();
+    let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
+    let out = render_offline_with_plugins(
+        &p,
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+    )
+    .unwrap();
+    let len = dry.len().min(out.len());
+    let one_and_a_half: Vec<f32> = dry[..len].iter().map(|s| s * 1.5).collect();
+    assert!(max_diff(&out[..len], &one_and_a_half) < 1e-5, "{}", max_diff(&out[..len], &one_and_a_half));
+}
+
+#[test]
+fn a_plug_ins_latency_is_compensated_inside_its_group() {
+    let notes = vec![note(0.0, 2.0, 69)];
+    let delayed = PluginSlotInfo { instrument: false, latency: 64 };
+    let single = project(notes.clone(), 2.0, vec![device("utility", &[]), plug(vst3())]);
+    let reference = render_offline_with_plugins(
+        &single,
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(&single, vec![(Stand::new(Behaviour::Delay(64)), delayed)]),
+    )
+    .unwrap();
+    let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
+    let out = render_offline_with_plugins(
+        &p,
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(&p, vec![(Stand::new(Behaviour::Delay(64)), delayed)]),
+    )
+    .unwrap();
+    let len = reference.len().min(out.len());
+    let doubled: Vec<f32> = reference[..len].iter().map(|s| s * 2.0).collect();
+    assert!(peak(&reference) > 0.1);
+    assert!(max_diff(&out[..len], &doubled) < 1e-5, "{}", max_diff(&out[..len], &doubled));
+}
+
+#[test]
+fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
+    let notes = vec![note(0.0, 1.0, 60)];
+    let p = project(notes, 2.0, vec![grouped(vec![vec![plug(vst3())], vec![plug(vst3())]])]);
+    let out = render_offline_with_plugins(
+        &p,
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Instrument), INSTRUMENT)],
+        ),
+    )
+    .unwrap();
+    // Each plays 0.5 while the note sounds; the track's gains scale the sum the same for both.
+    let one = render_offline_with_plugins(
+        &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(
+            &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)],
+        ),
+    )
+    .unwrap();
+    let len = one.len().min(out.len());
+    let doubled: Vec<f32> = one[..len].iter().map(|s| s * 2.0).collect();
+    assert!(peak(&one) > 0.1);
+    assert!(max_diff(&out[..len], &doubled) < 1e-5);
+    // One of them gone: the other plays alone, the gone one is silent and the render goes on.
+    let half = render_offline_with_plugins(
+        &p,
+        &AudioPool::new(),
+        SR,
+        512,
+        plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Gone), INSTRUMENT)]),
+    )
+    .unwrap();
+    assert!(max_diff(&half[..len], &one[..len]) < 1e-5, "{}", max_diff(&half[..len], &one[..len]));
+}
+
+#[test]
+fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
+    let notes = vec![note(0.0, 8.0, 69)];
+    let p = project(notes, 8.0, vec![plug(vst3())]);
+    let key = plugin_devices(&p)[0].key;
+    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut controller = renderer.controller();
+    let mut info = std::collections::HashMap::new();
+    info.insert(key, EFFECT);
+    controller.set_plugin_info(info);
+    let stand = Stand::new(Behaviour::Gain(0.0));
+    let dropped = Arc::clone(&stand.dropped);
+    controller.send_plugin(key, Box::new(stand)).unwrap();
+    blocks(&mut renderer, 2, 480);
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 2, 480);
+    assert_eq!(peak(&blocks(&mut renderer, 5, 480)), 0.0, "the plug-in silences the track");
+
+    // Into a group of one branch: the same key, the same process, still silencing.
+    let mut edited = p.clone();
+    let moved = edited.channels[0].devices.remove(0);
+    edited.channels[0].devices.push(grouped(vec![vec![moved]]));
+    assert_eq!(plugin_devices(&edited)[0].key, key);
+    controller.update(&edited).unwrap();
+    assert_eq!(peak(&blocks(&mut renderer, 10, 480)), 0.0);
+    controller.collect();
+    assert_eq!(dropped.load(Ordering::SeqCst), 0, "the plug-in carried over into the group");
+
+    // A restart reaches it inside the group.
+    controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
+    assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
+}

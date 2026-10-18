@@ -120,6 +120,8 @@ pub struct StripDevice {
     pub enabled: bool,
     /// A plug-in, run outside Suhina; otherwise a built-in effect or instrument.
     pub plugin: bool,
+    /// For a device group: how many devices it holds, at every depth.
+    pub group: Option<usize>,
 }
 
 /// A track's send to one return track, as the mixer strip shows it.
@@ -322,6 +324,9 @@ impl Grid {
                                     | suhina_engine::model::DeviceKind::Vst3 { .. }
                                     | suhina_engine::model::DeviceKind::Vst2 { .. }
                             ),
+                            group: d.as_group().map(|g| {
+                                g.branches.iter().map(|b| suhina_engine::model::count_devices(&b.devices)).sum()
+                            }),
                         })
                         .collect()
                 }),

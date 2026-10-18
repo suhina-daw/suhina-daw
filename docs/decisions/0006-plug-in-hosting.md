@@ -486,6 +486,18 @@ workspace forbids.
     (our host, then yabridge's Wine process). Windows plug-ins that exist only as VST2 do not
     work this way (decision 8).
 
+13. **Plug-ins inside device groups** (added 2026-10-18, #147;
+    [device groups](../spec/device-groups.md)). A plug-in inside a group still runs out of
+    process; a group is not a process boundary. Its key counts "how many of the same plug-in
+    come before it" depth-first through the channel's whole tree of devices, so moving it into or
+    out of a group keeps its process and state while the order of identical plug-ins stays.
+    Inside a branch it runs its round trip and is waited for within the block's deadline, one
+    after another with the branch's other devices; it does not take part in the joint blocks or
+    the staged runs of 4, which a later change can extend to a group's branches. A missed block
+    does what it does on a track: an effect passes its input, an instrument is silent, and the
+    rest of the group goes on. Its state is read and saved, and it restarts, by its key like any
+    other plug-in.
+
 ## Not decided yet
 
 - **Hosting VST2 directly.** The interface description and where it comes from is

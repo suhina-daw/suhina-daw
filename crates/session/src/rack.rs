@@ -1084,8 +1084,11 @@ impl Rack {
             if self.instances.contains_key(&found.key) || self.rebinding.contains(&found.key) {
                 continue;
             }
-            let Some(device) =
-                project.channels.iter().find(|c| c.id == found.channel).and_then(|c| c.devices.get(found.position))
+            let Some(device) = project
+                .channels
+                .iter()
+                .find(|c| c.id == found.channel)
+                .and_then(|c| suhina_model::device_at(&c.devices, &found.path))
             else {
                 continue;
             };
@@ -1660,8 +1663,11 @@ pub fn start_offline(project: &Project, audio: &AudioPool, env: &PluginEnv, samp
     let mut offline = OfflinePlugins::none();
     let mut missing = Vec::new();
     for found in plugin_devices(project) {
-        let Some(device) =
-            project.channels.iter().find(|c| c.id == found.channel).and_then(|c| c.devices.get(found.position))
+        let Some(device) = project
+            .channels
+            .iter()
+            .find(|c| c.id == found.channel)
+            .and_then(|c| suhina_model::device_at(&c.devices, &found.path))
         else {
             continue;
         };

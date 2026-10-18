@@ -119,7 +119,7 @@ impl Target {
             Kind::Builtin(spec) => Ok(spec.clamp(value)),
             Kind::Sd(parameter) if value.is_finite() => Ok(parameter.clamp(value)),
             Kind::Sd(_) => Err("value must be finite".into()),
-            Kind::Plugin(id) => plugin_value(session, self.track, self.device.unwrap_or(0), *id, value),
+            Kind::Plugin(id) => plugin_value(session, self.track, &[self.device.unwrap_or(0)], *id, value),
         }
     }
 

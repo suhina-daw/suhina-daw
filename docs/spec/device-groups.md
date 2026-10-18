@@ -2,12 +2,17 @@
 description: Planned device groups - several devices on a track as one unit, with parallel branches, per-branch volume, pan, mute and solo, a mix, macros, group presets, latency compensation, the model and the commands
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
-status: planned
+status: current
 last_verified: 2026-10-15
 covers:
   - crates/model/src/lib.rs
+  - crates/model/src/groups.rs
+  - crates/project-file/src/lib.rs
   - crates/engine/src/chain.rs
+  - crates/engine/src/group.rs
   - crates/session/src/devices.rs
+  - crates/session/src/device_groups.rs
+  - crates/ui/src/detail/detail_view.rs
 ---
 
 # Device groups
@@ -18,9 +23,12 @@ covers:
   ([ADR 0006](../decisions/0006-plug-in-hosting.md)) and the model
   ([ADR 0001](../decisions/0001-daw-neutral-model.md)). Nothing here is observed from another
   program; nothing is implemented yet.
-- **Status:** planned. The split into issues is at the end (*Implementation plan*); the
-  questions the maintainer decides are in *Open questions*. Where this document had to choose,
-  it says so and why, so a different answer changes one place.
+- **Status:** steps 1 to 6 of the *Implementation plan* are built (#147): the model and file,
+  groups in the engine with latency compensation, the commands, plug-ins inside groups and the
+  panel with Ctrl+G. Macros (7), group presets (8) and key ranges (9) are still planned; the model
+  already keeps the eight macros and their mappings. The questions the maintainer decides are in
+  *Open questions*, answered by the defaults this document chose. Where this document had to
+  choose, it says so and why, so a different answer changes one place.
 
 ## What it is
 

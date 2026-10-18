@@ -11,7 +11,8 @@ covers:
 
 # The .suhina project file
 
-Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 1. It is
+Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 1, or 2 when
+the project holds a device group. It is
 UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ([ADR 0001](../decisions/0001-daw-neutral-model.md)); this lists them and what a reader accepts.
 
@@ -31,9 +32,11 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 
 ## Rules
 
-- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows;
-  anything else is refused, and the message names the format the file gave. Files saved before
-  2026-10-13 named another format and are not read
+- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (2);
+  anything else is refused, and the message names the format the file gave. A writer writes 2
+  only when a channel holds a device group and 1 otherwise, so a project without groups still
+  opens in a Suhina from before them ([device groups](device-groups.md) › Project file). Files
+  saved before 2026-10-13 named another format and are not read
   ([ADR 0010](../decisions/0010-project-files.md) decision 12).
 - Ids are whole numbers that fit 32 bits. Numbers are finite (a writer writes 0 for one that is
   not). A list or an optional field may be left out or `null`.
@@ -66,7 +69,8 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 | `transport` | `tempo_bpm` (1–999, default 120); `time_signature` `[numerator, denominator]`, each 1–255 (default `[4, 4]`); `loop` (optional, left out without a loop region): `{ "start", "end", "enabled" }`, beats with `start` from 0 and `end` after it, `enabled` true or false (default false) ([loop region](arrangement-editing.md#loop-region)); `tempo_changes` `[{ beat, bpm, ramp }]` (beat after 0 and at most 120 000, bpm 1–999, `ramp` default false) and `time_signature_changes` `[{ bar, time_signature }]` (bar from 1, counted from 0; numerator 1–99, denominator 1, 2, 4 … 64), each at most 10 000 and left out when empty ([tempo map](tempo-map.md)) |
 | track | `id`; `name`; `color` `"#RRGGBB"` or `null`; `notes`, `audio` (what it plays); `channel` (its mixer channel) and `parent` (its group) or `null`; `midi_input` `{ port, channel }`, what it hears while armed ([ADR 0017](../decisions/0017-inputs-and-latency.md)): `port` `"all"` (the default), `"none"` or `{ "name" }`, `channel` 1–16 or `null` for every one; left out when it is every port and channel; `audio_input` `{ channels, monitor }`, what it hears of the audio input device: `channels` `[]`, `[n]` or `[n, n + 1]` (from 1, at most 256), `monitor` `"auto"` (while armed, the default), `"in"` or `"off"`; left out when it is no input and auto |
 | channel | `id`; `name`; `role` `regular`, `master`, `effect` (a return) or `submix`; `volume` (linear, not negative, default 1), `pan` (−1 to 1); `mute`, `solo`; `cue` (also heard on the cue output; written only when true, [spec](cue-output.md)); `output` (a channel, `null` for the audio output); `sends` `[{ target, level, pre_fader }]`; `devices`; `automation` (lanes of `volume`, `pan`, `mute`, as a device's; left out when the channel has none) |
-| device | `name`; `kind` `{ "type": "builtin", "id" }`, `sd`, `clap`, `vst3` (32 hex digits), `vst2` (a whole number) or `foreign` `{ format, id }`; `enabled` (default true); `state` (base64: plug-in state or embedded UTF-8 .sd graph); `params` `[{ id, value }]` (a built-in effect or instrument's, or an .sd device's, by the parameter's stable id; a plug-in's by its parameter id in decimal, in the plug-in's own range, set over its `state`); `automation` `[{ param, points: [{ beat, value, curve }], enabled }]` (left out when the device has none; points in beat order, two at one beat a jump; `curve` -1 to 1, the shape of the segment to the next point, left out for 0, a straight line; `enabled` left out when true; see [automation.md](automation.md)). A VST3 controller's state is the extension `Vst3ControllerState` |
+| device | `name`; `kind` `{ "type": "builtin", "id" }`, `sd`, `clap`, `vst3` (32 hex digits), `vst2` (a whole number), `foreign` `{ format, id }` or `group` `{ branches, macros }` (below); a `type` the reader does not know is refused with "this project uses a device a newer Suhina knows", never dropped; `enabled` (default true); `state` (base64: plug-in state or embedded UTF-8 .sd graph); `params` `[{ id, value }]` (a built-in effect or instrument's, or an .sd device's, by the parameter's stable id; a plug-in's by its parameter id in decimal, in the plug-in's own range, set over its `state`); `automation` `[{ param, points: [{ beat, value, curve }], enabled }]` (left out when the device has none; points in beat order, two at one beat a jump; `curve` -1 to 1, the shape of the segment to the next point, left out for 0, a straight line; `enabled` left out when true; see [automation.md](automation.md)). A VST3 controller's state is the extension `Vst3ControllerState` |
+| device group | the `kind` of a device group ([spec](device-groups.md)): `branches` (1 to 16), each `{ name, volume, pan, mute, solo, devices }` (`volume` linear, not negative, default 1; `pan` −1 to 1, default 0; `mute`, `solo` default false; `devices` as a channel's, groups inside nested at most four deep, at most 64 devices on a channel counting every depth; `extensions`); `macros`, exactly eight, each `{ name, mappings }`, a mapping `{ device, param, min, max }` with `device` a path of whole numbers relative to the group (branch, index, then again for each nested group), `param` a parameter id, `min` and `max` 0 to 1 (default 0 and 1); no parameter mapped twice. The group's `mix`, `gain` and `macro.1` … `macro.8` are its device's `params` |
 | content | `id`; `name`; `length` (beats); `lanes`, each `{ target, notes }` or `{ target, audio }` (`target` a track for a shared pattern, else `null`); `scale` (written only when the content has one, missing or `null` means none; a scale below) |
 | scale | `{ "root", "mode" }`: `root` a whole number 0 (C) to 11 (B); `mode` `major`, `minor`, `harmonicMinor`, `melodicMinor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `majorPentatonic`, `minorPentatonic` or `blues`. A root outside 0 to 11, a mode not in this list or a scale that is not such an object is an error naming where it is, as other bad values are ([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: clip scales) |
 | `next_id` | in `project`: the next id a lane, clip or scene gets; left out while nothing has an id |

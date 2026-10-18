@@ -14,6 +14,7 @@ mod clip_color;
 mod clip_edges;
 mod clip_shape;
 mod commands;
+mod device_groups;
 mod devices;
 mod editing;
 mod files;
@@ -796,6 +797,12 @@ impl Session {
         self.plugins.report(key)
     }
 
+    /// The report of the plug-in device at `path` on `track`, inside device groups too.
+    pub fn plugin_report_at(&mut self, track: suhina_model::TrackId, path: &[usize]) -> Option<PluginReport> {
+        let key = plugin_key_at_path(&self.project, track, path)?;
+        self.plugins.report(key)
+    }
+
     pub fn player(&self) -> Option<&Player> {
         self.player.as_ref()
     }
@@ -952,7 +959,7 @@ impl Session {
                 .channels
                 .iter_mut()
                 .find(|c| c.id == device.channel)
-                .and_then(|c| c.devices.get_mut(device.position));
+                .and_then(|c| suhina_model::device_at_mut(&mut c.devices, &device.path));
             if let Some(slot) = slot {
                 slot.state = Some(state.data.clone());
                 slot.extensions.0.retain(|e| e.key != "Vst3ControllerState");
@@ -1291,11 +1298,13 @@ impl Session {
 
 /// The key of the plug-in device at `device` among `track`'s channel's devices.
 pub(crate) fn plugin_key_at(project: &Project, track: suhina_model::TrackId, device: usize) -> Option<u64> {
+    plugin_key_at_path(project, track, &[device])
+}
+
+/// The key of the plug-in device at `path` on `track`'s channel, inside device groups too.
+pub(crate) fn plugin_key_at_path(project: &Project, track: suhina_model::TrackId, path: &[usize]) -> Option<u64> {
     let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    suhina_engine::plugin_devices(project)
-        .into_iter()
-        .find(|d| d.channel == channel && d.position == device)
-        .map(|d| d.key)
+    suhina_engine::plugin_devices(project).into_iter().find(|d| d.channel == channel && d.path == path).map(|d| d.key)
 }
 
 fn unknown_command(id: &str) -> CommandError {

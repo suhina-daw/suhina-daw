@@ -442,8 +442,12 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         list_painter.rect_filled(row, 0.0, fill);
         let text = row.shrink2(Vec2::new(4.0, 0.0));
         let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
-        let name = if device.plugin {
-            Rect::from_min_max(text.min, Pos2::new(text.right() - 36.0, text.bottom()))
+        let tag = match device.group {
+            Some(count) => Some(format!("group {count}")),
+            None => device.plugin.then(|| "plug-in".to_owned()),
+        };
+        let name = if tag.is_some() {
+            Rect::from_min_max(text.min, Pos2::new(text.right() - 40.0, text.bottom()))
         } else {
             text
         };
@@ -455,12 +459,12 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             theme::ui_font(theme::TEXT_SMALL),
             color,
         );
-        if device.plugin {
+        if let Some(tag) = &tag {
             widgets::text_in(
                 &list_painter,
                 text,
                 Align2::RIGHT_CENTER,
-                "plug-in",
+                tag,
                 theme::ui_font(theme::TEXT_TINY),
                 theme::text_hint(),
             );
