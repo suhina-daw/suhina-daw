@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 63] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 64] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -146,7 +146,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 63] = [
     ("selection.selectAll", "Select every clip in the arrangement", "Edit"),
     ("selection.split", "Split the selected clip at the playhead", "Edit"),
     ("selection.consolidate", "Consolidate the selected clip into a new one", "Edit"),
-    ("selection.group", "Group the selected tracks", "Tracks"),
+    ("selection.group", "Group the selected tracks, or the picked devices into a device group", "Tracks"),
+    ("selection.ungroup", "Take the picked device group of one branch apart", "Edit"),
     ("selection.launch", "Launch the selected clip slot", "Session"),
     ("selection.up", "Select the clip slot above", "Session"),
     ("selection.down", "Select the clip slot below", "Session"),
@@ -412,7 +413,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 64] = [
+const DEFAULTS: [(&str, &[&str]); 65] = [
     ("file.new", &["Ctrl+T"]),
     ("file.open", &["Ctrl+O"]),
     ("file.save", &["Ctrl+S"]),
@@ -444,6 +445,7 @@ const DEFAULTS: [(&str, &[&str]); 64] = [
     ("selection.split", &["Ctrl+E"]),
     ("selection.consolidate", &["Ctrl+J"]),
     ("selection.group", &["Ctrl+G"]),
+    ("selection.ungroup", &["Ctrl+Shift+G"]),
     ("selection.launch", &["Enter"]),
     ("selection.up", &["Up"]),
     ("selection.down", &["Down"]),

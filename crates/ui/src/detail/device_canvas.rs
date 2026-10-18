@@ -243,7 +243,7 @@ pub(crate) fn show(
     canvas: &Arc<DeviceUi>,
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    device: &crate::detail::detail_view::DeviceAt,
     actions: &mut Vec<Action>,
 ) {
     let loaded = images(ui.ctx(), canvas);
@@ -372,7 +372,7 @@ pub(crate) fn show(
                     });
                 });
                 if let Some(value) = picked.filter(|v| *v != p.value) {
-                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":device,"param":p.id,"value":value,"continuous":false,"gesture":control.id})));
+                    control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":device.value(),"param":p.id,"value":value,"continuous":false,"gesture":control.id})));
                 }
                 continue;
             }
@@ -467,7 +467,7 @@ pub(crate) fn show(
                 control_actions.push(Action::new(
                     "device.setParam",
                     json!({
-                        "track": track.0, "device": device, "param": p.id, "value": value,
+                        "track": track.0, "device": device.value(), "param": p.id, "value": value,
                         "continuous": response.dragged() || response.is_pointer_button_down_on() || button,
                         "gesture": control.id
                     }),
@@ -557,7 +557,7 @@ mod tests {
                 &preview_canvas,
                 &preview_parameters,
                 TrackId(1),
-                0,
+                &crate::detail::detail_view::DeviceAt(vec![0]),
                 &mut Vec::new(),
             );
         });
@@ -613,7 +613,7 @@ mod tests {
                 &narrow_canvas,
                 &narrow_parameters,
                 TrackId(1),
-                0,
+                &crate::detail::detail_view::DeviceAt(vec![0]),
                 &mut Vec::new(),
             );
         });
@@ -639,7 +639,7 @@ mod tests {
                 &time_canvas,
                 &time_parameters,
                 TrackId(1),
-                0,
+                &crate::detail::detail_view::DeviceAt(vec![0]),
                 &mut Vec::new(),
             );
         });
@@ -705,7 +705,7 @@ mod tests {
                     &canvas,
                     &state.0,
                     TrackId(1),
-                    0,
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
                     &mut actions,
                 );
                 for a in &actions {
@@ -843,7 +843,7 @@ mod tests {
                         canvas,
                         parameters,
                         TrackId(1),
-                        0,
+                        &crate::detail::detail_view::DeviceAt(vec![0]),
                         &mut actions,
                     )
                 },
@@ -886,7 +886,7 @@ mod tests {
                     &canvas,
                     &params,
                     TrackId(1),
-                    0,
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
                     &mut actions,
                 )
             });
@@ -977,7 +977,7 @@ mod tests {
                     canvas,
                     &[],
                     TrackId(1),
-                    0,
+                    &crate::detail::detail_view::DeviceAt(vec![0]),
                     &mut actions,
                 );
             }

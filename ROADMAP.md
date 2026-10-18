@@ -175,7 +175,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Device groups play: devices grouped on a track run in parallel branches, each with its own
   volume, pan, mute and solo, summed with a mix against the dry signal and an output gain;
   instruments in a group are layered on the same notes, and groups nest four deep
-  ([spec](docs/spec/device-groups.md)).
+  ([spec](docs/spec/device-groups.md)). Ctrl+G puts the devices picked in a strip's list or the
+  chain into a group, Ctrl+Shift+G takes one apart; the group's panel sets its mix and gain and
+  each branch's volume, pan, mute and solo, and shows a branch's devices after it. Plug-ins run
+  inside groups too. Commands: `device.group`, `device.ungroup`, `device.addGroup`,
+  `device.move`, `device.duplicate`, `branch.*`, with device paths such as `"2/1/0"`.
 - The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
   the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
   it ([nam spec](docs/spec/nam-amp-and-cab.md)).

@@ -124,7 +124,8 @@ of clip is on.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. |
+| Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. With devices picked (clicked in a mixer strip's device list or in the device chain), it puts those devices into a device group instead: one box that holds them, with branches that run side by side. |
+| Ctrl+Shift+G | `selection.ungroup` | A picked device group | Takes a device group of one branch apart, putting its devices back in its place. |
 
 ## Session view
 

@@ -15,7 +15,7 @@ use suhina_device_nam_amp_modeler::INFO as AMP_INFO;
 use suhina_device_nam_cab_loader::INFO as CAB_INFO;
 use suhina_engine::model::TrackId;
 
-use crate::detail::detail_view::DeviceBox;
+use crate::detail::detail_view::{DeviceAt, DeviceBox};
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
@@ -96,7 +96,7 @@ fn value_of(device: &DeviceBox, parameter: &ParamInfo) -> f64 {
 fn set_param(
     actions: &mut Vec<Action>,
     track: TrackId,
-    device: usize,
+    device: &DeviceAt,
     parameter: &ParamInfo,
     value: f64,
     continuous: bool,
@@ -104,7 +104,7 @@ fn set_param(
     actions.push(Action::new(
         "device.setParam",
         serde_json::json!({
-            "track": track.0, "device": device, "param": parameter.id,
+            "track": track.0, "device": device.value(), "param": parameter.id,
             "value": parameter.clamp(value), "continuous": continuous,
         }),
     ));
@@ -129,7 +129,7 @@ fn knob(
     ui: &Ui,
     cell: Rect,
     track: TrackId,
-    device_index: usize,
+    device_index: &DeviceAt,
     prefix: &str,
     parameter: &'static ParamInfo,
     value: f64,
@@ -192,7 +192,7 @@ fn mid_freq_line(
     ui: &Ui,
     under: Rect,
     track: TrackId,
-    device_index: usize,
+    device_index: &DeviceAt,
     prefix: &str,
     parameter: &'static ParamInfo,
     value: f64,
@@ -278,7 +278,7 @@ fn vslider(
     ui: &Ui,
     column: Rect,
     track: TrackId,
-    device_index: usize,
+    device_index: &DeviceAt,
     prefix: &str,
     parameter: &'static ParamInfo,
     value: f64,
@@ -340,7 +340,7 @@ fn toggle(
     ui: &Ui,
     rect: Rect,
     track: TrackId,
-    device_index: usize,
+    device_index: &DeviceAt,
     prefix: &str,
     parameter: &'static ParamInfo,
     on: bool,
@@ -374,7 +374,7 @@ fn toggle(
 /// The amp's big on/off: lit while the device runs; a click turns the whole device off or on
 /// again, as the header's square and the 0 key do.
 fn power(ui: &Ui, rect: Rect, track: TrackId, device: &DeviceBox, prefix: &str, actions: &mut Vec<Action>) {
-    let id = egui::Id::new(("nam-power", track.0, device.index));
+    let id = egui::Id::new(("nam-power", track.0, &device.at));
     let response = ui.interact(rect, id, Sense::click());
     let (fill, text) = widgets::toggle_colors(ui, &response, device.enabled);
     ui.painter().rect_filled(rect, 3.0, fill);
@@ -383,7 +383,7 @@ fn power(ui: &Ui, rect: Rect, track: TrackId, device: &DeviceBox, prefix: &str, 
     if response.clicked() {
         actions.push(Action::new(
             "device.setEnabled",
-            serde_json::json!({ "track": track.0, "device": device.index, "enabled": !device.enabled }),
+            serde_json::json!({ "track": track.0, "device": device.at.value(), "enabled": !device.enabled }),
         ));
     }
     response.widget_info(|| {
@@ -539,7 +539,7 @@ fn rows_and_picks(
     let (wide, left) = (rect.width(), rect.left());
     let prefix = prefix_of(device);
     let current = device.file.as_deref().unwrap_or("");
-    let salt = (track.0, device.index);
+    let salt = (track.0, &device.at);
     let in_pack = pack_of_current(current, sets);
     let shown_pack = in_pack.map_or(String::new(), |pack| pack.name.clone());
     // The pack row: the current pack, the folder's packs under, the steppers beside.
@@ -634,7 +634,7 @@ pub(crate) fn show_amp(
     if let Some(pick) = rows_and_picks(ui, rect, top, bottom, track, device, &lists.models, "model", "No model") {
         actions.push(Action::new(
             "device.setNamFile",
-            serde_json::json!({ "track": track.0, "device": device.index, "path": pick }),
+            serde_json::json!({ "track": track.0, "device": device.at.value(), "path": pick }),
         ));
     }
     let controls = controls_rect(rect, top, bottom);
@@ -658,7 +658,7 @@ pub(crate) fn show_amp(
         ui,
         gain_cell.shrink(2.0),
         track,
-        device.index,
+        &device.at,
         &prefix,
         amp_parameter("inputGain"),
         value_of(device, amp_parameter("inputGain")),
@@ -672,7 +672,7 @@ pub(crate) fn show_amp(
         ui,
         volume_cell.shrink(2.0),
         track,
-        device.index,
+        &device.at,
         &prefix,
         amp_parameter("outputVolume"),
         value_of(device, amp_parameter("outputVolume")),
@@ -686,7 +686,7 @@ pub(crate) fn show_amp(
     let cells = split(trio, 3);
     for (cell, id) in cells.iter().zip(["eqBass", "eqMid", "eqTreble"]) {
         let parameter = amp_parameter(id);
-        knob(ui, cell.shrink(2.0), track, device.index, &prefix, parameter, value_of(device, parameter), actions);
+        knob(ui, cell.shrink(2.0), track, &device.at, &prefix, parameter, value_of(device, parameter), actions);
     }
     // Under the trio: the Mid Freq's line with its handle, then the EQ button under that. The
     // Delay knob and the HQ button share a narrow column at the trio's right.
@@ -698,7 +698,7 @@ pub(crate) fn show_amp(
         ui,
         mid_freq_rect,
         track,
-        device.index,
+        &device.at,
         &prefix,
         amp_parameter("eqMidFreq"),
         value_of(device, amp_parameter("eqMidFreq")),
@@ -715,7 +715,7 @@ pub(crate) fn show_amp(
         ui,
         Rect::from_center_size(egui::pos2(eq_row.left() + 32.0, eq_row.center().y), egui::vec2(48.0, ROW_HEIGHT)),
         track,
-        device.index,
+        &device.at,
         &prefix,
         amp_parameter("eqOn"),
         on_of(device, amp_parameter("eqOn")),
@@ -730,14 +730,14 @@ pub(crate) fn show_amp(
         ui,
         Rect::from_min_max(aux.left_top(), egui::pos2(aux.right(), aux.top() + 56.0)).shrink(2.0),
         track,
-        device.index,
+        &device.at,
         &prefix,
         amp_parameter("delay"),
         value_of(device, amp_parameter("delay")),
         actions,
     );
     let hq_cell = Rect::from_center_size(egui::pos2(aux.center().x, aux.top() + 70.0), egui::vec2(48.0, ROW_HEIGHT));
-    toggle(ui, hq_cell, track, device.index, &prefix, amp_parameter("hq"), on_of(device, amp_parameter("hq")), actions);
+    toggle(ui, hq_cell, track, &device.at, &prefix, amp_parameter("hq"), on_of(device, amp_parameter("hq")), actions);
     // The failure note, beside the file row's left, over the file row's line.
     if let Some(note) = note_of(device, lists) {
         widgets::text_in(
@@ -771,7 +771,7 @@ pub(crate) fn show_cab(
     if let Some(pick) = rows_and_picks(ui, rect, top, bottom, track, device, &lists.irs, "cab", "No IR") {
         actions.push(Action::new(
             "device.setNamFile",
-            serde_json::json!({ "track": track.0, "device": device.index, "path": pick }),
+            serde_json::json!({ "track": track.0, "device": device.at.value(), "path": pick }),
         ));
     }
     let controls = controls_rect(rect, top, bottom);
@@ -786,7 +786,7 @@ pub(crate) fn show_cab(
         ui,
         delay_cell.shrink(2.0),
         track,
-        device.index,
+        &device.at,
         &prefix,
         cab_parameter("delay"),
         value_of(device, cab_parameter("delay")),
@@ -800,7 +800,7 @@ pub(crate) fn show_cab(
         ui,
         volume_cell,
         track,
-        device.index,
+        &device.at,
         &prefix,
         cab_parameter("volume"),
         value_of(device, cab_parameter("volume")),
@@ -823,7 +823,7 @@ pub(crate) fn show_cab(
                 egui::vec2(48.0, ROW_HEIGHT),
             ),
             track,
-            device.index,
+            &device.at,
             &prefix,
             parameter,
             on_of(device, parameter),
@@ -838,7 +838,7 @@ pub(crate) fn show_cab(
     let cells = split(cuts, 3);
     for (cell, id) in cells.iter().zip(["cutBass", "cutMid", "cutTreble"]) {
         let parameter = cab_parameter(id);
-        knob(ui, cell.shrink(2.0), track, device.index, &prefix, parameter, value_of(device, parameter), actions);
+        knob(ui, cell.shrink(2.0), track, &device.at, &prefix, parameter, value_of(device, parameter), actions);
     }
     let mid_freq_rect = Rect::from_min_max(
         egui::pos2(middle_rect.left(), cuts.bottom() + 2.0),
@@ -850,7 +850,7 @@ pub(crate) fn show_cab(
         ui,
         mid_freq_cell,
         track,
-        device.index,
+        &device.at,
         &prefix,
         cab_parameter("cutMidFreq"),
         value_of(device, cab_parameter("cutMidFreq")),

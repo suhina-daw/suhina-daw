@@ -2170,17 +2170,20 @@ impl App {
         if let Some(shown_track) = clip.map(ClipRef::track).or(track)
             && let Ok(session) = self.projects.session_mut(None)
         {
-            let devices = session
+            // Every device's path, inside device groups too.
+            let paths: Vec<Vec<usize>> = session
                 .project()
                 .tracks
                 .iter()
                 .find(|t| t.id == shown_track)
                 .and_then(|t| t.channel)
                 .and_then(|c| session.project().channels.iter().find(|ch| ch.id == c))
-                .map_or(0, |c| c.devices.len());
-            for index in 0..devices {
-                if let Some(report) = session.plugin_report(shown_track, index) {
-                    reports.insert((shown_track, index), report);
+                .map_or_else(Vec::new, |c| {
+                    suhina_engine::model::walk_devices(&c.devices).into_iter().map(|(path, _)| path).collect()
+                });
+            for path in paths {
+                if let Some(report) = session.plugin_report_at(shown_track, &path) {
+                    reports.insert((shown_track, path), report);
                 }
             }
         }
@@ -2293,7 +2296,7 @@ impl App {
         }
         let nam_lists = self.nam_lists();
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
-            detail_view::build_with(s.project(), track, clip, &mut |t, i| reports.remove(&(t, i)), nam_lists)
+            detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
         // What the piano roll has selected, described for the clip column (› Clip column).
         if let (detail_view::Detail::Clip(info, _), Some(piano), Some(session)) = (&mut shown, &piano, self.session()) {
@@ -3675,6 +3678,35 @@ impl App {
                         actions.push(Action::new("clip.paste", params))
                     }
                     None => self.status = Status::Hint("Select a clip or a track to paste on".into()),
+                }
+            }
+            // Picked devices (a strip's list or the chain) go into a device group: those next to
+            // each other on one track, in the place of the first.
+            "selection.group" if self.device_focus && self.selected_device.is_some() => {
+                let picks = self.device_picks();
+                let Some((track, _)) = picks.first().copied() else { return };
+                let mut indices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                indices.sort_unstable();
+                indices.dedup();
+                let (Some(&first), Some(&last)) = (indices.first(), indices.last()) else { return };
+                if last - first + 1 != indices.len() {
+                    self.status = Status::Hint("Group devices that sit next to each other".into());
+                    return;
+                }
+                actions.push(Action::new(
+                    "device.group",
+                    json!({ "track": track.0, "device": first, "count": indices.len() }),
+                ));
+                self.selected_device = Some((track, first));
+                self.device_picks = vec![(track, first)];
+            }
+            "selection.ungroup" => {
+                if self.device_focus
+                    && let Some((track, index)) = self.selected_device
+                {
+                    actions.push(Action::new("device.ungroup", json!({ "track": track.0, "device": index })));
+                } else {
+                    self.status = Status::Hint("Click a device group first".into());
                 }
             }
             "selection.group" => {

@@ -447,3 +447,58 @@ fn devices_picked_in_the_strip_are_copied_pasted_and_deleted_together() {
     harness.run();
     assert_eq!(drums_devices(&harness), pasted, "one undo brings both back");
 }
+
+/// The devices on Drums.
+fn drums(harness: &Harness<'static, App>) -> Vec<Device> {
+    let p = harness.state().session().unwrap().project();
+    let channel = p.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel).unwrap();
+    p.channels.iter().find(|c| c.id == channel).unwrap().devices.clone()
+}
+
+#[test]
+fn ctrl_g_groups_the_picked_devices_and_the_group_panel_edits_its_branches() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let before = drums_devices(&harness);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    let grouped = drums(&harness);
+    assert_eq!(grouped.len(), before.len() - 1, "two devices became one group");
+    let group = grouped.iter().find_map(Device::as_group).expect("a device group");
+    let inside: Vec<&str> = group.branches[0].devices.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(inside, ["Utility", "Limiter"]);
+    // The strip lists the group with how many devices it holds.
+    assert!(harness.query_by_label("Show Group on Drums").is_some());
+
+    // The group's panel in the detail area: add a branch, mute and solo it.
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.get_by_label("Add a branch to Group").click();
+    harness.run();
+    harness.get_by_label("Mute branch Branch 2").click();
+    harness.run();
+    harness.get_by_label("Solo branch Branch 1").click();
+    harness.run();
+    let group = drums(&harness).iter().find_map(Device::as_group).cloned().expect("a device group");
+    assert_eq!(group.branches.len(), 2);
+    assert!(group.branches[1].mute && group.branches[0].solo);
+    // The first branch's devices follow the panel in the chain.
+    assert!(harness.query_by_label("Device Utility").is_some());
+
+    // Ctrl+Shift+G takes a group of one branch apart; this one has two.
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::G);
+    harness.run();
+    assert!(drums(&harness).iter().any(|d| d.as_group().is_some()), "two branches stay a group");
+    for _ in 0..3 {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+    }
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::G);
+    harness.run();
+    assert_eq!(drums_devices(&harness), before, "ungrouped, the chain is as it was");
+}

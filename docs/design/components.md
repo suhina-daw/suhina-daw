@@ -484,6 +484,19 @@ top. Files dropped anywhere on it open as on the rest of the window.
 | Plug-in | A 16 px row with where it stands, 10 px: the plug-in's name and vendor (and its latency in frames) in `text.secondary` while it runs; "Loading …", "Not running" (the project is not playing) or "Not installed; kept with its settings" in `text.hint`; "Crashed: …" or "Could not start: …" in `recording`. Under it a 96 × 18 px button, `control.background` (hover `control.hoverBackground`), 1 px `border.strong` border, 10 px `text.primary`: "Open editor" or "Close editor" while it runs, "Restart" after a crash; none otherwise. It runs `device.openEditor`, `device.closeEditor` or `device.restart`. With Settings › Plug-ins › Editors › Device view, an open editor sits under the button, 6 px in: in a row the device is as wide as the editor plus 12 px (at least 220 px) and the detail area at least as tall as the tallest open editor; stacked, the device is as tall as the editor needs; what does not fit is cut off at the panel's edge |
 | No parameters | Another DAW's device: "Kept so the chain keeps its shape"; a built-in effect or instrument without parameters: "No parameters" (10 px `text.hint`) |
 | Stacked | In a column, each device is as tall as its parameters (20 px header, 6 px padding, 16 px a parameter; a plug-in as tall as its state row and button, plus an open embedded editor), 1 px apart |
+| Menu | **Group** (Ctrl+G, `device.group`), **Duplicate device** (`device.duplicate`), **Remove device**; on a device group also **Ungroup** (Ctrl+Shift+G, only with one branch) and **Add branch** ([device groups](../spec/device-groups.md)) |
+
+### Device group panel
+
+A device group ([spec](../spec/device-groups.md) › The device panel) is one panel in the chain, 260 px wide in a row (the column's width stacked), followed by the devices of its shown branch as the chain's own panels; nested groups do the same.
+
+| Part | Spec |
+|---|---|
+| Header | 20 px as a device's: on switch, name, then **Mix** (62 px) and **Gain** (66 px) value fields 2 px in from the header's edges, 2 px apart, then the remove ×. A value field is `control.background` (hover `control.hoverBackground`), its label 10 px `text.hint` on the left, its value 10 px `text.value` on the right; dragged sideways it changes (Mix 0.5 % a point, Gain 0.1 dB a point), a double-click resets it (100 %, 0 dB); the values go out while dragging, as `device.setParam` continuous edits |
+| Branch row | 18 px tall, 20 px apart, 6 px in: the name (a click shows that branch's devices after the panel; the shown branch on `control.activeBackground`, a muted one's name `text.hint`), its volume (44 px, "-6.0 dB") and pan (32 px, "C", "25L", "40R") value fields, then **M** and **S** (16 px each, 2 px apart; M lit as a track's toggle, S on `accent`). Volume and pan are drafts while dragged and set once when let go (`branch.setVolume`, `branch.setPan`), one undo step a drag; a double-click resets them to 0 dB and the centre |
+| Add branch | A last row "+ Branch", `window.background` (hover `control.hoverBackground`), 10 px `text.hint`: `branch.add` |
+| Inside a group | A device after a group's panel has a 2 px `accent` line along its top, one more 3 px lower for each group further in |
+| Picks | Ctrl+G groups the devices picked on the track (next to each other) in the place of the first; Ctrl+Shift+G takes the picked group of one branch apart. Devices inside a group are not picked yet |
 
 ## Plug-in loading dialog
 
