@@ -733,6 +733,10 @@ pub struct Rack {
     rebinding: std::collections::HashSet<u64>,
     /// Of those, the ones whose editor was open: it opens again once the plug-in runs.
     reopen_after_rebind: std::collections::HashSet<u64>,
+    /// Plug-in devices the host found to support ARA when they loaded although the catalog did
+    /// not say so (a scan that missed it): they are loaded again with their track's clips, and
+    /// from then on as plug-ins that edit clips.
+    ara_found: std::collections::HashSet<u64>,
     /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
     /// plug-in device key; told to it whenever it runs ([`Rack::select_ara`]).
     ara_selection: HashMap<u64, Option<String>>,
@@ -761,6 +765,7 @@ impl Default for Rack {
             rebinding: std::collections::HashSet::new(),
             reopen_after_rebind: std::collections::HashSet::new(),
             ara_selection: HashMap::new(),
+            ara_found: std::collections::HashSet::new(),
         }
     }
 }
@@ -1072,7 +1077,8 @@ impl Rack {
             };
             let state = self.kept.remove(&found.key).or_else(|| saved_state(device));
             // A plug-in that edits clips gets its track's audio clips (ADR 0028).
-            let layout = found.track.filter(|_| matched.plugin.ara).map(|t| crate::ara::Layout::of(project, audio, t));
+            let edits_clips = matched.plugin.ara || self.ara_found.contains(&found.key);
+            let layout = found.track.filter(|_| edits_clips).map(|t| crate::ara::Layout::of(project, audio, t));
             let ara = layout.as_ref().and_then(|l| l.document(audio));
             let (ara, ara_sources) = ara.map_or((None, Vec::new()), |(document, sources)| (Some(document), sources));
             let launch = Launch {
@@ -1121,6 +1127,22 @@ impl Rack {
         let mut updates = Vec::new();
         for found in devices {
             let Some(instance) = self.instances.get_mut(&found.key) else { continue };
+            // Found to support ARA when it loaded: on a track with audio clips it loads again
+            // with them.
+            if instance.ara_layout.is_none()
+                && self.ara_found.contains(&found.key)
+                && instance.status == PluginStatus::Running
+                && instance.control.is_some()
+                && let Some(track) = found.track
+            {
+                let now = crate::ara::Layout::of(project, audio, track);
+                if now.is_empty() {
+                    instance.ara_layout = Some(now);
+                } else {
+                    rebind.push(found.key);
+                }
+                continue;
+            }
             let (Some(layout), Some(track)) = (&instance.ara_layout, found.track) else { continue };
             if instance.status != PluginStatus::Running || instance.control.is_none() {
                 continue;
@@ -1204,6 +1226,12 @@ impl Rack {
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,
                         Err(e) => instance.status = PluginStatus::Failed(e.0),
+                    }
+                    // The host found it supports ARA where the catalog did not say so: it is
+                    // loaded again with its track's clips ([`Rack::follow_clips`]).
+                    if control.edits_clips() && instance.ara_layout.is_none() && self.ara_found.insert(started.key) {
+                        notices
+                            .push(format!("{name} edits clips (ARA): it is loaded again with its track's audio clips"));
                     }
                     instance.control = Some(control);
                     // Loaded again with its track's new clips: its editor was open, so it opens

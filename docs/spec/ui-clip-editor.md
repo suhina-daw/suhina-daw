@@ -68,8 +68,11 @@ lane, the grid and zoom, and the `note.*` commands.
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
   works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The clip's
-  right-click menu has **Open in** and the plug-in's name, and **Ctrl+Shift+A** (`view.araEditor`)
+  right-click menu has **Open in** and the plug-in's name, and **Alt+M** (`view.araEditor`)
   does the same for the selected clip: it selects **Clip**, opens the detail area and the editor.
+  Both work on any audio clip in the Arrangement while such a plug-in is installed (Melodyne
+  first): on a track without it, it is added to the track first, and its editor opens in the
+  clip's place once it runs with the track's clips; the status bar says so meanwhile.
   Moving or trimming the clip changes it in the editor at once, the editor staying open; when the
   plug-in has to be loaded again (it was added to a track with no audio clips yet), an editor
   that was open opens again.

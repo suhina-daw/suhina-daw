@@ -578,7 +578,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   clips and the overlap guard come later ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - Selecting an audio clip on such a track shows the plug-in's editor in the detail area, where a
   MIDI clip has its piano roll, with that clip shown in it; the clip's menu (**Open in** the
-  plug-in) and Ctrl+Shift+A open it. The plug-in goes first in its track's chain
+  plug-in) and Alt+M open it, adding the installed one (Melodyne first) to the track when it has
+  none. The plug-in goes first in its track's chain
   ([clip editor](docs/spec/ui-clip-editor.md) › Where it opens).
 - `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
   spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA

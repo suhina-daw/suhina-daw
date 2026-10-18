@@ -90,6 +90,12 @@ impl Drop for Interface {
     }
 }
 
+/// Whether `component` supports ARA: it answers `IPlugInEntryPoint`. Asking makes no document
+/// and binds nothing.
+pub(crate) fn supported(component: &ComPtr<IComponent>) -> bool {
+    Interface::query(component, &ENTRY_POINT_IID).is_some()
+}
+
 /// The factories this process has initialised, by address: ARA asks for one
 /// `initializeARAWithConfiguration` per factory and process, before any document.
 static INITIALISED: Mutex<Vec<usize>> = Mutex::new(Vec::new());

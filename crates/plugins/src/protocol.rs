@@ -227,9 +227,12 @@ pub enum Message {
         /// For an ARA plug-in (ADR 0028): the document to bind it to before it is activated.
         ara: Option<AraDocument>,
     },
+    /// `edits_clips`: the plug-in supports ARA (a VST3 component that answers
+    /// `IPlugInEntryPoint`), whether or not it was loaded with a document.
     Loaded {
         instance: u32,
         latency: u32,
+        edits_clips: bool,
     },
     /// Stop and let go of `instance`; the other instances in the process go on.
     Unload {
@@ -386,7 +389,9 @@ impl Message {
                 }
                 value
             }
-            Self::Loaded { instance, latency } => json!({ "op": "loaded", "instance": instance, "latency": latency }),
+            Self::Loaded { instance, latency, edits_clips } => {
+                json!({ "op": "loaded", "instance": instance, "latency": latency, "edits_clips": edits_clips })
+            }
             Self::Unload { instance } => json!({ "op": "unload", "instance": instance }),
             Self::Unloaded { instance } => json!({ "op": "unloaded", "instance": instance }),
             Self::Ping { id } => json!({ "op": "ping", "id": id }),
@@ -464,7 +469,14 @@ impl Message {
                     Some(document) => Some(AraDocument::from_json(document)?),
                 },
             },
-            "loaded" => Self::Loaded { instance: instance()?, latency: small("latency")? },
+            "loaded" => Self::Loaded {
+                instance: instance()?,
+                latency: small("latency")?,
+                edits_clips: match value.get("edits_clips") {
+                    None => false,
+                    Some(v) => v.as_bool()?,
+                },
+            },
             "unload" => Self::Unload { instance: instance()? },
             "unloaded" => Self::Unloaded { instance: instance()? },
             "ping" => Self::Ping { id: number("id")? },
@@ -638,7 +650,8 @@ mod tests {
                 sample_rate: 48_000.0,
                 ara: Some(ara_document()),
             },
-            Message::Loaded { instance: u32::MAX, latency: 64 },
+            Message::Loaded { instance: u32::MAX, latency: 64, edits_clips: false },
+            Message::Loaded { instance: 1, latency: 0, edits_clips: true },
             Message::Unload { instance: 0 },
             Message::Unloaded { instance: 7 },
             Message::Ping { id: u64::MAX },

@@ -1540,6 +1540,10 @@ impl App {
                     (Some(_), View::Arrangement) => {
                         // The tracks whose plug-in edits clips: their audio clips' menus open
                         // the clip in it.
+                        // An audio clip on another track opens in the installed one, which is
+                        // added to its track first.
+                        self.arrangement.ara_default =
+                            self.session().and_then(Session::ara_plugin).map(|(name, _)| name);
                         self.arrangement.ara_tracks = self.session().map_or_else(Vec::new, |s| {
                             s.ara_tracks()
                                 .into_iter()
@@ -1770,12 +1774,7 @@ impl App {
     /// shows the clip with the plug-in's editor in it, and the plug-in shows that clip.
     fn open_ara_editor(&mut self) {
         let Some((track, clip, device)) = self.ara_clip() else {
-            self.status = Status::Hint(match self.shown_clip() {
-                Some(ClipRef::Arrangement(..)) => {
-                    "The clip's track has no running plug-in that edits clips (such as a pitch editor)".into()
-                }
-                _ => "Select an audio clip in the Arrangement first".into(),
-            });
+            self.add_ara_plugin();
             return;
         };
         self.detail_showing = detail_view::Showing::Clip;
@@ -1788,6 +1787,49 @@ impl App {
         let open = self.session_mut_report(track, device).is_some_and(|r| r.editor_open);
         if !open {
             self.run(&Action::new("device.openEditor", json!({ "track": track.0, "device": device })));
+        }
+    }
+
+    /// For [`App::open_ara_editor`] when the selected clip's track has no plug-in that edits
+    /// clips running: adds the installed one ([`Session::ara_plugin`], Melodyne first) to the
+    /// track, first in its chain, as a host that opens clips in it does. Its editor opens in
+    /// the clip's place once it runs with the track's clips.
+    fn add_ara_plugin(&mut self) {
+        let Some(ClipRef::Arrangement(track, clip)) = self.shown_clip() else {
+            self.status = Status::Hint("Select an audio clip in the Arrangement first".into());
+            return;
+        };
+        if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_some() {
+            self.status = Status::Hint("A MIDI clip opens in the piano roll; select an audio clip".into());
+            return;
+        }
+        let Some((name, spec)) = self.session().and_then(Session::ara_plugin) else {
+            self.status = Status::Hint(
+                "No plug-in that edits clips (such as Melodyne) is installed; Settings › Plug-ins scans for it".into(),
+            );
+            return;
+        };
+        self.detail_showing = detail_view::Showing::Clip;
+        self.show_editor();
+        // It opens on its own once it runs bound to the clips (`detail_area`).
+        self.ara_opened = None;
+        let on_track = self.session().is_some_and(|s| {
+            let project = s.project();
+            project
+                .tracks
+                .iter()
+                .find(|t| t.id == track)
+                .and_then(|t| t.channel)
+                .and_then(|c| project.channels.iter().find(|ch| ch.id == c))
+                .is_some_and(|c| c.devices.iter().any(|d| d.name == name))
+        });
+        if on_track {
+            self.status = Status::Hint(format!("{name} is starting with the track's clips; it opens when it is ready"));
+            return;
+        }
+        self.run(&Action::new("device.addPlugin", json!({ "track": track.0, "plugin": spec })));
+        if !matches!(self.status, Status::Error(_)) {
+            self.status = Status::Hint(format!("{name} added to the track; it opens with the clip when it is ready"));
         }
     }
 

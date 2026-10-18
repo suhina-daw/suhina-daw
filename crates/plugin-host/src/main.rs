@@ -269,6 +269,11 @@ impl Loaded {
         }
     }
 
+    /// Whether the plug-in supports ARA.
+    fn edits_clips(&self) -> bool {
+        matches!(self, Self::Vst3(plugin) if plugin.edits_clips())
+    }
+
     /// Tells a plug-in bound to an ARA document which region the engine has selected.
     fn ara_select(&self, region: Option<&str>) {
         if let Self::Vst3(plugin) = self {
@@ -534,9 +539,9 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::Load { instance, plugin, link, sample_rate, ara } => {
             match load(instance, &plugin, &link, sample_rate, ara) {
                 Ok(fresh) => {
-                    let latency = fresh.latency();
+                    let (latency, edits_clips) = (fresh.latency(), fresh.edits_clips());
                     instances.insert(instance, fresh);
-                    Message::Loaded { instance, latency }
+                    Message::Loaded { instance, latency, edits_clips }
                 }
                 Err(message) => failed(instance, message),
             }

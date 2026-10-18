@@ -257,6 +257,9 @@ pub struct ArrangementViewState {
     /// The tracks whose plug-in edits clips (ARA), with that plug-in's name: their audio
     /// clips' menus offer to open the clip in it. The window sets it before each frame.
     pub ara_tracks: Vec<(TrackId, String)>,
+    /// The installed plug-in that edits clips, by name: the menu of an audio clip on any other
+    /// track offers to open it there, which adds it to the track first.
+    pub ara_default: Option<String>,
     pub header_width: f32,
     heights: HashMap<TrackId, f32>,
     /// The selected clips, in the order they were picked, and the one clicked last: a Shift-click
@@ -329,6 +332,7 @@ impl Default for ArrangementViewState {
             stack_midi: false,
             double_click_does_nothing: false,
             ara_tracks: Vec::new(),
+            ara_default: None,
             header_width: HEADER_COLUMN,
             heights: HashMap::new(),
             selected: Vec::new(),
@@ -1749,7 +1753,12 @@ fn clip_box<'a>(
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
-        let ara = state.ara_tracks.iter().find(|(t, _)| *t == lane.track).map(|(_, name)| name.as_str());
+        let ara = state
+            .ara_tracks
+            .iter()
+            .find(|(t, _)| *t == lane.track)
+            .map(|(_, name)| name.as_str())
+            .or(state.ara_default.as_deref());
         menus::clip_edit_menu(ui, lane.track, clip.id, (clip.start, clip.length), split_at, actions);
         if clip.audio
             && let Some(name) = ara

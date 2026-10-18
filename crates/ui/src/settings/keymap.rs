@@ -192,8 +192,7 @@ const DETAIL_ACTIONS: [(&str, &str, &str); 2] = [
         "View",
     ),
 ];
-const DETAIL_DEFAULTS: [(&str, &[&str]); 2] =
-    [("view.devices", &["Ctrl+Shift+D"]), ("view.araEditor", &["Ctrl+Shift+A"])];
+const DETAIL_DEFAULTS: [(&str, &[&str]); 2] = [("view.devices", &["Ctrl+Shift+D"]), ("view.araEditor", &["Alt+M"])];
 
 /// Every action a key can be bound to: the window's, then each command that needs no
 /// parameters.

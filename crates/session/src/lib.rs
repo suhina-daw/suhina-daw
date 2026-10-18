@@ -628,6 +628,24 @@ impl Session {
         self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
     }
 
+    /// The installed plug-in a clip is opened in when its track has none that edits clips (ARA):
+    /// its name, and what `device.addPlugin` takes for it. One the scan marked as ARA, Melodyne
+    /// first; else Melodyne, which the host finds to support ARA when it loads. `None` without
+    /// a catalog or such a plug-in.
+    pub fn ara_plugin(&self) -> Option<(String, String)> {
+        let catalog = &self.plugins.env()?.catalog;
+        let melodyne = |p: &&suhina_plugins::scan::PluginInfo| {
+            p.name.as_bytes().windows(8).any(|w| w.eq_ignore_ascii_case(b"melodyne"))
+        };
+        let chosen = catalog
+            .plugins()
+            .filter(|p| p.ara)
+            .find(melodyne)
+            .or_else(|| catalog.plugins().find(|p| p.ara))
+            .or_else(|| catalog.plugins().filter(|p| p.spec().starts_with("vst3:")).find(melodyne))?;
+        Some((chosen.name.clone(), chosen.spec()))
+    }
+
     /// The tracks whose chain runs a plug-in bound to their audio clips (ARA), each with the
     /// first such device's index in its chain.
     pub fn ara_tracks(&self) -> Vec<(suhina_model::TrackId, usize)> {

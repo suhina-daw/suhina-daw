@@ -514,7 +514,7 @@ impl Group {
 
     /// Loads `instance` as `launch` says into the group's process, starting one if none runs.
     /// Returns the generation it was loaded into, its latency and its link.
-    fn load(&mut self, launch: &Launch, instance: u32) -> Result<(u64, u32, Link), PluginError> {
+    fn load(&mut self, launch: &Launch, instance: u32) -> Result<(u64, u32, bool, Link), PluginError> {
         let link = Link::create(launch.channels, launch.max_frames)?;
         if !self.alive() {
             self.spawn(launch)?;
@@ -533,11 +533,11 @@ impl Group {
             launch.timeout,
             |m| matches!(m, Message::Loaded { instance: i, .. } if *i == instance),
         )?;
-        let latency = match loaded {
-            Message::Loaded { latency, .. } => latency,
-            _ => 0,
+        let (latency, edits_clips) = match loaded {
+            Message::Loaded { latency, edits_clips, .. } => (latency, edits_clips),
+            _ => (0, false),
         };
-        Ok((self.generation, latency, link))
+        Ok((self.generation, latency, edits_clips, link))
     }
 }
 
@@ -593,6 +593,8 @@ pub struct Plugin {
     generation: u64,
     unanswered: Arc<AtomicU32>,
     latency: u32,
+    /// The plug-in supports ARA, as the host found when it loaded it.
+    edits_clips: bool,
     /// The state last read from the plug-in; loaded again after a restart.
     last_state: Option<SavedState>,
     /// Parameters set since the state was last read or loaded, in order; set again after a
@@ -613,7 +615,7 @@ impl Plugin {
     pub fn start(launch: Launch) -> Result<(Self, PluginAudio), PluginError> {
         let group = group_for_launch(&launch);
         let instance = next_instance();
-        let (generation, latency, link) = lock(&group).load(&launch, instance)?;
+        let (generation, latency, edits_clips, link) = lock(&group).load(&launch, instance)?;
         let unanswered = Arc::new(AtomicU32::new(0));
         let plugin = Self {
             launch,
@@ -622,6 +624,7 @@ impl Plugin {
             generation,
             unanswered: unanswered.clone(),
             latency,
+            edits_clips,
             last_state: None,
             params_since: Vec::new(),
             editor_open: false,
@@ -635,6 +638,12 @@ impl Plugin {
     /// [`Plugin::follow_latency`]).
     pub fn latency(&self) -> u32 {
         self.latency
+    }
+
+    /// Whether the plug-in supports ARA (it can edit clips, ADR 0028), as the host found when
+    /// it loaded it: true even when the scan did not see it, or it was loaded without a document.
+    pub fn edits_clips(&self) -> bool {
+        self.edits_clips
     }
 
     /// Takes in a latency the plug-in reported while it runs (a lookahead it was given, say:
@@ -934,8 +943,9 @@ impl Plugin {
             locked.take_latency(instance);
         }
         let instance = next_instance();
-        let (generation, latency, link) = locked.load(&self.launch, instance)?;
+        let (generation, latency, edits_clips, link) = locked.load(&self.launch, instance)?;
         drop(locked);
+        self.edits_clips = edits_clips;
         self.instance = instance;
         self.generation = generation;
         self.latency = latency;

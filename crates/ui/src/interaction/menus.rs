@@ -310,7 +310,7 @@ pub fn clip_edit_menu(
 /// in that plug-in's editor (`view.araEditor`, which the window does).
 pub fn ara_menu(ui: &mut Ui, track: TrackId, clip: ClipId, plugin: &str, actions: &mut Vec<Action>) {
     ui.separator();
-    if ui.add(egui::Button::new(format!("Open in {plugin}")).shortcut_text("Ctrl+Shift+A")).clicked() {
+    if ui.add(egui::Button::new(format!("Open in {plugin}")).shortcut_text("Alt+M")).clicked() {
         actions.push(Action::new("view.araEditor", json!({ "track": track.0, "clip": clip.0 })));
         ui.close();
     }

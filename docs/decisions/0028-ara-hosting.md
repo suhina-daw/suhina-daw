@@ -238,8 +238,16 @@ the list below, in a first form). Where it differs from the decisions above it i
   MIDI clip has its piano roll ([clip editor](../spec/ui-clip-editor.md) › Where it opens). The
   session tells the plug-in which clip is selected with `ara_select` (a message that is not
   answered), and the host passes it to the editor view's `notifySelection`. The clip's menu
-  (**Open in** the plug-in) and Ctrl+Shift+A open it. The overlap marks and fixes, and the
+  (**Open in** the plug-in) and Alt+M open it. The overlap marks and fixes, and the
   question when the plug-in is removed, come with the overlap guard.
+- **Found when it loads, too.** The host tells the engine with `loaded` whether the plug-in
+  answers `IPlugInEntryPoint` (`edits_clips`). One the scan did not mark (the module's ARA class
+  named differently, say) is then loaded again with its track's clips, with a notice, and is
+  treated as an ARA plug-in from then on.
+- **Opened as a host with a pitch editor built in does.** A clip's menu (**Open in** the plug-in)
+  and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
+  running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is
+  added to the track, and its editor opens in the clip's place once it runs with the clips.
 - **An ARA plug-in goes first in its chain**, wherever it is dropped or `device.addPlugin` puts
   it (the result says `moved_first`): it plays the clips from their files, so a device before it
   would not be heard. Observed in another host, which moves it there too.

@@ -602,6 +602,8 @@ pub(crate) struct Vst3Plugin {
     /// The ARA document it is bound to, when it was loaded with one (ADR 0028); let go of
     /// before the component is terminated.
     ara: Option<Box<crate::ara::Document>>,
+    /// Its component answers ARA's entry point, so it can be bound to a document.
+    supports_ara: bool,
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
@@ -673,6 +675,7 @@ impl Vst3Plugin {
             name,
             editor: None,
             ara: None,
+            supports_ara: false,
             component,
             _handler: handler,
             _host: host,
@@ -692,6 +695,7 @@ impl Vst3Plugin {
         if let Some(document) = &ara {
             plugin.ara = Some(Box::new(crate::ara::Document::bind(&plugin.component, document)?));
         }
+        plugin.supports_ara = plugin.ara.is_some() || crate::ara::supported(&plugin.component);
 
         let processor = plugin.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
         let max_frames = served.max_frames();
@@ -932,6 +936,12 @@ impl Vst3Plugin {
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
+    }
+
+    /// Whether it supports ARA: it is bound to a document, or its component answers
+    /// `IPlugInEntryPoint` (found when it loaded).
+    pub(crate) fn edits_clips(&self) -> bool {
+        self.ara.is_some() || self.supports_ara
     }
 
     /// Brings its ARA document in line with `document`, the track's clips as they are now.

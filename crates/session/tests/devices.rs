@@ -342,6 +342,33 @@ fn installed_plug_ins_are_added_from_the_catalog() {
 }
 
 #[test]
+fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
+    let mut session = Session::new(project());
+    assert_eq!(session.ara_plugin(), None, "no catalog");
+    session.set_plugin_env(plugin_env());
+    let (name, spec) = session.ara_plugin().unwrap();
+    assert_eq!(name, "Tune");
+    assert!(spec.starts_with("vst3:"), "{spec}");
+    // A scan that missed it: Melodyne is still chosen by its name, and the host finds it
+    // supports ARA when it loads.
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let melodyne = PluginInfo {
+        path: "Melodyne.vst3".into(),
+        id: "5653544D656C6F6D656C6F64796E6535".into(),
+        name: "Melodyne".into(),
+        vendor: "Celemony".into(),
+        version: "5.4.2".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(melodyne.path.clone(), vec![melodyne]);
+    session.set_plugin_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    assert_eq!(session.ara_plugin().map(|(name, _)| name).as_deref(), Some("Melodyne"));
+}
+
+#[test]
 fn a_plug_in_that_edits_clips_goes_first() {
     let mut session = Session::new(project());
     session.set_plugin_env(plugin_env());
