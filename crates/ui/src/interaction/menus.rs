@@ -223,13 +223,39 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
 /// The menu of arrangement clips; `stack` is true when the stacking setting for the clips' kind
 /// is on, so their copies leave the clips they land on as they are. `clips` is the selection the
 /// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now.
-pub fn clip_menu(ui: &mut Ui, clips: &[(TrackId, usize)], stack: bool, enabled: bool, actions: &mut Vec<Action>) {
+pub fn clip_menu(
+    ui: &mut Ui,
+    clips: &[(TrackId, usize)],
+    stack: bool,
+    enabled: bool,
+    name: &str,
+    actions: &mut Vec<Action>,
+) {
     if clips.is_empty() {
         return;
     }
     let list: Vec<serde_json::Value> =
         clips.iter().map(|(track, index)| json!({ "track": track.0, "index": index })).collect();
     ui.set_min_width(140.0);
+    // One clip in the menu (a click on it, or the only one selected): a field renames it,
+    // applied with Enter or Rename, as a slot's clip's is.
+    if let [(track, index)] = clips {
+        let id = Id::new(("clip-rename", track, index));
+        let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
+        let field = ui.add(egui::TextEdit::singleline(&mut draft).id(id).desired_width(140.0));
+        ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
+        field.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Rename clip {}", name))
+        });
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        // An empty draft clears the name: the command takes it.
+        if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
+            actions.push(Action::new("clip.rename", json!({ "track": track.0, "index": index, "name": draft.trim() })));
+            ui.ctx().data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
+        ui.separator();
+    }
     if ui.add(egui::Button::new("Copy").shortcut_text("Ctrl+C")).clicked() {
         actions.push(Action::new("clip.copy", json!({ "clips": list.clone() })));
         ui.close();
@@ -361,11 +387,29 @@ pub fn slot_menu(
     ui: &mut Ui,
     track: TrackId,
     scene: usize,
+    name: &str,
     has_clip: bool,
     can_paste: bool,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(140.0);
+    // The clip's name, typed to rename: applied with Enter or Rename, as a marker's is.
+    if has_clip {
+        let id = Id::new(("slot-rename", track, scene));
+        let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
+        let field = ui.add(egui::TextEdit::singleline(&mut draft).id(id).desired_width(140.0));
+        ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
+        field.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, format!("Rename clip {}", name))
+        });
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        // An empty draft clears the name: the command takes it.
+        if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
+            actions.push(Action::new("clip.rename", json!({ "track": track.0, "scene": scene, "name": draft.trim() })));
+            ui.ctx().data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
+    }
     if ui.add_enabled(has_clip, egui::Button::new("Copy").shortcut_text("Ctrl+C")).clicked() {
         actions.push(Action::new("clip.copy", json!({ "track": track.0, "scene": scene })));
         ui.close();

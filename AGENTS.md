@@ -189,7 +189,7 @@ area labels (`CONTRIBUTING.md` › Issues lists them); a larger piece split into
 board keep their old key in the title (`(LOOP-27)`); a pull request for one names that key.
 Before starting, claim the item the way [`CONTRIBUTING.md`](CONTRIBUTING.md) › *Working on an issue*
 describes, for a person and for an agent alike: no assignee and no open pull request for it,
-`Backlog` or `Ready` on the board (`Ready` for a feature), and a `/claim` comment with the plan.
+`Backlog` or `Ready` on the board (`Ready` for a feature, unless you are a trusted contributor), and a `/claim` comment with the plan.
 
 Several agents often run at once, so an agent never starts work that exists already:
 
@@ -201,18 +201,41 @@ Several agents often run at once, so an agent never starts work that exists alre
   `actions_run_trigger` or with `gh`, then read the issue number from the log of that run
   (`OPENED_ISSUE=#N <url>`).
   Use the run the start returns, never the latest run, which may be another agent's. A run that
-  failed after it opened the issue still prints the line; do not start it again then.
+  failed after it opened the issue still prints the line; re-running that run does not open the
+  issue again, but starting a new one does. The inputs go in as JSON on stdin (`--json`), not as
+  `-f` arguments, so a long body is not cut off by the command-line limit (about 32 000 characters
+  on Windows).
 
   ```sh
-  run_url="$(gh workflow run open-issue.yml -f title="Piano roll: snap notes to the grid" \
-    -f body="$(cat issue.md)" -f type=enhancement -f labels="ui" -f parent=123)"
+  python -c "import json; print(json.dumps({'title': 'Piano roll: snap notes to the grid', \
+    'body': open('issue.md', encoding='utf-8').read(), 'type': 'enhancement', 'labels': 'ui', \
+    'parent': '123'}))" > request.json
+  run_url="$(gh workflow run open-issue.yml --json < request.json)"
   run_id="${run_url##*/}"
   gh run watch "$run_id" --exit-status; gh run view "$run_id" --log | grep OPENED_ISSUE
   ```
 
   `type` is one of `enhancement`, `bug`, `documentation`, `chore`, `epic` and sets the type label
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
-  board's Priority and Phase afterwards. Pull requests and comments stay under the person's account.
+  board's Priority and Phase afterwards. A pull request itself — its branch, its description and
+  its merge — stays under the person's account.
+- **Comment on a pull request as the bot when the comment is an agent's feedback.** A review an
+  agent wrote, the changes it asks for or a summary of what it found goes onto the pull request's
+  conversation through the [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so
+  it is written by `suhina-bot[bot]` and the person who ran the session is not its author. It is a
+  comment, not a GitHub review: it neither approves nor requests changes, and no merge rule sees
+  it; approving stays the maintainer's `ready to merge` label. Start it the same way,
+  with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
+  start returns. Re-running a failed run does not comment twice.
+
+  ```sh
+  python -c "import json; print(json.dumps({'pr': '600', \
+    'body': open('review.md', encoding='utf-8').read()}))" > request.json
+  run_url="$(gh workflow run comment-pr.yml --json < request.json)"
+  run_id="${run_url##*/}"
+  gh run watch "$run_id" --exit-status; gh run view "$run_id" --log | grep COMMENTED_PR
+  ```
+
 - **Before writing code**, comment `/claim` with the plan and a `Touches:` line naming the paths
   you will change (`Touches: crates/ui/src/detail, crates/session`), and read the bot's answer.
   When it says the work is taken, that it is blocked by another issue, or that it is already yours

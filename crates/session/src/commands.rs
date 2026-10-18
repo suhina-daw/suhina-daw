@@ -533,6 +533,13 @@ static COMMANDS: &[CommandSpec] = &[
         run: delete_clips,
     },
     CommandSpec {
+        id: "clip.rename",
+        label: "Rename a clip: an arrangement clip by index, or a slot's clip by scene; clips that play the same content share the name",
+        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, param("name", ParamType::Text, "the new name (empty clears it)")],
+        kind: CommandKind::Edit,
+        run: rename_clip,
+    },
+    CommandSpec {
         id: "clip.setGain",
         label: "Set an audio clip's gain (every clip that plays the same audio content follows)",
         params: &[
@@ -706,6 +713,22 @@ static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::Edit,
         run: move_clip,
+    },
+    CommandSpec {
+        id: "clip.moveSlot",
+        label: "Move a slot's clip to another track's slot; the two slots swap when the target has a clip",
+        params: &[
+            TRACK,
+            SCENE,
+            optional(
+                "to_track",
+                ParamType::Track,
+                "track to move the clip to (id or name); it must take the clip's kind: notes or audio (default: the same track)",
+            ),
+            optional("to_scene", ParamType::Integer, "the scene to move it to, from 1 (default: the same scene)"),
+        ],
+        kind: CommandKind::Edit,
+        run: move_slot,
     },
     CommandSpec {
         id: "project.markers",
@@ -2922,6 +2945,21 @@ fn delete_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
     }
 }
 
+/// `clip.rename`: the clip's name is its content's, so clips that play the same content share
+/// the new name (a pasted copy has a content of its own and keeps its name). An empty name
+/// clears it, and the launcher's slots then show "clip".
+fn rename_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let name = match params.get("name") {
+        Some(Value::String(name)) => name.trim().to_string(),
+        _ => return Err("name must be a text (empty clears it)".into()),
+    };
+    let (_, content, _) = crate::notes::locate(&session.project, params)?;
+    let content =
+        session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
+    content.name.clone_from(&name);
+    Ok(json!({ "name": name }))
+}
+
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read
 /// against the project as it was, so a lane loses all its clips at once.
 fn remove_clips(p: &mut Project, clips: &[(TrackId, usize)]) -> usize {
@@ -3253,6 +3291,113 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let new_index = lane.clips.iter().position(|c| *c == clip).unwrap_or_default();
     Ok(json!({ "start": start, "track": to.0, "index": new_index }))
+}
+
+/// `clip.moveSlot`: the dragged slot's clip goes to the target's slot; an occupied target's
+/// clip comes back to the source's slot (the two swap, nothing lost). The target must take the
+/// clip's kind: notes or audio.
+fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let from_column = column_index(session.project(), params)?;
+    let from_scene = scene_index(session.project(), params)?;
+    let to_track = match params.get("to_track") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(track_at(&session.project, params, "to_track")?),
+    };
+    let to_scene: Option<usize> = match params.get("to_scene") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(
+            v.as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .and_then(|n| n.checked_sub(1))
+                .ok_or("to_scene must be a whole number from 1")?,
+        ),
+    };
+
+    let project = &mut session.project;
+    let from_track = project.launcher.columns.get(from_column).map(|c| c.track).ok_or("the track has no clip slots")?;
+    let to_track = to_track.unwrap_or(from_track);
+    let to_scene = to_scene.unwrap_or(from_scene);
+    if (to_track, to_scene) == (from_track, from_scene) {
+        return Ok(json!({ "moved": false }));
+    }
+    // The clip's kind must be one the target's track plays: notes to a notes track, audio to
+    // an audio track, as `clip.move` checks for the arrangement.
+    let clip = project
+        .launcher
+        .columns
+        .get(from_column)
+        .and_then(|c| c.slots.get(from_scene))
+        .and_then(|s| s.clip.as_ref())
+        .ok_or("the slot has no clip to move")?;
+    let kinds = project.content(clip.content).map_or((false, false), |c| {
+        (
+            c.lanes.iter().any(|l| matches!(l.data, LaneData::Notes(_))),
+            c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))),
+        )
+    });
+    let target = project.tracks.iter().find(|t| t.id == to_track).ok_or("the target track is missing")?;
+    let source_track = project.tracks.iter().find(|t| t.id == from_track).ok_or("the source track is missing")?;
+    let fits = (!kinds.0 || target.content.notes) && (!kinds.1 || target.content.audio) && (kinds.0 || kinds.1);
+    if !fits {
+        let what = if kinds.1 { "an audio clip" } else { "a MIDI clip" };
+        return Err(format!("track {:?} cannot hold {what}", target.name).into());
+    }
+    let Some(to_column) = project.launcher.columns.iter().position(|c| c.track == to_track) else {
+        return Err(format!("track {:?} has no clip slots", target.name).into());
+    };
+    // The swap's other direction: a clip coming back to the source's slot must be one the
+    // source's track plays, checked before anything moves, so a refusal leaves both as they are.
+    let displaced =
+        project.launcher.columns.get(to_column).and_then(|c| c.slots.get(to_scene)).and_then(|s| s.clip.as_ref());
+    if let Some(displaced) = displaced {
+        let kinds = project.content(displaced.content).map_or((false, false), |c| {
+            (
+                c.lanes.iter().any(|l| matches!(l.data, LaneData::Notes(_))),
+                c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))),
+            )
+        });
+        let fits = (!kinds.0 || source_track.content.notes)
+            && (!kinds.1 || source_track.content.audio)
+            && (kinds.0 || kinds.1);
+        if !fits {
+            let what = if kinds.1 { "an audio clip" } else { "a MIDI clip" };
+            return Err(format!("track {:?} cannot hold {what}", source_track.name).into());
+        }
+    }
+    let from_clip = project
+        .launcher
+        .columns
+        .get_mut(from_column)
+        .and_then(|c| c.slots.get_mut(from_scene))
+        .ok_or("the slot is missing")?
+        .clip
+        .take();
+    let from_clip = match from_clip {
+        Some(clip) => clip,
+        None => return Err("the slot has no clip to move".into()),
+    };
+    let back = project
+        .launcher
+        .columns
+        .get_mut(to_column)
+        .and_then(|c| c.slots.get_mut(to_scene))
+        .ok_or("the slot is missing")?
+        .clip
+        .replace(from_clip);
+    let swapped = back.is_some();
+    project
+        .launcher
+        .columns
+        .get_mut(from_column)
+        .and_then(|c| c.slots.get_mut(from_scene))
+        .ok_or("the slot is missing")?
+        .clip = back;
+    Ok(json!({
+        "moved": true,
+        "track": to_track.0,
+        "scene": to_scene + 1,
+        "swapped": swapped,
+    }))
 }
 
 /// Clears `[from, to)` on a lane for a clip placed there (docs/spec/arrangement-editing.md):

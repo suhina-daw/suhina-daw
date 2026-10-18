@@ -1,0 +1,148 @@
+name: Comment on pull request
+run-name: "Comment on PR #${{ inputs.pr }}"
+
+# Posts a comment on a pull request as the GitHub App `suhina-bot` (`suhina-bot[bot]`) rather than
+# as the person who starts the run, for a review an agent session wrote (AGENTS.md › Tasks). The
+# pull request itself, its description and its merge stay under the person's account.
+#
+# A comment on the conversation of a pull request goes through the issue comments API, but GitHub
+# checks the App's `Pull requests` permission for it: `Issues: Read and write` alone is answered with
+# 403. The App has `Pull requests: Read and write`, and the token step asks for both.
+#
+# Start it from Actions › Comment on pull request › Run workflow, with
+# `gh workflow run comment-pr.yml --json < request.json` (the inputs as JSON on stdin, so a long
+# review is not cut off by the command line; AGENTS.md › Tasks), or with the GitHub MCP's
+# `actions_run_trigger`. The run prints `COMMENTED_PR=#<number> <url>` in its log and puts the link
+# in its summary; re-running a failed run does not comment twice.
+#
+# The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
+# private key, and a tag can be moved to other code.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+      body:
+        description: Comment in Markdown (at most 60 000 characters)
+        required: true
+        type: string
+
+# The workflow's own token only reads: the actor's permission and the pull request. The comment is
+# written with the App's token.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    environment: suhina-bot
+    steps:
+      # Everything the run was given is checked before the App's key is touched. Inputs reach the
+      # scripts only through `env`, never interpolated into a script.
+      - name: Check the inputs and who started the run
+        id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR: ${{ inputs.pr }}
+          BODY: ${{ inputs.body }}
+          # Only whether the secrets are set; the values stay out of this step.
+          HAS_SUHINA_BOT_APP_ID: ${{ secrets.SUHINA_BOT_APP_ID != '' }}
+          HAS_SUHINA_BOT_PRIVATE_KEY: ${{ secrets.SUHINA_BOT_PRIVATE_KEY != '' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const fail = (message) => { core.setFailed(message); throw new Error(message); };
+
+            for (const name of ["SUHINA_BOT_APP_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
+              if (process.env[`HAS_${name}`] !== "true") {
+                fail(`The secret ${name} is missing from the environment suhina-bot.`);
+              }
+            }
+
+            // Starting a workflow already needs write access; this says so in the run as well.
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner, repo, username: context.actor,
+            });
+            // `permission` is the base level (a custom role or maintain reads as write); `role_name`
+            // can be a custom role's own name.
+            if (!["admin", "write"].includes(permission.permission)) {
+              fail(`@${context.actor} has no write access to ${owner}/${repo}.`);
+            }
+
+            const prInput = process.env.PR.trim().replace(/^#/, "");
+            if (!/^[0-9]{1,7}$/.test(prInput)) fail(`"${process.env.PR}" is not a pull request number.`);
+            const pr = Number(prInput);
+
+            // The same limit as Open issue: characters, as GitHub counts a comment's length.
+            const body = process.env.BODY;
+            if (body.trim().length === 0) fail("The comment is empty.");
+            if (body.length > 60000) fail("The comment is longer than 60 000 characters.");
+
+            let pull;
+            try {
+              ({ data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pr }));
+            } catch (error) {
+              if (error.status === 404) fail(`#${pr} is not a pull request of ${owner}/${repo}.`);
+              throw error;
+            }
+            if (pull.state !== "open") fail(`#${pr} is not open.`);
+            if (pull.locked) fail(`The conversation of #${pr} is locked; a maintainer unlocks it first.`);
+
+            core.setOutput("pr", String(pr));
+
+      - name: Token of the suhina-bot App
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
+          private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Comment on the pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR: ${{ steps.check.outputs.pr }}
+          BODY: ${{ inputs.body }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = Number(process.env.PR);
+
+            // A run that is re-run after it commented (its summary failed, say) does not comment
+            // twice: the comment carries the run's id, and the App's comment with exactly this body
+            // is the one this run made. Anyone can write the marker, so neither alone counts.
+            const marker = `<!-- comment-pr run ${context.runId} -->`;
+            const body = `${process.env.BODY}\n\n${marker}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr, per_page: 100,
+            });
+            let comment = comments.find((c) => c.user?.login === "suhina-bot[bot]" && c.body === body);
+            if (!comment) {
+              try {
+                ({ data: comment } = await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                  owner, repo, issue_number: pr, body,
+                }));
+              } catch (error) {
+                // 403 is also the answer for a conversation locked since the check, so GitHub's own
+                // words come first.
+                if (error.status === 403) {
+                  core.setFailed(
+                    `GitHub refused the comment: ${error.message}. If it is about permissions, check that ` +
+                    "the App still has Pull requests: Read and write and that its installation accepted it.",
+                  );
+                  return;
+                }
+                throw error;
+              }
+            }
+
+            // Said before anything else can fail, so a failed run that did comment still names it.
+            console.log(`COMMENTED_PR=#${pr} ${comment.html_url}`);
+            core.summary.addRaw(`Commented on [#${pr}](${comment.html_url})`);
+            await core.summary.write();

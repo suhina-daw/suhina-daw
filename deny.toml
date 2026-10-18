@@ -94,4 +94,13 @@ ignore = [
     # (winit > sctk-adwaita > ab_glyph > owned_ttf_parser), which draw the title bar text.
     # Remove this when winit moves off it.
     { id = "RUSTSEC-2026-0192", reason = "unmaintained, no replacement upstream; only winit's Wayland title bar uses it" },
+    # zbus 5 and its zvariant, zvariant_derive and zbus_names are unmaintained since development
+    # moved to zbus 6. It is not a vulnerability, and it is Linux only. Two things pull in zbus 5:
+    # the realtime crate, which asks rtkit for real-time priority over D-Bus (ADR 0006), and
+    # egui's screen-reader support (eframe > accesskit_unix > atspi). Moving the realtime crate to
+    # zbus 6 would leave accesskit's zbus 5 in the tree, so remove these when eframe's accesskit
+    # moves to zbus 6, and move the realtime crate with it.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
 ]
