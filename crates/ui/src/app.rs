@@ -4551,7 +4551,8 @@ mod tests {
         let mut harness = egui_kittest::Harness::builder()
             .with_size(Vec2::new(1280., 800.))
             .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
-        harness.run();
+        harness.step();
+        harness.step();
         harness.ctx.data(|data| {
             assert!(
                 data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(
