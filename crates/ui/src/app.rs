@@ -1806,7 +1806,9 @@ impl App {
                     .iter()
                     .any(|t| Some(t.id) == clip.map(ClipRef::track).or(track) && t.channel == Some(channel.id))
             }) {
-                let Some(track) = session.project().tracks.iter().find(|t| t.channel == Some(channel.id)) else {
+                let Some(track) =
+                    session.project().tracks.iter().find(|t| Some(t.id) == clip.map(ClipRef::track).or(track))
+                else {
                     continue;
                 };
                 for (index, device) in channel.devices.iter().enumerate() {
@@ -3844,7 +3846,7 @@ impl App {
                 self.status = Status::Hint(format!("Reading {count} sample{}", if count == 1 { "" } else { "s" }));
                 self.pending_drop = Some(PendingDrop { project: self.projects.active(), commands, decoded });
             }
-            Err(_) => self.run_drop(commands),
+            Err(_) => self.status = Status::Error("could not start the sample decoder".into()),
         }
     }
 
@@ -3859,6 +3861,18 @@ impl App {
         match pending.decoded.try_recv() {
             Ok(decoded) => {
                 let Some(pending) = self.pending_drop.take() else { return };
+                if pending.commands.iter().any(|(id, params)| {
+                    *id == "device.loadSample"
+                        && !decoded.iter().any(|(path, _, data, _)| {
+                            params["path"].as_str().is_some_and(|p| Path::new(p) == path)
+                                && data.frames() >= 2
+                                && (1..=32).contains(&data.channels)
+                                && (1000..=384000).contains(&data.sample_rate)
+                        })
+                }) {
+                    self.status = Status::Error("sample could not be decoded; the track was left unchanged".into());
+                    return;
+                }
                 let mut waveforms = (*self.waveforms).clone();
                 if let Ok(session) = self.projects.session_mut(None) {
                     for (path, stream, data, peaks) in decoded {
@@ -4487,6 +4501,71 @@ mod tests {
         // Where the map's window cannot tell (no pointer over it yet), nothing is under the drag.
         app.map_window.drag = Some(RemoteDrag { screen: None, released: false, escape: false, ctrl: false });
         assert_eq!(drag_pointer_in(&app, main, None), None);
+    }
+
+    #[test]
+    fn failed_sampler_decode_leaves_the_empty_track_unchanged() {
+        let mut app = App::new();
+        app.set_session(Session::new(suhina_session::blank_project()), &[]);
+        let item = drop::system_file(Path::new("/invalid.wav")).unwrap();
+        let plan = app.plan_drop(&[item], DropTarget::Track(TrackId(1)), false).unwrap();
+        let before = app.session().unwrap().project().clone();
+        for short in [false, true] {
+            let (send, decoded) = std::sync::mpsc::channel();
+            let data =
+                std::sync::Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.] });
+            let result = if short {
+                vec![(PathBuf::from("/invalid.wav"), None, data.clone(), crate::kit::waveform::peaks(&data))]
+            } else {
+                vec![]
+            };
+            send.send(result).unwrap();
+            app.pending_drop =
+                Some(PendingDrop { project: app.projects.active(), commands: plan.commands.clone(), decoded });
+            app.poll_drop(&egui::Context::default());
+            assert_eq!(app.session().unwrap().project(), &before);
+            assert!(matches!(app.status, Status::Error(_)));
+        }
+    }
+
+    #[test]
+    fn sampler_source_uses_the_shown_track_when_two_tracks_share_a_channel() {
+        let mut project = suhina_session::blank_project();
+        project.tracks[1].channel = project.tracks[0].channel;
+        let mut session = Session::new(project);
+        session.execute("device.add", &json!({"track":2,"id":"sampler"})).unwrap();
+        let mut project = session.project().clone();
+        project.channels[0].devices[0].set_sample_file("shared.wav");
+        let mut session = Session::new(project);
+        let mut audio = suhina_engine::AudioPool::new();
+        audio.files.insert(
+            "shared.wav".into(),
+            std::sync::Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.25; 480] }),
+        );
+        session.set_audio(audio);
+        let mut app = App::new();
+        app.set_session(session, &[]);
+        app.view.selected = Some(TrackId(2));
+        app.detail_open = true;
+        app.detail_showing = detail_view::Showing::Devices;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280., 800.))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        harness.ctx.data(|data| {
+            assert!(
+                data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(
+                    crate::detail::device_canvas::sample_source_id(TrackId(2), 0)
+                )
+                .is_some()
+            );
+            assert!(
+                data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(
+                    crate::detail::device_canvas::sample_source_id(TrackId(1), 0)
+                )
+                .is_none()
+            );
+        });
     }
 
     #[test]
