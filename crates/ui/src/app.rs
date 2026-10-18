@@ -3968,12 +3968,15 @@ impl App {
             (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
         };
         let default_width = crate::settings::Settings::default().browser_width;
-        if let Some(new) = browser_view::resize_handle(ui, handle, width, left, default_width as f32) {
+        let (resized, done) = browser_view::resize_handle(ui, handle, width, left, default_width as f32);
+        if let Some(new) = resized {
             let new = new.round().clamp(low as f32, widest) as u32;
-            if new != self.settings.browser_width {
-                self.settings.browser_width = new;
-                self.settings_changed = true;
-            }
+            self.settings.browser_width = new;
+        }
+        // Saved once the handle is let go: writing the settings file on every frame of a drag
+        // made the drag lag.
+        if done {
+            self.settings_changed = true;
         }
         let search_key = self.keymap.label("browser.search").unwrap_or_default();
         let selected_track = self.selected_track();
@@ -4737,8 +4740,34 @@ impl App {
             Rect::from_min_size(Pos2::new(x, bar.center().y - theme::ROW / 2.0), Vec2::new(width, theme::ROW))
         };
 
-        // Left: tempo, time signature, launch quantisation.
+        // Left: the browser's show/hide button, tempo, time signature, launch quantisation.
         let mut x = bar.left() + PAD;
+        let browser_rect = row(x, theme::ROW);
+        let label = if self.settings.browser_open { "Hide browser" } else { "Show browser" };
+        let response = widgets::button_area(ui, browser_rect, Id::new("browser-toggle"), label);
+        let response = match self.keymap.binding_text("view.browser") {
+            Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
+            None => response.on_hover_text(label),
+        };
+        painter.rect_filled(
+            browser_rect,
+            0.0,
+            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+        );
+        // A panel with its left part filled while the browser shows.
+        let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
+        let ink = if self.settings.browser_open { theme::text_primary() } else { theme::text_secondary() };
+        painter.rect_stroke(icon, 0.0, theme::hairline(ink), egui::StrokeKind::Inside);
+        let side = Rect::from_min_size(icon.min, Vec2::new(5.0, icon.height()));
+        if self.settings.browser_open {
+            painter.rect_filled(side, 0.0, ink);
+        } else {
+            painter.vline(side.right() + 0.5, icon.y_range(), theme::hairline(ink));
+        }
+        if response.clicked() {
+            self.toggle_browser();
+        }
+        x = browser_rect.right() + 4.0;
         let tempo_rect = row(x, 56.0);
         let tempo_shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
         let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", format!("{tempo_shown:.2}"));

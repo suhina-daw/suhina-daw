@@ -19,6 +19,8 @@ pub struct TrackMenu<'a> {
     /// The colour the track shows, outlined among the swatches.
     pub colour: Rgb,
     pub is_group: bool,
+    /// A return track: new tracks from its menu go after the regular tracks.
+    pub is_return: bool,
     /// The tracks selected in the view; grouping takes them when this track is one of them.
     pub selection: &'a [TrackId],
     /// The groups the track can move into, with their names.
@@ -259,8 +261,31 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         ui.close();
     }
     ui.separator();
+    insert_items(ui, (!menu.is_return).then_some(menu.track), actions);
+    ui.separator();
     if ui.button("Delete track").clicked() {
         actions.push(Action::new("track.delete", json!({ "track": track })));
+        ui.close();
+    }
+}
+
+/// Insert audio track, Insert MIDI track (after `after`, or after the regular tracks) and Insert
+/// return track, as the track menus and the empty space's menu offer them.
+pub fn insert_items(ui: &mut Ui, after: Option<TrackId>, actions: &mut Vec<Action>) {
+    for (kind, label, keys) in
+        [("audio", "Insert audio track", "Ctrl+T"), ("midi", "Insert MIDI track", "Ctrl+Shift+T")]
+    {
+        if ui.add(egui::Button::new(label).shortcut_text(shown(keys))).clicked() {
+            let mut params = json!({ "kind": kind });
+            if let Some(after) = after {
+                params["after"] = json!(after.0);
+            }
+            actions.push(Action::new("track.add", params));
+            ui.close();
+        }
+    }
+    if ui.button("Insert return track").clicked() {
+        actions.push(Action::new("return.add", json!({})));
         ui.close();
     }
 }

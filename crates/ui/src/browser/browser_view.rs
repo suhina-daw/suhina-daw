@@ -1634,25 +1634,37 @@ fn footer_view(
     edit_rect
 }
 
-/// The browser's resize handle at its inner edge; returns the new width while dragged.
-/// The browser's edge: dragged, the width it is dragged to; double-clicked, `default`.
-pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> Option<f32> {
+/// The browser's resize handle at its inner edge: dragged, the width it is dragged to;
+/// double-clicked, `default`. Gives that width, and whether the handle was let go (or reset)
+/// now: the width is saved then, not on every frame of a drag.
+pub fn resize_handle(ui: &Ui, handle: Rect, width: f32, left: bool, default: f32) -> (Option<f32>, bool) {
     let response = ui
         .interact(handle, Id::new("browser-resize"), Sense::click_and_drag())
         .on_hover_cursor(CursorIcon::ResizeHorizontal);
     if response.double_clicked() {
-        return Some(default);
+        return (Some(default), true);
     }
     ui.painter().rect_filled(
         handle,
         0.0,
         if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() },
     );
-    if response.dragged() {
-        let dx = response.drag_delta().x;
-        return Some(if left { width + dx } else { width - dx });
+    // The width follows the pointer from where the drag began, so it never falls behind it
+    // (adding each frame's movement to the width rounded to whole points would).
+    let start_id = Id::new("browser-resize-start");
+    if response.drag_started()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(start_id, (width, pointer.x)));
     }
-    None
+    if response.dragged()
+        && let (Some((from, x0)), Some(pointer)) =
+            (ui.ctx().data(|d| d.get_temp::<(f32, f32)>(start_id)), response.interact_pointer_pos())
+    {
+        let dx = pointer.x - x0;
+        return (Some(if left { from + dx } else { from - dx }), false);
+    }
+    (None, response.drag_stopped())
 }
 
 /// The active project's session.

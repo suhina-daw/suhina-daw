@@ -100,13 +100,16 @@ colour (Mixer › the channel strip), and the Arrangement headers have it as a b
 track; dragging moves it (after the header of an open group is into that group, and over another
 group's column it joins that group, [arrangement editing](arrangement-editing.md) › Groups inside
 groups); right-clicking opens its menu (rename, colour, group, ungroup, move into group, move out
-of group, delete). A track inside groups has its name stepped in 4 px per level; a group's name
+of group, **Insert audio track** and **Insert MIDI track** after it, **Insert return track**,
+delete). The track's channel strip and a return's column, which has no slots, open the same menu
+on a right-click and select the track on a click. A track inside groups has its name stepped in 4 px per level; a group's name
 follows a fold arrow, and a folded group hides the columns of the tracks inside it.
 Double-clicking selects the track and shows its devices in the detail area, opening the detail
 area if it was hidden ([clip editor](ui-clip-editor.md) › Where it opens); renaming stays in the
 menu.
 Dropping a device or file from the browser on the empty area right of the last track creates a
-new track; the area also has **+ MIDI track** and **+ Audio track** buttons ([browser](browser.md) ›
+new track; the area also has **+ MIDI track**, **+ Audio track** and **+ Return track** buttons,
+and a right-click there offers the three inserts ([browser](browser.md) ›
 Files). A file dropped on a slot or below the stop row becomes a clip in that slot (scenes are
 added below when needed); a device dropped on a column joins the track's chain. Samples and MIDI
 files dragged from the system's file manager land the same way ([browser](browser.md) › Files

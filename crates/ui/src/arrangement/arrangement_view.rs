@@ -342,6 +342,8 @@ pub struct ArrangementViewState {
     gain_drag: Option<((TrackId, usize), f64)>,
     /// The main track's volume being dragged, and its value so far.
     main_drag: Option<f64>,
+    /// The main row's height, its top edge dragged to change it (a row by default).
+    main_height: f32,
     fade_drag: Option<FadeDrag>,
     curve_drag: Option<CurveDrag>,
     /// The beat a clip was last right-clicked on, where its menu's Split here cuts.
@@ -419,6 +421,7 @@ impl Default for ArrangementViewState {
             value_drag: None,
             gain_drag: None,
             main_drag: None,
+            main_height: ROW,
             fade_drag: None,
             curve_drag: None,
             split_at: None,
@@ -981,7 +984,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         .iter()
         .map(|l| state.return_height(l.track) + 1.0 + state.automation.height(l.track, &timeline.automation))
         .sum::<f32>()
-        + if main_volume_db.is_some() { ROW + 1.0 } else { 0.0 };
+        + if main_volume_db.is_some() { state.main_height + 1.0 } else { 0.0 };
     let fixed_top = (area.bottom() - fixed_height).max(marker_row.bottom() + 1.0);
     let fixed = Rect::from_min_max(Pos2::new(area.left(), fixed_top), area.max);
     let lanes_area =
@@ -1583,13 +1586,22 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         fixed_painter.hline(area.x_range(), row.time.bottom() + 0.5, theme::hairline(theme::border()));
     }
     if let Some(db) = main_volume_db {
-        let y = fixed.bottom() - ROW;
-        let header = Rect::from_x_y_ranges(headers, egui::Rangef::new(y, y + ROW));
+        let y = fixed.bottom() - state.main_height;
+        let header = Rect::from_x_y_ranges(headers, egui::Rangef::new(y, fixed.bottom()));
         fixed_painter.rect_filled(header, 0.0, theme::panel_background());
-        // Lined up with the track names, which start after their colour band.
+        // The top edge resizes the row: the fixed rows sit along the bottom, so they grow upward.
+        let edge = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y - 1.0, y + 3.0)).intersect(fixed);
+        let response = ui
+            .interact(edge, Id::new("arrangement-main-resize"), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+        if response.dragged_by(egui::PointerButton::Primary) {
+            state.main_height = (state.main_height - response.drag_delta().y).clamp(ROW, MAX_LANE);
+        }
+        // Lined up with the track names, which start after their colour band; the controls in
+        // the row's first line however tall it is.
         let inner = Rect::from_min_max(
             Pos2::new(header.left() + COLOUR_BAND + PAD, header.top() + 2.0),
-            header.max - Vec2::new(PAD, 2.0),
+            Pos2::new(header.right() - PAD, header.top() + ROW - 2.0),
         );
         let font = theme::ui_font(theme::TEXT);
         widgets::text_in(&fixed_painter, inner, Align2::LEFT_CENTER, "Main", font, theme::text_primary());
@@ -1649,9 +1661,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let empty =
         Rect::from_min_max(Pos2::new(area.left(), tracks_bottom + 1.0), Pos2::new(area.right(), lanes_area.bottom()));
     let empty_time = Rect::from_x_y_ranges(time.x_range(), empty.y_range());
-    if empty_time.is_positive() && ui.interact(empty_time, Id::new("arrangement-empty-space"), Sense::click()).clicked()
-    {
-        state.clear_selected_clip();
+    if empty_time.is_positive() {
+        let space = ui.interact(empty_time, Id::new("arrangement-empty-space"), Sense::click());
+        if space.clicked() {
+            state.clear_selected_clip();
+        }
+        crate::interaction::empty_space::empty_space_menu(&space, actions);
     }
     if empty.height() > theme::ROW + 4.0 {
         let buttons = Rect::from_x_y_ranges(time.x_range(), empty.y_range());
@@ -2922,6 +2937,7 @@ fn track_header(
             name: &lane.name,
             colour: lane.color,
             is_group: lane.kind == ColumnKind::Group,
+            is_return: lane.kind == ColumnKind::Return,
             selection: &selection,
             into: &into,
             out: nesting::out_of_group(nest.places, lane.track),
@@ -3079,15 +3095,21 @@ fn track_header(
         }
     }
 
-    // The bottom edge resizes the lane.
-    let edge =
-        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 3.0), Pos2::new(rect.right(), rect.bottom() + 2.0));
+    // The bottom edge resizes the lane; a return's top edge, as the fixed rows sit along the
+    // bottom and grow upward.
+    let upward = lane.kind == ColumnKind::Return;
+    let edge = if upward {
+        Rect::from_min_max(Pos2::new(rect.left(), rect.top() - 1.0), Pos2::new(rect.right(), rect.top() + 3.0))
+    } else {
+        Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 3.0), Pos2::new(rect.right(), rect.bottom() + 2.0))
+    };
     if edge.intersects(lanes_area) {
         let response = ui
             .interact(edge.intersect(lanes_area), id.with("resize"), Sense::drag())
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         if response.dragged_by(egui::PointerButton::Primary) {
-            let height = (state.height(lane) + response.drag_delta().y).clamp(MIN_LANE, MAX_LANE);
+            let dy = response.drag_delta().y;
+            let height = (state.height(lane) + if upward { -dy } else { dy }).clamp(MIN_LANE, MAX_LANE);
             state.heights.insert(lane.track, height);
         }
     }

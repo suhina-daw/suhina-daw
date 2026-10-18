@@ -171,12 +171,14 @@ pub enum Page {
     DetailArea,
     Browser,
     Appearance,
+    /// Appearance › Theme, a page of its own under Appearance in the list.
+    Theme,
     Shortcuts,
 }
 
 impl Page {
     /// Every page with its name.
-    pub const ALL: [(Page, &'static str); 12] = [
+    pub const ALL: [(Page, &'static str); 13] = [
         (Page::General, "General"),
         (Page::Audio, "Audio"),
         (Page::Midi, "MIDI"),
@@ -188,6 +190,7 @@ impl Page {
         (Page::DetailArea, "Detail area"),
         (Page::Browser, "Browser"),
         (Page::Appearance, "Appearance"),
+        (Page::Theme, "Theme"),
         (Page::Shortcuts, "Shortcuts"),
     ];
 
@@ -651,7 +654,9 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
         painter.rect_filled(row, 0.0, motion::mix(idle, theme::control_background(), selected));
-        let text = Rect::from_min_max(Pos2::new(row.left() + PAD, row.top()), row.max);
+        // A page under another (Theme under Appearance) is stepped in.
+        let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
+        let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
         let color = motion::mix(theme::text_secondary(), theme::text_primary(), selected);
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }

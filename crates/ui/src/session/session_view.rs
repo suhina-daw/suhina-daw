@@ -285,6 +285,9 @@ pub fn show(
         Pos2::new(returns_x - 1.0, mixer.top() - 1.0),
     );
     if empty.width() > 24.0 {
+        // Under the buttons, so they keep their clicks; a right-click there inserts tracks.
+        let space = ui.interact(empty, Id::new("session-empty-space"), Sense::click());
+        crate::interaction::empty_space::empty_space_menu(&space, actions);
         empty_space(ui, &painter, empty, actions);
     }
     if let Some(probe) = state.drop.as_mut() {
@@ -553,7 +556,22 @@ fn draw_column(
     column_body(ui, &painter.with_clip_rect(body_clip), body_clip, span, bands, column, progress, id, state, actions);
     let mixer_rect = Rect::from_x_y_ranges(span, bands.mixer.y_range());
     let mixer_painter = painter.with_clip_rect(bands.mixer.intersect(clip));
-    crate::session::mixer_strip::show(
+    // A return column has no slots: its body selects it and has its menu, as its header does.
+    if column.kind == ColumnKind::Return {
+        let body = Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(body_clip);
+        if body.width() > 0.0 && body.height() > 0.0 {
+            let response = ui.interact(body, id.with("return-body"), Sense::click());
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} column", column.name))
+            });
+            if response.clicked() {
+                state.selected = Some(column.track);
+                state.selected_slot = None;
+            }
+            track_menu_on(&response, column, bands, actions);
+        }
+    }
+    let strip = crate::session::mixer_strip::show(
         ui,
         &mixer_painter,
         mixer_rect,
@@ -565,9 +583,34 @@ fn draw_column(
         id,
         actions,
     );
+    // The strip's background has the track's menu, as its header does.
+    track_menu_on(&strip, column, bands, actions);
     // Column separator through header, grid and mixer.
     let full = egui::Rangef::new(bands.header.top(), bands.mixer.bottom());
     painter.with_clip_rect(clip).vline(span.max + 0.5, full, theme::hairline(theme::border_strong()));
+}
+
+/// The track's right-click menu on `response`: its header, its strip, a return's column.
+fn track_menu_on(response: &Response, column: &Column, bands: &Bands, actions: &mut Vec<Action>) {
+    response.context_menu(|ui| {
+        let into: Vec<(TrackId, String)> = nesting::move_targets(&bands.places, column.track)
+            .into_iter()
+            .filter_map(|g| bands.groups.iter().find(|(t, _)| *t == g).cloned())
+            .collect();
+        let menu = TrackMenu {
+            track: column.track,
+            name: &column.name,
+            colour: column.color,
+            is_group: column.kind == ColumnKind::Group,
+            is_return: column.kind == ColumnKind::Return,
+            selection: &[],
+            into: &into,
+            out: nesting::out_of_group(&bands.places, column.track),
+            midi: column.plays_notes.then_some((&column.midi_input, bands.midi_ports)),
+            audio: column.plays_audio.then_some((&column.audio_input, bands.input_channels)),
+        };
+        menus::track_menu(ui, &menu, actions);
+    });
 }
 
 fn column_header(
@@ -596,24 +639,7 @@ fn column_header(
     }
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", column.name)));
-    response.context_menu(|ui| {
-        let into: Vec<(TrackId, String)> = nesting::move_targets(&bands.places, column.track)
-            .into_iter()
-            .filter_map(|g| bands.groups.iter().find(|(t, _)| *t == g).cloned())
-            .collect();
-        let menu = TrackMenu {
-            track: column.track,
-            name: &column.name,
-            colour: column.color,
-            is_group: column.kind == ColumnKind::Group,
-            selection: &[],
-            into: &into,
-            out: nesting::out_of_group(&bands.places, column.track),
-            midi: column.plays_notes.then_some((&column.midi_input, bands.midi_ports)),
-            audio: column.plays_audio.then_some((&column.audio_input, bands.input_channels)),
-        };
-        menus::track_menu(ui, &menu, actions);
-    });
+    track_menu_on(&response, column, bands, actions);
     if response.clicked() {
         state.selected = Some(column.track);
         state.selected_slot = None;

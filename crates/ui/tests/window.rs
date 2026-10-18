@@ -917,7 +917,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     harness.state_mut().set_themes(&ctx, vec![night], Some("themes".into()));
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Appearance").click();
+    harness.get_by_label("Settings page: Theme").click();
     harness.run();
     assert!(harness.query_by_label("Theme: Suhina Dark").is_some());
     harness.get_by_label("Theme: Night").click();
@@ -1912,7 +1912,7 @@ fn two_projects() -> Harness<'static, App> {
 }
 
 #[test]
-fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar() {
+fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar_and_they_grow_upward() {
     let mut harness = arrangement_app();
     // A return's header is a track's: volume and pan, its on switch, its automation lanes.
     for label in ["A Reverb volume", "A Reverb pan", "Turn A Reverb off"] {
@@ -1939,6 +1939,24 @@ fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run_steps(3);
     assert!((main(&harness) - 1.0).abs() < 1e-9, "one undo step");
+
+    // The fixed rows grow upward: Main's top edge dragged up 30 points takes its bar and the
+    // return above it up as far.
+    let (bar_top, reverb_top) =
+        (harness.get_by_label("Main volume").rect().top(), harness.get_by_label("A Reverb volume").rect().top());
+    let edge = egui::pos2(harness.get_by_label("Main volume").rect().center().x, bar_top - 1.0);
+    harness.hover_at(edge);
+    harness.step();
+    harness.drag_at(edge);
+    harness.step();
+    for y in [-10.0, -20.0, -30.0] {
+        harness.hover_at(edge + egui::vec2(0.0, y));
+        harness.step();
+    }
+    harness.drop_at(edge + egui::vec2(0.0, -30.0));
+    harness.run_steps(3);
+    assert_eq!(harness.get_by_label("Main volume").rect().top(), bar_top - 30.0);
+    assert_eq!(harness.get_by_label("A Reverb volume").rect().top(), reverb_top - 30.0);
 }
 
 #[test]
@@ -2532,7 +2550,7 @@ fn render_the_session_window() {
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Appearance").click();
+    harness.get_by_label("Settings page: Theme").click();
     harness.run();
     harness.remove_cursor();
     harness.run();

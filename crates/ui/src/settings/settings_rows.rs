@@ -468,8 +468,9 @@ pub(crate) static ROWS: &[Entry] = &[
             cx.choose(r, &[("GPU", Graphics::Gpu), ("OpenGL", Graphics::OpenGl)], |s| &mut s.graphics);
         },
     ),
+    // Theme.
     block(
-        Page::Appearance,
+        Page::Theme,
         "Theme",
         "Theme",
         "The themes to pick from, the theme in use and its colours",

@@ -80,7 +80,8 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
         ("Transport", Some("Stop: Stay")),
         ("Detail area", Some("Detail area layout: Full width")),
         ("Browser", Some("Tag limit: 1024")),
-        ("Appearance", Some("Export the theme template")),
+        ("Appearance", Some("Renderer: OpenGL")),
+        ("Theme", Some("Export the theme template")),
         ("Shortcuts", Some("Change keys of file.new")),
     ];
     let names: Vec<&str> = Page::ALL.iter().map(|(_, name)| *name).collect();

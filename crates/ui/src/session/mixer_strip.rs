@@ -222,7 +222,7 @@ pub fn show(
     state: &mut SessionViewState,
     id: Id,
     actions: &mut Vec<Action>,
-) {
+) -> egui::Response {
     // The strip in a shade of its track's colour, as the column above it.
     let tint = motion::mix(
         theme::panel_background(),
@@ -237,6 +237,11 @@ pub fn show(
     });
     if strip.double_clicked() {
         state.open_devices = Some(column.track);
+    }
+    // A click on the strip selects its track, a return's too.
+    if strip.clicked() {
+        state.selected = Some(column.track);
+        state.selected_slot = None;
     }
     // The track's colour down the left edge, at every height; a click opens the palette.
     let band = Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()));
@@ -282,6 +287,7 @@ pub fn show(
         meter::show(ui, painter, at, &column.name, meter::Source::Track(column.track), &level, actions);
     }
     toggles(ui, painter, parts.toggles, column, track_number, id, actions);
+    strip
 }
 
 /// The line under a strip's device list: dragged down, the lists grow and the controls under them

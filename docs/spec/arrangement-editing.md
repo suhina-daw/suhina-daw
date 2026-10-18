@@ -123,9 +123,10 @@ where they were, an empty row between them staying until the rows above it empty
 
 Return tracks, along the bottom, have a track's header: volume and pan, the on switch and solo,
 the menu, automation lanes under them (shown with the header's button), a click to select them
-(the detail area shows their devices) and a bottom edge that sets their height (tall enough for
-volume and pan by default). The main track's row has a volume bar that a drag sets
-(`main.setVolume`, heard while dragging, one undo step).
+(the detail area shows their devices) and a top edge that sets their height (tall enough for
+volume and pan by default): the fixed rows sit along the bottom, so they grow upward, as the
+pointer goes. The main track's row has a volume bar that a drag sets (`main.setVolume`, heard
+while dragging, one undo step), and its top edge sets its height the same way.
 
 ## Clip edges
 
