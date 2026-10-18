@@ -665,6 +665,37 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_clip_enabled,
     },
     CommandSpec {
+        id: "clip.trim",
+        label: "Move an arrangement clip's edges (song beats), the content moving with the left one; an unlooped clip ends at most where its audio does, a looping one repeats as far as it goes, and loop turns the loop on first",
+        params: &[
+            TRACK,
+            param("index", ParamType::Integer, "clip index on the track, from project.clips"),
+            optional("start", ParamType::Number, "where the clip's left edge goes, in beats from the beginning"),
+            optional("end", ParamType::Number, "where the clip's right edge goes, in beats from the beginning"),
+            optional(
+                "loop",
+                ParamType::Bool,
+                "true turns the clip's loop on (over what it plays now) before the edges move",
+            ),
+            optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_edges::trim_clip,
+    },
+    CommandSpec {
+        id: "clip.stretch",
+        label: "Move an audio clip's edges with its audio time-stretched to fill the new length, its pitch kept",
+        params: &[
+            TRACK,
+            param("index", ParamType::Integer, "clip index on the track, from project.clips"),
+            optional("start", ParamType::Number, "where the clip's left edge goes, in beats from the beginning"),
+            optional("end", ParamType::Number, "where the clip's right edge goes, in beats from the beginning"),
+            optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_edges::stretch_clip,
+    },
+    CommandSpec {
         id: "range.split",
         label: "Split the clips of some tracks at both edges of a time selection, so the span is clips of its own; answers with the clips inside it",
         params: &[TRACKS, RANGE_START, RANGE_END],

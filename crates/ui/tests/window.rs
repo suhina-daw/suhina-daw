@@ -4366,7 +4366,7 @@ fn a_devices_switch_bypasses_it_and_a_click_again_enables_it() {
 }
 
 #[test]
-fn rename_in_a_slots_menu_asks_for_the_name_and_ctrl_r_does_too() {
+fn rename_in_a_slots_menu_edits_the_name_on_the_slot_and_ctrl_r_does_too() {
     let mut harness = window(demo_app());
     // By default the menu carries Rename, not a name field.
     harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
@@ -4375,23 +4375,99 @@ fn rename_in_a_slots_menu_asks_for_the_name_and_ctrl_r_does_too() {
     // The item's label carries its key too ("Rename" and Ctrl+R).
     harness.get_by_label_contains("Rename").click();
     harness.run();
-    assert!(harness.query_by_label("Clip name").is_some(), "Rename asks for the name");
-    harness.get_by_label("Cancel").click();
+    assert!(harness.query_by_label("Clip name").is_some(), "Rename puts a name field on the slot");
+    assert!(harness.query_by_label("Cancel").is_none(), "no dialog: the field is all there is");
+    harness.key_press(Key::Escape);
     harness.run();
-    assert!(harness.query_by_label("Clip name").is_none(), "Cancel closes it");
-    // Ctrl+R on the selected slot asks the same.
+    assert!(harness.query_by_label("Clip name").is_none(), "Escape leaves the name as it was");
+    assert!(harness.query_by_label("Launch Walk on Bass (scene 2)").is_some());
+    // Ctrl+R on the selected slot does the same; Enter renames.
     harness.get_by_label("Launch Walk on Bass (scene 2)").click();
     harness.run();
     harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
     harness.run();
-    assert!(harness.query_by_label("Clip name").is_some(), "Ctrl+R asks for the selected clip's name");
-    // The name given goes to that slot's clip (scenes are numbered from 1 in commands).
-    harness.get_by_label("Clip name").click();
-    harness.run();
+    assert!(harness.query_by_label("Clip name").is_some(), "Ctrl+R edits the selected clip's name");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
     harness.get_by_label("Clip name").type_text("Riff");
     harness.run();
-    harness.get_by_label("Rename").click();
+    harness.key_press(Key::Enter);
     harness.run();
     assert!(harness.query_by_label("Launch Riff on Bass (scene 2)").is_some(), "the selected slot's clip is renamed");
+}
+
+#[test]
+fn ctrl_r_on_an_arrangement_clip_edits_its_name_on_the_clip() {
+    let mut harness = arrangement_app();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
+    harness.run();
+    let field = harness.get_by_label("Clip name").rect();
+    assert!((field.top() - clip.top()).abs() < 4.0, "the field is on the clip: {field:?} on {clip:?}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Clip name").type_text("Fill");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(harness.query_by_label("Clip Fill on Drums at bar 17").is_some(), "renamed in place");
+}
+
+#[test]
+fn dragging_one_of_several_selected_clips_moves_them_all() {
+    let mut harness = arrangement_app();
+    let starts = |h: &Harness<'static, App>| {
+        h.state().session().map(|s| {
+            s.project().arrangement.lanes.iter().flat_map(|l| l.clips.iter().map(|c| c.start)).collect::<Vec<_>>()
+        })
+    };
+    let before = starts(&harness).unwrap();
+    assert!(before.len() > 1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    // Two bars later: 64 points at 8 points a beat.
+    drag_clip(&mut harness, "Clip Beat B on Drums at bar 17", egui::vec2(64.0, 0.0));
+    let after = starts(&harness).unwrap();
+    let mut want: Vec<f64> = before.iter().map(|s| s + 8.0).collect();
+    let mut got = after.clone();
+    want.sort_by(f64::total_cmp);
+    got.sort_by(f64::total_cmp);
+    assert_eq!(got, want, "every selected clip moved by two bars");
+}
+
+#[test]
+fn a_drag_on_the_ruler_selects_time_and_delete_removes_only_what_is_inside() {
+    let mut harness = arrangement_app();
+    let drums = |h: &Harness<'static, App>| {
+        h.state().session().map(|s| {
+            let p = s.project();
+            let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+            p.arrangement
+                .lanes
+                .iter()
+                .find(|l| l.track == track)
+                .map(|l| l.clips.iter().map(|c| (c.start, c.length)).collect::<Vec<_>>())
+        })
+    };
+    let before = drums(&harness).flatten().unwrap();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let ruler = harness.get_by_label("Ruler").rect();
+    // One bar into the clip to one bar before its end, on the bar grid (32 points a bar).
+    let (from, to) =
+        (egui::pos2(clip.left() + 33.0, ruler.center().y), egui::pos2(clip.right() - 33.0, ruler.center().y));
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert!(harness.state().arrangement().time_selection().is_some(), "the ruler's drag selected time");
+    harness.key_press(Key::Delete);
+    harness.run();
+    let after = drums(&harness).flatten().unwrap();
+    assert_eq!(after.len(), before.len() + 1, "the clip split around the gap: {before:?} -> {after:?}");
+    let total = |c: &[(f64, f64)]| c.iter().map(|(_, l)| l).sum::<f64>();
+    assert!(total(&after) < total(&before), "the inside went");
 }

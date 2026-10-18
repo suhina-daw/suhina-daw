@@ -79,8 +79,10 @@ A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection 
 and **Shift** takes the run of clips between the clip clicked last and this one, in the order the
 lanes draw them (top lane first, clips in their lane from left to right). Ctrl+A selects every clip
 in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
-start there; pressing one that is not selects that clip and only it moves, since moving a whole
-selection is not built yet (see Open).
+start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
+moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, stack?}`, one
+undo step, so no moved clip replaces another on the way); to another track only when the whole
+selection is on one track.
 
 A click on an empty spot of a lane, or on the empty space under the tracks, clears the clip
 selection (a double-click there still makes a clip, › Making an empty clip). The track
@@ -93,6 +95,36 @@ audio clip its waveform the same way ([components](../design/components.md) › 
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
+
+## Time selection
+
+A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
+not on whole clips, as in Ableton Live and Studio One. It is made by:
+
+- a drag from an empty spot of a lane (the rectangle's tracks and beats);
+- a drag on the ruler: that time over every track;
+- over a clip, as Settings › Arrangement › *Ctrl+drag selects time over clips* says: off (the
+  default, Ableton Live's way) a drag from the lower half of a clip on a lane at least 36 px tall
+  selects time and the clip moves from its upper half; on (FL Studio's way) a drag with Ctrl held
+  selects time anywhere and a plain drag moves the clip.
+
+Its edges are on the grid (Alt: free). A click on a clip, or moving one, ends it, so clicked
+clips act whole again (Ctrl+A, Shift and Ctrl clicks still pick whole clips).
+
+With a time selection:
+
+| Key | Command | What it does |
+|---|---|---|
+| Delete | `range.delete` | Removes what plays inside; clips crossing an edge keep their parts outside it, and the gap stays. |
+| Ctrl+X | `range.cut` | Copies what plays inside, cut to it, and removes it. |
+| Ctrl+C | `range.copy` | Copies what plays inside, cut to it. |
+| Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
+| Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own (Ableton Live's *Split Clip at Selection*). |
+| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
+| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
+
+Each takes `{tracks, start, end}` and is one undo step. Closing the gap (Ableton Live's *Delete
+Time*) is not built yet.
 
 ## Duplicating and deleting
 
@@ -656,10 +688,8 @@ is drawn.
 
 - Placing clips by recording follows the same rules (clips from the browser, duplicating and
   pasting already do).
-- Moving several selected clips at once.
 - Moving (rather than copying) a clip between a slot and the arrangement.
 - Whether a stacked lane should grow taller automatically.
-- Dragging along the ruler to scrub.
-- Consolidating more than one selected clip, or a time selection; the window consolidates the
-  selected clip's range until there is a selection of several clips.
+- Dragging along the ruler to scrub (a drag there selects time now).
+- Closing or opening a gap with a time selection (Delete Time, Insert Time).
 - A consolidated audio clip warped to the project, so it follows a later tempo change.

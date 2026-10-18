@@ -43,6 +43,9 @@ pub struct ViewSettings {
     pub menu_name_field: bool,
     /// Notes moved onto others of the same key and start replace them (on by default).
     pub notes_replace: bool,
+    /// Ctrl+drag over a clip selects time (FL Studio); off, a drag from a clip's lower half
+    /// does (Ableton Live, the default).
+    pub time_select_ctrl: bool,
 }
 
 impl Default for ViewSettings {
@@ -54,6 +57,7 @@ impl Default for ViewSettings {
             double_click_clip: true,
             menu_name_field: false,
             notes_replace: true,
+            time_select_ctrl: false,
         }
     }
 }
@@ -62,13 +66,14 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
             if self.double_click_clip { "on" } else { "off" },
             if self.menu_name_field { "on" } else { "off" },
             if self.notes_replace { "on" } else { "off" },
+            if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
         )
     }
 
@@ -89,6 +94,7 @@ impl ViewSettings {
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
+            ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
             _ => return false,
         }
         true
@@ -109,6 +115,7 @@ mod tests {
             double_click_clip: false,
             menu_name_field: true,
             notes_replace: false,
+            time_select_ctrl: true,
         };
         let settings = Settings { view, ..Settings::default() };
         let (read, warnings) = Settings::from_text(&settings.to_text());

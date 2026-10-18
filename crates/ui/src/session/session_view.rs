@@ -796,6 +796,14 @@ fn column_body(
                 .show(|ui| crate::session::slot_launch::launch_menu(ui, column.track, number, launch, actions));
         }
         let selected = state.selected_slot == Some(key);
+        // The name's place, for a rename in place (Ctrl+R).
+        let pass = ui.ctx().cumulative_pass_nr();
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), number as u64)),
+                (rect, pass),
+            );
+        });
         slot_cell(painter, rect, column, slot, hover, pulse, progress, selectable && selected);
         if column.armed && !has_clip && column.kind == ColumnKind::Track {
             let recording = column.recording == Some(scene);

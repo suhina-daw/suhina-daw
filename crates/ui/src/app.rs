@@ -1305,30 +1305,52 @@ impl App {
         }
         if let Some((target, mut draft, focused)) = self.rename.take() {
             let (mut keep, mut apply) = (true, None);
-            egui::Window::new("Rename clip")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 96.0))
-                .show(ui.ctx(), |ui| {
-                    let field = ui.add(egui::TextEdit::singleline(&mut draft).desired_width(220.0));
-                    field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Clip name"));
-                    if !focused {
-                        field.request_focus();
-                    }
-                    let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                    ui.horizontal(|ui| {
-                        if enter || ui.button("Rename").clicked() {
-                            let mut params = target.clone();
-                            params["name"] = json!(draft.trim());
-                            apply = Some(Action::new("clip.rename", params));
-                            keep = false;
-                        }
-                        if escape || ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
+            // The field sits on the clip's name, where the views drew it last frame: Enter or a
+            // click elsewhere renames, Escape leaves the name as it was.
+            let track = target.get("track").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            let key = match (target.get("index"), target.get("scene")) {
+                (Some(index), _) => egui::Id::new((NAME_RECT_CLIP, track, index.as_u64().unwrap_or(0))),
+                (None, scene) => {
+                    egui::Id::new((NAME_RECT_SLOT, track, scene.and_then(serde_json::Value::as_u64).unwrap_or(0)))
+                }
+            };
+            let now = ui.ctx().cumulative_pass_nr();
+            let place = ui
+                .ctx()
+                .data(|d| d.get_temp::<(Rect, u64)>(key))
+                .filter(|(_, pass)| now.saturating_sub(*pass) <= 2)
+                .map(|(rect, _)| rect);
+            match place {
+                None => keep = false,
+                Some(rect) => {
+                    egui::Area::new(egui::Id::new("inline-rename"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(rect.min)
+                        .show(ui.ctx(), |ui| {
+                            let field = ui.add(
+                                egui::TextEdit::singleline(&mut draft)
+                                    .id(egui::Id::new("inline-rename-field"))
+                                    .font(theme::ui_font(theme::TEXT_SMALL))
+                                    .desired_width(rect.width().max(120.0)),
+                            );
+                            field.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Clip name")
+                            });
+                            if !focused {
+                                field.request_focus();
+                            }
+                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                            if escape {
+                                keep = false;
+                            } else if field.lost_focus() && focused {
+                                let mut params = target.clone();
+                                params["name"] = json!(draft.trim());
+                                apply = Some(Action::new("clip.rename", params));
+                                keep = false;
+                            }
+                        });
+                }
+            }
             if keep {
                 self.rename = Some((target, draft, true));
             }
@@ -1626,6 +1648,7 @@ impl App {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
+        self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         // Any press ends a device panel's hold on Delete and the mute key; a click on a panel
         // takes it again when the button comes up, whether or not the detail area is shown.
         if ui.input(|i| i.pointer.primary_pressed()) {
@@ -3312,6 +3335,49 @@ impl App {
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
                 self.status = Status::Hint("In the Session view, a slot's clip can be copied and pasted".into());
             }
+            // A time selection in the Arrangement: the keys act on what plays inside it, as in
+            // Ableton Live and Studio One; clips picked by a click act whole (the arm below).
+            "selection.copy"
+            | "selection.cut"
+            | "selection.duplicate"
+            | "selection.delete"
+            | "selection.split"
+            | "selection.consolidate"
+                if self.shown == View::Arrangement
+                    && !self.device_focus
+                    && self.arrangement.automation.selected_points().is_none()
+                    && self.arrangement.time_selection().is_some() =>
+            {
+                let Some(span) = self.arrangement.time_selection().cloned() else { return };
+                let tracks: Vec<u32> = span.tracks.iter().map(|t| t.0).collect();
+                let params = json!({ "tracks": tracks, "start": span.start, "end": span.end });
+                match action {
+                    "selection.delete" => actions.push(Action::new("range.delete", params)),
+                    "selection.cut" => actions.push(Action::new("range.cut", params)),
+                    "selection.copy" => actions.push(Action::new("range.copy", params)),
+                    "selection.split" => actions.push(Action::new("range.split", params)),
+                    "selection.duplicate" => {
+                        actions.push(Action::new("range.duplicate", params));
+                        // The selection moves onto the copy, so Ctrl+D again goes on.
+                        let length = span.end - span.start;
+                        self.arrangement.set_time_selection(Some(
+                            crate::arrangement::arrangement_view::TimeSelection {
+                                start: span.end,
+                                end: span.end + length,
+                                ..span
+                            },
+                        ));
+                    }
+                    _ => {
+                        for track in tracks {
+                            actions.push(Action::new(
+                                "clip.consolidate",
+                                json!({ "track": track, "start": span.start, "end": span.end }),
+                            ));
+                        }
+                    }
+                }
+            }
             "selection.copy" | "selection.cut" | "selection.duplicate" | "selection.delete" => {
                 // Points selected on an automation lane are deleted before any clip.
                 if action == "selection.delete"
@@ -3475,6 +3541,14 @@ impl App {
                     })
                     .unwrap_or_default();
                 self.arrangement.select_clips(clips);
+            }
+            "selection.paste"
+                if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>
+            {
+                // Copied from several tracks: each part back on its own track, from the play
+                // start marker, as Ableton Live pastes at its insert marker.
+                let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.beat);
+                actions.push(Action::new("clip.paste", json!({ "start": beat })));
             }
             "selection.paste" => {
                 // After the selected clip, or at the playhead on the selected track.
@@ -4882,6 +4956,11 @@ fn ram_text(bytes: u64) -> String {
     let mib = bytes as f64 / (1024.0 * 1024.0);
     if mib >= 1024.0 { format!("{:.1} GB", mib / 1024.0) } else { format!("{mib:.0} MB") }
 }
+
+/// Where an arrangement clip's name is drawn, by (track, index): the inline rename's place.
+pub(crate) const NAME_RECT_CLIP: &str = "clip-name-rect";
+/// Where a clip slot's name is drawn, by (track, scene from 1).
+pub(crate) const NAME_RECT_SLOT: &str = "slot-name-rect";
 
 /// One menu of the menu bar. While another of the bar's menus is open, the pointer over this
 /// one's title opens it, as system menu bars do.

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, StrokeKind, Ui, Vec2};
-use serde_json::json;
+use serde_json::{Value, json};
 use suhina_engine::Quantization;
 use suhina_engine::model::{FadeCurve, FadeShape, Project, TrackId};
 
@@ -111,6 +111,8 @@ struct ClipDrag {
     index: usize,
     start: f64,
     target: TrackId,
+    /// Where the dragged clip started: the other selected clips move by as much as it does.
+    origin: f64,
 }
 
 /// Which end of a clip a fade belongs to.
@@ -251,6 +253,10 @@ pub struct ArrangementViewState {
     /// Moved clips stack on others instead of replacing them: audio clips, MIDI clips.
     pub stack_audio: bool,
     pub stack_midi: bool,
+    /// How a drag over a clip selects time (Settings › Arrangement › Time selection): with Ctrl
+    /// held (as FL Studio does) when true; from the clip's lower half (as Ableton Live does) when
+    /// false. A drag on empty lanes or on the ruler selects time either way.
+    pub time_select_ctrl: bool,
     /// A double-click on an empty spot of a lane does nothing (Settings › Arrangement ›
     /// Double-click makes a clip is off); by default it makes an empty clip of the track's kind.
     pub double_click_does_nothing: bool,
@@ -265,6 +271,8 @@ pub struct ArrangementViewState {
     marquee: Option<Pos2>,
     /// The span the last selection rectangle covered: its tracks and its beats.
     time_selection: Option<TimeSelection>,
+    /// Where a drag on the ruler started, in beats: it selects time over every track.
+    ruler_select: Option<f64>,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     menu_beat: Option<f64>,
     clip_drag: Option<ClipDrag>,
@@ -331,6 +339,7 @@ impl Default for ArrangementViewState {
             headers_left: false,
             stack_audio: false,
             stack_midi: false,
+            time_select_ctrl: false,
             double_click_does_nothing: false,
             header_width: HEADER_COLUMN,
             heights: HashMap::new(),
@@ -338,6 +347,7 @@ impl Default for ArrangementViewState {
             anchor: None,
             marquee: None,
             time_selection: None,
+            ruler_select: None,
             menu_beat: None,
             clip_drag: None,
             value_drag: None,
@@ -380,6 +390,11 @@ impl ArrangementViewState {
     /// The span the last selection rectangle covered, if one did.
     pub fn time_selection(&self) -> Option<&TimeSelection> {
         self.time_selection.as_ref()
+    }
+
+    /// Sets or clears the time selection: after a duplicate it moves onto the copy.
+    pub fn set_time_selection(&mut self, selection: Option<TimeSelection>) {
+        self.time_selection = selection;
     }
 
     /// The clip the views work on: the one clicked last.
@@ -1039,7 +1054,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // A click on the ruler moves the play start marker there, on the clip grid (Alt: free); while
     // playing, playback jumps there (`docs/spec/arrangement-editing.md` › Play position).
-    let ruler_response = ui.interact(ruler, Id::new("arrangement-ruler"), Sense::click());
+    let ruler_response = ui.interact(ruler, Id::new("arrangement-ruler"), Sense::click_and_drag());
     ruler_response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Ruler"));
     if ruler_response.clicked()
         && let Some(pointer) = ruler_response.interact_pointer_pos()
@@ -1047,6 +1062,27 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let free = ui.input(|i| i.modifiers.alt);
         let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
         actions.push(Action::new("transport.setPosition", json!({ "beats": ruler_beat(raw, grid, free) })));
+    }
+    // A drag along the ruler selects that time over every track (on the grid; Alt: free).
+    if ruler_response.drag_started_by(egui::PointerButton::Primary)
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+    {
+        let free = ui.input(|i| i.modifiers.alt);
+        let raw = f64::from((origin.x - time.left() + state.scroll.x) / state.beat_width);
+        state.ruler_select = Some(ruler_beat(raw, grid, free));
+    }
+    if let Some(from) = state.ruler_select
+        && let Some(pointer) = ui.ctx().pointer_latest_pos()
+    {
+        let free = ui.input(|i| i.modifiers.alt);
+        let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
+        let to = ruler_beat(raw, grid, free);
+        let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
+        let (start, end) = (from.min(to), from.max(to));
+        state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end });
+        if ui.input(|i| !i.pointer.primary_down()) {
+            state.ruler_select = None;
+        }
     }
     let beat_at = |x: f32, free: bool, state: &ArrangementViewState| {
         ruler_beat(
@@ -1332,7 +1368,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.marquee = None;
             let picked: Vec<(TrackId, usize)> =
                 clip_rects.iter().filter(|(_, r)| r.intersects(rect)).map(|(key, _)| *key).collect();
-            let beat_of = |x: f32| f64::from((x - time.left() + state.scroll.x) / state.beat_width).max(0.0);
+            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
+            let free = ui.input(|i| i.modifiers.alt);
+            let beat_of = |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free);
             let tracks: Vec<TrackId> =
                 rows_seen.iter().filter(|(_, r)| r.y_range().intersects(rect.y_range())).map(|(t, _)| *t).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
@@ -1823,6 +1861,10 @@ fn clip_box<'a>(
     let snapped = |raw: f64| grid.place(raw, free);
     let at = match state.clip_drag {
         Some(drag) if mine(&drag) => snapped(drag.start),
+        // Another clip of the selection is dragged: this one moves by as much.
+        Some(drag) if state.is_selected(key) && state.is_selected((drag.track, drag.index)) => {
+            (clip.start + snapped(drag.start) - drag.origin).max(0.0)
+        }
         _ => clip.start,
     };
     // Where it was last frame takes the pointer; it is drawn where this frame's drag puts it.
@@ -1868,20 +1910,41 @@ fn clip_box<'a>(
         menus::clip_edit_menu(ui, lane.track, clip.index, (clip.start, clip.length), joined, split_at, actions);
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+    // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
+    // lower half on a lane tall enough to have one, as the setting says.
+    let selects_time = response.drag_started_by(egui::PointerButton::Primary)
+        && ui.input(|i| i.pointer.press_origin()).is_some_and(|origin| {
+            if state.time_select_ctrl {
+                command
+            } else {
+                !command && visible.height() >= 36.0 && origin.y > visible.center().y
+            }
+        });
+    if selects_time {
+        state.marquee = ui.input(|i| i.pointer.press_origin());
+    } else if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
+        // Clips picked by a click or moved: the time selection gives way to them.
+        state.time_selection = None;
+    }
     if response.clicked() {
         state.pick_clip(key, shift, command, clip_order);
         state.clip_clicked = true;
-    } else if response.drag_started_by(egui::PointerButton::Primary) && !state.is_selected(key) {
+    } else if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && !state.is_selected(key) {
         // Pressing a clip that is already selected keeps the selection, so a drag can start there.
         state.pick_clip(key, shift, command, clip_order);
     }
-    if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
+    if response.clicked() || (response.drag_started_by(egui::PointerButton::Primary) && !selects_time) {
         // The track being worked on: a folded group shows this track while it is one of its own.
         state.targeted = Some(lane.track);
     }
-    if response.drag_started_by(egui::PointerButton::Primary) {
-        state.clip_drag =
-            Some(ClipDrag { track: lane.track, index: clip.index, start: clip.start, target: lane.track });
+    if response.drag_started_by(egui::PointerButton::Primary) && !selects_time {
+        state.clip_drag = Some(ClipDrag {
+            track: lane.track,
+            index: clip.index,
+            start: clip.start,
+            target: lane.track,
+            origin: clip.start,
+        });
     }
     if response.dragged_by(egui::PointerButton::Primary)
         && let Some(drag) = state.clip_drag.as_mut()
@@ -1897,15 +1960,34 @@ fn clip_box<'a>(
         && (drag.track, drag.index) == key
     {
         let start = snapped(drag.start);
-        let mut params = json!({ "track": lane.track.0, "index": clip.index, "start": start });
-        if drag.target != lane.track {
-            params["to_track"] = json!(drag.target.0);
-        }
-        if (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi) {
-            params["stack"] = json!(true);
-        }
-        if drag.target != lane.track || (start - clip.start).abs() > 1e-9 {
-            actions.push(Action::new("clip.move", params));
+        let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
+        let moved = drag.target != lane.track || (start - clip.start).abs() > 1e-9;
+        if state.selected.len() > 1 && state.is_selected(key) {
+            // The whole selection moves by as much, at once; to another track only when all of
+            // it is on this one.
+            let clips: Vec<Value> =
+                state.selected.iter().map(|(track, index)| json!({ "track": track.0, "index": index })).collect();
+            let mut params = json!({ "clips": clips, "beats": start - clip.start });
+            if drag.target != lane.track && state.selected.iter().all(|(track, _)| *track == lane.track) {
+                params["to_track"] = json!(drag.target.0);
+            }
+            if stack {
+                params["stack"] = json!(true);
+            }
+            if moved {
+                actions.push(Action::new("clip.moveMany", params));
+            }
+        } else {
+            let mut params = json!({ "track": lane.track.0, "index": clip.index, "start": start });
+            if drag.target != lane.track {
+                params["to_track"] = json!(drag.target.0);
+            }
+            if stack {
+                params["stack"] = json!(true);
+            }
+            if moved {
+                actions.push(Action::new("clip.move", params));
+            }
         }
         // Drawn where it was dropped until the project has moved it.
         let rect = clip_rect(space, start, clip.length, x_of);
@@ -2220,6 +2302,15 @@ fn paint_clip(
     let color = if clip.enabled { rgb(lane.color) } else { theme::text_hint() };
     painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, dim(color));
     let text_color = if clip.enabled && !lane.mute { theme::text_value() } else { theme::text_hint() };
+    // The name's place, for a rename in place (Ctrl+R).
+    let strip = Rect::from_min_max(
+        Pos2::new(rect.left().max(view.left()), rect.top()),
+        Pos2::new(rect.right().min(view.right()), rect.top() + 18.0),
+    );
+    let pass = painter.ctx().cumulative_pass_nr();
+    painter.ctx().data_mut(|d| {
+        d.insert_temp(Id::new((crate::app::NAME_RECT_CLIP, u64::from(lane.track.0), clip.index as u64)), (strip, pass));
+    });
     let has_name = rect.height() >= 20.0;
     if has_name {
         // The name stays in view while the clip's start is scrolled off to the left.

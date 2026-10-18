@@ -233,7 +233,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Clips",
         "Name field in clip menus",
-        "A clip's right-click menu renames it in place; off, Rename (Ctrl+R) asks for the name",
+        "A clip's right-click menu carries its name to edit; off, Rename (Ctrl+R) edits the name on the clip",
         &["menu_name_field"],
         |cx, r| cx.on_off(r, |s| &mut s.view.menu_name_field),
     ),
@@ -244,6 +244,14 @@ pub(crate) static ROWS: &[Entry] = &[
         "In the piano roll, a note moved onto another of the same key and start takes its place; off, both play",
         &["notes_replace"],
         |cx, r| cx.on_off(r, |s| &mut s.view.notes_replace),
+    ),
+    row(
+        Page::Arrangement,
+        "Clips",
+        "Ctrl+drag selects time over clips",
+        "As in FL Studio; off, a drag from a clip's lower half selects time, as in Ableton Live. A drag on empty lanes or the ruler always does",
+        &["time_select"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.time_select_ctrl),
     ),
     row(
         Page::Arrangement,

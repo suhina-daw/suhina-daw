@@ -102,6 +102,13 @@ The zoom level is remembered the next time Suhina starts.
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.
+
+With a time selection in the Arrangement (a drag on empty lanes, on the ruler, or over a clip as
+Settings › Arrangement › *Ctrl+drag selects time over clips* says), Delete, Ctrl+X, Ctrl+C,
+Ctrl+E, Ctrl+D and Ctrl+J act on what plays inside it: clips crossing its edges are split there.
+Ctrl+V puts material copied from several tracks back on its own tracks, from the play start
+marker. Ctrl+R edits a clip's name right on the clip; Enter or a click elsewhere keeps it, Escape
+leaves it.
 Ctrl+click a clip to add it to the selection; Shift+click selects everything from the last
 selected clip up to the one you click.
 

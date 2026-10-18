@@ -472,6 +472,41 @@ mod imp {
         found != 0 && !info.hwndCaret.is_null()
     }
 
+    /// Once an editor is open this process is interactive, not background work: Windows 11
+    /// otherwise may class a host with no console of its own as background, throttle it
+    /// (EcoQoS) and coarsen its timers, and a plug-in that paces its drawing by timers (Pro-Q 4)
+    /// then redraws a few times a second (#638). The timers get 1 ms resolution too, as DAWs
+    /// set it for their editors.
+    pub(crate) fn interactive() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentProcess, PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION, PROCESS_POWER_THROTTLING_STATE,
+                ProcessPowerThrottling, SetProcessInformation,
+            };
+            let state = PROCESS_POWER_THROTTLING_STATE {
+                Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+                    | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION,
+                StateMask: 0,
+            };
+            // SAFETY: this process's pseudo handle; no arguments.
+            let process = unsafe { GetCurrentProcess() };
+            // SAFETY: the state lives through the call and its size is given.
+            let _ = unsafe {
+                SetProcessInformation(
+                    process,
+                    ProcessPowerThrottling,
+                    std::ptr::from_ref(&state).cast(),
+                    std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+                )
+            };
+            // SAFETY: no pointers; kept for the life of the process, as DAWs keep it.
+            let _ = unsafe { windows_sys::Win32::Media::timeBeginPeriod(1) };
+        });
+    }
+
     thread_local! {
         /// The last Space press went to the engine, so its release does too.
         static SPACE_OURS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -1125,6 +1160,8 @@ impl Window {
     /// Opens a window for an editor of inside `size` as `mode` says: floating, titled `title`
     /// and resizable by the user when `resizable`; or embedded and hidden until placed.
     pub(crate) fn open_as(mode: Mode, title: &str, size: Size, resizable: bool) -> Result<Self, String> {
+        #[cfg(windows)]
+        imp::interactive();
         match mode {
             Mode::Floating => Self::open(title, size, resizable),
             Mode::Embedded { parent } => Self::open_embedded(parent, size),
