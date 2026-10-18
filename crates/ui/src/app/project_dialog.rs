@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The project dialog (File › New or open, Ctrl+T): a new blank project, a new one from a
+//! The project dialog (File › New or open, Ctrl+N): a new blank project, a new one from a
 //! template, or a project to open, typed as a path or picked from the recent ones. And the save
 //! prompt, which asks for a name and a folder when a project is saved for the first time, saved
 //! under another name, or saved as a template. And the question asked before a project with

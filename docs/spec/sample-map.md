@@ -72,8 +72,8 @@ Both play a sample as soon as the pointer is over it.
   the map. The sidebar, the category filters, search, tags and the preview strip stay as they
   are. The browser can be widened to half the window.
 - **Large.** The **Large** button at the map's corner (and View › Sample map,
-  **Ctrl+Shift+M**) shows the map in the main area in place of the Session or Arrangement view,
-  at full size; **Close**, Ctrl+Shift+M, Escape (when Show similar is not on) or the view
+  **Ctrl+Alt+Shift+M**) shows the map in the main area in place of the Session or Arrangement view,
+  at full size; **Close**, Ctrl+Alt+Shift+M, Escape (when Show similar is not on) or the view
   switches go back. The browser stays beside it and shows its list meanwhile. While something is
   dragged from the large map, the main view shows instead, so the drop can land on a track.
 - **In a window of its own.** The **Window** button on the map's bar (and View › Sample map in a

@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 63] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 67] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -147,6 +147,10 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 63] = [
     ("selection.split", "Split the selected clip at the playhead", "Edit"),
     ("selection.consolidate", "Consolidate the selected clip into a new one", "Edit"),
     ("selection.group", "Group the selected tracks", "Tracks"),
+    ("track.addAudio", "Add an audio track", "Tracks"),
+    ("track.addMidi", "Add a MIDI track", "Tracks"),
+    ("clip.insertMidi", "Insert an empty MIDI clip over the time selection", "Edit"),
+    ("view.automation", "Show or hide every track's automation lanes", "View"),
     ("selection.launch", "Launch the selected clip slot", "Session"),
     ("selection.up", "Select the clip slot above", "Session"),
     ("selection.down", "Select the clip slot below", "Session"),
@@ -412,8 +416,12 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 64] = [
-    ("file.new", &["Ctrl+T"]),
+const DEFAULTS: [(&str, &[&str]); 68] = [
+    ("file.new", &["Ctrl+N"]),
+    ("track.addAudio", &["Ctrl+T"]),
+    ("track.addMidi", &["Ctrl+Shift+T"]),
+    ("clip.insertMidi", &["Ctrl+Shift+M"]),
+    ("view.automation", &["A"]),
     ("file.open", &["Ctrl+O"]),
     ("file.save", &["Ctrl+S"]),
     ("file.saveAs", &["Ctrl+Shift+S"]),
@@ -425,7 +433,7 @@ const DEFAULTS: [(&str, &[&str]); 64] = [
     ("view.mappingMode", &["Ctrl+M"]),
     ("view.browser", &["Ctrl+B"]),
     ("browser.search", &["Ctrl+F"]),
-    ("view.sampleMap", &["Ctrl+Shift+M"]),
+    ("view.sampleMap", &["Ctrl+Alt+Shift+M"]),
     ("view.sampleMapWindow", &["Ctrl+Alt+M"]),
     ("settings.open", &["Ctrl+Comma"]),
     ("view.zoomIn", &["Ctrl+Plus", "Ctrl+Equals"]),

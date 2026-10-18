@@ -969,15 +969,32 @@ fn tab_only_switches_the_view() {
 }
 
 #[test]
-fn ctrl_t_asks_for_a_new_project_and_ctrl_s_saves_one() {
+fn ctrl_t_adds_an_audio_track_and_ctrl_shift_t_a_midi_one() {
+    let mut harness = window(demo_app());
+    // (audio tracks, MIDI tracks)
+    let kinds = |h: &Harness<'static, App>| {
+        let p = h.state().session().unwrap().project();
+        (p.tracks.iter().filter(|t| t.content.audio).count(), p.tracks.iter().filter(|t| t.content.notes).count())
+    };
+    let (audio, midi) = kinds(&harness);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::T);
+    harness.run();
+    assert_eq!(kinds(&harness), (audio + 1, midi), "Ctrl+T: an audio track");
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::T);
+    harness.run();
+    assert_eq!(kinds(&harness), (audio + 1, midi + 1), "Ctrl+Shift+T: a MIDI track");
+}
+
+#[test]
+fn ctrl_n_asks_for_a_new_project_and_ctrl_s_saves_one() {
     let dir = std::env::temp_dir().join(format!("suhina-ui-save-{}", std::process::id()));
     let _fresh = std::fs::remove_dir_all(&dir);
     let mut app = demo_app();
     app.set_default_folders(dir.join("Projects"), dir.join("Templates"));
     let mut harness = window(app);
 
-    // Ctrl+T: the dialog, which asks for its lists; a blank project is handed out to be made.
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::T);
+    // Ctrl+N: the dialog, which asks for its lists; a blank project is handed out to be made.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::N);
     harness.run();
     assert!(harness.state().project_dialog_open());
     assert_eq!(harness.state_mut().take_lists_wanted(), Some(dir.join("Templates")));
@@ -2937,7 +2954,7 @@ fn a_saved_map_window_opens_at_the_start() {
     // The large view takes the map out of its window; the map's layout repaints on the way,
     // so the frames are stepped and not run to rest (a repaint each frame would out-run
     // `Harness::run`'s max steps).
-    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::M);
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT, Key::M);
     harness.run_steps(3);
     assert!(!harness.state().sample_map.view.window);
     assert!(harness.state().sample_map.view.large);

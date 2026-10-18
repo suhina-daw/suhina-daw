@@ -417,7 +417,7 @@ use as `theme = <id>`; unknown lines are skipped with a warning in the status ba
 
 ## Project dialog and save prompt
 
-File › New or open (Ctrl+T) and Open (Ctrl+O, the path field takes the keys) show a dialog over
+File › New or open (Ctrl+N) and Open (Ctrl+O, the path field takes the keys) show a dialog over
 the window, as the plug-in loading dialog: the window dimmed with `window.background` at 60 %,
 a 620 × 380 px panel, `panel.background` with a 1 px `border.strong` border, a 20 px
 `control.background` title "New or open a project" with Close on the right. Escape closes it;
@@ -458,7 +458,7 @@ chosen in the field; cancelling leaves it as it was. The dialog opens in the fie
 
 While no project is open, the start panel (`start_panel.rs`) fills the area below the menu and
 control bar on `window.background`; the browser is hidden while it shows (Ctrl+B's setting keeps
-its value for when a project opens), and Ctrl+T (File › New or open…) does nothing there, since the
+its value for when a project opens), and Ctrl+N (File › New or open…) does nothing there, since the
 panel offers the same: at start when Settings › General › At start is Panel (the default), and
 after the last project is closed. Its content is at most 820 px wide, centred, 24 px from the
 top. Files dropped anywhere on it open as on the rest of the window.

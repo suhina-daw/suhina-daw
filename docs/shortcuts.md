@@ -101,7 +101,10 @@ status bar.
 | Show the selected clip's track devices in the detail area, or the clip again: the detail area's Clip / Devices switch, for a MIDI clip; opens the detail area when it is hidden (`view.devices`; [spec](spec/ui-clip-editor.md) › Where it opens). A double-click on a track's header, a Session column's name or its channel strip shows that track's devices too | Ctrl+Shift+D |
 | Map keys to clip slots, scenes and stop buttons, or stop mapping (`view.mappingMode`; [Session view](spec/ui-session-view.md#launch-keys)). A key mapped to a slot wins over its shortcut while the Session view is shown | Ctrl+M |
 | Show or hide the browser (`view.browser`) | Ctrl+B |
-| Show or hide the sample map in the main area (`view.sampleMap`; Escape on the map closes it too) | Ctrl+Shift+M |
+| Show or hide the sample map in the main area (`view.sampleMap`; Escape on the map closes it too) | Ctrl+Alt+Shift+M |
+| Insert an empty MIDI clip over the time selection (`clip.insertMidi`) | Ctrl+Shift+M |
+| Show or hide every track's automation lanes (`view.automation`) | A |
+| Add an audio track, a MIDI track (`track.addAudio`, `track.addMidi`) | Ctrl+T, Ctrl+Shift+T |
 | Open the sample map in a window of its own, or put it back (`view.sampleMapWindow`; [spec](spec/sample-map.md) › Where the map is shown) | Ctrl+Alt+M |
 | Search in the browser (`browser.search`; shows it when hidden). In the search field: Up and Down move through the results, Enter adds the selection to the selected track, Escape clears the search and then leaves the field | Ctrl+F |
 | Open or close Settings (`settings.open`) | Ctrl+, |
@@ -135,7 +138,7 @@ status bar.
 | Add an arrangement marker at the playhead, or at the play start marker while stopped (`marker.addAtPlayhead`; [spec](spec/arrangement-editing.md#markers)) | M |
 | Turn arrangement looping on or off; on without a loop region makes one over the first 4 bars (`transport.setLoopEnabled`; [spec](spec/arrangement-editing.md#loop-region)) | Ctrl+L |
 | Next, previous project (`projects.next`, `projects.previous`) | Ctrl+Tab, Ctrl+Shift+Tab |
-| New project or open one (`file.new`), open one (`file.open`) | Ctrl+T, Ctrl+O |
+| New project or open one (`file.new`), open one (`file.open`) | Ctrl+N, Ctrl+O |
 | Save, save as (`file.save`, `file.saveAs`); save as template (`file.saveTemplate`) | Ctrl+S, Ctrl+Shift+S; none |
 | Show which version of Suhina this is (`help.about`, Help › About Suhina, [spec](spec/about.md)) | none |
 

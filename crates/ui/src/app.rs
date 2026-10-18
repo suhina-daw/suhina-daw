@@ -3444,6 +3444,34 @@ impl App {
             "view.devices" => self.toggle_devices(),
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
+            "track.addAudio" => actions.push(Action::new("track.add", json!({ "kind": "audio" }))),
+            "track.addMidi" => actions.push(Action::new("track.add", json!({ "kind": "midi" }))),
+            "view.automation" => {
+                if let Some((_, _, timeline)) = self.timeline.as_ref() {
+                    let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
+                    self.arrangement.automation.toggle_all(&tracks, &timeline.automation);
+                }
+            }
+            // An empty MIDI clip over the time selection on each of its MIDI tracks (Ableton
+            // Live's Ctrl+Shift+M).
+            "clip.insertMidi" => {
+                let Some(span) = self.arrangement.time_selection().cloned() else {
+                    self.status = Status::Hint("Select a time range in the Arrangement first".into());
+                    return;
+                };
+                let notes: Vec<TrackId> = self.timeline.as_ref().map_or_else(Vec::new, |(_, _, t)| {
+                    t.lanes.iter().filter(|l| l.notes && span.tracks.contains(&l.track)).map(|l| l.track).collect()
+                });
+                if notes.is_empty() {
+                    self.status = Status::Hint("The time selection has no MIDI track".into());
+                }
+                for track in notes {
+                    actions.push(Action::new(
+                        "clip.create",
+                        json!({ "track": track.0, "start": span.start, "length": span.end - span.start }),
+                    ));
+                }
+            }
             "view.arrangement" => {
                 self.shown = View::Arrangement;
                 self.close_large_map();
