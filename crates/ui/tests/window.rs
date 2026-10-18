@@ -1882,6 +1882,45 @@ fn two_projects() -> Harness<'static, App> {
 }
 
 #[test]
+fn ctrl_tab_shows_the_open_projects_and_switches_when_ctrl_is_let_go() {
+    let mut app = App::new();
+    for _ in 0..3 {
+        app.open_project(Session::new(demo_project()), &[], OpenAs::NewTab);
+    }
+    let mut harness = window(app);
+    let ids = harness.state().projects().ids();
+    assert_eq!(harness.state().projects().active(), ids.get(2).copied());
+    // Ctrl held, Tab tapped twice: the list shows, the pick moves on, nothing switches yet.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.step();
+    tab_with_ctrl_held(&mut harness);
+    assert!(harness.query_by_label("Switch to Untitled 1").is_some(), "the open projects are listed");
+    tab_with_ctrl_held(&mut harness);
+    assert_eq!(harness.state().projects().active(), ids.get(2).copied(), "not while Ctrl is down");
+    // Ctrl let go: to the second one along (wrapping from the third: the first, then the second).
+    harness.event(egui::Event::ModifiersChanged(Modifiers::default()));
+    harness.run();
+    assert_eq!(harness.state().projects().active(), ids.get(1).copied());
+    assert!(harness.query_by_label("Switch to Untitled 1").is_none(), "the list is gone");
+}
+
+/// Tab pressed and let go while Ctrl (Cmd) stays down.
+fn tab_with_ctrl_held(harness: &mut Harness<'static, App>) {
+    for pressed in [true, false] {
+        harness.event(egui::Event::Key {
+            key: Key::Tab,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        });
+        harness.step();
+    }
+    harness.step();
+    harness.step();
+}
+
+#[test]
 fn tabs_switch_keep_each_projects_edits_and_close() {
     let mut harness = two_projects();
     let ids = harness.state().projects().ids();

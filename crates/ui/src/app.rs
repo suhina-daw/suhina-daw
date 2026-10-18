@@ -328,6 +328,9 @@ pub struct App {
     /// A clip being renamed (Rename in its menu, Ctrl+R): the command's target, the name typed
     /// so far, and whether the field has had the keyboard yet.
     rename: Option<(serde_json::Value, String, bool)>,
+    /// The project switcher Ctrl+Tab opens: the open project picked so far (its place among
+    /// them). It switches when Ctrl is let go, as Studio One's and most programs' do.
+    tab_switcher: Option<usize>,
     /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top),
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
@@ -457,6 +460,7 @@ impl App {
             detail_height: DETAIL_HEIGHT,
             detail_cap: None,
             rename: None,
+            tab_switcher: None,
             detail_max: false,
             detail_drag: None,
             editor_closed: false,
@@ -1307,6 +1311,7 @@ impl App {
                 None => {}
             }
         }
+        self.tab_switcher_ui(ui.ctx());
         if let Some((target, mut draft, focused)) = self.rename.take() {
             let (mut keep, mut apply) = (true, None);
             // The field sits on the clip's name, where the views drew it last frame: Enter or a
@@ -1502,6 +1507,65 @@ impl App {
         // A fresh pick says where the user is now: a removal's undo or redo no longer moves the
         // selection for them.
         self.pending_device_remove = None;
+    }
+
+    /// The project switcher, while Ctrl+Tab holds it open: the open projects, the one picked
+    /// lit. Letting go of Ctrl (Cmd) switches to it, a click on one switches there, Escape
+    /// leaves the project as it is.
+    fn tab_switcher_ui(&mut self, ctx: &egui::Context) {
+        let Some(picked) = self.tab_switcher else { return };
+        let ids = self.projects.ids();
+        if ids.len() < 2 || picked >= ids.len() {
+            self.tab_switcher = None;
+            return;
+        }
+        let (held, escape) = ctx.input(|i| (i.modifiers.command, i.key_pressed(egui::Key::Escape)));
+        if escape {
+            self.tab_switcher = None;
+            return;
+        }
+        let mut chosen = None;
+        egui::Area::new(egui::Id::new("project-switcher"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(360.0);
+                    ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
+                    for (place, id) in ids.iter().enumerate() {
+                        let name = self.projects.name(*id).unwrap_or("Untitled").to_string();
+                        let source = self
+                            .projects
+                            .get(*id)
+                            .and_then(Session::source)
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "Not saved yet".into());
+                        let lit = place == picked;
+                        let text = egui::RichText::new(format!("{name}\n{source}")).color(if lit {
+                            theme::text_primary()
+                        } else {
+                            theme::text_secondary()
+                        });
+                        let row = ui.add(egui::Button::selectable(lit, text).min_size(Vec2::new(360.0, 34.0)));
+                        row.widget_info(|| {
+                            egui::WidgetInfo::selected(egui::WidgetType::Button, true, lit, format!("Switch to {name}"))
+                        });
+                        if row.clicked() {
+                            chosen = Some(place);
+                        }
+                    }
+                });
+            });
+        // Ctrl let go (or a click): to the picked project.
+        let to = chosen.or((!held).then_some(picked));
+        if let Some(place) = to {
+            self.tab_switcher = None;
+            if let Some(id) = ids.get(place)
+                && self.projects.active() != Some(*id)
+            {
+                self.run(&Action::new("projects.switch", json!({ "project": id.0 })));
+            }
+        }
     }
 
     /// Runs a window action (`settings::keymap::actions`) on the next frame, as its key would:
@@ -3711,6 +3775,18 @@ impl App {
                 }
             }
             "projects.next" | "projects.previous" if self.projects.len() < 2 => {}
+            // Ctrl+Tab opens the switcher, or moves on in it while Ctrl stays down; letting go
+            // of Ctrl switches (`tab_switcher_ui`).
+            "projects.next" | "projects.previous" => {
+                let ids = self.projects.ids();
+                let count = ids.len();
+                let from = self
+                    .tab_switcher
+                    .or_else(|| self.projects.active().and_then(|a| ids.iter().position(|i| *i == a)))
+                    .unwrap_or(0);
+                let step = if action == "projects.next" { 1 } else { count - 1 };
+                self.tab_switcher = Some((from + step) % count);
+            }
             command => actions.push(Action::new_owned(command, json!({}))),
         }
     }

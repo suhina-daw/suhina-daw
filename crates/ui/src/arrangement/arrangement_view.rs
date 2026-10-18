@@ -333,6 +333,8 @@ pub struct ArrangementViewState {
     ruler_select: Option<f64>,
     /// A clip's edge being dragged.
     edge_drag: Option<EdgeDrag>,
+    /// The transport plays: a click on a clip then leaves the play start marker alone.
+    running: bool,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     menu_beat: Option<f64>,
     clip_drag: Option<ClipDrag>,
@@ -410,6 +412,7 @@ impl Default for ArrangementViewState {
             time_selection: None,
             ruler_select: None,
             edge_drag: None,
+            running: false,
             menu_beat: None,
             clip_drag: None,
             value_drag: None,
@@ -918,6 +921,7 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
+    state.running = timeline.running;
     // Showing one track, the view is not scrolled down; where it was is kept for later.
     let scrolled = state.scroll.y;
     if state.focus.is_some() {
@@ -2027,6 +2031,11 @@ fn clip_box<'a>(
     if response.clicked() {
         state.pick_clip(key, shift, command, clip_order);
         state.clip_clicked = true;
+        // Stopped, a click on a clip moves the play start marker to its start, so Play and Space
+        // start there, as Ableton Live's do; a loop the clip is before still catches playback.
+        if !state.running {
+            actions.push(Action::new("transport.setPosition", json!({ "beats": clip.start })));
+        }
     } else if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && !state.is_selected(key) {
         // Pressing a clip that is already selected keeps the selection, so a drag can start there.
         state.pick_clip(key, shift, command, clip_order);
