@@ -14,7 +14,7 @@ pub(crate) struct Parsed {
     pub graph: DeviceGraph,
     pub canvas: Option<Arc<DeviceUi>>,
 }
-thread_local! {static GRAPHS:RefCell<std::collections::HashMap<u64,Option<Arc<Parsed>>>>=RefCell::new(std::collections::HashMap::new());}
+thread_local! {static GRAPHS:RefCell<Vec<(u64,Option<Arc<Parsed>>)>>=const{RefCell::new(Vec::new())};}
 pub(crate) fn graph(bytes: &[u8]) -> Option<Arc<Parsed>> {
     if bytes.len() > 2 * 1024 * 1024 {
         return None;
@@ -23,7 +23,14 @@ pub(crate) fn graph(bytes: &[u8]) -> Option<Arc<Parsed>> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hash);
     let key = hash.finish();
-    if let Some(found) = GRAPHS.with(|cache| cache.borrow().get(&key).cloned()) {
+    if let Some(found) = GRAPHS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let index = cache.iter().position(|(hash, _)| *hash == key)?;
+        let entry = cache.remove(index);
+        let found = entry.1.clone();
+        cache.push(entry);
+        Some(found)
+    }) {
         return found;
     }
     let parsed = std::str::from_utf8(bytes).ok().and_then(|text| DeviceGraph::from_sd(text).ok()).map(|mut graph| {
@@ -32,12 +39,10 @@ pub(crate) fn graph(bytes: &[u8]) -> Option<Arc<Parsed>> {
     });
     GRAPHS.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() >= 64
-            && let Some(old) = cache.keys().next().copied()
-        {
-            cache.remove(&old);
+        if cache.len() >= 64 {
+            cache.remove(0);
         }
-        cache.insert(key, parsed.clone());
+        cache.push((key, parsed.clone()));
     });
     parsed
 }
