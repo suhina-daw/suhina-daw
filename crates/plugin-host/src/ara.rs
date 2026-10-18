@@ -752,6 +752,9 @@ impl Drop for Document {
     /// Destroys the document's objects (regions, modifications, sources, sequence, context) in
     /// one edit, then the document controller, as ARA requires.
     fn drop(&mut self) {
+        // The renderers let go of the regions first, while the extension is live (the plug-in
+        // is deactivated before its document goes).
+        self.renderers(&Edited { added: Vec::new(), removed: self.regions.clone() });
         let Some(dc) = self.controller() else { return };
         let i = &dc.interface;
         if let (Some(begin), Some(end)) = (i.beginEditing, i.endEditing) {

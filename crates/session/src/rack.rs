@@ -341,22 +341,26 @@ impl Hosted {
         input.copy_from_slice(buffer);
         self.notes.clear();
         self.params.clear();
-        // What earlier blocks could not send goes first.
-        for event in self.carried.drain(..) {
-            let event = Event { frame: 0, ..event };
-            match event.kind {
-                EventKind::Param { .. } => self.params.push(event),
-                _ => self.notes.push(event),
-            }
-        }
-        for &(frame, event) in events {
-            push_event(&mut self.notes, u32::try_from(frame).unwrap_or(u32::MAX), event);
-        }
+        // Where the song is goes first, at frame 0, so it always fits.
         if self.follows_song {
             let (playing, position, tempo) = self.transport;
             let tempo = if tempo.is_finite() { tempo.clamp(1.0, 999.0) as f32 } else { 120.0 };
             self.params.push(Event::transport(playing, position));
             self.params.push(Event::tempo(tempo));
+        }
+        // What earlier blocks could not send goes next, as far as there is room (never more
+        // than the lists were made for, so nothing allocates on the audio thread).
+        for event in self.carried.drain(..) {
+            let event = Event { frame: 0, ..event };
+            match event.kind {
+                EventKind::Param { .. } if self.params.len() < self.params.capacity() => self.params.push(event),
+                EventKind::Param { .. } => {}
+                _ if self.notes.len() < self.notes.capacity() => self.notes.push(event),
+                _ => {}
+            }
+        }
+        for &(frame, event) in events {
+            push_event(&mut self.notes, u32::try_from(frame).unwrap_or(u32::MAX), event);
         }
         let room = self.params.capacity().saturating_sub(self.params.len());
         let automated = self.automated.len().min(room);
@@ -438,7 +442,9 @@ impl PluginProcessor for Hosted {
     /// Its host process and number there, unless releases from a block it could not take wait
     /// to be sent (they go on its own link first) or its link still has a block out.
     fn joint(&self) -> Option<Joint> {
-        if !self.carried.is_empty() {
+        // A plug-in that follows the song needs its own transport events, which a follower in a
+        // joint round trip does not get (the lead's events go to every follower).
+        if self.follows_song || !self.carried.is_empty() {
             return None;
         }
         self.audio.seat().map(|seat| Joint { process: seat.process, member: seat.instance })

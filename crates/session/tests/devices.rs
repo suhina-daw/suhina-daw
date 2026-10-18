@@ -370,7 +370,14 @@ fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
 
 #[test]
 fn a_plug_in_that_edits_clips_goes_first() {
+    // Not on a MIDI track, where it would take the instrument's place.
     let mut session = Session::new(project());
+    session.set_plugin_env(plugin_env());
+    let error = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap_err();
+    assert!(error.contains("audio track"), "{error}");
+    let mut audio = project();
+    audio.tracks[0].content = ContentKinds { notes: false, audio: true };
+    let mut session = Session::new(audio);
     session.set_plugin_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     // Asked for after the utility, it goes before it, as it plays the clips from their files.

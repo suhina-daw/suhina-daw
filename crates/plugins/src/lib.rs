@@ -850,11 +850,14 @@ impl Plugin {
     /// again. Waits for the answer.
     pub fn ara_update(&mut self, document: AraDocument) -> Result<(), PluginError> {
         let instance = self.instance;
+        let kept = document.clone();
         self.request(
             &Message::AraUpdate { instance, document },
             "ara_update",
             |m| matches!(m, Message::AraUpdated { instance: i } if *i == instance),
         )?;
+        // A restart loads it with the clips as they are now, not as it was first loaded.
+        self.launch.ara = Some(kept);
         Ok(())
     }
 

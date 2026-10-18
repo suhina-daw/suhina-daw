@@ -689,6 +689,14 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
             return Err("an instrument goes on a MIDI track".into());
         }
     }
+    // A plug-in that edits clips (ARA) edits audio clips, and goes first in the chain: on a MIDI
+    // track it would take an instrument's place.
+    if plugin.ara {
+        let track = track_id(&session.project, params)?;
+        if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.audio) {
+            return Err("a plug-in that edits clips (ARA) goes on an audio track".into());
+        }
+    }
     let channel = channel_param(session, params)?;
     if channel.devices.len() >= MAX_DEVICES {
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());

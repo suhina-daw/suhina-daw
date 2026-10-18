@@ -43,7 +43,9 @@ impl Map {
 
 /// One audio source's samples in shared memory.
 pub struct AudioSource {
-    map: Map,
+    /// `None` only while it is dropped: the mapping goes before the file, which Windows does not
+    /// delete while a view of it is open.
+    map: Option<Map>,
     path: PathBuf,
     channels: u32,
     frames: u64,
@@ -85,7 +87,7 @@ impl AudioSource {
             }
         }
         map.flush()?;
-        Ok(Self { map: Map::Write(map), path, channels, frames, sample_rate, owner: true })
+        Ok(Self { map: Some(Map::Write(map)), path, channels, frames, sample_rate, owner: true })
     }
 
     /// Opens a region [`AudioSource::from_interleaved`] made, read only. Everything in its
@@ -118,7 +120,7 @@ impl AudioSource {
         if !(sample_rate.is_finite() && sample_rate > 0.0) {
             return Err(IpcError::BadLink("audio source has no sample rate"));
         }
-        Ok(Self { map: Map::Read(map), path: path.to_path_buf(), channels, frames, sample_rate, owner: false })
+        Ok(Self { map: Some(Map::Read(map)), path: path.to_path_buf(), channels, frames, sample_rate, owner: false })
     }
 
     /// What the host process needs to open it.
@@ -145,7 +147,7 @@ impl AudioSource {
         if channel >= self.channels {
             return;
         }
-        let bytes = self.map.bytes();
+        let bytes = self.map.as_ref().map_or(&[][..], Map::bytes);
         let base = HEADER_BYTES + channel as usize * self.frames as usize * 4;
         for (index, value) in out.iter_mut().enumerate() {
             let Some(frame) = position.checked_add(index as i64) else { break };
@@ -165,6 +167,7 @@ impl AudioSource {
 
 impl Drop for AudioSource {
     fn drop(&mut self) {
+        drop(self.map.take());
         if self.owner {
             // A host that still has it mapped keeps its view; on Windows the file stays until it
             // lets go of it.

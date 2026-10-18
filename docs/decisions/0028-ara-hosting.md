@@ -252,7 +252,7 @@ the list below, in a first form). Where it differs from the decisions above it i
   running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is
   added to the track, and its editor opens in the clip's place once it runs with the clips.
 - **An ARA plug-in goes first in its chain**, wherever it is dropped or `device.addPlugin` puts
-  it (the result says `moved_first`): it plays the clips from their files, so a device before it
+  it (the result says `moved_first`), and only on an audio track, where no instrument comes first: it plays the clips from their files, so a device before it
   would not be heard. Observed in another host, which moves it there too.
 - **Other interim limits.** One document per instance, not per plug-in product (decision 2).
   Warped clips are described at their file's speed (their start and end follow the song), loops

@@ -2776,6 +2776,8 @@ impl App {
         ui.style_mut().visuals.widgets.inactive.fg_stroke = theme::hairline(theme::text_secondary());
         // Whether the File menu showed last frame, so its recent list is read once as it opens.
         let file_menu_was_open = std::mem::take(&mut self.file_menu_open);
+        // An audio clip whose editor is its track's ARA plug-in has the Clip / Devices switch too.
+        let ara_editor = self.ara_clip().is_some();
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.add(egui::Button::new("New or open…").shortcut_text(keys("file.new"))).clicked() {
@@ -2866,7 +2868,7 @@ impl App {
                 // The detail area's Clip / Devices switch, for a clip with an editor.
                 let devices = self.detail_open && self.detail_showing == detail_view::Showing::Devices;
                 let label = if devices { "Show clip" } else { "Show devices" };
-                let editor = has_project && self.piano_clip(self.shown_clip()).is_some();
+                let editor = has_project && (self.piano_clip(self.shown_clip()).is_some() || ara_editor);
                 if ui.add_enabled(editor, egui::Button::new(label).shortcut_text(keys("view.devices"))).clicked() {
                     self.toggle_devices();
                 }
