@@ -420,7 +420,8 @@ fn render_a_block(renderer: &mut suhina_engine::Renderer) {
 }
 
 /// Markers under the ruler: M adds one at the play start marker, a right-click on the marker row
-/// adds one there on the grid, a click on a marker jumps to it, its menu deletes it.
+/// adds one there on the grid, a click on a marker jumps to it and loops to the next marker, its
+/// menu deletes it.
 #[test]
 fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
     let mut renderer =
@@ -460,6 +461,18 @@ fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
     harness.run();
     render_a_block(&mut renderer);
     assert_eq!(monitor.start_beat(), bar);
+    let looped = |h: &Harness<'static, App>| {
+        let transport = h.state().session().map(|s| s.project().transport.clone()).unwrap_or_default();
+        (transport.loop_range.map(|r| (r.start, r.end)), transport.loop_enabled)
+    };
+    assert_ne!(looped(&harness), (Some((16.0, bar)), true), "the last marker only jumps");
+
+    // A click on a marker with one after it loops from it to the next.
+    harness.get_by_label("Marker Marker 1").click();
+    harness.run();
+    render_a_block(&mut renderer);
+    assert_eq!(looped(&harness), (Some((16.0, bar)), true));
+    assert_eq!(monitor.start_beat(), 16.0);
 
     // Its menu deletes it, and undo brings it back.
     harness.get_by_label("Marker Marker 1").click_secondary();

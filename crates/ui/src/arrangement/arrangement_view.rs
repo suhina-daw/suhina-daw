@@ -1774,6 +1774,14 @@ fn marker_flags(
         );
 
         if response.clicked() {
+            // A click loops from the marker to the next one and jumps there, so a section is
+            // looped with one click; the last marker only jumps.
+            if let Some(next) = timeline.markers[n + 1..].iter().find(|m| m.beat > marker.beat) {
+                actions.push(Action::new(
+                    "transport.setLoop",
+                    json!({ "start": marker.beat, "end": next.beat, "enabled": true }),
+                ));
+            }
             actions.push(Action::new("marker.jump", json!({ "index": marker.index })));
         }
         if response.drag_started_by(egui::PointerButton::Primary) {

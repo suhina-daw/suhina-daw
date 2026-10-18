@@ -543,7 +543,9 @@ locators import as markers ([.als format](als-format.md) › Locators).
 
 **In the Arrangement view** markers sit in a row of their own under the ruler: a line at the
 marker's beat with its name in a tag beside it, cut short where the next marker starts. A click on
-a marker runs `marker.jump`. Dragging it moves it (`marker.move` when let go) on the same grid a
+a marker runs `marker.jump` and, when a marker comes after it, first makes the loop region from
+that marker to the next one and turns looping on (`transport.setLoop {start, end, enabled: true}`),
+so a section loops with one click; the last marker only jumps. Dragging it moves it (`marker.move` when let go) on the same grid a
 ruler click uses (Alt held: free). A right-click on a marker opens its menu: a field with its name
 and **Rename** (or Enter), **Jump to marker**, **Delete marker**. A right-click on the ruler or on
 an empty part of the marker row offers **Add marker here**, on that grid. The key **M** (the action
