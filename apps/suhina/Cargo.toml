@@ -25,6 +25,7 @@ suhina-output.workspace = true
 suhina-midi.workspace = true
 suhina-plugins.workspace = true
 suhina-ui.workspace = true
+suhina-update.workspace = true
 zip.workspace = true
 eframe = { version = "0.36", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
 # The system's own file and folder dialogs (Browse… beside a path field); on Linux through the

@@ -14,6 +14,7 @@ use crate::settings::{
     AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoRollTop, PlayFrom, Side, StopReturn,
     ToolbarSize, WarpMode,
 };
+use suhina_update::Channel;
 
 /// The keys of `keymap.json`, where the keys and the mouse switches are saved.
 pub(crate) const KEYMAP: &[&str] = &["keymap.json"];
@@ -124,6 +125,37 @@ pub(crate) static ROWS: &[Entry] = &[
             let options: Vec<(&str, WarpMode)> = WarpMode::ALL.iter().map(|m| (m.title(), *m)).collect();
             cx.choose(r, &options, |s| &mut s.warp_mode);
         },
+    ),
+    row(
+        Page::General,
+        "Updates",
+        "Check for updates",
+        "Once per start, asks GitHub whether a newer build is out; sends nothing about you",
+        &["check_updates"],
+        |cx, r| cx.on_off(r, |s| &mut s.updates.check),
+    ),
+    row(
+        Page::General,
+        "Updates",
+        "Channel",
+        "Which builds an update comes from: the nightly, or in developer mode a pull request's test build",
+        &["update_channel"],
+        |cx, r| {
+            if cx.settings.updates.test_builds_listed() {
+                let options = [("Nightly", Channel::Nightly), ("Test builds", Channel::TestBuilds)];
+                cx.choose(r, &options, |s| &mut s.updates.channel);
+            } else {
+                cx.choose(r, &[("Nightly", Channel::Nightly)], |s| &mut s.updates.channel);
+            }
+        },
+    ),
+    row(
+        Page::General,
+        "Updates",
+        "Developer mode",
+        "Lists test builds of pull requests as an update channel; downloading one needs the GitHub CLI",
+        &["developer_mode"],
+        |cx, r| cx.on_off(r, |s| &mut s.updates.developer),
     ),
     // Audio.
     block(

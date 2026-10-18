@@ -8,6 +8,7 @@ pub mod keymap;
 mod settings_rows;
 pub mod settings_view;
 pub mod themes;
+pub mod update_settings;
 pub mod view_settings;
 pub mod workflow;
 
@@ -277,6 +278,8 @@ pub struct Settings {
     pub select_on_launch: bool,
     /// The Session mixer's height, the detail area's layout and double-clicks that make clips.
     pub view: crate::settings::view_settings::ViewSettings,
+    /// Whether and where to check for updates (`docs/spec/updates.md`).
+    pub updates: crate::settings::update_settings::UpdateSettings,
     /// What stays above the piano roll pulled to the top.
     pub piano_roll_top: PianoRollTop,
     /// How large the piano roll's toolbar is drawn.
@@ -364,6 +367,7 @@ impl Default for Settings {
             device_layout: DeviceLayout::Row,
             select_on_launch: true,
             view: crate::settings::view_settings::ViewSettings::default(),
+            updates: crate::settings::update_settings::UpdateSettings::default(),
             piano_roll_top: PianoRollTop::Track,
             toolbar_size: ToolbarSize::Large,
             piano_grid_follows: false,
@@ -542,6 +546,7 @@ impl Settings {
             },
             piano_toolbar = self.toolbar_size.param(),
         ) + &self.view.to_text()
+            + &self.updates.to_text()
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
     }
 
@@ -560,7 +565,7 @@ impl Settings {
                 continue;
             };
             let (key, value) = (key.trim(), value.trim());
-            if settings.view.parse(key, value) {
+            if settings.view.parse(key, value) || settings.updates.parse(key, value) {
                 continue;
             }
             match (key, value) {
@@ -831,6 +836,7 @@ midi_input_off = Keys
             device_layout: DeviceLayout::Stack,
             select_on_launch: false,
             view: crate::settings::view_settings::ViewSettings::default(),
+            updates: crate::settings::update_settings::UpdateSettings::default(),
             piano_roll_top: PianoRollTop::Window,
             toolbar_size: ToolbarSize::Larger,
             piano_grid_follows: true,

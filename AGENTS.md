@@ -82,6 +82,8 @@ crates/
   library  L2 the browser's library: added folders, an index kept on disk and watched, search, pins,
            recent items, colour tags (ADR 0012)
   soundmap L2 the sample map: features of samples, layouts by how they sound (t-SNE), grids, kinds, the feature cache
+  update   L2 updates: whether a newer nightly or test build is out (GitHub, through the system's
+           curl), downloading it, checking its SHA-256 and putting it in place of the running build
   separation L2 stem separation: chunking, weighted overlap-add and resampling around an inference backend
              trait, and a deterministic test backend (a band splitter); no model or commands yet (#146)
   session  L2 open projects (tabs, ADR 0007), undo history, the command registry (ADR 0002), the

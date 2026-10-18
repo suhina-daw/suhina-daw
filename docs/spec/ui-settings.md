@@ -33,6 +33,7 @@ is on exactly one page, under one heading.
 | General | Projects | When opening a project, At start, Projects folder, Templates folder, Start template (shown with At start › Template) |
 | General | Backups | Backups, Clean up backups, Last backup (read only) |
 | General | Dropping files | Several files, Warp mode |
+| General | Updates | Check for updates, Channel (Test builds only in developer mode), Developer mode ([spec](updates.md)) |
 | Audio | Output | Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
 | Audio | Cue | Cue output, Cue volume |
 | Audio | Now | Output, Latency, Key to sound, Input now (read only), List devices again |

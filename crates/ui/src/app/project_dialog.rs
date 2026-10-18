@@ -421,7 +421,7 @@ fn draw_recovery(ui: &mut Ui, area: Rect, name: &str, written: &str, saved: bool
 
 /// A panel in the middle of `area` with a title row and a Close button, the area behind dimmed
 /// and its clicks swallowed. Returns the panel; `closed` is set when Close is clicked.
-fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &mut Option<T>) -> Rect {
+pub(crate) fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &mut Option<T>) -> Rect {
     let behind = ui.interact(area, Id::new(("dialog-behind", title)), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
@@ -454,7 +454,7 @@ fn panel<T: CloseChoice>(ui: &Ui, area: Rect, size: Vec2, title: &str, closed: &
 }
 
 /// The choice that closes a dialog.
-trait CloseChoice {
+pub(crate) trait CloseChoice {
     fn close() -> Self;
 }
 

@@ -22,6 +22,7 @@ const MAX_WIDTH: f32 = 820.0;
 const TWO_COLUMNS: f32 = 560.0;
 const AUDIO_WIDTH: f32 = 240.0;
 const ACTION: Vec2 = Vec2::new(132.0, 24.0);
+const NOTICE_BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 
 /// Which list the panel shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -59,9 +60,29 @@ pub enum StartChoice {
     AudioSettings,
     /// Take a project off the recent list.
     Forget(PathBuf),
+    /// The update line's button: Download update now, Restart now or Try again.
+    Update,
+    /// The update line's page (the release, or the pull request).
+    UpdatePage(String),
 }
 
-/// Draws the start panel in `area`; `now` dates the recent projects, `version` is the app's.
+/// The line under the actions about a newer build (`docs/spec/updates.md` › The start panel).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Notice {
+    pub text: String,
+    /// The button at its end.
+    pub button: Option<&'static str>,
+    /// How much of the download is done, 0 to 1, drawn under the text.
+    pub progress: Option<f32>,
+    /// The text says what went wrong.
+    pub error: bool,
+    /// The page *What's new* opens.
+    pub page: Option<String>,
+}
+
+/// Draws the start panel in `area`; `now` dates the recent projects, `version` is the app's,
+/// `notice` the line about a newer build.
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     area: Rect,
@@ -69,6 +90,7 @@ pub fn show(
     lists: &Lists,
     audio: &AudioSummary,
     version: &str,
+    notice: Option<&Notice>,
     now: SystemTime,
 ) -> Option<StartChoice> {
     ui.allocate_rect(area, Sense::hover());
@@ -112,10 +134,18 @@ pub fn show(
     let hint = "Drop a project or a Live Set (.als) here to open it";
     widgets::text_in(&painter, footer, Align2::RIGHT_CENTER, hint, small, theme::text_hint());
 
+    // A newer build, under the actions.
+    let mut top = content.top() + ACTION.y + 2.0 * PAD;
+    if let Some(notice) = notice {
+        let line = Rect::from_min_size(Pos2::new(content.left(), top), Vec2::new(content.width(), ACTION.y));
+        if let Some(chosen) = notice_line(ui, &painter, line, notice) {
+            choice = Some(chosen);
+        }
+        top = line.bottom() + 2.0 * PAD;
+    }
+
     // The list, and the audio card beside it or under it.
-    let body = Rect::from_min_max(Pos2::new(content.left(), content.top() + ACTION.y + 2.0 * PAD), {
-        Pos2::new(content.right(), footer.top() - PAD)
-    });
+    let body = Rect::from_min_max(Pos2::new(content.left(), top), Pos2::new(content.right(), footer.top() - PAD));
     let audio_height = 4.0 * LINE + BUTTON.y + 3.0 * PAD;
     let (list, card) = if body.width() >= TWO_COLUMNS {
         let card = Rect::from_min_size(
@@ -132,6 +162,45 @@ pub fn show(
     }
     if audio_card(ui, card, audio) {
         choice = Some(StartChoice::AudioSettings);
+    }
+    choice
+}
+
+/// The update line: its text, a progress bar while downloading, and its buttons on the right.
+fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
+    let mut choice = None;
+    painter.rect_filled(line, 0.0, theme::panel_background());
+    let edge = if notice.error { theme::recording() } else { theme::accent() };
+    painter.rect_filled(Rect::from_min_size(line.min, Vec2::new(3.0, line.height())), 0.0, edge);
+    let mut right = line.right() - PAD;
+    if let Some(text) = notice.button {
+        let rect = Rect::from_min_size(
+            Pos2::new(right - NOTICE_BUTTON.x, line.center().y - NOTICE_BUTTON.y / 2.0),
+            NOTICE_BUTTON,
+        );
+        if button(ui, painter, rect, text, text) {
+            choice = Some(StartChoice::Update);
+        }
+        right = rect.left() - PAD;
+    }
+    if let Some(page) = &notice.page {
+        let rect = Rect::from_min_size(Pos2::new(right - BUTTON.x, line.center().y - BUTTON.y / 2.0), BUTTON);
+        if button(ui, painter, rect, "What's new", "What's new in the new version") {
+            choice = Some(StartChoice::UpdatePage(page.clone()));
+        }
+        right = rect.left() - PAD;
+    }
+    let text = Rect::from_min_max(Pos2::new(line.left() + 3.0 + PAD, line.top()), Pos2::new(right, line.bottom()));
+    let colour = if notice.error { theme::recording() } else { theme::text_primary() };
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
+    if let Some(part) = notice.progress {
+        let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
+        painter.rect_filled(bar, 0.0, theme::control_background());
+        painter.rect_filled(
+            Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
+            0.0,
+            theme::accent(),
+        );
     }
     choice
 }
@@ -306,12 +375,16 @@ mod tests {
     type Panel = (StartState, Option<StartChoice>);
 
     fn panel(lists: Lists, size: Vec2) -> Harness<'static, Panel> {
+        panel_with(lists, size, None)
+    }
+
+    fn panel_with(lists: Lists, size: Vec2, notice: Option<Notice>) -> Harness<'static, Panel> {
         let audio = AudioSummary { device: "Speakers".into(), sample_rate: "48000 Hz".into(), buffer: "256".into() };
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
         Harness::builder().with_size(size).build_ui_state(
             move |ui, (state, chosen): &mut Panel| {
                 let area = ui.max_rect();
-                if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", now) {
+                if let Some(choice) = show(ui, area, state, &lists, &audio, "0.26.0", notice.as_ref(), now) {
                     *chosen = Some(choice);
                 }
             },
@@ -355,6 +428,26 @@ mod tests {
         harness.get_by_label("Recent projects").click();
         harness.run();
         assert_eq!(harness.state().0.tab, Tab::Recent);
+    }
+
+    #[test]
+    fn a_newer_build_is_offered_under_the_actions() {
+        let notice = Notice {
+            text: "New version available: Suhina 0.0.1-nightly.20261018+c176a33".into(),
+            button: Some("Download update now"),
+            progress: None,
+            error: false,
+            page: Some("https://example.invalid/nightly".into()),
+        };
+        let mut harness = panel_with(lists(), Vec2::new(900.0, 600.0), Some(notice));
+        harness.run();
+        assert!(harness.query_by_label("Open Night drive").is_some());
+        harness.get_by_label("Download update now").click();
+        harness.run();
+        assert_eq!(harness.state().1, Some(StartChoice::Update));
+        harness.get_by_label("What's new in the new version").click();
+        harness.run();
+        assert_eq!(harness.state().1, Some(StartChoice::UpdatePage("https://example.invalid/nightly".into())));
     }
 
     #[test]

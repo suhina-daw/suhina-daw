@@ -1,0 +1,18 @@
+[package]
+name = "suhina-update"
+description = "Updates: whether a newer build is out in the update channel, and putting it in place of the running one (docs/spec/updates.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+zip.workspace = true
+flate2.workspace = true
+semver = "1"  # MIT OR Apache-2.0; already in the tree through the build tools
+sha2 = "0.10"  # MIT OR Apache-2.0; the downloaded package's checksum
+tar = { version = "0.4", default-features = false }  # MIT OR Apache-2.0; the macOS and Linux packages
+
+[lints]
+workspace = true
