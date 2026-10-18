@@ -635,6 +635,9 @@ fn tracks_stay_lined_up_when_a_plug_in_changes_its_latency() {
         assert!(Instant::now() < deadline, "starting: {}", status(&mut session));
         session.sync_plugins();
         play(&mut renderer, 1);
+        // Offline blocks render as fast as they can: unpaced, a slow start (tests running side
+        // by side) plays past the note's end before the plug-in is up.
+        std::thread::sleep(Duration::from_millis(2));
     }
     assert_eq!(status(&mut session)["latency"], 0);
     // The graph with the plug-in in it, then a few blocks through it: lined up, no delay.
