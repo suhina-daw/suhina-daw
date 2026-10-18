@@ -6,10 +6,10 @@
 //!
 //! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `fit_editor`, `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `error`. Every
-//! message is answered, except `place_editor`, `ara_select` and `quit` (so the engine never
-//! waits on them).
+//! message is answered, except `place_editor`, `fit_editor`, `ara_select` and `quit` (so the
+//! engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
 //! only comes unasked, when a plug-in gives its editor a new size, and `latency_changed` only
 //! comes unasked, when a running plug-in reports another latency.
@@ -301,6 +301,14 @@ pub enum Message {
         instance: u32,
         placement: Placement,
     },
+    /// Ask an embedded editor to take the size of the room the engine has for it, in pixels,
+    /// when its plug-in lets its editor be resized (it may keep within its own limits). Not
+    /// answered; the new size comes back as `EditorResized`.
+    FitEditor {
+        instance: u32,
+        width: u32,
+        height: u32,
+    },
     /// Tell a plug-in bound to an ARA document (ADR 0028) which playback region the host has
     /// selected, by its persistent id (`clip-<id>`), so its editor shows it; `None` selects
     /// nothing. Not answered; a plug-in without a document ignores it.
@@ -365,6 +373,7 @@ impl Message {
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
             | Self::AraSelect { instance, .. }
+            | Self::FitEditor { instance, .. }
             | Self::AraUpdate { instance, .. }
             | Self::AraUpdated { instance }
             | Self::EditorResized { instance, .. }
@@ -420,6 +429,9 @@ impl Message {
             }
             Self::PlaceEditor { instance, placement } => {
                 json!({ "op": "place_editor", "instance": instance, "placement": placement.to_json() })
+            }
+            Self::FitEditor { instance, width, height } => {
+                json!({ "op": "fit_editor", "instance": instance, "width": width, "height": height })
             }
             Self::AraUpdate { instance, document } => {
                 json!({ "op": "ara_update", "instance": instance, "document": document.to_json() })
@@ -529,6 +541,7 @@ impl Message {
             "place_editor" => {
                 Self::PlaceEditor { instance: instance()?, placement: Placement::from_json(value.get("placement")?)? }
             }
+            "fit_editor" => Self::FitEditor { instance: instance()?, width: small("width")?, height: small("height")? },
             "ara_update" => {
                 Self::AraUpdate { instance: instance()?, document: AraDocument::from_json(value.get("document")?)? }
             }
@@ -680,6 +693,7 @@ mod tests {
             Message::AraSelect { instance: 6, region: None },
             Message::AraUpdate { instance: 6, document: ara_document() },
             Message::AraUpdated { instance: 6 },
+            Message::FitEditor { instance: 6, width: 900, height: 340 },
             Message::EditorResized { instance: 6, width: 1, height: 16_384 },
             Message::LatencyChanged { instance: 6, latency: 0 },
             Message::LatencyChanged { instance: u32::MAX, latency: u32::MAX },
@@ -748,6 +762,7 @@ mod tests {
             r#"{"op":"ara_update","instance":1}"#,
             r#"{"op":"ara_update","instance":1,"document":{}}"#,
             r#"{"op":"ara_updated"}"#,
+            r#"{"op":"fit_editor","instance":1,"width":900}"#,
             r#"{"op":"ara_select","instance":1,"region":7}"#,
             r#"{"op":"close_editor","instance":"1"}"#,
             r#"{"op":"latency_changed","instance":1}"#,

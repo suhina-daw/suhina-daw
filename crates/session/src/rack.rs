@@ -644,6 +644,10 @@ struct Instance {
     /// Where the window wants the embedded editor, and what the host was last told.
     placement_wanted: Option<Placement>,
     placement_sent: Option<Placement>,
+    /// The room in pixels the window has for its embedded editor, where the editor is asked to
+    /// fit it (an ARA editor in the clip's place), and what the host was last asked.
+    fit_wanted: Option<(u32, u32)>,
+    fit_sent: Option<(u32, u32)>,
     /// The editor is being closed to open again the other way (the embedding setting changed).
     reopen_editor: bool,
     /// An embedded editor cannot open on this system (macOS: a view of the host's process
@@ -688,6 +692,8 @@ impl Instance {
             editor_size: None,
             placement_wanted: None,
             placement_sent: None,
+            fit_wanted: None,
+            fit_sent: None,
             reopen_editor: false,
             force_floating: false,
             counts: None,
@@ -706,6 +712,8 @@ impl Instance {
         self.editor_size = None;
         self.placement_wanted = None;
         self.placement_sent = None;
+        self.fit_wanted = None;
+        self.fit_sent = None;
     }
 }
 
@@ -965,6 +973,14 @@ impl Rack {
                 && control.ara_select(wanted.as_deref()).unwrap_or(false)
             {
                 instance.ara_selection_sent = Some(wanted);
+            }
+        }
+        for instance in self.instances.values_mut() {
+            if let (Some(fit), Some(control)) = (instance.fit_wanted, instance.control.as_mut())
+                && instance.fit_sent != Some(fit)
+                && control.fit_editor(fit.0, fit.1).unwrap_or(false)
+            {
+                instance.fit_sent = Some(fit);
             }
         }
         for instance in self.instances.values_mut() {
@@ -1455,6 +1471,21 @@ impl Rack {
     /// Whether the plug-in device `key` runs bound to an ARA document of its track's clips.
     pub fn edits_clips(&self, key: u64) -> bool {
         self.instances.get(&key).is_some_and(|i| i.status == PluginStatus::Running && !i.ara_sources.is_empty())
+    }
+
+    /// The room in pixels the window has for the embedded editors of these plug-in devices,
+    /// which are asked to fit it (a plug-in that lets its editor be resized takes it, within
+    /// its limits). Told to the hosts now where it can be, else at the next [`Rack::sync`].
+    pub fn fit_editors(&mut self, wanted: &[(u64, (u32, u32))]) {
+        for (key, size) in wanted {
+            if let Some(instance) = self.instances.get_mut(key)
+                && instance.editor_open
+                && instance.editor_embedded
+            {
+                instance.fit_wanted = Some(*size);
+            }
+        }
+        self.send_placements();
     }
 
     /// Which region (`clip-<id>`) the plug-in device `key`, one that edits clips, should show

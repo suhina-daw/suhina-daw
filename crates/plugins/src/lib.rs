@@ -833,6 +833,18 @@ impl Plugin {
         Ok(true)
     }
 
+    /// Asks an embedded editor to take `width` × `height` pixels, the room the engine has for
+    /// it. Never waits, as [`Plugin::place_editor`]: `false` when it was not sent.
+    pub fn fit_editor(&mut self, width: u32, height: u32) -> Result<bool, PluginError> {
+        let Some(mut group) = try_lock(&self.group) else { return Ok(false) };
+        if group.generation != self.generation {
+            return Err(PluginError::Protocol("the host process was replaced; restart the plug-in".into()));
+        }
+        let process = group.process.as_mut().ok_or_else(|| PluginError::Protocol("the host is not running".into()))?;
+        process.send(&Message::FitEditor { instance: self.instance, width, height })?;
+        Ok(true)
+    }
+
     /// Brings the ARA document of a plug-in loaded with one in line with `document`, its
     /// track's clips as they are now (moved, trimmed, added or removed), without loading it
     /// again. Waits for the answer.

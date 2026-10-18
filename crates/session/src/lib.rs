@@ -675,6 +675,16 @@ impl Session {
         found
     }
 
+    /// The room in pixels the window has for these plug-in devices' embedded editors (track,
+    /// device, width and height), which they are asked to fit.
+    pub fn fit_editors(&mut self, wanted: &[(suhina_model::TrackId, usize, (u32, u32))]) {
+        let keyed: Vec<(u64, (u32, u32))> = wanted
+            .iter()
+            .filter_map(|(track, device, size)| Some((plugin_key_at(&self.project, *track, *device)?, *size)))
+            .collect();
+        self.plugins.fit_editors(&keyed);
+    }
+
     /// How far the project's plug-ins have got with starting (all zero while it does not play).
     pub fn plugin_progress(&self) -> PluginProgress {
         self.plugins.progress()

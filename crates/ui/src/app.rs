@@ -1886,8 +1886,10 @@ impl App {
         }
         if !stacked {
             let scale = ui.ctx().pixels_per_point();
+            // An ARA editor in the clip's place is fitted to the room there instead.
             let needed = reports
                 .values()
+                .filter(|r| !r.ara)
                 .filter_map(|r| r.editor_embedded)
                 .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
                 .fold(0.0, f32::max);
@@ -2279,6 +2281,10 @@ impl App {
         let Ok(session) = self.projects.session_mut(None) else { return };
         let shown: Vec<_> = places.iter().map(|p| (p.track, p.device, p.placement)).collect();
         session.place_editors(&shown);
+        let fits: Vec<_> = places.iter().filter_map(|p| Some((p.track, p.device, p.fit?))).collect();
+        if !fits.is_empty() {
+            session.fit_editors(&fits);
+        }
     }
 
     /// The tab row: one tab per open project, the active one lit; a tab's × closes it.

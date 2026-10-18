@@ -984,6 +984,13 @@ impl Vst3Plugin {
         }
     }
 
+    /// Asks the open editor to take `size`, the room the engine has for it.
+    pub(crate) fn fit_editor(&mut self, size: crate::window::Size) {
+        if let Some(editor) = &mut self.editor {
+            editor.fit(size);
+        }
+    }
+
     /// Puts an embedded editor where the engine says.
     pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
         if let Some(editor) = &self.editor {

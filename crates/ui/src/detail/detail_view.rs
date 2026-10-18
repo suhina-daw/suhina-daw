@@ -45,6 +45,9 @@ pub struct EditorPlace {
     pub track: TrackId,
     pub device: usize,
     pub placement: Placement,
+    /// The room the panel has for the editor, in pixels, where it is asked to fit (an ARA
+    /// editor in the clip's place); `None` where it keeps its own size.
+    pub fit: Option<(u32, u32)>,
 }
 
 /// The height a device row needs to show an embedded editor `height` pixels tall under a
@@ -679,7 +682,7 @@ fn editor_place(
             clip_height: span(shown.top(), shown.bottom()),
         }
     };
-    EditorPlace { track, device: device.index, placement }
+    EditorPlace { track, device: device.index, placement, fit: None }
 }
 
 /// A plug-in device's button under its state line: opens or closes its editor while it runs,
@@ -758,7 +761,13 @@ pub fn show_ara_editor(
             actions,
         );
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, float.bottom() + PAD), size);
-        places.push(editor_place(ui, area, rect.expand(PAD), size, track, device, rect.min));
+        let mut place = editor_place(ui, area, rect.expand(PAD), size, track, device, rect.min);
+        // The editor is asked to take the room under Float, as a piano roll fills it.
+        let room = Rect::from_min_max(rect.min, area.max - Vec2::splat(PAD));
+        let scale = ui.ctx().pixels_per_point();
+        let pixels = |points: f32| (points * scale).max(0.0).round() as u32;
+        place.fit = Some((pixels(room.width()), pixels(room.height())));
+        places.push(place);
         return;
     }
     let mut buttons = Vec::new();

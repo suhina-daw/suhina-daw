@@ -580,6 +580,12 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
                 None => missing(instance),
             }
         }
+        Message::FitEditor { instance, width, height } => {
+            if let Some(Loaded::Vst3(plugin)) = instances.get_mut(&instance) {
+                plugin.fit_editor(window::Size { width, height });
+            }
+            return None;
+        }
         Message::AraSelect { instance, region } => {
             if let Some(loaded) = instances.get(&instance) {
                 loaded.ara_select(region.as_deref());

@@ -63,7 +63,9 @@ lane, the grid and zoom, and the `note.*` commands.
   0028](../decisions/0028-ara-hosting.md)) has that plug-in's editor where a MIDI clip has its piano
   roll: the clip column on the left, the editor in the rest, embedded in the window whatever
   Settings › Plug-ins says for other editors (Windows, X11 on Linux; macOS opens it in a window of
-  its own). **Float** above it takes it out to a window of its own; the area then says so, with
+  its own), asked to take the room there as the piano roll does (`fit_editor`; a plug-in that
+  lets its editor be resized takes it within its limits, one of a fixed size is cut off at the
+  edges), and the detail area does not grow for it. **Float** above it takes it out to a window of its own; the area then says so, with
   **Dock**, which brings it back, and **Close editor**. Its keys are its own while it has the
   keyboard: a click in it gives it the keyboard, so Ctrl+Z there undoes the plug-in's edit, not
   Suhina's last step. The plug-in is told which clip is selected, so its editor shows that
