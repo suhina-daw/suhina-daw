@@ -134,11 +134,11 @@ fn main() -> ExitCode {
             let result = parse_args(args.get(1..).unwrap_or_default(), command).and_then(|a| match command {
                 Command::Render => render(&a),
                 Command::Play => {
-                    let (project, audio) = load_project(&a)?;
+                    let (project, audio, assets) = load_project(&a)?;
                     if a.launcher {
-                        play::launcher(project, &audio, &a.audio_output)
+                        play::launcher(project, &audio, &assets, &a.audio_output)
                     } else {
-                        play::play(&project, &audio, &a.audio_output)
+                        play::play(&project, &audio, &assets, &a.audio_output)
                     }
                 }
             });
@@ -333,9 +333,9 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
 
 /// Opens the project named by the arguments and the audio files it uses, printing warnings, and
 /// applies `--scene`.
-fn load_project(args: &Args) -> Result<(Project, AudioPool), String> {
-    let (project, audio) = match &args.source {
-        Source::Demo => (demo_project(), AudioPool::new()),
+fn load_project(args: &Args) -> Result<(Project, AudioPool, suhina_engine::DeviceAssets), String> {
+    let (project, audio, assets) = match &args.source {
+        Source::Demo => (demo_project(), AudioPool::new(), suhina_engine::DeviceAssets::new()),
         Source::Als(path) => {
             // A Suhina project (.suhina) or a Live Set to import.
             let (session, warnings) = suhina_session::Session::open(path).map_err(|e| e.0)?;
@@ -348,7 +348,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool), String> {
             if !audio.files.is_empty() {
                 eprintln!("audio: {} files decoded in {:.1} s", audio.files.len(), started.elapsed().as_secs_f64());
             }
-            (session.project().clone(), audio)
+            (session.project().clone(), audio, session.device_assets().clone())
         }
     };
     let mut project = match args.scene {
@@ -360,7 +360,7 @@ fn load_project(args: &Args) -> Result<(Project, AudioPool), String> {
         eprintln!("FM synth: {}", if patch.name().is_empty() { "(no name)".to_string() } else { patch.name() });
         put_fm_synth_on_note_tracks(&mut project, &patch);
     }
-    Ok((project, audio))
+    Ok((project, audio, assets))
 }
 
 /// The voice `--fm` asks for: from a DX7 voice or bank file, or the initial voice.
@@ -438,10 +438,10 @@ fn fm_synth(args: &[String]) -> Result<(), String> {
 
 fn render(args: &Args) -> Result<(), String> {
     let path = args.output.as_ref().ok_or("missing --output")?;
-    let (project, audio) = load_project(args)?;
+    let (project, audio, assets) = load_project(args)?;
     let mut library = suhina_plugins::library::Library::default();
     let env = suhina_session::PluginEnv::from_library(&mut library);
-    let summary = render_wavs(&project, &audio, path, args.cue.as_deref(), args.sample_rate, Some(&env))?;
+    let summary = render_wavs(&project, &audio, &assets, path, args.cue.as_deref(), args.sample_rate, Some(&env))?;
     for notice in &summary.plugins {
         eprintln!("plug-ins: {notice}");
     }
@@ -942,6 +942,7 @@ fn demo_project() -> Project {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Extensions::default(),
     };
 

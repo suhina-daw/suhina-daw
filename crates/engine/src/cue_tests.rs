@@ -9,10 +9,13 @@ use std::sync::Arc;
 use suhina_model::*;
 
 use crate::chain_tests::{SR, device, max_diff, note, peak, project};
-use crate::{AudioData, AudioPool, LaunchCommand, Plugins, Renderer, render_offline, render_offline_with_cue};
+use crate::{
+    AudioData, AudioPool, DeviceAssets, LaunchCommand, Plugins, Renderer, render_offline, render_offline_with_cue,
+};
 
 fn render_both(project: &Project, gain: f32, separate: bool) -> (Vec<f32>, Vec<f32>) {
-    render_offline_with_cue(project, &AudioPool::new(), SR, 512, Plugins::new(), gain, separate).unwrap()
+    render_offline_with_cue(project, &AudioPool::new(), &DeviceAssets::new(), SR, 512, Plugins::new(), gain, separate)
+        .unwrap()
 }
 
 fn cued(mut project: Project) -> Project {

@@ -78,6 +78,16 @@ fn everything() -> Project {
         },
         Device { state: Some(Vec::new()), ..Device::new("Old", DeviceKind::Vst2 { id: 1_234_567 }) },
         Device {
+            state: Some(b"/home/me/Suhina/NAM models/edge.nam".to_vec()),
+            params: vec![DeviceParam::new("inputGain", -3.5), DeviceParam::new("eqMidFreq", 800.0)],
+            ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
+        },
+        Device {
+            state: Some(b"/home/me/Suhina/IRs/marshall.wav".to_vec()),
+            params: vec![DeviceParam::new("volume", -1.9)],
+            ..Device::new("Cab", DeviceKind::Builtin("nam-cab-loader".into()))
+        },
+        Device {
             params: vec![DeviceParam::new("3", 0.25)],
             automation: vec![AutomationLane {
                 param: "3".into(),
@@ -733,6 +743,24 @@ fn a_missing_audio_file_is_found_by_its_absolute_path() {
     let LaneData::Audio(region) = &project.contents[1].lanes[0].data else { return };
     assert_eq!(region.file, "kept.wav");
     let _clean = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
+    // An empty audio clip has no file yet; saving elsewhere does not invent one.
+    let mut project = everything();
+    project.contents.push(ClipContent {
+        id: ContentId(900),
+        name: "Audio clip".into(),
+        length: 4.0,
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion { ..AudioRegion::new("") }) }],
+        extensions: Extensions::default(),
+        scale: None,
+    });
+    rebase_audio(&mut project, Path::new("/nowhere"), Path::new("/elsewhere"));
+    let LaneData::Audio(region) = &project.contents[2].lanes[0].data else { return };
+    assert_eq!(region.file, "", "the empty clip still names no file");
+    assert!(region.absolute_file.is_none(), "no absolute path is invented either: {:?}", region.absolute_file);
 }
 
 #[test]

@@ -64,6 +64,30 @@ impl Shortcut {
         parts.join("+")
     }
 
+    /// The key as menus and Settings show it: as [`Shortcut::text`] writes it, but on macOS with
+    /// the system's signs (⌘C, ⇧⌘D, ⌥⌘M).
+    pub fn display(&self) -> String {
+        if !cfg!(target_os = "macos") {
+            return self.text();
+        }
+        let mut text = String::new();
+        if self.modifiers.ctrl && !self.modifiers.mac_cmd && !self.modifiers.command {
+            text.push('⌃');
+        }
+        if self.modifiers.alt {
+            text.push('⌥');
+        }
+        if self.modifiers.shift {
+            text.push('⇧');
+        }
+        if self.modifiers.command || self.modifiers.mac_cmd {
+            text.push('⌘');
+        }
+        // ⌘, and ⌘+ rather than ⌘Comma and ⌘Plus.
+        text.push_str(self.key.symbol_or_name());
+        text
+    }
+
     fn modifier_count(&self) -> usize {
         usize::from(self.modifiers.command || self.modifiers.ctrl)
             + usize::from(self.modifiers.shift)
@@ -86,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 62] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 67] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -116,12 +140,17 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 62] = [
         "Edit",
     ),
     ("selection.duplicate", "Duplicate the selected clips, or the selected notes in the piano roll", "Edit"),
-    ("selection.delete", "Delete the selected clips, or the selected notes in the piano roll", "Edit"),
-    ("selection.mute", "Mute or unmute the selected clips", "Edit"),
+    ("selection.delete", "Delete the selected clips or device, or the selected notes in the piano roll", "Edit"),
+    ("selection.mute", "Mute or unmute the selected clips, or turn the device clicked last off or on", "Edit"),
+    ("selection.rename", "Rename the selected clip", "Edit"),
     ("selection.selectAll", "Select every clip in the arrangement", "Edit"),
     ("selection.split", "Split the selected clip at the playhead", "Edit"),
     ("selection.consolidate", "Consolidate the selected clip into a new one", "Edit"),
     ("selection.group", "Group the selected tracks", "Tracks"),
+    ("track.addAudio", "Add an audio track", "Tracks"),
+    ("track.addMidi", "Add a MIDI track", "Tracks"),
+    ("clip.insertMidi", "Insert an empty MIDI clip over the time selection", "Edit"),
+    ("view.automation", "Show or hide every track's automation lanes", "View"),
     ("selection.launch", "Launch the selected clip slot", "Session"),
     ("selection.up", "Select the clip slot above", "Session"),
     ("selection.down", "Select the clip slot below", "Session"),
@@ -184,15 +213,17 @@ fn overlap(a: &str, b: &str) -> bool {
 }
 
 /// The detail area's own actions, listed with the window's, and their default keys.
-const DETAIL_ACTIONS: [(&str, &str, &str); 2] = [
+const DETAIL_ACTIONS: [(&str, &str, &str); 3] = [
     ("view.devices", "Show the selected clip's track devices, or the clip again", "View"),
     (
         "view.araEditor",
         "Open the selected audio clip in its track's plug-in that edits clips (such as a pitch editor)",
         "View",
     ),
+    ("view.plugin", "Open or close the selected track's plug-in editor", "View"),
 ];
-const DETAIL_DEFAULTS: [(&str, &[&str]); 2] = [("view.devices", &["Ctrl+Shift+D"]), ("view.araEditor", &["Alt+M"])];
+const DETAIL_DEFAULTS: [(&str, &[&str]); 3] =
+    [("view.devices", &["Ctrl+Shift+D"]), ("view.araEditor", &["Alt+M"]), ("view.plugin", &["P"])];
 
 /// Every action a key can be bound to: the window's, then each command that needs no
 /// parameters.
@@ -391,8 +422,12 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 63] = [
-    ("file.new", &["Ctrl+T"]),
+const DEFAULTS: [(&str, &[&str]); 68] = [
+    ("file.new", &["Ctrl+N"]),
+    ("track.addAudio", &["Ctrl+T"]),
+    ("track.addMidi", &["Ctrl+Shift+T"]),
+    ("clip.insertMidi", &["Ctrl+Shift+M"]),
+    ("view.automation", &["A"]),
     ("file.open", &["Ctrl+O"]),
     ("file.save", &["Ctrl+S"]),
     ("file.saveAs", &["Ctrl+Shift+S"]),
@@ -404,7 +439,7 @@ const DEFAULTS: [(&str, &[&str]); 63] = [
     ("view.mappingMode", &["Ctrl+M"]),
     ("view.browser", &["Ctrl+B"]),
     ("browser.search", &["Ctrl+F"]),
-    ("view.sampleMap", &["Ctrl+Shift+M"]),
+    ("view.sampleMap", &["Ctrl+Alt+Shift+M"]),
     ("view.sampleMapWindow", &["Ctrl+Alt+M"]),
     ("settings.open", &["Ctrl+Comma"]),
     ("view.zoomIn", &["Ctrl+Plus", "Ctrl+Equals"]),
@@ -418,6 +453,7 @@ const DEFAULTS: [(&str, &[&str]); 63] = [
     ("selection.duplicate", &["Ctrl+D"]),
     ("selection.delete", &["Delete", "Backspace"]),
     ("selection.mute", &["0"]),
+    ("selection.rename", &["Ctrl+R"]),
     ("selection.selectAll", &["Ctrl+A"]),
     ("selection.split", &["Ctrl+E"]),
     ("selection.consolidate", &["Ctrl+J"]),
@@ -636,6 +672,11 @@ impl Keymap {
 
     /// The first key of an action as menus show it, if it has one.
     pub fn label(&self, action: &str) -> Option<String> {
+        self.keys(action).first().map(Shortcut::display)
+    }
+
+    /// The first key of an action as a keymap file writes it ("Ctrl+D"), on every system.
+    pub fn binding_text(&self, action: &str) -> Option<String> {
         self.keys(action).first().map(Shortcut::text)
     }
 
@@ -684,6 +725,11 @@ impl Keymap {
         }
         fired
     }
+}
+
+/// A key written as the keymap writes it ("Ctrl+C"), as menus show it on this system.
+pub fn shown(text: &str) -> String {
+    Shortcut::parse(text).map_or_else(|| text.to_string(), |s| s.display())
 }
 
 /// The window reports Ctrl+X, Ctrl+C and Ctrl+V (Cmd on macOS) as cut, copy and paste events
@@ -748,9 +794,9 @@ mod tests {
         let (keymap, warnings) = Keymap::from_json(
             r#"{ "edit.undo": ["Alt+Z"], "selection.delete": [], "dance": ["X"], "edit.redo": ["Ctrl+Bogus"] }"#,
         );
-        assert_eq!(keymap.label("edit.undo").as_deref(), Some("Alt+Z"));
+        assert_eq!(keymap.binding_text("edit.undo").as_deref(), Some("Alt+Z"));
         assert!(keymap.keys("selection.delete").is_empty());
-        assert_eq!(keymap.label("transport.toggle").as_deref(), Some("Space"));
+        assert_eq!(keymap.binding_text("transport.toggle").as_deref(), Some("Space"));
         assert_eq!(warnings.len(), 2);
         let (again, none) = Keymap::from_json(&keymap.to_json());
         assert_eq!((again, none.len()), (keymap, 0));
@@ -784,7 +830,7 @@ mod tests {
             assert_eq!(action.group, PIANO_ROLL);
             assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
             let number = (index + 1).to_string();
-            assert_eq!(Keymap::default().label(id).as_deref(), Some(number.as_str()), "{id}");
+            assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(number.as_str()), "{id}");
         }
     }
 
@@ -800,7 +846,7 @@ mod tests {
             let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
             assert_eq!(action.group, PIANO_ROLL);
             assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
-            assert_eq!(Keymap::default().label(id).as_deref(), Some(key), "{id}");
+            assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
         }
         assert!(Keymap::default().conflicts().is_empty());
     }
@@ -812,7 +858,7 @@ mod tests {
             let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
             assert_eq!(action.group, PIANO_ROLL);
             assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
-            assert_eq!(Keymap::default().label(id).as_deref(), Some(key), "{id}");
+            assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
         }
         assert!(Keymap::default().conflicts().is_empty());
     }
@@ -824,7 +870,7 @@ mod tests {
             known.iter().find(|a| a.id == "pianoRoll.tool6").unwrap_or_else(|| panic!("the Mute tool is an action"));
         assert_eq!((action.label.as_str(), action.group), ("Choose the Mute tool", PIANO_ROLL));
         assert!(piano_roll_only("pianoRoll.tool6"), "read only while the piano roll has the keyboard");
-        assert_eq!(Keymap::default().label("pianoRoll.tool6").as_deref(), Some("6"));
+        assert_eq!(Keymap::default().binding_text("pianoRoll.tool6").as_deref(), Some("6"));
     }
 
     #[test]
@@ -834,7 +880,7 @@ mod tests {
             keymap.set_preset(preset);
             assert_eq!(keymap.preset(), preset);
             assert!(keymap.conflicts().is_empty(), "{preset:?} has no key bound twice");
-            assert_eq!(keymap.label("selection.duplicate").as_deref(), Some(preset.duplicate_key()));
+            assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some(preset.duplicate_key()));
             assert_eq!(preset.right_click_deletes(), matches!(preset, Preset::DrawFirst | Preset::MouseFirst));
             assert_eq!(keymap.mouse(), preset.mouse(), "{preset:?} sets its mouse switches");
             // Every other key is the default's: the preset only changes what it names.
@@ -893,7 +939,7 @@ mod tests {
         // A file without them takes all four off.
         let (none, warnings) = Keymap::from_json(r#"{ "edit.undo": ["Alt+Z"] }"#);
         assert_eq!((none.mouse(), warnings.len()), (MouseSettings::default(), 0));
-        assert_eq!(none.label("edit.undo").as_deref(), Some("Alt+Z"));
+        assert_eq!(none.binding_text("edit.undo").as_deref(), Some("Alt+Z"));
         // A value that is not true or false is skipped with a warning, as a bad key is.
         let (bad, warnings) = Keymap::from_json(r#"{ "mouseRightDeletes": "yes" }"#);
         assert_eq!((bad.mouse().right_deletes, warnings.len()), (false, 1));
@@ -952,11 +998,11 @@ mod tests {
         keymap.set_workflow(Setting::DoubleClickNote, 1);
         assert_eq!(keymap.preset(), Preset::Custom);
         assert!(!keymap.workflow().double_click_deletes);
-        assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+B"), "Draw-first's key stays");
+        assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"), "Draw-first's key stays");
         // The duplicate setting binds the key, and gives the browser its own back.
         keymap.set_workflow(Setting::Duplicate, 0);
-        assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+D"));
-        assert_eq!(keymap.label("view.browser").as_deref(), Some("Ctrl+B"));
+        assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+D"));
+        assert_eq!(keymap.binding_text("view.browser").as_deref(), Some("Ctrl+B"));
         assert!(keymap.conflicts().is_empty());
         // Choosing Custom changes no setting; a preset fills them all in again.
         let before = keymap.workflow();
@@ -977,11 +1023,11 @@ mod tests {
         keymap.set_preset(Preset::DrawFirst);
         keymap.set("selection.duplicate", vec![Shortcut::new(Modifiers::COMMAND, Key::D)]);
         keymap.set_preset(Preset::DrawFirst);
-        assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+B"));
+        assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+B"));
         // And choosing the other preset sets its own keys.
         keymap.set_preset(Preset::SelectFirst);
-        assert_eq!(keymap.label("selection.duplicate").as_deref(), Some("Ctrl+D"));
-        assert_eq!(keymap.label("view.browser").as_deref(), Some("Ctrl+B"));
+        assert_eq!(keymap.binding_text("selection.duplicate").as_deref(), Some("Ctrl+D"));
+        assert_eq!(keymap.binding_text("view.browser").as_deref(), Some("Ctrl+B"));
         // The mouse switches come back the same way: choosing the preset again puts a switch
         // changed by hand back, and another preset turns every one of them off.
         keymap.set_preset(Preset::MouseFirst);
@@ -998,7 +1044,7 @@ mod tests {
         assert_eq!(keymap.preset(), Preset::SelectFirst, "an unknown preset is the default one");
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("Fancy-first"), "{}", warnings[0]);
-        assert_eq!(keymap.label("edit.undo").as_deref(), Some("Alt+Z"), "the rest of the file is read");
+        assert_eq!(keymap.binding_text("edit.undo").as_deref(), Some("Alt+Z"), "the rest of the file is read");
         // A preset that is not text at all, and a file that is not JSON.
         let (number, warnings) = Keymap::from_json(r#"{ "preset": 3 }"#);
         assert_eq!((number.preset(), warnings.len()), (Preset::SelectFirst, 1));
@@ -1027,15 +1073,32 @@ mod tests {
         let action =
             actions().into_iter().find(|a| a.id == "view.devices").unwrap_or_else(|| panic!("the switch is an action"));
         assert_eq!(action.group, "View");
-        assert_eq!(Keymap::default().label("view.devices").as_deref(), Some("Ctrl+Shift+D"));
+        assert_eq!(Keymap::default().binding_text("view.devices").as_deref(), Some("Ctrl+Shift+D"));
         for preset in Preset::ALL {
             let mut keymap = Keymap::default();
             keymap.set_preset(preset);
-            assert_eq!(keymap.label("view.devices").as_deref(), Some("Ctrl+Shift+D"), "{preset:?}");
+            assert_eq!(keymap.binding_text("view.devices").as_deref(), Some("Ctrl+Shift+D"), "{preset:?}");
             assert!(keymap.conflicts().is_empty(), "{preset:?}");
         }
         // Rebound and unbound like any other action, and read back from the file.
         let (keymap, warnings) = Keymap::from_json(r#"{ "view.devices": [] }"#);
         assert_eq!((keymap.keys("view.devices").len(), warnings.len()), (0, 0));
+    }
+
+    #[test]
+    fn the_plugin_toggle_has_its_own_key_under_every_preset() {
+        let action =
+            actions().into_iter().find(|a| a.id == "view.plugin").unwrap_or_else(|| panic!("the toggle is an action"));
+        assert_eq!(action.group, "View");
+        assert_eq!(Keymap::default().binding_text("view.plugin").as_deref(), Some("P"));
+        for preset in Preset::ALL {
+            let mut keymap = Keymap::default();
+            keymap.set_preset(preset);
+            assert_eq!(keymap.binding_text("view.plugin").as_deref(), Some("P"), "{preset:?}");
+            assert!(keymap.conflicts().is_empty(), "{preset:?}");
+        }
+        // Mappable like any other: unbound in the file, it stays unbound.
+        let (keymap, warnings) = Keymap::from_json(r#"{ "view.plugin": [] }"#);
+        assert_eq!((keymap.keys("view.plugin").len(), warnings.len()), (0, 0));
     }
 }

@@ -33,6 +33,7 @@ impl AudioSystem for Stand {
         &self,
         project: &Project,
         audio: &AudioPool,
+        _assets: &suhina_engine::DeviceAssets,
         _: &OutputChoice,
         previous: Option<Player>,
     ) -> Result<Opened, String> {

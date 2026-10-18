@@ -8,10 +8,11 @@
 
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::TrackId;
+use suhina_engine::model::{InputChannels, Monitor, TrackId};
 
 use crate::interaction::colour_picker;
 use crate::interaction::grid::{Column, ColumnKind};
+use crate::interaction::menus;
 use crate::kit::meter;
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD};
@@ -39,6 +40,15 @@ const UNDER_NAME: f32 = 2.0;
 const OUTPUT: f32 = 16.0;
 const ARROW: f32 = 14.0;
 const UNDER_OUTPUT: f32 = 4.0;
+/// The audio tracking's block above the toggles: the "Audio From" caption, the source dropdown,
+/// and the three monitor buttons, with a gap between the parts.
+const AUDIO_CAPTION: f32 = 12.0;
+const AUDIO_LIST: f32 = 16.0;
+const AUDIO_MONITOR: f32 = 18.0;
+const UNDER_AUDIO: f32 = 3.0;
+/// The height the audio block appears at, over the height where the name and output arrive and
+/// below where the device list does (`docs/design/components.md` › Height steps).
+pub const INPUT_AT: f32 = 236.0;
 /// A row of the device list, the least number of rows it shows, and the gap under it.
 const DEVICE_ROW: f32 = 16.0;
 const LEAST_DEVICES: f32 = 4.0;
@@ -64,6 +74,11 @@ pub struct Layout {
     pub name: Option<Rect>,
     /// Where the track's audio goes: "→" and the output dropdown.
     pub output: Option<Rect>,
+    /// The audio tracking's block, on a track that holds audio: the caption, the source
+    /// ("No input", a channel or a pair of the input device) and the three monitor buttons.
+    pub audio_caption: Option<Rect>,
+    pub audio_source: Option<Rect>,
+    pub audio_monitor: Option<Rect>,
     pub devices: Option<Rect>,
     pub sends: Option<Rect>,
     pub pan: Option<Rect>,
@@ -76,17 +91,35 @@ pub struct Layout {
     pub toggles: Rect,
 }
 
+/// What every strip of the mixer lays itself out by, besides its own track.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Shared {
+    /// Some strip holds the input's block, so every strip keeps its room from [`INPUT_AT`] up and
+    /// the controls stay in line across the mixer (an empty space where a track has no input).
+    pub reserve_input: bool,
+    /// The fader's height the divider under the device lists was dragged to; 0 is automatic.
+    pub fader: f32,
+}
+
 /// The parts of a strip filling `rect` (the column's width, the mixer's height). A strip without
-/// sends gives their row to the fader.
-pub fn layout(rect: Rect, has_sends: bool) -> Layout {
+/// sends gives their row to the fader; an audio track's strip holds the input's block above the
+/// toggles from [`INPUT_AT`] up.
+pub fn layout(rect: Rect, has_sends: bool, can_hear_input: bool) -> Layout {
+    layout_shared(rect, has_sends, can_hear_input, Shared::default())
+}
+
+/// [`layout`], with what the mixer's strips share: the input block's room and the divider.
+pub fn layout_shared(rect: Rect, has_sends: bool, can_hear_input: bool, shared: Shared) -> Layout {
     let inner = rect.shrink(PAD);
     let toggles =
         Rect::from_min_max(Pos2::new(inner.left(), (inner.bottom() - theme::TOGGLE).max(inner.top())), inner.max);
-    let bottom = toggles.top() - ABOVE_TOGGLES;
     let height = rect.height();
     let mut parts = Layout {
         name: None,
         output: None,
+        audio_caption: None,
+        audio_source: None,
+        audio_monitor: None,
         devices: None,
         sends: None,
         pan: None,
@@ -96,6 +129,25 @@ pub fn layout(rect: Rect, has_sends: bool) -> Layout {
         compact: None,
         toggles,
     };
+    let block = |top: f32, height: f32| {
+        Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(inner.right(), top + height))
+    };
+    let mut bottom = toggles.top() - ABOVE_TOGGLES;
+    if (can_hear_input || shared.reserve_input) && height >= INPUT_AT {
+        // Above the toggles: the three monitor buttons, over them the source's dropdown, and
+        // at the top the block's caption. A strip with no input keeps the room empty.
+        bottom -= AUDIO_MONITOR;
+        let monitor = block(bottom, AUDIO_MONITOR);
+        bottom -= UNDER_AUDIO + AUDIO_LIST;
+        let source = block(bottom, AUDIO_LIST);
+        bottom -= UNDER_AUDIO + AUDIO_CAPTION;
+        let caption = block(bottom, AUDIO_CAPTION);
+        if can_hear_input {
+            parts.audio_monitor = Some(monitor);
+            parts.audio_source = Some(source);
+            parts.audio_caption = Some(caption);
+        }
+    }
     let row = |top: f32, height: f32| {
         Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(inner.right(), top + height))
     };
@@ -118,7 +170,12 @@ pub fn layout(rect: Rect, has_sends: bool) -> Layout {
     let fixed = READOUT + UNDER_READOUT + if pan { KNOB_ROW } else { 0.0 } + if sends { KNOB_ROW } else { 0.0 };
     let rest = (bottom - top - fixed).max(0.0);
     let fader = if height >= DEVICES_AT {
-        let fader = (rest - LEAST_DEVICES * DEVICE_ROW - UNDER_DEVICES).clamp(LEAST_FADER, TALLEST_FADER_WITH_DEVICES);
+        let fader = if shared.fader > 0.0 {
+            // The divider's height, as long as one device row still shows over it.
+            shared.fader.clamp(LEAST_FADER, (rest - DEVICE_ROW - UNDER_DEVICES).max(LEAST_FADER))
+        } else {
+            (rest - LEAST_DEVICES * DEVICE_ROW - UNDER_DEVICES).clamp(LEAST_FADER, TALLEST_FADER_WITH_DEVICES)
+        };
         let list = rest - fader - UNDER_DEVICES;
         if list >= DEVICE_ROW {
             parts.devices = Some(row(top, list));
@@ -161,11 +218,18 @@ pub fn show(
     column: &Column,
     groups: &[(TrackId, String)],
     track_number: usize,
+    input_channels: u16,
     state: &mut SessionViewState,
     id: Id,
     actions: &mut Vec<Action>,
-) {
-    painter.rect_filled(rect, 0.0, theme::panel_background());
+) -> egui::Response {
+    // The strip in a shade of its track's colour, as the column above it.
+    let tint = motion::mix(
+        theme::panel_background(),
+        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+        0.16,
+    );
+    painter.rect_filled(rect, 0.0, tint);
     // The strip's own background, under its controls: a double-click shows the track's devices.
     let strip = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip"), Sense::click());
     strip.widget_info(|| {
@@ -173,6 +237,11 @@ pub fn show(
     });
     if strip.double_clicked() {
         state.open_devices = Some(column.track);
+    }
+    // A click on the strip selects its track, a return's too.
+    if strip.clicked() {
+        state.selected = Some(column.track);
+        state.selected_slot = None;
     }
     // The track's colour down the left edge, at every height; a click opens the palette.
     let band = Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()));
@@ -182,15 +251,25 @@ pub fn show(
         let colour_id = id.with("strip-colour");
         colour_picker::area(ui, band_hit, colour_id, column.track, &column.name, column.color, actions);
     }
-    let parts = layout(rect, !column.sends.is_empty());
+    let shared = Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
+    let parts = layout_shared(rect, !column.sends.is_empty(), column.plays_audio, shared);
     if let Some(name) = parts.name {
         name_row(ui, painter, name, column, id);
     }
     if let Some(row) = parts.output {
         output_row(ui, painter, row, column, groups, id, actions);
     }
+    if let Some(caption) = parts.audio_caption
+        && let Some(row) = parts.audio_source
+        && let Some(toggles) = parts.audio_monitor
+    {
+        audio_block(ui, painter, caption, row, toggles, column, input_channels, id, actions);
+    }
     if let Some(list) = parts.devices {
         devices(ui, painter, list, column, state, id);
+        if let Some(fader) = parts.fader {
+            divider(ui, painter, rect, list, fader.height(), state);
+        }
     }
     // Sends first, so a dragged send's level can stand where the pan's value is.
     let sending = parts.sends.and_then(|row| send_knobs(ui, painter, row, column, state, id, actions));
@@ -208,6 +287,35 @@ pub fn show(
         meter::show(ui, painter, at, &column.name, meter::Source::Track(column.track), &level, actions);
     }
     toggles(ui, painter, parts.toggles, column, track_number, id, actions);
+    strip
+}
+
+/// The line under a strip's device list: dragged down, the lists grow and the controls under them
+/// get lower in every strip at once; double-clicked, the split is automatic again.
+fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, list: Rect, fader: f32, state: &mut SessionViewState) {
+    let line = list.bottom() + UNDER_DEVICES / 2.0;
+    let rect = Rect::from_x_y_ranges(strip.x_range(), egui::Rangef::new(line - 3.0, line + 3.0));
+    let response = ui
+        .interact(
+            rect.intersect(painter.clip_rect()),
+            Id::new(("strip-divider", strip.left() as i32)),
+            Sense::click_and_drag(),
+        )
+        .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Device list and controls divider"));
+    if response.double_clicked() {
+        state.strip_fader_dragged = None;
+        state.strip_fader = 0.0;
+    } else if response.dragged_by(egui::PointerButton::Primary) {
+        // Down makes the controls lower and the list taller.
+        state.strip_fader_dragged = Some((fader - response.drag_delta().y).max(LEAST_FADER));
+    } else if response.drag_stopped_by(egui::PointerButton::Primary) && state.strip_fader_dragged.take().is_some() {
+        state.strip_fader = fader.round();
+    }
+    if response.hovered() || response.dragged() {
+        painter.hline(strip.x_range(), line, egui::Stroke::new(2.0, theme::accent()));
+    }
 }
 
 /// The track's name at the top of a tall strip; screen readers and tests find it as a label.
@@ -311,13 +419,19 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             id.with(("device", index)),
             format!("Show {} on {}", device.name, column.name),
         );
-        if response.clicked() {
+        if response.double_clicked() {
+            state.device_event =
+                Some(crate::session::session_view::DeviceEvent::Open { track, index, plugin: device.plugin });
+        } else if response.clicked() {
             state.selected = Some(track);
             state.selected_slot = None;
             state.shown_device = Some((track, index));
             state.open_detail = true;
+            let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+            state.device_event = Some(crate::session::session_view::DeviceEvent::Pick { track, index, add, run });
         }
-        let lit = state.shown_device == Some((track, index)) && state.selected == Some(track);
+        // Lit as the detail area's chain lights it: the devices picked in either.
+        let lit = state.device_picks.contains(&(track, index));
         let fill = if lit {
             theme::control_active()
         } else {
@@ -348,6 +462,103 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
                 theme::ui_font(theme::TEXT_TINY),
                 theme::text_hint(),
             );
+        }
+    }
+}
+
+/// The audio tracking's block above the toggles: "Audio From" with a dropdown of where the
+/// track listens (the same list the track menu shows, one `track.setAudioInput` a pick), and
+/// under it three monitor buttons. The one the track's monitoring is on now is lit.
+#[allow(clippy::too_many_arguments)]
+fn audio_block(
+    ui: &Ui,
+    painter: &egui::Painter,
+    caption: Rect,
+    source: Rect,
+    monitor: Rect,
+    column: &Column,
+    input_channels: u16,
+    id: Id,
+    actions: &mut Vec<Action>,
+) {
+    widgets::text_in(
+        painter,
+        caption.shrink2(Vec2::new(4.0, 0.0)),
+        Align2::LEFT_CENTER,
+        "Audio From",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_hint(),
+    );
+    let pick = source;
+    let current = match column.audio_input.channels {
+        InputChannels::None => "No input".to_string(),
+        InputChannels::Mono(c) => format!("In {c}"),
+        InputChannels::Stereo(c) => format!("In {c}/{}", c.saturating_add(1)),
+    };
+    let track = column.track;
+    let mut picked = None;
+    let response = widgets::button_area(
+        ui,
+        pick.intersect(painter.clip_rect()),
+        id.with("strip-audio-input"),
+        format!("{} audio from: {current}", column.name),
+    );
+    widgets::dropdown(ui, painter, pick, &response, &current);
+    egui::Popup::menu(&response).show(|ui| {
+        for (label, params) in menus::audio_input_picks(&column.audio_input, input_channels) {
+            let on = menus::audio_is(&column.audio_input, &params);
+            if ui.selectable_label(on, egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL))).clicked()
+                && !on
+            {
+                picked = Some(params);
+            }
+        }
+        if input_channels == 0 {
+            ui.label(
+                egui::RichText::new("No input device: choose one in Settings \u{203a} Audio")
+                    .font(theme::ui_font(theme::TEXT_SMALL)),
+            );
+        }
+    });
+    if let Some(mut params) = picked {
+        params["track"] = json!(track.0);
+        actions.push(Action::new("track.setAudioInput", params));
+    }
+    // The three monitor picks over the source row: In always hears the input, Auto while the
+    // track is armed, Off never; the one the monitoring is on is lit and stays put.
+    let width = (monitor.width() - 4.0) / 3.0;
+    for (index, (word, value, monitor_state)) in
+        [("In", "in", Monitor::In), ("Auto", "auto", Monitor::Auto), ("Off", "off", Monitor::Off)]
+            .into_iter()
+            .enumerate()
+    {
+        let area = Rect::from_min_size(
+            Pos2::new(monitor.left() + index as f32 * (width + 2.0), monitor.top()),
+            Vec2::new(width, monitor.height()),
+        );
+        let on = column.audio_input.monitor == monitor_state;
+        let response = widgets::button_area(
+            ui,
+            area.intersect(painter.clip_rect()),
+            id.with(("strip-monitor", value)),
+            format!("{} monitor {word}", column.name),
+        );
+        let fill = if on {
+            theme::control_active()
+        } else {
+            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response))
+        };
+        painter.rect_filled(area, 0.0, fill);
+        widgets::text_in(
+            painter,
+            area.shrink2(Vec2::new(3.0, 0.0)),
+            Align2::CENTER_CENTER,
+            word,
+            theme::ui_font(theme::TEXT_SMALL),
+            if on { theme::text_primary() } else { theme::text_secondary() },
+        );
+        if response.clicked() && !on {
+            actions.push(Action::new("track.setAudioInput", json!({ "track": track.0, "monitor": value })));
         }
     }
 }
@@ -424,7 +635,56 @@ fn fader_column(
         label,
     );
     let db = volume_drag(ui, &response, column, state, actions);
-    let hover = widgets::hover(ui, &response);
+    paint_fader(ui, painter, readout, fader, db, &response);
+}
+
+/// The main output's fader in the main column: as a track's, running `main.setVolume`.
+pub fn main_fader(
+    ui: &Ui,
+    painter: &egui::Painter,
+    readout: Rect,
+    fader: Rect,
+    volume_db: f64,
+    state: &mut SessionViewState,
+    actions: &mut Vec<Action>,
+) {
+    let area = Rect::from_min_max(Pos2::new(fader.left(), readout.top()), fader.max);
+    state.value_areas.push(area);
+    let mut preview = match state.drag {
+        Some((t, Control::Volume, v)) if t == MAIN => Some(v),
+        _ => None,
+    };
+    let label = widgets::format_db(preview.unwrap_or(volume_db));
+    let response =
+        widgets::value_area(ui, area.intersect(painter.clip_rect()), Id::new("main-volume"), "Main volume", label);
+    let continued = preview.is_some();
+    let send = |v: f64, continued: bool| {
+        let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
+        Action::new("main.setVolume", json!({ "db": db, "continue": continued }))
+    };
+    let mut db = volume_db;
+    match widgets::drag_value(ui, &response, &mut preview, volume_db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
+        Drag::Moving(v) => {
+            state.drag = Some((MAIN, Control::Volume, v));
+            actions.push(send(v, continued));
+            db = v;
+        }
+        Drag::Done(v) => {
+            state.drag = None;
+            actions.push(send(v, continued));
+            db = v;
+        }
+        Drag::None => {}
+    }
+    paint_fader(ui, painter, readout, fader, db, &response);
+}
+
+/// Where a drag on the main fader is kept in [`SessionViewState::drag`]: no track has this id.
+pub const MAIN: TrackId = TrackId(u32::MAX);
+
+/// A fader's look: the dB value over it, the track, the level and the cap.
+fn paint_fader(ui: &Ui, painter: &egui::Painter, readout: Rect, fader: Rect, db: f64, response: &egui::Response) {
+    let hover = widgets::hover(ui, response);
     let value_color = motion::mix(theme::text_value(), theme::text_primary(), hover);
     widgets::text_in(
         painter,
@@ -708,7 +968,7 @@ mod tests {
     use super::*;
 
     fn strip(height: f32) -> Layout {
-        layout(Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, height)), true)
+        layout(Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, height)), true, false)
     }
 
     fn shows(layout: &Layout) -> Vec<&'static str> {
@@ -777,7 +1037,7 @@ mod tests {
         assert!(taller.devices.map(|d| d.height()) > tall.devices.map(|d| d.height()));
         // Without sends the fader takes their row.
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::RETURN_COLUMN, 200.0));
-        let without = layout(rect, false);
+        let without = layout(rect, false, false);
         assert!(without.sends.is_none());
         assert_eq!(without.fader.map(|f| f.height()), strip(200.0).fader.map(|f| f.height() + KNOB_ROW));
     }

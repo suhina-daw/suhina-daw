@@ -4,6 +4,7 @@
 //! Saving a project as a Suhina project (.suhina) and opening it again.
 
 use serde_json::json;
+use suhina_model::{ContentLane, LaneData};
 use suhina_session::{Projects, Session, blank_project};
 
 fn folder(name: &str) -> std::path::PathBuf {
@@ -37,6 +38,34 @@ fn a_saved_project_opens_as_it_was() {
     assert!(session.has_unsaved_changes());
     assert!(session.execute("project.save", &json!({})).is_ok());
     assert!(!session.has_unsaved_changes());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_empty_audio_clip_saves_and_opens_with_nothing_to_decode_or_miss() {
+    let dir = folder("empty-audio");
+    let mut session = Session::new(blank_project());
+    session.execute("clip.create", &json!({ "track": "3 Audio", "scene": 1 })).unwrap_or_else(|e| panic!("{e}"));
+    session
+        .execute("project.save", &json!({ "path": dir.join("song.suhina").display().to_string() }))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let (opened, warnings) = Session::open(&dir.join("song.suhina")).unwrap_or_else(|e| panic!("{e}"));
+    assert!(warnings.is_empty(), "an empty clip names no file, so nothing is tried: {warnings:?}");
+    assert!(opened.missing_files().is_empty(), "an empty clip's missing file would be an empty name");
+    assert_eq!(opened.project(), session.project());
+    let slot = opened
+        .project()
+        .launcher
+        .columns
+        .iter()
+        .find(|c| c.track.0 == 3)
+        .and_then(|c| c.slots.first())
+        .and_then(|s| s.clip.clone());
+    let content = slot.and_then(|c| opened.project().contents.iter().find(|x| x.id == c.content).cloned());
+    assert!(
+        matches!(content.map(|c| c.lanes), Some(lanes) if matches!(lanes.as_slice(), [ContentLane { data: LaneData::Audio(region), .. }] if region.file.is_empty())),
+        "the empty clip opened as it was saved"
+    );
     let _clean = std::fs::remove_dir_all(&dir);
 }
 

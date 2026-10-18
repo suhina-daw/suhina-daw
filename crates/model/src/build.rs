@@ -88,6 +88,7 @@ impl Clip {
             fade_out_curve: FadeCurve::default(),
             follow_action: FollowAction::default(),
             launch: LaunchSettings::default(),
+            color: None,
             extensions: Extensions::default(),
         }
     }

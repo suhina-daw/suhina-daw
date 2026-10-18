@@ -52,7 +52,7 @@ pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value,
 /// The two parts of `clip` cut at song position `at` (inside it). The second part plays the
 /// content from where the clip was at the cut; the first keeps the fade-in, the second the
 /// fade-out, and the fades at the cut are none.
-fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
+pub(crate) fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
     let before = at - clip.start;
     let mut first = Clip { length: before, fade_out: 0.0, fade_out_curve: Default::default(), ..clip.clone() };
     first.fit_fades();
@@ -70,7 +70,7 @@ fn split(clip: &Clip, at: f64, rate: f64) -> (Clip, Clip) {
 
 /// Content beats a clip moves through per song beat: a transposed audio clip that is not warped
 /// plays faster or slower, as the engine plays it; everything else 1.
-fn content_rate(p: &Project, clip: &Clip) -> f64 {
+pub(crate) fn content_rate(p: &Project, clip: &Clip) -> f64 {
     let region = p.content(clip.content).and_then(|c| {
         c.lanes.iter().find_map(|l| match &l.data {
             LaneData::Audio(region) => Some(region),
@@ -160,6 +160,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;

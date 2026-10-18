@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "devices/*", "apps/*"]
-
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
@@ -32,6 +31,8 @@ suhina-device-overdrive = { path = "devices/overdrive" }
 suhina-device-fm-synth = { path = "devices/fm-synth" }
 suhina-device-compressor = { path = "devices/compressor" }
 suhina-device-limiter = { path = "devices/limiter" }
+suhina-device-nam-amp-modeler = { path = "devices/nam-amp-modeler" }
+suhina-device-nam-cab-loader = { path = "devices/nam-cab-loader" }
 suhina-device-registry = { path = "crates/device-registry" }
 suhina-stretch = { path = "crates/stretch" }
 suhina-output = { path = "crates/output" }
@@ -54,6 +55,7 @@ cpal = "0.18"  # Apache-2.0
 serde_json = "1"  # MIT OR Apache-2.0
 chrono = { version = "0.4", default-features = false, features = ["clock"] }  # MIT OR Apache-2.0
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
+nam-rs = "0.4"  # MIT; NAM model inference for the two NAM devices
 rtrb = "0.4"  # MIT OR Apache-2.0
 midir = "0.11"  # MIT
 notify-debouncer-full = "0.7"  # MIT OR Apache-2.0; with notify (CC0-1.0)

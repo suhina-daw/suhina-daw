@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use suhina_engine::AudioPool;
+use suhina_engine::{AudioPool, DeviceAssets};
 use suhina_model::Project;
 
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
@@ -420,6 +420,7 @@ pub trait AudioSystem: Send + Sync {
         &self,
         project: &Project,
         audio: &AudioPool,
+        assets: &DeviceAssets,
         choice: &OutputChoice,
         previous: Option<Player>,
     ) -> Result<Opened, String>;

@@ -25,14 +25,14 @@
     "track.mutedBackground": "#2A2A2A",
     "pan.background": "#1B1B1B",
     "pan.centre": "#5A5A5A",
-    "track.1": "#D08F6E",
-    "track.2": "#C6AC5E",
-    "track.3": "#73AAC0",
-    "track.4": "#A497CC",
-    "track.5": "#8FA87A",
-    "track.6": "#C27C8E",
-    "track.7": "#7F8FB0",
-    "track.8": "#B9B2A6",
+    "track.1": "#FF9A3C",
+    "track.2": "#F2D541",
+    "track.3": "#4FC3F7",
+    "track.4": "#B38BFF",
+    "track.5": "#7FDB5A",
+    "track.6": "#FF6FA8",
+    "track.7": "#5C8DFF",
+    "track.8": "#2FD9C4",
     "kind.kick": "#D06E5E",
     "kind.snare": "#73AAC0",
     "kind.clap": "#5EC0B0",
@@ -49,6 +49,7 @@
     "kind.tonal": "#6EB0D0",
     "kind.vocal": "#E8D0A0",
     "kind.effect": "#9CC49C",
-    "kind.other": "#8A8680"
+    "kind.other": "#8A8680",
+    "selection": "#D29922"
   }
 }

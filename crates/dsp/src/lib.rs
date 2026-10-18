@@ -11,18 +11,24 @@
 //! numbers it is given.
 
 pub mod biquad;
+pub mod convolver;
 pub mod crossover;
 pub mod dc;
+pub mod delay;
 pub mod gain;
 pub mod lfo;
 pub mod oversample;
+pub mod resampler;
 pub mod shape;
 pub mod smooth;
 
 pub use biquad::{Biquad, Coefficients};
+pub use convolver::{Convolver, Ir, MAX_FRAMES as IR_MAX_FRAMES, PARTITION};
 pub use crossover::{LinkwitzRiley, Slope};
 pub use dc::DcBlocker;
+pub use delay::DelayLine;
 pub use oversample::Oversampler2x;
+pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{OnePole, Smoother};
 
 /// Highest filter frequency as a fraction of the sample rate; keeps coefficients stable just

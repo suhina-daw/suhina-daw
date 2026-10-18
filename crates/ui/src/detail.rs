@@ -8,6 +8,7 @@ pub mod detail_view;
 mod device_canvas;
 pub mod follow_view;
 pub mod midi_tools;
+pub(crate) mod nam_panel;
 pub mod piano_roll;
 pub mod piano_roll_ghosts;
 pub mod piano_roll_grid;

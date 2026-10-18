@@ -31,6 +31,7 @@ is on exactly one page, under one heading.
 | Page | Section | Settings |
 |---|---|---|
 | General | Projects | When opening a project, At start, Projects folder, Templates folder, Start template (shown with At start › Template) |
+| General | NAM | NAM models folder, IR folder — where the two NAM devices' dropdowns list their files ([nam spec](nam-amp-and-cab.md) › Folders) |
 | General | Backups | Backups, Clean up backups, Last backup (read only) |
 | General | Agents | Let agents work on open projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
 | General | Dropping files | Several files, Warp mode |

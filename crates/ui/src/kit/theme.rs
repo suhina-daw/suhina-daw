@@ -82,6 +82,8 @@ palette! {
         "The name of a playing clip";
     accent, "accent", 0xA6A3FF,
         "The playhead, queued clips, a key being set";
+    selection, "selection", 0xE3C86A,
+        "The selected device's outline";
     recording, "recording", 0xE5484D,
         "Recording and errors";
     recording_background, "recording.background", 0x3A2B2A,
@@ -98,21 +100,21 @@ palette! {
         "Behind a track header's pan field";
     pan_centre, "pan.centre", 0x55524C,
         "The centre mark of a pan field";
-    track_color_1, "track.1", 0xD08F6E,
+    track_color_1, "track.1", 0xFF9A3C,
         "The first default track colour: new tracks take them in turn; also effects in the browser";
-    track_color_2, "track.2", 0xC6AC5E,
+    track_color_2, "track.2", 0xF2D541,
         "The second default track colour; also MIDI files in the browser";
-    track_color_3, "track.3", 0x73AAC0,
+    track_color_3, "track.3", 0x4FC3F7,
         "The third default track colour; also samples in the browser";
-    track_color_4, "track.4", 0xA497CC,
+    track_color_4, "track.4", 0xB38BFF,
         "The fourth default track colour; also instruments and presets in the browser";
-    track_color_5, "track.5", 0x8FA87A,
+    track_color_5, "track.5", 0x7FDB5A,
         "A colour the track colour palette offers";
-    track_color_6, "track.6", 0xC27C8E,
+    track_color_6, "track.6", 0xFF6FA8,
         "A colour the track colour palette offers";
-    track_color_7, "track.7", 0x7F8FB0,
+    track_color_7, "track.7", 0x5C8DFF,
         "A colour the track colour palette offers";
-    track_color_8, "track.8", 0xB9B2A6,
+    track_color_8, "track.8", 0x2FD9C4,
         "A colour the track colour palette offers";
     kind_kick, "kind.kick", 0xD06E5E,
         "Sample-map points of the kind kick";
@@ -528,7 +530,7 @@ mod tests {
             dark.track_color_7,
             dark.track_color_8,
         ];
-        let expected = [0xD08F6E, 0xC6AC5E, 0x73AAC0, 0xA497CC, 0x8FA87A, 0xC27C8E, 0x7F8FB0, 0xB9B2A6].map(rgb);
+        let expected = [0xFF9A3C, 0xF2D541, 0x4FC3F7, 0xB38BFF, 0x7FDB5A, 0xFF6FA8, 0x5C8DFF, 0x2FD9C4].map(rgb);
         assert_eq!(tracks, expected);
         assert_eq!((dark.kind_kick, dark.kind_other), (rgb(0xD06E5E), rgb(0x8A8680)));
         // A theme can change them like any other token.

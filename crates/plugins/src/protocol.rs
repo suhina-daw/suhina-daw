@@ -7,12 +7,14 @@
 //! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
 //! `fit_editor`, `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
-//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `error`. Every
-//! message is answered, except `place_editor`, `fit_editor`, `ara_select` and `quit` (so the
-//! engine never waits on them).
+//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `memory`,
+//! `transport_key`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
+//! `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
-//! only comes unasked, when a plug-in gives its editor a new size, and `latency_changed` only
-//! comes unasked, when a running plug-in reports another latency.
+//! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
+//! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
+//! once a second, and `transport_key` only comes unasked, when Space is pressed in a plug-in's
+//! window.
 //!
 //! One host process runs several plug-in instances. The engine names each with an `instance`
 //! number when it loads it; every message about one instance, and its reply, carries that
@@ -22,7 +24,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 9;
+pub const VERSION: u64 = 11;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -340,6 +342,14 @@ pub enum Message {
         instance: u32,
         latency: u32,
     },
+    /// The host reports its process's resident memory, in bytes, once a second (unasked): the
+    /// control bar adds every host's to the program's own RAM.
+    Memory {
+        bytes: u64,
+    },
+    /// Space was pressed in one of the host's editor windows (unasked): the engine plays or
+    /// stops as Space does in its own window, since the key never reaches it there.
+    TransportKey,
     CloseEditor {
         instance: u32,
     },
@@ -381,7 +391,12 @@ impl Message {
             | Self::CloseEditor { instance }
             | Self::EditorClosed { instance } => Some(*instance),
             Self::Error { instance, .. } => *instance,
-            Self::Hello { .. } | Self::Ping { .. } | Self::Pong { .. } | Self::Quit => None,
+            Self::Hello { .. }
+            | Self::Ping { .. }
+            | Self::Pong { .. }
+            | Self::Memory { .. }
+            | Self::TransportKey
+            | Self::Quit => None,
         }
     }
 
@@ -446,6 +461,8 @@ impl Message {
             Self::LatencyChanged { instance, latency } => {
                 json!({ "op": "latency_changed", "instance": instance, "latency": latency })
             }
+            Self::Memory { bytes } => json!({ "op": "memory", "bytes": bytes }),
+            Self::TransportKey => json!({ "op": "transport_key" }),
             Self::CloseEditor { instance } => json!({ "op": "close_editor", "instance": instance }),
             Self::EditorClosed { instance } => json!({ "op": "editor_closed", "instance": instance }),
             Self::Quit => json!({ "op": "quit" }),
@@ -557,6 +574,8 @@ impl Message {
                 Self::EditorResized { instance: instance()?, width: small("width")?, height: small("height")? }
             }
             "latency_changed" => Self::LatencyChanged { instance: instance()?, latency: small("latency")? },
+            "memory" => Self::Memory { bytes: number("bytes")? },
+            "transport_key" => Self::TransportKey,
             "close_editor" => Self::CloseEditor { instance: instance()? },
             "editor_closed" => Self::EditorClosed { instance: instance()? },
             "quit" => Self::Quit,
@@ -646,9 +665,10 @@ mod tests {
 
     #[test]
     fn every_message_round_trips() {
-        assert_eq!(VERSION, 9);
+        assert_eq!(VERSION, 11);
         let messages = [
             Message::Hello { version: VERSION },
+            Message::TransportKey,
             Message::Load {
                 instance: 3,
                 plugin: "test:gain".into(),
@@ -697,6 +717,8 @@ mod tests {
             Message::EditorResized { instance: 6, width: 1, height: 16_384 },
             Message::LatencyChanged { instance: 6, latency: 0 },
             Message::LatencyChanged { instance: u32::MAX, latency: u32::MAX },
+            Message::Memory { bytes: 0 },
+            Message::Memory { bytes: u64::MAX },
             Message::CloseEditor { instance: 6 },
             Message::EditorClosed { instance: 6 },
             Message::Error { instance: None, message: "no such plug-in: \"x\"\n".into() },

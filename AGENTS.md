@@ -114,6 +114,8 @@ devices/
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet
   fm-synth six operators, 32 algorithms, DX7 voice files; the engine is a port of MSFA (Apache-2.0)
   limiter  brickwall peak limiter with 1.5 ms lookahead; never over the ceiling
+  nam-amp-modeler  a `.nam` model through `nam-rs` (MIT) inference, with trims, EQ, HQ, a trim delay; the NAM folders and panels
+  nam-cab-loader  a `.wav` impulse response through the `dsp` convolver, with a phase invert, high pass, tone cuts, delay, volume
 apps/
   suhina-cli   headless CLI: render, play, mcp, commands, audio, plugins, plugin, fm-synth
   suhina       the desktop app (eframe): opens a project and shows it in the ui

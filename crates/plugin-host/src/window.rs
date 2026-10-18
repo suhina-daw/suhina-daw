@@ -26,6 +26,24 @@
 
 use std::cell::Cell;
 
+thread_local! {
+    /// Space presses caught in the editor windows since the host last sent them on.
+    static TRANSPORT_KEYS: Cell<u32> = const { Cell::new(0) };
+}
+
+/// How many times Space was pressed in an editor window since the last call. The key is kept
+/// from the plug-in: Space plays and stops the engine in every DAW, from its plug-in windows too.
+pub(crate) fn take_transport_keys() -> u32 {
+    TRANSPORT_KEYS.with(|k| k.replace(0))
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn caught_space(repeat: bool) {
+    if !repeat {
+        TRANSPORT_KEYS.with(|k| k.set(k.get().saturating_add(1)));
+    }
+}
+
 pub(crate) use suhina_plugins::Placement;
 
 thread_local! {
@@ -443,6 +461,69 @@ mod imp {
         with_state(id, |s| s.size).unwrap_or(Size { width: 0, height: 0 })
     }
 
+    /// The plug-in is taking text: the key's window is a system text field (an Edit or RichEdit
+    /// control, which VSTGUI and others open to type in) or this thread shows a text caret. A
+    /// space typed there is the plug-in's. A field a plug-in draws itself without a caret is not
+    /// seen here.
+    fn typing(hwnd: HWND) -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GUITHREADINFO, GetClassNameW, GetGUIThreadInfo};
+        let mut class = [0u16; 32];
+        // SAFETY: the buffer and its length are this array's.
+        let length = unsafe { GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32) };
+        let class = String::from_utf16_lossy(&class[..usize::try_from(length).unwrap_or(0)]).to_lowercase();
+        if class == "edit" || class.starts_with("richedit") {
+            return true;
+        }
+        // SAFETY: a zeroed info with its size set is what the call fills; thread 0 is this one's.
+        let mut info: GUITHREADINFO = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+        // SAFETY: no arguments; this thread's id.
+        let thread = unsafe { GetCurrentThreadId() };
+        // SAFETY: as above.
+        let found = unsafe { GetGUIThreadInfo(thread, &mut info) };
+        found != 0 && !info.hwndCaret.is_null()
+    }
+
+    /// Once an editor is open this process is interactive, not background work: Windows 11
+    /// otherwise may class a host with no console of its own as background, throttle it
+    /// (EcoQoS) and coarsen its timers, and a plug-in that paces its drawing by timers (Pro-Q 4)
+    /// then redraws a few times a second (#638). The timers get 1 ms resolution too, as DAWs
+    /// set it for their editors.
+    pub(crate) fn interactive() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentProcess, PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION, PROCESS_POWER_THROTTLING_STATE,
+                ProcessPowerThrottling, SetProcessInformation,
+            };
+            let state = PROCESS_POWER_THROTTLING_STATE {
+                Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+                    | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION,
+                StateMask: 0,
+            };
+            // SAFETY: this process's pseudo handle; no arguments.
+            let process = unsafe { GetCurrentProcess() };
+            // SAFETY: the state lives through the call and its size is given.
+            let _ = unsafe {
+                SetProcessInformation(
+                    process,
+                    ProcessPowerThrottling,
+                    std::ptr::from_ref(&state).cast(),
+                    std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+                )
+            };
+            // SAFETY: no pointers; kept for the life of the process, as DAWs keep it.
+            let _ = unsafe { windows_sys::Win32::Media::timeBeginPeriod(1) };
+        });
+    }
+
+    thread_local! {
+        /// The last Space press went to the engine, so its release does too.
+        static SPACE_OURS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
     /// Handles the window messages waiting for this thread's windows (the editors' and the
     /// plug-ins' own). Called from the host's main loop.
     pub(crate) fn pump() {
@@ -450,6 +531,30 @@ mod imp {
         let mut message: MSG = unsafe { std::mem::zeroed() };
         // SAFETY: the message is filled by the call; null asks for any window of this thread.
         while unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
+            // Space goes to the engine, not the plug-in: its press (bit 30 of lParam is set on
+            // an auto-repeat) and its release are kept from the window. With Ctrl or the Windows
+            // key held it is the plug-in's (Alt+Space is a system key, never seen here); its
+            // release goes where its press went.
+            const WM_KEYDOWN: u32 = 0x0100;
+            const WM_KEYUP: u32 = 0x0101;
+            const VK_SPACE: usize = 0x20;
+            if message.wParam == VK_SPACE && message.message == WM_KEYDOWN {
+                let held = |key: u16| {
+                    // SAFETY: reads this thread's keyboard state; no pointers.
+                    let state = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(i32::from(key)) };
+                    state < 0
+                };
+                use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_LWIN, VK_RWIN};
+                let ours = !(held(VK_CONTROL) || held(VK_LWIN) || held(VK_RWIN) || typing(message.hwnd));
+                SPACE_OURS.with(|s| s.set(ours));
+                if ours {
+                    super::caught_space(message.lParam & (1 << 30) != 0);
+                    continue;
+                }
+            } else if message.wParam == VK_SPACE && message.message == WM_KEYUP && SPACE_OURS.with(std::cell::Cell::get)
+            {
+                continue;
+            }
             // SAFETY: a message just taken from the queue.
             unsafe { TranslateMessage(&message) };
             // SAFETY: as above.
@@ -803,11 +908,12 @@ mod imp {
     use std::cell::{Cell, RefCell};
     use std::ffi::c_void;
 
-    use objc2::MainThreadOnly;
     use objc2::rc::Retained;
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{ClassType, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEventMask, NSView, NSWindow,
-        NSWindowStyleMask,
+        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEventMask, NSEventModifierFlags,
+        NSEventType, NSFloatingWindowLevel, NSNormalWindowLevel, NSView, NSWindow, NSWindowStyleMask, NSWorkspace,
     };
     use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode, NSPoint, NSRect, NSSize, NSString};
 
@@ -982,11 +1088,65 @@ mod imp {
                     NSDefaultRunLoopMode,
                     true,
                 ) {
+                    // Space (key code 49) without ⌘, ⌃ or ⌥ goes to the engine, not the plug-in,
+                    // unless the plug-in is typing in a system text field (its window's first
+                    // responder is a text view, the field editor AppKit text fields use).
+                    let kind = event.r#type();
+                    let typing = event
+                        .window(app.mtm())
+                        .and_then(|w| w.firstResponder())
+                        .is_some_and(|r| r.isKindOfClass(objc2_app_kit::NSText::class()));
+                    if (kind == NSEventType::KeyDown || kind == NSEventType::KeyUp)
+                        && event.keyCode() == 49
+                        && !typing
+                        && !event.modifierFlags().intersects(
+                            NSEventModifierFlags::Command
+                                | NSEventModifierFlags::Control
+                                | NSEventModifierFlags::Option,
+                        )
+                    {
+                        if kind == NSEventType::KeyDown {
+                            super::caught_space(event.isARepeat());
+                        }
+                        continue;
+                    }
                     app.sendEvent(&event);
                 }
             }
         }
         PUMPING.with(|p| p.set(false));
+        float_while_ours();
+    }
+
+    thread_local! {
+        static LEVEL_CHECKED: Cell<Option<std::time::Instant>> = const { Cell::new(None) };
+    }
+
+    /// The editors float above other windows while Suhina or this host is the active app, so a
+    /// click in Suhina does not hide them behind it, and sink back to normal windows while
+    /// another app is: macOS has no window ownership across processes, which is how Windows and
+    /// X11 keep them over Suhina. Checked ten times a second.
+    fn float_while_ours() {
+        let due =
+            LEVEL_CHECKED.with(|c| c.get().is_none_or(|at| at.elapsed() >= std::time::Duration::from_millis(100)));
+        if !due || !any_open() {
+            return;
+        }
+        LEVEL_CHECKED.with(|c| c.set(Some(std::time::Instant::now())));
+        let front = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier());
+        let ours = |pid: i32| {
+            u32::try_from(pid).is_ok_and(|pid| pid == std::process::id() || pid == std::os::unix::process::parent_id())
+        };
+        let level = if front.is_some_and(ours) { NSFloatingWindowLevel } else { NSNormalWindowLevel };
+        OPEN.with(|open| {
+            if let Ok(open) = open.try_borrow() {
+                for s in open.iter() {
+                    if s.window.level() != level {
+                        s.window.setLevel(level);
+                    }
+                }
+            }
+        });
     }
 
     pub(crate) fn any_open() -> bool {
@@ -1012,6 +1172,8 @@ impl Window {
     /// Opens a window for an editor of inside `size` as `mode` says: floating, titled `title`
     /// and resizable by the user when `resizable`; or embedded and hidden until placed.
     pub(crate) fn open_as(mode: Mode, title: &str, size: Size, resizable: bool) -> Result<Self, String> {
+        #[cfg(windows)]
+        imp::interactive();
         match mode {
             Mode::Floating => Self::open(title, size, resizable),
             Mode::Embedded { parent } => Self::open_embedded(parent, size),

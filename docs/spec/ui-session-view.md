@@ -50,8 +50,10 @@ From top to bottom:
      button ([recording](recording.md) › In the window)
     - draw mode, computer-keyboard MIDI, MIDI and audio activity, sample rate, CPU load
       (**Suhina:** the CPU load is built, left of the view switch; `launcher.state`
-      reports it as `cpu`; the rest is not). Left of the CPU load, the program's own RAM
-      (its resident memory, in MB or GB), shown always
+      reports it as `cpu`; the rest is not). Left of the CPU load, the program's RAM
+      (its resident memory, in MB or GB), shown always; **Suhina:** the number adds
+      the resident memory every plug-in host process reports to the engine once
+      a second, so the readout is what Suhina and its hosts use together
     - view switches (Session / Arrangement). **Suhina:** the last control at the right end
       of the bar, with the CPU load and the RAM left of it. In a window too narrow for all
       of them the RAM, then the CPU load, is left out rather than overlap the position
@@ -98,13 +100,16 @@ colour (Mixer › the channel strip), and the Arrangement headers have it as a b
 track; dragging moves it (after the header of an open group is into that group, and over another
 group's column it joins that group, [arrangement editing](arrangement-editing.md) › Groups inside
 groups); right-clicking opens its menu (rename, colour, group, ungroup, move into group, move out
-of group, delete). A track inside groups has its name stepped in 4 px per level; a group's name
+of group, **Insert audio track** and **Insert MIDI track** after it, **Insert return track**,
+delete). The track's channel strip and a return's column, which has no slots, open the same menu
+on a right-click and select the track on a click. A track inside groups has its name stepped in 4 px per level; a group's name
 follows a fold arrow, and a folded group hides the columns of the tracks inside it.
 Double-clicking selects the track and shows its devices in the detail area, opening the detail
 area if it was hidden ([clip editor](ui-clip-editor.md) › Where it opens); renaming stays in the
 menu.
 Dropping a device or file from the browser on the empty area right of the last track creates a
-new track; the area also has **+ MIDI track** and **+ Audio track** buttons ([browser](browser.md) ›
+new track; the area also has **+ MIDI track**, **+ Audio track** and **+ Return track** buttons,
+and a right-click there offers the three inserts ([browser](browser.md) ›
 Files). A file dropped on a slot or below the stop row becomes a clip in that slot (scenes are
 added below when needed); a device dropped on a column joins the track's chain. Samples and MIDI
 files dragged from the system's file manager land the same way ([browser](browser.md) › Files
@@ -117,7 +122,7 @@ Each cell is a slot for one clip.
 | Slot state | Shows | Click |
 |---|---|---|
 | Empty, with stop button | stop control | stops the track at the next quantisation point |
-| Empty, without stop button | nothing; **Suhina:** a double-click creates an empty MIDI clip | nothing (**Suhina:** selects it) |
+| Empty, without stop button | nothing; **Suhina:** a double-click creates an empty clip of the track's kind (`clip.create`) | nothing (**Suhina:** selects it) |
 | Clip, stopped | a play triangle in the track colour, clip name, launch control | on the launch control: launches the clip (**Suhina:** and selects it); on the name: selects it |
 | Clip, queued | launch control in a pending (blinking) state until the quantisation point | as stopped |
 | Clip, playing | a stop square in the track colour, progress through the clip | on the launch control: **Suhina:** a trigger clip (one that listens for no release) stops at the next quantisation point; a gate, toggle or repeat clip relaunches, its release keeps its own meaning; on the name: selects it |
@@ -147,15 +152,16 @@ click ends, and going up is the release a clip in gate or repeat mode listens fo
 with its launch settings under it: **Launch mode** (Trigger, Gate, Toggle, Repeat), **Launch
 quantisation** (Global, None, 8 bars … 1/32) and **Legato**, each an undoable edit.
 
-Double-clicking an empty slot (with or without a stop button) on a track that plays notes makes an
-empty MIDI clip there (**Suhina:** while Settings › Arrangement › **Double-click makes a clip** is On,
+Double-clicking an empty slot (with or without a stop button) on a track that holds clips makes an
+empty clip of the track's kind there — MIDI on a notes track, an "Audio clip" with no file yet on
+one that plays audio (**Suhina:** while Settings › Arrangement › **Double-click makes a clip** is On,
 the default; Off, the double-click does nothing, and the Arrangement's lanes follow the same
-setting), one bar long and looping, named "MIDI clip" (`clip.create`, one undo step;
-[arrangement editing](arrangement-editing.md) › Making an empty MIDI clip), and selects it, so the
-detail area shows it; a first click on a slot with a stop button still stops the track. Audio
-tracks, groups and returns do nothing on a double-click. Editing its notes waits for the piano
-roll (#200). Double-clicking a clip opens it. Dropping a file or clip on a slot puts the clip
-there; on an empty audio track the track takes the clip's name **(observed in the corpus)**.
+setting), one bar long and looping (`clip.create`, one undo step; [arrangement editing](arrangement-editing.md)
+› Making an empty clip), and selects it, so the detail area shows it; a first click on a slot with
+a stop button still stops the track. Groups and returns do nothing on a double-click. Editing the
+notes of a MIDI clip waits for the piano roll (#200); the empty audio clip plays silence until a
+sample lands on its slot. Double-clicking a clip opens it. Dropping a file or clip on a slot puts
+the clip there; on an empty audio track the track takes the clip's name **(observed in the corpus)**.
 
 Below the last scene each track has a **stop all clips** button for that track, and the main
 column has **stop all clips** for the whole set.
@@ -241,9 +247,16 @@ scene can change it.
 
 ### I/O section (below the grid, per track, toggleable)
 
+- Audio tracks: the audio input's block on the track's strip, above the on/solo/cue/arm row:
+  **Audio From** (the caption) with the source's dropdown — "No input", a channel, or a stereo
+  pair of the audio input device that Settings › Audio chose, the same list the track menu
+  shows — and the **Monitor** buttons **In / Auto / Off** with the one the project has lit.
+  They show from the mixer height where the track's name and output rows appear in full
+  ([components](../design/components.md) › Height steps). A pick is the same command the menu
+  runs (`track.setAudioInput`, one undo step); clicking the monitor button that is already on
+  runs nothing.
 - MIDI tracks: "MIDI From" (source, channel), monitoring (In / Auto / Off), "MIDI To" or "Audio
-  To" once an instrument is on the track.
-- Audio tracks: "Audio From" (source, channel), monitoring, "Audio To".
+  To" once an instrument is on the track — planned with the I/O section.
 - Return tracks: "Audio To".
 - Main: cue out and main out.
 
@@ -290,8 +303,10 @@ vertical channel strip under its slots, and the strip shows more the taller the 
 - **As it grows**, it adds in this order: a vertical **volume fader** with the track's level meter
   beside it and its dB value over it (the fader replaces the compact value); the **pan** knob
   with its value; the **send** knobs; the track's **name** at the top; under it the track's
-  **output**; and at the tallest heights a scrollable list of the track's **devices and
-  plug-ins**. Shrinking drops them in the reverse
+  **output**; at the tallest heights a scrollable list of the track's **devices and
+  plug-ins**; and on a track that plays audio the **input's block** above the on/solo/cue/arm
+  row (Audio From and the monitor's In / Auto / Off buttons, [I/O](#io-section-below-the-grid-per-track-toggleable)).
+  Shrinking drops them in the reverse
   order. Height the strip has beyond what its parts need goes to the fader, and once the device
   list shows, to the list after the fader is tall enough. A strip without sends (a return, or no
   returns in the project) gives that row to the fader.

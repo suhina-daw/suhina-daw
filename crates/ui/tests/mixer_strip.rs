@@ -410,3 +410,40 @@ fn render_the_strip() {
         image.save(out.join(file)).unwrap_or_else(|e| panic!("{e}"));
     }
 }
+
+/// The names of the devices on Drums, in chain order.
+fn drums_devices(harness: &Harness<'static, App>) -> Vec<String> {
+    let p = harness.state().session().unwrap().project();
+    let channel = p.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel).unwrap();
+    p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect()
+}
+
+#[test]
+fn devices_picked_in_the_strip_are_copied_pasted_and_deleted_together() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let before = drums_devices(&harness);
+    assert!(before.len() >= 2, "{before:?}");
+    // A click picks one; Ctrl (Cmd) adds another.
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    // The chain in the detail area lights the same two.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::C);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::V);
+    harness.run();
+    let pasted = drums_devices(&harness);
+    assert_eq!(pasted.len(), before.len() + 2, "both pasted: {pasted:?}");
+    // Delete takes the two picked ones out in one step (the first of each name: the originals).
+    harness.query_all_by_label("Show Utility on Drums").next().unwrap().click();
+    harness.run();
+    harness.query_all_by_label("Show Limiter on Drums").next().unwrap().click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(drums_devices(&harness).len(), pasted.len() - 2);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums_devices(&harness), pasted, "one undo brings both back");
+}

@@ -157,7 +157,13 @@ workspace forbids.
      with its automation yet.
    - **Messages** over a local socket or pipe, with a versioned protocol: load and unload,
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
-     version 9 (`load` may carry an ARA document, `ara_update` changes it, `ara_select` tells its editor the selected clip and `fit_editor` asks an embedded editor to take the room it has, [ADR 0028](0028-ara-hosting.md)); version 8 (`latency_changed` comes unasked when a running plug-in reports another
+     version 11 (the two below together with `transport_key`, which a host sends unasked when
+     Space is pressed in a plug-in's window, so the engine starts or stops playback); version 10
+     (`memory` comes unasked once a second: the host's process reports its resident memory, and
+     `host_memory` reads the running hosts' reports for the control bar's total); version 9
+     (`load` may carry an ARA document, `ara_update` changes it, `ara_select` tells its editor
+     the selected clip and `fit_editor` asks an embedded editor to take the room it has,
+     [ADR 0028](0028-ara-hosting.md)); version 8 (`latency_changed` comes unasked when a running plug-in reports another
      latency; see *Latency* below); version 7 (`open_editor` says whether the editor is `embedded` in the engine's window,
      `place_editor` puts it there and is not answered, and `editor_resized` comes unasked when
      a plug-in gives its editor a new size, decision 10); version 6: `open_editor` names the

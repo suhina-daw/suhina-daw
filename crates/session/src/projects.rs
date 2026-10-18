@@ -201,8 +201,8 @@ impl Projects {
         let session = self.session_mut(id)?;
         let (mut notice, mut kept) = (None, false);
         session
-            .replace_player(|project, audio, previous| {
-                system.open(project, audio, &choice, previous).map(|opened| {
+            .replace_player(|project, audio, assets, previous| {
+                system.open(project, audio, assets, &choice, previous).map(|opened| {
                     notice = opened.notice;
                     kept = opened.plugins_kept;
                     opened.player
@@ -227,8 +227,8 @@ impl Projects {
         let Some(transport) = session.player().map(crate::audio::Transport::of) else { return Ok(None) };
         let (mut notice, mut kept) = (None, false);
         session
-            .replace_player(|project, audio, previous| {
-                system.open(project, audio, &choice, previous).map(|opened| {
+            .replace_player(|project, audio, assets, previous| {
+                system.open(project, audio, assets, &choice, previous).map(|opened| {
                     notice = opened.notice;
                     kept = opened.plugins_kept;
                     opened.player
@@ -293,8 +293,8 @@ impl Projects {
             let choice = self.output_choice.clone();
             let mut session = Session::new(suhina_model::Project::default());
             session
-                .replace_player(|project, audio, previous| {
-                    system.open(project, audio, &choice, previous).map(|opened| opened.player)
+                .replace_player(|project, audio, assets, previous| {
+                    system.open(project, audio, assets, &choice, previous).map(|opened| opened.player)
                 })
                 .map_err(|e| CommandError(format!("no audio output: {e}")))?;
             self.preview = Some(session);

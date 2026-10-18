@@ -59,6 +59,9 @@ pub struct About {
     /// empty.
     pub projects_default: String,
     pub templates_default: String,
+    /// The NAM devices' folders ([docs/spec/nam-amp-and-cab.md]) the same way.
+    pub nam_models_default: String,
+    pub irs_default: String,
     /// The active project's newest backup, as Settings › General shows it: when and where.
     pub last_backup: String,
 }
@@ -73,6 +76,8 @@ impl Default for About {
             editors_embeddable: false,
             projects_default: String::new(),
             templates_default: String::new(),
+            nam_models_default: String::new(),
+            irs_default: String::new(),
             last_backup: Default::default(),
         }
     }
@@ -203,12 +208,14 @@ pub enum Page {
     DetailArea,
     Browser,
     Appearance,
+    /// Appearance › Theme, a page of its own under Appearance in the list.
+    Theme,
     Shortcuts,
 }
 
 impl Page {
     /// Every page with its name.
-    pub const ALL: [(Page, &'static str); 12] = [
+    pub const ALL: [(Page, &'static str); 13] = [
         (Page::General, "General"),
         (Page::Audio, "Audio"),
         (Page::Midi, "MIDI"),
@@ -220,6 +227,7 @@ impl Page {
         (Page::DetailArea, "Detail area"),
         (Page::Browser, "Browser"),
         (Page::Appearance, "Appearance"),
+        (Page::Theme, "Theme"),
         (Page::Shortcuts, "Shortcuts"),
     ];
 
@@ -683,7 +691,9 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), Some(page) == shown, motion::VALUE);
         let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
         painter.rect_filled(row, 0.0, motion::mix(idle, theme::control_background(), selected));
-        let text = Rect::from_min_max(Pos2::new(row.left() + PAD, row.top()), row.max);
+        // A page under another (Theme under Appearance) is stepped in.
+        let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
+        let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
         let color = motion::mix(theme::text_secondary(), theme::text_primary(), selected);
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
@@ -986,7 +996,7 @@ fn shortcuts_page(
     top += 30.0;
     for (key, ids) in keymap.conflicts() {
         let r = Rect::from_min_size(Pos2::new(page.left(), top), Vec2::new(page.width(), 16.0));
-        let text = format!("{} runs {} at once", key.text(), ids.join(" and "));
+        let text = format!("{} runs {} at once", key.display(), ids.join(" and "));
         widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), theme::recording());
         top += 16.0;
     }
@@ -1006,7 +1016,7 @@ fn shortcuts_page(
                     ui.label(egui::RichText::new(group).font(small.clone()).color(theme::text_hint()));
                 }
                 ui.horizontal(|ui| {
-                    let keys: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::text).collect();
+                    let keys: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::display).collect();
                     let capturing = state.capture.as_deref() == Some(action.id.as_str());
                     let left = egui::Layout::left_to_right(egui::Align::Center);
                     ui.allocate_ui_with_layout(Vec2::new(300.0, 18.0), left, |ui| {

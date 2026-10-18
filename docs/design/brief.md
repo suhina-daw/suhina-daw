@@ -82,7 +82,7 @@ From [research](#sources) and the first design rounds:
 | Clip slots | Flat cells, a small square in the track colour; playing = brighter cell with an accent progress line; queued = accent outline; recording = red dot and line | Fully coloured slots with triangle and square glyphs |
 | Arrangement clips | Neutral body, 2 px top strip and note or wave marks in the track colour | Colour-filled clip bodies |
 | MIDI notes | Track colour, velocity as brightness, selected note with a light outline | Velocity as saturation; blue selected notes |
-| Device panels | Plain panels, a square on/off switch in the header | Live's title bar with a round activator |
+| Device panels | Plain panels, a square on/off switch in the header; a device with more room to show draws its own panel (the NAM Amp Modeler's and Cab Loader's: a name dropdown with steppers, knob columns with labels over and values under, lit toggles, a file dropdown at the bottom — [nam spec](../spec/nam-amp-and-cab.md)) | Live's title bar with a round activator; Live's Amp and Cabinet & Mic devices' look |
 | Meters | Two thin bars, green with yellow only near the top | Live's meters |
 | Browser | Search, category filters as buttons, sidebar of places only (Pinned, Recent, Folders), tree with type icons, colour tags as dots on rows, preview with waveform, BPM and key | Live's sidebar of Collections, Library categories and Places |
 | Icons | Lucide (ISC) or our own simple strokes | Any glyph traced from Live |
@@ -134,7 +134,7 @@ a theme file can change any of them (see Themes). Current values:
 | `track.mutedBackground` | `#34322F` | The fills of a muted track |
 | `pan.background` | `#232220` | Behind a track header's pan field |
 | `pan.centre` | `#55524C` | The centre mark of a pan field |
-| `track.1`–`track.4` | `#D08F6E` `#C6AC5E` `#73AAC0` `#A497CC` | The colours tracks without one of their own take in turn; also the browser's icons (effects, MIDI files, samples, instruments and presets) |
+| `track.1`–`track.8` | `#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4` | Vibrant, as Ableton Live's clip colours: the first four are the colours tracks without one of their own take in turn (also the browser's icons: effects, MIDI files, samples, instruments and presets); all eight are the palette, after which + picks any colour |
 | `track.5`–`track.8` | `#8FA87A` `#C27C8E` `#7F8FB0` `#B9B2A6` | The other colours of the track colour palette (track menu, colour areas, colour tags' menu) |
 | `kind.kick`, `kind.snare`, `kind.clap`, `kind.closedHat`, `kind.openHat`, `kind.hat`, `kind.rim`, `kind.tom`, `kind.crash`, `kind.ride`, `kind.cymbal`, `kind.percussion`, `kind.bass`, `kind.tonal`, `kind.vocal`, `kind.effect`, `kind.other` | `#D06E5E` `#73AAC0` `#5EC0B0` `#C6AC5E` `#D08F6E` `#D8C47A` `#8CA8E0` `#B074A4` `#E0A0C8` `#C8B8E8` `#A497CC` `#8FC06E` `#A84F4F` `#6EB0D0` `#E8D0A0` `#9CC49C` `#8A8680` | Sample-map points of each kind ([spec](../spec/sample-map.md)) |
 | type | 11 px UI, 10 px values, 9 px rulers | |

@@ -1260,6 +1260,37 @@ fn an_empty_midi_clip_is_made_in_a_slot_one_bar_long_and_looping() {
 }
 
 #[test]
+fn an_empty_audio_clip_is_made_on_an_audio_track_no_file_yet() {
+    let mut session = Session::new(midi_slot_project());
+    let made = run(&mut session, "clip.create", json!({ "track": "Drums", "scene": 2 })).unwrap();
+    assert_eq!((made["track"].as_u64(), made["scene"].as_u64()), (Some(3), Some(2)));
+    let clip = session.project().launcher.columns[2].slots[1].clip.clone().unwrap();
+    assert_eq!(clip.length, 4.0, "one bar of 4/4");
+    assert_eq!(clip.loop_range, Some(LoopRange { start: 0.0, end: 4.0 }), "it loops, as the MIDI one does");
+    let content = content_of(&session, &clip).unwrap();
+    assert_eq!(content.name, "Audio clip");
+    assert!(
+        matches!(content.lanes.as_slice(), [ContentLane { data: LaneData::Audio(region), .. }]
+            if region.file.is_empty() && region.duration_seconds.is_none()),
+        "no file yet, so nothing is played"
+    );
+    // One undo step takes it back.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project().launcher.columns[2].slots[1].clip.is_none());
+    assert_eq!(session.project(), &midi_slot_project());
+
+    // In the arrangement it starts where it is told, same shapes as the MIDI one; a lane is made.
+    let at = run(&mut session, "clip.create", json!({ "track": "Drums", "start": 4, "length": 8 })).unwrap();
+    assert_eq!((at["start"].as_f64(), at["index"].as_u64()), (Some(4.0), Some(0)));
+    let lane = session.project().arrangement.lanes.iter().find(|l| l.name == "Drums").unwrap();
+    let clip = lane.clips[0].clone();
+    assert!(matches!(content_of(&session, &clip).map(|c| c.lanes.as_slice()),
+            Some([ContentLane { data: LaneData::Audio(region), .. }]) if region.file.is_empty()));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &midi_slot_project());
+}
+
+#[test]
 fn an_empty_midi_clip_in_the_arrangement_replaces_what_it_covers_unless_stacked() {
     let mut session = Session::new(lane_project());
     // A bar in 3/4 is three beats.
@@ -1288,7 +1319,6 @@ fn an_empty_midi_clip_in_the_arrangement_replaces_what_it_covers_unless_stacked(
 fn an_empty_midi_clip_is_refused_where_it_cannot_go_and_changes_nothing() {
     let mut session = Session::new(midi_slot_project());
     for (params, why) in [
-        (json!({ "track": "Drums", "scene": 1 }), "MIDI track"),
         (json!({ "track": "Lead", "scene": 1 }), "already has a clip"),
         (json!({ "track": "Bass", "scene": 3 }), "from 1 to 2"),
         (json!({ "track": "Bass", "scene": 0 }), "from 1"),
@@ -1309,6 +1339,17 @@ fn an_empty_midi_clip_is_refused_where_it_cannot_go_and_changes_nothing() {
         let error = run(&mut session, "clip.create", params.clone()).unwrap_err();
         assert!(error.contains(why), "{params}: {error}");
     }
+    // A track that holds no clips (a group's or a return's content) is refused.
+    let mut kept = midi_slot_project();
+    let mut silent = kept.tracks[0].clone();
+    silent.id = TrackId(4);
+    silent.name = "Silent".into();
+    silent.channel = None;
+    silent.content = ContentKinds::default();
+    kept.tracks.push(silent);
+    let mut refused = Session::new(kept);
+    let error = run(&mut refused, "clip.create", json!({ "track": "Silent", "scene": 1 })).unwrap_err();
+    assert!(error.contains("holds no clips"), "{error}");
     assert_eq!(session.project(), &midi_slot_project());
     assert!(!session.can_undo(), "nothing was recorded");
 }

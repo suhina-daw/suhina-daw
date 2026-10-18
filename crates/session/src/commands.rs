@@ -136,7 +136,12 @@ const CONTINUE: Param = optional(
      when no other edit came between (one drag, one step)",
 );
 const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (ids or names), at least one");
+const RANGE_START: Param =
+    param("start", ParamType::Number, "where the time selection starts, in beats from the beginning, at least 0");
+const RANGE_END: Param = param("end", ParamType::Number, "where the time selection ends, in beats, after start");
 const DEVICE: Param = param("device", ParamType::Integer, "device index on the track, from 0, as in track.devices");
+const DEVICES: Param =
+    param("devices", ParamType::Integers, "device indices on the track, from 0, as in track.devices; at least one");
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
 const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
 /// A clip command's clip by its id (ADR 0025): it stays the same when other clips move.
@@ -462,6 +467,21 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_volume,
     },
     CommandSpec {
+        id: "main.setVolume",
+        label: "Set the main output's volume, which every track, group and return plays through",
+        params: &[
+            param("db", ParamType::Decibels, "level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            optional(
+                "continue",
+                ParamType::Bool,
+                "true adds the change to the undo step of the previous call of this command, when no other \
+                 edit came between (one drag, one step)",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: set_main_volume,
+    },
+    CommandSpec {
         id: "track.adjustVolume",
         label: "Move the volume of each named track by the same number of decibels, keeping their differences",
         params: &[TRACKS, param("db", ParamType::Number, "how far to move it, in dB; positive is louder")],
@@ -692,6 +712,132 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_clip_enabled,
     },
     CommandSpec {
+        id: "clip.setColor",
+        label: "Give a clip a colour of its own (by index), or every clip of a track one when no index is given; \"none\" makes them show the track's colour again",
+        params: &[
+            CLIP_TRACK,
+            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's colour"),
+            CLIP,
+            optional(
+                "index",
+                ParamType::Integer,
+                "clip index on the track, from project.clips (deprecated, use clip); every clip of the track when neither is given",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_color::set_clip_color,
+    },
+    CommandSpec {
+        id: "track.renameClips",
+        label: "Name every clip of a track, in the arrangement and in its slots, after the track",
+        params: &[TRACK],
+        kind: CommandKind::Edit,
+        run: crate::clip_color::rename_clips,
+    },
+    CommandSpec {
+        id: "clip.trim",
+        label: "Move an arrangement clip's edges (song beats), the content moving with the left one; an unlooped clip ends at most where its audio does, a looping one repeats as far as it goes, and loop turns the loop on first",
+        params: &[
+            CLIP,
+            CLIP_TRACK,
+            CLIP_INDEX,
+            optional("start", ParamType::Number, "where the clip's left edge goes, in beats from the beginning"),
+            optional("end", ParamType::Number, "where the clip's right edge goes, in beats from the beginning"),
+            optional(
+                "loop",
+                ParamType::Bool,
+                "true turns the clip's loop on (over what it plays now) before the edges move",
+            ),
+            optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_edges::trim_clip,
+    },
+    CommandSpec {
+        id: "clip.stretch",
+        label: "Move an audio clip's edges with its audio time-stretched to fill the new length, its pitch kept",
+        params: &[
+            CLIP,
+            CLIP_TRACK,
+            CLIP_INDEX,
+            optional("start", ParamType::Number, "where the clip's left edge goes, in beats from the beginning"),
+            optional("end", ParamType::Number, "where the clip's right edge goes, in beats from the beginning"),
+            optional("stack", ParamType::Bool, "true leaves clips under it as they are; false (default) replaces them"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_edges::stretch_clip,
+    },
+    CommandSpec {
+        id: "range.split",
+        label: "Split the clips of some tracks at both edges of a time selection, so the span is clips of its own; answers with the clips inside it",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::split_range,
+    },
+    CommandSpec {
+        id: "range.delete",
+        label: "Delete what plays inside a time selection on some tracks: clips crossing an edge keep their parts outside it, and the gap stays",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::delete_range,
+    },
+    CommandSpec {
+        id: "range.copy",
+        label: "Copy what plays inside a time selection on some tracks, cut to it, for clip.paste; a paste with no track puts each part back on its own track",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Read,
+        run: crate::range::copy_range,
+    },
+    CommandSpec {
+        id: "range.cut",
+        label: "Copy what plays inside a time selection for clip.paste and delete it, as one undo step",
+        params: &[TRACKS, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::cut_range,
+    },
+    CommandSpec {
+        id: "range.duplicate",
+        label: "Put a copy of what plays inside a time selection right after it, on the same tracks",
+        params: &[
+            TRACKS,
+            RANGE_START,
+            RANGE_END,
+            optional(
+                "stack",
+                ParamType::Bool,
+                "true leaves clips under the copy as they are; false (default) replaces them",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::range::duplicate_range,
+    },
+    CommandSpec {
+        id: "clip.moveMany",
+        label: "Move several arrangement clips by the same number of beats at once, so none replaces another on the way; to_track takes clips of one track to another",
+        params: &[
+            param("clips", ParamType::Clips, "the clips to move, each {track, index} from project.clips"),
+            param("beats", ParamType::Number, "how far to move them, in beats; negative is earlier"),
+            optional("to_track", ParamType::Track, "track to move them to, when they are all on one track"),
+            optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
+            ),
+            optional(
+                "copy",
+                ParamType::Bool,
+                "true leaves the clips where they are and puts copies (each with a content of its own) where they would have gone",
+            ),
+            optional(
+                "stack",
+                ParamType::Bool,
+                "true leaves clips under them as they are; false (default) replaces them",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::range::move_clips,
+    },
+    CommandSpec {
         id: "clip.split",
         label: "Cut an arrangement clip in two at a song position; the second part plays on from where the clip was",
         params: &[
@@ -764,6 +910,11 @@ static COMMANDS: &[CommandSpec] = &[
                 "stack",
                 ParamType::Bool,
                 "true leaves clips under it as they are (they all play); false (default) shortens, splits or removes them",
+            ),
+            optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour the clip shows now, which it keeps on another track when it has none of its own",
             ),
         ],
         kind: CommandKind::Edit,
@@ -902,6 +1053,11 @@ static COMMANDS: &[CommandSpec] = &[
                 "db",
                 ParamType::Decibels,
                 "click level in dB, at most +6; keeps the current level (-6 at first) if left out",
+            ),
+            optional(
+                "sound",
+                ParamType::Text,
+                "the click's sound: beep (the first), wood or soft; keeps it if left out",
             ),
         ],
         kind: CommandKind::Transport,
@@ -1392,7 +1548,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.create",
-        label: "Make an empty MIDI clip on a track that plays notes: in an empty clip slot, or at a beat in the arrangement, replacing what it covers unless stacked",
+        label: "Make an empty clip on a track that holds clips: MIDI on a notes track, audio with no file yet on an audio track; in an empty clip slot, or at a beat in the arrangement, replacing what it covers unless stacked",
         params: &[
             TRACK,
             optional("scene", ParamType::Integer, "scene number, from 1, of an empty clip slot"),
@@ -1456,11 +1612,50 @@ static COMMANDS: &[CommandSpec] = &[
         run: devices::remove,
     },
     CommandSpec {
+        id: "device.removeMany",
+        label: "Remove several devices from a track as one undo step",
+        params: &[TRACK, DEVICES],
+        kind: CommandKind::Edit,
+        run: devices::remove_many,
+    },
+    CommandSpec {
+        id: "device.copy",
+        label: "Copy devices of a track, with their parameters, automation and a running plug-in's state as it is now, for device.paste",
+        params: &[TRACK, DEVICES],
+        kind: CommandKind::Read,
+        run: devices::copy,
+    },
+    CommandSpec {
+        id: "device.paste",
+        label: "Put the copied devices into a track's chain, in the order they were copied, as one undo step",
+        params: &[TRACK, optional("position", ParamType::Integer, "where in the chain, from 0; the end when left out")],
+        kind: CommandKind::Edit,
+        run: devices::paste,
+    },
+    CommandSpec {
         id: "device.setEnabled",
         label: "Switch a device on or off; a device that is off passes the sound through",
         params: &[TRACK, DEVICE, param("enabled", ParamType::Bool, "false switches the device off")],
         kind: CommandKind::Edit,
         run: devices::set_enabled,
+    },
+    CommandSpec {
+        id: "device.setNamFile",
+        label: "Load a .nam model into a NAM Amp Modeler, or a .wav impulse response into a NAM Cab Loader (docs/spec/nam-amp-and-cab.md)",
+        params: &[
+            TRACK,
+            DEVICE,
+            param("path", ParamType::Text, "path to a .nam model file, or a .wav impulse response for the Cab Loader"),
+        ],
+        kind: CommandKind::Edit,
+        run: devices::set_file,
+    },
+    CommandSpec {
+        id: "device.file",
+        label: "The file a NAM Amp Modeler or NAM Cab Loader runs: its absolute path (empty when none is set) and the model's or cab's name",
+        params: &[TRACK, DEVICE],
+        kind: CommandKind::Read,
+        run: devices::device_file,
     },
     CommandSpec {
         id: "device.setParam",
@@ -1752,6 +1947,12 @@ static COMMANDS: &[CommandSpec] = &[
             NOTES,
             optional("beats", ParamType::Number, "beats to move by, later when positive"),
             optional("semitones", ParamType::Integer, "semitones to move by, higher when positive"),
+            optional(
+                "replace",
+                ParamType::Bool,
+                "true removes a note the moved ones land on: the same key and the same start (default false: \
+                 both play)",
+            ),
         ],
         kind: CommandKind::Edit,
         run: notes::move_notes,
@@ -2279,6 +2480,18 @@ fn set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     Ok(with_override(json!({ "tracks": track_ids(&channels), "volume_db": vec![to_db(gain); channels.len()] }), off))
 }
 
+fn set_main_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let db = number_or_neg_infinity(params, "db")?;
+    if db > MAX_VOLUME_DB {
+        return Err(format!("db must be at most +{MAX_VOLUME_DB}, got {db}").into());
+    }
+    let Some(main) = session.project.channels.iter_mut().find(|c| c.role == ChannelRole::Master) else {
+        return Err("the project has no main channel".into());
+    };
+    main.volume = gain_of_db(db);
+    Ok(json!({ "volume_db": to_db(main.volume) }))
+}
+
 fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let db = number(params, "db")?;
     let channels = channel_ids(&session.project, params)?;
@@ -2640,7 +2853,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
 
 /// The clips `params.clips` names, each `{ "track": …, "index": n }` as `project.clips` lists
 /// them: at least one, without duplicates, every one of them there.
-fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
+pub(crate) fn clip_list(p: &Project, params: &Value) -> Result<Vec<(TrackId, usize)>, CommandError> {
     let list = params.get("clips").and_then(Value::as_array).ok_or("clips must be a list of {track, index}")?;
     let mut out: Vec<(TrackId, usize)> = Vec::new();
     for entry in list {
@@ -2846,6 +3059,7 @@ fn set_clip_fades(session: &mut Session, params: &Value) -> Result<Value, Comman
 fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let mut copied: Vec<(Clip, ClipContent)> = Vec::new();
+    let mut from: Vec<TrackId> = Vec::new();
     match (params.get("clips"), params.get("scene")) {
         (Some(_), None) => {
             if params.get("track").is_some() {
@@ -2862,6 +3076,7 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
                     .ok_or("the clip is missing")?;
                 let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
                 copied.push((clip, content));
+                from.push(track);
             }
         }
         (None, Some(_)) => {
@@ -2876,11 +3091,12 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     }
     let names: Vec<String> = copied.iter().map(|(_, content)| content.name.clone()).collect();
     session.clipboard = copied;
+    session.clipboard_tracks = from;
     Ok(json!({ "copied": names }))
 }
 
 /// An id no clip content of `p` has yet.
-fn new_content_id(p: &Project) -> Result<suhina_model::ContentId, CommandError> {
+pub(crate) fn new_content_id(p: &Project) -> Result<suhina_model::ContentId, CommandError> {
     let id = p.contents.iter().map(|c| c.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many clips")?;
     Ok(suhina_model::ContentId(id))
 }
@@ -2922,6 +3138,12 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
+    // No track: each copied clip goes back to the track it came from.
+    if params.get("track").is_none()
+        && let PasteAt::Beat(start) = at
+    {
+        return crate::range::paste_to_sources(session, start, stack);
+    }
     let track = track_id(&session.project, params)?;
     {
         let p = &session.project;
@@ -3333,12 +3555,27 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
             Some(if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) })
         }
     };
+    let sound = match params.get("sound") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(
+            suhina_engine::ClickSound::from_name(name)
+                .ok_or_else(|| CommandError(format!("sound must be beep, wood or soft, got {name}")))?,
+        ),
+        Some(other) => return Err(format!("sound must be beep, wood or soft, got {other}").into()),
+    };
     send(session, LaunchCommand::SetMetronome { on, gain: gain.map(|g| g as f32) })?;
-    let mut result = json!({ "metronome": on });
-    if let Some(gain) = gain {
-        result["db"] = json!(to_db(gain));
+    if let Some(sound) = sound {
+        send(session, LaunchCommand::SetMetronomeSound(sound))?;
     }
-    Ok(result)
+    session.metronome.0 = on;
+    if let Some(gain) = gain {
+        session.metronome.1 = to_db(gain).unwrap_or(f64::NEG_INFINITY);
+    }
+    if let Some(sound) = sound {
+        session.metronome.2 = sound;
+    }
+    let (_, db, sound) = session.metronome;
+    Ok(json!({ "metronome": on, "db": if db.is_finite() { json!(db) } else { json!("-inf") }, "sound": sound.name() }))
 }
 
 fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -3355,6 +3592,11 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     let to = match params.get("to_track") {
         Some(_) => track_at(&session.project, params, "to_track")?,
         None => track,
+    };
+    // The colour the clip shows on its track, kept when it goes to another (`color`).
+    let keep = match params.get("color") {
+        None | Some(Value::Null) => None,
+        Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
     let p = &mut session.project;
     let from_lane =
@@ -3390,6 +3632,9 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     };
     let mut clip = p.arrangement.lanes.get_mut(from_lane).ok_or("the lane is missing")?.clips.remove(index);
     clip.start = start;
+    if to != track && clip.color.is_none() {
+        clip.color = keep;
+    }
     let lane = p.arrangement.lanes.get_mut(to_lane).ok_or("the lane is missing")?;
     if !stack {
         make_room(&mut lane.clips, start, start + clip.length);
@@ -4146,6 +4391,19 @@ pub(crate) fn channel_param<'a>(session: &'a mut Session, params: &Value) -> Res
         .and_then(|t| t.channel)
         .ok_or("the track has no mixer channel")?;
     session.project.channels.iter_mut().find(|c| c.id == channel).ok_or_else(|| "the track's channel is missing".into())
+}
+
+/// The read-only form of [`channel_param`], for the `Read` commands that do not edit.
+pub(crate) fn channel_read<'a>(session: &'a Session, params: &Value) -> Result<&'a Channel, CommandError> {
+    let track = track_id(&session.project, params)?;
+    let channel = session
+        .project
+        .tracks
+        .iter()
+        .find(|t| t.id == track)
+        .and_then(|t| t.channel)
+        .ok_or("the track has no mixer channel")?;
+    session.project.channels.iter().find(|c| c.id == channel).ok_or_else(|| "the track's channel is missing".into())
 }
 
 fn channel_of<'a>(p: &'a Project, track: &Track) -> Option<&'a Channel> {

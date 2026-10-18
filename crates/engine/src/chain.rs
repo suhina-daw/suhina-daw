@@ -139,8 +139,9 @@ impl Chain {
     /// The chain for `track` at `sample_rate`, or `None` when its channel holds no device
     /// Suhina can run (other DAWs' devices and plug-ins that are not installed pass the sound
     /// through). Plug-in devices take their processors from `plugins` (one without a processor
-    /// yet gets a slot that waits for it). `post` is the track's gains. Allocates: call it off
-    /// the audio thread.
+    /// yet gets a slot that waits for it). `post` is the track's gains. A file-backed device
+    /// gets its file from `assets` by the path its state holds
+    /// ([docs/spec/nam-amp-and-cab.md]). Allocates: call it off the audio thread.
     pub(crate) fn build(
         project: &Project,
         track: TrackId,
@@ -148,6 +149,7 @@ impl Chain {
         post: (f32, f32),
         sample_rate: u32,
         plugins: &mut Plugins,
+        assets: &crate::DeviceAssets,
     ) -> Option<Self> {
         let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
         let channel = project.channels.iter().find(|c| c.id == channel)?;
@@ -233,7 +235,8 @@ impl Chain {
                 }
                 _ => continue,
             };
-            let Some(mut device) = suhina_device_registry::create(id) else { continue };
+            let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| assets.get(path));
+            let Some(mut device) = suhina_device_registry::create_with(id, asset) else { continue };
             if device.prepare(f64::from(sample_rate)).is_err() {
                 continue;
             }
@@ -253,7 +256,22 @@ impl Chain {
             latency = latency.saturating_add(device.latency());
             slots.push(Slot::Device(device));
             positions.push(position);
-            ids.push(id.clone());
+            // A device that holds a file changes with the file: its identity carries the state's
+            // hash, the `.sd` devices' trick, so a model swap rebuilds one device alone.
+            if suhina_device_registry::is_file_device(id) {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                let hashed = match std::str::from_utf8(stored.state.as_deref().unwrap_or(&[])) {
+                    Ok(text) => {
+                        text.hash(&mut hasher);
+                        hasher.finish()
+                    }
+                    Err(_) => hasher.finish(),
+                };
+                ids.push(format!("{id}:{hashed:016x}"));
+            } else {
+                ids.push(id.clone());
+            }
             params.push(values);
         }
         let instrument = slots.iter().any(|slot| match slot {

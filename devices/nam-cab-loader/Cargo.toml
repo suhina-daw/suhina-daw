@@ -1,0 +1,14 @@
+[package]
+name = "suhina-device-nam-cab-loader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+suhina-dsp.workspace = true
+suhina-device-api.workspace = true
+hound.workspace = true
+
+[lints]
+workspace = true

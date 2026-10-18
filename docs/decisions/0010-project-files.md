@@ -48,7 +48,8 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
 5. **Binary data is base64**: plug-in state, embedded UTF-8 .sd graph data, and format extensions.
 6. **Audio is referred to, not copied.** Each region keeps its path relative to the project file
    and an absolute path for when that does not resolve. Saving somewhere else rewrites both from
-   where the file is found now. A self-contained package (a zip with the audio) is a separate
+   where the file is found now; a region with no path yet — an empty audio clip — is left as it
+   is, so nothing invents one. A self-contained package (a zip with the audio) is a separate
    format for sharing, not decided here.
 7. **Saving is a command**, `project.save { path?, copy? }` (AGENTS.md rule 6). Without a path it
    writes the project file the project came from. It writes the running plug-ins' state as it is now:

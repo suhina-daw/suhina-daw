@@ -33,14 +33,35 @@ impl DetailLayout {
 pub struct ViewSettings {
     /// The Session mixer's height, in points.
     pub mixer_height: u32,
+    /// The strips' fader height the divider under their device lists sets, in points; 0 is
+    /// automatic.
+    pub strip_fader: u32,
     pub detail_layout: DetailLayout,
-    /// A double-click on an empty slot or an empty spot of a lane makes an empty MIDI clip.
+    /// A double-click on an empty slot or an empty spot of a lane makes an empty clip of the track's kind.
     pub double_click_clip: bool,
+    /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
+    pub menu_name_field: bool,
+    /// Notes moved onto others of the same key and start replace them (on by default).
+    pub notes_replace: bool,
+    /// Ctrl+drag over a clip selects time (FL Studio); off, a drag from a clip's lower half
+    /// does (Ableton Live, the default).
+    pub time_select_ctrl: bool,
+    /// Alt held while an audio clip's edge is dragged stretches its audio (on by default).
+    pub stretch_alt: bool,
 }
 
 impl Default for ViewSettings {
     fn default() -> Self {
-        Self { mixer_height: MIXER_HEIGHTS.1, detail_layout: DetailLayout::Beside, double_click_clip: true }
+        Self {
+            mixer_height: MIXER_HEIGHTS.1,
+            strip_fader: 0,
+            detail_layout: DetailLayout::Beside,
+            double_click_clip: true,
+            menu_name_field: false,
+            notes_replace: true,
+            time_select_ctrl: false,
+            stretch_alt: true,
+        }
     }
 }
 
@@ -48,10 +69,15 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\ndetail_layout = {}\ndouble_click_clip = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\n",
             self.mixer_height,
+            self.strip_fader,
             self.detail_layout.param(),
             if self.double_click_clip { "on" } else { "off" },
+            if self.menu_name_field { "on" } else { "off" },
+            if self.notes_replace { "on" } else { "off" },
+            if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
+            if self.stretch_alt { "on" } else { "off" },
         )
     }
 
@@ -63,9 +89,17 @@ impl ViewSettings {
                 Ok(height) => self.mixer_height = height.clamp(MIXER_HEIGHTS.0, MIXER_HEIGHTS.2),
                 Err(_) => return false,
             },
+            ("session_strip_fader", fader) => match fader.parse::<u32>() {
+                Ok(fader) => self.strip_fader = fader.min(MIXER_HEIGHTS.2),
+                Err(_) => return false,
+            },
             ("detail_layout", "beside") => self.detail_layout = DetailLayout::Beside,
             ("detail_layout", "full_width") => self.detail_layout = DetailLayout::FullWidth,
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
+            ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
+            ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
+            ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
+            ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             _ => return false,
         }
         true
@@ -79,7 +113,16 @@ mod tests {
 
     #[test]
     fn view_settings_survive_a_round_trip_through_the_settings_file() {
-        let view = ViewSettings { mixer_height: 300, detail_layout: DetailLayout::FullWidth, double_click_clip: false };
+        let view = ViewSettings {
+            mixer_height: 300,
+            strip_fader: 90,
+            detail_layout: DetailLayout::FullWidth,
+            double_click_clip: false,
+            menu_name_field: true,
+            notes_replace: false,
+            time_select_ctrl: true,
+            stretch_alt: false,
+        };
         let settings = Settings { view, ..Settings::default() };
         let (read, warnings) = Settings::from_text(&settings.to_text());
         assert!(warnings.is_empty(), "{warnings:?}");

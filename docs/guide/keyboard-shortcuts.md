@@ -40,7 +40,11 @@ A key does nothing while you type in a text field, such as the browser's search 
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+T | `file.new` | Anywhere | Opens the project dialog, where you make a new project or open an existing one. The project opens in a tab of its own. |
+| Ctrl+N | `file.new` | Anywhere but the start panel, which offers the same | Opens the project dialog, where you make a new project or open an existing one. The project opens in a tab of its own. |
+| Ctrl+T | `track.addAudio` | A project | Adds an audio track. |
+| Ctrl+Shift+T | `track.addMidi` | A project | Adds a MIDI track. |
+| Ctrl+Shift+M | `clip.insertMidi` | Arrangement, a time selection | Puts an empty MIDI clip over the time selection on each of its MIDI tracks. |
+| A | `view.automation` | Arrangement | Shows every track's automation lanes, or hides them all when they all show. |
 | Ctrl+O | `file.open` | Anywhere | Opens the same project dialog with the cursor in its file path field, ready to open a project file. The project opens in a tab of its own. |
 | Ctrl+S | `file.save` | Anywhere | Saves the project in the file it came from. A project that has never been saved asks for a name and a place first. |
 | Ctrl+Shift+S | `file.saveAs` | Anywhere | Saves the project under a new name or in a new place. From then on, Ctrl+S saves into the new file. |
@@ -52,7 +56,7 @@ Suhina can have several projects open at once, each in a tab.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+Tab | `projects.next` | Anywhere | Switches to the next project tab. After the last tab it goes back to the first. |
+| Ctrl+Tab | `projects.next` | Anywhere | Shows the open projects while Ctrl is held: each Tab moves to the next (Shift+Tab back), letting go of Ctrl switches, Escape stays. |
 | Ctrl+Shift+Tab | `projects.previous` | Anywhere | Switches to the previous project tab. Before the first tab it goes to the last. |
 
 The project you leave stops playing.
@@ -76,7 +80,7 @@ The project you leave stops playing.
 | Alt+M | `view.araEditor` | Arrangement | Opens the selected audio clip in its track's plug-in that edits clips (such as a pitch editor): the detail area shows the clip with the plug-in's editor. |
 | Ctrl+B | `view.browser` | Anywhere | Shows or hides the browser, the panel on the left that lists your samples, presets, effects, instruments and plug-ins. With the Draw-first preset this is Ctrl+Shift+B. |
 | Ctrl+F | `browser.search` | Anywhere | Puts the cursor in the browser's search field, and shows the browser when it is hidden. In the field, Up and Down move through the results, Enter adds the selected result to the selected track, and Escape clears the search and then leaves the field. |
-| Ctrl+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
+| Ctrl+Alt+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
 | Ctrl+Alt+M | `view.sampleMapWindow` | Anywhere | Opens the sample map in a window of its own, or puts it back in the main window. |
 | Ctrl+M | `view.mappingMode` | Anywhere | Starts or stops key mapping. While mapping, you click a clip slot, a scene or a stop button and press a key to launch it with. While the Session view is shown, a key mapped this way wins over its shortcut. |
 | Ctrl+, | `settings.open` | Anywhere | Opens Settings, or closes it when it is open. |
@@ -103,6 +107,18 @@ The zoom level is remembered the next time Suhina starts.
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips, and the space between them, into one new clip. |
 
 Every key that acts on clips acts on the whole selection, and all of it is one undo step.
+
+With a time selection in the Arrangement (a drag on empty lanes, on the ruler, or over a clip as
+Settings › Arrangement › *Ctrl+drag selects time over clips* says), Delete, Ctrl+X, Ctrl+C,
+Ctrl+E, Ctrl+D and Ctrl+J act on what plays inside it: clips crossing its edges are split there.
+Ctrl+V puts material copied from several tracks back on its own tracks, from the play start
+marker. Ctrl+R edits a clip's name right on the clip; Enter or a click elsewhere keeps it, Escape
+leaves it.
+
+Devices picked in a mixer strip's device list or the detail area's chain (a click, Ctrl to add,
+Shift for a run) take Delete, Ctrl+C, Ctrl+X and Ctrl+V the same way; a paste goes after the
+last picked device, with a plug-in's state as it was when copied. A double-click on a plug-in in
+the strip's list opens its editor.
 Ctrl+click a clip to add it to the selection; Shift+click selects everything from the last
 selected clip up to the one you click.
 

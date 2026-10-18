@@ -33,6 +33,49 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     painter.circle_filled(rect.center(), 4.5, theme::recording().gamma_multiply(0.35 + 0.65 * lit));
 }
 
+/// The metronome's switch in `rect`: lit while it clicks; a click turns it on or off, the
+/// right-click menu picks its sound (`transport.setMetronome`).
+pub fn metronome_button(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    (on, _, sound): (bool, f64, suhina_engine::ClickSound),
+    actions: &mut Vec<Action>,
+) {
+    let label = if on { "Metronome off" } else { "Metronome on" };
+    let response = widgets::button_area(ui, rect, Id::new("metronome"), label)
+        .on_hover_text("Metronome: a click on every beat while playing. Right-click: its sound");
+    if response.clicked() {
+        actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
+    }
+    response.context_menu(|ui| {
+        for choice in suhina_engine::ClickSound::ALL {
+            let name = match choice {
+                suhina_engine::ClickSound::Beep => "Beep",
+                suhina_engine::ClickSound::Wood => "Wood",
+                suhina_engine::ClickSound::Soft => "Soft",
+            };
+            if ui.selectable_label(choice == sound, name).clicked() && choice != sound {
+                actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": choice.name() })));
+                ui.close();
+            }
+        }
+    });
+    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
+    let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(rect, 0.0, motion::mix(hover, theme::control_active(), lit));
+    metronome_glyph(painter, rect, motion::mix(theme::text_primary(), theme::accent(), lit));
+}
+
+/// A small metronome: its body and its arm, centred in `rect`.
+pub fn metronome_glyph(painter: &Painter, rect: Rect, color: egui::Color32) {
+    let c = rect.center();
+    let body =
+        vec![c + Vec2::new(-4.5, 5.5), c + Vec2::new(-1.5, -5.5), c + Vec2::new(1.5, -5.5), c + Vec2::new(4.5, 5.5)];
+    painter.add(egui::Shape::closed_line(body, Stroke::new(1.2, color)));
+    painter.line_segment([c + Vec2::new(0.0, 3.5), c + Vec2::new(3.5, -4.0)], Stroke::new(1.2, color));
+}
+
 /// The count-in menu in `rect`: the bars recording counts in when it starts the transport.
 pub fn count_in_menu(ui: &mut Ui, rect: Rect, bars: u8, actions: &mut Vec<Action>) {
     let mono = theme::mono_font(theme::TEXT);

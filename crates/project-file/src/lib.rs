@@ -136,6 +136,10 @@ pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path) {
     for content in &mut project.contents {
         for lane in &mut content.lanes {
             let LaneData::Audio(region) = &mut lane.data else { continue };
+            // An empty audio clip has no file yet: nothing to move.
+            if region.file.is_empty() {
+                continue;
+            }
             let here = from.join(&region.file);
             let file = if here.is_file() {
                 here
@@ -525,6 +529,10 @@ fn clip_value(c: &Clip) -> Value {
         // arrangement clip that never was in a slot) stay as they were written before.
         if !c.launch.is_default() {
             map.insert("launch".into(), launch_value(&c.launch));
+        }
+        // Only a clip with a colour of its own carries one; the others show their track's.
+        if let Some(Rgb(r, g, b)) = c.color {
+            map.insert("color".into(), json!(format!("#{r:02X}{g:02X}{b:02X}")));
         }
         with_extensions(map, &c.extensions);
     }
@@ -1221,8 +1229,25 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         fade_out_curve: fade_curve(c, "fade_out", at)?,
         follow_action: read_follow(c, at)?,
         launch: read_launch(c, at)?,
+        color: read_color(c.get("color"), at)?,
         extensions: extensions(c, at)?,
     })
+}
+
+/// A `color` field, `#RRGGBB`; missing or null is none.
+fn read_color(value: Option<&Value>, at: &str) -> Result<Option<Rgb>, ProjectFileError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(hex)) => {
+            let digits = hex.strip_prefix('#').unwrap_or(hex);
+            let parsed = (digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()))
+                .then(|| u32::from_str_radix(digits, 16).ok())
+                .flatten();
+            let rgb = parsed.ok_or_else(|| ProjectFileError(format!("{at}.color: expected #RRGGBB")))?;
+            Ok(Some(Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)))
+        }
+        Some(_) => Err(format!("{at}.color: expected #RRGGBB").into()),
+    }
 }
 
 /// A clip's follow action, `follow`: off when missing (files written before follow actions).

@@ -32,6 +32,7 @@ pub(crate) fn build(
     sample_rate: u32,
     plugins: &mut Plugins,
     column_of: impl Fn(TrackId) -> u32,
+    assets: &crate::DeviceAssets,
 ) -> (Vec<Chain>, u32) {
     // Every track with devices has a chain, a silent one too (muted, or not soloed): its
     // devices keep running at a gain of zero, so a plug-in keeps its state and its process,
@@ -40,7 +41,9 @@ pub(crate) fn build(
     let mut chains: Vec<Chain> = project
         .tracks
         .iter()
-        .filter_map(|track| Chain::build(project, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins))
+        .filter_map(|track| {
+            Chain::build(project, track.id, column_of(track.id), (0.0, 0.0), sample_rate, plugins, assets)
+        })
         .collect();
     // A track whose mixer follows lanes applies its gains after a chain, one without devices
     // when it has none (#395); a group's chain makes it a bus.

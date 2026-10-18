@@ -97,6 +97,8 @@ pub(crate) struct Updater {
     swaps: Producer<Swap>,
     retired: Consumer<Box<Graph>>,
     audio: Arc<AudioPool>,
+    /// The file-backed devices' files ([docs/spec/nam-amp-and-cab.md]), for every graph built.
+    assets: Arc<crate::DeviceAssets>,
     sample_rate: u32,
     stretch: Option<StretchThread>,
     params: Producer<ParamChange>,
@@ -146,6 +148,7 @@ impl Renderer {
             swaps,
             retired,
             audio: Arc::clone(&self.audio),
+            assets: Arc::clone(&self.assets),
             sample_rate: self.sample_rate,
             stretch: None,
             params,
@@ -447,8 +450,8 @@ impl Controller {
         let updater = &mut self.updater;
         updater.collect();
         let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new() };
-        let mut graph =
-            Graph::build(project, &updater.audio, updater.sample_rate, &mut plugins).map_err(|e| e.to_string())?;
+        let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins)
+            .map_err(|e| e.to_string())?;
         let sent = Arc::clone(&graph.tempo);
         let monitor = &self.monitor;
         let (at, arrangement) = if monitor.running() {
@@ -541,6 +544,18 @@ impl Controller {
     /// The audio the graphs are built with.
     pub fn audio(&self) -> &Arc<AudioPool> {
         &self.updater.audio
+    }
+
+    /// Builds the graphs from now on with `assets` ([docs/spec/nam-amp-and-cab.md]): the
+    /// session's parsed models and IRs after a device's file changed. Takes effect with the
+    /// next [`Controller::update`].
+    pub fn set_assets(&mut self, assets: Arc<crate::DeviceAssets>) {
+        self.updater.assets = assets;
+    }
+
+    /// The files the graphs are built with.
+    pub fn assets(&self) -> &Arc<crate::DeviceAssets> {
+        &self.updater.assets
     }
 
     /// Previews `data` from `from` seconds at `gain` (linear), replacing any preview (ADR 0011).

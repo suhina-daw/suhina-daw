@@ -10,6 +10,8 @@ pub mod audio;
 mod automation;
 pub mod backup;
 mod blank;
+mod clip_color;
+mod clip_edges;
 mod clip_shape;
 mod commands;
 mod devices;
@@ -28,6 +30,7 @@ mod plugins;
 mod preview;
 mod projects;
 mod rack;
+mod range;
 mod record_writer;
 mod recording;
 mod relink;
@@ -36,6 +39,7 @@ mod sends;
 mod soundmap;
 mod tempo;
 
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -179,6 +183,12 @@ impl Player {
         self.controller.set_device_param(change.track, change.device, change.param, change.value).map_err(CommandError)
     }
 
+    /// Builds the engine's graphs from now on with the project's file-backed devices' parsed
+    /// models and IRs ([docs/spec/nam-amp-and-cab.md]).
+    pub fn set_device_assets(&mut self, assets: std::sync::Arc<suhina_engine::DeviceAssets>) {
+        self.controller.set_assets(assets);
+    }
+
     /// The engine's sample rate.
     pub fn sample_rate(&self) -> u32 {
         self.controller.sample_rate()
@@ -265,6 +275,11 @@ pub struct Session {
     quantization: Quantization,
     /// The arrangement clips copied for `clip.paste`, with the content each plays.
     clipboard: Vec<(suhina_model::Clip, suhina_model::ClipContent)>,
+    /// The track each copied clip came from, when the copy knows it (arrangement clips and time
+    /// selections); a paste with no track puts each clip back on its own.
+    clipboard_tracks: Vec<suhina_model::TrackId>,
+    /// Devices copied for `device.paste`, with their state as it was then.
+    device_clipboard: Vec<suhina_model::Device>,
     /// Notes copied from a MIDI clip, for `note.paste`.
     note_clipboard: Option<notes::NoteClipboard>,
     /// Set by an edit command whose changes are device parameters.
@@ -277,6 +292,15 @@ pub struct Session {
     audio: suhina_engine::AudioPool,
     /// Files added to `audio` since the player last got it.
     audio_changed: bool,
+    /// The parsed models and IRs the project's NAM devices run
+    /// ([docs/spec/nam-amp-and-cab.md]), by the path each device's state holds.
+    device_assets: suhina_engine::DeviceAssets,
+    /// Assets added to `device_assets` since the player last got them.
+    device_assets_changed: bool,
+    /// Why a device's file is not in `device_assets`, by the path: what a read gave.
+    device_asset_notes: HashMap<String, String>,
+    /// When each loaded file was last written, so a rewritten file is reloaded.
+    device_asset_files: HashMap<String, Option<std::time::SystemTime>>,
     /// Files decoded ahead of a command that uses them (`provide_audio`), newest last.
     decoded: Vec<(String, std::sync::Arc<suhina_engine::AudioData>)>,
     /// The command and track of the undo step on top that a call with `continue` may join: one
@@ -292,6 +316,9 @@ pub struct Session {
     armed: Vec<suhina_model::TrackId>,
     /// Takes being recorded and the count-in (`docs/spec/recording.md`).
     pub(crate) recording: recording::Recording,
+    /// The metronome: on, its level in dB, its sound. Not part of the project; a new output gets
+    /// it again.
+    pub(crate) metronome: (bool, f64, suhina_engine::ClickSound),
 }
 
 /// Files kept decoded ahead of the commands that use them.
@@ -314,18 +341,25 @@ impl Session {
             player: None,
             quantization: Quantization::Bars(1),
             clipboard: Vec::new(),
+            clipboard_tracks: Vec::new(),
+            device_clipboard: Vec::new(),
             note_clipboard: None,
             param_edits: Vec::new(),
             param_gesture: None,
             plugins: rack::Rack::default(),
             audio: suhina_engine::AudioPool::new(),
             audio_changed: false,
+            device_assets: suhina_engine::DeviceAssets::new(),
+            device_assets_changed: false,
+            device_asset_notes: HashMap::new(),
+            device_asset_files: HashMap::new(),
             decoded: Vec::new(),
             open_step: None,
             player_behind: false,
             backup: backup::SessionBackups::default(),
             armed: Vec::new(),
             recording: recording::Recording::default(),
+            metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
         }
     }
 
@@ -348,6 +382,18 @@ impl Session {
         self.clipboard.len()
     }
 
+    /// Whether the copied clips came from more than one track, so a paste puts each back on its
+    /// own track rather than all on one.
+    /// How many devices `device.paste` would add.
+    pub fn copied_devices(&self) -> usize {
+        self.device_clipboard.len()
+    }
+
+    pub fn copied_from_tracks(&self) -> bool {
+        self.clipboard_tracks.len() == self.clipboard.len()
+            && self.clipboard_tracks.iter().any(|t| Some(t) != self.clipboard_tracks.first())
+    }
+
     /// The project's decoded audio, which players are started with (ADR 0011).
     pub fn audio(&self) -> &suhina_engine::AudioPool {
         &self.audio
@@ -358,6 +404,40 @@ impl Session {
     pub fn set_audio(&mut self, audio: suhina_engine::AudioPool) {
         self.audio = audio;
         self.audio_changed = true;
+    }
+
+    /// The parsed model or decoded IR for a file-backed device's file, from the assets already
+    /// held, or `None` while a load failed or is still to run
+    /// ([docs/spec/nam-amp-and-cab.md]).
+    pub fn device_asset(&self, path: &str) -> Option<&suhina_device_registry::DeviceAsset> {
+        self.device_assets.get(path)
+    }
+
+    /// What the session's NAM devices run, by path, for a renderer's construction (a `render`
+    /// through `render_offline_with_assets`) and the app's output open.
+    pub fn device_assets(&self) -> &suhina_engine::DeviceAssets {
+        &self.device_assets
+    }
+
+    /// What a device's file is called, for a device panel: the model's own name (its metadata)
+    /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
+    /// the file is not in the assets.
+    pub fn device_asset_name(&self, path: &str) -> Option<String> {
+        match self.device_assets.get(path)? {
+            suhina_device_registry::DeviceAsset::Nam(model) => {
+                suhina_device_nam_amp_modeler::model::display_name(model)
+            }
+            suhina_device_registry::DeviceAsset::Ir(_) => std::path::Path::new(path)
+                .parent()
+                .and_then(|folder| folder.file_name())
+                .map(|folder| folder.to_string_lossy().into_owned()),
+        }
+    }
+
+    /// Why a device's file is not in the assets, by the path: what a read gave, for a device
+    /// panel's note.
+    pub fn device_asset_note(&self, path: &str) -> Option<&str> {
+        self.device_asset_notes.get(path).map(String::as_str)
     }
 
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
@@ -463,6 +543,11 @@ impl Session {
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
         let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.quantization));
+        // Its metronome too: on or off, level and sound, as this session has them.
+        let (on, db, sound) = self.metronome;
+        let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();
@@ -541,12 +626,18 @@ impl Session {
     /// error the session has no player.
     pub fn replace_player<E>(
         &mut self,
-        open: impl FnOnce(&Project, &suhina_engine::AudioPool, Option<Player>) -> Result<Player, E>,
+        open: impl FnOnce(
+            &Project,
+            &suhina_engine::AudioPool,
+            &suhina_engine::DeviceAssets,
+            Option<Player>,
+        ) -> Result<Player, E>,
     ) -> Result<(), E> {
         // A take ends where the engine it records from was (a lost device keeps what it had).
         self.end_takes_now();
+        self.sync_device_files();
         let old = self.player.take();
-        match open(&self.project, &self.audio, old) {
+        match open(&self.project, &self.audio, &self.device_assets, old) {
             Ok(player) => {
                 self.attach_player(player);
                 Ok(())
@@ -720,6 +811,8 @@ impl Session {
 
     /// Opens a project: a Suhina project (`.suhina`) or a Live Set to import (`.als`). Returns
     /// the session and the importer's warnings. Any other file is refused by its extension.
+    /// The NAM devices' files are read here, so the session is ready for the planned audio
+    /// before a player is attached.
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -738,6 +831,7 @@ impl Session {
         let mut session = Self::new(project);
         session.source = Some(path.to_path_buf());
         session.audio_folder = path.parent().map(Path::to_path_buf);
+        session.sync_device_files();
         Ok((session, warnings))
     }
 
@@ -946,9 +1040,18 @@ impl Session {
                     .any(|p| p.name == "continue")
                     .then(|| {
                         // A command over several tracks continues on its first one.
-                        commands::track_id(&self.project, params).ok().or_else(|| {
-                            commands::track_list(&self.project, params).ok().and_then(|l| l.first().copied())
-                        })
+                        commands::track_id(&self.project, params)
+                            .ok()
+                            .or_else(|| {
+                                commands::track_list(&self.project, params).ok().and_then(|l| l.first().copied())
+                            })
+                            // A command with no track (the main output's) continues on itself.
+                            .or_else(|| {
+                                (!params
+                                    .as_object()
+                                    .is_some_and(|o| o.contains_key("track") || o.contains_key("tracks")))
+                                .then_some(suhina_model::TrackId(u32::MAX))
+                            })
                     })
                     .flatten()
                     .map(|track| (spec.id, track));
@@ -1037,14 +1140,114 @@ impl Session {
         }
     }
 
+    /// Reads the NAM devices' files into the assets ([docs/spec/nam-amp-and-cab.md]): each
+    /// file-backed device's state, once per unique path and only when its file's last write is
+    /// newer than what a load saw. A file that fails leaves its message in
+    /// `device_asset_notes`, where a panel reads it. The reads run in the session's thread.
+    pub fn sync_device_files(&mut self) {
+        // Paths still attached to devices, by kind.
+        let mut need: HashMap<String, String> = HashMap::new();
+        for track in &self.project.tracks {
+            let Some(channel) = track.channel.and_then(|ch| self.project.channels.iter().find(|c| c.id == ch)) else {
+                continue;
+            };
+            for device in &channel.devices {
+                let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
+                if !suhina_device_registry::is_file_device(id) {
+                    continue;
+                }
+                if let Some(path) = device
+                    .state
+                    .as_deref()
+                    .and_then(|state| std::str::from_utf8(state).ok())
+                    .filter(|path| !path.is_empty())
+                {
+                    need.insert(path.to_string(), id.clone());
+                }
+            }
+        }
+        if need.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        for (path, kind) in need.iter() {
+            let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+            if (self.device_assets.entries.contains_key(path.as_str())
+                || self.device_asset_notes.contains_key(path.as_str()))
+                && self.device_asset_files.get(path).and_then(|seen| *seen) == mtime
+            {
+                continue;
+            }
+            let result = self.load_device_file(kind, path);
+            self.device_asset_files.insert(path.clone(), mtime);
+            match result {
+                Ok(asset) => {
+                    self.device_assets.set(path.clone(), asset);
+                    self.device_asset_notes.remove(path.as_str());
+                }
+                Err(e) => {
+                    self.device_assets.entries.remove(path.as_str());
+                    self.device_asset_notes.insert(path.clone(), e);
+                }
+            }
+            changed = true;
+        }
+        if changed {
+            self.device_assets_changed = true;
+        }
+    }
+
+    /// What a file-backed device of `kind` runs for the file at `path`: a parsed model for the
+    /// Amp Modeler or a decoded IR for the Cab Loader. The reads run here, at command or
+    /// project-load time, never on the audio thread.
+    pub(crate) fn load_device_file(
+        &self,
+        kind: &str,
+        path: &str,
+    ) -> Result<suhina_device_registry::DeviceAsset, String> {
+        // The extension check `device.setNamFile` makes: a project's stored path gets the same
+        // treatment, so a hand-made or foreign project file cannot point a device at some
+        // other file (a UNC path, for one).
+        let want_extension = match kind {
+            "nam-amp-modeler" => "nam",
+            "nam-cab-loader" => "wav",
+            other => return Err(format!("{other:?} does not run a file")),
+        };
+        if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
+            return Err(format!("a {kind} runs a .{want_extension} file"));
+        }
+        // An IR joins the project at the engine's rate; the session's rate is the player's, or
+        // 48 kHz until the first output opens.
+        let rate = self.player.as_ref().map_or(48_000, Player::sample_rate);
+        match kind {
+            "nam-amp-modeler" => {
+                let model = suhina_device_nam_amp_modeler::model::read(std::path::Path::new(path))?;
+                // The runtime's verdict, so the panel can say why a file is silent.
+                if let Err(e) = nam_rs::Model::from_nam(&model) {
+                    return Err(format!("the model does not run: {e}"));
+                }
+                Ok(suhina_device_registry::DeviceAsset::Nam(std::sync::Arc::new(model)))
+            }
+            "nam-cab-loader" => Ok(suhina_device_registry::DeviceAsset::Ir(std::sync::Arc::new(
+                suhina_device_nam_cab_loader::ir::read(std::path::Path::new(path), rate)?,
+            ))),
+            _ => Err(format!("{kind:?} does not run a file")),
+        }
+    }
+
     /// Lets a playing engine hear the project as it is now, with any audio added to the pool.
     /// The edit stays made if this fails.
     /// `scenes` is the scene inserted or removed since the last update, if that is what changed.
     fn update_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), CommandError> {
+        self.sync_device_files();
         let Some(player) = self.player.as_mut() else { return Ok(()) };
         if self.audio_changed {
             player.set_audio(std::sync::Arc::new(self.audio.clone()));
             self.audio_changed = false;
+        }
+        if self.device_assets_changed {
+            player.set_device_assets(std::sync::Arc::new(self.device_assets.clone()));
+            self.device_assets_changed = false;
         }
         player.update_with_scenes(&self.project, scenes).map_err(|e| {
             CommandError(format!("the edit was made, but the playing engine could not follow it: {}", e.0))

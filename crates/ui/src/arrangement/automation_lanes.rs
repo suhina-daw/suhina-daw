@@ -450,6 +450,17 @@ impl LanesState {
         }
     }
 
+    /// Shows every one of `tracks`' lanes, or hides them all when they all show already
+    /// (`view.automation`, A, as Studio One's and Ableton Live's key does).
+    pub fn toggle_all(&mut self, tracks: &[TrackId], params: &Params) {
+        let all_open = !tracks.is_empty() && tracks.iter().all(|t| self.is_open(*t));
+        for &track in tracks {
+            if self.is_open(track) == all_open {
+                self.toggle(track, params);
+            }
+        }
+    }
+
     /// Shows `key` in `track`'s lanes (opening them), after the lanes already shown.
     pub fn show_lane(&mut self, track: TrackId, key: LaneKey) {
         self.open.insert(track);

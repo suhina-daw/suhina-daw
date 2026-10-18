@@ -350,12 +350,30 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
                 .ok_or_else(|| format!("note {index} would leave the keys 0 to 127"))?;
             changed.push((index, Note { time, key, ..*note }));
         }
-        for (index, note) in changed {
-            if let Some(slot) = notes.get_mut(index) {
-                *slot = note;
+        for (index, note) in &changed {
+            if let Some(slot) = notes.get_mut(*index) {
+                *slot = *note;
             }
         }
-        Ok(json!({ "notes": moved }))
+        // A moved note landing on another, the same key from the same start, takes its place.
+        let replace = params.get("replace").and_then(Value::as_bool) == Some(true);
+        let covered: Vec<usize> = if replace {
+            (0..notes.len())
+                .filter(|i| !moved.contains(i))
+                .filter(|i| {
+                    changed.iter().any(|(_, m)| m.key == notes[*i].key && (m.time - notes[*i].time).abs() < EPSILON)
+                })
+                .filter(|_| beats.abs() >= EPSILON || semitones != 0)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for index in covered.iter().rev() {
+            notes.remove(*index);
+        }
+        // The moved notes' indices after the covered ones went.
+        let now: Vec<usize> = moved.iter().map(|i| i - covered.iter().filter(|c| *c < i).count()).collect();
+        Ok(json!({ "notes": now, "replaced": covered }))
     })
 }
 

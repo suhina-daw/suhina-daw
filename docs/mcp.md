@@ -179,8 +179,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   ([clip launching](spec/clip-launching.md) › Clips between the arrangement and the slots). `clip.setFades` with
   `scene` instead of `index` sets a launcher slot clip's fades
   ([clip launching](spec/clip-launching.md)). `clip.create {track, scene? | start?, length?,
-  stack?}` makes an empty MIDI clip, a bar long by default, in an empty slot or at a beat
-  ([arrangement editing](spec/arrangement-editing.md#making-an-empty-midi-clip)).
+  stack?}` makes an empty clip — MIDI on a notes track, audio with no file yet on an audio
+  track — a bar long by default, in an empty slot or at a beat
+  ([arrangement editing](spec/arrangement-editing.md#making-an-empty-clip)).
   `clip.split {track, index, at}` cuts a clip in two at a song position; `clip.consolidate
   {track, start, end}` turns a range of one track into one clip (audio is rendered to a file next
   to the project, which must have been saved).

@@ -45,7 +45,8 @@ run the same code.
    the same `Arc<AudioData>`s plus the new ones, so nothing is copied), and the graph the edit
    builds is built with it (ADR 0005). The audio thread sees only a new graph, as for any edit.
    The pool's key for a dropped file is its absolute path; saving rewrites it relative to the
-   project file (ADR 0010).
+   project file (ADR 0010). An empty audio clip (`clip.create` on an audio track) names no
+   file: nothing is decoded for it until a sample lands on its slot or lane.
 3. **Undo leaves the decoded file in the pool.** It costs memory until the project closes and
    means redo needs no decoding.
 4. **Previewing is a voice of its own in the engine, after the main channel.** The renderer has

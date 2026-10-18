@@ -1,12 +1,12 @@
 {
   "note": "Live 12 devices (manual chapters 29-31: 42 audio effects, 8 MIDI effects, 13 instruments) and their Suhina counterpart. 'kind' is our own two- or three-word category for the device, never its manual text; 'status' is equivalent | close | planned | none, where 'planned' means ROADMAP.md names work of this kind. See docs/research/parity-live-12.md (Sources and IP).",
   "audio_effects": [
-    ["Amp", "29.1", "amp and cabinet", "none", ""],
+    ["Amp", "29.1", "neural amp capture", "equivalent", "Suhina NAM Amp Modeler runs a .nam model with trims, its own EQ and a trim delay (docs/spec/nam-amp-and-cab.md)"],
     ["Auto Filter", "29.2", "multimode filter", "planned", "ROADMAP: EQ, filter (own dsp filters); only biquads and crossovers exist today"],
     ["Auto Pan-Tremolo", "29.3", "pan and tremolo", "equivalent", "Suhina auto-pan does both modes"],
     ["Auto Shift", "29.4", "pitch correction", "none", ""],
     ["Beat Repeat", "29.5", "buffer repeat", "none", ""],
-    ["Cabinet", "29.6", "speaker cabinet", "none", ""],
+    ["Cabinet", "29.6", "cab impulse response", "equivalent", "Suhina NAM Cab Loader convolves a .wav IR with a phase invert, a high pass, tone cuts, a trim delay and a volume"],
     ["Channel EQ", "29.7", "console EQ", "none", "the DJ EQ is a kill-style DJ EQ, a different kind"],
     ["Chorus-Ensemble", "29.8", "chorus and ensemble", "none", ""],
     ["Compressor", "29.9", "compressor", "equivalent", "Suhina compressor (stereo-linked, soft knee, side-chain high-pass, dry/wet)"],

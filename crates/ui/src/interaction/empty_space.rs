@@ -10,12 +10,19 @@ use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
-/// The two buttons that add an empty track, at the top of the empty space after the tracks;
-/// the space below takes drops (`docs/spec/browser.md` › Files).
+/// The empty space's right-click menu on `space`, the response the view has for it: Insert
+/// audio track, Insert MIDI track, Insert return track.
+pub(crate) fn empty_space_menu(space: &egui::Response, actions: &mut Vec<Action>) {
+    space.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Empty space"));
+    space.context_menu(|ui| crate::interaction::menus::insert_items(ui, None, actions));
+}
+
+/// The buttons that add an empty track or a return track, at the top of the empty space after
+/// the tracks; the space below takes drops (`docs/spec/browser.md` › Files).
 pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions: &mut Vec<Action>) {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut y = area.top() + PAD;
-    for (kind, label) in [("midi", "+ MIDI track"), ("audio", "+ Audio track")] {
+    for (kind, label) in [("midi", "+ MIDI track"), ("audio", "+ Audio track"), ("return", "+ Return track")] {
         let width = (widgets::text_width(ui, label, font.clone()) + PAD * 2.0).min(area.width() - PAD * 2.0);
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, y), Vec2::new(width, ROW));
         y = rect.bottom() + 2.0;
@@ -27,7 +34,11 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
         painter.rect_filled(rect, 0.0, fill);
         widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font.clone(), theme::text_secondary());
         if response.clicked() {
-            actions.push(Action::new("track.add", json!({ "kind": kind })));
+            if kind == "return" {
+                actions.push(Action::new("return.add", json!({})));
+            } else {
+                actions.push(Action::new("track.add", json!({ "kind": kind })));
+            }
         }
     }
     if area.height() > y - area.top() + ROW * 2.0 {

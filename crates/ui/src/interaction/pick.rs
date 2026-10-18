@@ -23,6 +23,10 @@ pub enum PickField {
     OpenProject,
     /// A folder for the browser (+ Add folder).
     BrowserFolder,
+    /// Settings › General › NAM models folder (docs/spec/nam-amp-and-cab.md).
+    NamModelsFolder,
+    /// Settings › General › IR folder (docs/spec/nam-amp-and-cab.md).
+    IrFolder,
 }
 
 impl PickField {
@@ -40,6 +44,8 @@ impl PickField {
             Self::SaveFolder => "Folder to save in",
             Self::OpenProject => "Open a project",
             Self::BrowserFolder => "Add a folder to the browser",
+            Self::NamModelsFolder => "NAM models folder",
+            Self::IrFolder => "IR folder",
         }
     }
 

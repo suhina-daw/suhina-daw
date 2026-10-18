@@ -115,6 +115,8 @@ pub enum LaunchCommand {
         on: bool,
         gain: Option<f32>,
     },
+    /// The metronome's click sound from the next click on.
+    SetMetronomeSound(crate::ClickSound),
     /// While the transport runs, playback jumps to `beat` at once, as [`LaunchCommand::SetPosition`]
     /// does, but the play start marker stays where it is. Ignored while stopped (the playhead is
     /// at the marker then) and for non-finite beats. For an output that is opened again.
@@ -1174,6 +1176,7 @@ impl Renderer {
                 self.metronome.set(on, gain);
                 self.graph.launcher.monitor.metronome.store(self.metronome.on(), Ordering::Relaxed);
             }
+            LaunchCommand::SetMetronomeSound(sound) => self.metronome.set_sound(sound),
             LaunchCommand::SetCue { gain, separate } => self.cue.set(gain, separate),
             LaunchCommand::FollowTempoMap => {
                 self.graph.launcher.follow_map();
@@ -1815,6 +1818,7 @@ mod tests {
             fade_out_curve: Default::default(),
             follow_action: Default::default(),
             launch: Default::default(),
+            color: None,
             extensions: Extensions::default(),
         }
     }

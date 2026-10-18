@@ -10,7 +10,7 @@ use suhina_device_api::{DeviceInfo, ParamKind, Role, Unit};
 use suhina_engine::param_id;
 use suhina_model::{AutomationLane, AutomationPoint, Device, DeviceKind, DeviceParam, Extensions};
 
-use crate::commands::{channel_param, number, track_id, with_override};
+use crate::commands::{channel_param, channel_read, number, track_id, with_override};
 use crate::{CommandError, ParamEdit, Session};
 
 /// Devices one track may hold.
@@ -440,6 +440,81 @@ pub(crate) fn remove(session: &mut Session, params: &Value) -> Result<Value, Com
     Ok(json!({ "removed": removed.name, "devices": channel.devices.len() }))
 }
 
+/// The device indices `params.devices` names on a chain of `len`, each once, highest first.
+fn device_list(len: usize, params: &Value) -> Result<Vec<usize>, CommandError> {
+    let list = params.get("devices").and_then(Value::as_array).ok_or("devices must be a list of device indices")?;
+    let mut out: Vec<usize> = Vec::with_capacity(list.len());
+    for value in list {
+        let index = value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n < len)
+            .ok_or_else(|| format!("each device must be an index from 0 to {}", len.saturating_sub(1)))?;
+        if !out.contains(&index) {
+            out.push(index);
+        }
+    }
+    if out.is_empty() {
+        return Err("devices must name at least one device".into());
+    }
+    out.sort_unstable_by(|a, b| b.cmp(a));
+    Ok(out)
+}
+
+/// `device.removeMany {track, devices}`: removes several devices of a track as one undo step.
+pub(crate) fn remove_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let channel = channel_param(session, params)?;
+    let indices = device_list(channel.devices.len(), params)?;
+    let removed: Vec<String> = indices.iter().map(|&i| channel.devices.remove(i).name).collect();
+    Ok(json!({ "removed": removed, "devices": channel.devices.len() }))
+}
+
+/// `device.copy {track, devices}`: copies devices, with their parameters, automation and a
+/// running plug-in's state as it is now, for `device.paste`.
+pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let track = track_id(&session.project, params)?;
+    let (heard, _) = session.heard();
+    let channel = heard
+        .tracks
+        .iter()
+        .find(|t| t.id == track)
+        .and_then(|t| t.channel)
+        .and_then(|c| heard.channels.iter().find(|ch| ch.id == c))
+        .ok_or("the track has no mixer channel")?;
+    let mut indices = device_list(channel.devices.len(), params)?;
+    indices.reverse();
+    let copied: Vec<Device> = indices.iter().filter_map(|&i| channel.devices.get(i).cloned()).collect();
+    let names: Vec<String> = copied.iter().map(|d| d.name.clone()).collect();
+    session.device_clipboard = copied;
+    Ok(json!({ "copied": names }))
+}
+
+/// `device.paste {track, position?}`: puts the copied devices into a track's chain at
+/// `position` (the end when left out), in the order they were copied, as one undo step.
+pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    if session.device_clipboard.is_empty() {
+        return Err("no devices have been copied".into());
+    }
+    let copied = session.device_clipboard.clone();
+    let channel = channel_param(session, params)?;
+    if channel.devices.len() + copied.len() > MAX_DEVICES {
+        return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
+    }
+    let position = match params.get("position") {
+        None | Some(Value::Null) => channel.devices.len(),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n <= channel.devices.len())
+            .ok_or_else(|| format!("position must be from 0 to {}", channel.devices.len()))?,
+    };
+    let count = copied.len();
+    for (offset, device) in copied.into_iter().enumerate() {
+        channel.devices.insert(position + offset, device);
+    }
+    Ok(json!({ "devices": (position..position + count).collect::<Vec<_>>() }))
+}
+
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
     let channel = channel_param(session, params)?;
@@ -447,6 +522,85 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
     let device = channel.devices.get_mut(index).ok_or("the device is missing")?;
     device.enabled = enabled;
     Ok(json!({ "device": index, "enabled": enabled }))
+}
+
+/// `device.setNamFile` ([docs/spec/nam-amp-and-cab.md]): the file a NAM Amp Modeler or a NAM
+/// Cab Loader runs. The device's state becomes the file's absolute path; the parsed model or
+/// decoded IR goes into the session's assets with this command, so the playing engine hears it
+/// with the next edit. One undo step, like the other device edits.
+pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let path = params
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty())
+        .ok_or("path must be a .nam model or a .wav IR file's path")?;
+    // The device's kind first, from a read; no mutation until the file has loaded.
+    let kind = {
+        let track = track_id(&session.project, params)?;
+        let channel = session
+            .project
+            .tracks
+            .iter()
+            .find(|t| t.id == track)
+            .and_then(|t| t.channel)
+            .ok_or("the track has no mixer channel")?;
+        let (channel, index) = {
+            let channel =
+                session.project.channels.iter().find(|c| c.id == channel).ok_or("the track's channel is missing")?;
+            let index = device_index(channel.devices.len(), params)?;
+            (channel, index)
+        };
+        match channel.devices.get(index) {
+            Some(device) => match &device.kind {
+                DeviceKind::Builtin(id) if suhina_device_registry::is_file_device(id) => id.clone(),
+                _ => return Err("the device does not run a file".into()),
+            },
+            None => return Err("the device is missing".into()),
+        }
+    };
+    let want_extension = match kind.as_str() {
+        "nam-amp-modeler" => "nam",
+        "nam-cab-loader" => "wav",
+        _ => return Err("the device does not run a file".into()),
+    };
+    if !path.to_lowercase().ends_with(&format!(".{want_extension}")) {
+        return Err(format!("a {kind} runs a .{want_extension} file").into());
+    }
+    let absolute = crate::files::absolute(std::path::Path::new(path));
+    let absolute_text = absolute.display().to_string();
+    let asset = session.load_device_file(&kind, &absolute_text).map_err(CommandError)?;
+    let name = match &asset {
+        suhina_device_registry::DeviceAsset::Nam(model) => {
+            suhina_device_nam_amp_modeler::model::display_name(model).unwrap_or_default()
+        }
+        suhina_device_registry::DeviceAsset::Ir(_) => absolute
+            .parent()
+            .and_then(|folder| folder.file_name())
+            .map_or_else(String::new, |folder| folder.to_string_lossy().into_owned()),
+    };
+    let channel = channel_param(session, params)?;
+    let index = device_index(channel.devices.len(), params)?;
+    let device = channel.devices.get_mut(index).ok_or("the device is missing")?;
+    device.state = Some(absolute_text.as_bytes().to_vec());
+    Ok(json!({ "device": index, "file": absolute_text, "name": name }))
+}
+
+/// `device.file`: the file a NAM device runs — its absolute path (empty when none is set) and
+/// the model's own name or the cab's (the IR's parent folder's name), for a device panel.
+pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let channel = channel_read(session, params)?;
+    let index = device_index(channel.devices.len(), params)?;
+    let device = channel.devices.get(index).ok_or("the device is missing")?;
+    let kind = match &device.kind {
+        DeviceKind::Builtin(id) => id.clone(),
+        _ => return Err("the device does not run a file".into()),
+    };
+    if !suhina_device_registry::is_file_device(&kind) {
+        return Err("the device does not run a file".into());
+    }
+    let file = device.state.as_deref().and_then(|state| std::str::from_utf8(state).ok()).unwrap_or_default();
+    let name = if file.is_empty() { String::new() } else { session.device_asset_name(file).unwrap_or_default() };
+    Ok(json!({ "file": file, "name": name }))
 }
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

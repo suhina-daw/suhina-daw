@@ -299,6 +299,10 @@ pub struct Settings {
     /// (`App::set_default_folders`).
     pub projects_folder: String,
     pub templates_folder: String,
+    /// Where the NAM devices' models and IRs list from
+    /// ([docs/spec/nam-amp-and-cab.md]); empty for the defaults the app gives.
+    pub nam_models_folder: String,
+    pub irs_folder: String,
     /// The browser panel shows, on which side, and how wide (`docs/spec/browser.md`).
     pub browser_open: bool,
     pub browser_side: Side,
@@ -367,7 +371,7 @@ impl Default for Settings {
             at_start: AtStart::Panel,
             start_template: String::new(),
             stop: StopReturn::Marker,
-            play_from: PlayFrom::Marker,
+            play_from: PlayFrom::Clip,
             device_layout: DeviceLayout::Row,
             select_on_launch: true,
             view: crate::settings::view_settings::ViewSettings::default(),
@@ -380,6 +384,8 @@ impl Default for Settings {
             theme: crate::kit::theme::BUILT_IN.into(),
             projects_folder: String::new(),
             templates_folder: String::new(),
+            nam_models_folder: String::new(),
+            irs_folder: String::new(),
             browser_open: true,
             browser_side: Side::Left,
             browser_width: BROWSER_WIDTH,
@@ -501,7 +507,7 @@ impl Settings {
             EditorPlacement::DeviceView => "device",
         };
         format!(
-            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_from = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_grid = {piano_grid}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
+            "# Suhina settings; changed from Options > Settings.\nanimations = {}\ntrack_headers = {headers}\nrenderer = {graphics}\nsample_stacking = {}\nmidi_stacking = {}\nopen_projects = {on_open}\nat_start = {at_start}\nstart_template = {}\nstop = {stop}\nplay_start = {play_from}\ndevice_chain = {devices}\nmixer_controls = {mixer}\nselect_on_launch = {select_on_launch}\nplugin_editors = {editors}\ntheme = {}\nprojects_folder = {}\ntemplates_folder = {}\nnam_models_folder = {}\nirs_folder = {}\nbrowser = {}\nbrowser_side = {browser_side}\nbrowser_width = {}\npreview_autoplay = {}\npreview_volume = {}\ndrop_files = {drop}\nwarp_mode = {}\nmap_layout = {map_layout}\nmap_hover_preview = {}\nmap_max_seconds = {}\nmap_dot_size = {}\nmap_window = {}\nmap_window_rect = {}\naudio_host = {}\naudio_device = {}\naudio_sample_rate = {}\naudio_buffer = {}\naudio_exclusive = {}\naudio_cue_pair = {}\naudio_cue_volume = {}\naudio_input = {}\nzoom = {}\nwaveform_scale = {waveform_scale}\npiano_roll_top = {piano_top}\npiano_roll_grid = {piano_grid}\npiano_roll_toolbar = {piano_toolbar}\nbackup = {}\nbackup_clean_up = {}\n",
             on(self.animations),
             on(self.sample_stacking),
             on(self.midi_stacking),
@@ -509,6 +515,8 @@ impl Settings {
             self.theme,
             self.projects_folder,
             self.templates_folder,
+            self.nam_models_folder,
+            self.irs_folder,
             on(self.browser_open),
             self.browser_width,
             on(self.preview_autoplay),
@@ -590,6 +598,8 @@ impl Settings {
                 ("plugin_editors", "device") => settings.plugin_editors = EditorPlacement::DeviceView,
                 ("projects_folder", folder) => settings.projects_folder = folder.to_string(),
                 ("templates_folder", folder) => settings.templates_folder = folder.to_string(),
+                ("nam_models_folder", folder) => settings.nam_models_folder = folder.to_string(),
+                ("irs_folder", folder) => settings.irs_folder = folder.to_string(),
                 ("open_projects", "ask") => settings.on_open = OnOpen::Ask,
                 ("open_projects", "tab") => settings.on_open = OnOpen::NewTab,
                 ("open_projects", "replace") => settings.on_open = OnOpen::Replace,
@@ -601,8 +611,11 @@ impl Settings {
                 ("start_template", path) => settings.start_template = path.to_string(),
                 ("stop", "marker") => settings.stop = StopReturn::Marker,
                 ("stop", "here") => settings.stop = StopReturn::Here,
-                ("play_from", "marker") => settings.play_from = PlayFrom::Marker,
-                ("play_from", "clip") => settings.play_from = PlayFrom::Clip,
+                // `play_start` since the selected clip became the default; the old key, which
+                // every file got written with "marker" while that was the default, is left alone.
+                ("play_start", "marker") => settings.play_from = PlayFrom::Marker,
+                ("play_start", "clip") => settings.play_from = PlayFrom::Clip,
+                ("play_from", "marker" | "clip") => {}
                 ("renderer", "wgpu") => settings.graphics = Graphics::Gpu,
                 ("renderer", "glow") => settings.graphics = Graphics::OpenGl,
                 ("theme", id) if is_theme_id(id) => settings.theme = id.to_string(),
@@ -728,7 +741,7 @@ open_projects = tab
 at_start = template
 start_template = Beats
 stop = here
-play_from = clip
+play_start = clip
 device_chain = stack
 mixer_controls = knob
 select_on_launch = off
@@ -791,6 +804,8 @@ midi_input_off = Keys
             theme: "night".into(),
             projects_folder: "/music/projects".into(),
             templates_folder: "/music/templates".into(),
+            nam_models_folder: String::new(),
+            irs_folder: String::new(),
             browser_open: false,
             browser_side: Side::Left,
             browser_width: 320,
@@ -852,6 +867,8 @@ midi_input_off = Keys
             theme: "Night blue".into(),
             projects_folder: "C:/Music/Songs = mine".into(),
             templates_folder: "/home/me/templates".into(),
+            nam_models_folder: "/home/me/nam models".into(),
+            irs_folder: "/home/me/irs".into(),
             browser_open: false,
             browser_side: Side::Right,
             browser_width: 420,
@@ -999,12 +1016,17 @@ map_window_rect = 10, 20, 800, 600
 
     #[test]
     fn play_from_reads_marker_or_clip_and_nothing_else() {
-        assert_eq!(Settings::default().play_from, PlayFrom::Marker);
-        assert_eq!(Settings::from_text("play_from = clip\n").0.play_from, PlayFrom::Clip);
-        assert_eq!(Settings::from_text("play_from = marker\n").0.play_from, PlayFrom::Marker);
-        let (settings, warnings) = Settings::from_text("play_from = selection\n");
-        assert_eq!((settings.play_from, warnings.len()), (PlayFrom::Marker, 1));
-        assert!(Settings::default().to_text().contains("play_from = marker\n"));
+        // The selected clip by default, as Ableton Live plays from it.
+        assert_eq!(Settings::default().play_from, PlayFrom::Clip);
+        assert_eq!(Settings::from_text("play_start = clip\n").0.play_from, PlayFrom::Clip);
+        assert_eq!(Settings::from_text("play_start = marker\n").0.play_from, PlayFrom::Marker);
+        let (settings, warnings) = Settings::from_text("play_start = selection\n");
+        assert_eq!((settings.play_from, warnings.len()), (PlayFrom::Clip, 1));
+        assert!(Settings::default().to_text().contains("play_start = clip\n"));
+        // The old key, written "marker" into every file while that was the default, is left
+        // alone, so the selected clip takes over.
+        let (settings, warnings) = Settings::from_text("play_from = marker\n");
+        assert_eq!((settings.play_from, warnings.len()), (PlayFrom::Clip, 0));
     }
 
     #[test]

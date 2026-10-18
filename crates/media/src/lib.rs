@@ -42,6 +42,10 @@ pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool
     for content in &project.contents {
         for lane in &content.lanes {
             let LaneData::Audio(region) = &lane.data else { continue };
+            // An empty audio clip has no file yet: nothing to decode, no warning.
+            if region.file.is_empty() {
+                continue;
+            }
             let streams = region.stream.is_some();
             if wanted.iter().any(|(file, _, s)| *file == region.file && *s == streams) {
                 continue;
@@ -132,6 +136,10 @@ pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio>
     for content in &project.contents {
         for lane in &content.lanes {
             let LaneData::Audio(region) = &lane.data else { continue };
+            // An empty audio clip has no file yet: it is not a missing file.
+            if region.file.is_empty() {
+                continue;
+            }
             if found.contains(&region.file.as_str()) || out.iter().any(|m| m.file == region.file) {
                 continue;
             }
@@ -311,6 +319,14 @@ mod tests {
         assert!(missing_audio(&project, &dir.join("set")).is_empty());
         assert_eq!(locate("here.wav", None, &dir.join("set")), Some(dir.join("set").join("here.wav")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_region_names_no_file_so_nothing_is_decoded_or_missed() {
+        // An empty audio clip (clip.create on an audio track) has no file yet.
+        let (pool, warnings) = load_project_audio(&project_with_audio("", None), Path::new("nowhere"));
+        assert!(pool.files.is_empty() && warnings.is_empty(), "{warnings:?}");
+        assert!(missing_audio(&project_with_audio("", None), Path::new("nowhere")).is_empty());
     }
 
     #[test]

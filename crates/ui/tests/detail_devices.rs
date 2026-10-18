@@ -10,7 +10,7 @@
 use egui::{Key, Modifiers, Pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use suhina_engine::model::{Device, DeviceKind, Extensions, Project, TrackId};
+use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions, Project, TrackId};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, kit::theme};
@@ -252,4 +252,148 @@ fn a_double_click_on_a_strip_control_is_the_controls_own() {
     hide_detail_area(&mut harness);
     double_click_at(&mut harness, fader);
     assert!(!shows_device(&harness, "Utility"), "the fader's double-click resets it, nothing more");
+}
+
+/// The demo project's Drums track with the two NAM devices on its channel, each with its
+/// default parameters, as `device.add` leaves them.
+fn nam_project() -> Project {
+    let mut project = demo_project();
+    for (name, id) in [("NAM Amp Modeler", "nam-amp-modeler"), ("NAM Cab Loader", "nam-cab-loader")] {
+        let params = suhina_device_registry::info(id)
+            .map(|info| info.params.iter().map(|p| DeviceParam::new(p.id, p.default)).collect())
+            .unwrap_or_default();
+        let device = Device { name: name.into(), kind: DeviceKind::Builtin(id.into()), params, ..device("nam") };
+        project.channels[0].devices.push(device);
+    }
+    project
+}
+
+/// A NAM device's panel in the detail area: the knobs, the toggles and the file row's labels are
+/// there, and the device is the header's ([docs/spec/nam-amp-and-cab.md] › The panels).
+#[test]
+fn a_nam_devices_panel_shows_its_controls_and_files() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("NAM models"), dir.join("IRs"));
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&irs).unwrap();
+    // The packs: a NAM folder keeps one amp's captures in a subfolder of it; loose files form
+    // the "(entered directly)" pack.
+    let pack = models.join("Test amp");
+    std::fs::create_dir_all(&pack).unwrap();
+    let model_path = pack.join("test amp.nam");
+    std::fs::write(&model_path, r#"{"version":"0.5.4","architecture":"WaveNet","config":{"layers":[{"input_size":1,"condition_size":1,"channels":1,"head_size":1,"kernel_size":1,"dilations":[1],"activation":"ReLU","gated":false,"head_bias":false}],"head":null,"head_scale":1.0},"weights":[1.0,2.0,0.0,0.0,1.0,0.0,1.0,1.0],"metadata":{"name":"Test amp"}}"#).unwrap();
+    let ir_path = irs.join("cab.wav");
+    std::fs::write(&ir_path, b"RIFF").unwrap();
+
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(nam_project()), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Session view").click();
+    // The column name's double-click shows the track's devices directly.
+    let name = harness.get_by_label("Track Drums").rect().center();
+    double_click_at(&mut harness, name);
+    assert!(shows_device(&harness, "NAM Amp Modeler"), "the amp's panel header is there");
+    for label in [
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: volume",
+        "Amp Modeler: mid freq",
+        "Amp Modeler: delay",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+    assert!(harness.query_by_label("Amp Modeler: device on").is_some(), "the power button, not a bypass");
+    for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
+    }
+    // The pack row with its steppers and the file row with its own; the pack is listed.
+    for label in [
+        "Amp Modeler: pack",
+        "Amp Modeler: previous pack",
+        "Amp Modeler: next pack",
+        "Amp Modeler: model file",
+        "Amp Modeler: previous file",
+        "Amp Modeler: next file",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+
+    assert!(shows_device(&harness, "NAM Cab Loader"), "the cab's panel header is there");
+    for label in [
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+        "Cab Loader: volume",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+    // The cab is switched off from its header, as other devices are; it has no bypass of its own.
+    assert!(harness.query_by_label("Cab Loader: bypass").is_none(), "no bypass toggle");
+    for label in ["Cab Loader: phase", "Cab Loader: hp"] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
+    }
+    for label in [
+        "Cab Loader: pack",
+        "Cab Loader: previous pack",
+        "Cab Loader: next pack",
+        "Cab Loader: cab file",
+        "Cab Loader: previous file",
+        "Cab Loader: next file",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "missing {label}");
+    }
+
+    // One click on the power button switches the device off (device.setEnabled), and another on.
+    harness.get_by_label("Amp Modeler: device on").click();
+    harness.run();
+    assert!(!project_now(&harness).channels[0].devices[0].enabled, "the power click switched it off");
+    harness.get_by_label("Amp Modeler: device off").click();
+    harness.run();
+    assert!(project_now(&harness).channels[0].devices[0].enabled, "and on again from the same button");
+    // One click on the EQ's button turns it on through device.setParam.
+    harness.get_by_label("Amp Modeler: eq").click();
+    harness.run();
+    let project = project_now(&harness);
+    let driver = project.channels[0].devices[0].params.iter().find(|p| p.id == "eqOn").unwrap();
+    assert_eq!(driver.value, 0.0, "the eq click turned it off (it is on by default)");
+    // The pack row's dropdown lists the folder's packs; picking one loads its first file.
+    harness.get_by_label("Amp Modeler: pack").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Amp Modeler: pack: Test amp").is_some(),
+        "the open pack row lists the folder's pack"
+    );
+    harness.get_by_label_contains("Amp Modeler: pack: Test amp").click();
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
+    // The pack steppers step through the packs (one here: from none, into it).
+    harness.get_by_label("Amp Modeler: next pack").click();
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), model_path.display().to_string());
+    // One undo takes the file choice back (the Edit › Undo key, Ctrl+Z).
+    harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::Z]);
+    harness.run();
+    assert_eq!(channel_device_state(&harness, 0), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A channel device's state as the project holds it, by its index.
+fn channel_device_state(harness: &Harness<'static, App>, index: usize) -> String {
+    harness.state().session().unwrap().project().channels[0]
+        .devices
+        .get(index)
+        .and_then(|d| d.state.as_deref().map(|state| String::from_utf8_lossy(state).into_owned()))
+        .unwrap_or_default()
 }

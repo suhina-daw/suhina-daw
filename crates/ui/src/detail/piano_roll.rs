@@ -392,6 +392,9 @@ pub struct PianoRollState {
     pub tools_open: bool,
     /// The toolbar's tool.
     pub tool: Tool,
+    /// Notes moved onto others of the same key and start replace them (Settings; the window sets
+    /// it each frame).
+    pub notes_replace: bool,
     /// The length (0: one grid step) and velocity a new note takes: those of the note last
     /// drawn or clicked.
     last_length: f64,
@@ -471,6 +474,7 @@ impl Default for PianoRollState {
             tools: ToolSettings::default(),
             tools_open: true,
             tool: Tool::Select,
+            notes_replace: true,
             last_length: 0.0,
             last_velocity: NEW_VELOCITY,
             stroke: Vec::new(),
@@ -1418,6 +1422,9 @@ pub fn show(
                 Some(CursorIcon::None)
             }
             (None, Some((_, Part::Start | Part::End)), _) => Some(CursorIcon::ResizeHorizontal),
+            (None, Some((_, Part::Body)), Tool::Select | Tool::Draw) if ui.input(|i| i.modifiers.command) => {
+                Some(CursorIcon::Copy)
+            }
             (Some(Gesture::Draw { .. } | Gesture::Paint), _, _) | (None, None, Tool::Draw | Tool::Paint) => {
                 Some(CursorIcon::Crosshair)
             }
@@ -2290,6 +2297,34 @@ fn commit(
                 actions.push(Action::new("note.duplicate", params));
                 state.selected = (clip.notes.len()..clip.notes.len() + notes.len()).collect();
             } else {
+                // Notes moved onto others of the same key and start replace them (Settings ›
+                // Piano roll › Moved notes replace the notes under them, on by default); the
+                // selection stays on the moved notes as the indices close up.
+                let replace = state.notes_replace;
+                if replace {
+                    params["replace"] = json!(true);
+                    let landed: Vec<Note> = notes
+                        .iter()
+                        .filter_map(|i| clip.notes.get(*i))
+                        .map(|n| Note {
+                            time: n.time + round_beat(beats),
+                            key: u8::try_from(i32::from(n.key) + keys).unwrap_or(n.key),
+                            ..*n
+                        })
+                        .collect();
+                    let covered: Vec<usize> = (0..clip.notes.len())
+                        .filter(|i| !notes.contains(i))
+                        .filter(|i| {
+                            landed
+                                .iter()
+                                .any(|m| m.key == clip.notes[*i].key && (m.time - clip.notes[*i].time).abs() < 1e-9)
+                        })
+                        .collect();
+                    if !covered.is_empty() {
+                        state.selected =
+                            state.selected.iter().map(|i| i - covered.iter().filter(|c| *c < i).count()).collect();
+                    }
+                }
                 actions.push(Action::new("note.move", params));
             }
         }
@@ -2676,6 +2711,16 @@ fn draw(
     // The velocity line being drawn, over the lane.
     if let Some(Effect::VelocityLine { from, to, .. }) = &preview {
         lane_painter.line_segment([*from, *to], Stroke::new(1.0, theme::accent()));
+    }
+    // A copying drag (Ctrl): the selected notes stay where they are, their copies move.
+    if matches!(state.gesture, Some(Gesture::Move { copy: true, .. })) && matches!(preview, Some(Effect::Move(..))) {
+        for (_, note) in clip.notes.iter().enumerate().filter(|(i, _)| state.selected.contains(i)) {
+            let rect = layout.note_rect(note);
+            if rect.intersects(layout.grid) {
+                let velocity = f32::from(suhina_session::midi_velocity(note.velocity));
+                grid_painter.rect_filled(rect, 0.0, clip.color.gamma_multiply(0.4 + 0.6 * velocity / 127.0));
+            }
+        }
     }
     for (i, note) in clip.notes.iter().enumerate() {
         let note = shown(i, note);

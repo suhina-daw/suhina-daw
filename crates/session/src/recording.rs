@@ -123,6 +123,11 @@ fn track_name(p: &Project, track: TrackId) -> String {
 
 impl Session {
     /// The count-in recording waits for when it starts the transport, in bars (0 for none).
+    /// The metronome as `transport.setMetronome` left it: on, its level in dB and its sound.
+    pub fn metronome(&self) -> (bool, f64, suhina_engine::ClickSound) {
+        (self.metronome.0, self.metronome.1, self.metronome.2)
+    }
+
     pub fn count_in_bars(&self) -> u8 {
         self.recording.count_in_bars
     }

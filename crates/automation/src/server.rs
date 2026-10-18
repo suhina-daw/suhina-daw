@@ -478,12 +478,14 @@ impl SuhinaMcp {
                     _ => heard,
                 };
                 let audio = audio_snapshot(session);
-                Ok((path, env, project, audio, launches))
+                // The NAM devices' files, read when the project opened.
+                let assets = session.device_assets().clone();
+                Ok((path, env, project, audio, assets, launches))
             })
             .await;
         let result = match prepared {
             Err(e) => Err(e),
-            Ok((path, env, project, audio, launches)) => {
+            Ok((path, env, project, audio, assets, launches)) => {
                 tokio::task::spawn_blocking(move || -> Result<Value, String> {
                     // Files the session has not decoded yet are decoded here, off the window's thread.
                     let (audio, warnings) = audio.complete(&project);
@@ -501,7 +503,7 @@ impl SuhinaMcp {
                             "steps": steps,
                         }));
                     }
-                    let summary = render_wav(&project, &audio, &path, sample_rate, Some(&env))?;
+                    let summary = render_wav(&project, &audio, &assets, &path, sample_rate, Some(&env))?;
                     Ok(json!({
                         "output": display_path(&path),
                         "warnings": warnings,

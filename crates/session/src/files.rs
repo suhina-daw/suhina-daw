@@ -484,18 +484,67 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(json!({ "clips": placed, "tracks": tracks, "groups": stem_groups, "skipped": skipped }))
 }
 
-/// The name of a clip made empty with `clip.create`.
+/// The name of a clip made empty with `clip.create`, by kind.
+/// The name an empty MIDI clip takes until it is renamed.
 pub const EMPTY_CLIP_NAME: &str = "MIDI clip";
 
-/// `clip.create`: an empty MIDI clip on a track that plays notes, in an empty clip slot or at a
-/// beat in the arrangement, one bar long unless `length` says otherwise.
+/// The name an empty audio clip takes until it is renamed: it has no file yet, so it plays
+/// silence until a sample is dropped on its slot or lane.
+pub const EMPTY_AUDIO_CLIP_NAME: &str = "Audio clip";
+
+/// `clip.create`: an empty clip on a track that holds clips — MIDI on a notes track, audio with
+/// no file yet on an audio track — in an empty clip slot or at a beat in the arrangement, one bar
+/// long unless `length` says otherwise.
 pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let track = track_at(p, params, "track")?;
     let target = p.tracks.iter().find(|t| t.id == track).ok_or("the track is missing")?;
-    if !target.content.notes {
-        return Err(format!("track {:?} does not play notes; a MIDI clip needs a MIDI track", target.name).into());
+    // The clip's kind follows the track, notes first: a track that takes both got a MIDI clip
+    // before, so it still does; audio tracks are the ones that play audio and not notes.
+    let kind = if target.content.notes {
+        TrackKind::Midi
+    } else if target.content.audio {
+        TrackKind::Audio
+    } else {
+        return Err(format!("track {:?} holds no clips (a group or a return)", target.name).into());
+    };
+    let length = match params.get("length") {
+        None | Some(Value::Null) => bar_beats(p),
+        Some(_) => number(params, "length")?,
+    };
+    if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {
+        return Err(format!("length must be more than 0 and at most {} beats", suhina_engine::MAX_START_BEAT).into());
     }
+    let source = match kind {
+        TrackKind::Midi => Source {
+            kind: TrackKind::Midi,
+            name: EMPTY_CLIP_NAME.into(),
+            length,
+            lane: LaneData::Notes(Vec::new()),
+            loops: true,
+        },
+        TrackKind::Audio => Source {
+            kind: TrackKind::Audio,
+            name: EMPTY_AUDIO_CLIP_NAME.into(),
+            length,
+            // No file yet, so nothing to play: a sample dropped on the slot takes the clip's
+            // place.
+            lane: LaneData::Audio(AudioRegion {
+                file: String::new(),
+                absolute_file: None,
+                sample_rate: None,
+                channels: None,
+                duration_seconds: None,
+                warped: false,
+                stretch: StretchMode::default(),
+                warp_markers: Vec::new(),
+                gain: 1.0,
+                transpose: 0.0,
+                stream: None,
+            }),
+            loops: true,
+        },
+    };
     let start = match params.get("start") {
         None | Some(Value::Null) => None,
         Some(_) => Some(number(params, "start")?),
@@ -509,13 +558,6 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
                 .ok_or("scene must be a whole number from 1")?,
         ),
     };
-    let length = match params.get("length") {
-        None | Some(Value::Null) => bar_beats(p),
-        Some(_) => number(params, "length")?,
-    };
-    if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {
-        return Err(format!("length must be more than 0 and at most {} beats", suhina_engine::MAX_START_BEAT).into());
-    }
     let stack = flag(params, "stack")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
@@ -538,13 +580,6 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
         }
         _ => {}
     }
-    let source = Source {
-        kind: TrackKind::Midi,
-        name: EMPTY_CLIP_NAME.into(),
-        length,
-        lane: LaneData::Notes(Vec::new()),
-        loops: true,
-    };
     let at = start.unwrap_or(0.0);
     let mut done = place_clip(&mut session.project, track, source, scene, at, stack)?;
     // The result names the clip by its id; an arrangement clip also by where it is on the track.
@@ -595,6 +630,7 @@ pub(crate) fn place_clip(
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Default::default(),
     };
     match row {

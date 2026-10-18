@@ -89,7 +89,7 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
      with no drift; the timestretch backend needed restarts before every onset and measured
      corrections to get there (see the measurements).
 3. **Loading a project only decodes.** `suhina-media` decodes every file in parallel, one thread per core up to 16. The
-   stretcher needs no pre-analysis.
+   stretcher needs no pre-analysis. A region with no file yet (an empty audio clip) is skipped: nothing to decode.
 4. **Modes choose backends behind one interface.** Now:
 
    | Mode | Backend |

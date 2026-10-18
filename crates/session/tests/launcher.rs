@@ -80,6 +80,7 @@ fn project_built() -> Project {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         launch: Default::default(),
+        color: None,
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -346,7 +347,7 @@ fn a_drag_that_outruns_the_engine_is_kept_and_heard_once_it_catches_up() {
 fn the_metronome_is_a_transport_command() {
     let (mut session, mut renderer) = playing();
     let set = run(&mut session, "transport.setMetronome", json!({ "on": true, "db": -12 })).unwrap();
-    assert_eq!(set, json!({ "metronome": true, "db": -12.0 }));
+    assert_eq!(set, json!({ "metronome": true, "db": -12.0, "sound": "beep" }));
     run(&mut session, "transport.play", json!({})).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);
     // A click at -12 dB on each beat, and no undo step.
@@ -356,12 +357,18 @@ fn the_metronome_is_a_transport_command() {
     // Off and on again without a level keeps -12 dB.
     assert_eq!(
         run(&mut session, "transport.setMetronome", json!({ "on": false })).unwrap(),
-        json!({ "metronome": false })
+        json!({ "metronome": false, "db": -12.0, "sound": "beep" })
     );
     run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);
     assert!(peaks.iter().all(|p| (0.2..0.26).contains(p)), "{peaks:?}");
     assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "db": 7 })).is_err());
+    // The sound is picked by name and kept until another is.
+    let wood = run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": "wood" })).unwrap();
+    assert_eq!(wood["sound"], "wood");
+    assert_eq!(run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap()["sound"], "wood");
+    assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": "cowbell" })).is_err());
+    assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": 5 })).is_err());
 }
 
 #[test]
@@ -511,6 +518,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         fade_in_curve: Default::default(),
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
+        color: None,
         extensions: Extensions::default(),
         launch: Default::default(),
     };

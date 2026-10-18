@@ -181,9 +181,9 @@ with the part played so far brighter and a playhead.
 - A file that cannot be read shows "Cannot preview: <reason>" in the strip and nothing plays.
   The status bar says so too, and says why when nothing can preview at all: there is no audio
   output here, or the active project has no audio output.
-- **With no project open** the browser works as with one: browsing, searching, the sample map
-  and previews. Previews then play through an output of their own, opened on the chosen device
-  at the first preview and closed before a project opens its output, so only one is ever open
+- **With no project open** the start panel stands alone and the browser is hidden; it shows
+  again once a project is open (#632). The engine can still preview with no project, through an
+  output of its own opened at the first preview and closed before a project opens its output
   ([ADR 0011](../decisions/0011-preview-and-added-audio.md) › Previews with no project open).
   Adding to a track needs a project.
 

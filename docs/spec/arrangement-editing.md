@@ -89,11 +89,13 @@ A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection 
 and **Shift** takes the run of clips between the clip clicked last and this one, in the order the
 lanes draw them (top lane first, clips in their lane from left to right). Ctrl+A selects every clip
 in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
-start there; pressing one that is not selects that clip and only it moves, since moving a whole
-selection is not built yet (see Open).
+start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
+moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, stack?}`, one
+undo step, so no moved clip replaces another on the way); to another track only when the whole
+selection is on one track.
 
 A click on an empty spot of a lane, or on the empty space under the tracks, clears the clip
-selection (a double-click there still makes a MIDI clip, › Making an empty MIDI clip). The track
+selection (a double-click there still makes a clip, › Making an empty clip). The track
 selection stays, so the detail area shows the selected track's devices (or its hint); it does not
 close or hide the detail area ([clip editor](ui-clip-editor.md) › Least height and closing).
 
@@ -103,6 +105,91 @@ audio clip its waveform the same way ([components](../design/components.md) › 
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
+
+## Clip colours
+
+A clip is drawn in its colour: the name bar along its top in full colour, the body a lighter
+shade of it, its notes or waveform in ink that reads on it (dark on a light colour). A clip with
+no colour of its own (`Clip::color` is `None`) shows its track's, so a new clip takes the
+track's colour and follows it. Moved to another track, a clip keeps the colour it showed
+(`clip.move` and `clip.moveMany` take `color`). The track menu's *Assign track color to all
+clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track back to the
+track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
+headers are tinted with their track's colour, deeper while selected.
+
+As in Studio One, a lane and its clips are split in two: a drag from the upper half paints a
+time selection (a text cursor) over the tracks it crosses, clips or not; from the lower half it
+moves a clip (a hand cursor) or, on an empty spot, draws a rectangle that picks whole clips and
+paints no time. A clip on a lane under 36 px moves from anywhere. With *Ctrl+drag selects time
+over clips* on, a plain drag moves clips and Ctrl paints time.
+Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
+they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
+with `copy`), the cursor showing the copy sign; while dragging, the originals stay drawn and the
+copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the accent over
+the clips with a line at each edge, and as a bar along the ruler.
+
+Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
+where they were, an empty row between them staying until the rows above it empty too.
+
+Return tracks, along the bottom, have a track's header: volume and pan, the on switch and solo,
+the menu, automation lanes under them (shown with the header's button), a click to select them
+(the detail area shows their devices) and a top edge that sets their height (tall enough for
+volume and pan by default): the fixed rows sit along the bottom, so they grow upward, as the
+pointer goes. The main track's row has a volume bar that a drag sets (`main.setVolume`, heard
+while dragging, one undo step), and its top edge sets its height the same way.
+
+## Clip edges
+
+A clip's left and right edges are handles (below the fade handles of an audio clip). Dragging one
+moves that edge on the grid (Shift: free) and the clip is drawn at its new length as it goes; it
+never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Let go, it is
+`clip.trim {track, index, start?, end?}`:
+
+- The left edge moves the content with it, so what plays stays where it was; it goes no earlier
+  than the content's start.
+- A clip that does not loop ends at most where its audio ends; a MIDI clip can be made as long as
+  wanted, its content growing with it.
+- A looping clip goes on as far as its edge is dragged, its loop repeating, as in Ableton Live.
+- The handle at a clip's lower right corner (Studio One's loop tool) turns the loop on over what
+  the clip plays now and makes the clip longer (`clip.trim` with `loop: true`).
+
+With Alt held (Settings › Arrangement › *Alt-drag on an edge stretches audio*, on by default) an
+audio clip's edge stretches its audio to the new length, its pitch kept, as Studio One's Alt-drag
+does: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
+clip is warped first) and gives the clip a content of its own when another clip plays the same.
+
+A time selection over a clip and empty time, consolidated (Ctrl+J), becomes one clip over the
+whole span, its empty part silent.
+
+## Time selection
+
+A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
+not on whole clips, as in Ableton Live and Studio One. It is made by:
+
+- a drag from an empty spot of a lane (the rectangle's tracks and beats);
+- a drag on the ruler: that time over every track;
+- over a clip, as Settings › Arrangement › *Ctrl+drag selects time over clips* says: off (the
+  default, Ableton Live's way) a drag from the lower half of a clip on a lane at least 36 px tall
+  selects time and the clip moves from its upper half; on (FL Studio's way) a drag with Ctrl held
+  selects time anywhere and a plain drag moves the clip.
+
+Its edges are on the grid (Alt: free). A click on a clip, or moving one, ends it, so clicked
+clips act whole again (Ctrl+A, Shift and Ctrl clicks still pick whole clips).
+
+With a time selection:
+
+| Key | Command | What it does |
+|---|---|---|
+| Delete | `range.delete` | Removes what plays inside; clips crossing an edge keep their parts outside it, and the gap stays. |
+| Ctrl+X | `range.cut` | Copies what plays inside, cut to it, and removes it. |
+| Ctrl+C | `range.copy` | Copies what plays inside, cut to it. |
+| Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
+| Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own (Ableton Live's *Split Clip at Selection*). |
+| Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
+| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
+
+Each takes `{tracks, start, end}` and is one undo step. Closing the gap (Ableton Live's *Delete
+Time*) is not built yet.
 
 ## Duplicating and deleting
 
@@ -123,22 +210,24 @@ Under a track, the lanes of its automation, shown and hidden with the envelope b
 header; a track's row grows by their height, and the next track moves down. Their gestures are
 in the [automation spec](automation.md#in-the-arrangement-view).
 
-## Making an empty MIDI clip
+## Making an empty clip
 
-`clip.create {track, scene? | start?, length?, stack?}` makes an empty MIDI clip, named "MIDI
-clip", on a track that plays notes; an audio track, a group or a return is refused. It goes
-either in clip slot `scene` (from 1, an existing scene; the slot must be empty), where it loops
-over its length, or at beat `start` in the arrangement (0 up to the engine's last beat), where it
-replaces what it covers unless stacked, as a pasted clip does. `length` is in beats, one bar of
-the project's time signature by default (four beats in 4/4, three in 3/4), more than 0. It is
-one undo step and returns the track and the scene, or the start and the clip's index as
-`project.clips` counts it.
+`clip.create {track, scene? | start?, length?, stack?}` makes an empty clip, one bar long, named
+after its kind (a "MIDI clip" or an "Audio clip"), on a track that holds clips: MIDI on a track
+that plays notes, an "Audio clip" with no file yet on a track that plays audio and not notes; an
+audio clip so far plays silence until a sample is dropped on its slot or lane. A group or a return
+is refused. It goes either in clip slot `scene` (from 1, an existing scene; the slot must be
+empty), where it loops over its length, or at beat `start` in the arrangement (0 up to the
+engine's last beat), where it replaces what it covers unless stacked, as a pasted clip does.
+`length` is in beats, one bar of the project's time signature by default (four beats in 4/4, three
+in 3/4), more than 0. It is one undo step and returns the track and the scene, or the start and
+the clip's index as `project.clips` counts it.
 
-In the Arrangement view a double-click on an empty spot of a lane that plays notes makes one a
-bar long, starting at the grid line before the pointer (with Alt, exactly at the pointer), and
-selects it; it stacks when the MIDI stacking setting is on. A double-click on a clip is the
-clip's own. In the Session view a double-click on an empty slot makes one there
-([Session view](ui-session-view.md) › Clip slots).
+In the Arrangement view a double-click on an empty spot of a lane that holds clips makes one a bar
+long, starting at the grid line before the pointer (with Alt, exactly at the pointer), and selects
+it; it stacks when the stacking setting for the track's kind is on (MIDI stacking, or audio
+stacking). A double-click on a clip is the clip's own. In the Session view a double-click on an
+empty slot makes one there ([Session view](ui-session-view.md) › Clip slots).
 
 Both double-clicks follow one setting, Settings › Arrangement › **Double-click makes a clip** (On by
 default, saved as `double_click_clip`). Off, a double-click on an empty spot of a lane, or on an
@@ -422,8 +511,9 @@ pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay
 
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
-Play button pass the setting **Play from** (Settings › General): **Marker** (default) or
-**Selected clip**, saved as `play_from = marker | clip`. With **Selected clip** and a clip
+Play button pass the setting **Play from** (Settings › General): **Selected clip** (default,
+as Ableton Live plays from the clip clicked) or **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked while stopped (a click, a rectangle, Ctrl+A), the play start marker also moves to the first of them.
+A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
 clip selected, or while the Session view is shown (where the selection is not seen), they play
 from the marker. **Shift+Space** (`transport.playFromSelection` in the keymap) plays from the
@@ -464,7 +554,9 @@ locators import as markers ([.als format](als-format.md) › Locators).
 
 **In the Arrangement view** markers sit in a row of their own under the ruler: a line at the
 marker's beat with its name in a tag beside it, cut short where the next marker starts. A click on
-a marker runs `marker.jump`. Dragging it moves it (`marker.move` when let go) on the same grid a
+a marker runs `marker.jump` and, when a marker comes after it, first makes the loop region from
+that marker to the next one and turns looping on (`transport.setLoop {start, end, enabled: true}`),
+so a section loops with one click; the last marker only jumps. Dragging it moves it (`marker.move` when let go) on the same grid a
 ruler click uses (Alt held: free). A right-click on a marker opens its menu: a field with its name
 and **Rename** (or Enter), **Jump to marker**, **Delete marker**. A right-click on the ruler or on
 an empty part of the marker row offers **Add marker here**, on that grid. The key **M** (the action
@@ -537,7 +629,9 @@ In the Arrangement view a header click selects a track (Ctrl adds, Shift takes a
 groups the selection, dragging a header moves the track above the lane under the pointer (below it
 from its lower half), and a right-click opens the track's menu: name, colour, group, ungroup,
 **Move into group** (a submenu of every other group it can go into), **Move out of group** (one
-level up, right after the group it leaves), delete. A group's header starts with a triangle that
+level up, right after the group it leaves), **Audio input** or **MIDI input** on a track that
+plays them (the source's channels and the monitoring; the commands the strip's block and the
+Session view's menu share), delete. A group's header starts with a triangle that
 folds its tracks away (Folded groups). The Session view's column headers have the same menu.
 
 A header's left edge is a 6 px band of the track's colour, the header's full height (dimmed while
@@ -662,10 +756,8 @@ is drawn.
 
 - Placing clips by recording follows the same rules (clips from the browser, duplicating and
   pasting already do).
-- Moving several selected clips at once.
 - Moving (rather than copying) a clip between a slot and the arrangement.
 - Whether a stacked lane should grow taller automatically.
-- Dragging along the ruler to scrub.
-- Consolidating more than one selected clip, or a time selection; the window consolidates the
-  selected clip's range until there is a selection of several clips.
+- Dragging along the ruler to scrub (a drag there selects time now).
+- Closing or opening a gap with a time selection (Delete Time, Insert Time).
 - A consolidated audio clip warped to the project, so it follows a later tempo change.

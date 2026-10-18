@@ -556,3 +556,145 @@ fn sdk_linked_delay_values_update_both_directions_and_undo_together() {
     edit(&mut session, "division_left", 16.);
     assert_eq!(value(&session, "division_right"), 16.);
 }
+
+/// The NAM devices take a file each: the model's or IR's path in `Device::state`, saved with the
+/// project ([docs/spec/nam-amp-and-cab.md] › What the project stores).
+#[test]
+fn a_nam_device_loads_its_file_with_the_command() {
+    let dir = std::env::temp_dir().join(format!("suhina-devices-nam-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the folder is made");
+    let models = dir.join("NAM models");
+    std::fs::create_dir_all(&models).expect("the models folder is made");
+    let irs = dir.join("IRs");
+    std::fs::create_dir_all(&irs).expect("the IR folder is made");
+    // A tiniest WaveNet model, the same fixture the device's tests run on.
+    let model_json = r#"{
+        "version": "0.5.4", "architecture": "WaveNet",
+        "config": {
+            "layers": [{
+                "input_size": 1, "condition_size": 1, "channels": 1, "head_size": 1,
+                "kernel_size": 1, "dilations": [1], "activation": "ReLU",
+                "gated": false, "head_bias": false
+            }],
+            "head": null, "head_scale": 1.0
+        },
+        "weights": [1.0, 2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+        "metadata": { "name": "Test amp 1965" }
+    }"#;
+    let model_path = models.join("test-amp.nam");
+    std::fs::write(&model_path, model_json).unwrap();
+    // A two-tap IR mono wav.
+    let ir_path = irs.join("cabinet.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&ir_path, spec).unwrap();
+    writer.write_sample(16_384_i16).unwrap();
+    drop(writer);
+
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+
+    let amp_path = model_path.display().to_string();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": &amp_path })).unwrap();
+    // The state holds the absolute path; the parsed model is in the session's assets.
+    let file_info = run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+    assert_eq!(file_info["file"], amp_path);
+    assert_eq!(file_info["name"], "Test amp 1965");
+    let asset = session.device_asset(&amp_path).unwrap();
+    assert!(matches!(asset, suhina_device_registry::DeviceAsset::Nam(_)));
+
+    let ir_file = ir_path.display().to_string();
+    run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 1, "path": &ir_file })).unwrap();
+    let ir = run(&mut session, "device.file", json!({ "track": 1, "device": 1 })).unwrap();
+    assert_eq!(ir["file"], ir_file);
+    // The cab's shown name is its parent folder's, per the spec (its files are the cabs).
+    assert_eq!(ir["name"], "IRs");
+    assert!(matches!(session.device_asset(&ir_file), Some(suhina_device_registry::DeviceAsset::Ir(_))));
+
+    // A wrong extension is refused with a message that names what it wants.
+    let error =
+        run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": &ir_file })).unwrap_err();
+    assert!(error.contains(".nam"), "{error}");
+
+    // A behaviour after a failed read: a file that is not a model leaves a note.
+    let broken = models.join("broken.nam");
+    std::fs::write(&broken, "{not json").unwrap();
+    let error = run(
+        &mut session,
+        "device.setNamFile",
+        json!({ "track": 1, "device": 0, "path": broken.display().to_string() }),
+    )
+    .unwrap_err();
+    assert!(error.contains("not a NAM model"), "{error}");
+
+    // One command, one undo step: two undos take both files back to none.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(run(&mut session, "device.file", json!({ "track": 1, "device": 0 })).unwrap()["file"], "");
+    assert_eq!(run(&mut session, "device.file", json!({ "track": 1, "device": 1 })).unwrap()["file"], "");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A project's stored path gets the extension check the command makes: opening a project whose
+/// NAM device points at, say, another kind of file leaves a note and no asset.
+#[test]
+fn a_projects_stored_path_gets_the_extension_check() {
+    let dir = std::env::temp_dir().join(format!("suhina-devices-nam-open-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the folder is made");
+    let impostor = dir.join("not-a-model.wav");
+    std::fs::write(&impostor, b"RIFF....").unwrap();
+
+    let mut project = project();
+    project.channels[0].devices.push(Device {
+        state: Some(impostor.display().to_string().into_bytes()),
+        ..Device::new("Amp", DeviceKind::Builtin("nam-amp-modeler".into()))
+    });
+    let file = dir.join("with-nam.suhina");
+    suhina_project_file::write_file(&file, &project).expect("the project is written");
+    let (session, _) = Session::open(&file).expect("the project opens");
+    assert!(session.device_asset(&impostor.display().to_string()).is_none(), "no asset was read");
+    let note = session.device_asset_note(&impostor.display().to_string());
+    assert!(note.is_some_and(|n| n.contains(".nam")), "{note:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn devices_are_copied_pasted_and_removed_together_in_one_step_each() {
+    let mut session = Session::new(project());
+    for id in ["utility", "overdrive", "utility"] {
+        run(&mut session, "device.add", json!({ "track": "Keys", "id": id })).unwrap();
+    }
+    let names = |s: &Session| {
+        let p = s.project();
+        let channel = p.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).unwrap();
+        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+    };
+    let before = names(&session);
+    assert_eq!(before.len(), 3);
+    // The overdrive's drive changed, then copied with the first device, and pasted after it.
+    run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [1, 0] })).unwrap();
+    assert_eq!(session.copied_devices(), 2);
+    let pasted = run(&mut session, "device.paste", json!({ "track": "Keys", "position": 1 })).unwrap();
+    assert_eq!(pasted["devices"], json!([1, 2]));
+    let after = names(&session);
+    assert_eq!(
+        after,
+        [before[0].clone(), before[0].clone(), before[1].clone(), before[1].clone(), before[2].clone()],
+        "in the chain's order"
+    );
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), before, "one undo step");
+    run(&mut session, "device.removeMany", json!({ "track": "Keys", "devices": [0, 2] })).unwrap();
+    assert_eq!(names(&session), [before[1].clone()]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), before, "one undo step");
+    assert!(run(&mut session, "device.removeMany", json!({ "track": "Keys", "devices": [7] })).is_err());
+}

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
-use suhina_engine::{AudioPool, Renderer};
+use suhina_engine::{AudioPool, DeviceAssets, Plugins, Renderer};
 use suhina_output::{Output, Progress, Stream};
 use suhina_session::{OutputChoice, Player, Session};
 
@@ -34,9 +34,10 @@ fn note_priority(stream: &Stream) {
 }
 
 /// Plays the project's arrangement once on the output `choice` names and returns when it ends.
-pub fn play(project: &Project, audio: &AudioPool, choice: &OutputChoice) -> Result<(), String> {
+pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice: &OutputChoice) -> Result<(), String> {
     let output = chosen_output(choice)?;
-    let mut renderer = Renderer::with_audio(project, audio, output.sample_rate()).map_err(|e| e.to_string())?;
+    let mut renderer =
+        Renderer::with_assets(project, audio, assets, output.sample_rate()).map_err(|e| e.to_string())?;
     let length = renderer.length();
     if length == 0 {
         println!("{}", nothing_to_play(project));
@@ -101,12 +102,18 @@ edits (heard while playing):
 
 /// Plays the project on the output `choice` names with the transport stopped and reads launcher
 /// commands from standard input until `quit` or end of input.
-pub fn launcher(project: Project, audio: &AudioPool, choice: &OutputChoice) -> Result<(), String> {
+pub fn launcher(
+    project: Project,
+    audio: &AudioPool,
+    assets: &DeviceAssets,
+    choice: &OutputChoice,
+) -> Result<(), String> {
     if project.launcher.columns.iter().all(|c| c.slots.iter().all(|s| s.clip.is_none())) {
         println!("note: the project has no clips in its clip launcher; only `play` (the arrangement) will sound");
     }
     let output = chosen_output(choice)?;
-    let mut renderer = Renderer::stopped(&project, audio, output.sample_rate()).map_err(|e| e.to_string())?;
+    let mut renderer = Renderer::stopped_with_assets(&project, audio, assets, output.sample_rate(), Plugins::new())
+        .map_err(|e| e.to_string())?;
     let mut controller = renderer.controller();
     let progress = Arc::new(Progress::default());
     let stream = output.start(renderer, &mut controller, &progress)?;

@@ -85,6 +85,8 @@ exists in `devices/`, passes its tests and runs in track chains.
 | compressor: stereo-linked, soft knee, side-chain high-pass, dry/wet | own | done |
 | bus compressor | own, Airwindows (MIT) for reference | planned |
 | limiter: brickwall, 1.5 ms lookahead | own | done |
+| NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
+| NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
 | multiband dynamics, upward and downward | own crossovers and detectors | planned |
 | delays | own delay lines | planned |
 | algorithmic and convolution reverb | Dragonfly Reverb (GPL-3.0), own convolution | planned |
@@ -174,6 +176,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   master volume and mute apply. A group with devices is a bus: its devices run over the sum of
   its tracks, with latency compensation on every path. `--fm` on `play` and `render` puts the FM synth on every MIDI
   track, with a voice from a DX7 file; `suhina-cli fm-synth voices` lists a file's voices.
+- The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
+  the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
+  it ([nam spec](docs/spec/nam-amp-and-cab.md)).
 - Sends and return tracks play: each track sends to each return before or after its fader; a
   return runs its devices over what it is sent and plays into the main channel or a group, with
   latency compensation on every send; loops are refused (`track.setSend`, `track.setSendMode`,
@@ -333,7 +338,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   followed: Suhina hears of it, restarts the plug-in's processing as its format asks, and lines
   the tracks up again.
 - The device panel shows each plug-in's state (loading, running, missing, crashed) with Open
-  editor, Close editor or Restart; the same commands work from the CLI and MCP. Editors float
+  editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
+  closes the shown track's plug-in's editor (the device the chain panel selects, else the
+  track's first running one; mappable, Settings › Shortcuts). Editors float
   above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
   (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
   the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
@@ -522,7 +529,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The control bar has tempo, launch quantisation, play, stop, the position, the CPU load
   (how much of the time the audio engine spends rendering, from the engine's monitor; hidden
   while no engine plays) and the program's RAM in megabytes or gigabytes (its resident
-  memory, measured once a second); Space plays and stops, Ctrl+Z and Ctrl+Shift+Z undo and
+  memory, measured once a second, with every plug-in host process's own added, which each
+  reports to the engine once a second); Space plays and stops, Ctrl+Z and Ctrl+Shift+Z undo and
   redo. Every click is a command, the same the CLI and MCP run.
 - Level meters for every track, group and return and the main output, in the Session mixer and
   the Arrangement headers: peak and RMS per side on the volume's dB scale, a held peak line and a
@@ -548,7 +556,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   project setting); a project that is gone says so in the status bar.
 - **Double-click makes a clip** ([#493](https://github.com/suhina-daw/suhina-daw/issues/493)):
   a setting in Settings › Interface, On by default; Off, a double-click on an empty slot or lane
-  spot no longer makes an empty MIDI clip.
+  spot no longer makes an empty clip of the track's kind.
 - Mixer commands take a list of tracks, so a selection moves together: `track.adjustVolume` and
   `track.adjustPan` move each track by the same amount, keeping what is between them, and
   `track.setMute`/`track.setSolo` take the whole list as one undo step. Dragging one header's
@@ -602,9 +610,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   nesting, and the fold triangle on a group's header hides its tracks in both views. Drag a header
   into a group, or use Move into group / Move out of group in its menu (`track.setGroup`); nested
   groups are saved and read from Live Sets ([spec](docs/spec/arrangement-editing.md#groups-inside-groups)).
-- A double-click on an empty Session slot or an empty spot of an Arrangement lane of a MIDI track
-  makes an empty MIDI clip there, a bar long and on the grid (`clip.create`, also over MCP); in
-  the Arrangement it is selected ([spec](docs/spec/arrangement-editing.md#making-an-empty-midi-clip)).
+- A double-click on an empty Session slot or an empty spot of an Arrangement lane makes an empty
+  clip of the track's kind — MIDI on a notes track, an audio clip with no file yet on an audio
+  track — a bar long and on the grid (`clip.create`, also over MCP); in the Arrangement it is
+  selected ([spec](docs/spec/arrangement-editing.md#making-an-empty-clip)).
 - Clips: Ctrl-click adds one to the selection and Shift-click takes the run up to one, Ctrl+A
   selects the lot, and Ctrl+C, Ctrl+X, Ctrl+D, Delete and 0 (clip mute) act on the whole
   selection as one undo step ([spec](docs/spec/arrangement-editing.md#selecting-clips)). Header
@@ -656,8 +665,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - **Audio input and monitoring:** choose an input device in Settings › Audio (off by default);
   each audio track hears one channel or a stereo pair of it, monitored while armed (Auto),
   always (In) or never (Off), through its devices and mix (`track.setAudioInput`); arm many
-  tracks at once to hear a band on separate tracks
-  ([#267](https://github.com/suhina-daw/suhina-daw/issues/267), ADR 0017).
+  tracks at once to hear a band on separate tracks; the source and the monitor sit on the
+  track's strip — Audio From and the three buttons — where the picker is visible without a
+  menu ([#267](https://github.com/suhina-daw/suhina-daw/issues/267), ADR 0017).
 - **A MIDI input per track:** each track hears every MIDI port, one port, or none, and every
   channel or one, so a keyboard and a pad controller (or two players) each play their own armed
   track; set from the track's menu or the Arrangement header (`track.setMidiInput`), saved with

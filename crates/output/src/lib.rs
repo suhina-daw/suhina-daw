@@ -845,7 +845,7 @@ impl LiveOutput for Live {
 /// the audio stream (a stream cannot move between threads on every platform). Returns a player
 /// for the session and a description of the device; dropping the player closes the stream.
 pub fn open_player(project: &Project, audio: &AudioPool) -> Result<(Player, String), String> {
-    let opened = open_chosen(project, audio, &OutputChoice::default(), None)?;
+    let opened = open_chosen(project, audio, &suhina_engine::DeviceAssets::new(), &OutputChoice::default(), None)?;
     let description = opened.player.output_info().map(|i| i.describe()).unwrap_or_default();
     Ok((opened.player, description))
 }
@@ -856,6 +856,7 @@ pub fn open_player(project: &Project, audio: &AudioPool) -> Result<(Player, Stri
 pub fn open_chosen(
     project: &Project,
     audio: &AudioPool,
+    assets: &suhina_engine::DeviceAssets,
     choice: &OutputChoice,
     previous: Option<Player>,
 ) -> Result<Opened, String> {
@@ -866,7 +867,8 @@ pub fn open_chosen(
         drop(controller);
         back
     });
-    let (project, audio, choice) = (project.clone(), audio.clone(), choice.clone());
+    let (project, audio, assets, choice) =
+        (project.clone(), audio.clone(), std::sync::Arc::new(assets.clone()), choice.clone());
     let (ready, opened) = mpsc::channel();
     let (close, closed) = mpsc::channel::<()>();
     let (back_tx, back) = mpsc::channel();
@@ -879,8 +881,9 @@ pub fn open_chosen(
                     Some((rate, plugins)) if rate == output.sample_rate => (plugins, true),
                     _ => (Plugins::new(), false),
                 };
-                let mut renderer = Renderer::stopped_with_plugins(&project, &audio, output.sample_rate, plugins)
-                    .map_err(|e| e.to_string())?;
+                let mut renderer =
+                    Renderer::stopped_with_assets(&project, &audio, &assets, output.sample_rate, plugins)
+                        .map_err(|e| e.to_string())?;
                 // The input device, when one is chosen: a failure leaves the output playing.
                 let input = match input::open(&output.host, &choice.input, output.sample_rate, Arc::clone(&progress)) {
                     Ok(Some((stream, ring))) => {
@@ -1004,10 +1007,11 @@ impl AudioSystem for DeviceOutput {
         &self,
         project: &Project,
         audio: &AudioPool,
+        assets: &suhina_engine::DeviceAssets,
         choice: &OutputChoice,
         previous: Option<Player>,
     ) -> Result<Opened, String> {
-        open_chosen(project, audio, choice, previous)
+        open_chosen(project, audio, assets, choice, previous)
     }
 
     /// Gives the answer of the last look for `choice`'s device, once, and starts the next look

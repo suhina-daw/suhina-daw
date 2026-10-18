@@ -40,6 +40,9 @@ pub struct StartState {
     pub tab: Tab,
 }
 
+/// What a drop on the window opens, said on the start panel and in the status bar.
+pub const DROP_HINT: &str = "Drop a project (.suhina) or an .als file here to open it";
+
 /// The audio output as the panel shows it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AudioSummary {
@@ -126,16 +129,34 @@ pub fn show(
         x = rect.right() + PAD;
     }
 
-    // The footer: the version, and what a drop does.
+    // What a drop does, right under the actions where it is read with them.
+    let drop_hint = Rect::from_min_size(
+        Pos2::new(content.left(), content.top() + ACTION.y + PAD),
+        Vec2::new(content.width(), LINE),
+    );
+    widgets::text_in(
+        &painter,
+        drop_hint,
+        Align2::LEFT_CENTER,
+        DROP_HINT,
+        theme::ui_font(theme::TEXT),
+        theme::text_secondary(),
+    );
+
+    // The footer: the version.
     let footer = Rect::from_min_max(Pos2::new(content.left(), content.bottom() - LINE), content.max);
-    let small = theme::ui_font(theme::TEXT_SMALL);
     let version = format!("Suhina {version}");
-    widgets::text_in(&painter, footer, Align2::LEFT_CENTER, &version, small.clone(), theme::text_hint());
-    let hint = "Drop a project or a Live Set (.als) here to open it";
-    widgets::text_in(&painter, footer, Align2::RIGHT_CENTER, hint, small, theme::text_hint());
+    widgets::text_in(
+        &painter,
+        footer,
+        Align2::LEFT_CENTER,
+        &version,
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_hint(),
+    );
 
     // A newer build, under the actions.
-    let mut top = content.top() + ACTION.y + 2.0 * PAD;
+    let mut top = drop_hint.bottom() + PAD;
     if let Some(notice) = notice {
         let line = Rect::from_min_size(Pos2::new(content.left(), top), Vec2::new(content.width(), ACTION.y));
         if let Some(chosen) = notice_line(ui, &painter, line, notice) {
