@@ -46,6 +46,23 @@ pub fn write_to(folder: &std::path::Path) -> Result<(), std::io::Error> {
 mod tests {
     use super::*;
     #[test]
+    fn legacy_sampler_accepts_only_known_ordered_parameter_prefixes() {
+        let mut graph = find("sampler").unwrap().graph().unwrap();
+        graph.ui = None;
+        graph.parameters.truncate(59);
+        assert!(graph.prepare_native_at(48000., &suhina_device_registry::create).is_ok());
+        let prepared = graph.prepare_native_at(48000., &suhina_device_registry::create).unwrap();
+        for (index, p) in suhina_device_sdk::sampler::INFO.params.iter().enumerate().skip(59) {
+            assert_eq!(prepared.param(index), Some(p.default));
+        }
+        graph.parameters.swap(0, 1);
+        assert!(graph.prepare_native_at(48000., &suhina_device_registry::create).is_err());
+        graph.parameters.swap(0, 1);
+        graph.parameters.remove(5);
+        assert!(graph.prepare_native_at(48000., &suhina_device_registry::create).is_err());
+    }
+
+    #[test]
     fn native_wrappers_reject_unknown_kernels_and_changed_contracts() {
         let stock = find("utility").unwrap();
         let mut graph = stock.graph().unwrap();

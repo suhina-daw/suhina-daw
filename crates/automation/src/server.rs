@@ -523,7 +523,7 @@ fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Option<&P
             confine_file(workspace, &mut params, "preset")?;
             confine_file(workspace, &mut params, "sd")?;
         }
-        "device.addSd" | "device.loadSample" => confine_file(workspace, &mut params, "path")?,
+        "device.addSd" | "device.updateSd" | "device.loadSample" => confine_file(workspace, &mut params, "path")?,
         "library.list" => {
             let folder = params.get("folder").and_then(Value::as_str).ok_or("folder must be a text")?;
             params["folder"] = json!(display_path(&workspace.readable_folder(folder)?));
@@ -758,11 +758,14 @@ mod confine_tests {
             confine(&workspace, "clip.addFiles", json!({ "paths": ["pack/kick.wav"], "start": 0.0 }), None).unwrap();
         assert!(ok["paths"][0].as_str().unwrap().ends_with("kick.wav"));
         assert!(Path::new(ok["paths"][0].as_str().unwrap()).is_absolute());
+        let update = confine(&workspace, "device.updateSd", json!({"path":"pack/kick.wav"}), None).unwrap();
+        assert!(Path::new(update["path"].as_str().unwrap()).is_absolute());
         let outside = dir.join("outside").join("secret.wav").display().to_string();
         for (id, params) in [
             ("clip.addFiles", json!({ "paths": [outside.clone()] })),
             ("clip.addFiles", json!({ "paths": ["../outside/secret.wav"] })),
             ("preview.play", json!({ "path": outside.clone() })),
+            ("device.updateSd", json!({ "track":1,"device":0,"path": outside.clone() })),
             ("device.add", json!({ "track": 1, "preset": outside.clone() })),
             ("library.list", json!({ "folder": dir.join("outside").display().to_string() })),
             ("library.search", json!({ "place": dir.join("outside").display().to_string() })),

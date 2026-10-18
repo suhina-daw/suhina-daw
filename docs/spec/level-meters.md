@@ -95,3 +95,6 @@ Both need an engine playing the project (`suhina-cli play --launcher`, the MCP s
 Sample instruments additionally publish up to 32 independent voice positions in fixed
 atomic slots per metered track. These are read heads, separate from audio levels;
 inactive voices are absent and do not leave a stale waveform line.
+
+Sampler voice positions are published through the assigned chain-to-meter slots;
+the render callback does not search all meter rows for each chain.

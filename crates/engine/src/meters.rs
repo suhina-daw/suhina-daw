@@ -295,8 +295,8 @@ impl Levels {
     /// for the next block. Call it once the chains have finished the block. Never allocates.
     pub(crate) fn finish(&mut self, chains: &[Chain], frames: usize, writer: &mut MeterWriter) {
         let frames = frames.min(MAX_BLOCK);
-        for chain in chains {
-            if let Some(row) = writer.monitor.row(chain.track) {
+        for (chain, slot) in chains.iter().zip(&self.chain_slots) {
+            if let Some(row) = slot.and_then(|slot| writer.monitor.tracks.get(slot)) {
                 let heads = chain.sample_positions();
                 let positions = heads.as_ref().map_or([None; 32], |(_, positions)| *positions);
                 for (slot, value) in row.voices.iter().zip(positions) {

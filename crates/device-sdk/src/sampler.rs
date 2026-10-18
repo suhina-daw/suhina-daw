@@ -92,6 +92,7 @@ pub const INFO: DeviceInfo = DeviceInfo { id: "sampler", name: "Sampler", role: 
 
 #[derive(Clone, Copy, Default)]
 struct Grain {
+    window_step: f64,
     position: f64,
     age: usize,
     length: usize,
@@ -152,6 +153,7 @@ impl Default for Voice {
     }
 }
 pub struct Sampler {
+    window: [f64; 2049],
     values: [f64; PARAMS.len()],
     analysis: Arc<SliceAnalysis>,
     manual_slices: Option<Arc<[f64]>>,
@@ -177,6 +179,7 @@ impl Default for Sampler {
 impl Sampler {
     pub fn new() -> Self {
         Self {
+            window: std::array::from_fn(|i| 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / 2048.).cos()),
             values: std::array::from_fn(|i| PARAMS[i].default),
             analysis: Arc::new(SliceAnalysis::default()),
             manual_slices: None,
@@ -411,6 +414,13 @@ impl Device for Sampler {
         let lo = (p[3] * total).max(start);
         let hi = (p[4] * total).min(end);
         let looping = p[8] == 2. && hi > lo + 1.;
+        let grain_limit = (256 / self.voices.iter().filter(|v| v.active).count().max(1)).min(32);
+        for voice in &mut self.voices {
+            for grain in voice.grains.iter_mut().skip(grain_limit) {
+                grain.length = 0;
+            }
+        }
+        let grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
         let target_gain = 10f64.powf(p[18] / 20.);
         for frame in buffer.as_chunks_mut::<2>().0 {
             let mut out = [0.; 2];
@@ -533,31 +543,32 @@ impl Device for Sampler {
                     v.next_grain -= 1.;
                     if v.next_grain <= 0. {
                         v.next_grain += self.rate / p[23];
-                        if let Some(g) = v.grains.iter_mut().find(|g| g.age >= g.length) {
+                        if let Some(g) = v.grains.iter_mut().take(grain_limit).find(|g| g.age >= g.length) {
+                            let length = (p[22] * self.rate / 1000.).max(2.) as usize;
                             *g = Grain {
+                                window_step: 2048. / (length - 1) as f64,
                                 position: start
                                     + ((p[20] * (end - start)
                                         + v.scan
                                         + random(&mut self.seed) * p[24] * (end - start) * 0.5)
                                         .rem_euclid(end - start)),
                                 age: 0,
-                                length: (p[22] * self.rate / 1000.).max(2.) as usize,
+                                length,
                                 step: v.step * v.direction,
                                 pan: random(&mut self.seed) * p[25],
                             };
                         }
                     }
-                    for g in &mut v.grains {
+                    for g in v.grains.iter_mut().take(grain_limit) {
                         if g.age >= g.length {
                             continue;
                         }
-                        let window = 0.5 - 0.5 * (std::f64::consts::TAU * g.age as f64 / (g.length - 1) as f64).cos();
+                        let window = grain_window(&self.window, g.age as f64 * g.window_step);
                         let position = start + (g.position - start).rem_euclid(end - start);
                         let data = read(self.source.as_ref().as_ref(), self.channels, position);
                         let window = window * source_fade(position, start, end, p[57], p[58], self.source_rate);
-                        let norm = (p[23] * p[22] / 1000. * 0.5).max(1.);
-                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) / norm;
-                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) / norm;
+                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) * grain_gain;
+                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) * grain_gain;
                         g.age += 1;
                         g.position += g.step;
                     }
@@ -757,5 +768,83 @@ mod shared_source_tests {
         drop(a);
         drop(b);
         assert_eq!(Arc::strong_count(&source), 1, "cache must not retain PCM");
+    }
+}
+
+fn grain_window(table: &[f64; 2049], phase: f64) -> f64 {
+    let index = (phase as usize).min(2047);
+    let a = table.get(index).copied().unwrap_or(0.);
+    let b = table.get(index + 1).copied().unwrap_or(0.);
+    a + (b - a) * (phase - index as f64).clamp(0., 1.)
+}
+
+#[cfg(test)]
+mod grain_window_tests {
+    #[test]
+    fn many_grain_voices_share_one_bounded_budget() {
+        use suhina_device_api::{Device, NoteEvent, ProcessContext};
+        let mut sampler = super::Sampler::new();
+        sampler.load_sample(48000, 1, vec![0.25; 48000].into());
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [("mode", 1.), ("poly", 32.), ("size", 500.), ("density", 100.)] {
+            sampler.set_param(super::INFO.param_index(id).unwrap(), value);
+        }
+        for key in 48..80 {
+            sampler.event(NoteEvent::On { key, velocity: 1. });
+        }
+        let mut block = [0.; 512];
+        for _ in 0..100 {
+            sampler.process(&ProcessContext::default(), &mut block);
+            assert!(sampler.voices.iter().flat_map(|v| v.grains).filter(|g| g.age < g.length).count() <= 256);
+        }
+        assert_eq!(sampler.voices.iter().filter(|v| v.active).count(), 32);
+        assert!(block.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    #[ignore = "local performance measurement, not a portable timing gate"]
+    fn measure_maximum_grain_workload() {
+        use suhina_device_api::{Device, NoteEvent, ProcessContext};
+        let mut sampler = super::Sampler::new();
+        sampler.load_sample(48000, 1, vec![0.25; 48000].into());
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [("mode", 1.), ("poly", 32.), ("size", 500.), ("density", 100.)] {
+            sampler.set_param(super::INFO.param_index(id).unwrap(), value);
+        }
+        for key in 48..80 {
+            sampler.event(NoteEvent::On { key, velocity: 1. });
+        }
+        let mut block = [0.; 512];
+        let context = ProcessContext::default();
+        for _ in 0..100 {
+            sampler.process(&context, &mut block);
+        }
+        assert_eq!(sampler.voices.iter().filter(|v| v.active).count(), 32);
+        assert!(sampler.voices.iter().flat_map(|v| v.grains).filter(|g| g.age < g.length).count() >= 32 * 7);
+        let start = std::time::Instant::now();
+        for _ in 0..200 {
+            sampler.process(&context, &mut block);
+            std::hint::black_box(&block);
+        }
+        let elapsed = start.elapsed().as_secs_f64();
+        println!(
+            "32 voices, bounded to 256 grains total, 48 kHz: {:.3} s for {:.3} s audio ({:.1}% real-time budget)",
+            elapsed,
+            51200. / 48000.,
+            elapsed / (51200. / 48000.) * 100.
+        );
+        assert!(block.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn cached_hann_matches_the_formula_including_endpoints() {
+        let sampler = super::Sampler::new();
+        for length in [2, 17, 480, 24000] {
+            for age in 0..length {
+                let phase = age as f64 / (length - 1) as f64;
+                let expected = 0.5 - 0.5 * (std::f64::consts::TAU * phase).cos();
+                assert!((super::grain_window(&sampler.window, phase * 2048.) - expected).abs() < 1e-6);
+            }
+        }
     }
 }

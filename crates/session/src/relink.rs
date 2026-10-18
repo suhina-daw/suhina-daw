@@ -31,6 +31,14 @@ impl Session {
     pub fn missing_files(&self) -> Vec<suhina_media::MissingAudio> {
         let folder = self.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         suhina_media::missing_audio(self.project(), &folder)
+            .into_iter()
+            .filter(|missing| {
+                // Already decoded paths were explicitly loaded or safely resolved on open.
+                let loaded = self.audio().files.contains_key(&missing.file)
+                    || self.audio().files.contains_key(&suhina_model::stream_key(&missing.file, 0));
+                !loaded || !missing.last_path.is_file()
+            })
+            .collect()
     }
 }
 

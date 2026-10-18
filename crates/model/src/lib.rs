@@ -277,6 +277,9 @@ pub struct Device {
     pub extensions: Extensions,
 }
 
+/// Maximum persisted manual slice boundaries per source.
+pub const MAX_SAMPLE_SLICES: usize = 4096;
+
 impl Device {
     /// Embedded stock .sd metadata is separate from native DSP/source state.
     pub fn sd_definition(&self) -> Option<&[u8]> {
@@ -289,7 +292,7 @@ impl Device {
     /// Manual source boundaries; None reads legacy fixed slice parameters.
     pub fn sample_slices(&self) -> Option<Vec<f64>> {
         let data = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_slices")?.data;
-        if !data.len().is_multiple_of(8) || data.len() > 8_000_000 {
+        if !data.len().is_multiple_of(8) || data.len() > MAX_SAMPLE_SLICES * 8 {
             return None;
         }
         let mut points = Vec::with_capacity(data.len() / 8);
@@ -304,13 +307,17 @@ impl Device {
         points.dedup();
         Some(points)
     }
-    pub fn set_sample_slices(&mut self, points: &[f64]) {
+    pub fn set_sample_slices(&mut self, points: &[f64]) -> Result<(), &'static str> {
+        if points.len() > MAX_SAMPLE_SLICES || points.iter().any(|p| !p.is_finite() || *p <= 0. || *p >= 1.) {
+            return Err("slice map needs at most 4096 finite points strictly between 0 and 1");
+        }
         self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_slices"));
         self.extensions.0.push(Extension {
             format: "suhina".into(),
             key: "sample_slices".into(),
             data: points.iter().flat_map(|v| v.to_le_bytes()).collect(),
         });
+        Ok(())
     }
     /// A sampler's source path, versioned independently of parameter values.
     pub fn sample_file(&self) -> Option<&str> {

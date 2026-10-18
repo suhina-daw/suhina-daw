@@ -154,6 +154,14 @@ fn dynamic_manual_slices_round_trip_validate_and_group_undo() {
     assert_eq!(s.project().channels[0].devices[0].sample_slices().unwrap().len(), 300);
     assert_eq!(suhina_project_file::from_json(&suhina_project_file::to_json(s.project())).unwrap(), *s.project());
     let changed = s.project().clone();
+    let oversized = vec![0.5; suhina_model::MAX_SAMPLE_SLICES + 1];
+    assert!(s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":oversized})).is_err());
+    let mut stored = s.project().channels[0].devices[0].clone();
+    assert!(stored.set_sample_slices(&oversized).is_err());
+    assert_eq!(&stored, &s.project().channels[0].devices[0]);
+    stored.extensions.0.iter_mut().find(|e| e.key == "sample_slices").unwrap().data =
+        vec![0; (suhina_model::MAX_SAMPLE_SLICES + 1) * 8];
+    assert!(stored.sample_slices().is_none());
     for points in [json!([0.]), json!([1.]), json!([-0.1]), json!(["bad"]), json!(null)] {
         assert!(s.execute("device.setSampleSlices", &json!({"track":1,"device":0,"points":points})).is_err());
         assert_eq!(*s.project(), changed);

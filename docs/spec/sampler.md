@@ -193,15 +193,14 @@ are silent. Slices play to their boundary, ignoring note-off. Reverse is support
 Transient detects rising amplitude in 5 ms windows; Sensitivity lowers its threshold.
 Beat uses quarter-note subdivisions at the transport tempo (120 BPM before playback);
 Sensitivity selects 4, 2, 1, 1/2, 1/4 or 1/8 beats. Region selects 1..32 equal
-regions with Sensitivity. Manual uses a dynamic list of normalized source positions, with no musical point
-count limit. Double-click empty waveform to add a point; double-click a line to
+regions with Sensitivity. Manual uses a dynamic list of normalized source positions, with at most 4096 points. Double-click empty waveform to add a point; double-click a line to
 remove it. Drag a line horizontally to move it; its hover cursor is horizontal
 resize. A drag is one undo step, even when crossing another line. Start/End crop
 the map without deleting points outside it. All points persist in the device's
 `suhina/sample_slices` extension as little-endian f64 values; an absent extension
 reads legacy slice_1..slice_16 parameters. Empty lists are explicit. The shared
 `device.setSampleSlices` command validates, sorts and deduplicates positions; its
-one-million-entry input budget protects memory, rather than limiting musical maps.
+4096-entry input budget applies both to stored maps and command input.
 The runtime installs immutable lists off the audio thread and selects note ranges
 by binary search without allocating. MIDI keys address successive slices from Root;
 all points remain editable even beyond the 128 available MIDI keys.
@@ -225,3 +224,12 @@ Sampler receives block tempo before note events, so a Beat slice triggered at fr
 A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)
 adds Sampler and loads its source without creating an audio clip. Tracks with devices
 are left intact. A pending file drop is cancelled when another project is active.
+
+Sample loading accepts 1000..384000 Hz and 1..32 channels before decoding.
+Decoded PCM is limited to 1 GiB per file (all streams together for Stems).
+Grain windows use a 2049-point Hann table prepared off the audio thread, with
+linear interpolation and an absolute error below 0.000001 against the cosine formula.
+
+Grain mode shares a budget of 256 active grains across sounding voices, up to 32
+per voice. Increasing polyphony reduces the per-voice grain limit; discarded grains
+are ended rather than resumed later. Normalization follows the active grain limit.

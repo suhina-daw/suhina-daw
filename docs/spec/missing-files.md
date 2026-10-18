@@ -24,8 +24,8 @@ project opens and helps find the files again.
 
 ## Terms
 
-- **Missing file:** a file the project's audio clips name (by its relative path from the
-  project's folder, or its absolute path) that is not found at either place.
+- **Missing file:** a clip or sampler source that cannot be resolved inside the project
+  folder, or an explicitly loaded source whose file has since moved.
 - **Candidate:** a file elsewhere with the same name (compared without regard to case), which
   may be the missing one.
 - **Relink:** point every clip that names a missing file at another file.
@@ -108,3 +108,13 @@ Over MCP, `folder` and every `to` path must be inside the server's read root ([`
 - Matching by content (length, sample rate) when names differ.
 - Collecting a project's files into its folder ("collect and save").
 - Missing plug-ins are reported by the plug-in loading dialog (ADR 0006), not here.
+
+## Project file boundaries
+
+On project open, audio clips and sampler sources are resolved only inside the
+project folder, symbolic links and junctions are not followed. Parent traversal and
+external absolute paths are treated as missing without reading the external file.
+Choose an external file explicitly through Locate/Apply to use it in the current
+session. To reopen without another relink, keep source audio inside the project
+folder. A direct browser/file drop or explicit CLI/MCP load remains a user-selected
+operation; MCP paths still stay inside its configured read root.

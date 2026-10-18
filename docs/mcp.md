@@ -403,3 +403,6 @@ command validates, sorts and deduplicates the list and supports undo/redo; an
 empty list clears the map. Optional `continue` groups consecutive drag edits.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
+
+`device.updateSd` applies the same read-root confinement as `device.addSd` and
+`device.loadSample`, including symlink resolution.

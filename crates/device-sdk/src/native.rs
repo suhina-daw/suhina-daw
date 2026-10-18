@@ -67,21 +67,11 @@ impl DeviceGraph {
         // Historic revisions retain their validated prefix; appended controls use defaults.
         let legacy_sampler_panel = id == "sampler"
             && matches!(self.parameters.len(), 52 | 53 | 56 | 59)
-            && info.params.get(self.parameters.len()..).is_some_and(|tail| {
-                tail.iter().all(|p| {
-                    p.id.starts_with("slice_")
-                        || matches!(
-                            p.id,
-                            "panel_view"
-                                | "lfo_filter"
-                                | "lfo_volume"
-                                | "lfo_pan"
-                                | "lfo_shape"
-                                | "fade_in"
-                                | "fade_out"
-                                | "sensitivity"
-                                | "slice_by"
-                        )
+            && crate::sampler::INFO.params.get(..self.parameters.len()).is_some_and(|prefix| {
+                self.parameters.iter().zip(prefix).all(|(a, b)| {
+                    a.id == b.id
+                        && a.min == b.min
+                        && (a.max == b.max || (a.id == "playback" && a.max == 2. && b.max == 3.))
                 })
             });
         if self.role != role
@@ -99,6 +89,9 @@ impl DeviceGraph {
             ));
         }
         device.prepare(rate).map_err(|e| DeviceSdkError(e.to_string()))?;
+        for (index, p) in info.params.iter().enumerate().skip(self.parameters.len()) {
+            device.set_param(index, p.default);
+        }
         for (index, p) in self.parameters.iter().enumerate() {
             device.set_param(index, p.default);
         }

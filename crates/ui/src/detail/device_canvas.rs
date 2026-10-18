@@ -14,24 +14,32 @@ pub(crate) struct Parsed {
     pub graph: DeviceGraph,
     pub canvas: Option<Arc<DeviceUi>>,
 }
-thread_local! {static GRAPHS:RefCell<Vec<(Vec<u8>,Arc<Parsed>)>>=const{RefCell::new(Vec::new())};}
+thread_local! {static GRAPHS:RefCell<std::collections::HashMap<u64,Option<Arc<Parsed>>>>=RefCell::new(std::collections::HashMap::new());}
 pub(crate) fn graph(bytes: &[u8]) -> Option<Arc<Parsed>> {
-    if let Some(found) =
-        GRAPHS.with(|cache| cache.borrow().iter().find(|(key, _)| key == bytes).map(|(_, v)| v.clone()))
-    {
-        return Some(found);
+    if bytes.len() > 2 * 1024 * 1024 {
+        return None;
     }
-    let mut graph = DeviceGraph::from_sd(std::str::from_utf8(bytes).ok()?).ok()?;
-    let canvas = graph.ui.take().map(Arc::new);
-    let parsed = Arc::new(Parsed { graph, canvas });
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hash);
+    let key = hash.finish();
+    if let Some(found) = GRAPHS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return found;
+    }
+    let parsed = std::str::from_utf8(bytes).ok().and_then(|text| DeviceGraph::from_sd(text).ok()).map(|mut graph| {
+        let canvas = graph.ui.take().map(Arc::new);
+        Arc::new(Parsed { graph, canvas })
+    });
     GRAPHS.with(|cache| {
         let mut cache = cache.borrow_mut();
-        cache.push((bytes.to_vec(), parsed.clone()));
-        while cache.len() > 64 || cache.iter().map(|(b, _)| b.len()).sum::<usize>() > 16 * 1024 * 1024 {
-            cache.remove(0);
+        if cache.len() >= 64
+            && let Some(old) = cache.keys().next().copied()
+        {
+            cache.remove(&old);
         }
+        cache.insert(key, parsed.clone());
     });
-    Some(parsed)
+    parsed
 }
 #[derive(Clone)]
 struct Loaded {
@@ -39,6 +47,42 @@ struct Loaded {
     palette: WidgetPalette,
     images: Vec<Result<egui::TextureHandle, String>>,
     controls: Vec<Vec<Draw>>,
+}
+
+fn visible_sample_peaks(source: &suhina_engine::AudioData, range: (usize, usize)) -> Vec<f32> {
+    let range = (range.0.min(source.frames()), range.1.min(source.frames()));
+    let mut peaks = vec![0f32; 1024];
+    let channels = usize::from(source.channels.max(1));
+    let span = range.1.saturating_sub(range.0).max(1);
+    for (i, frame) in source
+        .samples
+        .get(range.0.saturating_mul(channels)..range.1.saturating_mul(channels))
+        .unwrap_or_default()
+        .chunks(channels)
+        .enumerate()
+    {
+        let bin = i.saturating_mul(1024) / span;
+        if let Some(peak) = peaks.get_mut(bin) {
+            for &sample in frame {
+                if sample.is_finite() {
+                    *peak = peak.max(sample.abs().min(1.));
+                }
+            }
+        }
+    }
+    if span < peaks.len() {
+        let bins = peaks.len();
+        for (i, peak) in peaks.iter_mut().enumerate() {
+            if let Some(frame) = source
+                .samples
+                .get(range.0.saturating_add(i.saturating_mul(span) / bins).saturating_mul(channels)..)
+                .and_then(|samples| samples.get(..channels))
+            {
+                *peak = frame.iter().copied().filter(|v| v.is_finite()).fold(0f32, |p, v| p.max(v.abs().min(1.)));
+            }
+        }
+    }
+    peaks
 }
 
 pub(crate) type SampleTarget = (Rect, TrackId, usize);
@@ -285,30 +329,7 @@ fn sample_waveform(
         let peaks = if let Some(cached) = cached.filter(|c| Arc::ptr_eq(&c.source, source) && c.range == range) {
             cached.peaks
         } else {
-            let mut peaks = vec![0f32; 1024];
-            let channels = usize::from(source.channels.max(1));
-            let span = range.1.saturating_sub(range.0).max(1);
-            for (i, frame) in source.samples.chunks(channels).skip(range.0).take(span).enumerate() {
-                let bin = i.saturating_mul(1024) / span;
-                if let Some(peak) = peaks.get_mut(bin) {
-                    for &sample in frame {
-                        if sample.is_finite() {
-                            *peak = peak.max(sample.abs().min(1.));
-                        }
-                    }
-                }
-            }
-            if span < peaks.len() {
-                let bins = peaks.len();
-                for (i, peak) in peaks.iter_mut().enumerate() {
-                    if let Some(frame) =
-                        source.samples.chunks(channels).nth(range.0.saturating_add(i.saturating_mul(span) / bins))
-                    {
-                        *peak =
-                            frame.iter().copied().filter(|v| v.is_finite()).fold(0f32, |p, v| p.max(v.abs().min(1.)));
-                    }
-                }
-            }
+            let peaks = visible_sample_peaks(source, range);
             let peaks = Arc::new(peaks);
             ui.ctx().data_mut(|d| {
                 d.insert_temp(cache_id, SamplePeaks { source: source.clone(), range, peaks: peaks.clone() })
@@ -1207,6 +1228,31 @@ pub(crate) fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn waveform_zoom_reads_only_the_visible_end_of_a_long_source() {
+        let mut samples = vec![0.; 200000];
+        samples[199998] = 0.75;
+        samples[199999] = -0.5;
+        let audio = suhina_engine::AudioData { sample_rate: 48000, channels: 2, samples };
+        let peaks = visible_sample_peaks(&audio, (99999, 100001));
+        assert_eq!(peaks.len(), 1024);
+        assert!(peaks.iter().all(|v| *v == 0.75));
+        assert!(visible_sample_peaks(&audio, (100000, 100000)).iter().all(|v| *v == 0.));
+    }
+
+    #[test]
+    fn invalid_device_graphs_are_cached_without_retaining_input_bytes() {
+        GRAPHS.with(|cache| cache.borrow_mut().clear());
+        assert!(graph(b"{invalid graph}").is_none());
+        GRAPHS.with(|cache| assert_eq!(cache.borrow().len(), 1));
+        assert!(graph(b"{invalid graph}").is_none());
+        GRAPHS.with(|cache| assert_eq!(cache.borrow().len(), 1));
+        for i in 0..100 {
+            assert!(graph(format!("invalid {i}").as_bytes()).is_none());
+        }
+        GRAPHS.with(|cache| assert!(cache.borrow().len() <= 64));
+    }
+
     #[test]
     fn sample_waveform_draws_a_line_for_each_active_voice() {
         let ctx = egui::Context::default();

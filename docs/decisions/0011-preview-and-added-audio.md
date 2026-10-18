@@ -114,3 +114,10 @@ run the same code.
   instrument, and offline renders could not test it.
 - **Sending decoded audio to the audio thread as a message** for the graph to pick up: the
   graph already carries its pool; a new pool with the next graph needs no new path.
+
+Project-open decoding confines both clip and Sampler references to the project folder
+(without following symlinks or junctions); external references are reported as missing and require
+explicit relinking. Direct sample loads and relink commands still decode user-selected
+paths. Shared decoders reject formats outside 1000..384000 Hz and 1..32 channels before
+creating a decoder, and cap decoded PCM at 1 GiB per file, checked before copying
+each packet (all streams combined for Stems).

@@ -32,7 +32,7 @@ exactly; arbitrary missing parameters or changed ranges/order remain errors.
 
 The bundle build generates and validates all .sd files, checks that every devices/
 package is registered, and embeds their contents. The app build also writes them
-beside the executable in devices/. Startup and browser discovery use the embedded
+inside its `OUT_DIR/devices/`, without watching its own output. Startup and browser discovery use the embedded
 definitions, so moving the executable without that directory does not remove its
 stock instruments or effects. No user files are written at startup.
 
@@ -42,4 +42,7 @@ Its controls use the wrapper's declarations and panel. Existing native device id
 and project state remain compatible.
 
 Set `SUHINA_DEVICES_DIR` when the build should export definitions to a custom directory.
-This also supports builds with a separate Cargo intermediate build directory.
+The explicit export override is optional; ordinary builds write only in `OUT_DIR`.
+
+Legacy Sampler wrappers accept only the canonical ordered parameter prefixes of known revisions.
+Omitted parameters are explicitly initialized to their registered defaults during preparation.

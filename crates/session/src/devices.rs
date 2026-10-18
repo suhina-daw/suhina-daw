@@ -37,7 +37,7 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
 pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let values =
         params.get("points").and_then(Value::as_array).ok_or("points must be a list of normalized positions")?;
-    if values.len() > 1_000_000 {
+    if values.len() > suhina_model::MAX_SAMPLE_SLICES {
         return Err("slice map exceeds the input memory budget".into());
     }
     let mut points = Vec::with_capacity(values.len());
@@ -56,7 +56,7 @@ pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result
     if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "sampler") {
         return Err("slice editing needs a Sampler instrument".into());
     }
-    device.set_sample_slices(&points);
+    device.set_sample_slices(&points)?;
     Ok(json!({"points":points}))
 }
 

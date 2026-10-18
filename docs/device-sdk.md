@@ -313,7 +313,7 @@ parameter names. Custom drawings remain available for artwork and specialised co
 ## Stock device packaging
 
 Application builds generate registered `devices/` packages as `.sd` files in
-`target/<profile>/devices/` and embed them for startup. Native DSP uses the explicit
+the build script's `OUT_DIR/devices/` and embed them for startup. Native DSP uses the explicit
 `native_device` whole-device wrapper, prepared through `DeviceGraph::prepare_native_at`
 and the registry factory. Primitive graphs still use `compile_at`. See the
 [stock bundle specification](spec/stock-device-bundle.md).
