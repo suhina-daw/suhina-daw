@@ -1395,9 +1395,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     }
     // The time selection, lit over its tracks' lanes.
     if let Some(selection) = &state.time_selection {
-        let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end));
-        for (track, row) in rows_seen.iter().filter(|(t, _)| selection.tracks.contains(t)) {
-            let _ = track;
+        // Within the timeline: the track headers beside it are not lit.
+        let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
+        for (_, row) in rows_seen.iter().filter(|(t, _)| selection.tracks.contains(t)) {
+            if span.span() <= 0.0 {
+                break;
+            }
             lanes_painter.rect_filled(
                 Rect::from_x_y_ranges(span, row.y_range()),
                 0.0,
@@ -1410,7 +1413,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if let Some(origin) = state.marquee
         && let Some(now) = ui.ctx().pointer_latest_pos()
     {
-        let rect = Rect::from_two_pos(origin, now).intersect(lanes_area);
+        let rect = Rect::from_two_pos(origin, now).intersect(lanes_area).intersect(time);
         lanes_painter.rect_filled(rect, 0.0, theme::accent().gamma_multiply(0.12));
         lanes_painter.rect_stroke(rect, 0.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
         if ui.input(|i| !i.pointer.primary_down()) {
