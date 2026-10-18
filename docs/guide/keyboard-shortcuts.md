@@ -109,6 +109,11 @@ Ctrl+E, Ctrl+D and Ctrl+J act on what plays inside it: clips crossing its edges 
 Ctrl+V puts material copied from several tracks back on its own tracks, from the play start
 marker. Ctrl+R edits a clip's name right on the clip; Enter or a click elsewhere keeps it, Escape
 leaves it.
+
+Devices picked in a mixer strip's device list or the detail area's chain (a click, Ctrl to add,
+Shift for a run) take Delete, Ctrl+C, Ctrl+X and Ctrl+V the same way; a paste goes after the
+last picked device, with a plug-in's state as it was when copied. A double-click on a plug-in in
+the strip's list opens its editor.
 Ctrl+click a clip to add it to the selection; Shift+click selects everything from the last
 selected clip up to the one you click.
 

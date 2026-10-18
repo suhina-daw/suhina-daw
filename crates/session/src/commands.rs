@@ -136,6 +136,8 @@ const RANGE_START: Param =
     param("start", ParamType::Number, "where the time selection starts, in beats from the beginning, at least 0");
 const RANGE_END: Param = param("end", ParamType::Number, "where the time selection ends, in beats, after start");
 const DEVICE: Param = param("device", ParamType::Integer, "device index on the track, from 0, as in track.devices");
+const DEVICES: Param =
+    param("devices", ParamType::Integers, "device indices on the track, from 0, as in track.devices; at least one");
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
 const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
 /// A note command's clip: an arrangement clip by index, or a launcher clip by scene.
@@ -1501,6 +1503,27 @@ static COMMANDS: &[CommandSpec] = &[
         params: &[TRACK, DEVICE],
         kind: CommandKind::Edit,
         run: devices::remove,
+    },
+    CommandSpec {
+        id: "device.removeMany",
+        label: "Remove several devices from a track as one undo step",
+        params: &[TRACK, DEVICES],
+        kind: CommandKind::Edit,
+        run: devices::remove_many,
+    },
+    CommandSpec {
+        id: "device.copy",
+        label: "Copy devices of a track, with their parameters, automation and a running plug-in's state as it is now, for device.paste",
+        params: &[TRACK, DEVICES],
+        kind: CommandKind::Read,
+        run: devices::copy,
+    },
+    CommandSpec {
+        id: "device.paste",
+        label: "Put the copied devices into a track's chain, in the order they were copied, as one undo step",
+        params: &[TRACK, optional("position", ParamType::Integer, "where in the chain, from 0; the end when left out")],
+        kind: CommandKind::Edit,
+        run: devices::paste,
     },
     CommandSpec {
         id: "device.setEnabled",

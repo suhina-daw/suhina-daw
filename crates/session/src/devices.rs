@@ -440,6 +440,81 @@ pub(crate) fn remove(session: &mut Session, params: &Value) -> Result<Value, Com
     Ok(json!({ "removed": removed.name, "devices": channel.devices.len() }))
 }
 
+/// The device indices `params.devices` names on a chain of `len`, each once, highest first.
+fn device_list(len: usize, params: &Value) -> Result<Vec<usize>, CommandError> {
+    let list = params.get("devices").and_then(Value::as_array).ok_or("devices must be a list of device indices")?;
+    let mut out: Vec<usize> = Vec::with_capacity(list.len());
+    for value in list {
+        let index = value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n < len)
+            .ok_or_else(|| format!("each device must be an index from 0 to {}", len.saturating_sub(1)))?;
+        if !out.contains(&index) {
+            out.push(index);
+        }
+    }
+    if out.is_empty() {
+        return Err("devices must name at least one device".into());
+    }
+    out.sort_unstable_by(|a, b| b.cmp(a));
+    Ok(out)
+}
+
+/// `device.removeMany {track, devices}`: removes several devices of a track as one undo step.
+pub(crate) fn remove_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let channel = channel_param(session, params)?;
+    let indices = device_list(channel.devices.len(), params)?;
+    let removed: Vec<String> = indices.iter().map(|&i| channel.devices.remove(i).name).collect();
+    Ok(json!({ "removed": removed, "devices": channel.devices.len() }))
+}
+
+/// `device.copy {track, devices}`: copies devices, with their parameters, automation and a
+/// running plug-in's state as it is now, for `device.paste`.
+pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let track = track_id(&session.project, params)?;
+    let (heard, _) = session.heard();
+    let channel = heard
+        .tracks
+        .iter()
+        .find(|t| t.id == track)
+        .and_then(|t| t.channel)
+        .and_then(|c| heard.channels.iter().find(|ch| ch.id == c))
+        .ok_or("the track has no mixer channel")?;
+    let mut indices = device_list(channel.devices.len(), params)?;
+    indices.reverse();
+    let copied: Vec<Device> = indices.iter().filter_map(|&i| channel.devices.get(i).cloned()).collect();
+    let names: Vec<String> = copied.iter().map(|d| d.name.clone()).collect();
+    session.device_clipboard = copied;
+    Ok(json!({ "copied": names }))
+}
+
+/// `device.paste {track, position?}`: puts the copied devices into a track's chain at
+/// `position` (the end when left out), in the order they were copied, as one undo step.
+pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    if session.device_clipboard.is_empty() {
+        return Err("no devices have been copied".into());
+    }
+    let copied = session.device_clipboard.clone();
+    let channel = channel_param(session, params)?;
+    if channel.devices.len() + copied.len() > MAX_DEVICES {
+        return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
+    }
+    let position = match params.get("position") {
+        None | Some(Value::Null) => channel.devices.len(),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n <= channel.devices.len())
+            .ok_or_else(|| format!("position must be from 0 to {}", channel.devices.len()))?,
+    };
+    let count = copied.len();
+    for (offset, device) in copied.into_iter().enumerate() {
+        channel.devices.insert(position + offset, device);
+    }
+    Ok(json!({ "devices": (position..position + count).collect::<Vec<_>>() }))
+}
+
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
     let channel = channel_param(session, params)?;

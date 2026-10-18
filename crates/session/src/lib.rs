@@ -270,6 +270,8 @@ pub struct Session {
     /// The track each copied clip came from, when the copy knows it (arrangement clips and time
     /// selections); a paste with no track puts each clip back on its own.
     clipboard_tracks: Vec<suhina_model::TrackId>,
+    /// Devices copied for `device.paste`, with their state as it was then.
+    device_clipboard: Vec<suhina_model::Device>,
     /// Notes copied from a MIDI clip, for `note.paste`.
     note_clipboard: Option<notes::NoteClipboard>,
     /// Set by an edit command whose changes are device parameters.
@@ -328,6 +330,7 @@ impl Session {
             quantization: Quantization::Bars(1),
             clipboard: Vec::new(),
             clipboard_tracks: Vec::new(),
+            device_clipboard: Vec::new(),
             note_clipboard: None,
             param_edits: Vec::new(),
             param_gesture: None,
@@ -369,6 +372,11 @@ impl Session {
 
     /// Whether the copied clips came from more than one track, so a paste puts each back on its
     /// own track rather than all on one.
+    /// How many devices `device.paste` would add.
+    pub fn copied_devices(&self) -> usize {
+        self.device_clipboard.len()
+    }
+
     pub fn copied_from_tracks(&self) -> bool {
         self.clipboard_tracks.len() == self.clipboard.len()
             && self.clipboard_tracks.iter().any(|t| Some(t) != self.clipboard_tracks.first())

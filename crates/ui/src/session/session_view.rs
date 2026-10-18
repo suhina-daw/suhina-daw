@@ -38,6 +38,16 @@ const MUTED_ALPHA: f32 = 0.55;
 /// The band that takes the pointer to resize the mixer, either side of its top line.
 const MIXER_EDGE: f32 = 3.0;
 
+/// A click in a strip's device list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceEvent {
+    /// Picked: alone, or with Ctrl (Cmd) added to the picks or taken out, or with Shift the run
+    /// from the last one picked.
+    Pick { track: TrackId, index: usize, add: bool, run: bool },
+    /// Double-clicked: a plug-in's editor opens.
+    Open { track: TrackId, index: usize, plugin: bool },
+}
+
 /// What the view keeps between frames: scrolling, the selection, and a value being dragged.
 #[derive(Debug, Default)]
 pub struct SessionViewState {
@@ -93,6 +103,11 @@ pub struct SessionViewState {
     pub(crate) device_scroll: std::collections::BTreeMap<TrackId, f32>,
     /// The device row clicked last in a strip (track, device index): it stays lit.
     pub shown_device: Option<(TrackId, usize)>,
+    /// The devices picked in the window (the strips' lists and the detail area's chain light the
+    /// same ones); the window sets it before each frame.
+    pub device_picks: Vec<(TrackId, usize)>,
+    /// What a strip's device list was asked this frame, for the window to do.
+    pub device_event: Option<DeviceEvent>,
     /// A strip's device row was clicked: the window opens the detail area on the track.
     pub open_detail: bool,
     /// A column's name or channel strip was double-clicked: the window shows that track's devices

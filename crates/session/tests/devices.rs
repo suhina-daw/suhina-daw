@@ -606,3 +606,36 @@ fn a_projects_stored_path_gets_the_extension_check() {
     assert!(note.is_some_and(|n| n.contains(".nam")), "{note:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn devices_are_copied_pasted_and_removed_together_in_one_step_each() {
+    let mut session = Session::new(project());
+    for id in ["utility", "overdrive", "utility"] {
+        run(&mut session, "device.add", json!({ "track": "Keys", "id": id })).unwrap();
+    }
+    let names = |s: &Session| {
+        let p = s.project();
+        let channel = p.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).unwrap();
+        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+    };
+    let before = names(&session);
+    assert_eq!(before.len(), 3);
+    // The overdrive's drive changed, then copied with the first device, and pasted after it.
+    run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [1, 0] })).unwrap();
+    assert_eq!(session.copied_devices(), 2);
+    let pasted = run(&mut session, "device.paste", json!({ "track": "Keys", "position": 1 })).unwrap();
+    assert_eq!(pasted["devices"], json!([1, 2]));
+    let after = names(&session);
+    assert_eq!(
+        after,
+        [before[0].clone(), before[0].clone(), before[1].clone(), before[1].clone(), before[2].clone()],
+        "in the chain's order"
+    );
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), before, "one undo step");
+    run(&mut session, "device.removeMany", json!({ "track": "Keys", "devices": [0, 2] })).unwrap();
+    assert_eq!(names(&session), [before[1].clone()]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), before, "one undo step");
+    assert!(run(&mut session, "device.removeMany", json!({ "track": "Keys", "devices": [7] })).is_err());
+}

@@ -407,13 +407,19 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             id.with(("device", index)),
             format!("Show {} on {}", device.name, column.name),
         );
-        if response.clicked() {
+        if response.double_clicked() {
+            state.device_event =
+                Some(crate::session::session_view::DeviceEvent::Open { track, index, plugin: device.plugin });
+        } else if response.clicked() {
             state.selected = Some(track);
             state.selected_slot = None;
             state.shown_device = Some((track, index));
             state.open_detail = true;
+            let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+            state.device_event = Some(crate::session::session_view::DeviceEvent::Pick { track, index, add, run });
         }
-        let lit = state.shown_device == Some((track, index)) && state.selected == Some(track);
+        // Lit as the detail area's chain lights it: the devices picked in either.
+        let lit = state.device_picks.contains(&(track, index));
         let fill = if lit {
             theme::control_active()
         } else {

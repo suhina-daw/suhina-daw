@@ -311,6 +311,9 @@ pub struct App {
     /// A device panel was the last thing clicked (a click in the view clears it): Delete and the
     /// mute key act on the selected device then, even while a clip is selected too.
     device_focus: bool,
+    /// The devices picked together (Ctrl or Shift clicks), on the selected device's track; the
+    /// strips' lists and the chain light them, and Delete, copy and paste act on them.
+    device_picks: Vec<(TrackId, usize)>,
     /// Actions picked outside the window (the macOS menu bar), run at the start of the next frame.
     queued: Vec<String>,
     /// A device removal awaiting its undo or redo: the track, the index it left, how long the
@@ -447,6 +450,7 @@ impl App {
             detail_showing: detail_view::Showing::Clip,
             selected_device: None,
             device_focus: false,
+            device_picks: Vec::new(),
             queued: Vec::new(),
             pending_device_remove: None,
             detail_open: true,
@@ -1458,6 +1462,48 @@ impl App {
         self.status = status;
     }
 
+    /// The devices picked now: the picks on the selected device's track, or that device alone.
+    fn device_picks(&self) -> Vec<(TrackId, usize)> {
+        let Some(primary) = self.selected_device else { return Vec::new() };
+        if self.device_picks.contains(&primary) && self.device_picks.iter().all(|(t, _)| *t == primary.0) {
+            self.device_picks.clone()
+        } else {
+            vec![primary]
+        }
+    }
+
+    /// A device clicked in a strip's list or the chain: picked alone, added or taken out with
+    /// Ctrl (Cmd), or with Shift the run from the device picked last, on the same track.
+    fn pick_device(&mut self, track: TrackId, index: usize, add: bool, run: bool) {
+        let mut picks = self.device_picks();
+        let same_track = picks.first().is_some_and(|(t, _)| *t == track);
+        if add && same_track {
+            if let Some(at) = picks.iter().position(|p| *p == (track, index)) {
+                if picks.len() > 1 {
+                    picks.remove(at);
+                }
+            } else {
+                picks.push((track, index));
+            }
+        } else if run
+            && same_track
+            && let Some((_, from)) = self.selected_device
+        {
+            picks = (from.min(index)..=from.max(index)).map(|i| (track, i)).collect();
+        } else {
+            picks = vec![(track, index)];
+        }
+        self.selected_device = Some((track, index));
+        if !picks.contains(&(track, index)) {
+            self.selected_device = picks.last().copied();
+        }
+        self.device_picks = picks;
+        self.device_focus = true;
+        // A fresh pick says where the user is now: a removal's undo or redo no longer moves the
+        // selection for them.
+        self.pending_device_remove = None;
+    }
+
     /// Runs a window action (`settings::keymap::actions`) on the next frame, as its key would:
     /// for menus outside the window, such as the macOS menu bar.
     pub fn queue_action(&mut self, id: &str) {
@@ -1850,7 +1896,23 @@ impl App {
                         self.view.mixer_height = self.settings.view.mixer_height as f32;
                         self.view.strip_fader = self.settings.view.strip_fader as f32;
                         self.view.double_click_does_nothing = !self.settings.view.double_click_clip;
+                        self.view.device_picks = self.device_picks();
                         session_view::show(ui, grid, &progress, &mut self.view, &mut actions);
+                        match self.view.device_event.take() {
+                            Some(session_view::DeviceEvent::Pick { track, index, add, run }) => {
+                                self.pick_device(track, index, add, run);
+                            }
+                            Some(session_view::DeviceEvent::Open { track, index, plugin }) => {
+                                self.pick_device(track, index, false, false);
+                                if plugin {
+                                    actions.push(Action::new(
+                                        "device.openEditor",
+                                        json!({ "track": track.0, "device": index }),
+                                    ));
+                                }
+                            }
+                            None => {}
+                        }
                         self.arrangement.folds.set_groups(&self.view.folded);
                         self.session_view_done();
                     }
@@ -2284,6 +2346,7 @@ impl App {
                 self.session().and_then(|s| s.player()).map(|p| p.monitor()).filter(|m| m.running()).map(|m| m.beat())
             }
         };
+        let picks = self.device_picks();
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
@@ -2305,18 +2368,18 @@ impl App {
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
                 picked
             } else if stacked {
-                detail_view::show_stack(ui, &shown, self.selected_device, actions, &mut places)
+                detail_view::show_stack(ui, &shown, &picks, actions, &mut places)
             } else {
-                detail_view::show_row(ui, &shown, self.selected_device, actions, &mut places)
+                detail_view::show_row(ui, &shown, &picks, actions, &mut places)
             }
         });
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
         self.detail_cap = picked.inner.content_height.map(|h| h as f32);
-        if picked.inner.clicked.is_some() {
-            self.device_focus = true;
-            self.selected_device = picked.inner.clicked;
+        if let Some((track, index)) = picked.inner.clicked {
+            let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+            self.pick_device(track, index, add, run);
             // A fresh pick says where the user is now: a removal's undo or redo no longer
             // moves the selection for them.
             self.pending_device_remove = None;
@@ -3201,10 +3264,10 @@ impl App {
             "file.new" => self.open_project_dialog(false),
             // With clips selected in the Arrangement, the loop is exactly their span; with none,
             // Ctrl+L turns looping on or off as before.
+            // A time selection loops exactly its span; a click on a clip ends it, so then the
+            // clips' span is looped (below).
             "transport.setLoopEnabled"
-                if self.shown == View::Arrangement
-                    && self.arrangement.selected_clips().is_empty()
-                    && self.arrangement.time_selection().is_some() =>
+                if self.shown == View::Arrangement && self.arrangement.time_selection().is_some() =>
             {
                 if let Some(s) = self.arrangement.time_selection() {
                     actions.push(Action::new(
@@ -3323,6 +3386,29 @@ impl App {
             }
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // In the Session view copy and paste act on the selected clip slot.
+            // Picked devices (a click on a strip's device or a panel of the chain): copy, cut
+            // and paste act on them, before any clip.
+            "selection.copy" | "selection.cut" if self.device_focus && self.selected_device.is_some() => {
+                let picks = self.device_picks();
+                let Some((track, _)) = picks.first().copied() else { return };
+                let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                actions.push(Action::new("device.copy", json!({ "track": track.0, "devices": devices })));
+                if action == "selection.cut" {
+                    self.selected_device = None;
+                    self.device_picks.clear();
+                    actions.push(Action::new("device.removeMany", json!({ "track": track.0, "devices": devices })));
+                }
+            }
+            "selection.paste"
+                if self.device_focus
+                    && self.selected_device.is_some()
+                    && self.session().is_some_and(|s| s.copied_devices() > 0) =>
+            {
+                let picks = self.device_picks();
+                let Some((track, _)) = picks.first().copied() else { return };
+                let after = picks.iter().map(|(_, i)| *i).max().unwrap_or(0) + 1;
+                actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
+            }
             "selection.copy" | "selection.paste" if self.shown == View::Session => {
                 let Some((track, scene)) = self.view.selected_slot else {
                     self.status = Status::Hint("Click a clip slot first".into());
@@ -3409,8 +3495,15 @@ impl App {
                             .is_some_and(|c| p.channels.iter().any(|ch| ch.id == c && ch.devices.get(index).is_some()))
                     })
                 {
+                    let picks = self.device_picks();
                     self.selected_device = None;
-                    actions.push(Action::new("device.remove", json!({ "track": track.0, "device": index })));
+                    self.device_picks.clear();
+                    if picks.len() > 1 {
+                        let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                        actions.push(Action::new("device.removeMany", json!({ "track": track.0, "devices": devices })));
+                    } else {
+                        actions.push(Action::new("device.remove", json!({ "track": track.0, "device": index })));
+                    }
                     return;
                 }
                 // The Session view: Delete takes the selected slot's clip off its slot, and the

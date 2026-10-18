@@ -532,7 +532,7 @@ fn format_value(value: f64) -> String {
 pub fn show_row(
     ui: &mut Ui,
     detail: &Detail,
-    selected: Option<(TrackId, usize)>,
+    selected: &[(TrackId, usize)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -568,7 +568,7 @@ fn chain_row(
     painter: &egui::Painter,
     area: Rect,
     chain: &Chain,
-    selected: Option<(TrackId, usize)>,
+    selected: &[(TrackId, usize)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -644,7 +644,7 @@ fn chain_row(
             rect,
             chain.track,
             device,
-            selected == Some((chain.track, device.index)),
+            selected.contains(&(chain.track, device.index)),
             actions,
             &chain.nam,
         );
@@ -715,7 +715,7 @@ fn sdk_viewport(device: &DeviceBox) -> Option<[f32; 2]> {
 pub fn show_stack(
     ui: &mut Ui,
     detail: &Detail,
-    selected: Option<(TrackId, usize)>,
+    selected: &[(TrackId, usize)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -770,7 +770,7 @@ fn chain_stack(
     painter: &egui::Painter,
     area: Rect,
     chain: &Chain,
-    selected: Option<(TrackId, usize)>,
+    selected: &[(TrackId, usize)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -819,7 +819,7 @@ fn chain_stack(
             rect,
             chain.track,
             device,
-            selected == Some((chain.track, device.index)),
+            selected.contains(&(chain.track, device.index)),
             actions,
             &chain.nam,
         );
@@ -1701,7 +1701,7 @@ mod tests {
             let ctx = egui::Context::default();
             theme::install(&ctx);
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                show_stack(ui, &detail, None, &mut Vec::new(), &mut Vec::new());
+                show_stack(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
             });
             assert!(!output.shapes.is_empty(), "{control:?}");
             output.textures_delta.clear();
@@ -1751,7 +1751,7 @@ mod tests {
         let mut harness =
             egui_kittest::Harness::builder().with_size((1180.0, 180.0)).with_pixels_per_point(1.0).wgpu().build_ui(
                 |ui| {
-                    show_row(ui, &detail, None, &mut Vec::new(), &mut Vec::new());
+                    show_row(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
                 },
             );
         theme::install(&harness.ctx);
@@ -1775,7 +1775,7 @@ mod tests {
         let mut harness =
             egui_kittest::Harness::builder().with_size((660.0, 340.0)).with_pixels_per_point(1.0).wgpu().build_ui(
                 |ui| {
-                    show_stack(ui, &detail, None, &mut Vec::new(), &mut Vec::new());
+                    show_stack(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
                 },
             );
         theme::install(&harness.ctx);
@@ -1804,7 +1804,7 @@ mod tests {
         let mut harness =
             egui_kittest::Harness::builder().with_size((660.0, 340.0)).with_pixels_per_point(1.0).wgpu().build_ui(
                 |ui| {
-                    show_stack(ui, &detail, None, &mut Vec::new(), &mut Vec::new());
+                    show_stack(ui, &detail, &[], &mut Vec::new(), &mut Vec::new());
                 },
             );
         theme::install(&harness.ctx);
@@ -1894,9 +1894,9 @@ mod tests {
                     places.clear();
                     let mut actions = Vec::new();
                     if stacked {
-                        show_stack(ui, &detail, None, &mut actions, places);
+                        show_stack(ui, &detail, &[], &mut actions, places);
                     } else {
-                        show_row(ui, &detail, None, &mut actions, places);
+                        show_row(ui, &detail, &[], &mut actions, places);
                     }
                 },
                 Vec::new(),
@@ -1919,7 +1919,7 @@ mod tests {
             let mut probe = Harness::builder().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
                 |ui, places: &mut Vec<EditorPlace>| {
                     places.clear();
-                    show_row(ui, &detail, None, &mut Vec::new(), places);
+                    show_row(ui, &detail, &[], &mut Vec::new(), places);
                 },
                 Vec::new(),
             );
@@ -1930,7 +1930,7 @@ mod tests {
             Harness::builder().with_size(egui::vec2(600.0, EDITOR_TOP + 50.0 + margin * 2.0)).build_ui_state(
                 |ui, places: &mut Vec<EditorPlace>| {
                     places.clear();
-                    show_row(ui, &detail, None, &mut Vec::new(), places);
+                    show_row(ui, &detail, &[], &mut Vec::new(), places);
                 },
                 Vec::new(),
             );
@@ -1939,7 +1939,7 @@ mod tests {
         let mut none = Harness::builder().with_size(egui::vec2(600.0, EDITOR_TOP - 1.0 + margin * 2.0)).build_ui_state(
             |ui, places: &mut Vec<EditorPlace>| {
                 places.clear();
-                show_row(ui, &detail, None, &mut Vec::new(), places);
+                show_row(ui, &detail, &[], &mut Vec::new(), places);
             },
             Vec::new(),
         );
@@ -1967,9 +1967,9 @@ mod tests {
                 |ui, actions: &mut Vec<Action>| {
                     let mut places = Vec::new();
                     if stacked {
-                        show_stack(ui, &detail, None, actions, &mut places);
+                        show_stack(ui, &detail, &[], actions, &mut places);
                     } else {
-                        show_row(ui, &detail, None, actions, &mut places);
+                        show_row(ui, &detail, &[], actions, &mut places);
                     }
                     assert!(places.is_empty());
                 },

@@ -137,9 +137,16 @@ struct EdgeDrag {
 /// start and its right edge no later than its audio's end, as `clip.trim` keeps them; the loop
 /// handle has no end limit.
 fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64, f64) {
-    let least = if free || !grid.snaps { 1.0 / 16.0 } else { grid.step.max(1.0 / 16.0) };
-    let beat = grid.place(drag.raw, free);
     let end = clip.start + clip.length;
+    // A clip already shorter than a grid step keeps at least its length: a coarse grid (1 bar)
+    // does not stretch a short clip just because its edge was touched.
+    let least = if free || !grid.snaps { 1.0 / 16.0 } else { grid.step.min(clip.length).max(1.0 / 16.0) };
+    let start_edge = if drag.grab == EdgeGrab::Left { clip.start } else { end };
+    // Not moved yet (a press on the edge): nothing changes.
+    if (drag.raw - start_edge).abs() < 1e-9 {
+        return (clip.start, end);
+    }
+    let beat = grid.place(drag.raw, free);
     match drag.grab {
         EdgeGrab::Left => (beat.max(clip.earliest_start).min(end - least).max(0.0), end),
         EdgeGrab::Right => {

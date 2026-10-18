@@ -4462,6 +4462,53 @@ fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
 }
 
 #[test]
+fn ctrl_l_loops_the_time_selection_even_with_clips_in_it_selected() {
+    let mut harness = arrangement_app();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    // A selection rectangle from empty space before the clip into it picks the clip too.
+    let ruler = harness.get_by_label("Ruler").rect();
+    let (from, to) =
+        (egui::pos2(clip.left() - 64.0, ruler.center().y), egui::pos2(clip.left() + 32.0, ruler.center().y));
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    let span = harness.state().arrangement().time_selection().map(|s| (s.start, s.end)).unwrap();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
+    harness.run();
+    let transport = harness.state().session().unwrap().project().transport.clone();
+    assert!(transport.loop_enabled);
+    assert_eq!(transport.loop_range.map(|r| (r.start, r.end)), Some(span), "the loop is the selection");
+}
+
+#[test]
+fn touching_a_short_clips_edge_with_a_coarse_grid_changes_nothing() {
+    let mut harness = arrangement_app();
+    let length = |h: &Harness<'static, App>| {
+        let p = h.state().session().unwrap().project();
+        let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+        let lane = p.arrangement.lanes.iter().find(|l| l.track == track).unwrap();
+        lane.clips.iter().find(|c| (c.start - 64.0).abs() < 1e-6).map(|c| c.length).unwrap()
+    };
+    let before = length(&harness);
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    // A press and a let-go two points along: the edge stays where it was.
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(2.0, 0.0));
+    harness.run();
+    harness.drop_at(edge + egui::vec2(2.0, 0.0));
+    harness.run();
+    assert_eq!(length(&harness), before);
+}
+
+#[test]
 fn a_drag_on_the_ruler_selects_time_and_delete_removes_only_what_is_inside() {
     let mut harness = arrangement_app();
     let drums = |h: &Harness<'static, App>| {
