@@ -367,6 +367,7 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
             version: text(d.version()),
             features: d.features().map(|f| f.to_string_lossy().into_owned()).collect(),
             replaces: Vec::new(),
+            ara: false,
         })
         .collect())
 }

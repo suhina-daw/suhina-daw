@@ -301,6 +301,7 @@ fn plugin_env() -> std::sync::Arc<suhina_session::PluginEnv> {
         version: "1.0".into(),
         features: features.iter().map(|f| f.to_string()).collect(),
         replaces: Vec::new(),
+        ara: false,
     };
     let verb = plugin("Verb.vst3", "ABCDEF0123456789ABCDEF0123456789", "Verb", &["Fx|Reverb"]);
     let synth = plugin("Synth.clap", "com.vendor.synth", "Synth", &["instrument", "synthesizer"]);

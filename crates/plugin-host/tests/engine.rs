@@ -49,6 +49,7 @@ fn catalog() -> Catalog {
             version: "1".into(),
             features: features.into_iter().map(String::from).collect(),
             replaces: Vec::new(),
+            ara: false,
         };
         catalog.insert(path, vec![info]);
     }
@@ -583,6 +584,7 @@ fn a_plug_in_that_could_not_start_starts_again_on_restart() {
         version: "1".into(),
         features: vec!["audio-effect".into()],
         replaces: Vec::new(),
+        ara: false,
     };
     catalog.insert(path, vec![info]);
     let p = project(8.0, false, vec![plugin_device("broken")]);

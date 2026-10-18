@@ -33,6 +33,7 @@ fn env() -> Arc<PluginEnv> {
         version: "1".into(),
         features: vec!["audio-effect".into()],
         replaces: Vec::new(),
+        ara: false,
     };
     let mut catalog = Catalog::new();
     catalog.insert(path, vec![info]);

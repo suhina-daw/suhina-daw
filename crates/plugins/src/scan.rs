@@ -33,9 +33,10 @@ const MAX_FILES: usize = 10_000;
 /// Bytes of a scanner's output read, at most.
 const MAX_OUTPUT: u64 = 4 * 1024 * 1024;
 /// The saved catalog's format. A catalog saved in another one is dropped and everything is read
-/// again, except one saved in 2, which is read (2: plug-ins list what they replace; 3: entries
-/// keep when they were last read, and a file that holds no plug-ins is kept as such).
-const CATALOG_VERSION: u64 = 3;
+/// again, except one saved in 2 or 3, which is read (2: plug-ins list what they replace; 3: entries
+/// keep when they were last read, and a file that holds no plug-ins is kept as such; 4: a VST3
+/// plug-in says whether it supports ARA, so the VST3 files of an older catalog are read again).
+const CATALOG_VERSION: u64 = 4;
 /// How often a later scan tries again a file that hung: a hang costs its whole timeout each
 /// time, so a plug-in that always hangs slows down one scan a day, not every scan.
 pub const HANG_RETRY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -119,6 +120,9 @@ pub struct PluginInfo {
     /// `IPluginCompatibility`), which may name VST2 plug-ins by their derived class id
     /// ([`crate::matching::vst2_class_id`]).
     pub replaces: Vec<String>,
+    /// The plug-in can edit clips over ARA ([ADR 0028](../../../docs/decisions/0028-ara-hosting.md)):
+    /// its VST3 module declares an [`ARA_FACTORY_CLASS`] paired with it ([`pair_ara`]).
+    pub ara: bool,
 }
 
 impl PluginInfo {
@@ -372,10 +376,35 @@ pub fn scan_error_json(message: &str) -> String {
 }
 
 fn plugin_json(p: &PluginInfo) -> Value {
-    json!({
+    let mut value = json!({
         "id": p.id, "name": p.name, "vendor": p.vendor, "version": p.version, "features": p.features,
         "replaces": p.replaces,
-    })
+    });
+    if p.ara {
+        value["ara"] = json!(true);
+    }
+    value
+}
+
+/// The category of a VST3 module's class that makes ARA document controllers (`ARAVST3.h`,
+/// `kARAMainFactoryClass`).
+pub const ARA_FACTORY_CLASS: &str = "ARA Main Factory Class";
+
+/// Marks the audio classes of one VST3 module that support ARA, given the names of the
+/// module's [`ARA_FACTORY_CLASS`] classes. `ARAVST3.h` pairs an ARA factory with the audio
+/// processor of the same class name; a module with one of each pairs them whatever their names,
+/// as nothing else could be meant.
+pub fn pair_ara(plugins: &mut [PluginInfo], ara_classes: &[String]) {
+    if ara_classes.is_empty() {
+        return;
+    }
+    if let ([plugin], [_]) = (&mut *plugins, ara_classes) {
+        plugin.ara = true;
+        return;
+    }
+    for plugin in plugins.iter_mut() {
+        plugin.ara = ara_classes.contains(&plugin.name);
+    }
 }
 
 /// Fills in [`PluginInfo::replaces`] from a VST3 compatibility list: an array of
@@ -436,6 +465,7 @@ pub(crate) fn parse_scan(value: &Value, file: &str) -> Scanned {
             version: text(p, "version"),
             features: strings(p, "features"),
             replaces: strings(p, "replaces"),
+            ara: p.get("ara").and_then(Value::as_bool).unwrap_or(false),
         })
         .collect::<Vec<_>>();
     if plugins.is_empty() { Scanned::NoPlugins } else { Scanned::Plugins(plugins) }
@@ -609,13 +639,15 @@ impl Catalog {
     /// A catalog saved by [`Catalog::to_json`]; anything unreadable gives an empty catalog, so
     /// the next scan reads everything again. One saved in version 2 is read: when its entries
     /// were last read is not known, and its "holds no plug-ins" failures are
-    /// [`Scanned::NoPlugins`].
+    /// [`Scanned::NoPlugins`]. In one saved before version 4 the VST3 files that hold plug-ins
+    /// count as changed, so the next scan reads them again and learns which support ARA.
     pub fn from_json(text: &str) -> Self {
         let Ok(value) = serde_json::from_str::<Value>(text) else { return Self::default() };
         let version = value.get("version").and_then(Value::as_u64);
-        if version != Some(CATALOG_VERSION) && version != Some(2) {
+        if !matches!(version, Some(2..=CATALOG_VERSION)) {
             return Self::default();
         }
+        let before_ara = version < Some(4);
         let entries = value
             .get("entries")
             .and_then(Value::as_array)
@@ -623,7 +655,7 @@ impl Catalog {
                 list.iter()
                     .filter_map(|e| {
                         let path = PathBuf::from(e.get("path")?.as_str()?);
-                        let modified = e.get("modified")?.as_u64()?;
+                        let mut modified = e.get("modified")?.as_u64()?;
                         let size = e.get("size")?.as_u64()?;
                         let tried = e.get("tried").and_then(Value::as_u64).unwrap_or(0);
                         let incompatible = e.get("incompatible").and_then(Value::as_str);
@@ -636,6 +668,9 @@ impl Catalog {
                                 scanned => scanned,
                             },
                         };
+                        if before_ara && is_vst3(&path) && matches!(scanned, Scanned::Plugins(_)) {
+                            modified = 0;
+                        }
                         Some(Entry { path, modified, size, scanned, tried })
                     })
                     .collect()
@@ -696,6 +731,7 @@ mod tests {
             version: "1".into(),
             features: Vec::new(),
             replaces: Vec::new(),
+            ara: false,
         }
     }
 
@@ -716,5 +752,57 @@ mod tests {
         // Text that is not a list changes nothing.
         apply_compatibility_text(&mut plugins, "{ broken");
         assert_eq!(plugins[0].replaces.len(), 1);
+    }
+
+    fn named(name: &str) -> PluginInfo {
+        PluginInfo { name: name.into(), ..plugin("ABCDEF019182FAEB49746D78426E6477") }
+    }
+
+    #[test]
+    fn an_ara_factory_pairs_with_the_audio_class_of_its_name() {
+        // Two audio classes, one ARA factory named after the second (ARAVST3.h's pairing).
+        let mut plugins = [named("Tune"), named("Tune ARA")];
+        pair_ara(&mut plugins, &["Tune ARA".into()]);
+        assert_eq!(plugins.map(|p| p.ara), [false, true]);
+        // One of each pair whatever the names; none makes nothing ARA.
+        let mut one = [named("Tune")];
+        pair_ara(&mut one, &["Tune (ARA)".into()]);
+        assert!(one[0].ara);
+        let mut none = [named("Tune")];
+        pair_ara(&mut none, &[]);
+        assert!(!none[0].ara);
+        // Two factories, neither named after the class: not guessed.
+        let mut unpaired = [named("Tune"), named("Pitch")];
+        pair_ara(&mut unpaired, &["A".into(), "B".into()]);
+        assert_eq!(unpaired.map(|p| p.ara), [false, false]);
+    }
+
+    #[test]
+    fn the_catalog_keeps_ara_and_reads_older_vst3_entries_again() {
+        let mut catalog = Catalog::new();
+        let ara = PluginInfo { ara: true, ..plugin("ABCDEF019182FAEB49746D78426E6477") };
+        catalog.insert(ara.path.clone(), vec![ara.clone()]);
+        let text = catalog.to_json();
+        assert!(text.contains("\"ara\":true"));
+        let read = Catalog::from_json(&text);
+        assert_eq!(read.plugins().next(), Some(&ara));
+        assert!(read.entries().iter().all(|e| e.modified == catalog.entries()[0].modified));
+
+        // A version 3 catalog: no flag, so ARA is false, and its VST3 file counts as changed so
+        // the next scan reads it again; a CLAP file and a failure are kept as they were.
+        let old = r#"{ "version": 3, "entries": [
+            { "path": "/vst3/Thing.vst3", "modified": 7, "size": 9, "tried": 5,
+              "plugins": [ { "id": "ABCDEF019182FAEB49746D78426E6477", "name": "Thing" } ] },
+            { "path": "/clap/Thing.clap", "modified": 7, "size": 9, "tried": 5,
+              "plugins": [ { "id": "com.example.thing", "name": "Thing" } ] },
+            { "path": "/vst3/Broken.vst3", "modified": 7, "size": 9, "tried": 5, "failed": "it crashed" } ] }"#;
+        let read = Catalog::from_json(old);
+        let modified: Vec<u64> = read.entries().iter().map(|e| e.modified).collect();
+        let paths: Vec<String> = read.entries().iter().map(|e| e.path.display().to_string()).collect();
+        let at = |name: &str| paths.iter().position(|p| p.ends_with(name)).map(|i| modified[i]);
+        assert_eq!((at("Thing.vst3"), at("Thing.clap"), at("Broken.vst3")), (Some(0), Some(7), Some(7)));
+        assert!(read.plugins().all(|p| !p.ara));
+        // An unknown version is still dropped.
+        assert!(Catalog::from_json(r#"{ "version": 9, "entries": [] }"#).entries().is_empty());
     }
 }

@@ -34,6 +34,7 @@ fn env() -> Arc<PluginEnv> {
             version: "1".into(),
             features: vec!["audio-effect".into()],
             replaces: Vec::new(),
+            ara: false,
         };
         catalog.insert(path, vec![info]);
     }

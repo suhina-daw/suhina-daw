@@ -20,7 +20,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::scan::{PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, hung_message, parse_scan};
+use crate::scan::{
+    ARA_FACTORY_CLASS, PluginInfo, SCAN_MARKER, Scanned, apply_compatibility, hung_message, pair_ara, parse_scan,
+};
 
 /// How long a file a shell may take: one file that carries many plug-ins (a vendor's shell
 /// file) loads each of them, which takes minutes in any host.
@@ -53,9 +55,13 @@ pub fn module_info(bundle: &Path) -> Option<Vec<PluginInfo>> {
     let value: Value = json5::from_str(&text).ok()?;
     let factory_vendor = value.pointer("/Factory Info/Vendor").and_then(Value::as_str).unwrap_or_default();
     let text_of = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
-    let mut plugins: Vec<PluginInfo> = value
-        .get("Classes")?
-        .as_array()?
+    let classes = value.get("Classes")?.as_array()?;
+    let ara_classes: Vec<String> = classes
+        .iter()
+        .filter(|c| c.get("Category").and_then(Value::as_str) == Some(ARA_FACTORY_CLASS))
+        .map(|c| text_of(c, "Name"))
+        .collect();
+    let mut plugins: Vec<PluginInfo> = classes
         .iter()
         .filter(|c| c.get("Category").and_then(Value::as_str) == Some("Audio Module Class"))
         .filter_map(|c| {
@@ -77,12 +83,14 @@ pub fn module_info(bundle: &Path) -> Option<Vec<PluginInfo>> {
                     .map(|s| s.iter().filter_map(Value::as_str).map(str::to_string).collect())
                     .unwrap_or_default(),
                 replaces: Vec::new(),
+                ara: false,
             })
         })
         .collect();
     if let Some(list) = value.get("Compatibility") {
         apply_compatibility(&mut plugins, list);
     }
+    pair_ara(&mut plugins, &ara_classes);
     if plugins.is_empty() { None } else { Some(plugins) }
 }
 
@@ -296,6 +304,18 @@ mod tests {
         assert_eq!((thing.name.as_str(), thing.vendor.as_str(), thing.version.as_str()), ("Thing", "Maker", "1.2.3"));
         assert_eq!(thing.features, ["Fx", "Delay"]);
         assert_eq!(thing.path, bundle);
+
+        assert!(!thing.ara);
+
+        // An ARA factory class named after the audio class marks it (ARAVST3.h).
+        let ara = info.replace(
+            r#"{ "CID": "not hex","#,
+            r#"{ "CID": "ABCDEF011234ABCD49746D78426E6478", "Category": "ARA Main Factory Class", "Name": "Thing", },
+            { "CID": "not hex","#,
+        );
+        let _ = std::fs::write(resources.join("moduleinfo.json"), ara);
+        let plugins = module_info(&bundle).unwrap_or_default();
+        assert_eq!(plugins.iter().map(|p| p.ara).collect::<Vec<_>>(), [true]);
 
         let _ = std::fs::write(resources.join("moduleinfo.json"), "{ broken");
         assert!(module_info(&bundle).is_none());

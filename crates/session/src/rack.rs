@@ -536,6 +536,7 @@ mod group_tests {
             version: "1".into(),
             features: features.iter().map(|f| (*f).into()).collect(),
             replaces: Vec::new(),
+            ara: false,
         }
     }
 
@@ -1531,6 +1532,7 @@ mod tests {
             version: "1".into(),
             features: features.iter().map(|f| f.to_string()).collect(),
             replaces: Vec::new(),
+            ara: false,
         };
         assert!(is_instrument(&plugin(&["Instrument|Synth"])));
         assert!(is_instrument(&plugin(&["instrument", "stereo"])));

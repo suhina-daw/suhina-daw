@@ -96,6 +96,10 @@ pub fn group_for(hosting: Hosting, plugin: &PluginInfo) -> Option<String> {
         Hosting::Binary => Some(file()),
         Hosting::Vendor if plugin.vendor.trim().is_empty() => Some(file()),
         Hosting::Vendor => Some(format!("vendor:{}", plugin.vendor.trim())),
+        // An ARA plug-in's instances and the document they edit live in one process
+        // (ADR 0028 decision 2), so a choice saved before the plug-in was known to support ARA
+        // gives way to the default.
+        Hosting::Instance if plugin.ara => Some(file()),
         Hosting::Instance => None,
     }
 }
@@ -589,6 +593,7 @@ mod tests {
             version: String::new(),
             features: Vec::new(),
             replaces: Vec::new(),
+            ara: false,
         }
     }
 
@@ -717,5 +722,8 @@ mod tests {
         // Two plug-ins in one file share its process.
         let sibling = PluginInfo { id: "com.example.other".into(), ..plugin.clone() };
         assert_eq!(group_for(Hosting::Binary, &sibling), group_for(Hosting::Binary, &plugin));
+        // An ARA plug-in never gets a process of its own: its document lives with its file's.
+        let ara = PluginInfo { ara: true, ..plugin.clone() };
+        assert_eq!(group_for(Hosting::Instance, &ara), group_for(Hosting::Binary, &plugin));
     }
 }

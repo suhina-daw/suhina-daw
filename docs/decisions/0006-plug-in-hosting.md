@@ -96,7 +96,9 @@ workspace forbids.
    process. The hosting choice per plug-in (`Hosting`: `binary`, the default, `instance` or
    `vendor`) is kept in `plugin-hosting.json` in the settings folder; `library::group_for`
    turns it into the group: `file:<path>` (every plug-in in one file or shell together),
-   `vendor:<name>` (the file's group when the vendor is unknown) or none.
+   `vendor:<name>` (the file's group when the vendor is unknown) or none. An ARA plug-in is
+   never hosted alone: `instance` is refused for it and read as the file's group
+   ([ADR 0028](0028-ara-hosting.md) decision 2).
    *Built (#108): one round trip for consecutive plug-ins of a process.* A block may name
    instances of the same process to run after the link's own (`Link::send_joint`, up to 63;
    the engine sends at most 16 plug-ins a block). The host keeps each instance's audio
@@ -361,6 +363,8 @@ workspace forbids.
    folders the user adds, so no setting is needed to find installed plug-ins. Implemented in
    `suhina_plugins::scan` and `scan_pool` for CLAP and VST3:
    - A VST3 bundle with a `moduleinfo.json` (JSON5) is read from it without loading anything.
+     Both ways note whether a plug-in supports ARA (an `ARA Main Factory Class` paired with it,
+     [ADR 0028](0028-ara-hosting.md)).
    - Everything else goes to a few long-lived `suhina-plugin-host --scan-worker` processes
      (half the processor's threads, at most 4), each reading file after file. A worker that
      crashes or hangs on a file is ended, the file is marked failed with the reason, and a new

@@ -7,6 +7,8 @@ last_verified: 2026-10-17
 covers:
   - crates/model/src/overlap.rs
   - crates/session/src/commands.rs
+  - crates/plugins/src/scan.rs
+  - crates/plugins/src/scan_pool.rs
 ---
 
 # 0028: ARA hosting
@@ -78,6 +80,15 @@ protocol (`crates/plugins/src/protocol.rs`).
    document (one per track the plug-in sits on) must live in the process that holds its document
    controller. ADR 0006's default, one process per plug-in file, already does this; the
    *own process per instance* choice is refused for an ARA plug-in, with the reason.
+   *Built (#589):* the scan marks each VST3 plug-in that supports ARA (`PluginInfo::ara`, shown
+   by `plugins.list`): its module declares a class in the category `ARA Main Factory Class`
+   with the plug-in's class name, as `ARAVST3.h` pairs them, or the module has one of each. It
+   is read from `moduleinfo.json` without loading anything, or from the factory's class list in
+   the scan worker without making any object. The catalog keeps it (version 4; an older
+   catalog's VST3 files are read again so installed ARA plug-ins are found). `plugins.setHosting
+   ... instance` is refused for such a plug-in, and an `instance` choice saved before its
+   support was known starts it in its file's process. The factory itself (the plug-in name it
+   gives, its API generations) is read with the ARA bindings in the next stage.
 
 3. **The engine drives the document with edit batches.** Each command that changes what the
    document describes (adding, moving, trimming, splitting, deleting a clip; a tempo change; undo

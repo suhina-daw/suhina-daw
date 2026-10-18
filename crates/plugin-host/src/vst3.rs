@@ -226,6 +226,7 @@ impl ModuleFile {
                 version: String::new(),
                 features: Vec::new(),
                 replaces: Vec::new(),
+                ara: false,
             };
             if let Some(factory2) = &factory2 {
                 let mut info2: PClassInfo2 = blank();
@@ -242,6 +243,22 @@ impl ModuleFile {
             classes.push((info.cid, plugin));
         }
         Ok(classes)
+    }
+
+    /// The names of the module's ARA factory classes ([`suhina_plugins::scan::ARA_FACTORY_CLASS`]),
+    /// read from the class list without making any object.
+    fn ara_classes(&self) -> Vec<String> {
+        let Ok(factory) = self.factory() else { return Vec::new() };
+        // SAFETY: the factory is a live COM object.
+        let count = unsafe { factory.countClasses() };
+        (0..count.clamp(0, 4096))
+            .filter_map(|index| {
+                let mut info: PClassInfo = blank();
+                // SAFETY: as above; the index is below the count the factory gave.
+                let found = ok(unsafe { factory.getClassInfo(index, &mut info) });
+                (found && text(&info.category) == suhina_plugins::scan::ARA_FACTORY_CLASS).then(|| text(&info.name))
+            })
+            .collect()
     }
 
     /// The module's compatibility list, from its `Plugin Compatibility Class`
@@ -378,6 +395,7 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<PluginInfo>, String> {
     if let Some(list) = module.compatibility() {
         suhina_plugins::scan::apply_compatibility_text(&mut plugins, &list);
     }
+    suhina_plugins::scan::pair_ara(&mut plugins, &module.ara_classes());
     Ok(plugins)
 }
 

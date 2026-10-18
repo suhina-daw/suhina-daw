@@ -567,6 +567,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
+- A plug-in scan notes which VST3 plug-ins support ARA (`plugins.list` shows `ara`), and such a
+  plug-in is never given a host process of its own, since its document and every instance
+  editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
   spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
   ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
