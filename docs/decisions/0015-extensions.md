@@ -24,7 +24,7 @@ Some of what Suhina wants to do needs a component the project cannot ship:
   are provided only for scientific purposes". The audit is in [#146](https://github.com/suhina-daw/suhina-daw/issues/146)
   and `docs/research/separation-weights-licence-audit.md`.
 - **Native inference runtimes** such as ONNX Runtime: a C++ library and a build-time binary
-  download, against the project's pure-Rust preference (rule 9 allows it; the preference does not).
+  download, against the project's pure-Rust preference (rule 10 allows it; the preference does not).
 - **User code and user assets**: patches ([ADR 0008](0008-patch-devices.md)), and later analysers,
   instruments or effects written by other people.
 
@@ -39,7 +39,7 @@ downloaded** ([README](../../README.md) › ASIO, [`third_party/asiosdk/VENDORED
 What is missing is one concept for "an optional component the user has and Suhina does not": how it
 is found, what it must declare, what may be assumed about it, and where the licence line runs.
 
-The constraints: GPL-compatible dependencies only (rule 9); assets and weights need a licence the
+The constraints: GPL-compatible dependencies only (rule 10); assets and weights need a licence the
 project may rely on ([`ATTRIBUTION.md`](../../ATTRIBUTION.md); [ADR 0013](0013-sample-map-analysis.md)
 sets the same bar for a learned model — its licence *and* its training data); GPL-3.0 §10 forbids
 further restrictions on the covered work; §5 permits an aggregate of separate programs under other

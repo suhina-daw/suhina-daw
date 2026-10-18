@@ -437,3 +437,7 @@ Stock instrument and effect entries come from the embedded build-time `.sd` bund
 Availability does not depend on resource files beside the executable. Imported native
 wrappers preserve their SDK definitions in the project; see
 [stock bundles](stock-device-bundle.md).
+
+A single audio file dropped onto an empty MIDI track (header, slot or arrangement lane)
+adds Sampler and loads its source without creating an audio clip. Tracks with devices
+are left intact. A pending file drop is cancelled when another project is active.

@@ -76,7 +76,7 @@ proprietary runtime and cannot run in Suhina.
 - No Pd code was written before plug-in hosting existed; step 1 comes with it, once plugdata is
   tried as a plug-in.
 - Licences fit: libpd is BSD-3-Clause and plugdata GPL-3.0, both compatible with
-  GPL-3.0-or-later (AGENTS.md rule 9).
+  GPL-3.0-or-later (AGENTS.md rule 10).
 - The command registry becomes an interface for device authors as well as agents, so command
   ids and parameters must stay stable once published.
 

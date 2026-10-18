@@ -12,10 +12,6 @@ covers:
 
 # Missing files
 
-Sampler source paths participate in missing-file discovery and relinking alongside
-audio regions. Relinking decodes the replacement before changing the source and
-uses the same project undo step; the source remains silent while missing.
-
 A project names the audio files its clips play. When a file has moved or been renamed since the
 project was saved, it cannot be decoded and its clips are silent. Suhina says so when the
 project opens and helps find the files again.
@@ -78,6 +74,10 @@ Rows with no candidate stay missing.
 
 ## What relinking changes
 
+Sampler source paths participate in missing-file discovery and relinking alongside
+audio regions. Relinking decodes the replacement before changing the source and
+uses the same project undo step; the source remains silent while missing.
+
 Every audio clip that names the missing file (by its relative or absolute path) is pointed at the
 candidate: both its path and its absolute path become the candidate's absolute path, as for a
 sample added from the browser. Nothing else about the clips changes (start, length, warp markers,
@@ -88,9 +88,9 @@ project keeps the new paths; Undo goes back to the old ones.
 
 | Command | Kind | Params | Does |
 |---|---|---|---|
-| `project.missingFiles` | read | | the files the project's audio clips name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips` |
+| `project.missingFiles` | read | | the files the project's audio clips and sampler sources name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips` |
 | `library.findFiles` | library | `names`, `folder?` | candidates for each file name: from the browser's index and the active project's folder, or, with `folder`, from walking that folder; each name with its paths |
-| `project.relinkFiles` | edit | `files`, `to` | points the clips naming each of `files` at the file at the same place in `to`, one undo step; refused when a `to` file does not exist or cannot be decoded |
+| `project.relinkFiles` | edit | `files`, `to` | points the clips and sampler sources naming each of `files` at the file at the same place in `to`, one undo step; refused when a `to` file does not exist or cannot be decoded |
 
 Over MCP, `folder` and every `to` path must be inside the server's read root ([`mcp.md`](../mcp.md)).
 

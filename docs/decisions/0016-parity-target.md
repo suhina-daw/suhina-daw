@@ -78,7 +78,7 @@ agrees on. It does not schedule the work.
 6. **The measurement never brings the manual into the tree.** No page, table, screenshot or device
    parameter list of another product's manual is committed; the scripts read a copy the user owns,
    write to `target/parity/`, and the repository holds only our own numbers and words
-   (CONTRIBUTING.md › Clean-room; AGENTS.md rule 8).
+   (CONTRIBUTING.md › Clean-room; AGENTS.md rule 9).
 
 ## The build order
 

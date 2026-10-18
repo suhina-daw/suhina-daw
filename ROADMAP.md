@@ -796,3 +796,5 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 
 - Sampler waveform: dynamic manual slice maps with double-click add/remove, draggable
   lines, gray areas outside S/E, anchored zoom and horizontal navigation.
+
+- Drop one audio file onto an empty MIDI track to add Sampler with that source.

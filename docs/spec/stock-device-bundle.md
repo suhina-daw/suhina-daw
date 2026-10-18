@@ -40,3 +40,6 @@ Importing a native wrapper resolves its trusted implementation and preserves its
 definition in the project's device extensions, separate from sampler source state.
 Its controls use the wrapper's declarations and panel. Existing native device ids
 and project state remain compatible.
+
+Set `SUHINA_DEVICES_DIR` when the build should export definitions to a custom directory.
+This also supports builds with a separate Cargo intermediate build directory.

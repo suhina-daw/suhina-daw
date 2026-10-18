@@ -7,7 +7,19 @@ use suhina_session::Session;
 
 #[test]
 fn every_stock_sd_imports_and_persists_its_definition() {
-    let folder = std::env::temp_dir().join(format!("suhina-stock-{}", std::process::id()));
+    let folder = std::env::temp_dir().join(format!(
+        "suhina-stock-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    std::fs::create_dir(&folder).unwrap();
+    let _cleanup = Cleanup(folder.clone());
     suhina_device_bundle::write_to(&folder).unwrap();
     for stock in suhina_device_bundle::DEVICES {
         let project = Project {
@@ -42,5 +54,4 @@ fn every_stock_sd_imports_and_persists_its_definition() {
         }
         std::fs::remove_file(path).unwrap();
     }
-    std::fs::remove_dir(folder).unwrap();
 }

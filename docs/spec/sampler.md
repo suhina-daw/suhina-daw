@@ -221,3 +221,7 @@ retains detail. Source/loop markers, manual lines and voice heads share the same
 coordinate transform and clipping. Manual lines take precedence over navigation.
 
 Sampler receives block tempo before note events, so a Beat slice triggered at frame zero uses the current tempo. Decoded PCM and transient analysis are shared across graph preparations. Every panel control is a typed SDK widget, including the LFO WaveformPreview; the sampler definition contains no custom drawing primitives.
+
+A single audio file dropped onto an empty MIDI track (header, slot or arrangement lane)
+adds Sampler and loads its source without creating an audio clip. Tracks with devices
+are left intact. A pending file drop is cancelled when another project is active.

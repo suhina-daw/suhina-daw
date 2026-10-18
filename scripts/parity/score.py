@@ -53,7 +53,7 @@ CHAPTERS = [
     (4, "Working with the Browser", 60, 0.49, "partial",
      "Search, categories, folders watched on disk, pins, recent, colour tags, preview through the "
      "engine, sample map by sound similarity (smooth with 200 000 items, also while its window is resized) with kinds recognised from the sound and set by hand; samples and MIDI files dragged from the system's file "
-     "manager land like a browser drag (exact placement waits for pointer positions from the "
+     "manager land like a browser drag; dropping one sample on an empty MIDI track adds Sampler (exact placement waits for pointer positions from the "
      "windowing layer); installed plug-ins grouped by vendor, by type (instrument and effect groups "
      "from the formats' own categories) or in a flat list sortable by name, vendor, type, format "
      "and date, with pins and tags on them. Missing collections/tag editor depth, packs, Splice, "

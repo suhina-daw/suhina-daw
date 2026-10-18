@@ -17,12 +17,6 @@ covers:
 
 # Recording
 
-Sampler's waveform Record/Stop controls use `device.recordSample`. The track must
-be armed with an audio input selected and the project saved. This records directly
-into the instrument source through the same recording writer, without making a
-clip. Start and stop use the current arrangement beat rather than launch
-quantization. Loading the finished take is one undo step; undo keeps the WAV file.
-
 Suhina records what armed tracks play ([ADR 0017](../decisions/0017-inputs-and-latency.md)):
 the notes a MIDI controller plays on a track that plays notes, and the sound of the audio input
 on a track that has one. A recording makes one clip per armed track, a **take**, either in a
@@ -48,6 +42,12 @@ names no other program's behaviour.
   what was recorded is visible; an audio take always has sound, even if silent.
 
 ## Where it goes
+
+Sampler's waveform Record/Stop controls use `device.recordSample`. The track must
+be armed with an audio input selected and the project saved. This records directly
+into the instrument source through the same recording writer, without making a
+clip. Start and stop use the current arrangement beat rather than launch
+quantization. Loading the finished take is one undo step; undo keeps the WAV file.
 
 ### Into a clip slot
 
@@ -143,6 +143,7 @@ file's frames.
 
 | Command | What it does |
 |---|---|
+| `device.recordSample` | `track`, `device`, `on`: records the armed track audio input into Sampler without a clip; starts at the current beat, or the play start marker while stopped |
 | `clip.record` | `track`, `scene`: records into that empty slot of an armed track, from the next launch boundary |
 | `transport.record` | `on`: true records every armed track into the arrangement; false ends every take (slot takes at the next launch boundary) |
 | `transport.setCountIn` | `bars`: 0, 1, 2 or 4 |

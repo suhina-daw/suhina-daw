@@ -102,7 +102,6 @@ crates/
   device-api L0 the Device trait, parameter descriptions, contract tests every device runs
   device-sdk L0 builds and validates data-only `.sd` effect graphs, compiles DSP primitives and delayed feedback for real-time execution; shared node contracts and embedded custom UI canvases/images for authors and agents
   device-bundle L1 generates, validates and embeds stock `.sd` definitions at build time
-  device-bundle L1 generates, validates and embeds stock `.sd` definitions at build time
   device-registry L1 every built-in effect or instrument by its stable id: makes and lists them (ADR 0004)
   ipc      L0 audio blocks to a plug-in host process: shared memory, block sync with a deadline (ADR 0006; may use unsafe)
   realtime L0 real-time priority for audio threads: MMCSS Pro Audio on Windows, SCHED_FIFO or rtkit on Linux

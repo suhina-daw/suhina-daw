@@ -98,6 +98,7 @@ const SWITCH_HOVER: f64 = 0.5;
 
 /// A drop whose samples are being decoded on another thread before its commands run.
 struct PendingDrop {
+    project: Option<ProjectId>,
     commands: Vec<(&'static str, serde_json::Value)>,
     /// Each decoded file (a Stems file once per audio track, with its stream number).
     decoded: std::sync::mpsc::Receiver<Vec<DecodedDrop>>,
@@ -1798,13 +1799,29 @@ impl App {
             detail_view::build_with(s.project(), track, clip, &mut |t, i| reports.remove(&(t, i)))
         });
         if let Some(session) = self.session() {
-            for channel in &session.project().channels {
+            for channel in session.project().channels.iter().filter(|channel| {
+                session
+                    .project()
+                    .tracks
+                    .iter()
+                    .any(|t| Some(t.id) == clip.map(ClipRef::track).or(track) && t.channel == Some(channel.id))
+            }) {
                 let Some(track) = session.project().tracks.iter().find(|t| t.channel == Some(channel.id)) else {
                     continue;
                 };
                 for (index, device) in channel.devices.iter().enumerate() {
+                    if device.sample_file().is_none()
+                        && device.kind != suhina_engine::model::DeviceKind::Builtin("sampler".into())
+                    {
+                        continue;
+                    }
                     let id = crate::detail::device_canvas::sample_source_id(track.id, index);
                     ui.ctx().data_mut(|d| {
+                        let version = (self.projects.active(), self.revision);
+                        if d.get_temp::<(Option<ProjectId>, u64)>(id.with("manual-revision")) == Some(version) {
+                            return;
+                        }
+                        d.insert_temp(id.with("manual-revision"), version);
                         if let Some(points) = device.sample_slices() {
                             d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
                         } else {
@@ -3743,6 +3760,30 @@ impl App {
         let project = self.session()?.project();
         let name =
             |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
+        if let [sample] = items
+            && sample.kind == drop::ItemKind::Sample
+            && let Some(track_id) = match target {
+                DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
+                _ => None,
+            }
+            && let Some(track) = project.tracks.iter().find(|t| t.id == track_id)
+            && track.content.notes
+            && !track.content.audio
+            && let Some(channel) = project.channels.iter().find(|c| Some(c.id) == track.channel)
+            && channel.devices.is_empty()
+        {
+            let mut plan = drop::plan(
+                items,
+                DropTarget::Sampler { track: track_id, device: 0 },
+                separate,
+                self.settings.warp_mode.param(),
+                false,
+                &name,
+            )?;
+            plan.commands.insert(0, ("device.add", json!({"track":track_id.0,"id":"sampler"})));
+            plan.label = format!("Add Sampler to {}", name(track_id));
+            return Some(plan);
+        }
         let stack = self.settings.sample_stacking || self.settings.midi_stacking;
         drop::plan(items, target, separate, self.settings.warp_mode.param(), stack, &name)
     }
@@ -3799,7 +3840,7 @@ impl App {
         match started {
             Ok(_) => {
                 self.status = Status::Hint(format!("Reading {count} sample{}", if count == 1 { "" } else { "s" }));
-                self.pending_drop = Some(PendingDrop { commands, decoded });
+                self.pending_drop = Some(PendingDrop { project: self.projects.active(), commands, decoded });
             }
             Err(_) => self.run_drop(commands),
         }
@@ -3808,6 +3849,11 @@ impl App {
     /// Picks up the samples of a drop once they are decoded and runs its commands.
     fn poll_drop(&mut self, ctx: &egui::Context) {
         let Some(pending) = &self.pending_drop else { return };
+        if pending.project != self.projects.active() {
+            self.pending_drop = None;
+            self.status = Status::Hint("Sample drop cancelled after switching projects".into());
+            return;
+        }
         match pending.decoded.try_recv() {
             Ok(decoded) => {
                 let Some(pending) = self.pending_drop.take() else { return };
@@ -4439,6 +4485,57 @@ mod tests {
         // Where the map's window cannot tell (no pointer over it yet), nothing is under the drag.
         app.map_window.drag = Some(RemoteDrag { screen: None, released: false, escape: false, ctrl: false });
         assert_eq!(drag_pointer_in(&app, main, None), None);
+    }
+
+    #[test]
+    fn empty_midi_track_drop_adds_sampler_before_loading_source() {
+        use suhina_engine::model::*;
+        let mut app = App::new();
+        app.set_session(
+            Session::new(Project {
+                tracks: vec![Track {
+                    content: ContentKinds { notes: true, audio: false },
+                    channel: Some(ChannelId(1)),
+                    ..Track::new(TrackId(1), "MIDI")
+                }],
+                channels: vec![Channel::new(ChannelId(1), "MIDI")],
+                ..Project::default()
+            }),
+            &[],
+        );
+        let sample = drop::system_file(Path::new("/test.wav")).unwrap();
+        for target in [
+            DropTarget::Track(TrackId(1)),
+            DropTarget::Slot { track: TrackId(1), scene: 0 },
+            DropTarget::Lane { track: TrackId(1), beat: 0. },
+        ] {
+            let plan = app.plan_drop(std::slice::from_ref(&sample), target, false).unwrap();
+            assert_eq!(
+                plan.commands,
+                vec![
+                    ("device.add", json!({"track":1,"id":"sampler"})),
+                    ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
+                ]
+            );
+        }
+        app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
+        assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn pending_drop_is_cancelled_when_another_project_is_active() {
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        let project = app.projects.active();
+        let (send, decoded) = std::sync::mpsc::channel();
+        send.send(Vec::new()).unwrap();
+        app.pending_drop =
+            Some(PendingDrop { project, decoded, commands: vec![("device.add", json!({"track":1,"id":"sampler"}))] });
+        app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+        let before = app.session().unwrap().project().clone();
+        app.poll_drop(&egui::Context::default());
+        assert!(app.pending_drop.is_none());
+        assert_eq!(app.session().unwrap().project(), &before);
     }
 
     #[test]
