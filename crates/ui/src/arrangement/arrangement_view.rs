@@ -942,6 +942,11 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let focus = state.focus;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
+    // With the piano roll pulled over the whole window the view has no height: it draws nothing
+    // and takes no pointer, so its ruler never sits over the splitter and takes its double-click.
+    if area.height() < 1.0 {
+        return;
+    }
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::window_background());
 
