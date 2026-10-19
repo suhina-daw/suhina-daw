@@ -475,6 +475,41 @@ fn start(
 }
 
 /// Writes one message to the engine.
+/// The engine's end of the connection, shared: the main loop and a plug-in's transport request,
+/// sent the moment it is made, each write whole lines to it, one at a time.
+struct Shared<W>(Arc<std::sync::Mutex<W>>);
+
+impl<W> Clone for Shared<W> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<W: Write> Write for Shared<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).write(buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).write_all(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).flush()
+    }
+}
+
+/// Where [`send_now`] writes: the connection, once the host is connected.
+static NOW: std::sync::Mutex<Option<Box<dyn Write + Send>>> = std::sync::Mutex::new(None);
+
+/// Sends `message` at once, from whichever thread, rather than at the main loop's next turn:
+/// an ARA plug-in's transport request, which waited for its own click to be handled before
+/// (100 ms or more, so its playhead went to the new place late). Returns whether it was sent.
+pub(crate) fn send_now(message: &Message) -> bool {
+    let mut now = NOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    now.as_mut().is_some_and(|writer| send(writer, message).is_ok())
+}
+
 fn send(writer: &mut impl Write, message: &Message) -> std::io::Result<()> {
     if suhina_plugins::trace::on() && !matches!(message, Message::AraNotes { .. }) {
         let text = format!("{message:?}");
@@ -541,7 +576,8 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     suhina_plugins::trace!("host up, connecting");
     let stream = suhina_plugins::connect(address)?;
     suhina_plugins::trace!("host connected");
-    let mut writer = stream.try_clone()?;
+    let mut writer = Shared(Arc::new(std::sync::Mutex::new(stream.try_clone()?)));
+    *NOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(writer.clone()));
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();
     let mut last_memory = Instant::now();

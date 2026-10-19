@@ -1470,6 +1470,10 @@ const MAX_PLAYBACK_REQUESTS: usize = 16;
 
 fn ask(request: AraPlayback) {
     suhina_plugins::trace!("ara plug-in asks transport {request:?}");
+    // Sent at once: the main loop would send it only after the plug-in's click is handled.
+    if crate::send_now(&suhina_plugins::protocol::Message::AraPlayback(request)) {
+        return;
+    }
     let mut requests = PLAYBACK_REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let AraPlayback::Position(_) = request {
         requests.retain(|r| !matches!(r, AraPlayback::Position(_)));
