@@ -1851,7 +1851,9 @@ impl App {
                     }
                 }
                 // Duplicated clips: the copies are selected, so the next Ctrl+D copies them on.
-                if action.id == "clip.duplicate"
+                // So are the copies a Ctrl-drag made, on whichever track they landed (#692).
+                if (action.id == "clip.duplicate"
+                    || (action.id == "clip.moveMany" && action.params["copy"].as_bool() == Some(true)))
                     && let Some(made) = result["clips"].as_array()
                 {
                     let copies: Vec<(TrackId, ClipId)> = made
@@ -6224,6 +6226,29 @@ mod tests {
         assert_eq!(plan.commands[0].0, "clip.addFiles");
         app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
         assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn a_ctrl_drag_copy_to_another_track_selects_the_copy() {
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        let project = app.session().unwrap().project().clone();
+        let lanes: Vec<_> = project.arrangement.lanes.iter().filter(|l| l.track.is_some()).collect();
+        let from = lanes.iter().find(|l| !l.clips.is_empty()).expect("the demo has an arrangement clip");
+        let (track, clip) = (from.track.unwrap(), from.clips[0].id);
+        let notes = |t: TrackId| project.tracks.iter().any(|x| x.id == t && x.content.notes);
+        let to = lanes
+            .iter()
+            .filter_map(|l| l.track)
+            .find(|t| *t != track && notes(*t) == notes(track))
+            .expect("another track of the same kind");
+        app.arrangement.select_clip(track, clip);
+        let params = json!({ "clips": [{ "clip": clip.0 }], "beats": 64.0, "copy": true, "to_track": to.0 });
+        app.run(&Action::new("clip.moveMany", params));
+        let picked = app.arrangement.selected_clips();
+        assert_eq!(picked.len(), 1, "{picked:?}");
+        assert_eq!(picked[0].0, to, "the copy on the other track is selected");
+        assert_ne!(picked[0].1, clip);
     }
 
     #[test]
