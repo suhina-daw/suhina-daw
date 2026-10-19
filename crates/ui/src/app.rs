@@ -61,6 +61,8 @@ const TABS: f32 = 22.0;
 const RECENT_IN_MENU: usize = 10;
 /// The detail area's height in a row, by default, and the splitter between it and the view.
 const DETAIL_HEIGHT: f32 = 200.0;
+/// How long the browser takes to slide in or out, with animations on (#708).
+const BROWSER_SLIDE: f32 = 0.18;
 /// The least the view keeps above the detail area; pulled past it, the piano roll goes to the top.
 const MIN_VIEW: f32 = 160.0;
 const SPLITTER: f32 = 6.0;
@@ -441,6 +443,8 @@ pub struct App {
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
     /// index.
     device_carry: Option<(TrackId, usize)>,
+    /// How much of the browser shows, 0 to 1, while it slides in or out (#708).
+    browser_part: f32,
     /// The hosts' reader threads wake this window ([`suhina_plugins::set_waker`]).
     waker_set: bool,
     switch_hover: Option<(View, f64)>,
@@ -552,6 +556,7 @@ impl App {
             next_ram: None,
             carry: None,
             device_carry: None,
+            browser_part: 1.0,
             waker_set: false,
             switch_hover: None,
             agent_asks: Vec::new(),
@@ -2117,7 +2122,10 @@ impl App {
                 && self.settings.device_layout != DeviceLayout::Stack;
             // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
             // its value for when a project opens.
-            let browser_shown = self.settings.browser_open && !self.start_panel_open();
+            let browser_wanted = self.settings.browser_open && !self.start_panel_open();
+            // It slides in and out from its side, with animations on (#708).
+            self.browser_part = motion::toward(ui.ctx(), Id::new("browser-shown"), browser_wanted, BROWSER_SLIDE);
+            let browser_shown = self.browser_part > 0.001;
             let inner = if browser_shown && !full_width { self.browser_panel(ui, inner) } else { inner };
             let mut view_area = inner;
             self.detail_drop = None;
@@ -4771,23 +4779,37 @@ impl App {
         let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
         let width = (self.settings.browser_width as f32).clamp(low as f32, widest);
         let left = self.settings.browser_side == Side::Left;
+        // While it slides (#708) only `part` of it shows: it moves in from its side whole, not
+        // squeezed, and its handle takes hold only once it is all there.
+        let part = self.browser_part.clamp(0.0, 1.0);
+        let (shown, handle_width) = (width * part, BROWSER_HANDLE * part);
         let (panel, handle, rest) = if left {
-            let panel = Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()));
+            let panel = Rect::from_min_max(
+                Pos2::new(area.left() + shown - width, area.top()),
+                Pos2::new(area.left() + shown, area.bottom()),
+            );
             let handle = Rect::from_min_max(
                 Pos2::new(panel.right(), area.top()),
-                Pos2::new(panel.right() + BROWSER_HANDLE, area.bottom()),
+                Pos2::new(panel.right() + handle_width, area.bottom()),
             );
             (panel, handle, Rect::from_min_max(Pos2::new(handle.right(), area.top()), area.max))
         } else {
-            let panel = Rect::from_min_max(Pos2::new(area.right() - width, area.top()), area.max);
+            let panel = Rect::from_min_max(
+                Pos2::new(area.right() - shown, area.top()),
+                Pos2::new(area.right() - shown + width, area.bottom()),
+            );
             let handle = Rect::from_min_max(
-                Pos2::new(panel.left() - BROWSER_HANDLE, area.top()),
+                Pos2::new(panel.left() - handle_width, area.top()),
                 Pos2::new(panel.left(), area.bottom()),
             );
             (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
         };
         let default_width = crate::settings::Settings::default().browser_width;
-        let (resized, done) = browser_view::resize_handle(ui, handle, width, left, default_width as f32);
+        let (resized, done) = if part >= 1.0 {
+            browser_view::resize_handle(ui, handle, width, left, default_width as f32)
+        } else {
+            (None, false)
+        };
         if let Some(new) = resized {
             let new = new.round().clamp(low as f32, widest) as u32;
             self.settings.browser_width = new;
@@ -4807,6 +4829,7 @@ impl App {
         };
         let out = ui
             .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
+                ui.set_clip_rect(panel.intersect(area).intersect(ui.clip_rect()));
                 let cx = browser_view::Context {
                     projects: &mut self.projects,
                     settings: &self.settings,
@@ -6428,6 +6451,26 @@ mod tests {
         assert_eq!(plan.commands[0].0, "clip.addFiles");
         app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
         assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn the_browser_slides_out_and_in_with_animations_on() {
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        app.set_browser_open(true);
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .with_step_dt(1.0 / 60.0)
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        assert_eq!(harness.state().browser_part, 1.0);
+        harness.state_mut().set_browser_open(false);
+        harness.step();
+        harness.step();
+        let part = harness.state().browser_part;
+        assert!(part > 0.0 && part < 1.0, "half way out: {part}");
+        harness.run_steps(30);
+        assert_eq!(harness.state().browser_part, 0.0, "all the way out");
     }
 
     #[test]
