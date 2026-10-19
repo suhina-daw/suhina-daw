@@ -130,14 +130,17 @@ pub fn area(
 ) -> Response {
     let response = widgets::button_area(ui, rect, id, format!("{name} colour"));
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    egui::Popup::menu(&response).id(id.with("palette")).show(|ui| {
-        if let Some(colour) = swatch_row(ui, Some(current)) {
-            if colour != current {
-                actions.push(set_colour(track, colour));
+    egui::Popup::menu(&response)
+        .id(id.with("palette"))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            if let Some(colour) = swatch_row(ui, Some(current)) {
+                if colour != current {
+                    actions.push(set_colour(track, colour));
+                }
+                ui.close();
             }
-            ui.close();
-        }
-    });
+        });
     response
 }
 

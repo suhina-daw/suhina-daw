@@ -560,7 +560,9 @@ fn draw_column(
 
 /// The track's right-click menu on `response`: its header, its strip, a return's column.
 fn track_menu_on(response: &Response, column: &Column, bands: &Bands, actions: &mut Vec<Action>) {
-    response.context_menu(|ui| {
+    // Open until a click outside: its items close it themselves, and a colour dragged in its
+    // picker does not (#712).
+    egui::Popup::context_menu(response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         let into: Vec<(TrackId, String)> = nesting::move_targets(&bands.places, column.track)
             .into_iter()
             .filter_map(|g| bands.groups.iter().find(|(t, _)| *t == g).cloned())

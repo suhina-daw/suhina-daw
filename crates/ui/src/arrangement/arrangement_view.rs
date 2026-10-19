@@ -3108,7 +3108,9 @@ fn track_header(
         state.track_drop = Some((dragged, pointer.y));
     }
     let selection = state.selected_tracks.clone();
-    body.context_menu(|ui| {
+    // Open until a click outside: its items close it themselves, and a colour dragged in its
+    // picker does not (#712).
+    egui::Popup::context_menu(&body).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         let into: Vec<(TrackId, String)> = nesting::move_targets(nest.places, lane.track)
             .into_iter()
             .filter_map(|g| nest.groups.iter().find(|(t, _)| *t == g).cloned())
