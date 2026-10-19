@@ -277,7 +277,7 @@ knob marks a send before the fader. Behaviour and commands: [sends and returns](
 
 Per track, top to bottom: pan, volume with numeric field and meter ([level
 meters](level-meters.md)), track on/off (shows the
-track number), solo, cue (**C**: the track is also heard on the cue output, headphones,
+track number), solo, cue (headphones: the track is also heard on the cue output, headphones,
 `track.setCue`; [spec](cue-output.md)), arm (MIDI and audio tracks). Pan and volume are dragged
 up or down and double-clicked to reset; the change is heard while dragging, and one drag is one
 undo step (`track.setPan`, `track.setVolume` with `continue`). The Arrangement view's track

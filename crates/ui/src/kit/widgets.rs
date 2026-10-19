@@ -120,7 +120,8 @@ pub fn solo_button(
     ))
 }
 
-/// A track's cue button ("C"): draws it in `rect` and returns the command a click asks for,
+/// A track's cue button (headphones; a C read as part of the pan field beside it, which shows C
+/// for centre, #744): draws it in `rect` and returns the command a click asks for,
 /// which turns the track's cue on or off, so it is also heard on the cue output (headphones).
 pub fn cue_button(
     ui: &Ui,
@@ -135,8 +136,28 @@ pub fn cue_button(
     let response = button_area(ui, rect, id, label);
     let (fill, text) = toggle_colors(ui, &response, cue);
     painter.rect_filled(rect, 0.0, fill);
-    text_in(painter, rect, Align2::CENTER_CENTER, "C", theme::ui_font(theme::TEXT_SMALL), text);
+    headphones(painter, rect, text);
     response.clicked().then(|| Action::new("track.setCue", serde_json::json!({ "track": track, "cue": !cue })))
+}
+
+/// A pair of headphones in the middle of `rect`, in `color`: the band an arc over the top, a cup
+/// at each of its ends. Sized from the rectangle's height, so it reads at a button's 15 points.
+pub fn headphones(painter: &Painter, rect: Rect, color: Color32) {
+    let size = rect.height().min(rect.width()) * 0.62;
+    let radius = size * 0.45;
+    let center = rect.center() + egui::vec2(0.0, size * 0.12);
+    let band: Vec<Pos2> = (0..=12)
+        .map(|i| {
+            let angle = std::f32::consts::PI * (1.0 + i as f32 / 12.0);
+            center + egui::vec2(angle.cos() * radius, angle.sin() * radius)
+        })
+        .collect();
+    painter.add(egui::Shape::line(band, egui::Stroke::new((size * 0.13).max(1.0), color)));
+    let cup = egui::vec2(size * 0.26, size * 0.42);
+    for side in [-1.0f32, 1.0] {
+        let at = center + egui::vec2(side * radius, cup.y * 0.35);
+        painter.rect_filled(Rect::from_center_size(at, cup), size * 0.06, color);
+    }
 }
 
 /// A track's arm button (components › Arm): a ring off, a filled red dot on its dark red

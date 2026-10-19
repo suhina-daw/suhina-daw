@@ -28,7 +28,7 @@ outputs (1 and 2, the speakers) go on unchanged.
 
 - **Browser previews**: samples previewed from the browser and the sample map, and MIDI files
   previewed through the fallback instrument (ADR 0011).
-- **Tracks whose cue is on** (the **C** button on a track header, `track.setCue`): the track as
+- **Tracks whose cue is on** (the headphones button on a track header, `track.setCue`): the track as
   the mix has it after its own devices, volume and pan, before any group and the main channel.
   Turning the main volume down does not change it. A muted track, or one a solo leaves out, is
   silent on the cue too: the cue listens to what the track plays, it does not override the mix.
