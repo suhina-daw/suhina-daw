@@ -1035,7 +1035,9 @@ fn shortcuts_page(
             let mut group = "";
             let mut listed = 0;
             for action in actions() {
-                let keys_text: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::display).collect();
+                // As shown and as written ("⌘⌥↑" and "Ctrl+Alt+Up" on macOS), so either finds it.
+                let keys_text: Vec<String> =
+                    keymap.keys(&action.id).iter().map(|s| format!("{} {}", s.display(), s.text())).collect();
                 if !action_matches(&action.label, &action.id, action.group, &keys_text.join(" "), &words) {
                     continue;
                 }
@@ -1092,7 +1094,7 @@ fn shortcuts_page(
     changed
 }
 
-/// Every word is in the action's label, id, group or keys (as shown, "Ctrl+Alt+Up").
+/// Every word is in the action's label, id, group or keys (as shown and as written, "Ctrl+Alt+Up").
 fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[String]) -> bool {
     let text = format!("{label} {id} {group} {keys}").to_lowercase();
     words.iter().all(|word| text.contains(word.as_str()))
