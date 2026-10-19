@@ -258,3 +258,35 @@ fn block_size_does_not_change_a_render_with_sends() {
     let n = reference.len().min(live.len());
     assert!(max_diff(&live[..n], &reference[..n]) < 1e-6);
 }
+
+/// As in a project the app makes: a main channel, and the return playing into it (#705).
+fn sending_through_main(level: f64, pre_fader: bool) -> Project {
+    let mut project = sending(level, pre_fader, vec![]);
+    project.tracks.push(Track { channel: Some(ChannelId(9)), ..Track::new(TrackId(9), "Main") });
+    project.channels.push(channel(9, ChannelRole::Master, vec![]));
+    for c in project.channels.iter_mut().filter(|c| c.role != ChannelRole::Master) {
+        c.output = None;
+    }
+    project.channels[1].output = Some(ChannelId(9));
+    project
+}
+
+#[test]
+fn a_send_to_an_empty_return_playing_into_main_makes_the_track_louder_on_main() {
+    let plain = render_offline(&sending_through_main(0.0, false), SR, 512).unwrap();
+    assert!(peak(&plain) > 0.1);
+    for pre_fader in [false, true] {
+        let out = render_offline(&sending_through_main(1.0, pre_fader), SR, 512).unwrap();
+        let expected: Vec<f32> = plain.iter().map(|s| s * 2.0).collect();
+        assert_sounds_like(&out, &expected);
+        let half = render_offline(&sending_through_main(0.5, pre_fader), SR, 512).unwrap();
+        let expected: Vec<f32> = plain.iter().map(|s| s * 1.5).collect();
+        assert_sounds_like(&half, &expected);
+    }
+    // Main's own volume scales the return's share as it does the track's.
+    let mut quiet = sending_through_main(1.0, false);
+    quiet.channels.iter_mut().find(|c| c.role == ChannelRole::Master).unwrap().volume = 0.5;
+    let out = render_offline(&quiet, SR, 512).unwrap();
+    let expected = plain.clone();
+    assert_sounds_like(&out, &expected);
+}

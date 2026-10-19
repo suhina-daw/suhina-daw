@@ -3352,14 +3352,17 @@ fn send_knob(
     };
     let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
     let mut committed = None;
+    // Heard while it is dragged, in one undo step (#705).
+    let continued = preview.is_some();
     match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
-        Drag::Moving(v) => state.send_drag = Some((track, send.target, v)),
+        Drag::Moving(v) => {
+            state.send_drag = Some((track, send.target, v));
+            actions.push(crate::session::mixer_strip::set_send(track, send.target, v, continued));
+        }
         Drag::Done(v) => {
             state.send_drag = None;
             committed = Some(v);
-            let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-            actions
-                .push(Action::new("track.setSend", json!({ "track": track.0, "return": send.target.0, "level": db })));
+            actions.push(crate::session::mixer_strip::set_send(track, send.target, v, continued));
         }
         Drag::None => {}
     }

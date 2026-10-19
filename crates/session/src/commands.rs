@@ -2065,6 +2065,7 @@ static COMMANDS: &[CommandSpec] = &[
             TRACK,
             RETURN,
             param("level", ParamType::Decibels, "send level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            CONTINUE,
         ],
         kind: CommandKind::Edit,
         run: crate::sends::set_send,

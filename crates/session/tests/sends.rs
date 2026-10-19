@@ -216,3 +216,20 @@ fn a_send_set_by_command_is_heard_through_the_return() {
     run(&mut session, "track.setMute", json!({ "tracks": ["A Return"], "mute": true })).unwrap();
     assert!(peak(session.project()) < 1e-6);
 }
+
+#[test]
+fn a_send_dragged_is_one_undo_step() {
+    let mut session = Session::new(project_built());
+    let before = session.project().clone();
+    for (level, continued) in [(-30.0, false), (-20.0, true), (-10.0, true), (-6.0, true)] {
+        run(
+            &mut session,
+            "track.setSend",
+            json!({ "track": "Bass", "return": "A Return", "level": level, "continue": continued }),
+        )
+        .unwrap();
+    }
+    assert!(sends(&session, 1).iter().any(|s| (20.0 * s.level.log10() + 6.0).abs() < 0.01));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before, "the drag is undone at once");
+}

@@ -615,6 +615,13 @@ fn shown(state: &SessionViewState, column: &Column, control: Control, value: f64
     }
 }
 
+/// A finished or moving send drag as its command; every frame of a drag but the first continues
+/// its undo step.
+pub(crate) fn set_send(track: TrackId, target: TrackId, v: f64, continued: bool) -> Action {
+    let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
+    Action::new("track.setSend", json!({ "track": track.0, "return": target.0, "level": db, "continue": continued }))
+}
+
 /// A finished or moving volume drag as its command; every frame of a drag but the first
 /// continues its undo step, so the drag is one step.
 fn set_volume(track: u32, v: f64, continued: bool) -> Action {
@@ -900,16 +907,17 @@ fn send_knobs(
         };
         let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
         let mut committed = None;
+        // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
+        let continued = preview.is_some();
         match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
-            Drag::Moving(v) => state.drag = Some((track, control, v)),
+            Drag::Moving(v) => {
+                state.drag = Some((track, control, v));
+                actions.push(set_send(track, send.target, v, continued));
+            }
             Drag::Done(v) => {
                 state.drag = None;
                 committed = Some(v);
-                let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-                actions.push(Action::new(
-                    "track.setSend",
-                    json!({ "track": track.0, "return": send.target.0, "level": db }),
-                ));
+                actions.push(set_send(track, send.target, v, continued));
             }
             Drag::None => {}
         }
