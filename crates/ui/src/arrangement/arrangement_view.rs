@@ -2226,6 +2226,9 @@ fn clip_box<'a>(
     if response.clicked() {
         state.pick_clip(key, shift, command, clip_order);
         state.clip_clicked = true;
+        // The clips drawn before this one this frame still show the old selection: one more
+        // frame at once, or the old highlight stays until the pointer moves again (#695).
+        ui.ctx().request_repaint();
         // A click on a clip also moves the play position there, on the grid (Alt: free), as a
         // click on an empty lane does; an ARA plug-in's editor follows it (#717).
         if let Some(pointer) = response.interact_pointer_pos() {
@@ -2236,6 +2239,7 @@ fn clip_box<'a>(
     } else if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && !state.is_selected(key) {
         // Pressing a clip that is already selected keeps the selection, so a drag can start there.
         state.pick_clip(key, shift, command, clip_order);
+        ui.ctx().request_repaint();
     }
     if response.clicked() || (response.drag_started_by(egui::PointerButton::Primary) && !selects_time) {
         // The track being worked on: a folded group shows this track while it is one of its own.
