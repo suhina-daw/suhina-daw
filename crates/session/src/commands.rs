@@ -903,6 +903,11 @@ static COMMANDS: &[CommandSpec] = &[
             TRACK,
             param("start", ParamType::Number, "where the range starts, in beats from the beginning, at least 0"),
             param("end", ParamType::Number, "where the range ends, in beats, after start"),
+            optional(
+                "clips",
+                ParamType::Integers,
+                "only these clips (ids from project.clips), the others in the range left as they are: one row of a stack",
+            ),
         ],
         kind: CommandKind::Edit,
         run: editing::consolidate,

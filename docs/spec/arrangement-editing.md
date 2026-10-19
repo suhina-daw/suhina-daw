@@ -210,7 +210,7 @@ With a time selection:
 | Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
 | Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own. |
 | Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
-| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
+| Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks; a span painted in one row of a stack, that row's clips only. |
 
 Each takes `{tracks, start, end}` and is one undo step. Closing the gap (deleting the time
 itself) is not built yet.
@@ -327,9 +327,10 @@ at that zoom (Alt held while right-clicking: exactly there).
 one new clip there. It is one undo step and returns the clip's `index`, and for audio the `file`
 written.
 
-- **What is in the range:** the enabled clips on the track's lane that overlap it. A clip
-  reaching in from before or past the range counts with the part inside it; clips outside are
-  unchanged. As with a split, a note that starts before the range is left out.
+- **What is in the range:** the enabled clips on the track's lane that overlap it, or with
+  `clips` (clip ids) only those: a time selection painted in one row of a stack consolidates that
+  row's clips and leaves the other rows as they are. A clip reaching in from before or past the
+  range counts with the part inside it; clips outside are unchanged. As with a split, a note that starts before the range is left out.
 - **MIDI clips** are joined: the new clip's content holds every note the clips play inside the
   range, where it sounds (after start markers, loops and clip ends are applied), each cut where
   its clip ends or the range ends. Gaps between clips are silent.

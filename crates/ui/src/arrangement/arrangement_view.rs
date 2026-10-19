@@ -343,6 +343,8 @@ pub struct ArrangementViewState {
     /// The drag that started `marquee` paints time (a lane's or a clip's upper half) rather than
     /// drawing a rectangle that picks whole clips (the lower half).
     marquee_time: bool,
+    /// The stacked row a time-painting drag started in: its track, the row and how many.
+    marquee_row: Option<(TrackId, usize, usize)>,
     /// The scroll when `marquee` was last placed: the view scrolls under a drag past its edge,
     /// and the rectangle's start moves with the lanes (#691).
     marquee_scroll: Vec2,
@@ -452,6 +454,7 @@ impl Default for ArrangementViewState {
             anchor: None,
             marquee: None,
             marquee_time: false,
+            marquee_row: None,
             marquee_scroll: Vec2::ZERO,
             time_selection: None,
             ruler_select: None,
@@ -500,6 +503,9 @@ pub struct TimeSelection {
     pub tracks: Vec<TrackId>,
     pub start: f64,
     pub end: f64,
+    /// Painted from a clip in one row of a stack, on its track alone: that row (from 0) of how
+    /// many. Consolidate then joins that row's clips only and leaves the other rows be.
+    pub row: Option<(usize, usize)>,
 }
 
 impl ArrangementViewState {
@@ -1272,7 +1278,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         let to = ruler_beat(raw, grid, free);
         let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
         let (start, end) = (from.min(to), from.max(to));
-        state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end });
+        state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None });
         if ui.input(|i| !i.pointer.primary_down()) {
             state.ruler_select = None;
         }
@@ -1482,6 +1488,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.marquee_scroll = state.scroll;
             state.marquee_time =
                 if state.time_select_ctrl { ui.input(|i| i.modifiers.command) } else { origin.y < row.time.center().y };
+            state.marquee_row = None;
         }
         if !state.time_select_ctrl
             && state.marquee.is_none()
@@ -1620,8 +1627,13 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             if span.span() <= 0.0 {
                 break;
             }
-            // Plainly over the clips too: the accent, and a line at each edge.
-            let lit = Rect::from_x_y_ranges(span, row.y_range());
+            // Plainly over the clips too: the accent, and a line at each edge; in one row of a
+            // stack, over that row.
+            let band = match selection.row {
+                Some((at, of)) => sub_row(*row, at, of).y_range(),
+                None => row.y_range(),
+            };
+            let lit = Rect::from_x_y_ranges(span, band);
             lanes_painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(0.38));
             let edge = egui::Stroke::new(1.5, theme::accent());
             lanes_painter.vline(lit.left(), lit.y_range(), edge);
@@ -1650,8 +1662,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let tracks: Vec<TrackId> =
                 rows.iter().filter(|r| r.time.y_range().intersects(whole.y_range())).map(|r| r.clips).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
+            // Begun in a row of a stack and kept to its track: that row alone.
+            let row = state.marquee_row.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));
             state.time_selection =
-                (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end });
+                (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row });
             if done {
                 state.marquee = None;
                 if state.time_selection.is_some() {
@@ -2341,6 +2355,7 @@ fn clip_box<'a>(
         state.marquee = ui.input(|i| i.pointer.press_origin());
         state.marquee_scroll = state.scroll;
         state.marquee_time = true;
+        state.marquee_row = (clip.rows > 1).then_some((lane.track, clip.row, clip.rows));
     } else if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
         // Clips picked by a click or moved: the time selection gives way to them.
         state.time_selection = None;

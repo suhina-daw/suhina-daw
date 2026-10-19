@@ -373,3 +373,21 @@ fn stacked_midi_clips_consolidate_into_one_that_plays_them_all() {
     placed.sort_by(|a, b| a.0.total_cmp(&b.0));
     assert_eq!(placed, [(0.0, 60), (1.0, 60), (2.0, 64), (3.0, 64)]);
 }
+
+/// One row of a stack consolidated (`clips`): only its clips are joined and cut away, the clip in
+/// the other row stays as it was.
+#[test]
+fn one_row_of_a_stack_consolidates_alone() {
+    let notes = vec![note(0.0, 0.5, 60), note(2.0, 0.5, 64)];
+    let mut session = Session::new(midi_project(notes, vec![clip(1, 0.0, 4.0), clip(1, 1.0, 4.0)]));
+    let before = lane_clips(&session, 1);
+    let (first, second) = (before[0].clone(), before[1].clone());
+    run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 4.0, "clips": [first.id.0] }))
+        .unwrap();
+    let clips = lane_clips(&session, 1);
+    assert_eq!(clips.len(), 2, "the joined clip and the other row's: {clips:?}");
+    assert!(clips.contains(&second), "the other row's clip is untouched");
+    assert!(!clips.iter().any(|c| c.id == first.id), "the joined clip took the first one's place");
+    // A malformed list is refused.
+    assert!(run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 4.0, "clips": "x" })).is_err());
+}

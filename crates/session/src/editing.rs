@@ -86,7 +86,9 @@ pub(crate) fn content_rate(p: &Project, clip: &Clip) -> f64 {
     }
 }
 
-/// `clip.consolidate {track, start, end}`: the range on one track becomes one clip.
+/// `clip.consolidate {track, start, end, clips?}`: the range on one track becomes one clip. With
+/// `clips` (clip ids), only those clips are joined and cut away, the others (another row of a
+/// stack) left as they are.
 pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let start = number(params, "start")?;
     let end = number(params, "end")?;
@@ -97,6 +99,17 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         return Err(format!("end must be after start, got start {start} and end {end}").into());
     }
     let track = track_id(&session.project, params)?;
+    let only: Option<Vec<u32>> = match params.get("clips") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(
+            v.as_array()
+                .ok_or("clips must be a list of clip ids")?
+                .iter()
+                .map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("clips must be a list of clip ids"))
+                .collect::<Result<_, _>>()?,
+        ),
+    };
+    let chosen = |c: &Clip| only.as_ref().is_none_or(|ids| ids.contains(&c.id.0));
     let p = &session.project;
     let lane =
         p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the track has no arrangement lane")?;
@@ -104,7 +117,13 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         .arrangement
         .lanes
         .get(lane)
-        .map(|l| l.clips.iter().filter(|c| c.enabled && c.start < end && c.start + c.length > start).cloned().collect())
+        .map(|l| {
+            l.clips
+                .iter()
+                .filter(|c| c.enabled && c.start < end && c.start + c.length > start && chosen(c))
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default();
     if clips.is_empty() {
         return Err(format!("track {:?} has no clips between beats {start} and {end}", track_name(p, track)).into());
@@ -164,7 +183,11 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
-    make_room(&mut lane.clips, start, end);
+    // Only the joined clips give way; others (another row of a stack) stay as they are.
+    let (mut joined, kept): (Vec<Clip>, Vec<Clip>) = std::mem::take(&mut lane.clips).into_iter().partition(chosen);
+    make_room(&mut joined, start, end);
+    lane.clips = kept;
+    lane.clips.extend(joined);
     lane.clips.push(clip.clone());
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let index = lane.clips.iter().position(|c| c.id == clip.id).unwrap_or_default();

@@ -2357,6 +2357,25 @@ impl App {
                                     for lane in &mut timeline.lanes {
                                         lane.armed = session.is_armed(lane.track);
                                     }
+                                    // A file a command put in the pool (a consolidated range)
+                                    // was never decoded by the opening or a drop: its waveform is
+                                    // made here, once, or the clip showed none and looked muted.
+                                    let made: Vec<(String, std::sync::Arc<crate::kit::waveform::Peaks>)> = timeline
+                                        .lanes
+                                        .iter()
+                                        .flat_map(|l| &l.clips)
+                                        .filter_map(|c| c.audio_view.as_ref())
+                                        .filter(|v| !self.waveforms.contains_key(&v.file))
+                                        .filter_map(|v| {
+                                            let data = session.audio().files.get(&v.file)?;
+                                            Some((v.file.clone(), std::sync::Arc::new(crate::kit::waveform::peaks(data))))
+                                        })
+                                        .collect();
+                                    if !made.is_empty() {
+                                        let mut waveforms = (*self.waveforms).clone();
+                                        waveforms.extend(made);
+                                        self.waveforms = std::sync::Arc::new(waveforms);
+                                    }
                                     timeline.waveforms = self.waveforms.clone();
                                     timeline
                                 }
@@ -4394,11 +4413,25 @@ impl App {
                                 l.clips.iter().any(|c| c.start < span.end && c.start + c.length > span.start)
                             })
                         };
+                        // In one row of a stack: that row's clips only, the other rows left be.
+                        let in_row = |track: u32| -> Option<Vec<serde_json::Value>> {
+                            let (row, rows) = span.row?;
+                            let lane = timeline?.lanes.iter().find(|l| l.track.0 == track)?;
+                            Some(
+                                lane.clips
+                                    .iter()
+                                    .filter(|c| c.row == row && c.rows == rows)
+                                    .filter(|c| c.start < span.end && c.start + c.length > span.start)
+                                    .map(|c| json!(c.id.0))
+                                    .collect(),
+                            )
+                        };
                         for track in tracks.into_iter().filter(|t| playing(*t)) {
-                            actions.push(Action::new(
-                                "clip.consolidate",
-                                json!({ "track": track, "start": span.start, "end": span.end }),
-                            ));
+                            let mut params = json!({ "track": track, "start": span.start, "end": span.end });
+                            if let Some(clips) = in_row(track) {
+                                params["clips"] = json!(clips);
+                            }
+                            actions.push(Action::new("clip.consolidate", params));
                         }
                     }
                 }
