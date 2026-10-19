@@ -127,6 +127,89 @@ fn inside(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<Value> {
 
 /// `range.split {tracks, start, end}`: the clips crossing either edge are cut there, so the span
 /// is clips of its own; answers with the clips inside it.
+/// `range.insertTime {start, end}` (#713): empty time as long as the span, at its start.
+pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let start = number(params, "start")?;
+    let end = number(params, "end")?;
+    if start < 0.0 || end <= start + 1e-6 || end > suhina_engine::MAX_START_BEAT {
+        return Err(
+            format!("start and end must be from 0 to {}, end after start", suhina_engine::MAX_START_BEAT).into()
+        );
+    }
+    let length = end - start;
+    let after = |beat: f64| beat >= start - 1e-9;
+    let p = &mut session.project;
+    let last = p
+        .arrangement
+        .lanes
+        .iter()
+        .flat_map(|l| &l.clips)
+        .map(|c| c.start)
+        .chain(p.arrangement.markers.iter().map(|m| m.beat))
+        .fold(0.0, f64::max);
+    if last + length > suhina_engine::MAX_START_BEAT {
+        return Err(format!("the song would run past beat {}", suhina_engine::MAX_START_BEAT).into());
+    }
+    // Clips crossing the start are split there; what starts from it on moves later.
+    for lane in 0..p.arrangement.lanes.len() {
+        split_lane_at(p, lane, start)?;
+    }
+    for clip in p.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        if after(clip.start) {
+            clip.start += length;
+        }
+    }
+    for marker in &mut p.arrangement.markers {
+        if after(marker.beat) {
+            marker.beat += length;
+        }
+    }
+    let shift = |lanes: &mut Vec<suhina_model::AutomationLane>| {
+        for point in lanes.iter_mut().flat_map(|l| &mut l.points) {
+            if after(point.beat) {
+                point.beat += length;
+            }
+        }
+    };
+    for channel in &mut p.channels {
+        shift(&mut channel.automation);
+        let paths: Vec<Vec<usize>> =
+            suhina_model::walk_devices(&channel.devices).into_iter().map(|(path, _)| path).collect();
+        for path in paths {
+            if let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &path) {
+                shift(&mut device.automation);
+            }
+        }
+    }
+    for change in &mut p.transport.tempo_changes {
+        if after(change.beat) && change.beat > 0.0 {
+            change.beat += length;
+        }
+    }
+    // Time-signature changes are on bars: moved when the length is whole bars of the meter there.
+    let position = p.transport.meter().position(start);
+    let bars = length / position.bar_beats;
+    if position.bar_beats > 0.0 && (bars - bars.round()).abs() < 1e-6 && bars >= 1.0 {
+        let on_bar = (position.bar_start - start).abs() < 1e-6;
+        let first = if on_bar { position.bar } else { position.bar + 1 };
+        let by = bars.round() as u32;
+        for change in &mut p.transport.time_signature_changes {
+            if change.bar >= first {
+                change.bar = change.bar.saturating_add(by);
+            }
+        }
+    }
+    if let Some(range) = p.transport.loop_range.as_mut() {
+        if after(range.start) {
+            range.start += length;
+            range.end += length;
+        } else if range.end > start + 1e-9 {
+            range.end += length;
+        }
+    }
+    Ok(json!({ "start": start, "length": length }))
+}
+
 pub(crate) fn split_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (tracks, start, end) = span(&session.project, params)?;
     let p = &mut session.project;

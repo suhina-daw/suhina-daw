@@ -811,6 +811,13 @@ static COMMANDS: &[CommandSpec] = &[
         run: crate::range::split_range,
     },
     CommandSpec {
+        id: "range.insertTime",
+        label: "Insert empty time as long as a time selection at its start, on every track: clips crossing it are split there, and clips, markers, automation, tempo changes and the loop region after it move later by as much (time-signature changes too, when the length is whole bars)",
+        params: &[RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::range::insert_time,
+    },
+    CommandSpec {
         id: "range.delete",
         label: "Delete what plays inside a time selection on some tracks: clips crossing an edge keep their parts outside it, and the gap stays",
         params: &[TRACKS, RANGE_START, RANGE_END],

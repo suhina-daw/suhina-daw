@@ -171,3 +171,41 @@ fn copying_clips_by_drag_leaves_them_and_places_copies_of_their_own() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(spans(&session, 1), [(0.0, 4.0)], "one undo step");
 }
+
+#[test]
+fn adding_a_section_inserts_empty_time_and_moves_everything_after_it() {
+    let mut p = project();
+    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(2))).unwrap().clips[0].start = 8.0;
+    p.arrangement.markers.push(Marker::new(8.0, "Chorus"));
+    p.transport.tempo_changes.push(TempoPoint { beat: 8.0, bpm: 90.0, ramp: false });
+    p.transport
+        .time_signature_changes
+        .push(TimeSignatureChange { bar: 2, time_signature: TimeSignature { numerator: 3, denominator: 4 } });
+    p.transport.loop_range = Some(LoopRange { start: 8.0, end: 12.0 });
+    let main = p.channels.iter().position(|c| c.role == ChannelRole::Master).unwrap();
+    p.channels[main].automation.push(AutomationLane {
+        param: "volume".into(),
+        points: vec![
+            AutomationPoint { beat: 1.0, value: 1.0, curve: 0.0 },
+            AutomationPoint { beat: 8.0, value: 0.5, curve: 0.0 },
+        ],
+        enabled: true,
+    });
+    let mut session = Session::new(p);
+    let before = session.project().clone();
+    // One bar at beat 2, inside track 1's clip (0..4): it is split there, its rest moves.
+    run(&mut session, "range.insertTime", json!({ "start": 2.0, "end": 6.0 })).unwrap();
+    assert_eq!(spans(&session, 1), [(0.0, 2.0), (6.0, 2.0)]);
+    assert_eq!(spans(&session, 2), [(12.0, 4.0)]);
+    let p = session.project();
+    assert_eq!(p.arrangement.markers[0].beat, 12.0);
+    assert_eq!(p.transport.tempo_changes[0].beat, 12.0);
+    assert_eq!(p.transport.time_signature_changes[0].bar, 3, "a whole bar moves the change a bar");
+    assert_eq!(p.transport.loop_range, Some(LoopRange { start: 12.0, end: 16.0 }));
+    let points: Vec<f64> = p.channels[main].automation[0].points.iter().map(|pt| pt.beat).collect();
+    assert_eq!(points, [1.0, 12.0]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    // One undo step; the id counter stays where it went (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..before });
+    assert!(run(&mut session, "range.insertTime", json!({ "start": 4.0, "end": 4.0 })).is_err());
+}

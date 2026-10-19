@@ -1257,6 +1257,15 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 actions.push(Action::new("marker.add", json!({ "beat": state.marker_menu_beat })));
                 ui.close();
             }
+            // Empty time as long as the time selection, at its start; what comes after moves
+            // later (#713).
+            if let Some(selection) = state.time_selection.as_ref()
+                && ui.button("Add section").clicked()
+            {
+                actions
+                    .push(Action::new("range.insertTime", json!({ "start": selection.start, "end": selection.end })));
+                ui.close();
+            }
         });
     }
     loop_brace(ui, timeline, state, actions, loop_row, &x_of);
