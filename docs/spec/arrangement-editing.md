@@ -91,9 +91,13 @@ as the view draws them, by the time from the earlier start to the later end, eve
 touches it (#694). Ctrl+A selects every clip
 in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
 start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
-moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, stack?}`, one
-undo step, so no moved clip replaces another on the way); to another track only when the whole
-selection is on one track.
+moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, tracks_by?,
+to_new_track?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
+or down, a selection on one track goes to the track under the pointer, and a selection on several
+tracks moves each clip by as many tracks from its own (`tracks_by`), refused where a clip would
+land on a track that cannot hold it. Dropped on the empty space under the tracks, outlined there
+as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
+after the last (`to_new_track`), in the same undo step.
 
 A click on an empty spot of a lane, or on the empty space under the tracks, clears the clip
 selection (a double-click there still makes a clip, › Making an empty clip). The track

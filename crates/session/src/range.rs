@@ -290,23 +290,70 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
     Ok(json!({ "clips": placed }))
 }
 
-/// `clip.moveMany {clips, beats, to_track?, stack?}`: moves several arrangement clips by the
-/// same number of beats at once, so none replaces another on the way; `to_track` takes them to
-/// another track when they are all on one.
+/// `clip.moveMany {clips, beats, to_track?, tracks_by?, to_new_track?, stack?}`: moves several
+/// arrangement clips by the same number of beats at once, so none replaces another on the way;
+/// `to_track` takes them to another track when they are all on one, `tracks_by` takes each that
+/// many tracks down (up when negative) from its own, and `to_new_track` to a new track after the
+/// last, of the clips' kind, made in the same step.
 pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let chosen = clip_list(&session.project, params)?;
     let beats = number(params, "beats")?;
     let stack = params.get("stack").and_then(Value::as_bool).unwrap_or(false);
     let copy = params.get("copy").and_then(Value::as_bool).unwrap_or(false);
-    let to = match params.get("to_track") {
-        Some(_) => Some(track_at(&session.project, params, "to_track")?),
-        None => None,
+    let by = match params.get("tracks_by") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_i64().ok_or("tracks_by must be a whole number of tracks")?),
+    };
+    let new_track = params.get("to_new_track").and_then(Value::as_bool).unwrap_or(false);
+    if [params.get("to_track").is_some_and(|v| !v.is_null()), by.is_some(), new_track].iter().filter(|b| **b).count()
+        > 1
+    {
+        return Err("give one of to_track, tracks_by and to_new_track".into());
+    }
+    // Each clip's track after the move, by its own: the tracks that hold clips, in the order the
+    // tracks are shown (a track added after another has its lane at the end of the lanes).
+    let holders: Vec<TrackId> = session
+        .project
+        .tracks
+        .iter()
+        .filter(|t| t.content.notes || t.content.audio)
+        .filter(|t| session.project.arrangement.lanes.iter().any(|l| l.track == Some(t.id)))
+        .map(|t| t.id)
+        .collect();
+    let moved_by = |track: TrackId| -> Result<TrackId, CommandError> {
+        let Some(by) = by else { return Ok(track) };
+        let at = holders.iter().position(|t| *t == track).ok_or("the clip's track holds no clips")?;
+        let to = i64::try_from(at).unwrap_or(i64::MAX).saturating_add(by);
+        usize::try_from(to)
+            .ok()
+            .and_then(|to| holders.get(to).copied())
+            .ok_or_else(|| "there is no track that far".into())
+    };
+    for (track, _) in &chosen {
+        moved_by(*track)?;
+    }
+    let to = if new_track {
+        // The clips' kind: audio clips make an audio track, MIDI clips a MIDI track.
+        let audio = chosen.iter().any(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track));
+            let clip = lane.and_then(|l| l.clips.get(*index));
+            clip.and_then(|c| session.project.content(c.content))
+                .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, suhina_model::LaneData::Audio(_))))
+        });
+        let added = crate::files::add_track(session, &json!({ "kind": if audio { "audio" } else { "midi" } }))?;
+        let id = added["track"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("the new track has no id")?;
+        Some(TrackId(id))
+    } else {
+        match params.get("to_track") {
+            Some(v) if !v.is_null() => Some(track_at(&session.project, params, "to_track")?),
+            _ => None,
+        }
     };
     let keep = match params.get("color") {
         None | Some(Value::Null) => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
-    if to.is_some() && chosen.iter().any(|(track, _)| *track != chosen[0].0) {
+    if to.is_some() && !new_track && chosen.iter().any(|(track, _)| *track != chosen[0].0) {
         return Err("to_track moves clips of one track; these are on several".into());
     }
     let p = &mut session.project;
@@ -323,14 +370,15 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             return Err(format!("a clip would start at beat {}, before the start", clip.start + beats).into());
         }
         let mut clip = clip;
-        if to.is_some_and(|to| to != track) && clip.color.is_none() {
+        let goes = to.unwrap_or(moved_by(track)?);
+        if goes != track && clip.color.is_none() {
             clip.color = keep;
         }
-        taken.push((to.unwrap_or(track), clip));
+        taken.push((goes, clip));
     }
-    if let Some(to) = to {
-        let target = p.tracks.iter().find(|t| t.id == to).ok_or("the target track is missing")?;
-        for (_, clip) in &taken {
+    for (goes, clip) in &taken {
+        {
+            let target = p.tracks.iter().find(|t| t.id == *goes).ok_or("the target track is missing")?;
             let kinds = p.content(clip.content).map_or((false, false), |c| {
                 (
                     c.lanes.iter().any(|l| matches!(l.data, suhina_model::LaneData::Notes(_))),

@@ -856,11 +856,21 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.moveMany",
-        label: "Move several arrangement clips by the same number of beats at once, so none replaces another on the way; to_track takes clips of one track to another",
+        label: "Move several arrangement clips by the same number of beats at once, so none replaces another on the way; to_track takes clips of one track to another, tracks_by moves each by as many tracks, to_new_track makes a track for them",
         params: &[
             param("clips", ParamType::Clips, "the clips to move, each {track, index} from project.clips"),
             param("beats", ParamType::Number, "how far to move them, in beats; negative is earlier"),
             optional("to_track", ParamType::Track, "track to move them to, when they are all on one track"),
+            optional(
+                "tracks_by",
+                ParamType::Integer,
+                "instead of to_track: move each that many tracks down (negative: up) from its own, among the tracks that hold clips",
+            ),
+            optional(
+                "to_new_track",
+                ParamType::Bool,
+                "instead of to_track: true makes a track of the clips' kind after the last and moves them there, in the same undo step",
+            ),
             optional(
                 "color",
                 ParamType::Text,

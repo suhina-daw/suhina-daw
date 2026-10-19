@@ -117,6 +117,9 @@ struct ClipDrag {
     /// Ctrl (Cmd) was held as the drag began (Shift with Ctrl+drag selecting time): the clips
     /// are copied rather than moved.
     copy: bool,
+    /// The pointer is in the empty space under the tracks: dropped there, the clips go to a new
+    /// track of their kind.
+    new_track: bool,
 }
 
 /// Which of a clip's edges is dragged. Its loop is turned on in its properties (the Loop
@@ -373,6 +376,9 @@ pub struct ArrangementViewState {
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     menu_beat: Option<f64>,
     clip_drag: Option<ClipDrag>,
+    /// The empty space under the tracks this frame, top to bottom: a clip dropped there goes to
+    /// a new track.
+    below_tracks: Option<(f32, f32)>,
     value_drag: Option<ValueDrag>,
     /// A clip gain being dragged, and its value so far.
     gain_drag: Option<((TrackId, ClipId), f64)>,
@@ -481,6 +487,7 @@ impl Default for ArrangementViewState {
             edge_released: None,
             menu_beat: None,
             clip_drag: None,
+            below_tracks: None,
             value_drag: None,
             gain_drag: None,
             main_drag: None,
@@ -1178,6 +1185,23 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let ruler_painter = painter.with_clip_rect(ruler);
     // The grid covers the tracks and the fixed rows, not the empty space below the tracks.
     let tracks_bottom = (lanes_area.top() - state.scroll.y + content_height).min(lanes_area.bottom());
+    state.below_tracks = (lanes_area.bottom() - tracks_bottom > 4.0).then_some((tracks_bottom, lanes_area.bottom()));
+    // A clip carried into it: the new track it would make, outlined where it would go.
+    if let Some((top, bottom)) = state.below_tracks
+        && state.clip_drag.is_some_and(|d| d.new_track)
+    {
+        let band = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(top + 2.0, (top + 42.0).min(bottom)));
+        painter.rect_filled(band, 2.0, theme::accent().gamma_multiply(0.12));
+        painter.rect_stroke(band, 2.0, theme::hairline(theme::accent()), egui::StrokeKind::Inside);
+        widgets::text_in(
+            &painter,
+            band.shrink2(Vec2::new(8.0, 0.0)),
+            Align2::LEFT_CENTER,
+            "New track",
+            theme::ui_font(theme::TEXT_SMALL),
+            theme::text_secondary(),
+        );
+    }
     let grid_bands =
         [egui::Rangef::new(lanes_area.top(), tracks_bottom), egui::Rangef::new(fixed.top(), fixed.bottom())];
     let grid_painter = painter
@@ -2518,6 +2542,7 @@ fn clip_box<'a>(
             target: lane.track,
             origin: clip.start,
             copy: copy_key,
+            new_track: false,
         });
     }
     if response.dragged_by(egui::PointerButton::Primary)
@@ -2525,8 +2550,17 @@ fn clip_box<'a>(
         && (drag.track, drag.clip) == key
     {
         drag.start += f64::from(response.drag_delta().x / state.beat_width);
-        if let Some(target) = response.interact_pointer_pos().and_then(lane_at) {
-            drag.target = target;
+        if let Some(pointer) = response.interact_pointer_pos() {
+            match lane_at(pointer) {
+                Some(target) => {
+                    drag.target = target;
+                    drag.new_track = false;
+                }
+                None => {
+                    drag.new_track =
+                        state.below_tracks.is_some_and(|(top, bottom)| pointer.y > top && pointer.y < bottom);
+                }
+            }
         }
     }
     if response.drag_stopped_by(egui::PointerButton::Primary)
@@ -2535,7 +2569,13 @@ fn clip_box<'a>(
     {
         let start = snapped(drag.start);
         let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
-        let moved = drag.target != lane.track || (start - clip.start).abs() > 1e-9;
+        let moved = drag.new_track || drag.target != lane.track || (start - clip.start).abs() > 1e-9;
+        // How many tracks down the drop is from this clip's own, among the tracks that hold clips:
+        // a selection on several tracks moves by as many.
+        let holders: Vec<TrackId> =
+            timeline.lanes.iter().filter(|l| l.kind == ColumnKind::Track).map(|l| l.track).collect();
+        let place = |track: TrackId| holders.iter().position(|t| *t == track).map(|i| i as i64);
+        let tracks_by = place(drag.target).zip(place(lane.track)).map(|(to, from)| to - from).unwrap_or(0);
         // Copied: the clips stay, and copies (each playing a content of its own) go where they
         // were dropped; a selection is copied whole.
         let copying = drag.copy || copy_key;
@@ -2544,9 +2584,14 @@ fn clip_box<'a>(
                 if state.is_selected(key) && state.selected.len() > 1 { state.selected.clone() } else { vec![key] };
             let clips: Vec<Value> = chosen.iter().map(|(_, id)| json!({ "clip": id.0 })).collect();
             let mut params = json!({ "clips": clips, "beats": start - clip.start, "copy": true });
-            if drag.target != lane.track && chosen.iter().all(|(track, _)| *track == lane.track) {
+            if drag.new_track {
+                params["to_new_track"] = json!(true);
+                params["color"] = json!(hex(clip.color));
+            } else if drag.target != lane.track && chosen.iter().all(|(track, _)| *track == lane.track) {
                 params["to_track"] = json!(drag.target.0);
                 params["color"] = json!(hex(clip.color));
+            } else if tracks_by != 0 {
+                params["tracks_by"] = json!(tracks_by);
             }
             if stack {
                 params["stack"] = json!(true);
@@ -2555,13 +2600,18 @@ fn clip_box<'a>(
                 actions.push(Action::new("clip.moveMany", params));
             }
         } else if state.selected.len() > 1 && state.is_selected(key) {
-            // The whole selection moves by as much, at once; to another track only when all of
-            // it is on this one.
+            // The whole selection moves by as much, at once: to another track when all of it is on
+            // this one, by as many tracks when it is on several, or to a new track.
             let clips: Vec<Value> = state.selected.iter().map(|(_, id)| json!({ "clip": id.0 })).collect();
             let mut params = json!({ "clips": clips, "beats": start - clip.start });
-            if drag.target != lane.track && state.selected.iter().all(|(track, _)| *track == lane.track) {
+            if drag.new_track {
+                params["to_new_track"] = json!(true);
+                params["color"] = json!(hex(lane.color));
+            } else if drag.target != lane.track && state.selected.iter().all(|(track, _)| *track == lane.track) {
                 params["to_track"] = json!(drag.target.0);
                 params["color"] = json!(hex(lane.color));
+            } else if tracks_by != 0 {
+                params["tracks_by"] = json!(tracks_by);
             }
             if stack {
                 params["stack"] = json!(true);
@@ -2569,6 +2619,17 @@ fn clip_box<'a>(
             if moved {
                 actions.push(Action::new("clip.moveMany", params));
             }
+        } else if drag.new_track {
+            let mut params = json!({
+                "clips": [{ "clip": clip.id.0 }],
+                "beats": start - clip.start,
+                "to_new_track": true,
+                "color": hex(clip.color),
+            });
+            if stack {
+                params["stack"] = json!(true);
+            }
+            actions.push(Action::new("clip.moveMany", params));
         } else {
             let mut params = json!({ "clip": clip.id.0, "start": start });
             if drag.target != lane.track {
