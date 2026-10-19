@@ -2067,12 +2067,18 @@ impl App {
         if ui.input(|i| i.pointer.primary_pressed()) {
             self.device_focus = false;
         }
+        self.frame_trace.mark("input");
         self.follow_active();
+        self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
+        self.frame_trace.mark("plug-in scan");
         self.poll_plugins(ui.ctx());
+        self.frame_trace.mark("plug-ins");
         self.tick_backups(ui.ctx());
+        self.frame_trace.mark("backups");
         // The sample map's analysis goes on in the background; take in what it finished.
-        self.projects.poll_sound_map();
+        suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
+        self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
         keys_for_shortcuts(ui.ctx());
         self.launch_keys(ui, &mut actions);
@@ -2081,7 +2087,9 @@ impl App {
         }
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
+        self.frame_trace.mark("keys");
         self.sample_map_window(ui.ctx(), &mut actions);
+        self.frame_trace.mark("sample map window");
         let scale = if self.settings.waveform_db {
             crate::kit::waveform::Scale::Db
         } else {
@@ -2528,7 +2536,7 @@ impl App {
         }
         self.frame_trace.mark("views");
         self.carry_clip(ui);
-        self.poll_drop(ui.ctx());
+        suhina_plugins::trace::timed("drop poll", || self.poll_drop(ui.ctx()));
         self.frame_trace.mark("drags");
 
         self.plugin_dialog(ui, window);
@@ -5026,7 +5034,9 @@ impl App {
         let mut map_settings = self.settings.clone();
         let map_panel = &mut self.sample_map;
         let mut draw_map = |ui: &mut Ui, rect: Rect, state: &mut BrowserState, projects: &mut Projects| {
-            map_panel.show(ui, rect, state, projects, &mut map_settings, revision);
+            suhina_plugins::trace::timed("sample map", || {
+                map_panel.show(ui, rect, state, projects, &mut map_settings, revision)
+            });
         };
         let out = ui
             .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
@@ -5258,7 +5268,7 @@ impl App {
             (None, View::Arrangement) => DropTarget::NewTracks { beat: Some(0.0), scene: None },
             (None, View::Session) => DropTarget::NewTracks { beat: None, scene: Some(0) },
         };
-        self.drop_items(&items, target, false);
+        suhina_plugins::trace::timed("adding to a track", || self.drop_items(&items, target, false));
     }
 
     /// While items are dragged from the browser: the label beside the pointer, Escape to stop,

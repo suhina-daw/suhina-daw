@@ -177,7 +177,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::panel_background());
     state.poll();
-    projects.file_library_mut().poll();
+    suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
     // The search.
     let search = Rect::from_min_size(area.min, Vec2::new(area.width(), SEARCH));
@@ -258,7 +258,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     painter.vline(sidebar.right() + 0.5, sidebar.y_range(), theme::hairline(theme::border()));
     sidebar_view(ui, sidebar, state, projects, settings.view.recent_chips, &mut out);
 
-    if let Err(e) = state.refresh_rows(projects) {
+    if let Err(e) = suhina_plugins::trace::timed("browser rows", || state.refresh_rows(projects)) {
         out.status = Some(Status::Error(e));
     }
     match (state.mode, other_results) {

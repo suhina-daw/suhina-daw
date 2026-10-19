@@ -615,7 +615,10 @@ impl BrowserState {
         let listing = match self.listings.get(folder) {
             Some(listing) => Arc::clone(listing),
             None => {
-                let listing = Arc::new(projects.file_library_mut().list(folder).unwrap_or_default());
+                let listing = Arc::new(
+                    suhina_plugins::trace::timed("library folder listing", || projects.file_library_mut().list(folder))
+                        .unwrap_or_default(),
+                );
                 self.listings.insert(folder.to_path_buf(), Arc::clone(&listing));
                 listing
             }

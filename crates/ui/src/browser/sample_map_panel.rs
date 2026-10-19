@@ -415,7 +415,7 @@ impl Panel {
         self.refresh(ui, state, projects, settings);
         self.view.layout = if settings.map_grid { Layout::Grid } else { Layout::Cloud };
         self.fit_grid(ui);
-        self.update_points(state, projects, revision);
+        suhina_plugins::trace::timed("sample map points", || self.update_points(state, projects, revision));
         self.view.preview_on_hover = settings.map_hover_preview;
         self.view.dot_size = settings.map_dot_size as f32 / 100.0;
         self.view.volume = settings.preview_volume;

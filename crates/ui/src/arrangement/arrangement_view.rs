@@ -2950,6 +2950,16 @@ fn clip_box<'a>(
     }
     // The handles sit on top of everything on the clip, where the fades now end.
     let handle_painter = painter.with_clip_rect(row.clip);
+    if suhina_plugins::trace::on() && !handles.is_empty() {
+        // Which clip each drawn handle belongs to and where, for a handle seen without its clip.
+        suhina_plugins::trace::state(
+            &format!("fade handles of clip-{}", clip.id.0),
+            format!(
+                "on {} row {}/{} at beat {:.3} for {:.3}, clip {:?}, row {:?}, selected {selected}, pointer in {pointer_in}",
+                lane.name, clip.row, clip.rows, clip.start, clip.length, rect, row.clip
+            ),
+        );
+    }
     for (edge, hover) in handles {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
         let handle = fade_handle(rect, edge, length as f32 * state.beat_width);

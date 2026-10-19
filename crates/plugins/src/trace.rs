@@ -63,6 +63,24 @@ macro_rules! trace {
     };
 }
 
+/// Work that takes this long or longer is written by [`timed`].
+pub const SLOW_WORK: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// Runs `work`; with tracing on, writes `slow <what>: N ms` when it took [`SLOW_WORK`] or
+/// longer, so a part of the window that lags (the library, the sample map) names itself.
+pub fn timed<T>(what: &str, work: impl FnOnce() -> T) -> T {
+    if !on() {
+        return work();
+    }
+    let started = std::time::Instant::now();
+    let out = work();
+    let spent = started.elapsed();
+    if spent >= SLOW_WORK {
+        line(format_args!("slow {what}: {:.1} ms", spent.as_secs_f64() * 1000.0));
+    }
+    out
+}
+
 /// Appends `key: value` when it differs from the last value traced for `key`: a state that is
 /// worked out every frame shows only when it changes.
 pub fn state(key: &str, value: String) {
