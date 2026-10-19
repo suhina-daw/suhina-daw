@@ -24,7 +24,7 @@ serde_json.workspace = true
 memory-stats.workspace = true
 egui = "0.36"  # MIT OR Apache-2.0
 # Draws the logo from its SVG paths; already in the tree through winit on Linux.
-tiny-skia = { version = "0.11", default-features = false, features = ["std"] }  # BSD-3-Clause
+tiny-skia = { version = "0.12", default-features = false, features = ["std"] }  # BSD-3-Clause
 
 [dev-dependencies]
 image = { version = "0.25.10", default-features = false, features = ["png"] } # MIT OR Apache-2.0; SDK artwork fixture
