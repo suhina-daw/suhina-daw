@@ -179,3 +179,88 @@ pub(crate) fn set_start(session: &mut Session, params: &Value) -> Result<Value, 
     out.insert("length".into(), json!(clip.length));
     Ok(Value::Object(out))
 }
+
+/// The names `clip.setAudio` takes and returns for each warp mode.
+const MODES: [(&str, suhina_model::StretchMode); 6] = [
+    ("repitch", suhina_model::StretchMode::Repitch),
+    ("rhythmic", suhina_model::StretchMode::Rhythmic),
+    ("tonal", suhina_model::StretchMode::Tonal),
+    ("texture", suhina_model::StretchMode::Texture),
+    ("smooth", suhina_model::StretchMode::Smooth),
+    ("high-quality", suhina_model::StretchMode::HighQuality),
+];
+
+/// The name of warp mode `mode`, as `clip.setAudio` takes it.
+pub(crate) fn mode_name(mode: suhina_model::StretchMode) -> &'static str {
+    MODES.iter().find(|(_, m)| *m == mode).map_or("smooth", |(name, _)| name)
+}
+
+/// `clip.setAudio`: an audio clip's warp switch, warp mode and transpose, the clip properties'
+/// controls (#699). Every clip that plays the same audio content follows, as with its gain. Warp
+/// turned on for audio that has no warp markers gets two, its start and its end, so it plays as
+/// it did and then follows the tempo.
+pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let warp = match params.get("warp") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_bool().ok_or("warp must be true or false")?),
+    };
+    let mode = match params.get("mode") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let text = v.as_str().ok_or("mode must be a warp mode's name")?;
+            let names = MODES.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ");
+            Some(
+                MODES
+                    .iter()
+                    .find(|(n, _)| *n == text)
+                    .map(|(_, m)| *m)
+                    .ok_or_else(|| format!("mode must be one of {names}, got {text:?}"))?,
+            )
+        }
+    };
+    let transpose = match params.get("transpose") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let t = v.as_f64().filter(|t| t.is_finite()).ok_or("transpose must be a number of semitones")?;
+            if !(-48.0..=48.0).contains(&t) {
+                return Err(format!("transpose must be from -48 to 48 semitones, got {t}").into());
+            }
+            Some(t)
+        }
+    };
+    if warp.is_none() && mode.is_none() && transpose.is_none() {
+        return Err("give warp, mode or transpose".into());
+    }
+    let (at, clip) = named(session, params)?;
+    let (id, content_id) = (clip.id, clip.content);
+    let content =
+        session.project.contents.iter_mut().find(|c| c.id == content_id).ok_or("the clip's content is missing")?;
+    let length = content.length;
+    let mut found = None;
+    for lane in &mut content.lanes {
+        let suhina_model::LaneData::Audio(region) = &mut lane.data else { continue };
+        if let Some(on) = warp {
+            if on && region.warp_markers.is_empty() {
+                let seconds = region.duration_seconds.ok_or("the audio's length is not known, so it cannot warp")?;
+                region.warp_markers = vec![
+                    suhina_model::WarpMarker { time: 0.0, audio_time: 0.0 },
+                    suhina_model::WarpMarker { time: length, audio_time: seconds },
+                ];
+            }
+            region.warped = on;
+        }
+        if let Some(mode) = mode {
+            region.stretch = mode;
+        }
+        if let Some(t) = transpose {
+            region.transpose = t;
+        }
+        found = Some((region.warped, region.stretch, region.transpose));
+    }
+    let (warped, stretch, transpose) = found.ok_or("only an audio clip can be warped or transposed")?;
+    let mut out = address(at, id);
+    out.insert("warp".into(), json!(warped));
+    out.insert("mode".into(), json!(mode_name(stretch)));
+    out.insert("transpose".into(), json!(transpose));
+    Ok(Value::Object(out))
+}

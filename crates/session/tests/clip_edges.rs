@@ -146,3 +146,37 @@ fn a_stretched_clip_whose_content_another_plays_gets_its_own() {
     assert_ne!(lane.clips[0].content, lane.clips[1].content, "the stretched one plays a copy");
     assert_eq!(session.project().content(ContentId(1)).unwrap().length, 8.0, "the other keeps its speed");
 }
+
+/// The clip properties' audio controls (#699): warp on gives the audio two warp markers and
+/// keeps them when turned off again; the mode and transpose are set; one undo step each.
+#[test]
+fn an_audio_clips_warp_mode_and_transpose_are_set() {
+    let mut session = Session::new(project());
+    let clip = first(&session, 3).id.0;
+    let region = |session: &Session| {
+        let p = session.project();
+        match &p.content(ContentId(1)).unwrap().lanes[0].data {
+            LaneData::Audio(region) => region.clone(),
+            LaneData::Notes(_) => panic!("not audio"),
+        }
+    };
+    let out = run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
+    assert_eq!((out["warp"].as_bool(), out["mode"].as_str()), (Some(true), Some("smooth")));
+    let warped = region(&session);
+    assert!(warped.warped);
+    assert_eq!(warped.warp_markers.len(), 2, "its start and its end");
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "mode": "rhythmic", "transpose": -3.5 })).unwrap();
+    let set = region(&session);
+    assert_eq!((set.stretch, set.transpose), (StretchMode::Rhythmic, -3.5));
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": false })).unwrap();
+    assert!(!region(&session).warped);
+    assert_eq!(region(&session).warp_markers.len(), 2, "the markers are kept for when it warps again");
+    // Refused: nothing to set, an unknown mode, too far, a MIDI clip.
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": clip })).is_err());
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": clip, "mode": "fast" })).is_err());
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": clip, "transpose": 60 })).is_err());
+    let midi = first(&session, 1).id.0;
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": midi, "warp": true })).is_err());
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(region(&session).warped, "undone, warp is back on");
+}

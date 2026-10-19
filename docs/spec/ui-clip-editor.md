@@ -685,6 +685,18 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   column is the same column in every layout: Track, Start, Length, Loop and (for a MIDI clip)
   Notes, or the audio clip's Gain and fades. With the detail area stacked (a column at the right of
   the window) it is a block at the top and the piano roll sits under it, as before.
+- **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
+  clip, each change one undo step:
+  - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
+    end** rows too, dragged sideways by quarter beats, a quarter beat apart at least; a MIDI clip's
+    loop is dragged on the piano roll's ruler instead, so its column keeps room for the selection.
+  - An audio clip has **Gain** (dragged by tenths of a dB, a double-click puts it at 0 dB;
+    `clip.setGain`, arrangement clips only), **Warp** (a switch), **Mode** (a click steps through
+    Re-pitch, Rhythmic, Tonal, Texture, Smooth and High quality) and **Transpose** (dragged by
+    semitones, -48 to +48, a double-click puts it at 0), all through `clip.setAudio`. Warp turned
+    on for audio without warp markers gives it two, at its start and its end, so it plays as it did
+    and then follows the tempo.
+  - A drag shows its value as it goes and sends one command when it is let go.
 - **Built ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** the **Notes** row reads
   **"N of M"** while notes are selected, where N is how many are selected and M how many the clip
   has, and just **M** with nothing selected. Under it, while a selection exists, come the rows that

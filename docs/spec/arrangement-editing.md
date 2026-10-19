@@ -182,8 +182,10 @@ never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Le
 - A looping clip goes on as far as its edge is dragged, its loop repeating. Its repeats are
   drawn as the clip itself, in its colour; where each pass starts it has a notch in its top and
   bottom edges and a dashed line between them (#700).
-- The handle at a clip's lower right corner (the loop handle) turns the loop on over what
-  the clip plays now and makes the clip longer (`clip.trim` with `loop: true`).
+- The right edge is one handle over the clip's full height; there is no separate loop handle
+  at the corner (#700). The loop is turned on in the clip column (› Clip column in
+  [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then
+  draws out its repeats.
 
 With Alt held (Settings › Arrangement › *Alt-drag on an edge stretches audio*, on by default) an
 audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped

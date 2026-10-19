@@ -119,13 +119,12 @@ struct ClipDrag {
     copy: bool,
 }
 
-/// Which grip of a clip's edges is dragged: its left or right edge, or the loop handle at its
-/// lower right, which turns the loop on as it makes the clip longer.
+/// Which of a clip's edges is dragged. Its loop is turned on in its properties (the Loop
+/// switch), never by an edge (#700); a looping clip's right edge goes on as far as it is dragged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EdgeGrab {
     Left,
     Right,
-    Loop,
 }
 
 /// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far.
@@ -138,8 +137,8 @@ struct EdgeDrag {
 
 /// Where a clip's edges are while `drag` moves one: on the grid (free with `free`), kept at
 /// least a grid step (or a 16th of a beat) long, its left edge no earlier than its content's
-/// start and its right edge no later than its audio's end, as `clip.trim` keeps them; the loop
-/// handle has no end limit.
+/// start and its right edge no later than its audio's end (none for a looping clip), as
+/// `clip.trim` keeps them.
 fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64, f64) {
     let end = clip.start + clip.length;
     // A clip already shorter than a grid step keeps at least its length: a coarse grid (1 bar)
@@ -157,7 +156,6 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
             let to = beat.max(clip.start + least);
             (clip.start, clip.latest_end.map_or(to, |last| to.min(last.max(clip.start + least))))
         }
-        EdgeGrab::Loop => (clip.start, beat.max(clip.start + least)),
     }
 }
 
@@ -1392,9 +1390,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     };
     {
         let response = ui.interact(zoom_bar, Id::new("arrangement-waveform-zoom"), Sense::click_and_drag());
-        response.widget_info(|| {
-            egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom")
-        });
+        response.widget_info(|| egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom"));
         if response.dragged() {
             // Thirty points up doubles it.
             let delta = -response.drag_delta().y / 30.0;
@@ -1427,7 +1423,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         ));
         let hover = widgets::hover(ui, &response);
         painter.rect_filled(zoom_bar, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-        let share = (state.waveform_zoom / WAVEFORM_ZOOM_RANGE.0).log2() / (WAVEFORM_ZOOM_RANGE.1 / WAVEFORM_ZOOM_RANGE.0).log2();
+        let share = (state.waveform_zoom / WAVEFORM_ZOOM_RANGE.0).log2()
+            / (WAVEFORM_ZOOM_RANGE.1 / WAVEFORM_ZOOM_RANGE.0).log2();
         let filled = Rect::from_min_max(
             Pos2::new(zoom_bar.left(), zoom_bar.bottom() - zoom_bar.height() * share.clamp(0.0, 1.0)),
             zoom_bar.max,
@@ -2413,13 +2410,9 @@ fn clip_box<'a>(
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
     // lower half on a lane tall enough to have one, as the setting says.
     let selects_time = response.drag_started_by(egui::PointerButton::Primary)
-        && ui.input(|i| i.pointer.press_origin()).is_some_and(|origin| {
-            if state.time_select_ctrl {
-                command
-            } else {
-                selects_at(origin.y)
-            }
-        });
+        && ui
+            .input(|i| i.pointer.press_origin())
+            .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) });
     if selects_time {
         state.marquee = ui.input(|i| i.pointer.press_origin());
         state.marquee_scroll = state.scroll;
@@ -2612,16 +2605,14 @@ fn clip_box<'a>(
 
     // A clip's edges: the left or right edge dragged moves it (on the grid; Shift: free), the
     // content staying where it plays; with Alt an audio clip's audio stretches to the new length
-    // instead. The handle at the lower right turns the loop on and makes the clip longer
-    // (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges). An
-    // audio clip keeps its top corners for the fade handles.
+    // instead (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges).
+    // An audio clip keeps its top corners for the fade handles.
     let edge_rect = clip_rect(space, live_start, live_length, x_of);
     if state.clip_drag.is_none_or(|d| !mine(&d)) && edge_rect.width() >= 12.0 {
         const ZONE: f32 = 5.0;
-        const CORNER: f32 = 10.0;
         let top = edge_rect.top() + if clip.audio { FADE_HANDLE + 2.0 } else { 2.0 };
         let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
-        for grab in [EdgeGrab::Left, EdgeGrab::Right, EdgeGrab::Loop] {
+        for grab in [EdgeGrab::Left, EdgeGrab::Right] {
             let hit = match grab {
                 EdgeGrab::Left => Rect::from_min_max(
                     Pos2::new(edge_rect.left(), top),
@@ -2629,11 +2620,7 @@ fn clip_box<'a>(
                 ),
                 EdgeGrab::Right => Rect::from_min_max(
                     Pos2::new(edge_rect.right() - ZONE, top),
-                    Pos2::new(edge_rect.right(), edge_rect.bottom() - CORNER),
-                ),
-                EdgeGrab::Loop => Rect::from_min_max(
-                    Pos2::new(edge_rect.right() - CORNER, edge_rect.bottom() - CORNER),
-                    edge_rect.max,
+                    Pos2::new(edge_rect.right(), edge_rect.bottom()),
                 ),
             }
             .intersect(row.clip);
@@ -2645,7 +2632,6 @@ fn clip_box<'a>(
             let what = match grab {
                 EdgeGrab::Left => "Left edge",
                 EdgeGrab::Right => "Right edge",
-                EdgeGrab::Loop => "Loop handle",
             };
             let label = format!("{what} of {name} on {}", lane.name);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &label));
@@ -2664,17 +2650,14 @@ fn clip_box<'a>(
             {
                 let (from, to) = edge_extent(clip, drag, &grid, shift);
                 let beat = if grab == EdgeGrab::Left { from } else { to };
-                let stretch = alt && state.stretch_alt && clip.audio && grab != EdgeGrab::Loop;
+                let stretch = alt && state.stretch_alt && clip.audio;
                 let mut params = json!({ "clip": clip.id.0 });
                 params[if grab == EdgeGrab::Left { "start" } else { "end" }] = json!(beat);
-                if grab == EdgeGrab::Loop {
-                    params["loop"] = json!(true);
-                }
                 if (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi) {
                     params["stack"] = json!(true);
                 }
                 let old = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
-                if (beat - old).abs() > 1e-9 || grab == EdgeGrab::Loop {
+                if (beat - old).abs() > 1e-9 {
                     actions.push(Action::new(if stretch { "clip.stretch" } else { "clip.trim" }, params));
                 }
             }
@@ -3166,7 +3149,11 @@ fn paint_clip(
             ));
             let notch = 4.0;
             painter.add(egui::Shape::convex_polygon(
-                vec![Pos2::new(x - notch, rect.top()), Pos2::new(x + notch, rect.top()), Pos2::new(x, rect.top() + notch)],
+                vec![
+                    Pos2::new(x - notch, rect.top()),
+                    Pos2::new(x + notch, rect.top()),
+                    Pos2::new(x, rect.top() + notch),
+                ],
                 mark,
                 egui::Stroke::NONE,
             ));

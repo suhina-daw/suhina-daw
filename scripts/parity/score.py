@@ -72,9 +72,11 @@ CHAPTERS = [
      "Sets), the arrangement loop brace (draw, resize, move, on/off with Ctrl+L; playback wraps "
      "sample-accurately; imported from Live Sets), split at the playhead or a clicked beat, consolidate "
      "(MIDI joined, audio rendered to a file), time-signature changes (commands; the ruler counts bars "
-     "through them and marks them). A clip's loop range is read and drawn but no "
-     "command sets it. Missing previous/next marker, punch in/out, editing signature changes on the ruler, "
-     "time selections, crop, crossfades, linked-track editing, the time commands."),
+     "through them and marks them), time selections painted over clips, one row of stacked clips "
+     "consolidated on its own, a waveform zoom that draws audio clips larger without changing their "
+     "sound (a slider by the ruler, Ctrl+Alt+Up/Down, a setting). Missing previous/next marker, punch "
+     "in/out, editing signature changes on the ruler, crop, crossfades, linked-track editing, the "
+     "time commands."),
     (7, "Session View", 13, 0.67, "partial",
      "Slots, scenes, scene launch, stop buttons, track status, column headers filled with the track "
      "colour and a colour palette opened from the channel strip (one palette shared with the "
@@ -88,17 +90,20 @@ CHAPTERS = [
      "scenes inserted, duplicated, deleted and renamed from a menu, with a tempo and time signature "
      "each. A launched clip is selected and the detail area shows its follow-action controls. "
      "Missing capture-and-insert scene, moving clips between slots, select-on-launch options."),
-    (8, "Clip View", 34, 0.18, "started",
+    (8, "Clip View", 34, 0.22, "started",
      "Detail area shows clip properties and, for a MIDI clip in the Arrangement, a first piano roll "
      "(docs/spec/ui-clip-editor.md): keys, ruler, note grid, velocity lane, zoom and scroll, a toolbar of "
      "tool icons with the note clipboard and a toolbar size, a MIDI tools column beside the notes, "
      "and the selection described in the clip column (count, span, pitch and velocity range); the "
      "editor keeps a least height with its notes in view and closes by its splitter, an x or View > "
-     "Hide editor, opening again when a clip is selected. No loop "
-     "or marker editing, no clip panels, no sample editor, no groove/scale panels."),
-    (9, "Audio Clips, Tempo, and Warping", 18, 0.38, "partial",
+     "Hide editor, opening again when a clip is selected. The clip column edits the clip: loop on "
+     "or off, an audio clip's loop start and end, gain, warp on or off, warp mode and transpose. "
+     "No clip panels, no sample editor, no groove/scale panels."),
+    (9, "Audio Clips, Tempo, and Warping", 18, 0.42, "partial",
      "Real-time time-stretching along warp markers read from Live Sets, clip gain, transpose, "
-     "six warp modes in the model, tempo detect for the browser. One stretch algorithm serves "
+     "six warp modes in the model, warp on or off, the mode and transpose set from the clip column "
+     "(clip.setAudio; warp turned on gives unwarped audio markers at its start and end), tempo "
+     "detect for the browser. One stretch algorithm serves "
      "every mode except Re-pitch, so the mode names are not yet different algorithms, and rates "
      "outside 0.25x-4x fall back to Re-pitch. Tempo changes over the song (steps and ramps, a tempo "
      "map every clip follows, read from a set's tempo envelope; a scene tempo overrides it until "

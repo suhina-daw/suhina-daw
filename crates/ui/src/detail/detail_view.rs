@@ -12,7 +12,7 @@
 
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
-use suhina_engine::model::{ClipId, DeviceKind, LaneData, Note, Project, TrackId};
+use suhina_engine::model::{ClipId, DeviceKind, LaneData, Note, Project, StretchMode, TrackId};
 use suhina_session::{Placement, PluginReport, PluginStatus};
 
 use crate::interaction::grid::gain_to_db;
@@ -259,8 +259,16 @@ pub struct ClipInfo {
     pub scene: bool,
     pub length: String,
     pub looping: bool,
+    /// The loop's start and end in content beats, when it loops.
+    pub loop_range: Option<(f64, f64)>,
     pub audio: bool,
     pub gain_db: Option<f64>,
+    /// An audio clip's warp switch, warp mode and transpose in semitones (`clip.setAudio`).
+    pub warped: bool,
+    pub stretch: StretchMode,
+    pub transpose: f64,
+    /// The clip the column's controls edit; none where nothing can be edited.
+    pub at: Option<ClipRef>,
     /// Fade-in and fade-out in beats (`clip.setFades`).
     pub fades: (f64, f64),
     pub notes: usize,
@@ -469,7 +477,7 @@ pub fn build_with(
         let content = project.content(placed.content);
         let audio = content.and_then(|c| {
             c.lanes.iter().find_map(|l| match &l.data {
-                LaneData::Audio(region) => Some(region.gain),
+                LaneData::Audio(region) => Some(region),
                 LaneData::Notes(_) => None,
             })
         });
@@ -490,8 +498,16 @@ pub fn build_with(
                 scene: scene.is_some(),
                 length: bars_beats(placed.length, bar, 0),
                 looping: placed.loop_range.is_some(),
+                loop_range: placed.loop_range.map(|r| (r.start, r.end)),
                 audio: audio.is_some(),
-                gain_db: audio.map(gain_to_db),
+                gain_db: audio.map(|region| gain_to_db(region.gain)),
+                warped: audio.is_some_and(|region| region.warped),
+                stretch: audio.map(|region| region.stretch).unwrap_or_default(),
+                transpose: audio.map_or(0.0, |region| region.transpose),
+                at: Some(match scene {
+                    Some(scene) => ClipRef::Slot(id, scene),
+                    None => ClipRef::Arrangement(id, placed.id),
+                }),
                 fades: (placed.fade_in, placed.fade_out),
                 notes,
                 selection: SelectionInfo::default(),
@@ -723,7 +739,7 @@ pub fn show_row(
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, false);
+            let (column, picked) = clip_properties(ui, &painter, area, info, false, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(column.right() + 1.0, area.top()), area.max);
             // The chain is drawn beside the clip's properties: a click on one of its panels
@@ -917,7 +933,7 @@ pub fn show_stack(
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
-            let (column, picked) = clip_properties(ui, &painter, area, info, true);
+            let (column, picked) = clip_properties(ui, &painter, area, info, true, actions);
             clip_for_readers(ui, column, info);
             let rest = Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max);
             // The chain is drawn under the clip's properties: its panels pick as they do with
@@ -938,12 +954,12 @@ pub fn show_stack(
 /// controls and the MIDI tools live in the column beside this one
 /// (› Other note tools in `docs/spec/ui-clip-editor.md`). With it, the part the Clip / Devices
 /// switch was clicked to, if it was.
-pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool) -> (Rect, Picked) {
+pub fn show_clip_column(ui: &mut Ui, info: &ClipInfo, stacked: bool, actions: &mut Vec<Action>) -> (Rect, Picked) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::window_background());
-    let (column, picked) = clip_properties(ui, &painter, area, info, stacked);
+    let (column, picked) = clip_properties(ui, &painter, area, info, stacked, actions);
     clip_for_readers(ui, column, info);
     let rest = if stacked {
         Rect::from_min_max(Pos2::new(area.left(), column.bottom() + 1.0), area.max)
@@ -1685,27 +1701,87 @@ fn device_panel(
     clicked
 }
 
-/// The selected clip: its name and where it is, how long, and what it plays. In a row it takes
-/// a column of [`CLIP_WIDTH`] at the left of `area`, stacked the rows it needs at the top;
-/// returns the space it took.
+/// What a row of the clip column edits, when it edits something (#699).
+#[derive(Clone, Copy, PartialEq)]
+enum ClipEdit {
+    None,
+    Loop,
+    LoopStart,
+    LoopEnd,
+    Gain,
+    Warp,
+    Mode,
+    Transpose,
+}
+
+/// The warp modes in the order a click on the Mode row steps through them: the name
+/// `clip.setAudio` takes, and the one shown.
+const WARP_MODES: [(StretchMode, &str, &str); 6] = [
+    (StretchMode::Repitch, "repitch", "Re-pitch"),
+    (StretchMode::Rhythmic, "rhythmic", "Rhythmic"),
+    (StretchMode::Tonal, "tonal", "Tonal"),
+    (StretchMode::Texture, "texture", "Texture"),
+    (StretchMode::Smooth, "smooth", "Smooth"),
+    (StretchMode::HighQuality, "high-quality", "High quality"),
+];
+
+/// `params` with the clip at `at` named in them, for a `clip.*` command.
+fn on_clip(at: ClipRef, params: serde_json::Value) -> serde_json::Value {
+    let mut named = match at {
+        ClipRef::Arrangement(_, clip) => json!({ "clip": clip.0 }),
+        ClipRef::Slot(track, scene) => json!({ "track": track.0, "scene": scene + 1 }),
+    };
+    if let (Some(map), serde_json::Value::Object(more)) = (named.as_object_mut(), params) {
+        map.extend(more);
+    }
+    named
+}
+
+/// A beat count as the loop rows show it.
+fn beats_text(beats: f64) -> String {
+    let rounded = (beats * 100.0).round() / 100.0;
+    format!("{rounded} beats")
+}
+
+/// The selected clip: its name and where it is, how long, and what it plays; the loop, gain and
+/// warp rows edit it (› Clip column in `docs/spec/ui-clip-editor.md`). In a row it takes a column
+/// of [`CLIP_WIDTH`] at the left of `area`, stacked the rows it needs at the top; returns the
+/// space it took.
 fn clip_properties(
     ui: &Ui,
     painter: &egui::Painter,
     area: Rect,
     info: &ClipInfo,
     stacked: bool,
+    actions: &mut Vec<Action>,
 ) -> (Rect, Option<Showing>) {
     let mut rows = vec![
-        ("Track", info.track.clone()),
-        (if info.scene { "Scene" } else { "Start" }, info.start.clone()),
-        ("Length", info.length.clone()),
-        ("Loop", if info.looping { "On".into() } else { "Off".into() }),
+        ("Track", info.track.clone(), ClipEdit::None),
+        (if info.scene { "Scene" } else { "Start" }, info.start.clone(), ClipEdit::None),
+        ("Length", info.length.clone(), ClipEdit::None),
+        ("Loop", if info.looping { "On".into() } else { "Off".into() }, ClipEdit::Loop),
     ];
+    // A MIDI clip's loop is dragged on the piano roll's ruler; an audio clip has no editor yet,
+    // so its loop is set here.
+    if let (Some((start, end)), true) = (info.loop_range, info.audio) {
+        rows.push(("Loop start", beats_text(start), ClipEdit::LoopStart));
+        rows.push(("Loop end", beats_text(end), ClipEdit::LoopEnd));
+    }
     if info.audio {
-        rows.push(("Gain", info.gain_db.map_or_else(|| "-".into(), |db| format!("{} dB", widgets::format_db(db)))));
+        // A slot's clip has no gain command of its own yet: its gain is shown, not edited.
+        let gain_edit = if matches!(info.at, Some(ClipRef::Arrangement(..))) { ClipEdit::Gain } else { ClipEdit::None };
+        rows.push((
+            "Gain",
+            info.gain_db.map_or_else(|| "-".into(), |db| format!("{} dB", widgets::format_db(db))),
+            gain_edit,
+        ));
+        rows.push(("Warp", if info.warped { "On".into() } else { "Off".into() }, ClipEdit::Warp));
+        let mode = WARP_MODES.iter().find(|(m, _, _)| *m == info.stretch).map_or("Smooth", |(_, _, shown)| shown);
+        rows.push(("Mode", mode.into(), ClipEdit::Mode));
+        rows.push(("Transpose", transpose_text(info.transpose), ClipEdit::Transpose));
         let beats = |b: f64| if b > 0.0 { format!("{} beats", (b * 100.0).round() / 100.0) } else { "-".into() };
-        rows.push(("Fade in", beats(info.fades.0)));
-        rows.push(("Fade out", beats(info.fades.1)));
+        rows.push(("Fade in", beats(info.fades.0), ClipEdit::None));
+        rows.push(("Fade out", beats(info.fades.1), ClipEdit::None));
     } else {
         // With notes selected the row says how many of the clip's notes they are, and how many of
         // them are muted (› Clip column in `docs/spec/ui-clip-editor.md`).
@@ -1717,12 +1793,12 @@ fn clip_properties(
         } else {
             format!("{} of {}, {} muted", selection.selected, info.notes, selection.muted)
         };
-        rows.push(("Notes", notes));
+        rows.push(("Notes", notes, ClipEdit::None));
         if let Some(from) = &selection.from {
-            rows.push(("From", from.clone()));
+            rows.push(("From", from.clone(), ClipEdit::None));
         }
         if let Some(to) = &selection.to {
-            rows.push(("To", to.clone()));
+            rows.push(("To", to.clone(), ClipEdit::None));
         }
         if let (Some(low), Some(high)) = (selection.low_key, selection.high_key) {
             let one = low == high;
@@ -1730,10 +1806,15 @@ fn clip_properties(
             rows.push((
                 "Pitch",
                 if one { low_name } else { format!("{low_name}–{}", crate::detail::piano_roll::key_name(high)) },
+                ClipEdit::None,
             ));
         }
         if let (Some(low), Some(high)) = (selection.low_velocity, selection.high_velocity) {
-            rows.push(("Velocity", if low == high { low.to_string() } else { format!("{low}–{high}") }));
+            rows.push((
+                "Velocity",
+                if low == high { low.to_string() } else { format!("{low}–{high}") },
+                ClipEdit::None,
+            ));
         }
     }
     let column = if stacked {
@@ -1772,19 +1853,23 @@ fn clip_properties(
         theme::text_primary(),
     );
     let mut y = title.bottom() + PAD;
-    for (label, value) in rows {
+    for (label, value, edit) in rows {
         let row = Rect::from_min_max(Pos2::new(column.left() + PAD, y), Pos2::new(column.right() - PAD, y + PARAM_ROW));
         y += PARAM_ROW;
         if row.bottom() > column.bottom() + 0.5 {
             break;
+        }
+        // The value keeps clear of the label, so a long track name is shortened, not drawn over it.
+        let value_rect = Rect::from_min_max(Pos2::new(row.left() + LABEL_WIDTH, row.top()), row.max);
+        if let (Some(at), true) = (info.at, edit != ClipEdit::None) {
+            clip_edit_row(ui, painter, row, value_rect, (label, &value), edit, at, info, actions);
+            continue;
         }
         // The row is named for a reader and a test ("Notes: 1 of 4"), as the piano roll's notes
         // are, so what the column says can be found by name.
         let response = ui.interact(row, egui::Id::new(("clip-property", label)), Sense::hover());
         let named = format!("{label}: {value}");
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &named));
-        // The value keeps clear of the label, so a long track name is shortened, not drawn over it.
-        let value_rect = Rect::from_min_max(Pos2::new(row.left() + LABEL_WIDTH, row.top()), row.max);
         widgets::text_in(
             painter,
             row,
@@ -1803,6 +1888,120 @@ fn clip_properties(
         );
     }
     (column, picked)
+}
+
+/// Semitones as the Transpose row shows them.
+fn transpose_text(semitones: f64) -> String {
+    let rounded = (semitones * 100.0).round() / 100.0;
+    if rounded > 0.0 { format!("+{rounded} st") } else { format!("{rounded} st") }
+}
+
+/// A row of the clip column that edits the clip: a click switches the loop or warp, or steps
+/// the warp mode; the loop range, gain and transpose are dragged sideways (one command when the
+/// drag ends, so a drag is one undo step) and a double-click puts gain and transpose back to 0.
+#[allow(clippy::too_many_arguments)]
+fn clip_edit_row(
+    ui: &Ui,
+    painter: &egui::Painter,
+    row: Rect,
+    value_rect: Rect,
+    (label, value): (&str, &str),
+    edit: ClipEdit,
+    at: ClipRef,
+    info: &ClipInfo,
+    actions: &mut Vec<Action>,
+) {
+    widgets::text_in(
+        painter,
+        row,
+        Align2::LEFT_CENTER,
+        label,
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_secondary(),
+    );
+    let id = Id::new(("clip-edit", label));
+    let draw_value = |response: &egui::Response, text: &str| {
+        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
+        painter.rect_filled(value_rect, 2.0, fill);
+        widgets::text_in(
+            painter,
+            value_rect.shrink2(Vec2::new(PAD / 2.0, 0.0)),
+            Align2::RIGHT_CENTER,
+            text,
+            theme::mono_font(theme::TEXT_SMALL),
+            theme::text_value(),
+        );
+    };
+    if matches!(edit, ClipEdit::Loop | ClipEdit::Warp | ClipEdit::Mode) {
+        let response = widgets::button_area(ui, value_rect, id, format!("{label}: {value}"));
+        draw_value(&response, value);
+        if response.clicked() {
+            actions.push(match edit {
+                ClipEdit::Loop => Action::new("clip.setLoop", on_clip(at, json!({ "loop": !info.looping }))),
+                ClipEdit::Warp => Action::new("clip.setAudio", on_clip(at, json!({ "warp": !info.warped }))),
+                _ => {
+                    let index = WARP_MODES.iter().position(|(m, _, _)| *m == info.stretch).unwrap_or(4);
+                    let next = WARP_MODES[(index + 1) % WARP_MODES.len()].1;
+                    Action::new("clip.setAudio", on_clip(at, json!({ "mode": next })))
+                }
+            });
+        }
+        return;
+    }
+    // Dragged: shown from a draft while the drag lasts. The loop's ends keep a quarter beat
+    // apart and move by quarter beats, the transpose by semitones, the gain by tenths of a dB.
+    let (start, end) = info.loop_range.unwrap_or((0.0, 4.0));
+    let (stored, per_point, min, max, reset) = match edit {
+        ClipEdit::LoopStart => (start, 0.0625, 0.0, end - 0.25, None),
+        ClipEdit::LoopEnd => (end, 0.0625, start + 0.25, 120_000.0, None),
+        ClipEdit::Gain => {
+            (info.gain_db.filter(|db| db.is_finite()).unwrap_or(-70.0).max(-70.0), 0.1, -70.0, 24.0, Some(0.0))
+        }
+        _ => (info.transpose, 0.1, -48.0, 48.0, Some(0.0)),
+    };
+    let snap = |v: f64| match edit {
+        ClipEdit::LoopStart | ClipEdit::LoopEnd => (v * 4.0).round() / 4.0,
+        ClipEdit::Transpose => v.round(),
+        _ => (v * 10.0).round() / 10.0,
+    };
+    let draft = ui.data(|d| d.get_temp::<f64>(id));
+    let text = match draft.map(snap) {
+        None => value.to_string(),
+        Some(shown) => match edit {
+            ClipEdit::Gain => format!("{} dB", widgets::format_db(shown)),
+            ClipEdit::Transpose => transpose_text(shown),
+            _ => beats_text(shown),
+        },
+    };
+    let hint = if reset.is_some() { "Drag sideways; double-click resets" } else { "Drag sideways" };
+    let response = ui.interact(value_rect, id.with("drag"), Sense::click_and_drag()).on_hover_text(hint);
+    let named = format!("{label}: {text}");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &named));
+    draw_value(&response, &text);
+    let moved = |from: f64| snap((from + f64::from(response.drag_delta().x) * per_point).clamp(min, max));
+    let set = if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<f64>(id));
+        reset
+    } else if response.drag_stopped() {
+        ui.data_mut(|d| d.remove::<f64>(id));
+        Some(moved(draft.unwrap_or(stored)))
+    } else {
+        if response.dragged() {
+            let next = (draft.unwrap_or(stored) + f64::from(response.drag_delta().x) * per_point).clamp(min, max);
+            ui.data_mut(|d| d.insert_temp(id, next));
+        }
+        None
+    };
+    let Some(value) = set.filter(|v| (v - stored).abs() > 1e-9) else { return };
+    actions.push(match edit {
+        ClipEdit::LoopStart => Action::new("clip.setLoop", on_clip(at, json!({ "start": value }))),
+        ClipEdit::LoopEnd => Action::new("clip.setLoop", on_clip(at, json!({ "end": value }))),
+        ClipEdit::Gain => {
+            let db = if value <= -70.0 { json!("-inf") } else { json!(value) };
+            Action::new("clip.setGain", on_clip(at, json!({ "db": db })))
+        }
+        _ => Action::new("clip.setAudio", on_clip(at, json!({ "transpose": value }))),
+    });
 }
 
 /// The Clip / Devices switch in `rect`: two equal parts 1 px apart, the one on light
@@ -2293,6 +2492,49 @@ mod tests {
         assert_eq!((info.name.as_str(), info.start.as_str(), info.length.as_str()), ("Beat B", "17.1", "12.0"));
         assert!(info.looping && !info.audio && !info.scene);
         assert_eq!(info.notes, 4);
+    }
+
+    /// The clip column's loop, warp and mode rows ask for the clip's commands (#699).
+    #[test]
+    fn the_clip_column_edits_the_clip() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+        let project = demo_project();
+        let beat_b = project.arrangement.lanes[0].clips[1].id;
+        let Detail::Clip(mut info, chain) =
+            build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+        else {
+            panic!("expected the clip")
+        };
+        assert_eq!(info.at, Some(ClipRef::Arrangement(TrackId(1), beat_b)));
+        // Shown as an audio clip, to reach the warp rows.
+        info.audio = true;
+        info.gain_db = Some(0.0);
+        let detail = Detail::Clip(info, chain);
+        for (label, command, key, value) in [
+            ("Loop: On", "clip.setLoop", "loop", json!(false)),
+            ("Warp: Off", "clip.setAudio", "warp", json!(true)),
+            ("Mode: Smooth", "clip.setAudio", "mode", json!("high-quality")),
+        ] {
+            let mut harness = Harness::builder().with_size(egui::vec2(700.0, 400.0)).build_ui_state(
+                |ui, actions: &mut Vec<Action>| {
+                    show_row(ui, &detail, &[], actions, &mut Vec::new());
+                },
+                Vec::new(),
+            );
+            harness.get_by_label(label).click();
+            harness.run();
+            let actions = harness.state();
+            assert_eq!(actions.len(), 1, "{label}");
+            assert_eq!(actions[0].id, command);
+            assert_eq!(actions[0].params["clip"], json!(beat_b.0));
+            assert_eq!(actions[0].params[key], value, "{label}");
+        }
+        // A slot's clip is named by its track and its scene, from 1.
+        assert_eq!(
+            on_clip(ClipRef::Slot(TrackId(2), 1), json!({ "loop": true })),
+            json!({ "track": 2, "scene": 2, "loop": true })
+        );
     }
 
     #[test]

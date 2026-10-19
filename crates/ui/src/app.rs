@@ -2371,7 +2371,10 @@ impl App {
                                         .filter(|v| !self.waveforms.contains_key(&v.file))
                                         .filter_map(|v| {
                                             let data = session.audio().files.get(&v.file)?;
-                                            Some((v.file.clone(), std::sync::Arc::new(crate::kit::waveform::peaks(data))))
+                                            Some((
+                                                v.file.clone(),
+                                                std::sync::Arc::new(crate::kit::waveform::peaks(data)),
+                                            ))
                                         })
                                         .collect();
                                     if !made.is_empty() {
@@ -3096,7 +3099,7 @@ impl App {
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
-                let (mut rest, picked) = detail_view::show_clip_column(ui, info, stacked);
+                let (mut rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
                 let picked = detail_view::Picked { showing: picked.showing, ..detail_view::Picked::default() };
                 // The MIDI tools column, between the clip's properties and the note grid. With the
                 // detail area stacked there is no room beside the notes, so it is not drawn there
@@ -3114,7 +3117,7 @@ impl App {
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
-                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked);
+                let (rest, picked) = detail_view::show_clip_column(ui, info, stacked, actions);
                 detail_view::show_ara_editor(ui, rest, chain, device, actions, &mut places);
                 picked
             } else if stacked {

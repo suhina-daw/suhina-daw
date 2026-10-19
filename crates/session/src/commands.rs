@@ -1224,6 +1224,25 @@ static COMMANDS: &[CommandSpec] = &[
         run: crate::clip_shape::set_loop,
     },
     CommandSpec {
+        id: "clip.setAudio",
+        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            optional("warp", ParamType::Bool, "true warps the audio to the tempo, false plays it at its own speed"),
+            optional(
+                "mode",
+                ParamType::Text,
+                "the warp mode: repitch, rhythmic, tonal, texture, smooth or high-quality",
+            ),
+            optional("transpose", ParamType::Number, "pitch shift in semitones, -48 to 48 (fractions are cents)"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_shape::set_audio,
+    },
+    CommandSpec {
         id: "clip.setLength",
         label: "Set how long a clip plays, in beats (an arrangement clip by index, or a slot's clip by scene); an arrangement clip keeps its start and may not run into the next clip on its lane",
         params: &[
