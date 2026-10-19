@@ -802,6 +802,7 @@ fn builtin_stock_wrappers_are_discarded_without_losing_values_or_other_extension
         key: "stock_sd".into(),
         data: b"obsolete graph".to_vec(),
     });
+    device.extensions.0.push(Extension { format: "other".into(), key: "metadata".into(), data: vec![1, 2, 3] });
     let encoded = device_value(&device);
     assert!(!encoded.to_string().contains("stock_sd"));
     let mut legacy = encoded;
