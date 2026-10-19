@@ -486,19 +486,7 @@ impl Group {
                     self.ara_notes.push((*instance, region.clone(), notes.clone()));
                 }
             }
-            Message::TransportKey => {
-                TRANSPORT_KEYS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-            Message::AraPlayback(request) => {
-                let mut requests = lock(&ARA_PLAYBACK);
-                // A newer position replaces one not taken yet; a few starts and stops are kept.
-                if let protocol::AraPlayback::Position(_) = request {
-                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
-                }
-                if requests.len() < MAX_ARA_PLAYBACK {
-                    requests.push(*request);
-                }
-            }
+            Message::TransportKey | Message::AraPlayback(_) => take_in_transport(message),
             Message::Memory { bytes } => {
                 // Only a process that is still there reports; the host sends it once a second,
                 // so the latest is what the control bar adds.
@@ -1226,6 +1214,30 @@ pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
     *lock(&WAKER) = Some(std::sync::Arc::new(waker));
 }
 
+/// Takes in a transport request a host sent unasked: Space in an editor window, or an ARA
+/// plug-in's play, stop or position. Done on the reader thread as the line comes, before the
+/// window is woken, so the frame it wakes plays or moves at once: left in the replies until a
+/// request read them, a click in the plug-in's timeline waited a frame or more, and the plug-in
+/// drew the old position meanwhile.
+fn take_in_transport(message: &Message) {
+    match message {
+        Message::TransportKey => {
+            TRANSPORT_KEYS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        Message::AraPlayback(request) => {
+            let mut requests = lock(&ARA_PLAYBACK);
+            // A newer position replaces one not taken yet; a few starts and stops are kept.
+            if let protocol::AraPlayback::Position(_) = request {
+                requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+            }
+            if requests.len() < MAX_ARA_PLAYBACK {
+                requests.push(*request);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();
@@ -1252,6 +1264,11 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                                 | Message::AraNotes { .. }
                                 | Message::EditorClosed { .. }
                         );
+                        if matches!(message, Message::TransportKey | Message::AraPlayback(_)) {
+                            take_in_transport(&message);
+                            wake();
+                            continue;
+                        }
                         if sender.send(message).is_err() {
                             return;
                         }

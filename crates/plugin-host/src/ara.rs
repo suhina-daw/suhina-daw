@@ -17,7 +17,7 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::{CString, c_void};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use suhina_ipc::AudioSource;
@@ -1491,7 +1491,46 @@ unsafe extern "C" fn stop_request(_host: ARAPlaybackControllerHostRef) {
 unsafe extern "C" fn position_request(_host: ARAPlaybackControllerHostRef, at: ARATimePosition) {
     if at.is_finite() && at >= 0.0 {
         ask(AraPlayback::Position(at));
+        hold_position(at);
     }
+}
+
+/// The position an ARA plug-in last asked for, in seconds (as `f64` bits; NaN for none), and
+/// until when it is shown, in milliseconds since [`epoch`].
+static HELD_POSITION: AtomicU64 = AtomicU64::new(f64::NAN.to_bits());
+static HELD_UNTIL: AtomicU64 = AtomicU64::new(0);
+/// How long a position asked for is shown at most, should the engine never get there.
+const HOLD_FOR: Duration = Duration::from_secs(1);
+
+fn epoch() -> Instant {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+fn hold_position(seconds: f64) {
+    let until = epoch().elapsed().saturating_add(HOLD_FOR).as_millis();
+    HELD_UNTIL.store(u64::try_from(until).unwrap_or(u64::MAX), Ordering::Release);
+    HELD_POSITION.store(seconds.to_bits(), Ordering::Release);
+}
+
+/// The plug-in's place while the transport is stopped: the position it asked for until the
+/// engine reports it (or a second has passed), rather than the engine's last one. The request
+/// goes to the engine and back, which takes a block or more; the plug-in drew the position it
+/// was clicked at, then the old one from the next block, then the new one: its playhead
+/// flickered back. `engine` and the result are in samples. Real-time safe.
+pub(crate) fn shown_position(engine: i64, sample_rate: f64, playing: bool) -> i64 {
+    let held = f64::from_bits(HELD_POSITION.load(Ordering::Acquire));
+    if held.is_nan() {
+        return engine;
+    }
+    let now = u64::try_from(epoch().elapsed().as_millis()).unwrap_or(u64::MAX);
+    let wanted = (held * sample_rate).round() as i64;
+    // The engine is there (within a millisecond), playing, or it took too long: its own.
+    if playing || now > HELD_UNTIL.load(Ordering::Acquire) || (engine - wanted).abs() as f64 <= sample_rate / 1000.0 {
+        HELD_POSITION.store(f64::NAN.to_bits(), Ordering::Release);
+        return engine;
+    }
+    wanted
 }
 
 // The loop (cycle) requests wait for a later step: Suhina's loop region is set in the ruler.
@@ -1508,6 +1547,24 @@ unsafe extern "C" fn no_cycle_switch(_host: ARAPlaybackControllerHostRef, _enabl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_position_asked_for_is_shown_until_the_engine_is_there() {
+        let rate = 48_000.0;
+        // Nothing asked for: the engine's position.
+        assert_eq!(shown_position(1000, rate, false), 1000);
+        // Asked for 2 s while the engine is still at its old place: 2 s is shown.
+        hold_position(2.0);
+        assert_eq!(shown_position(1000, rate, false), 96_000);
+        assert_eq!(shown_position(1512, rate, false), 96_000);
+        // The engine gets there: its own from then on, the hold let go of.
+        assert_eq!(shown_position(96_010, rate, false), 96_010);
+        assert_eq!(shown_position(1000, rate, false), 1000);
+        // Playing, the engine's position always.
+        hold_position(3.0);
+        assert_eq!(shown_position(1000, rate, true), 1000);
+        assert_eq!(shown_position(1000, rate, false), 1000);
+    }
 
     #[test]
     fn reading_fills_each_channel_with_silence_outside() {

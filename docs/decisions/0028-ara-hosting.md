@@ -208,7 +208,12 @@ the list below, in a first form). Where it differs from the decisions above it i
 - **Transport requests.** The plug-in's own play and stop buttons and a click in its editor's
   timeline reach Suhina's transport: the host's playback controller queues them and sends
   `ara_playback` (protocol version 12), and the window plays, stops or moves the play position
-  through the tempo map. A newer position replaces one not sent yet. The loop (cycle) requests
+  through the tempo map. A newer position replaces one not sent yet. The app takes these requests
+  in on the thread that reads the host's lines, before it wakes the window, so the frame it wakes
+  moves the transport. Until the engine reports the position asked for (or a second has passed),
+  the host shows the plug-in that position in its process context while the transport is stopped:
+  the request goes to the engine and back, and the plug-in otherwise drew the old position from the
+  next block, its playhead flickering back for a moment. The loop (cycle) requests
   are not followed; the loop region is set in the ruler. A click on a clip in the arrangement
   moves the play position there, so the editor follows the clip it shows (#717) The rules that play
   from a selected clip's start (Settings › Play from, and a clip picked while stopped) give way

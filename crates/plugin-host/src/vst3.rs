@@ -1327,7 +1327,8 @@ fn follow_song(context: &mut ProcessContext, events: &[suhina_ipc::Event]) {
     for event in events {
         match event.kind {
             EventKind::Transport { playing, position } => {
-                context.projectTimeSamples = i64::try_from(position).unwrap_or(i64::MAX);
+                let position = i64::try_from(position).unwrap_or(i64::MAX);
+                context.projectTimeSamples = crate::ara::shown_position(position, context.sampleRate, playing);
                 let playing_flag = bits(Flags::kPlaying);
                 context.state = if playing { context.state | playing_flag } else { context.state & !playing_flag };
             }
