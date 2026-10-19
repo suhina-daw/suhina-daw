@@ -1277,7 +1277,8 @@ fn an_empty_audio_clip_is_made_on_an_audio_track_no_file_yet() {
     // One undo step takes it back.
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert!(session.project().launcher.columns[2].slots[1].clip.is_none());
-    assert_eq!(session.project(), &midi_slot_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..midi_slot_project() });
 
     // In the arrangement it starts where it is told, same shapes as the MIDI one; a lane is made.
     let at = run(&mut session, "clip.create", json!({ "track": "Drums", "start": 4, "length": 8 })).unwrap();
@@ -1287,7 +1288,8 @@ fn an_empty_audio_clip_is_made_on_an_audio_track_no_file_yet() {
     assert!(matches!(content_of(&session, &clip).map(|c| c.lanes.as_slice()),
             Some([ContentLane { data: LaneData::Audio(region), .. }]) if region.file.is_empty()));
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &midi_slot_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..midi_slot_project() });
 }
 
 #[test]

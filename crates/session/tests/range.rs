@@ -73,7 +73,17 @@ fn splitting_a_range_makes_it_clips_of_its_own() {
     for track in BOTH {
         assert_eq!(spans(&session, track), [(0.0, 1.0), (1.0, 2.0), (3.0, 1.0)]);
     }
-    assert_eq!(out["clips"], json!([{ "track": 1, "index": 1 }, { "track": 2, "index": 1 }]), "the middle parts");
+    // The middle parts, each with its id (ADR 0025).
+    let parts: Vec<(u64, u64)> = out["clips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            assert!(c["clip"].as_u64().is_some(), "{c}");
+            (c["track"].as_u64().unwrap(), c["index"].as_u64().unwrap())
+        })
+        .collect();
+    assert_eq!(parts, [(1, 1), (2, 1)], "the middle parts");
 }
 
 #[test]

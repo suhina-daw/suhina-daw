@@ -166,6 +166,7 @@ impl Chain {
     /// yet gets a slot that waits for it). `post` is the track's gains. A file-backed device
     /// gets its file from `assets` by the path its state holds
     /// ([docs/spec/nam-amp-and-cab.md]). Allocates: call it off the audio thread.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build(
         project: &Project,
         audio: &crate::AudioPool,

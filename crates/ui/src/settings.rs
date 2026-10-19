@@ -1016,7 +1016,7 @@ map_window_rect = 10, 20, 800, 600
 
     #[test]
     fn play_from_reads_marker_or_clip_and_nothing_else() {
-        // The selected clip by default, as Ableton Live plays from it.
+        // The selected clip by default.
         assert_eq!(Settings::default().play_from, PlayFrom::Clip);
         assert_eq!(Settings::from_text("play_start = clip\n").0.play_from, PlayFrom::Clip);
         assert_eq!(Settings::from_text("play_start = marker\n").0.play_from, PlayFrom::Marker);

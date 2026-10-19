@@ -43,8 +43,8 @@ pub struct ViewSettings {
     pub menu_name_field: bool,
     /// Notes moved onto others of the same key and start replace them (on by default).
     pub notes_replace: bool,
-    /// Ctrl+drag over a clip selects time (FL Studio); off, a drag from a clip's lower half
-    /// does (Ableton Live, the default).
+    /// Ctrl+drag over a clip selects time; off (the default), a drag from a clip's upper half
+    /// does.
     pub time_select_ctrl: bool,
     /// Alt held while an audio clip's edge is dragged stretches its audio (on by default).
     pub stretch_alt: bool,

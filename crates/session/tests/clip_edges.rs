@@ -82,13 +82,13 @@ fn the_left_edge_moves_the_content_with_it_and_stops_at_its_start() {
 #[test]
 fn a_looping_audio_clip_goes_on_as_far_as_it_is_dragged() {
     let mut session = Session::new(project());
-    // Studio One's loop handle: the loop turns on over what plays, then the edge goes on.
+    // The loop handle: the loop turns on over what plays, then the edge goes on.
     let out = run(&mut session, "clip.trim", json!({ "track": 3, "index": 0, "end": 36.0, "loop": true })).unwrap();
     assert_eq!(out["loop"], true);
     let clip = first(&session, 3);
     assert_eq!(clip.length, 32.0, "four times its audio");
     assert_eq!(clip.loop_range, Some(LoopRange { start: 0.0, end: 8.0 }));
-    // Looping already, a plain drag of the edge does the same (Ableton's way).
+    // Looping already, a plain drag of the edge does the same.
     run(&mut session, "clip.trim", json!({ "track": 3, "index": 0, "end": 44.0 })).unwrap();
     assert_eq!(first(&session, 3).length, 40.0);
 }

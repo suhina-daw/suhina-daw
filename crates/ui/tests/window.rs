@@ -768,7 +768,7 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
         render_a_block(renderer);
     };
 
-    // By default Play starts from the selected clip, as Ableton Live's does.
+    // By default Play starts from the selected clip.
     harness.get_by_label("Clip Beat B on Drums at bar 17").click();
     harness.run();
     harness.get_by_label("Play").click();

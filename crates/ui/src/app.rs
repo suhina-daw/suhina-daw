@@ -336,7 +336,7 @@ pub struct App {
     /// so far, and whether the field has had the keyboard yet.
     rename: Option<(serde_json::Value, String, bool)>,
     /// The project switcher Ctrl+Tab opens: the open project picked so far (its place among
-    /// them). It switches when Ctrl is let go, as Studio One's and most programs' do.
+    /// them). It switches when Ctrl is let go, as most programs' do.
     tab_switcher: Option<usize>,
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
@@ -2171,7 +2171,7 @@ impl App {
                                 .map_or(0, |i| i.input_channels);
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
                             // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
-                            // paste): play starts from the first of them, as Ableton Live's does.
+                            // paste): play starts from the first of them.
                             let picked = self.arrangement.selected_clips();
                             if picked != self.clips_before.as_slice() {
                                 let first = picked
@@ -3930,8 +3930,7 @@ impl App {
                     self.arrangement.automation.toggle_all(&tracks, &timeline.automation);
                 }
             }
-            // An empty MIDI clip over the time selection on each of its MIDI tracks (Ableton
-            // Live's Ctrl+Shift+M).
+            // An empty MIDI clip over the time selection on each of its MIDI tracks (Ctrl+Shift+M).
             "clip.insertMidi" => {
                 let Some(span) = self.arrangement.time_selection().cloned() else {
                     self.status = Status::Hint("Select a time range in the Arrangement first".into());
@@ -4022,7 +4021,7 @@ impl App {
                 self.status = Status::Hint("In the Session view, a slot's clip can be copied and pasted".into());
             }
             // A time selection in the Arrangement: the keys act on what plays inside it, as in
-            // Ableton Live and Studio One; clips picked by a click act whole (the arm below).
+            // clips picked by a click act whole (the arm below).
             "selection.copy"
             | "selection.cut"
             | "selection.duplicate"
@@ -4056,7 +4055,7 @@ impl App {
                     }
                     _ => {
                         // Each track of the span with something in it: the new clip runs over the
-                        // whole span, its empty part silent, as Ableton Live consolidates.
+                        // whole span, its empty part silent.
                         let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                         let playing = |track: u32| {
                             timeline.and_then(|t| t.lanes.iter().find(|l| l.track.0 == track)).is_some_and(|l| {
@@ -4247,7 +4246,7 @@ impl App {
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>
             {
                 // Copied from several tracks: each part back on its own track, from the play
-                // start marker, as Ableton Live pastes at its insert marker.
+                // start marker.
                 let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.beat);
                 actions.push(Action::new("clip.paste", json!({ "start": beat })));
             }

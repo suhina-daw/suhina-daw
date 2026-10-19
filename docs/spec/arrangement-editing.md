@@ -117,7 +117,7 @@ clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track ba
 track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
 headers are tinted with their track's colour, deeper while selected.
 
-As in Studio One, a lane and its clips are split in two: a drag from the upper half paints a
+A lane and its clips are split in two: a drag from the upper half paints a
 time selection (a text cursor) over the tracks it crosses, clips or not; from the lower half it
 moves a clip (a hand cursor) or, on an empty spot, draws a rectangle that picks whole clips and
 paints no time. A clip on a lane under 36 px moves from anywhere. With *Ctrl+drag selects time
@@ -149,13 +149,12 @@ never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Le
   than the content's start.
 - A clip that does not loop ends at most where its audio ends; a MIDI clip can be made as long as
   wanted, its content growing with it.
-- A looping clip goes on as far as its edge is dragged, its loop repeating, as in Ableton Live.
-- The handle at a clip's lower right corner (Studio One's loop tool) turns the loop on over what
+- A looping clip goes on as far as its edge is dragged, its loop repeating.
+- The handle at a clip's lower right corner (the loop handle) turns the loop on over what
   the clip plays now and makes the clip longer (`clip.trim` with `loop: true`).
 
 With Alt held (Settings › Arrangement › *Alt-drag on an edge stretches audio*, on by default) an
-audio clip's edge stretches its audio to the new length, its pitch kept, as Studio One's Alt-drag
-does: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
+audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
 clip is warped first) and gives the clip a content of its own when another clip plays the same.
 
 A time selection over a clip and empty time, consolidated (Ctrl+J), becomes one clip over the
@@ -164,14 +163,14 @@ whole span, its empty part silent.
 ## Time selection
 
 A time selection is a span of beats over some tracks; the keys then act on what plays inside it,
-not on whole clips, as in Ableton Live and Studio One. It is made by:
+not on whole clips. It is made by:
 
 - a drag from an empty spot of a lane (the rectangle's tracks and beats);
 - a drag on the ruler: that time over every track;
 - over a clip, as Settings › Arrangement › *Ctrl+drag selects time over clips* says: off (the
-  default, Ableton Live's way) a drag from the lower half of a clip on a lane at least 36 px tall
-  selects time and the clip moves from its upper half; on (FL Studio's way) a drag with Ctrl held
-  selects time anywhere and a plain drag moves the clip.
+  default) a drag from the upper half of a clip on a lane at least 36 px tall selects time and
+  the clip moves from its lower half; on, a drag with Ctrl held selects time anywhere and a plain
+  drag moves the clip.
 
 Its edges are on the grid (Alt: free). A click on a clip, or moving one, ends it, so clicked
 clips act whole again (Ctrl+A, Shift and Ctrl clicks still pick whole clips).
@@ -184,12 +183,12 @@ With a time selection:
 | Ctrl+X | `range.cut` | Copies what plays inside, cut to it, and removes it. |
 | Ctrl+C | `range.copy` | Copies what plays inside, cut to it. |
 | Ctrl+V | `clip.paste {start}` | A copy from several tracks goes back to its own tracks, from the play start marker. |
-| Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own (Ableton Live's *Split Clip at Selection*). |
+| Ctrl+E | `range.split` | Splits the clips at both edges: the span becomes clips of its own. |
 | Ctrl+D | `range.duplicate` | Puts a copy right after the span on the same tracks; the selection moves onto the copy. |
 | Ctrl+J | `clip.consolidate` | Consolidates the span on each of its tracks. |
 
-Each takes `{tracks, start, end}` and is one undo step. Closing the gap (Ableton Live's *Delete
-Time*) is not built yet.
+Each takes `{tracks, start, end}` and is one undo step. Closing the gap (deleting the time
+itself) is not built yet.
 
 ## Duplicating and deleting
 
@@ -511,8 +510,8 @@ pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay
 
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
-Play button pass the setting **Play from** (Settings › General): **Selected clip** (default,
-as Ableton Live plays from the clip clicked) or **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked while stopped (a click, a rectangle, Ctrl+A), the play start marker also moves to the first of them.
+Play button pass the setting **Play from** (Settings › General): **Selected clip** (default) or
+**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked while stopped (a click, a rectangle, Ctrl+A), the play start marker also moves to the first of them.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
 clip selected, or while the Session view is shown (where the selection is not seen), they play

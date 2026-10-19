@@ -46,13 +46,10 @@ fn every_stock_sd_imports_as_its_built_in_by_id() {
             let mut project = session.project().clone();
             project.channels[0].devices[0].set_sample_file("source.wav");
             session = Session::new(project);
-            let mut newer = stock.graph().unwrap();
-            newer
-                .migrations
-                .push(suhina_device_sdk::DeviceMigration { from_version: newer.device_version, parameter_ids: vec![] });
-            newer.device_version += 1;
-            std::fs::write(&path, newer.to_sd().unwrap()).unwrap();
-            session.execute("device.updateSd", &json!({"track":1,"device":0,"path":path})).unwrap();
+            // A built-in's definition is always the bundle's (ADR 0021 amendment 3), so there is
+            // nothing of it to update: device.updateSd refuses it and the sample stays.
+            let refused = session.execute("device.updateSd", &json!({"track":1,"device":0,"path":path}));
+            assert!(refused.is_err(), "{refused:?}");
             assert_eq!(session.project().channels[0].devices[0].sample_file(), Some("source.wav"));
         }
         std::fs::remove_file(path).unwrap();

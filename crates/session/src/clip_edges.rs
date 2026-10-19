@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! An arrangement clip's edges dragged (`docs/spec/arrangement-editing.md` › Clip edges): its
-//! start and end moved, as Ableton Live and Studio One move an event's edges, or its audio
-//! stretched to the new length (Studio One's Alt-drag on an edge). A clip that does not loop
+//! start and end moved, or its audio
+//! stretched to the new length (Alt held on an edge). A clip that does not loop
 //! ends at most where its audio does; a looping clip goes on as long as it is made, its loop
-//! repeating; `loop` turns the loop on first (Studio One's loop handle at a clip's lower right).
+//! repeating; `loop` turns the loop on first (the loop handle at a clip's lower right).
 
 use serde_json::{Value, json};
 use suhina_model::{Clip, ContentId, LaneData, LoopRange, Project, WarpMarker};

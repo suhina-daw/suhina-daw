@@ -3,7 +3,7 @@
 
 //! Editing a time selection in the arrangement: a span of beats over some tracks, as the
 //! selection rectangle makes it. The commands act on the material inside the span, not on whole
-//! clips: a clip that crosses an edge is split there first, as Ableton Live and Studio One do with
+//! clips: a clip that crosses an edge is split there first, as is usual with
 //! a time selection (`docs/spec/arrangement-editing.md` › Time selection). Each is one undo step.
 
 use serde_json::{Value, json};

@@ -418,6 +418,7 @@ impl GroupSlot {
     /// Runs the group over `buffer`'s frames `from..to` (interleaved stereo, frames counted from
     /// the block's start), with `pending`, the notes at their frames in the block. Never
     /// allocates.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn run(
         &mut self,
         buffer: &mut [f32],

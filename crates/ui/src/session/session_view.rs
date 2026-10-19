@@ -176,7 +176,7 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 }
 
 /// How much of the track's colour an empty slot shows: the whole column reads as the track's,
-/// as Ableton Live's Session view does.
+/// the whole column in its track's colour.
 const EMPTY_TINT: f32 = 0.12;
 
 /// Draws the Session view in the space left in `ui` and adds what the user asked for to

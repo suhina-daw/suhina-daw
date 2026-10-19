@@ -112,12 +112,12 @@ struct ClipDrag {
     /// Where the dragged clip started: the other selected clips move by as much as it does.
     origin: f64,
     /// Ctrl (Cmd) was held as the drag began (Shift with Ctrl+drag selecting time): the clips
-    /// are copied rather than moved, as Ableton Live's Ctrl-drag does.
+    /// are copied rather than moved.
     copy: bool,
 }
 
 /// Which grip of a clip's edges is dragged: its left or right edge, or the loop handle at its
-/// lower right (Studio One's), which turns the loop on as it makes the clip longer.
+/// lower right, which turns the loop on as it makes the clip longer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EdgeGrab {
     Left,
@@ -307,8 +307,7 @@ pub struct ArrangementViewState {
     pub stack_audio: bool,
     pub stack_midi: bool,
     /// How a drag over a clip selects time (Settings › Arrangement › Time selection): with Ctrl
-    /// held (as FL Studio does) when true; from the clip's lower half (as Ableton Live does) when
-    /// false. A drag on empty lanes or on the ruler selects time either way.
+    /// held when true; from the clip's upper half when false. A drag on empty lanes or on the ruler selects time either way.
     pub time_select_ctrl: bool,
     /// Alt held while an audio clip's edge is dragged stretches its audio to the new length
     /// (Settings › Arrangement › Alt-drag on an edge stretches audio).
@@ -1353,7 +1352,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         rows_seen.push((clips_lane.track, row.clip));
         // A drag from an empty spot (#649): from the lane's upper half it paints a time selection
         // over the tracks it crosses, from the lower half it draws a rectangle that picks whole
-        // clips, as Studio One's lanes do (with Ctrl+drag selecting time, Ctrl paints instead).
+        // clips (with Ctrl+drag selecting time, Ctrl paints instead).
         if body.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
@@ -2080,8 +2079,8 @@ fn clip_box<'a>(
     let bar = (clip.start / bar_beats).floor() as u64 + 1;
     let name = if clip.name.is_empty() { "clip" } else { clip.name.as_str() };
     let response = ui.interact(visible, Id::new(("arrangement-clip", clip.id.0)), Sense::click_and_drag());
-    // The cursor says what a drag does: the upper half moves the clip (a hand; with the copy key
-    // held, the copy cursor), the lower half selects time (a text cursor), as Ableton Live's do.
+    // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key
+    // held, the copy cursor), the upper half selects time (a text cursor).
     let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
     let in_body = |y: f32| !state.time_select_ctrl && clip_grab_area(visible).is_some_and(|grab| y < grab.top());
     if state.clip_drag.is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
@@ -2752,13 +2751,13 @@ fn paint_clip(
 }
 
 /// The part of a clip a drag moves it from: its lower half, on a lane tall enough to have an
-/// upper half for painting time (Studio One's range); `None` when the whole clip moves it.
+/// upper half for painting time; `None` when the whole clip moves it.
 fn clip_grab_area(rect: Rect) -> Option<Rect> {
     (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_max(Pos2::new(rect.left(), rect.center().y), rect.max))
 }
 
 /// The bar along a clip's top that carries its name, on a lane tall enough to have a body under
-/// it (Ableton Live's title bar); the drag that moves the clip takes the whole upper half.
+/// it (a title bar); the drag that moves the clip takes the whole upper half.
 fn clip_name_bar(rect: Rect) -> Option<Rect> {
     (rect.height() >= CLIP_BODY_LEAST).then(|| Rect::from_min_size(rect.min, Vec2::new(rect.width(), CLIP_NAME_BAR)))
 }
