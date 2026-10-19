@@ -1387,7 +1387,15 @@ impl Rack {
             if instance.status != PluginStatus::Running {
                 continue;
             }
-            let (Some(layout), Some(control)) = (&instance.ara_layout, instance.control.as_mut()) else { continue };
+            let Some(layout) = &instance.ara_layout else { continue };
+            // The notes it has are kept while its control half is lent out (an edit of its clips
+            // going to it, an editor opening): the host sends notes only when they change, so
+            // ones let go of then would not come back. New ones are taken in when it is home.
+            live.push(layout);
+            if enabled(*key) {
+                shown.push(layout);
+            }
+            let Some(control) = instance.control.as_mut() else { continue };
             for (region, notes) in control.take_ara_notes() {
                 let Some(clip) = region.strip_prefix("clip-").and_then(|n| n.parse().ok()).map(suhina_model::ClipId)
                 else {
@@ -1401,10 +1409,6 @@ impl Rack {
                     Some(notes) => self.ara_notes.insert(clip, notes),
                     None => self.ara_notes.remove(&clip),
                 };
-            }
-            live.push(layout);
-            if enabled(*key) {
-                shown.push(layout);
             }
         }
         let has = |layouts: &[&crate::ara::Layout], clip: &suhina_model::ClipId| {
