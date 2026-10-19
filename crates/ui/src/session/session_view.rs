@@ -391,6 +391,9 @@ pub fn show(
     let shared =
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = crate::session::mixer_strip::layout_shared(main_mixer, false, false, shared);
+    if let Some(list) = parts.devices {
+        crate::session::mixer_strip::main_devices(&painter.with_clip_rect(main_mixer), list, &grid.main_devices);
+    }
     if let (Some(readout), Some(fader)) = (parts.readout, parts.fader) {
         let main_painter = painter.with_clip_rect(main_mixer);
         crate::session::mixer_strip::main_fader(ui, &main_painter, readout, fader, grid.main_volume_db, state, actions);

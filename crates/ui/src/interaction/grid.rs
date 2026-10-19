@@ -135,6 +135,26 @@ pub struct SendKnob {
     pub pre_fader: bool,
 }
 
+/// A channel's devices as its strip's list shows them.
+fn strip_devices(devices: &[suhina_engine::model::Device]) -> Vec<StripDevice> {
+    devices
+        .iter()
+        .map(|d| StripDevice {
+            name: d.name.clone(),
+            enabled: d.enabled,
+            plugin: matches!(
+                d.kind,
+                suhina_engine::model::DeviceKind::Clap { .. }
+                    | suhina_engine::model::DeviceKind::Vst3 { .. }
+                    | suhina_engine::model::DeviceKind::Vst2 { .. }
+            ),
+            group: d
+                .as_group()
+                .map(|g| g.branches.iter().map(|b| suhina_engine::model::count_devices(&b.devices)).sum()),
+        })
+        .collect()
+}
+
 impl Column {
     /// Where the track sits in the track list.
     pub fn place(&self) -> crate::interaction::nesting::Place {
@@ -195,6 +215,8 @@ pub struct Grid {
     pub mapped: Vec<(MappingTarget, String)>,
     /// The main output's volume in dB.
     pub main_volume_db: f64,
+    /// The main channel's devices, for its strip's list.
+    pub main_devices: Vec<StripDevice>,
     /// The metronome: on, its level in dB, its sound; set by the app.
     pub metronome: (bool, f64, suhina_engine::ClickSound),
 }
@@ -312,24 +334,7 @@ impl Grid {
                         })
                         .collect(),
                 },
-                devices: channel.map_or_else(Vec::new, |c| {
-                    c.devices
-                        .iter()
-                        .map(|d| StripDevice {
-                            name: d.name.clone(),
-                            enabled: d.enabled,
-                            plugin: matches!(
-                                d.kind,
-                                suhina_engine::model::DeviceKind::Clap { .. }
-                                    | suhina_engine::model::DeviceKind::Vst3 { .. }
-                                    | suhina_engine::model::DeviceKind::Vst2 { .. }
-                            ),
-                            group: d.as_group().map(|g| {
-                                g.branches.iter().map(|b| suhina_engine::model::count_devices(&b.devices)).sum()
-                            }),
-                        })
-                        .collect()
-                }),
+                devices: channel.map_or_else(Vec::new, |c| strip_devices(&c.devices)),
             };
             if kind == ColumnKind::Return { returns.push(column) } else { columns.push(column) }
         }
@@ -391,6 +396,11 @@ impl Grid {
                 .iter()
                 .find(|c| c.role == ChannelRole::Master)
                 .map_or(0.0, |c| gain_to_db(c.volume)),
+            main_devices: project
+                .channels
+                .iter()
+                .find(|c| c.role == ChannelRole::Master)
+                .map_or_else(Vec::new, |c| strip_devices(&c.devices)),
             metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
         }
     }

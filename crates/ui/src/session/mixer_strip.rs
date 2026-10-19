@@ -170,17 +170,22 @@ pub fn layout_shared(rect: Rect, has_sends: bool, can_hear_input: bool, shared: 
     let fixed = READOUT + UNDER_READOUT + if pan { KNOB_ROW } else { 0.0 } + if sends { KNOB_ROW } else { 0.0 };
     let rest = (bottom - top - fixed).max(0.0);
     let fader = if height >= DEVICES_AT {
+        // The device list is as tall on every strip, Main and the returns too (#683): it is
+        // worked out as if the strip had a row of sends, and a strip without them gives that
+        // row to its fader.
+        let spare = if height >= SENDS_AT && !has_sends { KNOB_ROW } else { 0.0 };
+        let room = (rest - spare).max(0.0);
         let fader = if shared.fader > 0.0 {
             // The divider's height, as long as one device row still shows over it.
-            shared.fader.clamp(LEAST_FADER, (rest - DEVICE_ROW - UNDER_DEVICES).max(LEAST_FADER))
+            shared.fader.clamp(LEAST_FADER, (room - DEVICE_ROW - UNDER_DEVICES).max(LEAST_FADER))
         } else {
-            (rest - LEAST_DEVICES * DEVICE_ROW - UNDER_DEVICES).clamp(LEAST_FADER, TALLEST_FADER_WITH_DEVICES)
+            (room - LEAST_DEVICES * DEVICE_ROW - UNDER_DEVICES).clamp(LEAST_FADER, TALLEST_FADER_WITH_DEVICES)
         };
-        let list = rest - fader - UNDER_DEVICES;
+        let list = room - fader - UNDER_DEVICES;
         if list >= DEVICE_ROW {
             parts.devices = Some(row(top, list));
             top += list + UNDER_DEVICES;
-            fader
+            fader + spare
         } else {
             rest
         }
@@ -375,6 +380,38 @@ fn output_row(
     });
     if let Some(to) = picked {
         actions.push(Action::new("track.setOutput", json!({ "track": column.track.0, "to": to })));
+    }
+}
+
+/// The main channel's devices in its strip, at the same height as every track's list (#683).
+pub fn main_devices(painter: &egui::Painter, rect: Rect, devices: &[crate::interaction::grid::StripDevice]) {
+    painter.rect_filled(rect, 0.0, theme::window_background());
+    let list_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    if devices.is_empty() {
+        widgets::text_in(
+            &list_painter,
+            rect.shrink2(Vec2::new(4.0, 0.0)),
+            Align2::LEFT_TOP,
+            "No devices",
+            theme::ui_font(theme::TEXT_SMALL),
+            theme::text_hint(),
+        );
+        return;
+    }
+    for (index, device) in devices.iter().enumerate() {
+        let row = Rect::from_min_size(
+            Pos2::new(rect.left(), rect.top() + index as f32 * DEVICE_ROW),
+            Vec2::new(rect.width(), DEVICE_ROW),
+        );
+        let color = if device.enabled { theme::text_secondary() } else { theme::text_hint() };
+        widgets::text_in(
+            &list_painter,
+            row.shrink2(Vec2::new(4.0, 0.0)),
+            Align2::LEFT_CENTER,
+            &device.name,
+            theme::ui_font(theme::TEXT_SMALL),
+            color,
+        );
     }
 }
 
@@ -1046,5 +1083,20 @@ mod tests {
         let without = layout(rect, false, false);
         assert!(without.sends.is_none());
         assert_eq!(without.fader.map(|f| f.height()), strip(200.0).fader.map(|f| f.height() + KNOB_ROW));
+    }
+
+    #[test]
+    fn the_device_list_is_as_tall_on_a_strip_without_sends() {
+        for height in [DEVICES_AT, 300.0, 420.0, 700.0] {
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::RETURN_COLUMN, height));
+            let (with, without) = (layout(rect, true, false), layout(rect, false, false));
+            assert_eq!(with.devices.map(|d| d.y_range()), without.devices.map(|d| d.y_range()), "{height}");
+            let divided = Shared { fader: 90.0, ..Shared::default() };
+            assert_eq!(
+                layout_shared(rect, true, false, divided).devices.map(|d| d.y_range()),
+                layout_shared(rect, false, false, divided).devices.map(|d| d.y_range()),
+                "{height}"
+            );
+        }
     }
 }
