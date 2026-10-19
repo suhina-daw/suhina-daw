@@ -38,7 +38,10 @@ From top to bottom:
 2. **Control bar**, left to right:
    - external sync and tempo: sync toggle, tap tempo, tempo field, nudge, time signature
    - groove amount, metronome, global launch quantisation (in Suhina also the Arrangement
-     view's grid: [arrangement editing](arrangement-editing.md) › The grid)
+     view's grid: [arrangement editing](arrangement-editing.md) › The grid). **Suhina:** the
+     metronome's button, here and in the main strip, is held and dragged for its level: a
+     slider opens above it, or below where there is no room above, and the pointer's height on
+     it is the level (−60 to +6 dB), so the whole range is one drag
    - key and scale
    - transport: arrangement position, play, stop, record, overdub, automation arm, loop region
      start, punch, loop, loop length. **Suhina:** play starts from the play start marker, or

@@ -95,8 +95,6 @@ pub struct SessionViewState {
     pub(crate) strip_fader_dragged: Option<f32>,
     /// Some strip holds an audio input's block, so every strip keeps its room.
     pub(crate) reserve_input: bool,
-    /// The metronome's level while the main strip's metronome button is held and dragged.
-    pub(crate) metronome_drag: Option<f64>,
     /// How far each strip's device list is scrolled.
     pub(crate) device_scroll: std::collections::BTreeMap<TrackId, f32>,
     /// The device row clicked last in a strip (track, device index): it stays lit.
@@ -408,7 +406,7 @@ pub fn show(
     // The metronome in the main strip's toggle row, as the main channel's click control.
     let click =
         Rect::from_min_size(parts.toggles.min, Vec2::new(28.0_f32.min(parts.toggles.width()), parts.toggles.height()));
-    main_metronome(ui, &painter.with_clip_rect(main_mixer), click, grid.metronome, state, actions);
+    main_metronome(ui, &painter.with_clip_rect(main_mixer), click, grid.metronome, actions);
     mixer_edge(ui, &painter, area, mixer, mixer_height, state);
 }
 
@@ -419,10 +417,8 @@ fn main_metronome(
     painter: &egui::Painter,
     rect: Rect,
     (on, db, _): (bool, f64, suhina_engine::ClickSound),
-    state: &mut SessionViewState,
     actions: &mut Vec<Action>,
 ) {
-    const RANGE: (f64, f64) = (-60.0, 6.0);
     let response = ui
         .interact(rect.intersect(painter.clip_rect()), Id::new("main-metronome"), Sense::click_and_drag())
         .on_hover_text("Metronome: click to turn it on or off; hold and drag up or down for its level");
@@ -430,58 +426,12 @@ fn main_metronome(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    let start = if db.is_finite() { db } else { RANGE.0 };
-    if response.drag_started() {
-        state.metronome_drag = Some(start);
-    }
-    if response.dragged()
-        && let Some(level) = state.metronome_drag
-    {
-        let next = (level - f64::from(response.drag_delta().y) * 0.25).clamp(RANGE.0, RANGE.1);
-        if next != level {
-            state.metronome_drag = Some(next);
-            actions
-                .push(Action::new("transport.setMetronome", json!({ "on": on, "db": (next * 10.0).round() / 10.0 })));
-        }
-    }
-    if response.drag_stopped() {
-        state.metronome_drag = None;
-    }
     let fill = if on { theme::control_active() } else { theme::control_background() };
     painter.rect_filled(rect, 0.0, fill);
     let glyph = if on { theme::accent() } else { theme::text_primary() };
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
-    // Held: the level's slider over the button, above everything else.
-    if response.is_pointer_button_down_on() {
-        let level = state.metronome_drag.unwrap_or(start);
-        let slider =
-            Rect::from_min_max(Pos2::new(rect.left(), rect.top() - 128.0), Pos2::new(rect.right(), rect.top() - 2.0));
-        let over =
-            ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("main-metronome-slider")));
-        over.rect_filled(slider, 0.0, theme::panel_background());
-        over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-        let track = Rect::from_min_max(
-            Pos2::new(slider.center().x - 2.0, slider.top() + 18.0),
-            Pos2::new(slider.center().x + 2.0, slider.bottom() - 6.0),
-        );
-        over.rect_filled(track, 0.0, theme::control_background());
-        let position = ((level - RANGE.0) / (RANGE.1 - RANGE.0)) as f32;
-        let y = track.bottom() - track.height() * position;
-        over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
-        over.rect_filled(
-            Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
-            0.0,
-            theme::text_primary(),
-        );
-        widgets::text_in(
-            &over,
-            Rect::from_min_max(slider.min, Pos2::new(slider.right(), slider.top() + 16.0)),
-            Align2::CENTER_CENTER,
-            &format!("{level:.0}"),
-            theme::mono_font(theme::TEXT_SMALL),
-            theme::text_value(),
-        );
-    }
+    // Held: the level's slider beside the button, where there is room.
+    crate::session::record_controls::metronome_level(ui, &response, rect, (on, db), actions);
 }
 
 /// The mixer's height this frame: the one being dragged to, else the saved one, kept between the

@@ -6,7 +6,7 @@
 //! (`transport.setCountIn`), and the record button an armed track's empty slots show
 //! (`clip.record`; a click on a slot that records ends its take with `clip.launch`).
 
-use egui::{Align2, Id, Painter, Rect, Stroke, Ui, Vec2};
+use egui::{Align2, Id, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use serde_json::json;
 
 use crate::kit::widgets::{self, Action};
@@ -33,21 +33,30 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     painter.circle_filled(rect.center(), 4.5, theme::recording().gamma_multiply(0.35 + 0.65 * lit));
 }
 
-/// The metronome's switch in `rect`: lit while it clicks; a click turns it on or off, the
-/// right-click menu picks its sound (`transport.setMetronome`).
+/// The metronome's level in dB, lowest and highest, as its slider sets it.
+pub const METRONOME_RANGE: (f64, f64) = (-60.0, 6.0);
+/// The level slider's height.
+const LEVEL_SLIDER: f32 = 128.0;
+
+/// The metronome's switch in `rect`: lit while it clicks; a click turns it on or off, held and
+/// dragged it sets its level ([`metronome_level`]), the right-click menu picks its sound
+/// (`transport.setMetronome`).
 pub fn metronome_button(
     ui: &Ui,
     painter: &Painter,
     rect: Rect,
-    (on, _, sound): (bool, f64, suhina_engine::ClickSound),
+    (on, db, sound): (bool, f64, suhina_engine::ClickSound),
     actions: &mut Vec<Action>,
 ) {
     let label = if on { "Metronome off" } else { "Metronome on" };
-    let response = widgets::button_area(ui, rect, Id::new("metronome"), label)
-        .on_hover_text("Metronome: a click on every beat while playing. Right-click: its sound");
+    let response = ui.interact(rect, Id::new("metronome"), egui::Sense::click_and_drag()).on_hover_text(
+        "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
+    metronome_level(ui, &response, rect, (on, db), actions);
     response.context_menu(|ui| {
         for choice in suhina_engine::ClickSound::ALL {
             let name = match choice {
@@ -65,6 +74,71 @@ pub fn metronome_button(
     let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.rect_filled(rect, 0.0, motion::mix(hover, theme::control_active(), lit));
     metronome_glyph(painter, rect, motion::mix(theme::text_primary(), theme::accent(), lit));
+}
+
+/// While the metronome's button (`response`, in `button`) is held: its level's slider beside it,
+/// above, or below where there is no room above (#684). Dragged, the pointer's height on the
+/// slider is the level, so the whole range is in reach in one drag; a press that does not move
+/// changes nothing, so a click still only turns it on or off.
+pub fn metronome_level(
+    ui: &Ui,
+    response: &egui::Response,
+    button: Rect,
+    (on, db): (bool, f64),
+    actions: &mut Vec<Action>,
+) {
+    if !response.is_pointer_button_down_on() {
+        return;
+    }
+    let (low, high) = METRONOME_RANGE;
+    let screen = ui.ctx().content_rect();
+    let above = button.top() - screen.top() >= LEVEL_SLIDER + 2.0;
+    let slider = if above {
+        Rect::from_min_max(
+            Pos2::new(button.left(), button.top() - 2.0 - LEVEL_SLIDER),
+            Pos2::new(button.right(), button.top() - 2.0),
+        )
+    } else {
+        Rect::from_min_max(
+            Pos2::new(button.left(), button.bottom() + 2.0),
+            Pos2::new(button.right(), button.bottom() + 2.0 + LEVEL_SLIDER),
+        )
+    };
+    let track = Rect::from_min_max(
+        Pos2::new(slider.center().x - 2.0, slider.top() + 18.0),
+        Pos2::new(slider.center().x + 2.0, slider.bottom() - 6.0),
+    );
+    let mut level = if db.is_finite() { db.clamp(low, high) } else { low };
+    if response.dragged()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let at = f64::from(((track.bottom() - pointer.y) / track.height()).clamp(0.0, 1.0));
+        let next = ((low + at * (high - low)) * 2.0).round() / 2.0;
+        if (next - level).abs() > 1e-9 {
+            level = next;
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "db": next })));
+        }
+    }
+    let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
+    over.rect_filled(slider, 0.0, theme::panel_background());
+    over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    over.rect_filled(track, 0.0, theme::control_background());
+    let position = ((level - low) / (high - low)) as f32;
+    let y = track.bottom() - track.height() * position;
+    over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
+    over.rect_filled(
+        Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
+        0.0,
+        theme::text_primary(),
+    );
+    widgets::text_in(
+        &over,
+        Rect::from_min_max(slider.min, Pos2::new(slider.right(), slider.top() + 16.0)),
+        Align2::CENTER_CENTER,
+        &format!("{level:.0}"),
+        theme::mono_font(theme::TEXT_SMALL),
+        theme::text_value(),
+    );
 }
 
 /// A small metronome: its body and its arm, centred in `rect`.
