@@ -9,6 +9,12 @@
 //! (u64), modification time (u64), a status byte (0 analysed, 1 failed) and, when analysed,
 //! the file's length in seconds (f32) and [`FEATURE_COUNT`] f32 values; when failed, the reason
 //! (u16 length, UTF-8).
+//!
+//! Beside it, `features-<hash>.log` keeps the changes since the file was written: the magic
+//! `LWSJ`, the two versions, then records, each a tag (0 an entry put, as above; 1 an entry
+//! removed, its path as above). New results are appended there in a few bytes, and the whole
+//! file is written again only when the journal has grown past a share of it; a torn last record
+//! (a crash while appending) is left out.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -17,9 +23,20 @@ use std::path::{Path, PathBuf};
 use crate::features::{FEATURE_COUNT, FEATURE_VERSION, Features};
 
 const MAGIC: &[u8; 4] = b"LWSM";
+const JOURNAL_MAGIC: &[u8; 4] = b"LWSJ";
 const FILE_VERSION: u32 = 1;
-/// A cache file larger than this is not read (spec › Limits).
-pub const MAX_CACHE_BYTES: u64 = 64 * 1024 * 1024;
+/// A cache file (or its journal) larger than this is not read (spec › Limits). A library of a
+/// quarter of a million samples takes about 63 MiB.
+pub const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+
+/// A change to a folder's cache since its file was written, kept in its journal.
+// Nearly every change puts an entry, so boxing it would only add an allocation to each.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Change {
+    Put(PathBuf, Entry),
+    Remove(PathBuf),
+}
 
 /// What is known of one file.
 // Nearly every entry is analysed, so boxing the features would only add an allocation to each.
@@ -46,6 +63,109 @@ pub struct Entry {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FolderCache {
     pub entries: HashMap<PathBuf, Entry>,
+    /// Records in its journal on disk, past the file: the file is written again when they
+    /// pass a share of the entries.
+    pub journal: usize,
+}
+
+/// Whether an entry can be written (its path and reason fit their u16 lengths).
+fn writable(path: &Path, entry: &Entry) -> bool {
+    path.to_str().is_some_and(|s| s.len() <= usize::from(u16::MAX))
+        && match &entry.analysis {
+            Analysis::Failed(reason) => reason.len() <= usize::from(u16::MAX),
+            Analysis::Analysed { .. } => true,
+        }
+}
+
+fn write_path(out: &mut Vec<u8>, path: &str) {
+    out.extend_from_slice(&(path.len() as u16).to_le_bytes());
+    out.extend_from_slice(path.as_bytes());
+}
+
+fn write_entry(out: &mut Vec<u8>, path: &str, entry: &Entry) {
+    write_path(out, path);
+    out.extend_from_slice(&entry.size.to_le_bytes());
+    out.extend_from_slice(&entry.modified.to_le_bytes());
+    match &entry.analysis {
+        Analysis::Analysed { features, seconds } => {
+            out.push(0);
+            out.extend_from_slice(&seconds.to_le_bytes());
+            for v in features {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Analysis::Failed(reason) => {
+            out.push(1);
+            out.extend_from_slice(&(reason.len() as u16).to_le_bytes());
+            out.extend_from_slice(reason.as_bytes());
+        }
+    }
+}
+
+fn read_path(r: &mut Reader<'_>) -> Option<PathBuf> {
+    let length = usize::from(r.u16()?);
+    Some(PathBuf::from(std::str::from_utf8(r.take(length)?).ok()?))
+}
+
+fn read_entry(r: &mut Reader<'_>) -> Option<(PathBuf, Entry)> {
+    let path = read_path(r)?;
+    let size = r.u64()?;
+    let modified = r.u64()?;
+    let analysis = match r.take(1)?.first()? {
+        0 => {
+            let seconds = f32::from_le_bytes(r.take(4)?.try_into().ok()?);
+            if !seconds.is_finite() || seconds < 0.0 {
+                return None;
+            }
+            let mut features = [0.0f32; FEATURE_COUNT];
+            for slot in features.iter_mut() {
+                *slot = f32::from_le_bytes(r.take(4)?.try_into().ok()?);
+                if !slot.is_finite() {
+                    return None;
+                }
+            }
+            Analysis::Analysed { features, seconds }
+        }
+        1 => {
+            let length = usize::from(r.u16()?);
+            Analysis::Failed(std::str::from_utf8(r.take(length)?).ok()?.to_string())
+        }
+        _ => return None,
+    };
+    Some((path, Entry { size, modified, analysis }))
+}
+
+/// The journal beside the cache file at `path`.
+pub fn journal_path(path: &Path) -> PathBuf {
+    path.with_extension("log")
+}
+
+/// Appends `changes` to the journal beside the cache file at `path`, started with its header
+/// when there is none yet.
+pub fn append(path: &Path, changes: &[Change]) -> std::io::Result<()> {
+    let journal = journal_path(path);
+    let mut out = Vec::new();
+    if std::fs::metadata(&journal).map_or(true, |m| m.len() == 0) {
+        out.extend_from_slice(JOURNAL_MAGIC);
+        out.extend_from_slice(&FILE_VERSION.to_le_bytes());
+        out.extend_from_slice(&FEATURE_VERSION.to_le_bytes());
+    }
+    for change in changes {
+        match change {
+            Change::Put(path, entry) if writable(path, entry) => {
+                out.push(0);
+                write_entry(&mut out, path.to_str().unwrap_or_default(), entry);
+            }
+            Change::Remove(path) if path.to_str().is_some_and(|s| s.len() <= usize::from(u16::MAX)) => {
+                out.push(1);
+                write_path(&mut out, path.to_str().unwrap_or_default());
+            }
+            _ => {}
+        }
+    }
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&journal)?;
+    file.write_all(&out)?;
+    file.flush()
 }
 
 impl FolderCache {
@@ -59,39 +179,11 @@ impl FolderCache {
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&FILE_VERSION.to_le_bytes());
         out.extend_from_slice(&FEATURE_VERSION.to_le_bytes());
-        let mut entries: Vec<(&PathBuf, &Entry)> = self.entries.iter().filter(|(p, _)| p.to_str().is_some()).collect();
+        let mut entries: Vec<(&PathBuf, &Entry)> = self.entries.iter().filter(|(p, e)| writable(p, e)).collect();
         entries.sort_by(|a, b| a.0.cmp(b.0));
-        let entries: Vec<_> = entries
-            .into_iter()
-            .filter(|(p, e)| {
-                p.to_str().is_some_and(|s| s.len() <= usize::from(u16::MAX))
-                    && match &e.analysis {
-                        Analysis::Failed(reason) => reason.len() <= usize::from(u16::MAX),
-                        Analysis::Analysed { .. } => true,
-                    }
-            })
-            .collect();
         out.extend_from_slice(&(entries.len() as u32).to_le_bytes());
         for (path, entry) in entries {
-            let path = path.to_str().unwrap_or_default();
-            out.extend_from_slice(&(path.len() as u16).to_le_bytes());
-            out.extend_from_slice(path.as_bytes());
-            out.extend_from_slice(&entry.size.to_le_bytes());
-            out.extend_from_slice(&entry.modified.to_le_bytes());
-            match &entry.analysis {
-                Analysis::Analysed { features, seconds } => {
-                    out.push(0);
-                    out.extend_from_slice(&seconds.to_le_bytes());
-                    for v in features {
-                        out.extend_from_slice(&v.to_le_bytes());
-                    }
-                }
-                Analysis::Failed(reason) => {
-                    out.push(1);
-                    out.extend_from_slice(&(reason.len() as u16).to_le_bytes());
-                    out.extend_from_slice(reason.as_bytes());
-                }
-            }
+            write_entry(&mut out, path.to_str().unwrap_or_default(), entry);
         }
         out
     }
@@ -114,46 +206,58 @@ impl FolderCache {
         }
         let mut entries = HashMap::with_capacity(count);
         for _ in 0..count {
-            let length = usize::from(r.u16()?);
-            let path = std::str::from_utf8(r.take(length)?).ok()?;
-            let size = r.u64()?;
-            let modified = r.u64()?;
-            let analysis = match r.take(1)?.first()? {
-                0 => {
-                    let seconds = f32::from_le_bytes(r.take(4)?.try_into().ok()?);
-                    if !seconds.is_finite() || seconds < 0.0 {
-                        return None;
-                    }
-                    let mut features = [0.0f32; FEATURE_COUNT];
-                    for slot in features.iter_mut() {
-                        *slot = f32::from_le_bytes(r.take(4)?.try_into().ok()?);
-                        if !slot.is_finite() {
-                            return None;
-                        }
-                    }
-                    Analysis::Analysed { features, seconds }
-                }
-                1 => {
-                    let length = usize::from(r.u16()?);
-                    Analysis::Failed(std::str::from_utf8(r.take(length)?).ok()?.to_string())
-                }
-                _ => return None,
-            };
-            entries.insert(PathBuf::from(path), Entry { size, modified, analysis });
+            let (path, entry) = read_entry(&mut r)?;
+            entries.insert(path, entry);
         }
-        (r.at == bytes.len()).then_some(FolderCache { entries })
+        (r.at == bytes.len()).then_some(FolderCache { entries, journal: 0 })
     }
 
-    /// Reads the cache at `path`; a missing or unreadable one is empty.
+    /// Applies a journal's bytes: its records in order, up to a torn or malformed one. Returns
+    /// how many were applied; a journal of other versions applies none.
+    pub fn apply_journal(&mut self, bytes: &[u8]) -> usize {
+        let mut r = Reader { bytes, at: 0 };
+        let header =
+            (|| Some(r.take(4)? == JOURNAL_MAGIC && r.u32()? == FILE_VERSION && r.u32()? == FEATURE_VERSION))();
+        if header != Some(true) {
+            return 0;
+        }
+        let mut applied = 0;
+        while r.at < bytes.len() {
+            let record = (|| match r.take(1)?.first()? {
+                0 => read_entry(&mut r).map(|(path, entry)| Change::Put(path, entry)),
+                1 => read_path(&mut r).map(Change::Remove),
+                _ => None,
+            })();
+            let Some(change) = record else { break };
+            match change {
+                Change::Put(path, entry) => {
+                    self.entries.insert(path, entry);
+                }
+                Change::Remove(path) => {
+                    self.entries.remove(&path);
+                }
+            }
+            applied += 1;
+        }
+        applied
+    }
+
+    /// Reads the cache at `path` and the journal beside it; a missing or unreadable file is
+    /// empty, and the journal's changes are applied to what there is.
     pub fn load(path: &Path) -> FolderCache {
-        match std::fs::metadata(path) {
-            Ok(m) if m.len() <= MAX_CACHE_BYTES => {}
-            _ => return FolderCache::default(),
+        let read = |path: &Path| match std::fs::metadata(path) {
+            Ok(m) if m.len() <= MAX_CACHE_BYTES => std::fs::read(path).ok(),
+            _ => None,
+        };
+        let mut cache = read(path).and_then(|b| FolderCache::from_bytes(&b)).unwrap_or_default();
+        if let Some(bytes) = read(&journal_path(path)) {
+            cache.journal = cache.apply_journal(&bytes);
         }
-        std::fs::read(path).ok().and_then(|b| FolderCache::from_bytes(&b)).unwrap_or_default()
+        cache
     }
 
-    /// Writes the cache to a file beside `path` and moves it over `path`.
+    /// Writes the cache to a file beside `path` and moves it over `path`; the journal, whose
+    /// changes are in it now, goes.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let temporary = path.with_extension("bin.tmp");
         {
@@ -161,7 +265,11 @@ impl FolderCache {
             file.write_all(&self.to_bytes())?;
             file.sync_all()?;
         }
-        std::fs::rename(&temporary, path)
+        std::fs::rename(&temporary, path)?;
+        match std::fs::remove_file(journal_path(path)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -286,6 +394,40 @@ mod tests {
         std::fs::write(&path, b"garbage").unwrap();
         assert_eq!(FolderCache::load(&path), FolderCache::default());
         assert_eq!(FolderCache::load(&folder.join("missing.bin")), FolderCache::default());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Changes appended to the journal are read back over the file; the next full save takes
+    /// them in and removes the journal; a torn last record is left out.
+    #[test]
+    fn the_journal_keeps_changes_until_the_file_is_written_again() {
+        let folder = crate::tests::unique_dir("cache-journal");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(file_name(Path::new("/samples")));
+        let mut cache = sample();
+        cache.save(&path).unwrap();
+        let added = Entry { size: 9, modified: 3, analysis: Analysis::Failed("short".into()) };
+        let changes =
+            vec![Change::Put(PathBuf::from("new.wav"), added.clone()), Change::Remove(PathBuf::from("broken.wav"))];
+        append(&path, &changes).unwrap();
+        cache.entries.insert(PathBuf::from("new.wav"), added);
+        cache.entries.remove(Path::new("broken.wav"));
+        let loaded = FolderCache::load(&path);
+        assert_eq!(loaded.entries, cache.entries);
+        assert_eq!(loaded.journal, 2);
+        // A torn record at the end: the ones before it stand.
+        let mut bytes = std::fs::read(journal_path(&path)).unwrap();
+        bytes.extend_from_slice(&[0, 5, 0, b'a']);
+        std::fs::write(journal_path(&path), &bytes).unwrap();
+        assert_eq!(FolderCache::load(&path).entries, cache.entries);
+        // A full save takes the changes in and the journal goes.
+        loaded.save(&path).unwrap();
+        assert!(!journal_path(&path).exists());
+        assert_eq!(FolderCache::load(&path).entries, cache.entries);
+        // A journal with no file before it: its changes over an empty cache.
+        std::fs::remove_file(&path).unwrap();
+        append(&path, &changes[..1]).unwrap();
+        assert_eq!(FolderCache::load(&path).entries.len(), 1);
         let _ = std::fs::remove_dir_all(&folder);
     }
 

@@ -21,7 +21,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
-use cache::{Analysis, Entry, FolderCache};
+use cache::{Analysis, Change, Entry, FolderCache};
 use kinds::Kind;
 use layout::Standardised;
 
@@ -165,8 +165,11 @@ struct Queue {
     ready: Condvar,
 }
 
-/// A folder's cache to write, and where.
-type CacheSave = (PathBuf, FolderCache);
+/// A folder's cache to write whole, or changes to append to its journal, and where.
+enum CacheSave {
+    Whole(PathBuf, FolderCache),
+    Changes(PathBuf, Vec<Change>),
+}
 
 /// The analysis of a library's samples, cached per folder.
 pub struct SoundMap {
@@ -174,7 +177,8 @@ pub struct SoundMap {
     caches: HashMap<PathBuf, FolderCache>,
     /// Files queued or being analysed, by absolute path.
     queued: HashSet<PathBuf>,
-    unsaved: HashMap<PathBuf, usize>,
+    /// The changes of each folder's cache not written yet, and whether it must be written whole.
+    unsaved: HashMap<PathBuf, (Vec<Change>, bool)>,
     queue: Arc<Queue>,
     results: Receiver<Done>,
     workers: Vec<JoinHandle<()>>,
@@ -238,10 +242,11 @@ impl SoundMap {
         }
         for (folder, cache) in self.caches.iter_mut() {
             let keep = present.get(folder);
-            let before = cache.entries.len();
-            cache.entries.retain(|p, _| keep.is_some_and(|k| k.contains(p)));
-            if cache.entries.len() != before {
-                *self.unsaved.entry(folder.clone()).or_default() += 1;
+            let gone: Vec<PathBuf> =
+                cache.entries.keys().filter(|p| !keep.is_some_and(|k| k.contains(*p))).cloned().collect();
+            for path in gone {
+                cache.entries.remove(&path);
+                self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
             }
         }
         self.caches.retain(|folder, _| present.contains_key(folder));
@@ -256,6 +261,7 @@ impl SoundMap {
     pub fn reanalyse(&mut self, folder: &Path, files: &[SourceFile]) {
         if let Some(cache) = self.caches.get_mut(folder) {
             cache.entries.clear();
+            self.unsaved.entry(folder.to_path_buf()).or_default().1 = true;
         }
         let work: Vec<Job> = files
             .iter()
@@ -292,8 +298,9 @@ impl SoundMap {
             self.queued.remove(&file.path);
             let relative = relative(&file.path, &file.folder);
             let folder = file.folder.clone();
-            self.cache(&folder).entries.insert(relative, Entry { size: file.size, modified: file.modified, analysis });
-            *self.unsaved.entry(folder).or_default() += 1;
+            let entry = Entry { size: file.size, modified: file.modified, analysis };
+            self.cache(&folder).entries.insert(relative.clone(), entry.clone());
+            self.unsaved.entry(folder).or_default().0.push(Change::Put(relative, entry));
             changed = true;
         }
         self.save_due(self.queued.is_empty());
@@ -309,10 +316,9 @@ impl SoundMap {
                     self.queued.remove(&file.path);
                     let relative = relative(&file.path, &file.folder);
                     let folder = file.folder.clone();
-                    self.cache(&folder)
-                        .entries
-                        .insert(relative, Entry { size: file.size, modified: file.modified, analysis });
-                    *self.unsaved.entry(folder).or_default() += 1;
+                    let entry = Entry { size: file.size, modified: file.modified, analysis };
+                    self.cache(&folder).entries.insert(relative.clone(), entry.clone());
+                    self.unsaved.entry(folder).or_default().0.push(Change::Put(relative, entry));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -335,31 +341,54 @@ impl SoundMap {
             self.unsaved.clear();
             return;
         };
-        let due: Vec<PathBuf> =
-            self.unsaved.iter().filter(|(_, n)| all || **n >= SAVE_EVERY).map(|(f, _)| f.clone()).collect();
+        let due: Vec<PathBuf> = self
+            .unsaved
+            .iter()
+            .filter(|(_, (changes, whole))| *whole || (!changes.is_empty() && (all || changes.len() >= SAVE_EVERY)))
+            .map(|(f, _)| f.clone())
+            .collect();
         if !due.is_empty() && std::fs::create_dir_all(&dir).is_err() {
             return;
         }
-        for folder in due {
-            let Some(cache) = self.caches.get(&folder) else { continue };
-            let path = dir.join(cache::file_name(&folder));
-            // Handed to the saving thread as it is now; written there, in order, so a later
-            // save of the same folder lands last.
-            if self.saver.is_none() {
-                let (to, from) = channel::<CacheSave>();
-                let thread = std::thread::Builder::new().name("sound map saves".into()).spawn(move || {
-                    for (path, cache) in from {
-                        let _ = cache.save(&path);
-                    }
-                });
-                if let Ok(thread) = thread {
-                    self.saver = Some((to, thread));
+        if !due.is_empty() && self.saver.is_none() {
+            // Written on a thread of its own, in order, so a later save of a folder lands last.
+            let (to, from) = channel::<CacheSave>();
+            let thread = std::thread::Builder::new().name("sound map saves".into()).spawn(move || {
+                for save in from {
+                    let _ = match save {
+                        CacheSave::Whole(path, cache) => cache.save(&path),
+                        CacheSave::Changes(path, changes) => cache::append(&path, &changes),
+                    };
                 }
+            });
+            if let Ok(thread) = thread {
+                self.saver = Some((to, thread));
             }
-            let sent = self.saver.as_ref().is_some_and(|(to, _)| to.send((path.clone(), cache.clone())).is_ok());
-            if sent || cache.save(&path).is_ok() {
-                self.unsaved.remove(&folder);
-            }
+        }
+        for folder in due {
+            let Some((changes, whole)) = self.unsaved.remove(&folder) else { continue };
+            let Some(cache) = self.caches.get_mut(&folder) else { continue };
+            let path = dir.join(cache::file_name(&folder));
+            // Appended in a few bytes; the file is written whole again only when its journal has
+            // grown past a quarter of its entries (or it was emptied).
+            let journal = cache.journal + changes.len();
+            let save = if whole || journal > cache.entries.len() / 4 + 64 {
+                cache.journal = 0;
+                CacheSave::Whole(path, cache.clone())
+            } else {
+                cache.journal = journal;
+                CacheSave::Changes(path, changes)
+            };
+            let unsent = match &self.saver {
+                Some((to, _)) => to.send(save).err().map(|e| e.0),
+                None => Some(save),
+            };
+            // No saving thread: written here.
+            let _ = match unsent {
+                Some(CacheSave::Whole(path, cache)) => cache.save(&path),
+                Some(CacheSave::Changes(path, changes)) => cache::append(&path, &changes),
+                None => Ok(()),
+            };
         }
     }
 
