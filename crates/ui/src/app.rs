@@ -1947,6 +1947,21 @@ impl App {
         for _ in 0..suhina_plugins::take_transport_keys() {
             self.do_action("transport.toggle", &mut actions);
         }
+        // What an ARA plug-in asked of the transport: its play and stop buttons, a click in its
+        // timeline, in seconds of song time through the tempo map (#717).
+        for request in suhina_plugins::take_ara_playback() {
+            use suhina_plugins::protocol::AraPlayback;
+            match request {
+                AraPlayback::Start => actions.push(Action::new("transport.play", json!({}))),
+                AraPlayback::Stop => actions.push(Action::new("transport.stop", json!({}))),
+                AraPlayback::Position(seconds) => {
+                    if let Some(session) = self.session() {
+                        let beats = session.project().transport.tempo_map(1.0).beat_at(seconds);
+                        actions.push(Action::new("transport.setPosition", json!({ "beats": beats })));
+                    }
+                }
+            }
+        }
 
         egui::Panel::top("menu-bar")
             .exact_size(theme::MENU_BAR)

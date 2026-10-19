@@ -499,6 +499,10 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
         for _ in 0..window::take_transport_keys() {
             send(&mut writer, &Message::TransportKey)?;
         }
+        // What ARA plug-ins asked of the transport (their play buttons, their timeline).
+        for request in ara::take_playback_requests() {
+            send(&mut writer, &Message::AraPlayback(request))?;
+        }
         // The engine's control bar adds this process's RAM to the program's; report it without
         // being asked, off the control thread, once a second.
         if last_memory.elapsed() >= MEMORY_EVERY {

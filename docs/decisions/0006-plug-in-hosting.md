@@ -157,7 +157,8 @@ workspace forbids.
      with its automation yet.
    - **Messages** over a local socket or pipe, with a versioned protocol: load and unload,
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
-     version 11 (the two below together with `transport_key`, which a host sends unasked when
+     version 12 (`ara_playback` comes unasked when an ARA plug-in asks the transport to play,
+     stop or move, [ADR 0028](0028-ara-hosting.md)); version 11 (the two below together with `transport_key`, which a host sends unasked when
      Space is pressed in a plug-in's window, so the engine starts or stops playback); version 10
      (`memory` comes unasked once a second: the host's process reports its resident memory, and
      `host_memory` reads the running hosts' reports for the control bar's total); version 9

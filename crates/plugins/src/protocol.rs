@@ -8,13 +8,14 @@
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
 //! `fit_editor`, `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `memory`,
-//! `transport_key`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
+//! `transport_key`, `ara_playback`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
 //! `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
 //! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
 //! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
-//! once a second, and `transport_key` only comes unasked, when Space is pressed in a plug-in's
-//! window.
+//! once a second, `transport_key` only comes unasked, when Space is pressed in a plug-in's
+//! window, and `ara_playback` only comes unasked, when an ARA plug-in asks the transport to play,
+//! stop or move.
 //!
 //! One host process runs several plug-in instances. The engine names each with an `instance`
 //! number when it loads it; every message about one instance, and its reply, carries that
@@ -24,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 11;
+pub const VERSION: u64 = 12;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -214,6 +215,15 @@ impl AraDocument {
     }
 }
 
+/// What an ARA plug-in asked of the host's transport (ARA's playback controller).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AraPlayback {
+    Start,
+    Stop,
+    /// Move the play position to this many seconds of song time.
+    Position(f64),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     Hello {
@@ -350,6 +360,9 @@ pub enum Message {
     /// Space was pressed in one of the host's editor windows (unasked): the engine plays or
     /// stops as Space does in its own window, since the key never reaches it there.
     TransportKey,
+    /// An ARA plug-in asked the host's transport to play, stop or move (unasked): its own
+    /// transport buttons and a click in its editor's timeline (#717).
+    AraPlayback(AraPlayback),
     CloseEditor {
         instance: u32,
     },
@@ -396,6 +409,7 @@ impl Message {
             | Self::Pong { .. }
             | Self::Memory { .. }
             | Self::TransportKey
+            | Self::AraPlayback(_)
             | Self::Quit => None,
         }
     }
@@ -463,6 +477,11 @@ impl Message {
             }
             Self::Memory { bytes } => json!({ "op": "memory", "bytes": bytes }),
             Self::TransportKey => json!({ "op": "transport_key" }),
+            Self::AraPlayback(AraPlayback::Start) => json!({ "op": "ara_playback", "request": "start" }),
+            Self::AraPlayback(AraPlayback::Stop) => json!({ "op": "ara_playback", "request": "stop" }),
+            Self::AraPlayback(AraPlayback::Position(seconds)) => {
+                json!({ "op": "ara_playback", "request": "position", "seconds": seconds })
+            }
             Self::CloseEditor { instance } => json!({ "op": "close_editor", "instance": instance }),
             Self::EditorClosed { instance } => json!({ "op": "editor_closed", "instance": instance }),
             Self::Quit => json!({ "op": "quit" }),
@@ -576,6 +595,14 @@ impl Message {
             "latency_changed" => Self::LatencyChanged { instance: instance()?, latency: small("latency")? },
             "memory" => Self::Memory { bytes: number("bytes")? },
             "transport_key" => Self::TransportKey,
+            "ara_playback" => Self::AraPlayback(match text("request")?.as_str() {
+                "start" => AraPlayback::Start,
+                "stop" => AraPlayback::Stop,
+                "position" => AraPlayback::Position(
+                    value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
+                ),
+                _ => return None,
+            }),
             "close_editor" => Self::CloseEditor { instance: instance()? },
             "editor_closed" => Self::EditorClosed { instance: instance()? },
             "quit" => Self::Quit,
@@ -665,10 +692,13 @@ mod tests {
 
     #[test]
     fn every_message_round_trips() {
-        assert_eq!(VERSION, 11);
+        assert_eq!(VERSION, 12);
         let messages = [
             Message::Hello { version: VERSION },
             Message::TransportKey,
+            Message::AraPlayback(AraPlayback::Start),
+            Message::AraPlayback(AraPlayback::Stop),
+            Message::AraPlayback(AraPlayback::Position(12.5)),
             Message::Load {
                 instance: 3,
                 plugin: "test:gain".into(),

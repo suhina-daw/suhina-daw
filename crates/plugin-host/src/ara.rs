@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use suhina_ipc::AudioSource;
-use suhina_plugins::protocol::{AraDocument, AraRegion};
+use suhina_plugins::protocol::{AraDocument, AraPlayback, AraRegion};
 use vst3::ComPtr;
 use vst3::Steinberg::Vst::IComponent;
 use vst3::Steinberg::{FUnknown, FUnknownVtbl, TUID, kResultOk};
@@ -1128,17 +1128,51 @@ unsafe extern "C" fn document_changed(host: ARAModelUpdateControllerHostRef) {
 
 static PLAYBACK: ARAPlaybackControllerInterface = ARAPlaybackControllerInterface {
     structSize: size_of::<ARAPlaybackControllerInterface>(),
-    requestStartPlayback: Some(no_playback_request),
-    requestStopPlayback: Some(no_playback_request),
-    requestSetPlaybackPosition: Some(no_position_request),
+    requestStartPlayback: Some(start_request),
+    requestStopPlayback: Some(stop_request),
+    requestSetPlaybackPosition: Some(position_request),
     requestSetCycleRange: Some(no_cycle_request),
     requestEnableCycle: Some(no_cycle_switch),
 };
 
-// The plug-in's own transport buttons do nothing yet: Suhina's transport plays the song.
-unsafe extern "C" fn no_playback_request(_host: ARAPlaybackControllerHostRef) {}
+/// What the plug-ins asked of the transport, waiting for the main loop to send it on (#717). A
+/// plug-in may ask from any thread, so it is behind a lock; a newer position replaces one not
+/// sent yet, and a burst is cut at [`MAX_PLAYBACK_REQUESTS`].
+static PLAYBACK_REQUESTS: Mutex<Vec<AraPlayback>> = Mutex::new(Vec::new());
+const MAX_PLAYBACK_REQUESTS: usize = 16;
 
-unsafe extern "C" fn no_position_request(_host: ARAPlaybackControllerHostRef, _at: ARATimePosition) {}
+fn ask(request: AraPlayback) {
+    let mut requests = PLAYBACK_REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let AraPlayback::Position(_) = request {
+        requests.retain(|r| !matches!(r, AraPlayback::Position(_)));
+    }
+    if requests.len() < MAX_PLAYBACK_REQUESTS {
+        requests.push(request);
+    }
+}
+
+/// The transport requests the plug-ins made since the last call, oldest first.
+pub(crate) fn take_playback_requests() -> Vec<AraPlayback> {
+    std::mem::take(&mut *PLAYBACK_REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
+
+// The plug-in's own transport buttons and a click in its timeline: the engine's transport plays,
+// stops or moves, as Suhina's own buttons and ruler do.
+unsafe extern "C" fn start_request(_host: ARAPlaybackControllerHostRef) {
+    ask(AraPlayback::Start);
+}
+
+unsafe extern "C" fn stop_request(_host: ARAPlaybackControllerHostRef) {
+    ask(AraPlayback::Stop);
+}
+
+unsafe extern "C" fn position_request(_host: ARAPlaybackControllerHostRef, at: ARATimePosition) {
+    if at.is_finite() && at >= 0.0 {
+        ask(AraPlayback::Position(at));
+    }
+}
+
+// The loop (cycle) requests wait for a later step: Suhina's loop region is set in the ruler.
 
 unsafe extern "C" fn no_cycle_request(
     _host: ARAPlaybackControllerHostRef,

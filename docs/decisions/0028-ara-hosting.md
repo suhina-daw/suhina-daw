@@ -198,6 +198,12 @@ the list below, in a first form). Where it differs from the decisions above it i
   the API asks ("periodically by the host whenever not editing"). Without it a plug-in sends what
   an edit set off only on its own timer, which showed as a clip resize drawn about 2 s late in
   the editor (#718).
+- **Transport requests.** The plug-in's own play and stop buttons and a click in its editor's
+  timeline reach Suhina's transport: the host's playback controller queues them and sends
+  `ara_playback` (protocol version 12), and the window plays, stops or moves the play position
+  through the tempo map. A newer position replaces one not sent yet. The loop (cycle) requests
+  are not followed; the loop region is set in the ruler. A click on a clip in the arrangement
+  moves the play position there, so the editor follows the clip it shows (#717).
 - **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
   name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
   (clip id, content id, start, length and offset in seconds). The host queries the component for

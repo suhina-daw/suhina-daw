@@ -443,6 +443,16 @@ impl Group {
             Message::TransportKey => {
                 TRANSPORT_KEYS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
+            Message::AraPlayback(request) => {
+                let mut requests = lock(&ARA_PLAYBACK);
+                // A newer position replaces one not taken yet; a few starts and stops are kept.
+                if let protocol::AraPlayback::Position(_) = request {
+                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+                }
+                if requests.len() < MAX_ARA_PLAYBACK {
+                    requests.push(*request);
+                }
+            }
             Message::Memory { bytes } => {
                 // Only a process that is still there reports; the host sends it once a second,
                 // so the latest is what the control bar adds.
@@ -1065,6 +1075,17 @@ pub fn parse_address(address: &str) -> Result<(String, Name<'static>), PluginErr
     Ok((address.to_string(), name))
 }
 
+/// What ARA plug-ins asked of the transport and the window has not taken yet (#717).
+static ARA_PLAYBACK: Mutex<Vec<protocol::AraPlayback>> = Mutex::new(Vec::new());
+const MAX_ARA_PLAYBACK: usize = 16;
+
+/// What ARA plug-ins asked of the transport since the last call, oldest first: play, stop, or a
+/// play position in seconds. Takes in what the hosts sent without waiting for any of them.
+pub fn take_ara_playback() -> Vec<protocol::AraPlayback> {
+    drain_groups();
+    std::mem::take(&mut *lock(&ARA_PLAYBACK))
+}
+
 /// Space presses the hosts' editor windows sent and the window has not taken yet.
 static TRANSPORT_KEYS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -1072,14 +1093,18 @@ static TRANSPORT_KEYS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU
 /// plays or stops that many times, as Space in its own window does. Takes in what the hosts sent
 /// without waiting for any of them.
 pub fn take_transport_keys() -> u32 {
+    drain_groups();
+    TRANSPORT_KEYS.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Takes in what every host sent, without waiting for a group that is busy.
+fn drain_groups() {
     let groups = lock(&GROUPS);
     for group in groups.values().filter_map(Weak::upgrade) {
         if let Some(mut group) = try_lock(&group) {
             group.drain();
         }
     }
-    drop(groups);
-    TRANSPORT_KEYS.swap(0, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// The resident memory, in bytes, of every host process that has reported it and still runs,
