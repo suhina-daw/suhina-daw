@@ -1703,6 +1703,18 @@ static COMMANDS: &[CommandSpec] = &[
         run: device_groups::duplicate,
     },
     CommandSpec {
+        id: "device.moveToTrack",
+        label: "Move a device (a group with everything in it) to another track, or copy it there; it goes where its kind goes on that track, a running plug-in's state with it, as one undo step",
+        params: &[
+            TRACK,
+            DEVICE,
+            param("to_track", ParamType::Track, "the track to move or copy it to, by id or name"),
+            optional("copy", ParamType::Bool, "true copies it and leaves it where it is (default false)"),
+        ],
+        kind: CommandKind::Edit,
+        run: devices::move_to_track,
+    },
+    CommandSpec {
         id: "device.duplicateMany",
         label: "Copy several devices of a track (groups with everything in them) right after the last of them, in their order, as one undo step; the device clipboard stays as it was",
         params: &[TRACK, DEVICES],

@@ -518,3 +518,49 @@ fn ctrl_g_groups_the_picked_devices_and_the_group_panel_edits_its_branches() {
     harness.run();
     assert_eq!(drums_devices(&harness), before, "ungrouped, the chain is as it was");
 }
+
+/// The devices on `track`'s channel, by name.
+fn chain_of(harness: &Harness<'static, App>, track: &str) -> Vec<String> {
+    let project = harness.state().session().unwrap().project();
+    let channel = project.tracks.iter().find(|t| t.name == track).and_then(|t| t.channel).unwrap();
+    project.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect()
+}
+
+fn drag_device(harness: &mut Harness<'static, App>, from: Pos2, to: Pos2) {
+    // Stepped: the label beside the pointer repaints while it is dragged.
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + (to - from) * 0.5);
+    harness.step();
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.step();
+    harness.drop_at(to);
+    harness.step();
+    harness.run();
+}
+
+#[test]
+fn a_device_dragged_onto_another_track_moves_there_and_with_ctrl_is_copied() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let (drums, bass) = (chain_of(&harness, "Drums"), chain_of(&harness, "Bass"));
+    let from = harness.get_by_label("Show Limiter on Drums").rect().center();
+    let to = harness.get_by_label("Bass channel strip").rect().center();
+    drag_device(&mut harness, from, to);
+    assert!(!chain_of(&harness, "Drums").contains(&"Limiter".to_string()), "moved away");
+    assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
+    assert_eq!(chain_of(&harness, "Bass").last().map(String::as_str), Some("Limiter"));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!((chain_of(&harness, "Drums"), chain_of(&harness, "Bass")), (drums.clone(), bass.clone()), "one undo");
+    // With Ctrl held it is copied: Drums keeps it.
+    let from = harness.get_by_label("Show Limiter on Drums").rect().center();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    drag_device(&mut harness, from, to);
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    assert_eq!(chain_of(&harness, "Drums"), drums);
+    assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
+}

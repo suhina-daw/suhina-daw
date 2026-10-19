@@ -433,6 +433,9 @@ pub struct App {
     next_ram: Option<f64>,
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
+    /// A device carried from a chain or a strip's list onto another track (#688): its track and
+    /// index.
+    device_carry: Option<(TrackId, usize)>,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -539,6 +542,7 @@ impl App {
             ram: None,
             next_ram: None,
             carry: None,
+            device_carry: None,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -2127,9 +2131,19 @@ impl App {
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));
             let probe =
                 dragged.and_then(|items| self.drag_pointer(ui.ctx()).map(|pointer| DropProbe::new(pointer, items)));
-            // A carried clip probes the same way, for a slot or a lane only.
-            let probe = match (&self.carry, ui.ctx().pointer_latest_pos()) {
-                (Some(_), Some(pointer)) => Some(DropProbe::for_clip(pointer)),
+            // A carried clip probes the same way, for a slot or a lane only; a carried device for a
+            // track, as a dropped one does.
+            if let Some(start) = ui.ctx().data_mut(|d| {
+                let id = Id::new(drop::DEVICE_CARRY);
+                let start = d.get_temp::<(TrackId, usize)>(id);
+                d.remove::<(TrackId, usize)>(id);
+                start
+            }) {
+                self.device_carry = Some(start);
+            }
+            let probe = match (&self.carry, self.device_carry, ui.ctx().pointer_latest_pos()) {
+                (Some(_), _, Some(pointer)) => Some(DropProbe::for_clip(pointer)),
+                (None, Some(_), Some(pointer)) => Some(DropProbe::for_device(pointer)),
                 _ => probe,
             };
             self.view.can_paste = self.session().is_some_and(|s| s.copied_clip_is_audio().is_some());
@@ -2301,6 +2315,7 @@ impl App {
             drop_overlay(ui, view_area);
         });
         self.browser_drag(ui);
+        self.device_drag(ui);
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);
         }
@@ -4930,6 +4945,67 @@ impl App {
                 browser_view::stop_preview(&mut self.browser, &mut self.projects);
                 self.drop_items(&items, target, separate);
             }
+        }
+    }
+
+    /// While a device is carried from a chain or a strip's list: the label beside the pointer,
+    /// Escape to stop, and on another track's column, header or lane when the button is let go
+    /// the device moves there, or with Ctrl held is copied (#688).
+    fn device_drag(&mut self, ui: &Ui) {
+        let Some((from, index)) = self.device_carry else { return };
+        let (released, escape, copy, pointer) = ui.input(|i| {
+            (!i.pointer.primary_down(), i.key_pressed(Key::Escape), i.modifiers.command, i.pointer.latest_pos())
+        });
+        if escape {
+            self.device_carry = None;
+            return;
+        }
+        let target = match self.shown {
+            View::Session => self.view.drop.as_ref().and_then(|p| p.target),
+            View::Arrangement => self.arrangement.drop.as_ref().and_then(|p| p.target),
+        };
+        let to = match target {
+            Some(DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. }) => {
+                Some(t).filter(|t| *t != from)
+            }
+            _ => None,
+        };
+        let session = self.session();
+        let name = |track: TrackId| {
+            session
+                .and_then(|s| s.project().tracks.iter().find(|t| t.id == track))
+                .map_or_else(String::new, |t| t.name.clone())
+        };
+        let device = session
+            .and_then(|s| {
+                let p = s.project();
+                let channel = p.tracks.iter().find(|t| t.id == from)?.channel?;
+                p.channels.iter().find(|c| c.id == channel)?.devices.get(index).map(|d| d.name.clone())
+            })
+            .unwrap_or_default();
+        if !released {
+            if let Some(pointer) = pointer {
+                let text = match to {
+                    Some(to) if copy => format!("Copy {device} to {}", name(to)),
+                    Some(to) => format!("Move {device} to {}", name(to)),
+                    None => device.clone(),
+                };
+                drag_label(ui.ctx(), pointer, &text, to.is_some());
+            }
+            return;
+        }
+        self.device_carry = None;
+        self.view.drop = None;
+        self.arrangement.drop = None;
+        if let Some(to) = to {
+            if !copy {
+                self.selected_device = None;
+                self.device_picks.clear();
+            }
+            self.run(&Action::new(
+                "device.moveToTrack",
+                json!({ "track": from.0, "device": index, "to_track": to.0, "copy": copy }),
+            ));
         }
     }
 

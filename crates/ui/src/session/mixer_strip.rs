@@ -452,12 +452,13 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
         if !row.intersects(clip) {
             continue;
         }
-        let response = widgets::button_area(
-            ui,
-            row.intersect(clip),
-            id.with(("device", index)),
-            format!("Show {} on {}", device.name, column.name),
-        );
+        let response = ui.interact(row.intersect(clip), id.with(("device", index)), Sense::click_and_drag());
+        let label = format!("Show {} on {}", device.name, column.name);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        // Dragged onto another track: moved there, Ctrl copies it (#688).
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            crate::interaction::drop::start_device_carry(ui.ctx(), track, index);
+        }
         if response.double_clicked() {
             state.device_event =
                 Some(crate::session::session_view::DeviceEvent::Open { track, index, plugin: device.plugin });

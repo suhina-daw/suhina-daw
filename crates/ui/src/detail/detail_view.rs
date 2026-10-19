@@ -1196,8 +1196,11 @@ fn device_panel(
     // screen-reader and test name the chain drew for it before. A click selects the device, so
     // the Delete key takes it off the track.
     let panel = ui
-        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click())
-        .on_hover_text("Right-click for the device's menu");
+        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click_and_drag())
+        .on_hover_text("Right-click for the device's menu; drag onto another track to move it there, Ctrl to copy it");
+    if panel.drag_started_by(egui::PointerButton::Primary) && device.at.top() {
+        crate::interaction::drop::start_device_carry(ui.ctx(), track, device.index);
+    }
     panel.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
     panel.context_menu(|ui| {
@@ -1944,8 +1947,11 @@ fn group_panel(
 ) -> bool {
     let at = device.at.value();
     let panel = ui
-        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click())
-        .on_hover_text("Right-click for the group's menu");
+        .interact(rect, Id::new(("device-panel", track.0, &device.at)), Sense::click_and_drag())
+        .on_hover_text("Right-click for the group's menu; drag onto another track to move it there, Ctrl to copy it");
+    if panel.drag_started_by(egui::PointerButton::Primary) && device.at.top() {
+        crate::interaction::drop::start_device_carry(ui.ctx(), track, device.index);
+    }
     panel.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Device {}", device.name)));
     let clicked = panel.clicked();
     panel.context_menu(|ui| menus::device_menu(ui, track, &device.at, Some(group.branches.len()), actions));

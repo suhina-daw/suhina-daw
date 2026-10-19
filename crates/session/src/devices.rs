@@ -697,6 +697,80 @@ pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Va
     Ok(json!({ "devices": made }))
 }
 
+/// `device.moveToTrack {track, device, to_track, copy?}`: a device (a group with everything in
+/// it) dragged onto another track (#688): moved there, or with `copy` copied, as one undo step.
+/// It goes where its kind goes on that track: an instrument or a MIDI effect after the MIDI
+/// effects that lead the chain (on a track that plays notes), an effect at the end. A running
+/// plug-in's state goes with it as it is now.
+pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let from = track_id(&session.project, params)?;
+    let to = crate::commands::track_at(&session.project, params, "to_track")?;
+    if from == to {
+        return Err("the device is on that track already; device.move moves it along the chain".into());
+    }
+    let copy = match params.get("copy") {
+        None | Some(Value::Null) => false,
+        Some(v) => v.as_bool().ok_or("copy must be true or false")?,
+    };
+    let channel_of = |p: &suhina_model::Project, track| {
+        p.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel).ok_or("the track has no mixer channel")
+    };
+    let (source, target) = (channel_of(&session.project, from)?, channel_of(&session.project, to)?);
+    let (heard, _) = session.heard();
+    let heard_devices = heard.channels.iter().find(|c| c.id == source).map(|c| c.devices.clone());
+    let devices =
+        &session.project.channels.iter().find(|c| c.id == source).ok_or("the track's channel is missing")?.devices;
+    let path = device_path(devices, params, "device")?;
+    let device = heard_devices
+        .as_deref()
+        .and_then(|h| device_at(h, &path))
+        .or_else(|| device_at(devices, &path))
+        .cloned()
+        .ok_or("the device is missing")?;
+    let instrument = match chain_role(&device) {
+        Some(role) => role == Role::Instrument,
+        None => session
+            .plugins
+            .env()
+            .and_then(|env| crate::device_plugin(&env.catalog, &device))
+            .is_some_and(|(found, _)| crate::is_instrument(found.plugin)),
+    };
+    let midi_effect = chain_role(&device) == Some(Role::MidiEffect);
+    let plays_notes = session.project.tracks.iter().find(|t| t.id == to).is_some_and(|t| t.content.notes);
+    if (instrument || midi_effect) && !plays_notes {
+        let what = if instrument { "an instrument" } else { "a MIDI effect" };
+        return Err(format!("{what} goes on a MIDI track").into());
+    }
+    let chain =
+        &session.project.channels.iter().find(|c| c.id == target).ok_or("the track's channel is missing")?.devices;
+    if instrument && chain.iter().any(|d| chain_role(d) == Some(Role::Instrument)) {
+        return Err("the track has an instrument already; remove it first".into());
+    }
+    if suhina_model::count_devices(chain) + suhina_model::count_devices(std::slice::from_ref(&device)) > MAX_DEVICES {
+        return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
+    }
+    let position = if instrument || midi_effect { midi_prefix(chain) } else { chain.len() };
+    if !copy {
+        let devices = &mut session
+            .project
+            .channels
+            .iter_mut()
+            .find(|c| c.id == source)
+            .ok_or("the track's channel is missing")?
+            .devices;
+        remove_at(devices, &path).ok_or("the device is missing")?;
+    }
+    let chain = &mut session
+        .project
+        .channels
+        .iter_mut()
+        .find(|c| c.id == target)
+        .ok_or("the track's channel is missing")?
+        .devices;
+    chain.insert(position, device);
+    Ok(json!({ "track": to.0, "device": position, "copied": copy }))
+}
+
 /// `device.paste {track, position?}`: puts the copied devices into a track's chain at
 /// `position` (the end when left out), in the order they were copied, as one undo step.
 pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

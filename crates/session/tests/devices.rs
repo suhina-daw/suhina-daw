@@ -874,3 +874,31 @@ fn picked_devices_are_duplicated_after_the_last_in_one_step_and_the_clipboard_st
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(names(&session), before, "one undo step");
 }
+
+#[test]
+fn a_device_moves_or_copies_to_another_track_in_one_step() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "delay" })).unwrap();
+    let chain = |s: &Session, name: &str| {
+        let p = s.project();
+        let channel = p.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel).unwrap();
+        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+    };
+    run(&mut session, "track.add", json!({ "kind": "audio", "name": "Bus" })).unwrap();
+    let other = "Bus".to_string();
+    let (keys, there) = (chain(&session, "Keys"), chain(&session, &other));
+    let at = keys.len() - 1;
+    run(&mut session, "device.moveToTrack", json!({ "track": "Keys", "device": at, "to_track": other, "copy": true }))
+        .unwrap();
+    assert_eq!(chain(&session, "Keys"), keys, "a copy leaves it");
+    assert_eq!(chain(&session, &other).len(), there.len() + 1);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "device.moveToTrack", json!({ "track": "Keys", "device": at, "to_track": other })).unwrap();
+    assert_eq!(chain(&session, "Keys").len(), keys.len() - 1, "moved away");
+    assert_eq!(chain(&session, &other).last().map(String::as_str), keys.last().map(String::as_str));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!((chain(&session, "Keys"), chain(&session, &other)), (keys, there), "one step");
+    assert!(
+        run(&mut session, "device.moveToTrack", json!({ "track": "Keys", "device": 0, "to_track": "Keys" })).is_err()
+    );
+}

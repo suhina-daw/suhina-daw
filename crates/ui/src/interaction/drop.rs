@@ -44,6 +44,15 @@ impl ItemKind {
     }
 }
 
+/// Where a device carried from a chain or a strip's list started (#688): the panel or row puts
+/// its track and index here as the drag starts, and the window takes it from there.
+pub const DEVICE_CARRY: &str = "device-carry-start";
+
+/// Says that a drag of the top-level device `index` on `track` started this frame.
+pub fn start_device_carry(ctx: &egui::Context, track: suhina_engine::model::TrackId, index: usize) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(DEVICE_CARRY), (track, index)));
+}
+
 /// An item in the browser's results, as it is dragged.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrowserItem {
@@ -114,6 +123,12 @@ pub struct DropProbe {
 }
 
 impl DropProbe {
+    /// A device carried from a chain or a strip's list onto another track (#688): it lands on a
+    /// track as a dropped device does.
+    pub fn for_device(pointer: egui::Pos2) -> Self {
+        Self { pointer, files: false, devices: true, clip: false, target: None, area: None }
+    }
+
     pub fn new(pointer: egui::Pos2, items: &[BrowserItem]) -> Self {
         Self {
             pointer,
