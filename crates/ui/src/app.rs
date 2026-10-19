@@ -311,7 +311,14 @@ pub struct App {
     /// selected, and the one whose ARA editor was last opened on its own when it was selected:
     /// once per clip, so an editor the user closes stays closed.
     ara_told: Option<(TrackId, Option<ClipId>)>,
+    /// The clip whose ARA editor the user closed while it was shown: not opened again on its
+    /// own until another clip is shown or Alt+M asks (#719).
     ara_opened: Option<(TrackId, ClipId)>,
+    /// The clip whose ARA editor was open last frame, and when the editor was last asked to
+    /// open for which clip (seconds of the window's clock): a refused or lost open is asked
+    /// again a second later, as a plug-in that is busy or reloading misses it (#719).
+    ara_was_open: Option<(TrackId, ClipId)>,
+    ara_open_asked: Option<((TrackId, ClipId), f64)>,
     /// The device selected in the detail area (its panel's click): the track and the device's
     /// index, for the Delete key to take off the track. Window state.
     selected_device: Option<(TrackId, usize)>,
@@ -474,6 +481,8 @@ impl App {
             detail_showing: detail_view::Showing::Clip,
             ara_told: None,
             ara_opened: None,
+            ara_was_open: None,
+            ara_open_asked: None,
             selected_device: None,
             device_focus: false,
             device_picks: Vec::new(),
@@ -2435,7 +2444,7 @@ impl App {
             session.select_ara_clip(track, Some(clip));
         }
         self.ara_told = Some((track, Some(clip)));
-        self.ara_opened = Some((track, clip));
+        self.ara_opened = None;
         let open = self.session_mut_report(track, device).is_some_and(|r| r.editor_open);
         if !open {
             self.run(&Action::new("device.openEditor", json!({ "track": track.0, "device": device })));
@@ -2574,14 +2583,33 @@ impl App {
             }
             self.ara_told = told;
         }
-        if let Some((t, c, device, open)) = ara
-            && self.detail_showing == detail_view::Showing::Clip
-            && self.ara_opened != Some((t, c))
-        {
-            self.ara_opened = Some((t, c));
-            if !open {
-                actions.push(Action::new("device.openEditor", json!({ "track": t.0, "device": device })));
+        // The editor opens in the clip's place on its own, and again until it is open: a plug-in
+        // that is busy or loading again misses the first ask. Closed by the user while its clip
+        // is shown, it stays closed for that clip (#719).
+        match ara.filter(|_| self.detail_showing == detail_view::Showing::Clip) {
+            Some((t, c, device, open)) => {
+                let key = (t, c);
+                if open {
+                    self.ara_was_open = Some(key);
+                } else {
+                    if self.ara_was_open == Some(key) {
+                        self.ara_opened = Some(key);
+                    }
+                    self.ara_was_open = None;
+                    if self.ara_opened.is_some_and(|closed| closed != key) {
+                        self.ara_opened = None;
+                    }
+                    let now = ui.input(|i| i.time);
+                    let due = self.ara_open_asked.is_none_or(|(asked, at)| asked != key || now - at >= 1.0);
+                    if self.ara_opened != Some(key) && due {
+                        self.ara_open_asked = Some((key, now));
+                        actions.push(Action::new("device.openEditor", json!({ "track": t.0, "device": device })));
+                        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+                    }
+                }
             }
+            // No bound plug-in shown (a reload, another view): nothing was closed by hand.
+            None => self.ara_was_open = None,
         }
         let least = self.least_detail_height();
         let pullable = !stacked && piano.is_some() && self.shown == View::Arrangement;
@@ -3027,7 +3055,24 @@ impl App {
 
     /// Tells the active project where the panel shows its embedded plug-in editors this frame
     /// (none: they are hidden).
+    /// Whether something drawn over the whole window is open (Settings or a dialog): an embedded
+    /// plug-in editor is a native window egui cannot draw over, so it is hidden meanwhile (#723).
+    fn over_the_window(&self) -> bool {
+        self.settings_open
+            || self.about_open
+            || self.updates.open
+            || self.project_dialog.is_some()
+            || self.save_prompt.is_some()
+            || self.unsaved_prompt.is_some()
+            || self.recovery_open.is_some()
+            || !self.recovery.is_empty()
+            || !self.agent_asks.is_empty()
+    }
+
     fn place_editors(&mut self, places: &[detail_view::EditorPlace]) {
+        // One placement a frame: with something over the window the editors are told to hide,
+        // never shown first and hidden after (which left them over Settings).
+        let places = if self.over_the_window() { &[][..] } else { places };
         let Ok(session) = self.projects.session_mut(None) else { return };
         let shown: Vec<_> = places.iter().map(|p| (p.track, p.device, p.placement)).collect();
         session.place_editors(&shown);
