@@ -500,6 +500,8 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();
     let mut last_memory = Instant::now();
+    // A message read while placements were gathered, to answer next.
+    let mut held: Option<Message> = None;
     loop {
         // Between messages: the plug-ins' main-thread callbacks and their editors' windows.
         window::pump();
@@ -536,10 +538,30 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
-        let message = match next_message(&messages) {
+        let message = match held.take().map_or_else(|| next_message(&messages), Ok) {
             Ok(message) => message,
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
+        };
+        // Placements of an editor queued while the host was busy: only the newest counts, so
+        // the editor goes straight to where the window is now rather than through every place
+        // it was on the way.
+        let message = match message {
+            Message::PlaceEditor { instance, mut placement } => {
+                while let Ok(next) = messages.try_recv() {
+                    match next {
+                        Message::PlaceEditor { instance: same, placement: newer } if same == instance => {
+                            placement = newer;
+                        }
+                        other => {
+                            held = Some(other);
+                            break;
+                        }
+                    }
+                }
+                Message::PlaceEditor { instance, placement }
+            }
+            other => other,
         };
         if message == Message::Quit {
             break;

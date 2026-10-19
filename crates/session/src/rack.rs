@@ -646,6 +646,12 @@ struct Instance {
     /// Where the window wants the embedded editor, and what the host was last told.
     placement_wanted: Option<Placement>,
     placement_sent: Option<Placement>,
+    /// Sends the embedded editor's placement and size even while the control half is lent out
+    /// (an ARA edit, an editor opening), so the editor never lags behind the window.
+    placer: Option<suhina_plugins::EditorPlacer>,
+    /// An editor asked open (`true`) or closed while the control half was out: done when it is
+    /// back, rather than refused as busy.
+    editor_wanted: Option<bool>,
     /// The room in pixels the window has for its embedded editor, where the editor is asked to
     /// fit it (an ARA editor in the clip's place), and what the host was last asked.
     fit_wanted: Option<(u32, u32)>,
@@ -694,6 +700,8 @@ impl Instance {
             editor_size: None,
             placement_wanted: None,
             placement_sent: None,
+            placer: None,
+            editor_wanted: None,
             fit_wanted: None,
             fit_sent: None,
             reopen_editor: false,
@@ -706,6 +714,36 @@ impl Instance {
             ara_float: false,
             ara_selection_sent: None,
         }
+    }
+
+    /// The sender of the embedded editor's placement, taken from the control half the first time
+    /// it is here; kept while the control half is lent out.
+    fn placer(&mut self) -> Option<&suhina_plugins::EditorPlacer> {
+        if self.placer.is_none() {
+            self.placer = self.control.as_mut().and_then(suhina_plugins::Plugin::placer);
+        }
+        self.placer.as_ref()
+    }
+
+    /// Sends the embedded editor its placement now; `false` when it could not be sent (the
+    /// host gone: the placer is let go, and taken again from the next control half).
+    fn send_placement(&mut self, placement: Placement) -> bool {
+        let Some(placer) = self.placer() else { return false };
+        let sent = placer.place(placement);
+        if !sent {
+            self.placer = None;
+        }
+        sent
+    }
+
+    /// Asks the embedded editor to take `fit` pixels now, as [`Instance::send_placement`].
+    fn send_fit(&mut self, (width, height): (u32, u32)) -> bool {
+        let Some(placer) = self.placer() else { return false };
+        let sent = placer.fit(width, height);
+        if !sent {
+            self.placer = None;
+        }
+        sent
     }
 
     /// The editor is closed (or gone with its process).
@@ -967,6 +1005,18 @@ impl Rack {
             {
                 notices.push(format!("the editor did not open again: {}", e.0));
             }
+            // An open or close asked meanwhile, now that the control half is back.
+            let wanted = self.instances.get_mut(&key).and_then(|i| i.editor_wanted.take());
+            let result = match wanted {
+                Some(true) if !self.instances.get(&key).is_some_and(|i| i.editor_open) => {
+                    self.open_editor(key).map(|_| ())
+                }
+                Some(false) if self.instances.get(&key).is_some_and(|i| i.editor_open) => self.close_editor(key),
+                _ => Ok(()),
+            };
+            if let Err(e) = result {
+                notices.push(e.0);
+            }
         }
     }
 
@@ -985,21 +1035,16 @@ impl Rack {
             }
         }
         for instance in self.instances.values_mut() {
-            if let (Some(fit), Some(control)) = (instance.fit_wanted, instance.control.as_mut())
+            if let Some(fit) = instance.fit_wanted
                 && instance.fit_sent != Some(fit)
-                && control.fit_editor(fit.0, fit.1).unwrap_or(false)
+                && instance.send_fit(fit)
             {
                 instance.fit_sent = Some(fit);
             }
         }
         for instance in self.instances.values_mut() {
-            let (Some(wanted), Some(control)) = (instance.placement_wanted, instance.control.as_mut()) else {
-                continue;
-            };
-            if instance.placement_sent == Some(wanted) {
-                continue;
-            }
-            if control.place_editor(wanted).unwrap_or(false) {
+            let Some(wanted) = instance.placement_wanted else { continue };
+            if instance.placement_sent != Some(wanted) && instance.send_placement(wanted) {
                 instance.placement_sent = Some(wanted);
             }
         }
@@ -1514,6 +1559,9 @@ impl Rack {
     }
 
     pub fn open_editor(&mut self, key: u64) -> Result<Option<(u32, u32)>, CommandError> {
+        if self.lent_out(key, true) {
+            return Ok(None);
+        }
         self.running(key)?;
         match self.owner {
             Some(owner) => {
@@ -1586,9 +1634,7 @@ impl Rack {
             if instance.placement_sent == Some(placement) {
                 continue;
             }
-            if let Some(control) = instance.control.as_mut()
-                && control.place_editor(placement).unwrap_or(false)
-            {
+            if instance.send_placement(placement) {
                 instance.placement_sent = Some(placement);
             }
         }
@@ -1597,11 +1643,26 @@ impl Rack {
     /// Closes the editor of the plug-in device `key`; with an owner window, on a thread of
     /// its own, like opening it.
     pub fn close_editor(&mut self, key: u64) -> Result<(), CommandError> {
+        if self.lent_out(key, false) {
+            return Ok(());
+        }
         self.running(key)?;
         if self.owner.is_some() {
             return self.lend(key, |control| Done::Closed(control.close_editor().map_err(|e| e.to_string())));
         }
         self.running(key)?.close_editor().map_err(|e| CommandError(e.to_string()))
+    }
+
+    /// Whether the control half of running plug-in `key` is out on a thread of its own: the
+    /// editor `open` (or closed) is then remembered and done when it is back
+    /// ([`Rack::take_returned`]), so a click while it edits or opens never says it is busy.
+    fn lent_out(&mut self, key: u64, open: bool) -> bool {
+        let Some(instance) = self.instances.get_mut(&key) else { return false };
+        let out = instance.status == PluginStatus::Running && instance.control.is_none();
+        if out {
+            instance.editor_wanted = Some(open);
+        }
+        out
     }
 
     fn running(&mut self, key: u64) -> Result<&mut Plugin, CommandError> {

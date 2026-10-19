@@ -282,8 +282,38 @@ fn try_lock<T>(mutex: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
 /// A running host process and its control connection.
 struct HostProcess {
     child: Child,
-    control: Stream,
+    /// Behind a lock of its own, held only while a line is written: an editor's placement
+    /// ([`EditorPlacer`]) goes out while another request waits for its answer.
+    control: std::sync::Arc<Mutex<Stream>>,
     replies: Receiver<Message>,
+}
+
+/// Sends an embedded editor's placement and size to its host, without the plug-in's control
+/// half and without waiting for any request the host is busy with: the editor follows the
+/// window at once, also while the plug-in is being edited or opened.
+#[derive(Clone)]
+pub struct EditorPlacer {
+    writer: std::sync::Arc<Mutex<Stream>>,
+    instance: u32,
+}
+
+impl EditorPlacer {
+    fn send(&self, message: &Message) -> bool {
+        let mut line = message.encode();
+        line.push('\n');
+        let mut writer = lock(&self.writer);
+        writer.write_all(line.as_bytes()).and_then(|()| writer.flush()).is_ok()
+    }
+
+    /// Puts the embedded editor where `placement` says; `false` when the host is gone.
+    pub fn place(&self, placement: Placement) -> bool {
+        self.send(&Message::PlaceEditor { instance: self.instance, placement })
+    }
+
+    /// Asks the embedded editor to take `width` × `height` pixels; `false` when the host is gone.
+    pub fn fit(&self, width: u32, height: u32) -> bool {
+        self.send(&Message::FitEditor { instance: self.instance, width, height })
+    }
 }
 
 impl HostProcess {
@@ -319,7 +349,7 @@ impl HostProcess {
         };
         control.set_nonblocking(false)?;
         let replies = read_lines(control.try_clone()?);
-        Ok(Self { child, control, replies })
+        Ok(Self { child, control: std::sync::Arc::new(Mutex::new(control)), replies })
     }
 
     fn alive(&mut self) -> bool {
@@ -329,8 +359,9 @@ impl HostProcess {
     fn send(&mut self, message: &Message) -> Result<(), PluginError> {
         let mut line = message.encode();
         line.push('\n');
-        self.control.write_all(line.as_bytes())?;
-        self.control.flush()?;
+        let mut control = lock(&self.control);
+        control.write_all(line.as_bytes())?;
+        control.flush()?;
         Ok(())
     }
 
@@ -889,6 +920,17 @@ impl Plugin {
     /// Puts an embedded editor at `placement` in the engine's window. Never waits for the
     /// host, and not for the process either: while it is busy with another request the
     /// placement is not sent, and this returns `false` so the caller sends it again later.
+    /// What sends this instance's embedded editor its placement and size without the control
+    /// half ([`EditorPlacer`]). `None` while the process is busy with another request, or gone.
+    pub fn placer(&mut self) -> Option<EditorPlacer> {
+        let group = try_lock(&self.group)?;
+        if group.generation != self.generation {
+            return None;
+        }
+        let process = group.process.as_ref()?;
+        Some(EditorPlacer { writer: process.control.clone(), instance: self.instance })
+    }
+
     pub fn place_editor(&mut self, placement: Placement) -> Result<bool, PluginError> {
         let Some(mut group) = try_lock(&self.group) else { return Ok(false) };
         if group.generation != self.generation {
@@ -1264,7 +1306,7 @@ mod tests {
         }
         let child = child.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
         let (feed, replies) = mpsc::channel();
-        (HostProcess { child, control, replies }, feed)
+        (HostProcess { child, control: std::sync::Arc::new(Mutex::new(control)), replies }, feed)
     }
 
     #[test]
