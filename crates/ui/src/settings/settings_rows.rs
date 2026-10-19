@@ -320,6 +320,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Tracks",
+        "New track colour",
+        "Alternating: each new track takes the next colour of the palette, by its place; fixed: every new track takes the palette's first colour. A track keeps the colour it was made with",
+        &["new_track_colour"],
+        |cx, r| cx.choose(r, &[("Alternating", false), ("Fixed", true)], |s| &mut s.view.fixed_track_colour),
+    ),
+    row(
+        Page::Arrangement,
+        "Tracks",
         "Track headers",
         "Which side of the timeline they are on",
         &["track_headers"],

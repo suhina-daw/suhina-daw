@@ -1947,7 +1947,9 @@ impl App {
         self.projects.set_editor_embedding(self.settings.plugin_editors == EditorPlacement::DeviceView);
         // Tracks keep the colour they show when others come and go (#690, #709).
         if let Ok(session) = self.projects.session_mut(None) {
-            session.set_track_colours(crate::interaction::grid::track_palette().to_vec(), None);
+            let palette = crate::interaction::grid::track_palette();
+            let fixed = self.settings.view.fixed_track_colour.then(|| palette[0]);
+            session.set_track_colours(palette.to_vec(), fixed);
         }
         let notices = self.projects.poll_plugins();
         if let Some(last) = notices.last() {

@@ -110,3 +110,19 @@ fn tracks_keep_the_colour_they_show_when_tracks_come_and_go() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(shown(&session), before);
 }
+
+#[test]
+fn with_a_fixed_colour_new_tracks_take_it_and_the_others_keep_theirs() {
+    let palette = vec![Rgb(1, 0, 0), Rgb(0, 2, 0), Rgb(0, 0, 3), Rgb(4, 4, 0)];
+    let mut session = Session::new(blank_project());
+    session.set_track_colours(palette.clone(), Some(Rgb(9, 9, 9)));
+    let before: Vec<_> = session.project().tracks.iter().map(|t| t.id).collect();
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "track.add", json!({ "kind": "midi" })).unwrap();
+    let p = session.project();
+    let new: Vec<_> = p.tracks.iter().filter(|t| !before.contains(&t.id)).map(|t| t.color).collect();
+    assert_eq!(new, [Some(Rgb(9, 9, 9)), Some(Rgb(9, 9, 9))]);
+    for (place, track) in p.tracks.iter().enumerate().filter(|(_, t)| before.contains(&t.id)) {
+        assert!(track.color.is_some(), "{place}: stored as it showed");
+    }
+}
