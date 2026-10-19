@@ -3483,14 +3483,18 @@ fn a_send_knob_sets_the_send_level_and_its_menu_the_mode() {
     let knob = harness.get_by_label("Bass send to A Reverb").rect().center();
     harness.hover_at(knob);
     harness.run();
+    // Stepped: the send is heard while it is dragged, an edit every frame (#705).
     harness.drag_at(knob);
-    harness.run();
+    harness.step();
     harness.hover_at(knob - egui::vec2(0.0, 10.0));
-    harness.run();
+    harness.step();
+    let during = bass_send(&harness).map(|(level, _)| 20.0 * level.log10()).unwrap_or_default();
+    assert!(during > before, "louder while dragged: {before} to {during}");
     harness.hover_at(knob - egui::vec2(0.0, 20.0));
-    harness.run();
+    harness.step();
     harness.drop_at(knob - egui::vec2(0.0, 20.0));
-    harness.run();
+    harness.step();
+    harness.step();
     // 20 points up at 0.25 dB a point: 5 dB louder, rounded to 0.1 dB.
     let after = bass_send(&harness).map(|(level, _)| 20.0 * level.log10()).unwrap_or_default();
     assert!((after - before - 5.0).abs() < 0.11, "{before} to {after}");
