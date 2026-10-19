@@ -185,6 +185,9 @@ struct FadeDrag {
     key: (TrackId, ClipId),
     edge: FadeEdge,
     raw: f64,
+    /// The fade's length when the drag started: the other selected clips' fades change by as
+    /// much as this one has moved from it (#715).
+    from: f64,
 }
 
 /// A fade's curve handle being dragged: the clip, which fade, the curve so far, and how far
@@ -674,6 +677,19 @@ impl ArrangementViewState {
             match drag.edge {
                 FadeEdge::In => shown.fade_in = fade_length(drag.raw, FadeEdge::In, clip, shown.fade_out, grid),
                 FadeEdge::Out => shown.fade_out = fade_length(drag.raw, FadeEdge::Out, clip, shown.fade_in, grid),
+            }
+        } else if let Some(drag) = self.fade_drag.filter(|d| self.is_selected(d.key) && self.is_selected(key)) {
+            // Another selected clip's fade dragged: this one's moves by as much (#715).
+            if clip.audio {
+                let by = drag.raw - drag.from;
+                match drag.edge {
+                    FadeEdge::In => {
+                        shown.fade_in = (shown.fade_in + by).clamp(0.0, (clip.length - shown.fade_out).max(0.0))
+                    }
+                    FadeEdge::Out => {
+                        shown.fade_out = (shown.fade_out + by).clamp(0.0, (clip.length - shown.fade_in).max(0.0))
+                    }
+                }
             }
         }
         if let Some(drag) = self.curve_drag.filter(|d| d.key == key) {
@@ -2502,7 +2518,7 @@ fn clip_box<'a>(
                 done = Some(0.0);
             } else {
                 if response.drag_started_by(egui::PointerButton::Primary) {
-                    state.fade_drag = Some(FadeDrag { key, edge, raw: current });
+                    state.fade_drag = Some(FadeDrag { key, edge, raw: current, from: current });
                 }
                 if response.dragged_by(egui::PointerButton::Primary)
                     && let Some(drag) = state.fade_drag.as_mut().filter(|d| mine_fade(d))
@@ -2525,9 +2541,26 @@ fn clip_box<'a>(
                 && (v - current).abs() > 1e-9
             {
                 let param = if edge == FadeEdge::In { "in" } else { "out" };
-                let mut params = json!({ "clip": clip.id.0 });
-                params[param] = json!((v * 1e6).round() / 1e6);
-                actions.push(Action::new("clip.setFades", params));
+                // One of several selected clips: every selected clip's fade moves by as much,
+                // each from its own (#715); a double-click still clears only this one.
+                if state.is_selected(key) && state.selected.len() > 1 && response.drag_stopped() {
+                    let audio = |(track, id): &(TrackId, ClipId)| {
+                        timeline
+                            .lanes
+                            .iter()
+                            .find(|l| l.track == *track)
+                            .is_some_and(|l| l.clips.iter().any(|c| c.id == *id && c.audio))
+                    };
+                    let clips: Vec<Value> =
+                        state.selected.iter().filter(|k| audio(k)).map(|(_, id)| json!({ "clip": id.0 })).collect();
+                    let beats = ((v - current) * 1e6).round() / 1e6;
+                    actions
+                        .push(Action::new("clip.shiftFades", json!({ "clips": clips, "edge": param, "beats": beats })));
+                } else {
+                    let mut params = json!({ "clip": clip.id.0 });
+                    params[param] = json!((v * 1e6).round() / 1e6);
+                    actions.push(Action::new("clip.setFades", params));
+                }
             }
             match edge {
                 FadeEdge::In => shown.fade_in = length,
@@ -3820,7 +3853,7 @@ mod tests {
             "only on the dragged clip"
         );
         // A fade being dragged: on the grid, or free with Alt.
-        state.fade_drag = Some(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6 });
+        state.fade_drag = Some(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 });
         assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out, 3.0);
         assert!((state.shown(key, &clip, None).fade_out - 2.6).abs() < 1e-9);
     }

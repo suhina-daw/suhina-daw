@@ -665,6 +665,17 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_clip_fades,
     },
     CommandSpec {
+        id: "clip.shiftFades",
+        label: "Lengthen or shorten the fade-in or fade-out of several arrangement clips by the same beats, each from its own, kept from 0 to what the clip's other fade leaves; as one undo step",
+        params: &[
+            CLIPS,
+            param("edge", ParamType::Text, "in or out"),
+            param("beats", ParamType::Number, "how much longer (or, below 0, shorter) each fade gets"),
+        ],
+        kind: CommandKind::Edit,
+        run: shift_fades,
+    },
+    CommandSpec {
         id: "clip.copy",
         label: "Copy clips, with what they play, for clip.paste: arrangement clips by clips, or a clip slot's by track and scene",
         params: &[
@@ -3469,6 +3480,38 @@ fn rename_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
     content.name.clone_from(&name);
     Ok(json!({ "name": name }))
+}
+
+/// `clip.shiftFades {clips, edge, beats}` (#715).
+fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let fade_in = match params.get("edge").and_then(Value::as_str) {
+        Some("in") => true,
+        Some("out") => false,
+        _ => return Err("edge must be in or out".into()),
+    };
+    let beats = number(params, "beats")?;
+    let p = &mut session.project;
+    let chosen = clip_list(p, params)?;
+    let mut changed = 0;
+    for (track, index) in chosen {
+        let clip = p
+            .arrangement
+            .lanes
+            .iter_mut()
+            .find(|l| l.track == Some(track))
+            .and_then(|l| l.clips.get_mut(index))
+            .ok_or("the clip is missing")?;
+        let (own, other) = if fade_in { (clip.fade_in, clip.fade_out) } else { (clip.fade_out, clip.fade_in) };
+        let most = (clip.length - other).max(0.0);
+        let now = (own + beats).clamp(0.0, most);
+        if fade_in {
+            clip.fade_in = now;
+        } else {
+            clip.fade_out = now;
+        }
+        changed += 1;
+    }
+    Ok(json!({ "clips": changed }))
 }
 
 /// `clip.renameMany {clips, name}` (#693).

@@ -287,3 +287,24 @@ fn the_commands_are_listed() {
         assert!(suhina_session::commands().iter().any(|c| c.id == id), "{id}");
     }
 }
+
+#[test]
+fn several_clips_fades_move_by_as_much_each_from_its_own_in_one_step() {
+    let mut project = project();
+    project.arrangement.lanes[0].clips[1].fade_in = 1.0;
+    project.arrangement.lanes[0].clips[1].fade_out = 2.5;
+    let mut session = Session::new(project);
+    let ids: Vec<Value> =
+        session.project().arrangement.lanes[0].clips.iter().map(|c| json!({ "clip": c.id.0 })).collect();
+    run(&mut session, "clip.shiftFades", json!({ "clips": ids, "edge": "in", "beats": 0.5 })).unwrap();
+    assert_eq!(arranged(&session, 0).fade_in, 0.5, "from none");
+    assert_eq!(arranged(&session, 1).fade_in, 1.5, "from its own, not reset");
+    // Kept to what the other fade leaves (4 - 2.5).
+    run(&mut session, "clip.shiftFades", json!({ "clips": ids, "edge": "in", "beats": 3.0 })).unwrap();
+    assert_eq!(arranged(&session, 1).fade_in, 1.5);
+    assert_eq!(arranged(&session, 0).fade_in, 3.5);
+    undo(&mut session);
+    undo(&mut session);
+    assert_eq!((arranged(&session, 0).fade_in, arranged(&session, 1).fade_in), (0.0, 1.0), "one step each");
+    assert!(run(&mut session, "clip.shiftFades", json!({ "clips": ids, "edge": "up", "beats": 1.0 })).is_err());
+}
