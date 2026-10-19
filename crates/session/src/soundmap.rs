@@ -121,9 +121,24 @@ impl Projects {
             library.poll();
             let revision = library.revision();
             if self.sound_map_revision != Some(revision) {
-                let files = suhina_plugins::trace::timed("sound map: the library's samples", || sample_files(self));
-                suhina_plugins::trace::timed("sound map: update", || self.sound_map_mut().update(&files));
-                self.sound_map_revision = Some(revision);
+                if self.sound_map_mut().reads_in_background() {
+                    // Listed and compared on a thread of its own: a large library held the
+                    // window up for a second here.
+                    let snapshot = self.file_library_mut().index_snapshot();
+                    let started = self.sound_map_mut().update_in_background(move || {
+                        suhina_library::files_in(&snapshot, Some(FileKind::Sample))
+                            .map(|f| SourceFile { folder: f.folder, path: f.path, size: f.size, modified: f.modified })
+                            .collect()
+                    });
+                    // Still working out the one before: asked again at a later poll.
+                    if started {
+                        self.sound_map_revision = Some(revision);
+                    }
+                } else {
+                    let files = sample_files(self);
+                    self.sound_map_mut().update(&files);
+                    self.sound_map_revision = Some(revision);
+                }
                 changed = true;
             }
         }

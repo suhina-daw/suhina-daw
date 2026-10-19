@@ -106,6 +106,23 @@ pub struct IndexedFile {
     pub modified: u64,
 }
 
+/// Every file of `kind` (or of every kind) in an [`Library::index_snapshot`].
+pub fn files_in(
+    snapshot: &[(PathBuf, Arc<FolderIndex>)],
+    kind: Option<FileKind>,
+) -> impl Iterator<Item = IndexedFile> + '_ {
+    snapshot.iter().flat_map(move |(folder, index)| {
+        index.files.iter().filter(move |(_, e)| kind.is_none_or(|k| k == e.kind)).map(move |(rel, e)| IndexedFile {
+            folder: folder.clone(),
+            path: index::path_of(folder, rel),
+            rel: rel.clone(),
+            kind: e.kind,
+            size: e.size,
+            modified: e.modified,
+        })
+    })
+}
+
 impl IndexedFile {
     /// The file's name.
     pub fn name(&self) -> &str {
@@ -421,6 +438,13 @@ impl Library {
             }
         }
         Ok(())
+    }
+
+    /// Each folder with its index as it is now, shared: to list its files on another thread
+    /// ([`files_in`]) without copying them here.
+    pub fn index_snapshot(&mut self) -> Vec<(PathBuf, Arc<FolderIndex>)> {
+        self.load();
+        self.folders.iter().map(|f| (f.path.clone(), Arc::clone(&f.index))).collect()
     }
 
     /// Every indexed file, of `kind` or of every kind.

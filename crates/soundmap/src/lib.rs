@@ -167,14 +167,15 @@ struct Queue {
 
 /// A folder's cache to write whole, or changes to append to its journal, and where.
 enum CacheSave {
-    Whole(PathBuf, FolderCache),
+    Whole(PathBuf, Arc<FolderCache>),
     Changes(PathBuf, Vec<Change>),
 }
 
 /// The analysis of a library's samples, cached per folder.
 pub struct SoundMap {
     data_folder: Option<PathBuf>,
-    caches: HashMap<PathBuf, FolderCache>,
+    /// Shared, so an update worked out on a thread of its own reads them without a copy.
+    caches: HashMap<PathBuf, Arc<FolderCache>>,
     /// Files queued or being analysed, by absolute path.
     queued: HashSet<PathBuf>,
     /// The changes of each folder's cache not written yet, and whether it must be written whole.
@@ -191,13 +192,19 @@ pub struct SoundMap {
     /// The thread that writes caches to disk, started with the first save: a cache written on
     /// the window's thread (serialised, written and synced) held it up for half a second.
     saver: Option<(Sender<CacheSave>, JoinHandle<()>)>,
-    /// Folders whose cache file is being read on a thread of its own (a large one took the
-    /// window's thread 600 ms), with the files an update has for them meanwhile.
-    loading: HashMap<PathBuf, Vec<SourceFile>>,
-    /// Whether caches are read on a thread of their own ([`SoundMap::read_in_background`]).
+    /// Whether updates are worked out on a thread of their own ([`SoundMap::read_in_background`]).
     background_reads: bool,
-    loaded_to: Sender<(PathBuf, FolderCache)>,
-    loaded: Receiver<(PathBuf, FolderCache)>,
+    /// An update being worked out there ([`SoundMap::update_in_background`]).
+    diffing: Option<Receiver<Diff>>,
+}
+
+/// An update worked out on a thread of its own: the caches read from disk for folders not
+/// read yet, the files to analyse, each folder's files that are gone, and the folders there are.
+struct Diff {
+    loaded: Vec<(PathBuf, FolderCache)>,
+    work: Vec<Job>,
+    gone: Vec<(PathBuf, Vec<PathBuf>)>,
+    folders: HashSet<PathBuf>,
 }
 
 impl SoundMap {
@@ -205,7 +212,6 @@ impl SoundMap {
     /// threads start with the first [`SoundMap::update`] that finds work, at most `threads`.
     pub fn new(data_folder: Option<PathBuf>, threads: usize) -> Self {
         let (sender, results) = channel();
-        let (loaded_to, loaded) = channel();
         SoundMap {
             data_folder,
             caches: HashMap::new(),
@@ -219,18 +225,21 @@ impl SoundMap {
             layouts: HashMap::new(),
             hand_kinds: None,
             saver: None,
-            loading: HashMap::new(),
             background_reads: false,
-            loaded_to,
-            loaded,
+            diffing: None,
         }
     }
 
-    /// Reads a folder's cache on a thread of its own when an update first needs it, comparing
-    /// its files when it is in (at a later [`SoundMap::poll`]): for the window, which a large
-    /// cache held up for 600 ms. Off, an update reads it at once (tests, the CLI).
+    /// Works out updates on a thread of their own ([`SoundMap::update_in_background`]): for the
+    /// window, which a large library held up for a second. Off, the caller updates at once
+    /// (tests, the CLI).
     pub fn read_in_background(&mut self, on: bool) {
         self.background_reads = on;
+    }
+
+    /// Whether updates are worked out on a thread of their own.
+    pub fn reads_in_background(&self) -> bool {
+        self.background_reads
     }
 
     /// Half the cores, at least one (ADR 0013 › Threads).
@@ -238,12 +247,112 @@ impl SoundMap {
         std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1))
     }
 
+    /// A folder's cache to change: read first when it is not yet; copied only while an update
+    /// on another thread still reads the one shared.
     fn cache(&mut self, folder: &Path) -> &mut FolderCache {
+        Arc::make_mut(self.shared_cache(folder))
+    }
+
+    /// A folder's cache to read: read first when it is not yet.
+    fn cache_ref(&mut self, folder: &Path) -> &FolderCache {
+        self.shared_cache(folder)
+    }
+
+    fn shared_cache(&mut self, folder: &Path) -> &mut Arc<FolderCache> {
         let data_folder = self.data_folder.clone();
-        self.caches.entry(folder.to_path_buf()).or_insert_with(|| match &data_folder {
-            Some(dir) => FolderCache::load(&dir.join(cache::file_name(folder))),
-            None => FolderCache::default(),
+        self.caches.entry(folder.to_path_buf()).or_insert_with(|| {
+            Arc::new(match &data_folder {
+                Some(dir) => FolderCache::load(&dir.join(cache::file_name(folder))),
+                None => FolderCache::default(),
+            })
         })
+    }
+
+    /// Works out an update like [`SoundMap::update`] on a thread of its own, from the files
+    /// `files` lists there, and takes it in at a later [`SoundMap::poll`]: the library's files
+    /// listed, the caches read and compared off the caller's thread. Returns `false` while the
+    /// one before is still being worked out (asked again later).
+    pub fn update_in_background(&mut self, files: impl FnOnce() -> Vec<SourceFile> + Send + 'static) -> bool {
+        if self.diffing.is_some() {
+            return false;
+        }
+        let shared: HashMap<PathBuf, Arc<FolderCache>> = self.caches.clone();
+        let queued = self.queued.clone();
+        let data_folder = self.data_folder.clone();
+        let (to, from) = channel();
+        let spawned = std::thread::Builder::new().name("sound map update".into()).spawn(move || {
+            let files = files();
+            let mut loaded: HashMap<PathBuf, FolderCache> = HashMap::new();
+            let mut present: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new();
+            let mut work = Vec::new();
+            for file in &files {
+                let relative = relative(&file.path, &file.folder);
+                present.entry(file.folder.clone()).or_default().insert(relative.clone());
+                if !shared.contains_key(&file.folder) && !loaded.contains_key(&file.folder) {
+                    let cache = match &data_folder {
+                        Some(dir) => FolderCache::load(&dir.join(cache::file_name(&file.folder))),
+                        None => FolderCache::default(),
+                    };
+                    loaded.insert(file.folder.clone(), cache);
+                }
+                let cache = shared.get(&file.folder).map(|c| &**c).or_else(|| loaded.get(&file.folder));
+                let current = cache.is_some_and(|c| c.current(&relative, file.size, file.modified).is_some());
+                if !current && !queued.contains(&file.path) {
+                    work.push((relative, file.clone()));
+                }
+            }
+            let caches = shared.iter().map(|(f, c)| (f, &**c)).chain(loaded.iter());
+            let gone = caches
+                .filter_map(|(folder, cache)| {
+                    let keep = present.get(folder);
+                    let gone: Vec<PathBuf> =
+                        cache.entries.keys().filter(|p| !keep.is_some_and(|k| k.contains(*p))).cloned().collect();
+                    (!gone.is_empty()).then(|| (folder.clone(), gone))
+                })
+                .collect();
+            let folders = present.into_keys().collect();
+            let _ = to.send(Diff { loaded: loaded.into_iter().collect(), work, gone, folders });
+        });
+        if spawned.is_ok() {
+            self.diffing = Some(from);
+        }
+        spawned.is_ok()
+    }
+
+    /// Takes in an update worked out on another thread, once it is done. Returns whether one
+    /// came in.
+    fn take_diff(&mut self, wait: bool) -> bool {
+        let Some(from) = &self.diffing else { return false };
+        let diff = if wait { from.recv().ok() } else { from.try_recv().ok() };
+        let gone_thread = !wait && matches!(from.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected));
+        let Some(diff) = diff else {
+            if gone_thread || wait {
+                self.diffing = None;
+            }
+            return false;
+        };
+        self.diffing = None;
+        let Diff { loaded, work, gone, folders } = diff;
+        for (folder, cache) in loaded {
+            // Read here meanwhile (a status asked for): that one stands.
+            self.caches.entry(folder).or_insert_with(|| Arc::new(cache));
+        }
+        for (folder, paths) in gone {
+            let Some(cache) = self.caches.get_mut(&folder) else { continue };
+            let cache = Arc::make_mut(cache);
+            for path in paths {
+                if cache.entries.remove(&path).is_some() {
+                    self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
+                }
+            }
+        }
+        self.caches.retain(|folder, _| folders.contains(folder));
+        self.unsaved.retain(|folder, _| folders.contains(folder));
+        let work: Vec<Job> = work.into_iter().filter(|(_, file)| !self.queued.contains(&file.path)).collect();
+        if !work.is_empty() {
+            self.enqueue(work);
+        }
+        true
     }
 
     /// Brings the caches in line with the library's files: queues new and changed files, and
@@ -254,23 +363,7 @@ impl SoundMap {
         for file in files {
             let relative = relative(&file.path, &file.folder);
             present.entry(file.folder.clone()).or_default().insert(relative.clone());
-            // A folder whose cache is not read yet: read on a thread of its own, and its files
-            // compared when it is in (`poll`).
-            if self.background_reads
-                && !self.caches.contains_key(&file.folder)
-                && let Some(dir) = &self.data_folder
-            {
-                if !self.loading.contains_key(&file.folder) {
-                    let (folder, to) = (file.folder.clone(), self.loaded_to.clone());
-                    let path = dir.join(cache::file_name(&folder));
-                    let _ = std::thread::Builder::new()
-                        .name("sound map cache read".into())
-                        .spawn(move || drop(to.send((folder, FolderCache::load(&path)))));
-                }
-                self.loading.entry(file.folder.clone()).or_default().push(file.clone());
-                continue;
-            }
-            let current = self.cache(&file.folder).current(&relative, file.size, file.modified).is_some();
+            let current = self.cache_ref(&file.folder).current(&relative, file.size, file.modified).is_some();
             if !current && !self.queued.contains(&file.path) {
                 work.push((relative, file.clone()));
             }
@@ -279,15 +372,17 @@ impl SoundMap {
             let keep = present.get(folder);
             let gone: Vec<PathBuf> =
                 cache.entries.keys().filter(|p| !keep.is_some_and(|k| k.contains(*p))).cloned().collect();
+            if gone.is_empty() {
+                continue;
+            }
+            let cache = Arc::make_mut(cache);
             for path in gone {
                 cache.entries.remove(&path);
                 self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
             }
         }
-        // A folder being read is kept: its update comes when it is in.
-        let loading = &self.loading;
-        self.caches.retain(|folder, _| present.contains_key(folder) || loading.contains_key(folder));
-        self.unsaved.retain(|folder, _| present.contains_key(folder) || loading.contains_key(folder));
+        self.caches.retain(|folder, _| present.contains_key(folder));
+        self.unsaved.retain(|folder, _| present.contains_key(folder));
         if !work.is_empty() {
             self.enqueue(work);
         }
@@ -297,7 +392,7 @@ impl SoundMap {
     /// Analyses `folder` again, ignoring its cache.
     pub fn reanalyse(&mut self, folder: &Path, files: &[SourceFile]) {
         if let Some(cache) = self.caches.get_mut(folder) {
-            cache.entries.clear();
+            Arc::make_mut(cache).entries.clear();
             self.unsaved.entry(folder.to_path_buf()).or_default().1 = true;
         }
         let work: Vec<Job> = files
@@ -330,7 +425,7 @@ impl SoundMap {
     /// Takes in finished analyses and writes caches that have gathered enough. Returns whether
     /// anything changed. Called often (each frame of the UI, or before a command answers).
     pub fn poll(&mut self) -> bool {
-        let mut changed = self.take_loaded();
+        let mut changed = self.take_diff(false);
         while let Ok((file, analysis)) = self.results.try_recv() {
             self.queued.remove(&file.path);
             let relative = relative(&file.path, &file.folder);
@@ -346,16 +441,7 @@ impl SoundMap {
 
     /// Waits until nothing is queued (for tests and the CLI).
     pub fn wait(&mut self) {
-        while !self.loading.is_empty() {
-            match self.loaded.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(done) => {
-                    let _ = self.loaded_to.send(done);
-                    self.take_loaded();
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
+        self.take_diff(true);
         while !self.queued.is_empty() {
             match self.results.recv_timeout(std::time::Duration::from_millis(50)) {
                 Ok(done) => {
@@ -373,39 +459,6 @@ impl SoundMap {
         }
         self.save_due(true);
         self.finish_saves();
-    }
-
-    /// Takes in the caches read since, and brings each folder in line with the files the
-    /// updates had for it meanwhile. Returns whether any came in.
-    fn take_loaded(&mut self) -> bool {
-        let mut any = false;
-        while let Ok((folder, cache)) = self.loaded.try_recv() {
-            any = true;
-            let Some(files) = self.loading.remove(&folder) else { continue };
-            // Read here meanwhile (a status asked for): that one stands.
-            self.caches.entry(folder.clone()).or_insert(cache);
-            let mut work = Vec::new();
-            let mut present = HashSet::new();
-            for file in &files {
-                let relative = relative(&file.path, &file.folder);
-                present.insert(relative.clone());
-                let current = self.cache(&folder).current(&relative, file.size, file.modified).is_some();
-                if !current && !self.queued.contains(&file.path) {
-                    work.push((relative, file.clone()));
-                }
-            }
-            if let Some(cache) = self.caches.get_mut(&folder) {
-                let gone: Vec<PathBuf> = cache.entries.keys().filter(|p| !present.contains(*p)).cloned().collect();
-                for path in gone {
-                    cache.entries.remove(&path);
-                    self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
-                }
-            }
-            if !work.is_empty() {
-                self.enqueue(work);
-            }
-        }
-        any
     }
 
     /// Waits until every cache handed to the saving thread is on disk.
@@ -447,16 +500,17 @@ impl SoundMap {
         }
         for folder in due {
             let Some((changes, whole)) = self.unsaved.remove(&folder) else { continue };
-            let Some(cache) = self.caches.get_mut(&folder) else { continue };
+            let Some(shared) = self.caches.get_mut(&folder) else { continue };
             let path = dir.join(cache::file_name(&folder));
             // Appended in a few bytes; the file is written whole again only when its journal has
             // grown past a quarter of its entries (or it was emptied).
-            let journal = cache.journal + changes.len();
-            let save = if whole || journal > cache.entries.len() / 4 + 64 {
-                cache.journal = 0;
-                CacheSave::Whole(path, cache.clone())
+            let journal = shared.journal + changes.len();
+            let save = if whole || journal > shared.entries.len() / 4 + 64 {
+                Arc::make_mut(shared).journal = 0;
+                // Shared with the saving thread, not copied.
+                CacheSave::Whole(path, Arc::clone(shared))
             } else {
-                cache.journal = journal;
+                Arc::make_mut(shared).journal = journal;
                 CacheSave::Changes(path, changes)
             };
             let unsent = match &self.saver {
@@ -478,7 +532,7 @@ impl SoundMap {
         for file in files {
             let relative = relative(&file.path, &file.folder);
             let queued = self.queued.contains(&file.path);
-            let analysis = self.cache(&file.folder).current(&relative, file.size, file.modified).cloned();
+            let analysis = self.cache_ref(&file.folder).current(&relative, file.size, file.modified).cloned();
             let index = match out.iter().position(|s| s.folder == file.folder) {
                 Some(i) => i,
                 None => {
@@ -500,7 +554,7 @@ impl SoundMap {
     /// The analysis of one file, when it is current.
     pub fn analysis(&mut self, file: &SourceFile) -> Option<Analysis> {
         let relative = relative(&file.path, &file.folder);
-        self.cache(&file.folder).current(&relative, file.size, file.modified).cloned()
+        self.cache_ref(&file.folder).current(&relative, file.size, file.modified).cloned()
     }
 
     /// Lays out a scope: the analysed files among `files` no longer than `max_seconds`. A new
@@ -525,7 +579,7 @@ impl SoundMap {
         sorted.dedup_by(|a, b| a.path == b.path);
         for file in sorted {
             let relative = relative(&file.path, &file.folder);
-            match self.cache(&file.folder).current(&relative, file.size, file.modified) {
+            match self.cache_ref(&file.folder).current(&relative, file.size, file.modified) {
                 Some(Analysis::Analysed { seconds, .. }) if *seconds > max_seconds => too_long += 1,
                 Some(Analysis::Analysed { features, .. }) => {
                     if chosen.len() < MAX_ITEMS {
