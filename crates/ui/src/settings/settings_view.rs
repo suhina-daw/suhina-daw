@@ -258,6 +258,8 @@ pub struct PageState {
     pub scrolled: Option<(Page, String)>,
     /// The control with the keyboard focus when it was last scrolled into view.
     pub focused: Option<Id>,
+    /// What is typed in the Shortcuts page's own filter: only the actions it matches are listed.
+    pub key_filter: String,
 }
 
 impl PageState {
@@ -367,10 +369,12 @@ impl Entry {
         Self { shown, ..self }
     }
 
-    /// Every word is in its name, note, section or page.
+    /// Every word is in its name, note, section or page; for the shortcuts, in an action's too.
     fn matches(&self, words: &[String]) -> bool {
         let text = format!("{} {} {} {}", self.name, self.note, self.section, self.page.name()).to_lowercase();
         words.iter().all(|word| text.contains(word.as_str()))
+            || (self.page == Page::Shortcuts
+                && actions().iter().any(|a| action_matches(&a.label, &a.id, a.group, "", words)))
     }
 }
 
@@ -950,6 +954,24 @@ fn shortcuts_page(
 
     let head = Rect::from_min_size(Pos2::new(page.left(), *at), Vec2::new(page.width(), SETTING_ROW));
     label(painter, head, "Shortcuts", "Change, then press the keys; Escape cancels. Kept in keymap.json.");
+    // The page's own filter, left of Reset all: by action, group or key ("zoom", "ctrl+alt").
+    let filter = Rect::from_min_max(
+        Pos2::new(head.right() - 80.0 - 8.0 - 180.0, head.top() + 1.0),
+        Pos2::new(head.right() - 80.0 - 8.0, head.top() + 1.0 + SEGMENT),
+    );
+    let edit = ui.put(
+        filter,
+        egui::TextEdit::singleline(&mut state.key_filter)
+            .hint_text("Filter shortcuts")
+            .font(theme::ui_font(theme::TEXT_SMALL)),
+    );
+    edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Filter shortcuts"));
+    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.key_filter.clear();
+    }
+    // The settings search narrows the list too, so a search shows the actions it found.
+    let words: Vec<String> =
+        state.key_filter.split_whitespace().chain(state.search.split_whitespace()).map(str::to_lowercase).collect();
     let reset = Rect::from_min_max(
         Pos2::new(head.right() - 80.0, head.top() + 1.0),
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
@@ -1011,7 +1033,13 @@ fn shortcuts_page(
     ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let mut group = "";
+            let mut listed = 0;
             for action in actions() {
+                let keys_text: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::display).collect();
+                if !action_matches(&action.label, &action.id, action.group, &keys_text.join(" "), &words) {
+                    continue;
+                }
+                listed += 1;
                 if action.group != group {
                     group = action.group;
                     ui.add_space(6.0);
@@ -1054,9 +1082,20 @@ fn shortcuts_page(
                     }
                 });
             }
+            if listed == 0 {
+                ui.label(
+                    egui::RichText::new("No action matches the filter").font(small.clone()).color(theme::text_hint()),
+                );
+            }
         });
     });
     changed
+}
+
+/// Every word is in the action's label, id, group or keys (as shown, "Ctrl+Alt+Up").
+fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[String]) -> bool {
+    let text = format!("{label} {id} {group} {keys}").to_lowercase();
+    words.iter().all(|word| text.contains(word.as_str()))
 }
 
 /// Folders, scanning, what was found in a line, and the button that opens the plug-in manager,

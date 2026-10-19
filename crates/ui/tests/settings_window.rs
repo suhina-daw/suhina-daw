@@ -182,3 +182,27 @@ fn escape_in_the_search_empties_it_and_keeps_settings_open() {
     settle(&mut harness);
     assert!(!harness.state().settings_open());
 }
+
+/// The search finds single shortcuts, and the Shortcuts page filters its own list by action,
+/// group or key.
+#[test]
+fn a_search_finds_shortcuts_and_the_shortcuts_page_filters_its_list() {
+    let mut harness = short_window();
+    harness.get_by_label("Search settings").focus();
+    settle(&mut harness);
+    harness.get_by_label("Search settings").type_text("waveform");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Change keys of view.waveformZoomIn").is_some(), "the action is found");
+    assert!(harness.query_by_label("Change keys of file.save").is_none(), "the rest are not listed");
+
+    // On the page, its own filter: by the keys too.
+    harness.get_by_label("Settings page: Shortcuts").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Change keys of file.save").is_some(), "the whole list without a filter");
+    harness.get_by_label("Filter shortcuts").focus();
+    settle(&mut harness);
+    harness.get_by_label("Filter shortcuts").type_text("ctrl+alt+up");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Change keys of view.waveformZoomIn").is_some());
+    assert!(harness.query_by_label("Change keys of file.save").is_none());
+}
