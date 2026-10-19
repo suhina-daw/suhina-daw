@@ -178,8 +178,9 @@ while dragging, one undo step), and its top edge sets its height the same way.
 ## Clip edges
 
 A clip's left and right edges are handles (below the fade handles of an audio clip). Dragging one
-moves that edge on the grid (Shift: free) and the clip is drawn at its new length as it goes; it
-never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Let go, it is
+moves that edge on the grid (Alt: free, as for every other drag) and the clip is drawn at its new
+length as it goes; it never gets shorter than a grid step (a 16th of a beat with Alt or no grid).
+Let go, it is
 `clip.trim {track, index, start?, end?}`:
 
 - The left edge moves the content with it, so what plays stays where it was; it goes no earlier
@@ -196,7 +197,8 @@ never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Le
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then
   draws out its repeats.
 
-With Alt held (Settings › Arrangement › *Alt-drag on an edge stretches audio*, on by default) an
+With Ctrl and Alt held (Settings › Arrangement › *Ctrl+Alt-drag on an edge stretches audio*, on by
+default) an
 audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the content's warp markers (an unwarped
 clip is warped first) and gives the clip a content of its own when another clip plays the same.
 
@@ -532,7 +534,8 @@ arrangement clips; in the Arrangement view its lane dims, and the ruler shows a
 
 **Starting inside the arrangement.** From the marker's frame on, the arrangement plays exactly as
 it would at that frame of a render from the beginning, with two exceptions: a note that started
-before the marker is not played (notes are not picked up mid-way), and a time-stretched audio clip
+before the marker and still sounds there starts at the marker (it is chased), from its attack, as
+an instrument cannot begin a sound part-way, and ends where it would have; and a time-stretched audio clip
 starts its stretcher at that point, without the audio before it, so it can differ very slightly
 for its first moments. Unwarped and re-pitched audio clips that span the marker play from where
 they are, sample for sample. The metronome counts from the marker: on a beat it clicks at once,
@@ -698,8 +701,9 @@ output; each group's volume, mute and devices apply on the way ([ADR 0004](../de
 › 10), and solo follows the nesting: a soloed track is heard through every group above it, a
 soloed group plays everything inside it at any depth.
 
-A header shows its nesting by stepping in 8 px per level. A group that holds tracks has the fold
-triangle at the start of its header (Folded groups): the lanes of every track inside it, at any
+A header shows its nesting by stepping in 16 px per level; every header keeps the fold triangle's
+room, so a group's tracks start clearly to the right of their group. A group that holds tracks has
+the fold triangle at the start of its header (Folded groups): the lanes of every track inside it, at any
 depth, are hidden while it is folded, and the Session view hides their columns; both views fold
 the same groups, and folding is part of the view, not an edit, so it does not undo. A dragged
 header joins the group of the lane it is let go over: above that lane, or below it from its lower
@@ -729,6 +733,13 @@ more tracks by id or name:
 A set or adjust that changes a parameter with an automation lane turns that lane off for each
 track it changes, and the answer says `"automation": "off"` ([automation](automation.md)).
 
+**A track's header** in the Arrangement view: a lane tall enough for two rows has, on the first,
+the track-on toggle (its number), solo, cue and arm, then the volume bar and the pan field, the
+level controls together; on the second, the automation lanes button under the toggle, the name,
+and the send knobs at its end, as many as leave the name its room. A shorter lane has one row:
+the buttons, the name and the automation button at its end. Taller still, the routing and the
+input lines follow below.
+
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
 one field moves every selected track's by the same amount (the others follow it as it is dragged,
@@ -737,9 +748,11 @@ off or on, and the whole list is one undo step. With one track selected, or with
 the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
 the value with `continue`, so the drag is one undo step.
 
-**The wheel over a field** changes its value instead of scrolling the view: one tick of a wheel is
-one step (1 dB, or 0.02 of pan), Shift makes it ten times finer, and the view stays where it is.
-The same holds for a clip's gain field and for the Session mixer's values.
+**Alt and the wheel over a field** change its value instead of scrolling the view: one tick of a
+wheel is one step (1 dB, or 0.02 of pan), Shift as well makes it ten times finer, and the view
+stays where it is. The wheel alone scrolls the view over a field too, so scrolling down the track
+headers never moves a fader. The same holds for a clip's gain field, a send's knob, the main
+volume and the Session mixer's values; a strip's device list scrolls with the wheel itself.
 
 **Mixer controls** (Settings › Session and mixer) chooses how a track's volume and pan are
 drawn: **Field** (default), the bar and the centre bar this view has always had, or **Knob**, a

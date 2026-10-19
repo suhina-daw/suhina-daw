@@ -736,12 +736,13 @@ impl Vst3Plugin {
         let pending = self.pending.clone();
         let mapping = MidiMapping::of(self.controller.as_ref());
         let (buses, sample_rate, instance) = (self.buses.clone(), self.sample_rate, self.instance);
+        let bound = self.ara.is_some();
         let audio = AudioSide(processor);
         let thread = thread::Builder::new()
             .name("plug-in audio".into())
             .spawn(move || {
                 let _realtime = crate::real_time_thread();
-                serve(instance, audio, served, buses, sample_rate, (pending, mapping), (&stop, &flush))
+                serve(instance, audio, served, buses, sample_rate, (pending, mapping), (&stop, &flush), bound)
             })
             .map_err(|e| e.to_string())?;
         self.audio = Some(thread);
@@ -1199,6 +1200,7 @@ impl Drop for Vst3Plugin {
 /// link back. When `flush` is set by then, the parameter values still waiting go to the
 /// processor first, in a block of no samples (the SDK's way of passing parameters without
 /// audio).
+#[allow(clippy::too_many_arguments)]
 fn serve(
     instance: u32,
     audio: AudioSide,
@@ -1207,12 +1209,16 @@ fn serve(
     sample_rate: f64,
     (pending, mapping): (Pending, MidiMapping),
     (stop, flush): (&AtomicBool, &AtomicBool),
+    ara_bound: bool,
 ) -> Served {
     let processor = audio.0;
     let waiting = pending.clone();
     // SAFETY: a live, active processor, on the audio thread.
     let _ = unsafe { processor.setProcessing(1) };
-    let block = Vst3Block::new(processor, &served, buses, sample_rate, (pending, mapping));
+    let mut block = Vst3Block::new(processor, &served, buses, sample_rate, (pending, mapping));
+    if ara_bound && suhina_plugins::trace::on() {
+        block.watch = Some(Watch { instance, frames: 0, peak: 0.0 });
+    }
     if let Some(mut block) = crate::audio::serve(instance, block, &mut served, stop) {
         if flush.load(Ordering::Acquire) && waiting.lock().is_ok_and(|w| !w.is_empty()) {
             block.flush();
@@ -1243,6 +1249,16 @@ struct Vst3Block {
     inputs: Vec<AudioBusBuffers>,
     outputs: Vec<AudioBusBuffers>,
     context: ProcessContext,
+    /// With a trace, an ARA-bound plug-in's output summed up once a second (`docs/debugging.md`).
+    watch: Option<Watch>,
+}
+
+/// What an ARA-bound plug-in played since the last trace line: its instance, the frames and the
+/// loudest sample.
+struct Watch {
+    instance: u32,
+    frames: u64,
+    peak: f32,
 }
 
 // SAFETY: the block is used by one audio thread at a time (behind its lock, `crate::audio`),
@@ -1299,6 +1315,7 @@ impl Vst3Block {
             inputs,
             outputs,
             context,
+            watch: None,
         }
     }
 }
@@ -1355,6 +1372,33 @@ fn follow_song(context: &mut ProcessContext, events: &[suhina_ipc::Event]) {
     }
 }
 
+impl Vst3Block {
+    /// Sums up an ARA-bound plug-in's `output` of `frames` frames and traces it once a second:
+    /// the song's place it was told, whether it plays, the loudest sample (a silent ARA track
+    /// says here whether the plug-in played nothing or was not asked to).
+    fn watch_output(&mut self, output: &[f32], frames: usize) {
+        let rate = self.context.sampleRate;
+        let Some(watch) = self.watch.as_mut() else { return };
+        watch.peak = output.iter().fold(watch.peak, |peak, s| peak.max(s.abs()));
+        watch.frames += frames as u64;
+        if rate <= 0.0 || (watch.frames as f64) < rate {
+            return;
+        }
+        use vst3::Steinberg::Vst::ProcessContext_::StatesAndFlags_ as Flags;
+        #[allow(clippy::unnecessary_cast, reason = "the flags are signed on Windows")]
+        let playing = self.context.state & (Flags::kPlaying as u32) != 0;
+        suhina_plugins::trace!(
+            "ara audio {}: {}, song at {:.2} s, peak {:.4}",
+            watch.instance,
+            if playing { "playing" } else { "stopped" },
+            self.context.projectTimeSamples as f64 / rate,
+            watch.peak
+        );
+        watch.frames = 0;
+        watch.peak = 0.0;
+    }
+}
+
 impl crate::audio::Block for Vst3Block {
     fn process(&mut self, input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
         let link_channels = self.link_channels;
@@ -1408,6 +1452,7 @@ impl crate::audio::Block for Vst3Block {
                 }
             }
         }
+        self.watch_output(output, frames);
     }
 }
 

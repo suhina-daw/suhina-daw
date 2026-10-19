@@ -123,8 +123,10 @@ everything the project plays, so it can be moved or shared as it is.
 ## Project file boundaries
 
 On project open, audio clips and sampler sources are resolved inside the project
-folder, without following symbolic links or junctions. Outside it, the app reads only
-what the person chose themselves:
+folder, without following symbolic links or junctions. Outside it, the desktop app reads a
+file the project names wherever it is on a local disk (a drive letter on Windows), as the
+person opened the project themselves; a network share or a device path is not read until
+they choose it. The CLI and the MCP server read only what the person chose themselves:
 
 - **Files they loaded and saved a project with.** Saving a project keeps the absolute
   paths of the audio it has decoded (dropped, loaded, recorded or relinked) as trusted,
@@ -139,8 +141,10 @@ what the person chose themselves:
   dropped from is found by name. They are kept on this machine, never in the project file:
   a project from someone else cannot name folders to read.
 
-Anything else a project names outside its folder (another person's paths, a network
-share) is treated as missing, decided from the path alone before anything is read.
+Anything else a project names outside its folder is treated as missing, decided from the
+path alone before anything is read: in the desktop app a network share or a device path, in
+the CLI and the MCP server any path not trusted. A project that comes from someone else (live
+collaboration, when it arrives) is opened with the stricter rule too.
 Choose such a file through Locate/Apply to use it; saving then trusts it. The CLI and
 the MCP server open projects with the folder rule alone; MCP paths stay inside its
 configured read root.

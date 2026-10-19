@@ -308,6 +308,14 @@ pub struct LauncherMonitor {
     pub(crate) position: AtomicU64,
     pub(crate) arrangement: AtomicU64,
     pub(crate) stretch_underruns: AtomicU64,
+    /// Graph swaps while playing that had to move the stretch voices (they landed too far from
+    /// where they were rendered for): each silences the stretched clips until they catch up.
+    pub(crate) stretch_moves: AtomicU64,
+    /// Plug-in blocks the playing graph's plug-ins did not answer in time, and the plug-in
+    /// (its key) that missed most with its count: what a crackle with no device underrun is.
+    pub(crate) plugin_misses: AtomicU64,
+    pub(crate) worst_plugin: AtomicU64,
+    pub(crate) worst_misses: AtomicU64,
     /// Arrangement frames per beat of the playing graph (f64 bits), so an update can find the
     /// playhead's beat.
     pub(crate) frames_per_beat: AtomicU64,
@@ -343,6 +351,10 @@ impl LauncherMonitor {
             position: AtomicU64::new(0),
             arrangement: AtomicU64::new(0),
             stretch_underruns: AtomicU64::new(0),
+            stretch_moves: AtomicU64::new(0),
+            plugin_misses: AtomicU64::new(0),
+            worst_plugin: AtomicU64::new(0),
+            worst_misses: AtomicU64::new(0),
             frames_per_beat: AtomicU64::new(0),
             metronome: AtomicBool::new(false),
             start_beat: AtomicU64::new(0f64.to_bits()),
@@ -1144,13 +1156,15 @@ impl Renderer {
     pub fn handle(&mut self, command: LaunchCommand) {
         match command {
             LaunchCommand::Play => {
-                if !self.running {
-                    self.start_transport();
+                if !self.running && self.start_waiting.is_none() {
+                    self.start_when_ready();
                 }
             }
             // A stop during the count-in only ends the count: the transport never started, so
             // the play start marker stays where it is.
             LaunchCommand::Stop | LaunchCommand::StopHere if self.count_in.is_some() => self.cancel_count_in(),
+            // A stop before the waiting start rolled: it never did.
+            LaunchCommand::Stop | LaunchCommand::StopHere if self.start_waiting.is_some() => self.start_waiting = None,
             LaunchCommand::Stop => self.stop_transport(false),
             LaunchCommand::StopHere => self.stop_transport(true),
             LaunchCommand::SetRecording { on } => self.recorder.set(on),
@@ -1159,6 +1173,7 @@ impl Renderer {
             LaunchCommand::Locate { beat } => {
                 if self.running && beat.is_finite() {
                     self.jump_to(beat.clamp(0.0, MAX_START_BEAT));
+                    self.chase = true;
                 }
             }
             LaunchCommand::ResumeColumn { column, slot, elapsed_beats } => {
@@ -1285,7 +1300,37 @@ impl Renderer {
         }
     }
 
+    /// Starts the transport once the stretched clips at the marker are rendered ahead (at once
+    /// when they are, offline, or without any), so their beginnings are not lost to a worker
+    /// still filling their rings.
+    fn start_when_ready(&mut self) {
+        if !self.stretch_fresh {
+            self.graph.ahead.move_to(self.start_frame());
+            self.stretch_fresh = true;
+        }
+        if self.graph.ahead.ready_at(self.start_frame()) {
+            self.start_transport();
+        } else {
+            self.start_waiting = Some(0);
+        }
+    }
+
+    /// Moves a waiting start along before a block of `frames`: rolls when the stretched clips
+    /// are ready or it has waited [`crate::START_WAIT_SECONDS`].
+    pub(crate) fn wait_to_start(&mut self, frames: u64) {
+        let Some(waited) = self.start_waiting else { return };
+        self.graph.ahead.service();
+        let limit = (crate::START_WAIT_SECONDS * f64::from(self.sample_rate)) as u64;
+        if waited >= limit || self.graph.ahead.ready_at(self.start_frame()) {
+            self.start_waiting = None;
+            self.start_transport();
+        } else {
+            self.start_waiting = Some(waited + frames);
+        }
+    }
+
     pub(crate) fn start_transport(&mut self) {
+        self.start_waiting = None;
         self.running = true;
         self.count_in = None;
         // A start plays the arrangement's tempo and bars again; a scene launched with it takes
@@ -1299,12 +1344,14 @@ impl Renderer {
             self.stretch_fresh = true;
         }
         self.locate(self.start_beat);
+        self.chase = true;
         self.graph.launcher.monitor.running.store(true, Ordering::Relaxed);
     }
 
     /// Plays the arrangement from `beat` from the next frame on: notes that start there or
-    /// later, audio clips from wherever they are at that beat. Notes that started before it are
-    /// not played (`docs/spec/arrangement-editing.md` › Play position).
+    /// later, audio clips from wherever they are at that beat. A start or a jump also chases the
+    /// notes that started before it and still sound (`Renderer::chase_notes`); a loop's wrap does
+    /// not (`docs/spec/arrangement-editing.md` › Play position).
     fn locate(&mut self, beat: f64) {
         self.origin = self.position;
         self.time_at_origin = self.frame_of_beat(beat);

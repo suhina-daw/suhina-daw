@@ -434,7 +434,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     let clip = rect.intersect(painter.clip_rect());
     let list_painter = painter.with_clip_rect(clip);
     // The wheel over the list scrolls it, not the view.
-    state.value_areas.push(rect);
+    state.scroll_areas.push(rect);
     let most = (column.devices.len() as f32 * DEVICE_ROW - rect.height()).max(0.0);
     let mut scroll = state.device_scroll.get(&track).copied().unwrap_or(0.0);
     if ui.rect_contains_pointer(clip) {

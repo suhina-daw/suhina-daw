@@ -45,13 +45,16 @@ const HEADER_PAD_Y: f32 = 5.0;
 const HEADER_ROW: f32 = 15.0;
 const FIELD: f32 = 16.0;
 const PAN_FIELD: f32 = 46.0;
-/// The gap between a header's send knobs, and the least width its volume bar keeps beside them.
+/// The gap between a header's send knobs.
 const SEND_GAP: f32 = 3.0;
-const LEAST_VOLUME: f32 = 60.0;
+/// The least room a track's name keeps on a header's lower row before sends are left out.
+const LEAST_NAME: f32 = 48.0;
 const ON_TOGGLE: f32 = 30.0;
 const SOLO: f32 = 18.0;
 /// A group's fold triangle at the start of its header row.
 const FOLD: f32 = 12.0;
+/// How far a track inside a group is indented in its header, a level.
+const INDENT: f32 = 16.0;
 /// The track colour's band down a header's left edge.
 const COLOUR_BAND: f32 = 6.0;
 /// Points per beat: the default and the zoom range.
@@ -139,6 +142,12 @@ struct EdgeDrag {
     raw: f64,
     from: f64,
     origin: f32,
+}
+
+/// The keys held over a clip's edge drag: Alt alone lets the edge off the grid, as Alt does for
+/// every other drag; Ctrl and Alt stretch an audio clip's audio with it (Settings › Arrangement).
+fn edge_keys(ui: &Ui) -> (bool, bool) {
+    ui.input(|i| (i.modifiers.alt && !i.modifiers.command, i.modifiers.alt && i.modifiers.command))
 }
 
 /// Where a clip's edges are while `drag` moves one: on the grid (free with `free`), kept at
@@ -335,7 +344,7 @@ pub struct ArrangementViewState {
     /// held when true; from the clip's upper half when false. A drag on empty lanes or on the ruler selects time either way.
     pub time_select_ctrl: bool,
     /// Alt held while an audio clip's edge is dragged stretches its audio to the new length
-    /// (Settings › Arrangement › Alt-drag on an edge stretches audio).
+    /// (Settings › Arrangement › Ctrl+Alt-drag on an edge stretches audio).
     pub stretch_alt: bool,
     /// A double-click on an empty spot of a lane does nothing (Settings › Arrangement ›
     /// Double-click makes a clip is off); by default it makes an empty clip of the track's kind.
@@ -1117,11 +1126,11 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let bar_beats = if timeline.bar_beats > 0.0 { timeline.bar_beats } else { 4.0 };
 
     // Zoom around the pointer with Ctrl and the wheel, lane heights with Alt and the wheel; the
-    // wheel alone scrolls. The wheel over a value field is the field's (`value_areas`), so the
-    // view leaves it alone.
+    // wheel alone scrolls, over a value field too. Alt and the wheel over a value field are the
+    // field's (`value_areas`), so the view leaves them alone.
     let fields = std::mem::take(&mut state.value_areas);
     if let Some(pointer) = widgets::pointer_over(ui, area) {
-        let over_field = fields.iter().any(|rect| rect.contains(pointer));
+        let over_field = fields.iter().any(|rect| rect.contains(pointer)) && widgets::wheel_moves_value(ui);
         let zoom = ui.input(|i| i.zoom_delta());
         if zoom != 1.0 && time.contains(pointer) && !over_field {
             let beat = (pointer.x - time.left() + state.scroll.x) / state.beat_width;
@@ -1972,6 +1981,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             "Main volume",
             widgets::format_db(state.main_drag.unwrap_or(db)),
         );
+        state.value_areas.push(field.intersect(fixed));
         let mut preview = state.main_drag;
         match widgets::drag_value(ui, &response, &mut preview, db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
             Drag::Moving(v) => {
@@ -2672,7 +2682,7 @@ fn clip_box<'a>(
     let released = state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to));
     let (live_start, live_length) = match state.edge_drag.filter(|d| d.key == key) {
         Some(edge) => {
-            let (from, to) = edge_extent(clip, edge, &grid, ui.input(|i| i.modifiers.shift));
+            let (from, to) = edge_extent(clip, edge, &grid, edge_keys(ui).0);
             (from, to - from)
         }
         None => released.map_or((clip.start, clip.length), |(from, to)| (from, to - from)),
@@ -2725,15 +2735,15 @@ fn clip_box<'a>(
         }
     }
 
-    // A clip's edges: the left or right edge dragged moves it (on the grid; Shift: free), the
-    // content staying where it plays; with Alt an audio clip's audio stretches to the new length
+    // A clip's edges: the left or right edge dragged moves it (on the grid; Alt: free), the
+    // content staying where it plays; with Ctrl and Alt an audio clip's audio stretches to the new length
     // instead (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges).
     // An audio clip keeps its top corners for the fade handles.
     let edge_rect = clip_rect(space, live_start, live_length, x_of);
     if state.clip_drag.is_none_or(|d| !mine(&d)) && edge_rect.width() >= 12.0 {
         const ZONE: f32 = 5.0;
         let top = edge_rect.top() + if clip.audio { FADE_HANDLE + 2.0 } else { 2.0 };
-        let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
+        let (free, stretch_held) = edge_keys(ui);
         for grab in [EdgeGrab::Left, EdgeGrab::Right] {
             let hit = match grab {
                 EdgeGrab::Left => Rect::from_min_max(
@@ -2776,9 +2786,9 @@ fn clip_box<'a>(
             if response.drag_stopped_by(egui::PointerButton::Primary)
                 && let Some(drag) = state.edge_drag.take_if(|d| mine_edge(d))
             {
-                let (from, to) = edge_extent(clip, drag, &grid, shift);
+                let (from, to) = edge_extent(clip, drag, &grid, free);
                 let beat = if grab == EdgeGrab::Left { from } else { to };
-                let stretch = alt && state.stretch_alt && clip.audio;
+                let stretch = stretch_held && state.stretch_alt && clip.audio;
                 let mut params = json!({ "clip": clip.id.0 });
                 params[if grab == EdgeGrab::Left { "start" } else { "end" }] = json!(beat);
                 if (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi) {
@@ -2998,9 +3008,9 @@ fn clip_box<'a>(
             let start = at;
             // An edge being dragged: the clip is drawn at the length it has so far, its content
             // where it plays.
-            let shift = ui.input(|i| i.modifiers.shift);
+            let free = edge_keys(ui).0;
             let extent = match state.edge_drag.filter(|d| d.key == key) {
-                Some(edge) => Some(edge_extent(clip, edge, &grid, shift)),
+                Some(edge) => Some(edge_extent(clip, edge, &grid, free)),
                 None => state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to)),
             };
             let (rect, clip_area) = match extent {
@@ -3210,10 +3220,10 @@ fn paint_clip(
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
         }
     }
-    // Notes an ARA plug-in found in an audio clip go over its waveform, which dims under them
-    // so both read (ADR 0028, #720).
+    // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
+    // them so both read (ADR 0028, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
-    let wave_ink = if ara_notes.is_some() { motion::mix(body, ink, 0.4) } else { ink };
+    let wave_ink = if ara_notes.is_some() { motion::mix(body, ink, 0.75) } else { ink };
     let dim = |_: Color32| wave_ink;
     let color = ink;
     let text_color = ink_on(if bar.is_some() { base } else { body });
@@ -3595,7 +3605,7 @@ fn track_header(
     // The meter stands at the right edge; the rows keep clear of it.
     let meter_x = rect.right() - PAD - meter::WIDTH;
     let inner = Rect::from_min_max(
-        Pos2::new(band.right() + PAD + lane.depth as f32 * 8.0, rect.top() + HEADER_PAD_Y),
+        Pos2::new(band.right() + PAD + lane.depth as f32 * INDENT, rect.top() + HEADER_PAD_Y),
         Pos2::new(meter_x - PAD, rect.bottom() - HEADER_PAD_Y),
     );
     let meter_bottom =
@@ -3640,7 +3650,9 @@ fn track_header(
             ui.ctx().request_repaint();
         }
     }
-    let first_x = fold.map_or(inner.left(), |f| f.right() + 2.0);
+    // Every header keeps the fold triangle's room, so a group's tracks line up under it and their
+    // indent shows; a group without the triangle (no tracks yet) lines up the same.
+    let first_x = inner.left() + FOLD + 2.0;
     let row = Rect::from_min_max(Pos2::new(first_x, inner.top()), Pos2::new(inner.right(), inner.top() + HEADER_ROW));
     let toggle = Rect::from_min_size(row.min, Vec2::new(ON_TOGGLE, HEADER_ROW));
     let solo = Rect::from_min_size(Pos2::new(toggle.right() + 2.0, row.top()), Vec2::new(SOLO, HEADER_ROW));
@@ -3648,8 +3660,24 @@ fn track_header(
     // A track that can be armed has its arm button after cue, as wide.
     let arm =
         lane.armable.then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(SOLO, HEADER_ROW)));
-    // The automation button at the end of the row shows and hides the track's lanes.
-    let lanes_button = Rect::from_min_size(Pos2::new(row.right() - SOLO, row.top()), Vec2::new(SOLO, HEADER_ROW));
+    // A lane tall enough for two rows has its volume and pan beside the buttons, where the
+    // other level controls are, and the automation button, the name and the sends on the row
+    // below, the button under the track-on toggle; a short lane keeps one row of buttons, name
+    // and automation button.
+    let tall = rect.height() >= SHOWS_MIXER;
+    let below = Rect::from_min_max(
+        Pos2::new(first_x, row.bottom() + PAD),
+        Pos2::new(inner.right(), row.bottom() + PAD + FIELD),
+    );
+    // The automation button shows and hides the track's lanes.
+    let lanes_button = if tall {
+        Rect::from_min_size(
+            Pos2::new(below.left() + (ON_TOGGLE - SOLO) / 2.0, below.top()),
+            Vec2::new(SOLO, HEADER_ROW),
+        )
+    } else {
+        Rect::from_min_size(Pos2::new(row.right() - SOLO, row.top()), Vec2::new(SOLO, HEADER_ROW))
+    };
     if lanes_button.intersects(clip) {
         automation::header_button(
             ui,
@@ -3661,10 +3689,26 @@ fn track_header(
             &timeline.automation,
         );
     }
-    let name = Rect::from_min_max(
-        Pos2::new(arm.unwrap_or(cue).right() + PAD, row.top()),
-        Pos2::new(lanes_button.left() - 4.0, row.bottom()),
-    );
+    // Two rows: the sends at the end of the lower row, as many as leave the name its room.
+    let step = FIELD + SEND_GAP;
+    let shown_sends = if tall {
+        let room = ((below.right() - lanes_button.right() - PAD - LEAST_NAME) / step).floor().max(0.0) as usize;
+        lane.sends.len().min(room)
+    } else {
+        0
+    };
+    let sends_left = below.right() - step * shown_sends as f32 + SEND_GAP;
+    let name = if tall {
+        Rect::from_min_max(
+            Pos2::new(lanes_button.right() + PAD, below.top()),
+            Pos2::new(sends_left - SEND_GAP - 4.0, below.top() + HEADER_ROW),
+        )
+    } else {
+        Rect::from_min_max(
+            Pos2::new(arm.unwrap_or(cue).right() + PAD, row.top()),
+            Pos2::new(lanes_button.left() - 4.0, row.bottom()),
+        )
+    };
     let name_color = if lane.mute { theme::text_hint() } else { theme::text_primary() };
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(theme::TEXT), name_color);
     // The name's place, for a rename in place (Ctrl+R, #696).
@@ -3713,23 +3757,20 @@ fn track_header(
         widgets::text_in(painter, toggle, Align2::CENTER_CENTER, &number, theme::mono_font(theme::TEXT_SMALL), text);
     }
 
-    // Row 2, once the lane is tall enough: volume and pan.
-    if rect.height() >= SHOWS_MIXER {
-        let top = row.bottom() + PAD;
-        let pan = Rect::from_min_max(Pos2::new(inner.right() - PAN_FIELD, top), Pos2::new(inner.right(), top + FIELD));
-        // The sends, a knob per return before the pan, as many as leave the volume bar its room.
-        let step = FIELD + SEND_GAP;
-        let room = ((pan.left() - 4.0 - inner.left() - LEAST_VOLUME) / step).floor().max(0.0) as usize;
-        let shown = lane.sends.len().min(room);
-        let sends_left = pan.left() - 4.0 - step * shown as f32;
-        let volume = Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(sends_left, top + FIELD));
+    // Two rows: volume and pan beside the buttons, the sends after the name below.
+    if tall {
+        let left = arm.unwrap_or(cue).right() + PAD;
+        let pan =
+            Rect::from_min_max(Pos2::new(row.right() - PAN_FIELD, row.top()), Pos2::new(row.right(), row.bottom()));
+        let volume =
+            Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new((pan.left() - 4.0).max(left), row.bottom()));
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
-        for (index, send) in lane.sends.iter().take(shown).enumerate() {
+        value_control(ui, painter, pan, clip, lane, Control::Pan, false, id, state, actions);
+        for (index, send) in lane.sends.iter().take(shown_sends).enumerate() {
             let knob =
-                Rect::from_min_size(Pos2::new(sends_left + SEND_GAP + step * index as f32, top), Vec2::splat(FIELD));
+                Rect::from_min_size(Pos2::new(sends_left + step * index as f32, below.top()), Vec2::splat(FIELD));
             send_knob(ui, painter, knob, clip, lane, send, id, state, actions);
         }
-        value_control(ui, painter, pan, clip, lane, Control::Pan, false, id, state, actions);
     }
 
     // Row 3, taller still: where the track's audio goes.
@@ -3790,6 +3831,7 @@ fn send_knob(
     }
     let track = lane.track;
     let mode = if send.pre_fader { "pre" } else { "post" };
+    state.value_areas.push(rect.intersect(clip));
     let response = widgets::value_area(
         ui,
         rect.intersect(clip),

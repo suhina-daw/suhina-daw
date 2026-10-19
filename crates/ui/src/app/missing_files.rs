@@ -81,6 +81,10 @@ pub enum Outcome {
 pub struct MissingFiles {
     /// The project and revision the rows were made for.
     checked: Option<(ProjectId, u64)>,
+    /// What the project's audio files were when they were last looked for on disk
+    /// ([`audio_files_key`]): an edit that leaves them as they were (a solo, a mute) does not
+    /// look again, which took a large project 300 ms or more each time.
+    files_key: Option<u64>,
     pub rows: Vec<Row>,
     /// The bar was dismissed with Later for this project.
     pub bar_hidden: bool,
@@ -114,6 +118,11 @@ impl MissingFiles {
         }
         self.checked = Some((active, revision));
         let Some(session) = projects.get(active) else { return };
+        let key = audio_files_key(session.project());
+        if !new_project && self.files_key == Some(key) {
+            return;
+        }
+        self.files_key = Some(key);
         let missing = session.missing_files();
         let project_folder = session.audio_folder().map(Path::to_path_buf);
         // Keep what was found or chosen for files still missing.
@@ -542,4 +551,24 @@ mod look {
         harness.run();
         harness.render().unwrap().save("../../target/missing-files.png").unwrap();
     }
+}
+
+/// A fingerprint of the audio files `project` names, clip by clip and device by device: it
+/// changes when a clip or sampler gets, loses or changes a file, not with other edits.
+fn audio_files_key(project: &suhina_engine::model::Project) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for device in project.channels.iter().flat_map(|c| &c.devices) {
+        device.sample_file().hash(&mut hasher);
+        device.sample_absolute_file().hash(&mut hasher);
+    }
+    for content in &project.contents {
+        for lane in &content.lanes {
+            if let suhina_engine::model::LaneData::Audio(region) = &lane.data {
+                region.file.hash(&mut hasher);
+                region.absolute_file.hash(&mut hasher);
+            }
+        }
+    }
+    hasher.finish()
 }

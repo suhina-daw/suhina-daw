@@ -324,17 +324,20 @@ fn a_drag_that_outruns_the_engine_is_kept_and_heard_once_it_catches_up() {
     let (mut session, mut renderer) = playing();
     run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 1 })).unwrap();
     let loud = beat_peaks(&mut renderer, 2)[1];
-    // Edits while the audio thread takes none fill the engine's queue of new graphs.
+    // Edits while the audio thread takes none fill the engine's queue of new graphs (a pan takes
+    // a new graph; a volume is a message to the playing one).
     let mut full = None;
     for i in 0..64 {
-        let db = -f64::from(i % 2 + 1);
-        if let Err(e) = run(&mut session, "track.setVolume", json!({ "tracks": ["Drums"], "db": db })) {
+        let pan = if i % 2 == 0 { 0.5 } else { -0.5 };
+        if let Err(e) = run(&mut session, "track.setPan", json!({ "tracks": ["Drums"], "pan": pan })) {
             full = Some(e);
             break;
         }
     }
     assert!(full.is_some_and(|e| e.contains("could not follow")));
     // A continued edit (a drag) is not an error then: the project has it, the engine catches up.
+    run(&mut session, "track.setPan", json!({ "tracks": ["Drums"], "pan": 0.0, "continue": true })).unwrap();
+    assert!(session.project().channels[0].pan.abs() < 1e-9);
     run(&mut session, "track.setVolume", json!({ "tracks": ["Drums"], "db": -12, "continue": true })).unwrap();
     assert!((session.project().channels[0].volume - 0.2512).abs() < 1e-3);
     beat_peaks(&mut renderer, 1);

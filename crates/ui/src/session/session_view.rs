@@ -78,6 +78,9 @@ pub struct SessionViewState {
     /// Where the mixer strip's pan and volume controls were drawn last frame: the wheel over one
     /// changes its value instead of scrolling the view.
     pub(crate) value_areas: Vec<Rect>,
+    /// Lists that scroll with the wheel themselves (a strip's devices): the view leaves the wheel
+    /// over them alone, with or without Alt.
+    pub(crate) scroll_areas: Vec<Rect>,
     /// The volume as a knob beside the pan knob instead of a plain value
     /// (Settings › Session and mixer › Mixer controls).
     pub knobs: bool,
@@ -223,9 +226,13 @@ pub fn show(
         .sum();
     let content_height = (grid.scenes.len() as f32 + 1.0) * PITCH;
     let fields = std::mem::take(&mut state.value_areas);
+    let lists = std::mem::take(&mut state.scroll_areas);
     if ui.rect_contains_pointer(area) {
-        let over_field =
-            ui.ctx().pointer_hover_pos().is_some_and(|pointer| fields.iter().any(|rect| rect.contains(pointer)));
+        // Alt and the wheel over a value field are the field's; the wheel alone scrolls.
+        let pointer = ui.ctx().pointer_hover_pos();
+        let over_field = (widgets::wheel_moves_value(ui)
+            && pointer.is_some_and(|pointer| fields.iter().any(|rect| rect.contains(pointer))))
+            || pointer.is_some_and(|pointer| lists.iter().any(|rect| rect.contains(pointer)));
         if !over_field {
             let delta = ui.input(|i| i.smooth_scroll_delta());
             state.scroll -= delta;

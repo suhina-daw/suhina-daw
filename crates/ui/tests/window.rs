@@ -1461,22 +1461,30 @@ fn gain_of(db: f64) -> f64 {
 }
 
 #[test]
-fn the_wheel_over_a_fader_changes_the_volume_and_not_the_scroll() {
+fn alt_and_the_wheel_over_a_fader_change_the_volume_and_the_wheel_alone_does_not() {
     let mut harness = arrangement_app();
     let at = harness.get_by_label("Drums volume").rect().center();
     harness.hover_at(at);
     harness.run();
-    let scroll = harness.state().arrangement().scroll;
+    let volume = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().channels[0].volume).unwrap_or(1.0);
     // One line of a wheel upwards, as a wheel reports it (the content moves up).
-    harness.input_mut().events.push(egui::Event::MouseWheel {
+    let tick = |modifiers: Modifiers| egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Line,
         delta: egui::vec2(0.0, -1.0),
-        modifiers: Modifiers::NONE,
+        modifiers,
         phase: egui::TouchPhase::Move,
-    });
+    };
+    // The wheel alone scrolls the view: scrolling down the headers never moves a fader.
+    harness.input_mut().events.push(tick(Modifiers::NONE));
     harness.run();
-    let volume = harness.state().session().map(|s| s.project().channels[0].volume).unwrap_or(1.0);
-    assert!((volume - gain_of(1.0)).abs() < 1e-6, "one tick raised it by 1 dB: {volume}");
+    assert!((volume(&harness) - 1.0).abs() < 1e-9, "the wheel alone left it: {}", volume(&harness));
+    // Alt and the wheel move the fader, and the view stays where it is.
+    let scroll = harness.state().arrangement().scroll;
+    harness.event(egui::Event::ModifiersChanged(Modifiers::ALT));
+    harness.input_mut().events.push(tick(Modifiers::ALT));
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    assert!((volume(&harness) - gain_of(1.0)).abs() < 1e-6, "one tick raised it by 1 dB: {}", volume(&harness));
     assert_eq!(harness.state().arrangement().scroll, scroll, "and the view stayed where it was");
 }
 

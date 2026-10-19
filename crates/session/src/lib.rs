@@ -166,7 +166,10 @@ impl Player {
 
     /// Makes the engine play `project` from now on, keeping what is playing (ADR 0005).
     pub fn update(&mut self, project: &Project) -> Result<(), CommandError> {
-        self.controller.update(project).map_err(CommandError)
+        let began = std::time::Instant::now();
+        let updated = self.controller.update(project).map_err(CommandError);
+        trace_update(began);
+        updated
     }
 
     /// Like [`Player::update`], for a project with one scene inserted or removed since the last
@@ -176,7 +179,10 @@ impl Player {
         project: &Project,
         scenes: Option<suhina_engine::SceneShift>,
     ) -> Result<(), CommandError> {
-        self.controller.update_with_scenes(project, scenes).map_err(CommandError)
+        let began = std::time::Instant::now();
+        let updated = self.controller.update_with_scenes(project, scenes).map_err(CommandError);
+        trace_update(began);
+        updated
     }
 
     /// Sets one parameter of a device on a track from the next audio block, without building a
@@ -221,6 +227,16 @@ impl Player {
     /// so far.
     pub fn stretch_underruns(&self) -> u64 {
         self.controller.stretch_underruns()
+    }
+
+    /// Edits while playing whose new graph had to restart the stretched clips, so far.
+    pub fn stretch_moves(&self) -> u64 {
+        self.controller.stretch_moves()
+    }
+
+    /// Plug-in blocks not answered in time, and the plug-in (its key) that missed most.
+    pub fn plugin_misses(&self) -> (u64, u64, u64) {
+        self.controller.plugin_misses()
     }
 
     /// The level meters of the main output and every track.
@@ -295,6 +311,10 @@ pub struct Session {
     note_clipboard: Option<notes::NoteClipboard>,
     /// Set by an edit command whose changes are device parameters.
     pub(crate) param_edits: Vec<ParamEdit>,
+    /// The fader moves of an edit that is only track volumes: sent to a playing engine as
+    /// messages ([`suhina_engine::MIXER_VOLUME`]) instead of a new graph when it can take them.
+    /// Unlike `param_edits`, they leave undo as the command's own steps make it.
+    pub(crate) mixer_edits: Vec<ParamEdit>,
     /// Parameter whose live drag has already recorded its single undo snapshot.
     param_gesture: Option<(suhina_model::TrackId, usize, String)>,
     /// The colours a track without one of its own shows, by its place among the tracks (the
@@ -360,6 +380,7 @@ impl Session {
             device_clipboard: Vec::new(),
             note_clipboard: None,
             param_edits: Vec::new(),
+            mixer_edits: Vec::new(),
             param_gesture: None,
             track_colours: (Vec::new(), None),
             plugins: rack::Rack::default(),
@@ -1157,6 +1178,7 @@ impl Session {
             }
             CommandKind::Edit => {
                 self.param_edits.clear();
+                self.mixer_edits.clear();
                 // A command with a `continue` parameter can add to the step it made last time.
                 let step = spec
                     .params
@@ -1225,9 +1247,13 @@ impl Session {
                             }
                             // A parameter change goes to the engine as a message; anything else,
                             // or a message that cannot be sent, as a new graph.
-                            let sent = match (changes.is_empty(), self.player.as_mut()) {
-                                (false, Some(player)) => {
+                            let mixer = std::mem::take(&mut self.mixer_edits);
+                            let sent = match (changes.is_empty(), mixer.is_empty(), self.player.as_mut()) {
+                                (false, _, Some(player)) => {
                                     changes.into_iter().all(|change| player.set_device_param(change).is_ok())
+                                }
+                                (true, false, Some(player)) => {
+                                    mixer.into_iter().all(|change| player.set_device_param(change).is_ok())
                                 }
                                 _ => false,
                             };
@@ -1415,6 +1441,17 @@ impl Session {
 }
 
 /// The key of the plug-in device at `device` among `track`'s channel's devices.
+/// The track and name of the plug-in device whose key is `key`, for the trace.
+pub fn plugin_device_name(project: &Project, key: u64) -> Option<String> {
+    project.tracks.iter().find_map(|track| {
+        let channel = project.channels.iter().find(|c| Some(c.id) == track.channel)?;
+        (0..channel.devices.len()).find_map(|index| {
+            (plugin_key_at(project, track.id, index) == Some(key))
+                .then(|| format!("{} on {}", channel.devices.get(index).map_or("?", |d| d.name.as_str()), track.name))
+        })
+    })
+}
+
 pub(crate) fn plugin_key_at(project: &Project, track: suhina_model::TrackId, device: usize) -> Option<u64> {
     plugin_key_at_path(project, track, &[device])
 }
@@ -1448,6 +1485,19 @@ fn live_filter(project: &Project, track: suhina_model::TrackId) -> suhina_engine
         MidiPort::Nothing => LivePorts::Nothing,
     };
     LiveFilter { ports, channel: input.channel.and_then(|c| c.checked_sub(1)) }
+}
+
+/// Traces an engine update that took the caller's thread [`suhina_plugins::trace::SLOW_WORK`] or
+/// more, with what its graph's build took part by part.
+fn trace_update(began: std::time::Instant) {
+    let took = began.elapsed();
+    if took >= suhina_plugins::trace::SLOW_WORK {
+        suhina_plugins::trace!(
+            "slow engine update: {:.1} ms ({})",
+            took.as_secs_f64() * 1000.0,
+            suhina_engine::build_report::last()
+        );
+    }
 }
 
 #[cfg(test)]

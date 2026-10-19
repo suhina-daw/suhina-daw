@@ -204,6 +204,12 @@ pub enum Drag {
     Done(f64),
 }
 
+/// Whether the wheel over a value field changes its value this frame: with Alt held. Without it
+/// the wheel scrolls the view under the field (`docs/spec/arrangement-editing.md`).
+pub fn wheel_moves_value(ui: &Ui) -> bool {
+    ui.input(|i| i.modifiers.alt)
+}
+
 /// The points one tick of a wheel scrolls, which is one step of a value control (egui reports a
 /// line of a wheel as this many points on most platforms).
 const WHEEL_TICK: f64 = 50.0;
@@ -216,11 +222,15 @@ fn wheel_points(ui: &Ui) -> f32 {
             .events
             .iter()
             .filter_map(|event| match event {
-                egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
-                    egui::MouseWheelUnit::Point => delta.y,
-                    egui::MouseWheelUnit::Line => delta.y * WHEEL_TICK as f32,
-                    egui::MouseWheelUnit::Page => delta.y * 400.0,
-                }),
+                egui::Event::MouseWheel { unit, delta, .. } => {
+                    // Some systems turn Alt and the wheel into a sideways scroll.
+                    let turned = if delta.y == 0.0 { delta.x } else { delta.y };
+                    Some(match unit {
+                        egui::MouseWheelUnit::Point => turned,
+                        egui::MouseWheelUnit::Line => turned * WHEEL_TICK as f32,
+                        egui::MouseWheelUnit::Page => turned * 400.0,
+                    })
+                }
                 _ => None,
             })
             .sum()
@@ -379,9 +389,10 @@ pub fn drag_value(
         *preview = None;
         return Drag::Done((from + step).clamp(range.0, range.1));
     }
-    // The wheel over the control moves it, as a drag would; the caller commits what it is given.
-    // Scrolling up raises the value, as dragging up does.
-    if response.hovered() {
+    // Alt and the wheel over the control move it, as a drag would; the caller commits what it is
+    // given. The wheel alone scrolls the view, so scrolling past a field never changes it.
+    // Scrolling up raises the value, as dragging up does; Shift too, ten times finer.
+    if response.hovered() && wheel_moves_value(ui) {
         let points = wheel_points(ui);
         if points != 0.0 {
             let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };

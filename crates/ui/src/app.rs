@@ -447,8 +447,8 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
-    /// The audio's health counters last traced: device underruns and late stretched frames.
-    audio_traced: (u64, u64),
+    /// The audio's health counters last traced: device underruns, late stretched frames and late plug-in blocks.
+    audio_traced: (u64, u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -475,8 +475,12 @@ impl Default for App {
 
 impl App {
     pub fn new() -> Self {
+        // The window opens the person's own projects: their audio is read wherever it is on a
+        // local disk, as projects name it (docs/spec/missing-files.md › Project file boundaries).
+        let mut projects = Projects::new();
+        projects.read_local_audio(true);
         Self {
-            projects: Projects::new(),
+            projects,
             shown_project: None,
             stashes: HashMap::new(),
             open_prompt: None,
@@ -568,7 +572,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
-            audio_traced: (0, 0),
+            audio_traced: (0, 0, 0),
             carry: None,
             device_carry: None,
             browser_part: 1.0,
@@ -639,7 +643,9 @@ impl App {
     /// A window whose `plugins.*` commands use `library` instead of the one in Suhina's
     /// settings folder (tests, portable setups).
     pub fn with_library(library: suhina_plugins::library::Library) -> Self {
-        Self { projects: Projects::with_library(library), ..Self::new() }
+        let mut projects = Projects::with_library(library);
+        projects.read_local_audio(true);
+        Self { projects, ..Self::new() }
     }
 
     /// Shows `session`, replacing the active project. `warnings` are what the importer skipped.
@@ -1005,14 +1011,21 @@ impl App {
         let info = player.output_info();
         let device = info.as_ref().map_or(0, |i| i.underruns);
         let stretched = player.stretch_underruns();
+        let moves = player.stretch_moves();
+        let (misses, worst, worst_misses) = player.plugin_misses();
+        let worst_name = self
+            .session()
+            .and_then(|s| suhina_session::plugin_device_name(s.project(), worst))
+            .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched) = self.audio_traced;
-        if device > was_device || stretched > was_stretched || cpu >= 700 {
+        let (was_device, was_stretched, was_misses) = self.audio_traced;
+        if device > was_device || stretched > was_stretched || misses > was_misses || cpu >= 700 {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}",
+                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}",
                 device.saturating_sub(was_device),
                 stretched.saturating_sub(was_stretched),
+                misses.saturating_sub(was_misses),
                 f64::from(cpu) / 10.0,
                 if running { "playing" } else { "stopped" },
                 info.as_ref().map_or(0, |i| i.buffer_frames),
@@ -1021,7 +1034,7 @@ impl App {
                 if info.as_ref().is_some_and(|i| i.failed) { ", the device failed" } else { "" },
             );
         }
-        self.audio_traced = (device, stretched);
+        self.audio_traced = (device, stretched, misses);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
@@ -2268,11 +2281,13 @@ impl App {
                 }
             }
         }
+        self.frame_trace.mark("plug-in requests");
 
         egui::Panel::top("menu-bar")
             .exact_size(theme::MENU_BAR)
             .frame(egui::Frame::NONE.fill(theme::panel_background()).inner_margin(egui::Margin::symmetric(4, 0)))
             .show(ui, |ui| self.menu_bar(ui, &mut actions));
+        self.frame_trace.mark("menu bar");
         if self.projects.len() >= 2 {
             egui::Panel::top("tabs")
                 .exact_size(TABS)
@@ -2283,6 +2298,7 @@ impl App {
             .exact_size(theme::CONTROL_BAR)
             .frame(egui::Frame::NONE.fill(theme::panel_background()))
             .show(ui, |ui| self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions));
+        self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar")
             .exact_size(theme::STATUS_BAR)
             .frame(egui::Frame::NONE.fill(theme::panel_background()))
@@ -4485,8 +4501,15 @@ impl App {
             "view.araEditor" => self.open_ara_editor(),
             "view.plugin" => self.toggle_plugin_editor(),
             "view.mappingMode" => self.toggle_mapping_mode(),
-            "track.addAudio" => actions.push(Action::new("track.add", json!({ "kind": "audio" }))),
-            "track.addMidi" => actions.push(Action::new("track.add", json!({ "kind": "midi" }))),
+            "track.addAudio" | "track.addMidi" => {
+                let kind = if action == "track.addAudio" { "audio" } else { "midi" };
+                let mut params = json!({ "kind": kind });
+                // Below the selected track, in its group, as the track menu's Insert does.
+                if let Some(after) = self.add_track_after() {
+                    params["after"] = json!(after.0);
+                }
+                actions.push(Action::new("track.add", params));
+            }
             "view.automation" => {
                 if let Some((_, _, timeline)) = self.timeline.as_ref() {
                     let tracks: Vec<TrackId> = timeline.lanes.iter().map(|l| l.track).collect();
@@ -5093,6 +5116,26 @@ impl App {
     }
 
     /// The track selected in the view shown.
+    /// Where a track added from the keyboard goes: after the lowest selected track that is not a
+    /// return track; `None` (after the last regular track) without one.
+    fn add_track_after(&self) -> Option<TrackId> {
+        let project = self.session()?.project();
+        let selected: Vec<TrackId> = match self.shown {
+            View::Session => self.view.selected.into_iter().collect(),
+            View::Arrangement => self.arrangement.selected_tracks.clone(),
+        };
+        project
+            .tracks
+            .iter()
+            .rev()
+            .filter(|t| selected.contains(&t.id))
+            .find(|t| {
+                let role = project.channels.iter().find(|c| Some(c.id) == t.channel).map(|c| c.role);
+                role != Some(suhina_engine::model::ChannelRole::Effect)
+            })
+            .map(|t| t.id)
+    }
+
     fn selected_track(&self) -> Option<TrackId> {
         match self.shown {
             View::Session => self.view.selected,

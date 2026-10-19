@@ -168,8 +168,9 @@ pub struct MissingAudio {
 }
 
 /// Audio files outside a project's folder that opening it may read (› Project file boundaries
-/// in `docs/spec/missing-files.md`): files the person loaded into a project on this machine and
-/// saved it with, and the browser's library folders. Anything else outside the folder stays
+/// in `docs/spec/missing-files.md`): in the desktop app, any file on a local disk (`local`);
+/// elsewhere (the CLI, the MCP server) the files the person loaded into a project on this machine
+/// and saved it with, and the browser's library folders. Anything else outside the folder stays
 /// missing until the person chooses it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Trusted {
@@ -177,6 +178,9 @@ pub struct Trusted {
     pub folders: Vec<PathBuf>,
     /// Single files that may be read, by absolute path.
     pub files: std::collections::BTreeSet<PathBuf>,
+    /// Any file on a local disk may be read, as a project the person opens names it: the
+    /// desktop app. A network share or a device path still is not.
+    pub local: bool,
 }
 
 impl Trusted {
@@ -187,6 +191,9 @@ impl Trusted {
         if !path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return None;
         }
+        if self.local && on_local_disk(path) {
+            return path.is_file().then(|| path.to_path_buf());
+        }
         if !self.files.contains(path) {
             let folder = self.folders.iter().find(|f| f.is_absolute() && path.starts_with(f))?;
             // Inside the folder as it is on disk too, links followed.
@@ -196,6 +203,17 @@ impl Trusted {
             }
         }
         path.is_file().then(|| path.to_path_buf())
+    }
+}
+
+/// Whether `path` is on a local disk, decided from the path alone: a drive letter on Windows (not
+/// a network share or a device path); any absolute path elsewhere.
+fn on_local_disk(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    match path.components().next() {
+        Some(Component::Prefix(prefix)) => matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)),
+        Some(Component::RootDir) => !cfg!(windows),
+        _ => false,
     }
 }
 

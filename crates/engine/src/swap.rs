@@ -38,6 +38,9 @@ use crate::{Graph, MAX_AUDIO_VOICES, Renderer};
 /// to move its stretch voices and fill their rings before the audio thread reaches it. A graph
 /// without stretched clips takes over at the next block.
 const SWAP_AHEAD_SECONDS: f64 = 0.15;
+/// How far, in frames, a swap may land from where its stretch voices were rendered for and
+/// still play them as they are.
+const SWAP_TOLERANCE: u64 = 1024;
 /// Graphs that can wait in either direction.
 const QUEUE: usize = 16;
 /// Parameter messages that can wait for the audio thread.
@@ -109,6 +112,8 @@ pub(crate) struct Updater {
     retired_plugins: Consumer<Processor>,
     /// The tempo map of the last graph sent, which plays once the swaps before it are done.
     tempo: Arc<suhina_model::TempoMap>,
+    /// The tracks whose chain in the last graph sent takes a live volume.
+    live_volumes: Vec<TrackId>,
 }
 
 impl Updater {
@@ -157,6 +162,7 @@ impl Renderer {
             plugins,
             retired_plugins,
             tempo: Arc::clone(&self.graph.tempo),
+            live_volumes: self.graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect(),
         }
     }
 
@@ -326,8 +332,14 @@ impl Renderer {
         // The new stretch voices were moved to where the playhead was expected.
         self.underruns_before += old.ahead.underruns();
         if self.running {
-            if swap.arrangement != Some(time) {
+            // A swap a few frames off where it was expected keeps the voices rendered for it: the
+            // reader drops the frames already past or waits out the few not yet due. Moving them
+            // emptied every stretched clip's ring at each edit, and a large project dropped out
+            // while a fader moved.
+            let near = swap.arrangement.is_some_and(|expected| expected.abs_diff(time) <= SWAP_TOLERANCE);
+            if !near {
                 self.graph.ahead.move_to(time);
+                self.graph.launcher.monitor.stretch_moves.fetch_add(1, Ordering::Relaxed);
             }
             self.stretch_fresh = false;
         } else {
@@ -431,7 +443,11 @@ fn park(parked: &mut Vec<(u64, Processor)>, retired: &mut Producer<Processor>, k
 
 fn apply_param(chains: &mut [crate::chain::Chain], change: ParamChange) {
     if let Some(chain) = chains.iter_mut().find(|c| c.track == change.track) {
-        chain.set_param(change.device, change.param, change.value);
+        if change.device == crate::MIXER_VOLUME {
+            chain.set_live_volume(change.value);
+        } else {
+            chain.set_param(change.device, change.param, change.value);
+        }
     }
 }
 
@@ -448,11 +464,15 @@ impl Controller {
     /// column plays and has queued moves with its slot.
     pub fn update_with_scenes(&mut self, project: &Project, scenes: Option<SceneShift>) -> Result<(), String> {
         let updater = &mut self.updater;
+        let collect_began = std::time::Instant::now();
         updater.collect();
+        let collect_took = collect_began.elapsed();
         let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new() };
         let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins)
             .map_err(|e| e.to_string())?;
+        crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
         let sent = Arc::clone(&graph.tempo);
+        updater.live_volumes = graph.chains.iter().filter(|c| c.built_volume.is_some()).map(|c| c.track).collect();
         let monitor = &self.monitor;
         let (at, arrangement) = if monitor.running() {
             let ahead =
@@ -477,10 +497,12 @@ impl Controller {
         if let Some(arrangement) = arrangement {
             graph.ahead.move_to(arrangement);
         }
-        if let Some(thread) = updater.stretch.as_mut()
-            && let Some(worker) = graph.ahead.take_worker()
-        {
-            thread.add(worker)?;
+        if let Some(thread) = updater.stretch.as_mut() {
+            let began = std::time::Instant::now();
+            if let Some(worker) = graph.ahead.take_worker() {
+                thread.add(worker)?;
+            }
+            crate::build_report::add(&format!("rings filled {:.1} ms", began.elapsed().as_secs_f64() * 1000.0));
         }
         updater
             .swaps
@@ -495,6 +517,10 @@ impl Controller {
     /// built from it keeps it. Fails if the message queue is full.
     pub fn set_device_param(&mut self, track: TrackId, device: usize, param: usize, value: f64) -> Result<(), String> {
         let updater = &mut self.updater;
+        // A fader move ([`crate::MIXER_VOLUME`]) only reaches a track whose chain can take it.
+        if device == crate::MIXER_VOLUME && !updater.live_volumes.contains(&track) {
+            return Err("the track's volume takes a new graph".to_string());
+        }
         let seq = updater.param_seq + 1;
         updater
             .params
@@ -634,5 +660,21 @@ impl Controller {
     /// Frames of stretched clips that were not ready in time and played as silence.
     pub fn stretch_underruns(&self) -> u64 {
         self.monitor.stretch_underruns.load(Ordering::Relaxed)
+    }
+
+    /// Graph swaps while playing that moved the stretch voices, so far.
+    pub fn stretch_moves(&self) -> u64 {
+        self.monitor.stretch_moves.load(Ordering::Relaxed)
+    }
+
+    /// Plug-in blocks the playing graph's plug-ins did not answer in time, and the plug-in (its
+    /// key) that missed most with its count.
+    pub fn plugin_misses(&self) -> (u64, u64, u64) {
+        let m = &self.monitor;
+        (
+            m.plugin_misses.load(Ordering::Relaxed),
+            m.worst_plugin.load(Ordering::Relaxed),
+            m.worst_misses.load(Ordering::Relaxed),
+        )
     }
 }

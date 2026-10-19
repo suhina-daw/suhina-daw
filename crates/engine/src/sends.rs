@@ -30,6 +30,8 @@ pub(crate) struct Planned {
     pub(crate) source: TrackId,
     pub(crate) target: TrackId,
     pub(crate) gains: (f32, f32),
+    /// After the fader: the channel's live volume ([`Chain::set_live_volume`]) scales it too.
+    pub(crate) post_fader: bool,
 }
 
 /// One send of a built chain: the return chain's index, the gains and its latency compensation.
@@ -38,13 +40,14 @@ pub(crate) struct SendOut {
     /// The return track, so a graph swap can find the same send in the old graph.
     pub(crate) track: TrackId,
     pub(crate) gains: (f32, f32),
+    pub(crate) post_fader: bool,
     pub(crate) delay: Delay,
 }
 
 impl SendOut {
     /// A send into the chain at `target` (return `track`), delayed by `delay` frames. Allocates.
-    pub(crate) fn new(target: usize, track: TrackId, gains: (f32, f32), delay: usize) -> Self {
-        Self { target, track, gains, delay: Delay::new(delay) }
+    pub(crate) fn new(target: usize, track: TrackId, gains: (f32, f32), post_fader: bool, delay: usize) -> Self {
+        Self { target, track, gains, post_fader, delay: Delay::new(delay) }
     }
 }
 
@@ -79,7 +82,12 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 continue;
             }
             edges.push((channel.id, send.target));
-            planned.push(Planned { source, target, gains: gains(channel, send.level, send.pre_fader) });
+            planned.push(Planned {
+                source,
+                target,
+                gains: gains(channel, send.level, send.pre_fader),
+                post_fader: !send.pre_fader,
+            });
         }
     }
     planned
@@ -190,9 +198,13 @@ impl Chain {
         scratch.copy_from_slice(buffer);
         send.delay.run(scratch);
         let (gain_left, gain_right) = send.gains;
-        for ([l, r], [sl, sr]) in input.as_chunks_mut::<2>().0.iter_mut().zip(scratch.as_chunks::<2>().0) {
-            *l += sl * gain_left;
-            *r += sr * gain_right;
+        let live = send.post_fader.then_some(self.live);
+        for (frame, ([l, r], [sl, sr])) in
+            input.as_chunks_mut::<2>().0.iter_mut().zip(scratch.as_chunks::<2>().0).enumerate()
+        {
+            let fader = live.map_or(1.0, |live| live.at(frame));
+            *l += sl * gain_left * fader;
+            *r += sr * gain_right * fader;
         }
     }
 

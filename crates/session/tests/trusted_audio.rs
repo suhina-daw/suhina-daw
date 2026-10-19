@@ -95,7 +95,11 @@ fn only_trusted_files_and_library_folders_are_read_outside_the_project() {
     assert_eq!(locate(&elsewhere, &none), None, "outside the folder and not trusted");
     assert_eq!(locate(&in_library, &none), None);
 
-    let trusted = suhina_media::Trusted { folders: vec![library.clone()], files: [elsewhere.clone()].into() };
+    let trusted = suhina_media::Trusted {
+        folders: vec![library.clone()],
+        files: [elsewhere.clone()].into(),
+        ..Default::default()
+    };
     assert_eq!(locate(&in_library, &trusted), Some(in_library.clone()), "inside a library folder");
     assert_eq!(locate(&elsewhere, &trusted), Some(elsewhere.clone()), "a trusted file");
     // A parent step out of a library folder is not inside it.

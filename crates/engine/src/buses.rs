@@ -19,7 +19,7 @@ use crate::sends::{self, SendOut};
 use crate::{MAX_LATENCY_SECONDS, track_gains};
 
 /// A send of a chain: the return chain's index, the return track and the send's gains.
-type SendTarget = (usize, TrackId, (f32, f32));
+type SendTarget = (usize, TrackId, (f32, f32), bool);
 
 /// The most channels a route is followed through, so a routing cycle cannot loop forever.
 const MAX_HOPS: usize = 64;
@@ -50,6 +50,21 @@ pub(crate) fn build(
     // when it has none (#395); a group's chain makes it a bus.
     for track in &project.tracks {
         if chains.iter().all(|c| c.track != track.id) && automation::mixer_automated(project, track.id) {
+            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+        }
+    }
+
+    // Every other heard track that no channel plays into has a chain too, a passthrough when it
+    // has no devices: its volume then applies after the chain, where a fader move reaches it as
+    // a message rather than a new graph ([`Chain::set_live_volume`]), as a fader is a control
+    // the audio thread reads in OSS hosts too.
+    let fed_channel =
+        |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
+    for track in &project.tracks {
+        if chains.iter().all(|c| c.track != track.id)
+            && track.channel.is_some_and(|ch| !fed_channel(ch))
+            && track_gains(project, track.id).is_some()
+        {
             chains.push(Chain::passthrough(track.id, column_of(track.id)));
         }
     }
@@ -134,7 +149,9 @@ pub(crate) fn build(
             planned
                 .iter()
                 .filter(|p| p.source == c.track)
-                .filter_map(|p| Some((chains.iter().position(|o| o.track == p.target)?, p.target, p.gains)))
+                .filter_map(|p| {
+                    Some((chains.iter().position(|o| o.track == p.target)?, p.target, p.gains, p.post_fader))
+                })
                 .collect()
         })
         .collect();
@@ -148,10 +165,16 @@ pub(crate) fn build(
         let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
         chain.mix = automation::channel_of(project, chain.track)
             .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus));
+        // The volume the gains were built at, which a live volume is taken relative to; none for
+        // a bus (its volume scales what plays into it too) or a volume on a lane.
+        chain.built_volume = automation::channel_of(project, chain.track)
+            .filter(|c| !is_bus && !c.automated(suhina_model::automation::VOLUME))
+            .map(|c| c.volume)
+            .filter(|v| v.is_finite() && *v > 0.0);
     }
     for index in 0..chains.len() {
         let fed = targets.iter().any(|t| t.is_some_and(|(target, _)| target == index))
-            || send_targets.iter().flatten().any(|(target, _, _)| *target == index);
+            || send_targets.iter().flatten().any(|(target, _, _, _)| *target == index);
         if let Some(chain) = chains.get_mut(index) {
             chain.is_bus = fed;
         }
@@ -170,7 +193,7 @@ pub(crate) fn build(
             *slot = at;
         }
         let fed = targets.get(i).copied().flatten().map(|(target, _)| target).into_iter();
-        let sent = send_targets.get(i).into_iter().flatten().map(|(target, _, _)| *target);
+        let sent = send_targets.get(i).into_iter().flatten().map(|(target, _, _, _)| *target);
         for target in fed.chain(sent) {
             if let Some(slot) = input.get_mut(target) {
                 *slot = (*slot).max(at);
@@ -196,9 +219,9 @@ pub(crate) fn build(
             .get(i)
             .into_iter()
             .flatten()
-            .map(|&(target, track, gains)| {
+            .map(|&(target, track, gains, post_fader)| {
                 let delay = input.get(target).copied().unwrap_or(0).saturating_sub(arrived);
-                SendOut::new(target, track, gains, delay as usize)
+                SendOut::new(target, track, gains, post_fader, delay as usize)
             })
             .collect();
         chain.set_sends(sends);

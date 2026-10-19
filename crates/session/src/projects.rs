@@ -67,6 +67,8 @@ pub struct Projects {
     pub(crate) backups: crate::backup::Backups,
     /// The MIDI input ports and where they send their notes (ADR 0017).
     midi: crate::midi::MidiInputs,
+    /// Projects opened read their audio wherever it is on a local disk ([`Projects::read_local_audio`]).
+    local_audio: bool,
     /// With no project open, the empty session previews play in, with a player of its own
     /// (ADR 0011); made on the first preview and dropped before a project opens its output.
     preview: Option<Session>,
@@ -428,6 +430,14 @@ impl Projects {
         &mut self.files
     }
 
+    /// Lets the projects opened from now on read their audio wherever it is on a local disk, as
+    /// the desktop app does (`docs/spec/missing-files.md` › Project file boundaries); off, only
+    /// the trusted files and folders outside a project's folder are read (the CLI, the MCP
+    /// server).
+    pub fn read_local_audio(&mut self, on: bool) {
+        self.local_audio = on;
+    }
+
     /// The audio outside a project's folder that opening it may read: the files the person
     /// loaded into a project and saved it with, and the browser's library folders
     /// (`docs/spec/missing-files.md` › Project file boundaries).
@@ -442,7 +452,11 @@ impl Projects {
         if let Some(project) = project {
             folders.extend(self.files.project_folders(&std::path::absolute(project).unwrap_or_default()));
         }
-        suhina_media::Trusted { folders, files: self.files.trusted_audio().into_iter().collect() }
+        suhina_media::Trusted {
+            folders,
+            files: self.files.trusted_audio().into_iter().collect(),
+            local: self.local_audio,
+        }
     }
 
     /// The window plug-in editors open over (a Win32 `HWND`, an X11 window id): the desktop

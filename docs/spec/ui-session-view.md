@@ -405,8 +405,9 @@ MIDI / return track), Ctrl+I (insert scene), Ctrl+Shift+I (capture and insert sc
 (play/stop), Enter (launch selected), arrow keys (move selection), 0 (deactivate) **(to observe:
 full list)**.
 
-**Suhina:** its keys and how to change them are in [shortcuts](../shortcuts.md); Ctrl+T there
-opens New or open, not a new track.
+**Suhina:** its keys and how to change them are in [shortcuts](../shortcuts.md); Ctrl+T and
+Ctrl+Shift+T add an audio or a MIDI track below the selected track, in its group (after the last
+regular track when none is selected).
 
 ## Open
 
