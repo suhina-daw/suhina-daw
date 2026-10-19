@@ -2331,6 +2331,15 @@ fn clip_box<'a>(
         return None;
     }
 
+    // While one of its edges is dragged the clip is drawn at the length it has so far; its gain
+    // field, its edges' handles and its fade handles follow it on every frame (#698).
+    let (live_start, live_length) = match state.edge_drag.filter(|d| d.key == key) {
+        Some(edge) => {
+            let (from, to) = edge_extent(clip, edge, &grid, ui.input(|i| i.modifiers.shift));
+            (from, to - from)
+        }
+        None => (clip.start, clip.length),
+    };
     // What the clip shows: the project's values, or those of a drag in progress, so the
     // waveform follows the gain and the fades while they are dragged.
     let fade_grid = (!free).then_some(grid);
@@ -2341,7 +2350,7 @@ fn clip_box<'a>(
     if let Some(view) = &clip.audio_view
         && state.clip_drag.is_none_or(|d| !mine(&d))
     {
-        let rect = clip_rect(space, clip.start, clip.length, x_of);
+        let rect = clip_rect(space, live_start, live_length, x_of);
         let field = Rect::from_min_size(
             Pos2::new(rect.right() - GAIN_FIELD_INSET - GAIN_FIELD.x, rect.top() + 3.0),
             GAIN_FIELD,
@@ -2384,7 +2393,7 @@ fn clip_box<'a>(
     // instead. The handle at the lower right turns the loop on and makes the clip longer
     // (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges). An
     // audio clip keeps its top corners for the fade handles.
-    let edge_rect = clip_rect(space, clip.start, clip.length, x_of);
+    let edge_rect = clip_rect(space, live_start, live_length, x_of);
     if state.clip_drag.is_none_or(|d| !mine(&d)) && edge_rect.width() >= 12.0 {
         const ZONE: f32 = 5.0;
         const CORNER: f32 = 10.0;
@@ -2455,7 +2464,7 @@ fn clip_box<'a>(
     // removes it, a right-click chooses its shape.
     let mut handles = Vec::new();
     let mut curves = Vec::new();
-    let rect = clip_rect(space, clip.start, clip.length, x_of);
+    let rect = clip_rect(space, live_start, live_length, x_of);
     let selected = state.is_selected(key);
     let fading = state.fade_drag.is_some_and(|d| d.key == key) || state.curve_drag.is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
