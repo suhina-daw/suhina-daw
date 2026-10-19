@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler
 type: spec
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
@@ -40,6 +40,9 @@ something the sources do not settle, the text says so (**Suhina:**).
   - **Ramp** (`ramp` true): the tempo glides from the tempo before it (the previous change's, or
     the start tempo) to `bpm`, which it reaches at `beat`. The glide is linear in beats: halfway
     between the two points in beats, the tempo is halfway between the two tempos.
+  - **A glide and a jump on one beat:** a beat can hold a ramp and a step. The tempo glides to
+    the ramp's tempo, reaching it at the beat, and jumps there to the step's: drawn as a line, a
+    slope that ends in a vertical drop or rise. A beat holds at most one of each.
   - After the last change the tempo stays where it is.
 - **Bar:** counted from 0 inside Suhina; shown from 1 (bar 0 is "bar 1"). A bar is
   `numerator × 4 / denominator` beats: 4 in 4/4, 3 in 3/4 and 6/8, 3.5 in 7/8.
@@ -149,8 +152,8 @@ All are edits with one undo step. Tempo points are numbered from 1 in beat order
 | Command | Params | Does |
 |---|---|---|
 | `tempo.points` | | lists the start tempo and every change: `{ point, beat, bpm, ramp }` |
-| `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one already on that beat is replaced |
-| `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto another point's beat, it replaces that one |
+| `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one of the same kind (step or ramp) already on that beat is replaced |
+| `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto a beat with a point of the same kind, it replaces that one |
 | `tempo.deletePoint` | `point` | removes a point |
 | `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16, 32, 64) | adds a change at the start of the bar; one already there is replaced |
 | `timeSignature.move` | `bar`, `to?`, `numerator?`, `denominator?` | moves a change to bar `to` or changes its signature |

@@ -44,8 +44,14 @@ const DOT: f32 = 6.0;
 /// nearer one dot cannot answer with the next dot's tag.
 const DOT_HIT: f32 = DOT + 4.0;
 const PLAY: f32 = 22.0;
-/// The List | Map switch above the results.
+/// The strip above the results that holds the Plug-ins category's Instruments | Effects switch,
+/// and the strip of its columns' headings.
 const MODE_SWITCH: f32 = 22.0;
+/// The narrowest the name column of the plug-ins' list gets: below it, the columns to its right
+/// drop, the rightmost first, so the name always shows.
+const NAME_LEAST: f32 = 96.0;
+/// The name of the button that shows the sample map, after the categories.
+const SAMPLE_MAP: &str = "Sample map";
 /// A row of the tag editor.
 const EDITOR_ROW: f32 = 26.0;
 
@@ -178,33 +184,42 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         stop_preview(state, projects);
     }
 
-    // The category filters, wrapping.
+    // The category filters, then the sample map's button when there is a map, wrapping.
     let mut y = search.bottom() + 4.0;
     let mut x = area.left() + PAD;
     let small = theme::ui_font(theme::TEXT_SMALL);
-    for category in Category::ALL {
-        let width = widgets::text_width(ui, category.title(), small.clone()) + FILTER_PAD * 2.0;
+    let map = other_results.is_some();
+    let buttons = Category::ALL.into_iter().map(Some).chain(map.then_some(None));
+    for category in buttons {
+        let title = category.map_or(SAMPLE_MAP, Category::title);
+        let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
             y += FILTER + FILTER_GAP;
         }
         let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, FILTER));
-        let response = widgets::button_area(
-            ui,
-            rect,
-            Id::new(("browser-filter", category.title())),
-            format!("Show {}", category.title()),
-        );
-        let chosen = state.category == category;
-        if response.clicked() && !chosen {
-            state.category = category;
+        let label = match category {
+            Some(category) => format!("Show {}", category.title()),
+            None => "Show the samples laid out by how they sound".to_string(),
+        };
+        let response = widgets::button_area(ui, rect, Id::new(("browser-filter", title)), label);
+        let showing_map = state.mode == crate::browser::ResultsMode::Other;
+        let chosen = match category {
+            Some(category) => state.category == category && !showing_map,
+            None => showing_map,
+        };
+        if response.clicked() {
+            match category {
+                Some(category) => choose_category(state, category),
+                None => state.mode = crate::browser::ResultsMode::Other,
+            }
             state.scroll = 0.0;
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), chosen, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         painter.rect_filled(rect, 0.0, motion::mix(idle, theme::text_value(), lit));
         let text = motion::mix(theme::text_secondary(), theme::window_background(), lit);
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, category.title(), small.clone(), text);
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, small.clone(), text);
         x = rect.right() + FILTER_GAP;
     }
     y += FILTER + 6.0;
@@ -219,15 +234,6 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     if let Err(e) = state.refresh_rows(projects) {
         out.status = Some(Status::Error(e));
     }
-    // With another view to offer, a List | Map switch above the results chooses.
-    let results = match &other_results {
-        Some(_) => {
-            let switch = Rect::from_min_size(results.min, Vec2::new(results.width(), MODE_SWITCH));
-            mode_switch(ui, switch, state);
-            Rect::from_min_max(Pos2::new(results.left(), switch.bottom()), results.max)
-        }
-        None => results,
-    };
     match (state.mode, other_results) {
         (crate::browser::ResultsMode::Other, Some(draw)) => draw(ui, results, state, projects),
         _ => results_view(ui, results, state, projects, settings, selected_track, &mut out),
@@ -410,7 +416,7 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
             let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
             let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
             widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
-            if let Some(note) = note {
+            if let Some(note) = note.filter(|_| !chosen) {
                 widgets::text_in(
                     &painter,
                     text,
@@ -421,8 +427,29 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
                 );
             }
         }
-        if response.clicked() {
-            state.place = if chosen { None } else { Some(place) };
+        // The place chosen shows a × that clears it; a second click on the place keeps it.
+        if chosen && rect.intersects(area) {
+            let clear = Rect::from_min_size(Pos2::new(rect.right() - ROW, rect.top()), Vec2::splat(ROW));
+            let cleared = widgets::button_area(
+                ui,
+                clear.intersect(area),
+                Id::new(("browser-place-clear", place.param())),
+                "Show everything",
+            );
+            let color = motion::mix(theme::text_hint(), theme::text_primary(), widgets::hover(ui, &cleared));
+            widgets::text_in(&painter, clear, Align2::CENTER_CENTER, "×", item_font.clone(), color);
+            if cleared.clicked() {
+                state.place = None;
+                state.scroll = 0.0;
+                return response;
+            }
+        }
+        if response.clicked() && !chosen {
+            // A recent group's place shows its own kind, so its category comes with it.
+            if let Some(category) = place.category() {
+                state.category = category;
+            }
+            state.place = Some(place);
             state.scroll = 0.0;
         }
         response
@@ -538,17 +565,20 @@ fn results_view(
 ) {
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, theme::panel_background());
-    // The plug-ins' view switch takes the results' top when the plug-ins are listed alone.
+    // The Plug-ins category's Instruments | Effects switch takes the results' top, then its
+    // list's column headings, unless a place or a search lists other rows.
     let plugins_view = projects.file_library_mut().plugins_view();
-    let flat = if state.mode == crate::browser::ResultsMode::List && state.category == Category::Plugins {
+    let listed = state.mode == crate::browser::ResultsMode::List
+        && state.category == Category::Plugins
+        && state.place.is_none()
+        && state.search.trim().is_empty()
+        && state.tag_filter.is_empty();
+    if listed {
         let strip = Rect::from_min_size(area.min, Vec2::new(area.width(), MODE_SWITCH));
         plugins_view_switch(ui, strip, projects, plugins_view, out);
         area = area.intersect(Rect::from_min_max(Pos2::new(area.left(), strip.bottom() + 2.0), area.max));
-        plugins_view == suhina_library::store::PluginsView::Flat
-    } else {
-        false
-    };
-    if flat {
+    }
+    if listed {
         // The columns' header row, its headings clickable to sort.
         let strip = Rect::from_min_size(area.min, Vec2::new(area.width(), MODE_SWITCH));
         columns_header(ui, strip, state);
@@ -637,24 +667,19 @@ fn results_view(
         let icon_rect = Rect::from_min_size(Pos2::new(x, rect.top() + 2.5), Vec2::splat(12.0));
         icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind));
         x = icon_rect.right() + 5.0;
-        // The flat list's columns, where they are drawn.
+        // The plug-ins' list's columns, those there is room for.
         if let Some(columns) = &row.columns {
             let small = theme::ui_font(theme::TEXT_TINY);
-            let modified = columns.modified.map(date).unwrap_or_default();
-            let texts = [(1, columns.vendor.as_str()), (2, columns.kind), (3, columns.format), (4, modified.as_str())];
-            for (index, text) in texts {
-                let (left, right) = column_span(area, index);
-                if right <= left || text.is_empty() {
-                    continue;
-                }
+            if let Some((left, right)) = column_span(area, 1) {
                 let span = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(right, rect.bottom()));
-                let align = if index == 1 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
-                widgets::text_in(&painter, span, align, text, small.clone(), theme::text_hint());
+                widgets::text_in(&painter, span, Align2::RIGHT_CENTER, columns.format, small, theme::text_hint());
             }
         }
-        // On the right: a sample's length, a device's kind, where a search found it.
+        // On the right: a sample's length, a device's kind, where a search found it. The
+        // plug-ins' list says what each row is in its columns instead.
         let meta = match row.item.kind {
-            ItemKind::Sample | ItemKind::Midi if row.columns.is_none() => {
+            _ if row.columns.is_some() => None,
+            ItemKind::Sample | ItemKind::Midi => {
                 row.item.path().and_then(|p| state.info(&p, false).and_then(|i| i.seconds)).map(duration_text)
             }
             ItemKind::Instrument if row.item.plugin => Some("plug-in".into()),
@@ -663,7 +688,10 @@ fn results_view(
             _ => None,
         }
         .unwrap_or_default();
-        let name_right = if row.columns.is_some() { column_span(area, 0).1 } else { rect.right() - PAD };
+        let name_right = match row.columns {
+            Some(_) => column_span(area, 0).map_or(rect.right() - PAD, |(_, right)| right),
+            None => rect.right() - PAD,
+        };
         let meta_width = if meta.is_empty() {
             0.0
         } else {
@@ -944,35 +972,8 @@ fn start_preview(
     }
 }
 
-/// The List | Map switch.
-fn mode_switch(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
-    use crate::browser::ResultsMode;
-    let painter = ui.painter_at(area);
-    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
-    let small = theme::ui_font(theme::TEXT_SMALL);
-    let mut x = area.left() + PAD;
-    for (mode, name, hint) in [
-        (ResultsMode::List, "List", "Show the results as a list"),
-        (ResultsMode::Other, "Map", "Show the samples laid out by how they sound"),
-    ] {
-        let width = widgets::text_width(ui, name, small.clone()) + FILTER_PAD * 2.0;
-        let rect = Rect::from_min_size(Pos2::new(x, area.top() + 2.0), Vec2::new(width, FILTER));
-        let response = widgets::button_area(ui, rect, Id::new(("browser-mode", name)), hint.to_string());
-        let chosen = state.mode == mode;
-        if response.clicked() && !chosen {
-            state.mode = mode;
-        }
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, if chosen { theme::text_value() } else { idle });
-        let text = if chosen { theme::window_background() } else { theme::text_secondary() };
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, small.clone(), text);
-        x = rect.right() + FILTER_GAP;
-    }
-}
-
-/// The Grouped | By type | All switch above the results, when the plug-ins are listed alone;
-/// the choice is a library command, kept for the next start
-/// ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md)).
+/// The Instruments | Effects switch above the Plug-ins category's list; the choice is a library
+/// command, kept for the next start ([the plug-in browsing spec](../../docs/spec/plugin-browsing.md)).
 fn plugins_view_switch(
     ui: &mut Ui,
     area: Rect,
@@ -985,18 +986,14 @@ fn plugins_view_switch(
     let small = theme::ui_font(theme::TEXT_SMALL);
     let mut x = area.left() + PAD;
     for view in suhina_library::store::PluginsView::ALL {
-        let name = match view {
-            suhina_library::store::PluginsView::Grouped => "Grouped",
-            suhina_library::store::PluginsView::Type => "By type",
-            suhina_library::store::PluginsView::Flat => "All",
-        };
+        let name = view.title();
         let width = widgets::text_width(ui, name, small.clone()) + FILTER_PAD * 2.0;
         let rect = Rect::from_min_size(Pos2::new(x, area.top() + 2.0), Vec2::new(width, FILTER));
         let response = widgets::button_area(
             ui,
             rect,
             Id::new(("browser-plugins-view", view.name())),
-            format!("Show plug-ins {name}"),
+            format!("Show plug-in {}", name.to_lowercase()),
         );
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
@@ -1009,31 +1006,46 @@ fn plugins_view_switch(
     }
 }
 
-/// The flat list's columns' widths, by column index: the name (0) takes what is left, then
-/// vendor, type, format and modified, all from the right edge. A narrow panel squeezes the
-/// name; below the columns' total the header and the rows show the name alone.
-const COLUMN_WIDTHS: [f32; 5] = [0.0, 160.0, 70.0, 52.0, 74.0];
+/// The plug-ins' list's columns: the name (0), which takes what is left, then the others from
+/// the right edge, with these widths.
+const COLUMN_WIDTHS: [f32; 2] = [0.0, 52.0];
+/// The columns' headings, by index.
+const COLUMN_NAMES: [&str; 2] = ["Name", "Format"];
 
-/// The left and right edge of the flat list's column `index` (0 name … 4 modified).
-fn column_span(area: Rect, index: usize) -> (f32, f32) {
-    let right = area.right() - PAD - COLUMN_WIDTHS[index + 1..].iter().sum::<f32>();
+/// How many columns besides the name fit in `area`: those that leave the name at least
+/// [`NAME_LEAST`], counted from the left, so the rightmost drop first as the panel narrows
+/// (whichever side the panel is on).
+fn columns_shown(area: Rect) -> usize {
+    let room = area.width() - 2.0 * PAD;
+    let mut shown = COLUMN_WIDTHS.len() - 1;
+    while shown > 0 && room - COLUMN_WIDTHS[1..=shown].iter().sum::<f32>() < NAME_LEAST {
+        shown -= 1;
+    }
+    shown
+}
+
+/// The left and right edge of the list's column `index` (0 name, 1 format), or `None` when it
+/// has dropped for want of room.
+fn column_span(area: Rect, index: usize) -> Option<(f32, f32)> {
+    let shown = columns_shown(area);
+    if index > shown {
+        return None;
+    }
+    let right = area.right() - PAD - COLUMN_WIDTHS.get(index + 1..=shown).map_or(0.0, |w| w.iter().sum::<f32>());
     match index {
-        0 => (area.left() + PAD, right),
-        _ => (right - COLUMN_WIDTHS[index], right),
+        0 => Some((area.left() + PAD, area.right() - PAD - COLUMN_WIDTHS[1..=shown].iter().sum::<f32>())),
+        _ => Some((right - COLUMN_WIDTHS.get(index).copied().unwrap_or(0.0), right)),
     }
 }
 
-/// The flat list's column headings; clicking one sorts by it, again for the other direction.
+/// The list's column headings; clicking one sorts by it, again for the other direction.
 fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
     let painter = ui.painter_at(area);
     painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
     let small = theme::ui_font(theme::TEXT_SMALL);
     let (sorted, descending) = state.plugin_sort;
-    for (index, name) in ["Name", "Vendor", "Type", "Format", "Modified"].into_iter().enumerate() {
-        let (left, right) = column_span(area, index);
-        if right <= left {
-            continue;
-        }
+    for (index, name) in COLUMN_NAMES.into_iter().enumerate() {
+        let Some((left, right)) = column_span(area, index) else { continue };
         let rect = Rect::from_min_size(Pos2::new(left, area.top() + 2.0), Vec2::new(right - left, FILTER));
         let response = widgets::button_area(ui, rect, Id::new(("browser-column", index)), format!("Sort by {name}"));
         if response.clicked() {
@@ -1045,22 +1057,22 @@ fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
         let color = if chosen { theme::text_primary() } else { theme::text_hint() };
         let hover = motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response));
         painter.rect_filled(rect, 0.0, hover);
-        widgets::text_in(&painter, rect, Align2::RIGHT_CENTER, &label, small.clone(), color);
+        let align = if index == 0 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
+        widgets::text_in(&painter, rect, align, &label, small.clone(), color);
     }
 }
 
-/// A unix time in seconds as a date, `YYYY-MM-DD`.
-fn date(seconds: u64) -> String {
-    // Howard Hinnant's civil_from_days.
-    let z = (seconds / 86_400) as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (m, d) = (if mp < 10 { mp + 3 } else { mp - 9 }, doy - (153 * mp + 2) / 5 + 1);
-    let y = if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
-    format!("{y:04}-{m:02}-{d:02}")
+/// Chooses `category` from the category row: the list shows again in place of the sample map,
+/// and a recent place of another kind is let go, since the category would hide all it lists.
+/// The category already chosen, clicked again, shows its whole tree (lets go of any place).
+pub fn choose_category(state: &mut BrowserState, category: Category) {
+    let again = state.category == category && state.mode == crate::browser::ResultsMode::List;
+    state.mode = crate::browser::ResultsMode::List;
+    let conflicts = state.place.as_ref().and_then(Place::category).is_some_and(|c| c != category);
+    if again || (conflicts && category != Category::All) {
+        state.place = None;
+    }
+    state.category = category;
 }
 
 /// Why nothing can preview now, if so: previews play through the active project's audio output,
@@ -1642,6 +1654,23 @@ fn active(projects: &Projects) -> Option<&suhina_session::Session> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The name of a plug-in always shows: as the panel narrows, the columns to its right drop
+    /// (the rightmost first) before the name gets narrower than its least.
+    #[test]
+    fn the_name_column_keeps_its_room_and_the_others_drop_from_the_right() {
+        let wide = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 20.0));
+        assert_eq!(columns_shown(wide), 1);
+        let (name_left, name_right) = column_span(wide, 0).unwrap();
+        let (format_left, format_right) = column_span(wide, 1).unwrap();
+        assert!(name_right <= format_left && format_right <= wide.right() && name_left >= wide.left());
+        assert!(name_right - name_left >= NAME_LEAST);
+        let narrow = Rect::from_min_size(Pos2::ZERO, Vec2::new(NAME_LEAST + 30.0, 20.0));
+        assert_eq!(columns_shown(narrow), 0);
+        assert!(column_span(narrow, 1).is_none());
+        let (left, right) = column_span(narrow, 0).unwrap();
+        assert_eq!(right - left, narrow.width() - 2.0 * PAD, "the name takes the whole row");
+    }
 
     /// Two dots of a row tag the same item, so their centers are close: their hit areas must
     /// touch at most, or a pointer inside one would fall in the other too and answer with the

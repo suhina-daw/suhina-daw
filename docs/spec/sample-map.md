@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -68,8 +68,8 @@ Both play a sample as soon as the pointer is over it.
 
 ## Where the map is shown
 
-- **In the browser.** A **List | Map** switch above the results changes the results area into
-  the map. The sidebar, the category filters, search, tags and the preview strip stay as they
+- **In the browser.** The **Sample map** button at the end of the category row changes the
+  results area into the map; a category button shows the list again. The sidebar, the category filters, search, tags and the preview strip stay as they
   are. The browser can be widened to half the window.
 - **Large.** The **Large** button at the map's corner (and View › Sample map,
   **Ctrl+Shift+M**) shows the map in the main area in place of the Session or Arrangement view,
@@ -84,7 +84,7 @@ Both play a sample as soon as the pointer is over it.
   a track, a slot or a device chain in the main window drops there (the map's window has the
   pointer while the button is down; the main window shows the drop label and takes the drop).
   The keymap's keys work in that window too. **Dock**, Ctrl+Alt+M, closing the window, the
-  browser's Map switch or the large view put the map back. Whether the window is open, and where
+  browser's **Sample map** button or the large view put the map back. Whether the window is open, and where
   it is and how big (`map_window`, `map_window_rect` in `settings.txt`: left, top, width and
   height in points on the whole desktop, so a second screen counts), are kept for the next
   start; a place no screen could show is not used.

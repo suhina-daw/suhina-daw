@@ -3,7 +3,7 @@ description: How third-party plug-ins are hosted out of process (process model, 
 read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC, shared memory, unsafe, plug-in crash, scanning, plug-in editor
 type: decision
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-10-18
 covers:
   - crates/ipc/**
   - crates/plugins/**
@@ -370,9 +370,34 @@ workspace forbids.
      timed the shells out; this takes 86 s and finds every plug-in (733). Starting a process
      cost about a second there (antivirus checks each start), more than most plug-ins take to
      load.
-   - A file that failed keeps its reason and is not tried again until it changes.
+   - A failure can be passing: a plug-in that waits on a lock another process of its vendor
+     holds (seen with a vendor's daily background sync) gives no factory or hangs, more often
+     when files load side by side. So the files that failed in the parallel pass are read once
+     more, one at a time, at the end of the same scan, and the second result is kept. A file
+     that still fails keeps its reason and is listed as failed; later plain scans try it again
+     while it is unchanged, one that hung at most once a day (a hang costs its whole timeout),
+     so a plug-in that always hangs slows one scan a day, not every start. *Amended 2026-10-17*
+     (#602; was: a file that failed is not tried again until it changes).
+   - Two results are settled: not read again while the file is unchanged, and not listed
+     among the failures. A file that loads and holds no audio plug-ins (a vendor's shell
+     bundle with no classes) is passed over; `plugins.list` with `ignored` lists it. A file
+     built only for another processor (an Intel-only plug-in on an Apple silicon Mac) is never
+     loaded: its executable's header (Mach-O, PE or ELF, `suhina_plugins::arch`) says so before
+     any load, and it is listed apart as `incompatible` with the processors it is built for.
+     The catalog (format 3) keeps when each file was last read; a catalog in format 2 is read
+     as it is. A failure's reason is kept to its first line (a loader can list every path it
+     tried).
+   - Each added folder is for one format (VST3 or CLAP) or for every format Suhina hosts, and
+     any folder, standard or added, can be switched off without removing it; its plug-ins leave
+     the catalog with the next scan. VST2 folders are a format already, refused until VST2
+     plug-ins are hosted, so adding them later is a matter of the scan, not of the folders.
+   - Plug-ins can be switched off (`plugins.setEnabled`, the plug-in manager). One switched off
+     stays in the catalog and in `plugins.list`, but sessions get the catalog without it: it is
+     not offered in the browser, not found by name, and a project that uses it finds it
+     missing, so it never loads. *Amended 2026-10-18.*
    The `plugins.*` commands run scans and choose the added folders (ADR 0002 amendment); the
-   folders and the catalog are kept as JSON in Suhina's settings folder.
+   folders, the catalog, the plug-ins switched off and the hosting choices are kept as JSON in
+   Suhina's settings folder.
 10. **Editors** open from the host process, by default floating above Suhina's window and
     owned by it, as most hosts do: the window stays above Suhina, has no taskbar entry of its
     own and is minimised with it. *Amended 2026-10-12* (was: embedded in a Suhina window on
@@ -461,7 +486,7 @@ workspace forbids.
   editors). Decided after native CLAP and VST3 work and the cost of the yabridge path has been
   measured; yabridge's code (GPL-3.0) can be read for how it solves the same problems.
 - macOS block sync and audio workgroup details, after the prototype.
-- Audio Units on macOS, LV2 on Linux, ARA (LOOP-15).
+- Audio Units on macOS, LV2 on Linux. ARA (LOOP-15) is [ADR 0028](0028-ara-hosting.md) (proposed).
 
 ## Consequences
 

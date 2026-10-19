@@ -46,7 +46,12 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
             scale: None,
         }],
         arrangement: Arrangement {
-            lanes: vec![ArrangementLane { name: "l".into(), track: Some(TrackId(1)), clips: vec![clip(0.0, false)] }],
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "l".into(),
+                track: Some(TrackId(1)),
+                clips: vec![clip(0.0, false)],
+            }],
             markers: Vec::new(),
         },
         launcher: Launcher {

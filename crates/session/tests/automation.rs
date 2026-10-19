@@ -9,6 +9,13 @@ use suhina_model::*;
 use suhina_session::Session;
 
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     Project {
         tracks: vec![Track {
             content: ContentKinds { notes: true, audio: false },

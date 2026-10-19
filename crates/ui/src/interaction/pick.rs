@@ -45,7 +45,7 @@ impl PickField {
 
     /// The file extensions a file dialog offers; none for a folder.
     pub fn extensions(self) -> &'static [&'static str] {
-        if self.folder() { &[] } else { &["suhina", "locr", "als"] }
+        if self.folder() { &[] } else { &["suhina", "als"] }
     }
 }
 

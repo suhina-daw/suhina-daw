@@ -13,7 +13,7 @@ use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui
 use serde_json::{Value, json};
 use suhina_device_api::{ParamInfo, ParamKind, Unit};
 use suhina_engine::model::automation::{MUTE, PAN, VOLUME};
-use suhina_engine::model::{AutomationLane, AutomationPoint, DeviceKind, Project, Rgb, TrackId};
+use suhina_engine::model::{AutomationLane, AutomationPoint, ClipId, DeviceKind, Project, Rgb, TrackId};
 
 use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, Action};
@@ -408,7 +408,7 @@ pub struct LanesState {
     curve_drag: Option<CurveDrag>,
     box_drag: Option<BoxDrag>,
     /// The clip selected in the view last frame: selecting a clip ends a selection of points.
-    clip: Option<(TrackId, usize)>,
+    clip: Option<(TrackId, ClipId)>,
 }
 
 impl LanesState {
@@ -474,7 +474,7 @@ impl LanesState {
 
     /// Called once a frame before the lanes are drawn: a clip selected since the last frame ends
     /// the selection of points.
-    pub fn follow_clip(&mut self, clip: Option<(TrackId, usize)>) {
+    pub fn follow_clip(&mut self, clip: Option<(TrackId, ClipId)>) {
         if clip.is_some() && clip != self.clip {
             self.selection = None;
         }

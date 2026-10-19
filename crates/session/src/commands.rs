@@ -7,8 +7,8 @@
 use serde_json::{Value, json};
 use suhina_engine::{ColumnStatus, LaunchCommand, MAX_START_BEAT, Quantization, Queued};
 use suhina_model::{
-    ArrangementLane, Channel, ChannelId, ChannelRole, Clip, ClipContent, FadeCurve, FadeShape, LaneData, LoopRange,
-    MAX_GROUP_DEPTH, Marker, MidiPort, Project, Scene, Slot, TimeSignature, Track, TrackId,
+    ArrangementLane, Channel, ChannelId, ChannelRole, Clip, ClipContent, ClipId, ClipPlace, FadeCurve, FadeShape,
+    LaneData, LoopRange, MAX_GROUP_DEPTH, Marker, MidiPort, Project, Scene, Slot, TimeSignature, Track, TrackId,
 };
 
 use crate::{
@@ -60,6 +60,7 @@ impl ParamType {
             Self::Notes => "notes",
             Self::Numbers => "numbers",
             Self::Clips => "clips",
+            Self::Clip => "clip",
         }
     }
 }
@@ -103,8 +104,11 @@ pub enum ParamType {
     Notes,
     /// A list of numbers.
     Numbers,
-    /// A list of arrangement clips, each `{ "track": …, "index": n }`.
+    /// A list of arrangement clips, each `{ "clip": id }` or (deprecated) `{ "track": …, "index": n }`.
     Clips,
+    /// A clip id (integer, from `project.clips` or `project.launcher`) or a clip name (string) that
+    /// only one clip has.
+    Clip,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,9 +139,21 @@ const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (
 const DEVICE: Param = param("device", ParamType::Integer, "device index on the track, from 0, as in track.devices");
 const RETURN: Param = param("return", ParamType::Track, "return track id or name, from project.tracks");
 const SCENE: Param = param("scene", ParamType::Integer, "scene number, from 1, as in project.launcher");
+/// A clip command's clip by its id (ADR 0025): it stays the same when other clips move.
+const CLIP: Param = optional(
+    "clip",
+    ParamType::Clip,
+    "the clip: its id, from project.clips or project.launcher, or a name only one clip has; instead of track with index or scene",
+);
+/// The clip's track, for the positional forms `index` and `scene`; not needed with `clip`.
+const CLIP_TRACK: Param =
+    optional("track", ParamType::Track, "with index or scene: the clip's track, id or name (not needed with clip)");
 /// A note command's clip: an arrangement clip by index, or a launcher clip by scene.
-const CLIP_INDEX: Param =
-    optional("index", ParamType::Integer, "an arrangement clip's index on the track, from project.clips");
+const CLIP_INDEX: Param = optional(
+    "index",
+    ParamType::Integer,
+    "an arrangement clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+);
 const CLIP_SCENE: Param =
     optional("scene", ParamType::Integer, "instead of index: the clip in the track's slot of this scene, from 1");
 /// A scale's root and mode, for `clip.setScale` and `project.setDefaultScale`.
@@ -177,15 +193,16 @@ const MARKER: Param = param("index", ParamType::Integer, "marker index, from 0, 
 const DELETE_CLIPS: Param = optional(
     "clips",
     ParamType::Clips,
-    "arrangement clips, each { \"track\": id or name, \"index\": n } as project.clips lists them; \
-     instead of track with index or scene",
+    "arrangement clips, each { \"clip\": id } as project.clips lists them (or, deprecated, \
+     { \"track\": id or name, \"index\": n }); instead of clip, or track with index or scene",
 );
 const DELETE_TRACK: Param =
-    optional("track", ParamType::Track, "with index or scene instead of clips: the clip's track, id or name");
+    optional("track", ParamType::Track, "with index or scene instead of clip or clips: the clip's track, id or name");
 const CLIPS: Param = param(
     "clips",
     ParamType::Clips,
-    "the clips to act on, each { \"track\": id or name, \"index\": n } as project.clips lists them; at least one",
+    "the clips to act on, each { \"clip\": id } as project.clips lists them (or, deprecated, \
+     { \"track\": id or name, \"index\": n }); at least one",
 );
 
 pub struct CommandSpec<T: 'static = Session> {
@@ -230,10 +247,10 @@ impl<T> CommandSpec<T> {
                     ParamType::Clips => json!({
                         "type": "object",
                         "properties": {
-                            "track": { "type": ["integer", "string"] },
-                            "index": { "type": "integer" },
+                            "clip": { "type": ["integer", "string"], "description": "the clip's id, or a name only one clip has" },
+                            "track": { "type": ["integer", "string"], "description": "deprecated, with index: the clip's track" },
+                            "index": { "type": "integer", "description": "deprecated, with track: the clip's index on it" },
                         },
-                        "required": ["track", "index"],
                         "additionalProperties": false,
                     }),
                     _ => json!({ "type": "string" }),
@@ -251,7 +268,7 @@ impl<T> CommandSpec<T> {
                 ParamType::Number => json!("number"),
                 ParamType::Integer => json!("integer"),
                 ParamType::Bool => json!("boolean"),
-                ParamType::Track => json!(["integer", "string"]),
+                ParamType::Track | ParamType::Clip => json!(["integer", "string"]),
                 ParamType::Decibels => json!(["number", "string"]),
                 ParamType::Text => json!("string"),
             };
@@ -325,10 +342,17 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "project.clips",
-        label: "List arrangement clips with track, index, start and length in beats, and note count",
+        label: "List arrangement clips with their id (what clip commands take), track, index, start and length in beats, and note count",
         params: &[optional("track", ParamType::Track, "only clips on this track (id or name)")],
         kind: CommandKind::Read,
         run: clips,
+    },
+    CommandSpec {
+        id: "arrangement.audioOverlaps",
+        label: "List the pairs of audio clips that sound together on one track because their arrangement spans overlap; clips that only touch do not",
+        params: &[optional("track", ParamType::Track, "only overlaps on this track (id or name)")],
+        kind: CommandKind::Read,
+        run: audio_overlaps,
     },
     CommandSpec {
         id: "transport.setTempo",
@@ -364,7 +388,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "tempo.addPoint",
-        label: "Add a tempo change at a beat: a step, or a ramp that glides from the tempo before it (one already on that beat is replaced)",
+        label: "Add a tempo change at a beat: a step, or a ramp that glides from the tempo before it (a beat holds a ramp and a step; one of the same kind already there is replaced)",
         params: &[
             param("beat", ParamType::Number, "where the change is, in beats from the start, after 0"),
             param("bpm", ParamType::Number, "the tempo from there, 20 to 999"),
@@ -528,14 +552,20 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "clip.delete",
         label: "Delete arrangement clips as one undo step, or the clip in a track's slot of a scene",
-        params: &[DELETE_CLIPS, DELETE_TRACK, CLIP_INDEX, CLIP_SCENE],
+        params: &[CLIP, DELETE_CLIPS, DELETE_TRACK, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::Edit,
         run: delete_clips,
     },
     CommandSpec {
         id: "clip.rename",
-        label: "Rename a clip: an arrangement clip by index, or a slot's clip by scene; clips that play the same content share the name",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, param("name", ParamType::Text, "the new name (empty clears it)")],
+        label: "Rename a clip: by its id, or (deprecated) an arrangement clip by index; a slot's clip by scene; clips that play the same content share the name",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("name", ParamType::Text, "the new name (empty clears it)"),
+        ],
         kind: CommandKind::Edit,
         run: rename_clip,
     },
@@ -543,8 +573,13 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setGain",
         label: "Set an audio clip's gain (every clip that plays the same audio content follows)",
         params: &[
-            TRACK,
-            param("index", ParamType::Integer, "clip index on the track, from project.clips"),
+            CLIP_TRACK,
+            CLIP,
+            optional(
+                "index",
+                ParamType::Integer,
+                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+            ),
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
         ],
         kind: CommandKind::Edit,
@@ -554,8 +589,13 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setFades",
         label: "Set an audio clip's fade-in and fade-out: lengths in beats (together at most the clip's length), shapes and curves; an arrangement clip by index, a launcher clip by scene",
         params: &[
-            TRACK,
-            optional("index", ParamType::Integer, "arrangement clip index on the track, from project.clips"),
+            CLIP_TRACK,
+            CLIP,
+            optional(
+                "index",
+                ParamType::Integer,
+                "arrangement clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+            ),
             optional(
                 "scene",
                 ParamType::Integer,
@@ -583,12 +623,17 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.copy",
         label: "Copy clips, with what they play, for clip.paste: arrangement clips by clips, or a clip slot's by track and scene",
         params: &[
+            CLIP,
             optional(
                 "clips",
                 ParamType::Clips,
-                "the arrangement clips to copy, each { \"track\": id or name, \"index\": n } as project.clips lists them",
+                "the arrangement clips to copy, each { \"clip\": id } as project.clips lists them (or, deprecated, { \"track\": id or name, \"index\": n })",
             ),
-            optional("track", ParamType::Track, "instead of clips, with scene: the track whose clip slot to copy"),
+            optional(
+                "track",
+                ParamType::Track,
+                "instead of clip or clips, with scene: the track whose clip slot to copy",
+            ),
             optional(
                 "scene",
                 ParamType::Integer,
@@ -650,8 +695,13 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.split",
         label: "Cut an arrangement clip in two at a song position; the second part plays on from where the clip was",
         params: &[
-            TRACK,
-            param("index", ParamType::Integer, "clip index on the track, from project.clips"),
+            CLIP_TRACK,
+            CLIP,
+            optional(
+                "index",
+                ParamType::Integer,
+                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+            ),
             param("at", ParamType::Number, "where to cut, in beats from the beginning of the song, inside the clip"),
         ],
         kind: CommandKind::Edit,
@@ -697,8 +747,13 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.move",
         label: "Move an arrangement clip to a new start position, and to another track if asked; it replaces what it covers unless stacked",
         params: &[
-            TRACK,
-            param("index", ParamType::Integer, "clip index on the track, from project.clips"),
+            CLIP_TRACK,
+            CLIP,
+            optional(
+                "index",
+                ParamType::Integer,
+                "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+            ),
             param("start", ParamType::Number, "new start in beats from the beginning, at least 0"),
             optional(
                 "to_track",
@@ -798,8 +853,17 @@ static COMMANDS: &[CommandSpec] = &[
                 ParamType::Text,
                 "marker (default): from the play start marker; clip: the marker moves to the start of the clip track and index name, and playback starts there",
             ),
-            optional("track", ParamType::Track, "with from: clip, the clip's track (id or name)"),
-            optional("index", ParamType::Integer, "with from: clip, the clip's index on the track, from project.clips"),
+            optional(
+                "clip",
+                ParamType::Clip,
+                "with from: clip, the clip's id from project.clips, or a name only one clip has",
+            ),
+            optional("track", ParamType::Track, "with from: clip and index, the clip's track (id or name)"),
+            optional(
+                "index",
+                ParamType::Integer,
+                "with from: clip and track, the clip's index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
+            ),
         ],
         kind: CommandKind::Transport,
         run: play,
@@ -940,7 +1004,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setLoop",
         label: "Switch a clip's loop (an arrangement clip by index, or the clip in a track's slot by scene): on, it repeats its whole length, or the loop it has; off, it plays once. With start and end, the loop is set to that part of the content and turned on",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             optional(
@@ -958,7 +1023,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setLength",
         label: "Set how long a clip plays, in beats (an arrangement clip by index, or a slot's clip by scene); an arrangement clip keeps its start and may not run into the next clip on its lane",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             param("length", ParamType::Number, "the new length in beats, above 0 and at most 120000"),
@@ -970,7 +1036,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setStart",
         label: "Set a clip's start marker: where in its content it starts playing. A clip that does not loop keeps its end marker, so its length changes by as much; a looping clip keeps its length",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             param(
@@ -1676,7 +1743,7 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
         label: "List a MIDI clip's notes: index, time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::Read,
         run: notes::list,
     },
@@ -1684,7 +1751,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.add",
         label: "Add notes to a MIDI clip; they go after its other notes, and the result gives their indices",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             param("notes", ParamType::Notes, "the notes, each {time, length, key, velocity?}; at most 10000"),
@@ -1695,7 +1763,7 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.delete",
         label: "Delete notes of a MIDI clip; later notes move up in the list",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::Edit,
         run: notes::delete,
     },
@@ -1703,7 +1771,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.move",
         label: "Move notes of a MIDI clip in time and in pitch; fails if any note would start before 0 or leave keys 0 to 127",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1717,7 +1786,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.resize",
         label: "Set the length of notes of a MIDI clip, change it by a number of beats, or move their starts and keep their ends",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1736,7 +1806,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.setVelocity",
         label: "Set the velocity of notes of a MIDI clip, or change it by an amount, each kept within 1 to 127",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1755,7 +1826,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.quantize",
         label: "Quantise notes of a MIDI clip: move their starts, and with ends their ends, towards the nearest grid line",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             optional("notes", ParamType::Integers, "note indices, from note.list; every note when left out"),
@@ -1769,14 +1841,14 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.copy",
         label: "Copy notes of a MIDI clip for note.paste; changes nothing",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::Read,
         run: notes::copy,
     },
     CommandSpec {
         id: "note.cut",
         label: "Copy notes of a MIDI clip for note.paste and delete them",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTES],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
         kind: CommandKind::Edit,
         run: notes::cut,
     },
@@ -1784,7 +1856,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.paste",
         label: "Add the copied notes to a MIDI clip, keeping their spacing; the result gives their indices",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             optional(
@@ -1800,7 +1873,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.duplicate",
         label: "Add a copy of notes of a MIDI clip right after their end, or beats and semitones away; the result gives the copies' indices",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1814,7 +1888,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.split",
         label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1827,7 +1902,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.setMuted",
         label: "Mute or unmute notes of a MIDI clip; with muted left out each named note is flipped; the result gives the state of each",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTES,
@@ -1840,7 +1916,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.humanize",
         label: "Move the starts and velocities of notes of a MIDI clip by a random draw; the same seed gives the same result, and the result gives the seed",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
@@ -1859,7 +1936,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.fitToScale",
         label: "Move notes of a MIDI clip to the nearest key of a scale over a root; a tie goes to the lower key",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
@@ -1880,21 +1958,21 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.invert",
         label: "Mirror the keys of notes of a MIDI clip around the middle of the range they cover, each kept within 0 to 127",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
         kind: CommandKind::Edit,
         run: note_tools::invert,
     },
     CommandSpec {
         id: "note.reverse",
         label: "Turn notes of a MIDI clip round in time inside their own span (the earliest start to the latest end), lengths unchanged",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
         kind: CommandKind::Edit,
         run: note_tools::reverse,
     },
     CommandSpec {
         id: "note.legato",
         label: "Make each note of a MIDI clip last until the next note of its key starts, at least a hundredth of a beat; the last of a key keeps its length",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTE_SELECTION],
         kind: CommandKind::Edit,
         run: note_tools::legato,
     },
@@ -1902,7 +1980,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.stretch",
         label: "Stretch notes of a MIDI clip in time about the earliest of their starts; 2 is twice as long, 0.5 half of it",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
@@ -1915,7 +1994,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.randomizeVelocity",
         label: "Move the velocities of notes of a MIDI clip by a random draw, each kept within 1 to 127; the same seed gives the same result",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
@@ -1933,7 +2013,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "note.rampVelocity",
         label: "Spread the velocities of notes of a MIDI clip evenly from one value to another in time order; one note takes the last value",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             NOTE_SELECTION,
@@ -1946,7 +2027,7 @@ static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "clip.scale",
         label: "The scale of a MIDI clip (root and mode, or null for none) and the project's default scale for new clips",
-        params: &[TRACK, CLIP_INDEX, CLIP_SCENE],
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::Read,
         run: crate::scales::clip_scale,
     },
@@ -1954,7 +2035,8 @@ static COMMANDS: &[CommandSpec] = &[
         id: "clip.setScale",
         label: "Set the scale of a MIDI clip (the piano roll marks its keys), or clear it with off; a content other clips also play is copied for this clip first",
         params: &[
-            TRACK,
+            CLIP_TRACK,
+            CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
             SCALE_ROOT,
@@ -2083,6 +2165,45 @@ fn clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     Ok(Value::Array(out))
 }
 
+/// `arrangement.audioOverlaps`: [`Project::audio_overlaps`], each clip named as `clip.move`
+/// addresses it (ADR 0028).
+fn audio_overlaps(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = session.project();
+    let only = match params.get("track") {
+        Some(_) => Some(track_id(p, params)?),
+        None => None,
+    };
+    let track_name = |id: TrackId| p.tracks.iter().find(|t| t.id == id).map(|t| t.name.as_str()).unwrap_or_default();
+    let clip = |place: suhina_model::OverlapClip| {
+        let found = p.arrangement.lanes.get(place.lane).and_then(|l| l.clips.get(place.index));
+        let name = found.and_then(|c| p.content(c.content)).map(|c| c.name.as_str());
+        json!({
+            "id": found.map(|c| c.id.0),
+            "track": place.track.0,
+            "track_name": track_name(place.track),
+            "index": place.index,
+            "name": name,
+        })
+    };
+    let found = p.audio_overlaps();
+    let overlaps: Vec<Value> = found
+        .pairs
+        .iter()
+        .filter(|o| only.is_none_or(|t| t == o.track))
+        .map(|o| {
+            json!({
+                "track": o.track.0,
+                "track_name": track_name(o.track),
+                "start": o.start,
+                "end": o.end,
+                "kind": if o.contained { "contained" } else { "partial" },
+                "clips": [clip(o.first), clip(o.second)],
+            })
+        })
+        .collect();
+    Ok(json!({ "overlaps": overlaps, "truncated": found.truncated }))
+}
+
 fn clip_json(p: &Project, track_name: &str, track: TrackId, index: usize, clip: &Clip) -> Value {
     let content = p.content(clip.content);
     let (notes, audio) = content.map_or((0, None), |c| {
@@ -2092,6 +2213,7 @@ fn clip_json(p: &Project, track_name: &str, track: TrackId, index: usize, clip: 
         })
     });
     json!({
+        "id": clip.id.0,
         "track": track.0,
         "track_name": track_name,
         "index": index,
@@ -2854,13 +2976,15 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         p.contents.push(suhina_model::ClipContent { id, ..content });
         // Gain, warp and the loop travel with the content and the clip; fades are fitted, as when
         // a clip is shortened, so a clip with odd fades still makes a valid project.
-        let mut placed = Clip { content: id, start: 0.0, ..clip };
+        // The pasted clip is a new clip, with an id of its own.
+        let mut placed = Clip { id: p.new_clip_id()?, content: id, start: 0.0, ..clip };
         placed.fit_fades();
+        let placed_id = placed.id;
         let slot =
             p.launcher.columns.get_mut(column).and_then(|c| c.slots.get_mut(scene)).ok_or("the slot is missing")?;
         let replaced = slot.clip.is_some();
         slot.clip = Some(placed);
-        return Ok(json!({ "track": track.0, "scene": scene + 1, "replaced": replaced }));
+        return Ok(json!({ "clip": placed_id.0, "track": track.0, "scene": scene + 1, "replaced": replaced }));
     }
     let start = match at {
         PasteAt::Beat(start) => start,
@@ -2875,7 +2999,8 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         Some(lane) => lane,
         None => {
             let name = p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default();
-            p.arrangement.lanes.push(ArrangementLane { name, track: Some(track), clips: Vec::new() });
+            let id = p.new_lane_id()?;
+            p.arrangement.lanes.push(ArrangementLane { id, name, track: Some(track), clips: Vec::new() });
             p.arrangement.lanes.len() - 1
         }
     };
@@ -2885,16 +3010,17 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         let id = new_content_id(p)?;
         p.contents.push(suhina_model::ClipContent { id, ..content });
         let at = clip.start + offset;
-        let mut copy = Clip { content: id, start: at, ..clip };
+        let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
         let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
         if !stack {
             make_room(&mut lane.clips, at, at + copy.length);
         }
-        lane.clips.push(copy.clone());
+        let copy_id = copy.id;
+        lane.clips.push(copy);
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-        let index = lane.clips.iter().position(|c| *c == copy).unwrap_or_default();
-        placed.push(json!({ "track": track.0, "index": index, "start": at }));
+        let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
+        placed.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": at }));
     }
     Ok(json!({ "clips": placed }))
 }
@@ -3008,15 +3134,21 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
                 .collect(),
             None => continue,
         };
+        // Each copy is a new clip with an id of its own.
+        let mut copies = copies;
+        for copy in &mut copies {
+            copy.id = p.new_clip_id()?;
+        }
         let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) else { continue };
         for copy in copies {
             if !stack {
                 make_room(&mut lane.clips, copy.start, copy.start + copy.length);
             }
-            lane.clips.push(copy.clone());
+            let (copy_id, copy_start) = (copy.id, copy.start);
+            lane.clips.push(copy);
             lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-            let index = lane.clips.iter().position(|c| *c == copy).unwrap_or_default();
-            made.push(json!({ "track": track.0, "index": index, "start": copy.start }));
+            let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
+            made.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": copy_start }));
         }
     }
     Ok(json!({ "clips": made }))
@@ -3277,7 +3409,8 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         Some(lane) => lane,
         None => {
             let name = p.tracks.iter().find(|t| t.id == to).map(|t| t.name.clone()).unwrap_or_default();
-            p.arrangement.lanes.push(ArrangementLane { name, track: Some(to), clips: Vec::new() });
+            let id = p.new_lane_id()?;
+            p.arrangement.lanes.push(ArrangementLane { id, name, track: Some(to), clips: Vec::new() });
             p.arrangement.lanes.len() - 1
         }
     };
@@ -3287,10 +3420,12 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if !stack {
         make_room(&mut lane.clips, start, start + clip.length);
     }
-    lane.clips.push(clip.clone());
+    // A moved clip is the same clip: it keeps its id, on whichever track it lands.
+    let clip_id = clip.id;
+    lane.clips.push(clip);
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let new_index = lane.clips.iter().position(|c| *c == clip).unwrap_or_default();
-    Ok(json!({ "start": start, "track": to.0, "index": new_index }))
+    let new_index = lane.clips.iter().position(|c| c.id == clip_id).unwrap_or_default();
+    Ok(json!({ "clip": clip_id.0, "start": start, "track": to.0, "index": new_index }))
 }
 
 /// `clip.moveSlot`: the dragged slot's clip goes to the target's slot; an occupied target's
@@ -3404,6 +3539,8 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 /// clips entirely inside are removed, clips reaching in are shortened, and a clip around it is
 /// split in two, the second part continuing its content from where it was. A split clip's
 /// first part keeps its fade-in and the second its fade-out; fades are fitted to what is left.
+/// The first part keeps the clip's id; the second is a new clip and gets an id when the command
+/// is done ([`Project::assign_ids`]).
 pub(crate) fn make_room(clips: &mut Vec<Clip>, from: f64, to: f64) {
     let mut kept = Vec::with_capacity(clips.len() + 1);
     for clip in clips.drain(..) {
@@ -3424,6 +3561,9 @@ pub(crate) fn make_room(clips: &mut Vec<Clip>, from: f64, to: f64) {
         if end > to {
             let offset = content_at(&clip, to - start, 1.0);
             let mut second = Clip { start: to, length: end - to, offset, ..clip };
+            if start < from {
+                second.id = suhina_model::ClipId::NONE;
+            }
             if split {
                 second.fade_in = 0.0;
             }
@@ -3553,6 +3693,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         .map(|(scene, number): (_, u32)| {
             json!({
                 "scene": number,
+                "id": scene.id.0,
                 "name": scene.name,
                 "tempo_bpm": scene.tempo_bpm,
                 "time_signature": scene.time_signature.map(signature_text),
@@ -3571,6 +3712,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
                 .map(|(slot, number): (_, u32)| match &slot.clip {
                     Some(clip) => json!({
                         "scene": number,
+                        "id": clip.id.0,
                         "clip": p.content(clip.content).map(|c| c.name.as_str()),
                         "length": clip.length,
                         "loop": clip.loop_range.is_some(),
@@ -3779,7 +3921,8 @@ fn insert_scene(session: &mut Session, params: &Value) -> Result<Value, CommandE
     };
     let name = scene_name(params)?;
     even_slots(p);
-    p.launcher.scenes.insert(at, Scene { name, ..Scene::default() });
+    let id = p.new_scene_id()?;
+    p.launcher.scenes.insert(at, Scene { id, name, ..Scene::default() });
     for column in &mut p.launcher.columns {
         column.slots.insert(at, Slot { clip: None, has_stop: true });
     }
@@ -3793,7 +3936,8 @@ fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, Comma
         return Err(format!("the project has {} scenes, as many as it can have", p.launcher.scenes.len()).into());
     }
     even_slots(p);
-    let copy = p.launcher.scenes.get(scene).cloned().unwrap_or_default();
+    let mut copy = p.launcher.scenes.get(scene).cloned().unwrap_or_default();
+    copy.id = p.new_scene_id()?;
     p.launcher.scenes.insert(scene + 1, copy);
     let mut next_content = p.contents.iter().map(|c| c.id.0).max().unwrap_or(0);
     for column in &mut p.launcher.columns {
@@ -3806,6 +3950,10 @@ fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, Comma
             let id = suhina_model::ContentId(next_content);
             p.contents.push(suhina_model::ClipContent { id, ..content });
             clip.content = id;
+        }
+        // The copy is a new clip: it gets its own id when the command is done.
+        if let Some(clip) = slot.clip.as_mut() {
+            clip.id = suhina_model::ClipId::NONE;
         }
         column.slots.insert(scene + 1, slot);
     }
@@ -4050,4 +4198,121 @@ fn number_or_neg_infinity(params: &Value, name: &str) -> Result<f64, CommandErro
 /// Linear gain to decibels, rounded to 0.01 dB; `None` (JSON null) for silence.
 pub(crate) fn to_db(gain: f64) -> Option<f64> {
     (gain > 0.0).then(|| (20.0 * gain.log10() * 100.0).round() / 100.0)
+}
+
+/// The clip id or name in `value`: an id from `project.clips` or `project.launcher`, or a name
+/// (its content's) that only one clip has.
+pub(crate) fn clip_param(p: &Project, value: &Value) -> Result<ClipId, CommandError> {
+    match value {
+        Value::Number(n) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("a clip id is a whole number")?;
+            let id = ClipId(id);
+            p.clip_place(id)
+                .map(|_| id)
+                .ok_or_else(|| format!("clip {id} does not exist; project.clips lists them").into())
+        }
+        Value::String(name) => {
+            let named = |exact: bool| -> Vec<ClipId> {
+                let content_named = |c: &Clip| {
+                    p.content(c.content)
+                        .is_some_and(|c| if exact { c.name == *name } else { c.name.eq_ignore_ascii_case(name) })
+                };
+                p.all_clips().filter(|c| content_named(c)).map(|c| c.id).collect()
+            };
+            let exact = named(true);
+            let matches = if exact.is_empty() { named(false) } else { exact };
+            match matches.as_slice() {
+                [id] => Ok(*id),
+                [] => Err(format!("no clip is named {name:?}; project.clips lists them").into()),
+                ids => {
+                    let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
+                    Err(format!("several clips are named {name:?} (ids {}); use the clip id", ids.join(", ")).into())
+                }
+            }
+        }
+        _ => Err("clip must be a clip id or name".into()),
+    }
+}
+
+/// The track a clip plays on and where the clip is.
+fn clip_track(p: &Project, id: ClipId) -> Result<(TrackId, ClipPlace), CommandError> {
+    let place = p.clip_place(id).ok_or_else(|| format!("clip {id} does not exist"))?;
+    let track = match place {
+        ClipPlace::Lane { lane, .. } => p.arrangement.lanes.get(lane).and_then(|l| l.track),
+        ClipPlace::Slot { column, .. } => p.launcher.columns.get(column).map(|c| c.track),
+    };
+    let track = track.ok_or_else(|| format!("clip {id} is on a lane that belongs to no track"))?;
+    Ok((track, place))
+}
+
+/// `params` with the clips it names by id (`clip`, and `clip` in the items of a `clips` list)
+/// written as the commands read them: `track` with `index` (an arrangement clip) or `scene` (a
+/// clip slot), looked up in the project as it is now, so a clip is found wherever earlier
+/// edits moved it (ADR 0025). `None` when `params` names no clip by id.
+///
+/// During the deprecation window a command still takes `track` with `index`; that form is
+/// removed with the project format's next version ([ADR 0025](../../docs/decisions/0025-object-identity.md) › 4).
+pub(crate) fn resolve_clip_ids<T>(
+    p: &Project,
+    spec: &CommandSpec<T>,
+    params: &Value,
+) -> Result<Option<Value>, CommandError> {
+    let takes = |name: &str| spec.params.iter().any(|q| q.name == name);
+    let Some(object) = params.as_object() else { return Ok(None) };
+    let given = |key: &str| object.get(key).filter(|v| !v.is_null());
+    let single = given("clip").filter(|_| spec.params.iter().any(|q| q.ty == ParamType::Clip));
+    let listed = spec.params.iter().any(|q| q.ty == ParamType::Clips)
+        && given("clips").and_then(Value::as_array).is_some_and(|l| l.iter().any(|e| e.get("clip").is_some()));
+    if single.is_none() && !listed {
+        return Ok(None);
+    }
+    let mut out = object.clone();
+    if let Some(value) = single {
+        for key in ["index", "scene", "clips"] {
+            if given(key).is_some() {
+                return Err(format!("give clip or {key}, not both").into());
+            }
+        }
+        let id = clip_param(p, value)?;
+        let (track, place) = clip_track(p, id)?;
+        if given("track").is_some() && track_id(p, params)? != track {
+            return Err(format!("clip {id} is not on that track").into());
+        }
+        out.remove("clip");
+        out.insert("track".into(), json!(track.0));
+        match place {
+            ClipPlace::Lane { index, .. } if takes("index") => {
+                out.insert("index".into(), json!(index));
+            }
+            ClipPlace::Lane { index, .. } if takes("clips") => {
+                out.remove("track");
+                out.insert("clips".into(), json!([{ "track": track.0, "index": index }]));
+            }
+            ClipPlace::Slot { slot, .. } if takes("scene") => {
+                out.insert("scene".into(), json!(slot + 1));
+            }
+            ClipPlace::Lane { .. } => {
+                return Err(format!("clip {id} is on the arrangement; {} takes a clip slot's clip", spec.id).into());
+            }
+            ClipPlace::Slot { .. } => {
+                return Err(format!("clip {id} is in a clip slot; {} takes arrangement clips", spec.id).into());
+            }
+        }
+    }
+    if listed && let Some(Value::Array(entries)) = out.get_mut("clips") {
+        for entry in entries.iter_mut() {
+            let Some(value) = entry.get("clip") else { continue };
+            if entry.get("track").is_some() || entry.get("index").is_some() {
+                return Err("each clip in clips is { \"clip\": id }, or { \"track\", \"index\" }, not both".into());
+            }
+            let id = clip_param(p, value)?;
+            match clip_track(p, id)? {
+                (track, ClipPlace::Lane { index, .. }) => *entry = json!({ "track": track.0, "index": index }),
+                (_, ClipPlace::Slot { .. }) => {
+                    return Err(format!("clip {id} is in a clip slot; clips names arrangement clips").into());
+                }
+            }
+        }
+    }
+    Ok(Some(Value::Object(out)))
 }

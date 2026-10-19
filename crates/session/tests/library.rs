@@ -189,7 +189,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     let mut p = projects(&settings);
     // The view choice: a real one is set and kept; junk is an error, not a change.
     assert!(run(&mut p, "library.setPluginsView", json!({ "view": "nope" })).is_err());
-    run(&mut p, "library.setPluginsView", json!({ "view": "flat" })).unwrap();
+    run(&mut p, "library.setPluginsView", json!({ "view": "effects" })).unwrap();
     // Pins and tags work on a plug-in's key like on a file's.
     run(&mut p, "library.pin", json!({ "item": verb })).unwrap();
     run(&mut p, "library.setTag", json!({ "name": "Go-to", "color": "#336699" })).unwrap();
@@ -204,7 +204,7 @@ fn a_plugins_view_is_kept_and_plug_ins_are_pinned_and_tagged_like_files() {
     // The view survives a restart (it is kept in browser.json), and the flat search lists the
     // plug-ins with their details.
     let mut view = Library::new(Some(settings.to_path_buf()));
-    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Flat);
+    assert_eq!(view.plugins_view(), suhina_library::store::PluginsView::Effects);
     let all = run(&mut again, "library.search", json!({ "category": "plugins" })).unwrap();
     let mut all_names = names(&all);
     all_names.sort();

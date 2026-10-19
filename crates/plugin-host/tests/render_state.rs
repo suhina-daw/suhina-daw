@@ -84,6 +84,7 @@ fn project() -> Project {
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "l".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
@@ -130,7 +131,9 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: i
 
 #[test]
 fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
-    let opened = project();
+    // Its lanes and clips get ids, as a session gives them, so it compares with the session's.
+    let mut opened = project();
+    assert_eq!(opened.assign_ids(), Ok(()));
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));

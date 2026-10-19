@@ -1802,6 +1802,7 @@ mod tests {
     /// A clip of `length` beats that loops over its whole length, or plays once.
     pub(super) fn clip(content: u32, length: f64, looping: bool) -> Clip {
         Clip {
+            id: Default::default(),
             content: ContentId(content),
             start: 0.0,
             length,
@@ -2169,7 +2170,12 @@ mod tests {
     fn a_launched_clip_takes_its_track_over_from_the_arrangement() {
         let mut p = two_loops();
         let looped = Clip { length: 32.0, ..clip(1, 1.0, true) };
-        p.arrangement.lanes.push(ArrangementLane { name: String::new(), track: Some(TrackId(1)), clips: vec![looped] });
+        p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
+            name: String::new(),
+            track: Some(TrackId(1)),
+            clips: vec![looped],
+        });
         let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
         // The arrangement plays every beat of bar 1, then the off-beat clip takes over at bar 2.
         let mut out = vec![0.0f32; 2 * (BAR + 2 * BEAT)];
@@ -2198,7 +2204,12 @@ mod tests {
     fn back_to_arrangement_stops_the_launched_clip() {
         let mut p = two_loops();
         let looped = Clip { length: 32.0, ..clip(1, 1.0, true) };
-        p.arrangement.lanes.push(ArrangementLane { name: String::new(), track: Some(TrackId(1)), clips: vec![looped] });
+        p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
+            name: String::new(),
+            track: Some(TrackId(1)),
+            clips: vec![looped],
+        });
         let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
         let mut out = vec![0.0f32; 2 * (BAR + BEAT)];
         let (first, rest) = out.split_at_mut(2 * (BEAT / 4));
@@ -2304,7 +2315,12 @@ mod tests {
     fn a_column_resumes_without_a_clip_and_the_tempo_carries_over() {
         let mut p = two_loops();
         let looped = Clip { length: 32.0, ..clip(1, 1.0, true) };
-        p.arrangement.lanes.push(ArrangementLane { name: String::new(), track: Some(TrackId(1)), clips: vec![looped] });
+        p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
+            name: String::new(),
+            track: Some(TrackId(1)),
+            clips: vec![looped],
+        });
         let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
         // Stopped: ignored.
         renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: None, elapsed_beats: 0.0 });
@@ -2546,6 +2562,7 @@ mod tests {
         let (mut p, audio) = stretched_sine();
         let looped = p.launcher.columns[0].slots[0].clip.clone().unwrap();
         p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
             name: String::new(),
             track: Some(TrackId(1)),
             clips: vec![Clip { length: 16.0, ..looped }],

@@ -145,7 +145,8 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
     // One undo step each.
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
 }
 
 #[test]
@@ -263,7 +264,7 @@ fn a_sample_with_no_known_tempo_loops_in_its_slot() {
 
     // clip.setLoop off makes it a one-shot: it plays once and the slot falls silent.
     let done = run(&mut session, "clip.setLoop", json!({ "track": 3, "scene": 1, "loop": false })).unwrap();
-    assert_eq!(done, json!({ "scene": 1, "loop": false }));
+    assert_eq!(done, json!({ "clip": slot_clip(session.project(), 3, 1).id.0, "scene": 1, "loop": false }));
     assert_eq!(slot_clip(session.project(), 3, 1).loop_range, None);
     let out = render(&session);
     assert!(at(&out, 0.3) > 0.1 && at(&out, 1.0) < 1e-6 && at(&out, 1.8) < 1e-6);
@@ -407,7 +408,8 @@ fn a_drop_is_one_undo_step() {
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m)], "scene": 3, "separate": true })).unwrap();
     assert_eq!(session.project().tracks.len(), 8);
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &blank_project());
+    // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
+    assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..blank_project() });
     let _ = std::fs::remove_dir_all(&dir);
 }
 

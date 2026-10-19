@@ -81,7 +81,12 @@ pub fn demo_project() -> Project {
                 ..clip_of(ContentId(id * 10 + scene as u32))
             })
             .collect();
-        project.arrangement.lanes.push(ArrangementLane { name: (*name).into(), track: Some(TrackId(id)), clips });
+        project.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
+            name: (*name).into(),
+            track: Some(TrackId(id)),
+            clips,
+        });
     }
     for (offset, (channel_id, name)) in returns.iter().enumerate() {
         let id = 10 + offset as u32;
@@ -104,6 +109,8 @@ pub fn demo_project() -> Project {
         scenes: SCENES.iter().map(|name| Scene { name: (*name).into(), ..Scene::default() }).collect(),
         columns,
     };
+    // Lanes, clips and scenes get their ids in order, as a session would give them.
+    let _ = project.assign_ids();
     project
 }
 
@@ -151,6 +158,7 @@ fn content_of(id: ContentId, name: &str, track: u8) -> ClipContent {
 
 fn clip_of(content: ContentId) -> Clip {
     Clip {
+        id: Default::default(),
         content,
         start: 0.0,
         length: 4.0,

@@ -25,6 +25,8 @@ suhina-output.workspace = true
 suhina-midi.workspace = true
 suhina-plugins.workspace = true
 suhina-ui.workspace = true
+# The build's endpoints: one instance per build, and agents working on the open projects (ADR 0028).
+suhina-automation.workspace = true
 zip.workspace = true
 eframe = { version = "0.36", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
 # The system's own file and folder dialogs (Browse… beside a path field); on Linux through the
@@ -33,6 +35,7 @@ rfd = "0.17"  # MIT
 
 [build-dependencies]
 suhina-device-bundle.workspace = true
+winresource.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Opening the window as an X11 one when an X server is there (eframe's own winit).

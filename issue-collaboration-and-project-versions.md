@@ -251,8 +251,9 @@ Measured on an authored `.als` project folder (41 files, 39.2 MB) — the observ
 2. **Shipping neither half.** The exact failure mode of the previous generation. The boundary above
    goes into the documentation, and the asynchronous half ships first.
 3. **Musical time decided wrong before any sync exists.** If wall-clock samples reach the model, a
-   multi-peer tempo map becomes a model-wide rewrite. Positions stay in beats and tempo becomes an
-   append-only list of segments, decided now and independently of whether collaboration ships.
+   multi-peer tempo map becomes a model-wide rewrite. Positions stay in beats and the tempo map is
+   a list of changes keyed by beat that merges three-way; this landed with #402 and ADR 0024 is
+   accepted.
 4. **Schema evolution meeting replication.** Two peers on different versions is the hard case. The
    schema is versioned independently of any replication format, migrations are idempotent and
    commutative, and syncing across incompatible major versions is refused rather than merged lossily.
@@ -301,14 +302,15 @@ Measured on an authored `.als` project folder (41 files, 39.2 MB) — the observ
   DAW is adopted for being a DAW and this is a retention and differentiation feature, not an
   acquisition one. Two of its parts are exceptions and should land earlier because they are cheap
   now and expensive later: **musical time** and **object identity**.
-- **Sub-issues this should be split into:** (1) the ADR on musical time and tempo over the song, with
+- **Sub-issues this should be split into:** (1) the ADR on musical time and tempo over the song (done:
+  #402 landed the tempo map and ADR 0024 is accepted, so it has no issue of its own), with
   tests, independent of everything else; (2) object identity in the model — ids derived from v1
   files, all addressing moved to ids, `ParamType::Clip` with a deprecation window; (3) the project
   folder, the manifest and the package, with the format version bump; (4) the hand-set kind store,
   separate from the versioned feature cache, closing [#325](https://github.com/suhina-daw/suhina-daw/issues/325);
   (5) the merge over two folders, with the conflict rules; (6) `suhina merge-driver` and the git
   integration, including ignoring `.git` in the library scan and watch; (7) the version browser;
-  (8) the musical diff; (9) the release of `.locr` compatibility, as its own documented decision
+  (8) the musical diff; (9) the release of `.locr` compatibility, as its own documented decision (#565)
   (it is a fossil of a name the project may not write out, its functional code is about four lines,
   and no such file exists in the wild); (10) the session protocol and the peer permission model;
   (11) the transport: direct, hole-punched and relayed, with the invitation; (12) `suhina-relay`;

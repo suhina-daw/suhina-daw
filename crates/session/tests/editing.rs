@@ -44,6 +44,13 @@ fn clip(content: u32, start: f64, length: f64) -> Clip {
 
 /// The blank project with a notes content on track 1 ("1 MIDI") placed by `clips`.
 fn midi_project(notes: Vec<Note>, clips: Vec<Clip>) -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = midi_project_built(notes, clips);
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn midi_project_built(notes: Vec<Note>, clips: Vec<Clip>) -> Project {
     let mut p = blank_project();
     p.contents.push(ClipContent {
         id: ContentId(1),

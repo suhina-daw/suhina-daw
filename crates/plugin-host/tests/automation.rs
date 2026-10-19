@@ -72,6 +72,7 @@ fn project(length: f64, devices: Vec<Device>) -> Project {
         }],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "l".into(),
                 track: Some(TrackId(1)),
                 clips: vec![Clip::new(ContentId(1), 0.0, length)],

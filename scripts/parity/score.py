@@ -54,9 +54,9 @@ CHAPTERS = [
      "Search, categories, folders watched on disk, pins, recent, colour tags, preview through the "
      "engine, sample map by sound similarity (smooth with 200 000 items, also while its window is resized) with kinds recognised from the sound and set by hand; samples and MIDI files dragged from the system's file "
      "manager land like a browser drag; dropping one sample on an empty MIDI track adds Sampler (exact placement waits for pointer positions from the "
-     "windowing layer); installed plug-ins grouped by vendor, by type (instrument and effect groups "
-     "from the formats' own categories) or in a flat list sortable by name, vendor, type, format "
-     "and date, with pins and tags on them. Missing collections/tag editor depth, packs, Splice, "
+     "windowing layer); installed plug-ins grouped by vendor in the tree, and in the Plug-ins "
+     "category as the instruments or the effects by name and format, with pins and tags on them. "
+     "Missing collections/tag editor depth, packs, Splice, "
      "Cloud, Push transfer, filter groups, browser history."),
     (5, "Managing Files and Sets", 43, 0.38, "partial",
      ".suhina save/open, File > Open recent, .als import, templates, several projects in tabs, missing-file locate and "
@@ -181,9 +181,10 @@ CHAPTERS = [
      "SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, "
      "graphs and custom panels, and support explicit revision updates. Missing A/B, "
      "hot-swap, preset browser depth, defaults, device delay review."),
-    (24, "Using Plug-Ins", 12, 0.64, "partial",
+    (24, "Using Plug-Ins", 12, 0.68, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
-     "editors (Windows/X11), scans, latency "
+     "editors (Windows/X11), scans that try failures again and settle files built for another "
+     "processor, a plug-in manager (plug-ins switched off, folders per format and switched off), latency "
      "compensation (followed when a plug-in changes its latency while it plays), saved state "
      "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
      "and automated from the engine. Missing AU, VST2 hosting, "

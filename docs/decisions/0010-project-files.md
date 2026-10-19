@@ -1,9 +1,9 @@
 ---
-description: Suhina's own project file (.suhina; .locr from before October 2026 still read): versioned JSON of the model, written by its own crate; saving, templates and new projects
+description: Suhina's own project file (.suhina): versioned JSON of the model, written by its own crate; saving, templates and new projects
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
 status: current
-last_verified: 2026-10-15
+last_verified: 2026-10-18
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -15,7 +15,8 @@ covers:
 # 0010: Suhina's own project files (.suhina)
 
 - **Status:** accepted
-- **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11)
+- **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11);
+  the old extension no longer read 2026-10-17 (decision 12)
 
 ## Context
 
@@ -25,8 +26,9 @@ itself and reads back with nothing lost. `docs/architecture.md` had it planned a
 format written and read by its own crate.
 
 The first extension, `.locr`, stood for the product's earlier name. When the product became
-Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-13, and the
-`.locr` files saved before still open (decision 10).
+Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-13. The
+`.locr` files saved before still opened for a few days (decision 10) and are no longer read
+(decision 12).
 
 ## Decision
 
@@ -90,8 +92,9 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    reads the running plug-ins' states first, so a change made a moment ago in an editor counts):
    Save, Don't save or Cancel; quitting asks about each such project in turn, and Save on one
    that has no file yet asks for a name before the app closes.
-10. **`.suhina`, and `.locr` still read** (2026-10-13). New projects, templates and every name the
-    window or `project.save` makes end in `.suhina`, and the file names the format `"suhina"`.
+10. **`.suhina`, and `.locr` still read** (2026-10-13; superseded by decision 12). New projects,
+    templates and every name the window or `project.save` makes end in `.suhina`, and the file
+    names the format `"suhina"`.
     A `.locr` file, with `"format": "locr"`, is the same format: it opens, lists among the
     templates and in the browser, and is saved back to the same `.locr` path (Ctrl+S,
     `project.save` without a path, or a path that ends in `.locr`), so no file is renamed
@@ -110,13 +113,22 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
     project file is offered: open it as an unsaved project tied to the original file, show the
     folder, or ignore. `project.autosave` writes and reports backups. The list of critical
     operations, the clean-up rule and the journal are in [the spec](../spec/backups.md).
+12. **Only `.suhina` is read** (2026-10-17, [#565](https://github.com/suhina-daw/suhina-daw/issues/565)).
+    The `.locr` extension and `"format": "locr"` are no longer read: a `.locr` file is not a
+    project file (not listed, not opened when dropped, not offered by the file dialog), and a
+    document naming `"locr"` is refused like any other format, with a message that names it. The
+    reasons: no file of that kind is known to exist, the extension stands for a name the project
+    no longer uses, and the project folder and its version bump
+    ([ADR 0026](0026-project-folder-and-package.md)) should have one name to deal with, not two.
+    A file of that kind is opened by renaming it to `.suhina` and changing its `format` to
+    `"suhina"`; nothing else in it differs.
 
 ## Consequences
 
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
-- Readers keep accepting `.locr` and `"format": "locr"` (`suhina_project_file::is_project_file`,
-  tested); a `.locr` file saved again keeps its name but names the new format inside.
+- Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,
+  tested, decision 12).
 - Every new field in the model needs its line in `suhina-project-file` and in the round-trip test; a
   field that changes meaning needs a new version. A new field that older files lack is read as
   empty and written only when it holds something, so the version stays (the transport's

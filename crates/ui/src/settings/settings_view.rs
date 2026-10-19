@@ -88,31 +88,68 @@ pub struct MidiPort {
     pub error: Option<String>,
 }
 
-/// The plug-in library as the page shows it, read through the `plugins.*` commands.
+/// The plug-in library as the page and the plug-in manager show it, read through the
+/// `plugins.*` commands.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginsView {
-    /// The system's standard folders, and the ones the user added.
-    pub standard: Vec<String>,
-    pub added: Vec<String>,
-    /// Name, vendor, format and version of each plug-in found.
-    pub found: Vec<[String; 4]>,
+    /// The folders scans may look in: the system's standard ones, then the ones added.
+    pub folders: Vec<FolderRow>,
+    /// Each plug-in found.
+    pub found: Vec<PluginRow>,
     /// Files that failed to load, and why.
     pub failed: Vec<(String, String)>,
+    /// Files built for another processor, and why they do not load here.
+    pub incompatible: Vec<(String, String)>,
     /// A scan is running in the background.
     pub scanning: bool,
-    /// The folder typed into the add field.
+    /// The folder typed into the add field, and the format chosen for it.
     pub new_folder: String,
+    pub new_format: suhina_plugins::scan::FolderFormat,
+    /// The plug-in manager: whether it shows, its search and sort.
+    pub manager: crate::settings::plugin_manager::ManagerState,
 }
 
-/// What the page asks the app to do with the plug-in library.
+/// A plug-in folder as the page lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderRow {
+    pub path: String,
+    /// `any`, `vst3`, `clap` or `vst2`.
+    pub format: String,
+    pub enabled: bool,
+    /// One of the system's: it can be switched off, not removed.
+    pub standard: bool,
+}
+
+/// A plug-in as the manager lists it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginRow {
+    pub name: String,
+    pub vendor: String,
+    /// `instrument` or `effect`.
+    pub kind: String,
+    pub format: String,
+    pub version: String,
+    pub file: String,
+    /// How the commands name it (`plugins.setEnabled`).
+    pub spec: String,
+    pub enabled: bool,
+}
+
+/// What the page or the plug-in manager asks the app to do with the plug-in library.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginRequest {
     /// Scan new and changed files, or every file again.
     Scan {
         all: bool,
     },
-    AddFolder(String),
+    AddFolder(String, suhina_plugins::scan::FolderFormat),
     RemoveFolder(String),
+    /// Switch a folder on or off for scans.
+    SetFolderEnabled(String, bool),
+    /// Switch a plug-in (by spec) on or off.
+    SetEnabled(String, bool),
+    /// Read one file again now.
+    ScanFile(String),
 }
 
 /// The themes as the page shows them.
@@ -1010,15 +1047,17 @@ fn shortcuts_page(
     changed
 }
 
-/// Folders, scanning and what was found. Returns what the user asked for.
+/// Folders, scanning, what was found in a line, and the button that opens the plug-in manager,
+/// which lists it all. Returns what the user asked for.
 fn plugin_section(
     ui: &mut Ui,
     painter: &egui::Painter,
     page: Rect,
     y: &mut f32,
-    bottom: f32,
+    _bottom: f32,
     plugins: &mut PluginsView,
 ) -> Option<PluginRequest> {
+    use suhina_plugins::scan::FolderFormat;
     let mut request = None;
     let small = theme::ui_font(theme::TEXT_SMALL);
     let line = |y: &mut f32, height: f32| {
@@ -1026,32 +1065,70 @@ fn plugin_section(
         *y += height;
         rect
     };
+    let format_name = |format: &str| match format {
+        "vst3" => "VST3",
+        "clap" => "CLAP",
+        "vst2" => "VST2",
+        _ => "CLAP and VST3",
+    };
 
-    // Folders: the standard ones, then the added ones with a way to remove each.
+    // Folders: each on or off for scans, with the format taken from it; the added ones can be
+    // removed.
     let r = line(y, 18.0);
     widgets::text_in(painter, r, Align2::LEFT_CENTER, "Folders", theme::ui_font(theme::TEXT), theme::text_primary());
-    for folder in &plugins.standard {
-        let r = line(y, 16.0);
-        let text = format!("{folder}  (standard)");
-        widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), theme::text_hint());
-    }
-    for folder in &plugins.added {
+    for folder in &plugins.folders {
         let r = line(y, 18.0);
-        let remove =
-            Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top() + 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
-        widgets::text_in(painter, r, Align2::LEFT_CENTER, folder, small.clone(), theme::text_secondary());
-        let response = widgets::button_area(ui, remove, Id::new(("remove-folder", folder)), format!("Remove {folder}"));
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(remove, 0.0, fill);
-        widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
-        if response.clicked() {
-            request = Some(PluginRequest::RemoveFolder(folder.clone()));
+        let check = Rect::from_min_size(Pos2::new(r.left(), r.top() + 1.0), Vec2::splat(16.0));
+        let mut enabled = folder.enabled;
+        // Off while a scan runs: its result replaces the library, switches too.
+        let response = ui.put(check, |ui: &mut egui::Ui| {
+            ui.add_enabled(!plugins.scanning, egui::Checkbox::without_text(&mut enabled))
+        });
+        let label = format!("Scan {}", folder.path);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, folder.enabled, &label));
+        if response.changed() {
+            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), enabled));
+        }
+        let right = if folder.standard { r.right() } else { r.right() - 68.0 };
+        let text = Rect::from_min_max(Pos2::new(check.right() + 6.0, r.top()), Pos2::new(right - 96.0, r.bottom()));
+        let color = if folder.enabled { theme::text_secondary() } else { theme::text_hint() };
+        let shown = if folder.standard { format!("{}  (standard)", folder.path) } else { folder.path.clone() };
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &shown, small.clone(), color);
+        let format = Rect::from_min_max(Pos2::new(right - 92.0, r.top()), Pos2::new(right - 4.0, r.bottom()));
+        widgets::text_in(
+            painter,
+            format,
+            Align2::RIGHT_CENTER,
+            format_name(&folder.format),
+            small.clone(),
+            theme::text_hint(),
+        );
+        if !folder.standard {
+            let remove =
+                Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top() + 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
+            let response = widgets::button_area(
+                ui,
+                remove,
+                Id::new(("remove-folder", &folder.path)),
+                format!("Remove {}", folder.path),
+            );
+            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            painter.rect_filled(remove, 0.0, fill);
+            widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
+            if response.clicked() {
+                request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
+            }
         }
     }
+    // A folder to add, and the format it holds: VST2 shows, for when it is hosted.
     *y += 4.0;
     let r = line(y, 20.0);
     let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
-    let field = Rect::from_min_max(r.min, Pos2::new(add.left() - 4.0, r.bottom()));
+    let formats = Rect::from_min_max(
+        Pos2::new(add.left() - 4.0 - 4.0 * 52.0, r.top() + 2.0),
+        Pos2::new(add.left() - 4.0, r.bottom() - 2.0),
+    );
+    let field = Rect::from_min_max(r.min, Pos2::new(formats.left() - 4.0, r.bottom()));
     let edit = ui.put(
         field,
         egui::TextEdit::singleline(&mut plugins.new_folder)
@@ -1059,13 +1136,48 @@ fn plugin_section(
             .font(small.clone()),
     );
     edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Plug-in folder to add"));
+    let width = formats.width() / 4.0;
+    for (index, (format, title)) in [
+        (FolderFormat::Any, "Both"),
+        (FolderFormat::Vst3, "VST3"),
+        (FolderFormat::Clap, "CLAP"),
+        (FolderFormat::Vst2, "VST2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cell = Rect::from_min_size(
+            Pos2::new(formats.left() + index as f32 * width, formats.top()),
+            Vec2::new(width - 1.0, formats.height()),
+        );
+        let label = if format.hosted() {
+            format!("Folder format: {}", format_name(format.name()))
+        } else {
+            "Folder format: VST2 (not hosted yet)".to_string()
+        };
+        let response = widgets::button_area(ui, cell, Id::new(("folder-format", index)), label);
+        let chosen = plugins.new_format == format;
+        if response.clicked() && format.hosted() {
+            plugins.new_format = format;
+        }
+        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        painter.rect_filled(cell, 0.0, if chosen { theme::text_value() } else { idle });
+        let color = if chosen {
+            theme::window_background()
+        } else if format.hosted() {
+            theme::text_secondary()
+        } else {
+            theme::text_hint()
+        };
+        widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
+    }
     let response = widgets::button_area(ui, add, Id::new("add-folder"), "Add plug-in folder");
     let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     painter.rect_filled(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if (response.clicked() || entered) && !plugins.new_folder.trim().is_empty() {
-        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string()));
+        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string(), plugins.new_format));
     }
     *y += 8.0;
 
@@ -1074,7 +1186,16 @@ fn plugin_section(
     let summary = if plugins.scanning {
         "Scanning: each file is loaded in a separate process, so a plug-in that crashes is only reported".to_string()
     } else {
-        format!("{} plug-ins found, {} files failed to load", plugins.found.len(), plugins.failed.len())
+        let off = plugins.found.iter().filter(|p| !p.enabled).count();
+        let mut summary = format!("{} plug-ins found", plugins.found.len());
+        if off > 0 {
+            summary.push_str(&format!(" ({off} switched off)"));
+        }
+        summary.push_str(&format!(", {} files failed to load", plugins.failed.len()));
+        if !plugins.incompatible.is_empty() {
+            summary.push_str(&format!(", {} built for another processor", plugins.incompatible.len()));
+        }
+        summary
     };
     label(painter, r, "Scan", &summary);
     let buttons = control_rect(r, 2);
@@ -1099,29 +1220,17 @@ fn plugin_section(
         }
     }
 
-    // What was found, in the space left.
-    let list = Rect::from_min_max(
-        Pos2::new(page.left(), *y + 4.0),
-        Pos2::new(page.right(), (bottom - 12.0).max(*y + 4.0 + LIST_LEAST)),
-    );
-    *y = list.bottom();
-    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for [name, vendor, format, version] in &plugins.found {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(name).font(small.clone()).color(theme::text_primary()));
-                    ui.label(
-                        egui::RichText::new(format!("{vendor} · {format} {version}"))
-                            .font(small.clone())
-                            .color(theme::text_hint()),
-                    );
-                });
-            }
-            for (file, why) in &plugins.failed {
-                ui.label(egui::RichText::new(format!("{file}: {why}")).font(small.clone()).color(theme::recording()));
-            }
-        });
-    });
+    // The plug-in manager: every plug-in and every file that gave none, in one table.
+    let r = line(y, SETTING_ROW);
+    label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
+    let open = control_rect(r, 2);
+    let response = widgets::button_area(ui, open, Id::new("open-plugin-manager"), "Open the plug-in manager");
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(open, 0.0, fill);
+    widgets::text_in(painter, open, Align2::CENTER_CENTER, "Manage plug-ins", small, theme::text_primary());
+    if response.clicked() {
+        plugins.manager.open = true;
+    }
     request
 }
 

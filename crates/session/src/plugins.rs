@@ -1,9 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Commands for the plug-in library: scanning for installed plug-ins, listing them, and the
-//! folders a scan looks in (ADR 0006). They belong to Suhina, not to one project, so they run
-//! on [`Projects`] like the `projects.*` commands.
+//! Commands for the plug-in library: scanning for installed plug-ins, listing them, switching
+//! them on and off, and the folders a scan looks in (ADR 0006). They belong to Suhina, not to
+//! one project, so they run on [`Projects`] like the `projects.*` commands.
 
 use std::path::Path;
 
@@ -11,42 +11,69 @@ use serde_json::{Value, json};
 use suhina_model::{Device, DeviceKind};
 use suhina_plugins::SavedState;
 use suhina_plugins::matching::Match;
-use suhina_plugins::scan::{Catalog, Report, Scanned};
+use suhina_plugins::scan::{Catalog, FolderFormat, NO_PLUGINS, Report};
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::projects::project_param;
 use crate::{CommandError, Projects};
 
 const FOLDER: Param = param("folder", ParamType::Text, "a folder that holds plug-ins");
+const PLUGIN: Param = param("plugin", ParamType::Text, "plug-in name, id or spec, from plugins.list");
+const ENABLED: Param = param("enabled", ParamType::Bool, "true for on, false for off");
 
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugins.list",
-        label: "List the plug-ins the last scan found (id, name, vendor, version, features, file) and the files that failed",
-        params: &[],
+        label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, file, whether it is switched on), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
+        params: &[optional(
+            "ignored",
+            ParamType::Bool,
+            "also list the files that hold no plug-ins, which scans pass over (default false)",
+        )],
         kind: CommandKind::Plugins,
         run: list,
     },
     CommandSpec {
         id: "plugins.scan",
-        label: "Look for installed plug-ins in the standard folders and the added ones; reads only new and changed files unless all is true",
+        label: "Look for installed plug-ins in the standard folders and the added ones; reads new and changed files and tries failed ones again (a hung one once a day), every file if all is true",
         params: &[optional("all", ParamType::Bool, "read every file again, failed ones too (default false)")],
         kind: CommandKind::Plugins,
         run: scan,
     },
     CommandSpec {
         id: "plugins.folders",
-        label: "List the folders a scan looks in: the system's standard ones and the ones added",
+        label: "List the folders a scan looks in: the system's standard ones and the ones added, each with its format and whether it is switched on",
         params: &[],
         kind: CommandKind::Plugins,
         run: folders,
     },
     CommandSpec {
         id: "plugins.addFolder",
-        label: "Add a folder for scans to look in, besides the standard ones",
-        params: &[FOLDER],
+        label: "Add a folder for scans to look in, besides the standard ones, for one plug-in format or every one Suhina hosts",
+        params: &[FOLDER, optional("format", ParamType::Text, "any (default: CLAP and VST3), vst3 or clap")],
         kind: CommandKind::Plugins,
         run: add_folder,
+    },
+    CommandSpec {
+        id: "plugins.setFolderEnabled",
+        label: "Switch a plug-in folder (standard or added) on or off for scans; the plug-ins of a folder switched off leave the list with the next scan",
+        params: &[FOLDER, ENABLED],
+        kind: CommandKind::Plugins,
+        run: set_folder_enabled,
+    },
+    CommandSpec {
+        id: "plugins.setEnabled",
+        label: "Switch an installed plug-in on or off: one switched off is not offered in the browser and does not load, and a project that uses it finds it missing",
+        params: &[PLUGIN, ENABLED],
+        kind: CommandKind::Plugins,
+        run: set_enabled,
+    },
+    CommandSpec {
+        id: "plugins.scanFile",
+        label: "Read one plug-in file of the list again now, a failed one too",
+        params: &[param("file", ParamType::Text, "the plug-in file, as plugins.list gives it")],
+        kind: CommandKind::Plugins,
+        run: scan_file,
     },
     CommandSpec {
         id: "plugins.removeFolder",
@@ -92,11 +119,14 @@ fn paths(list: &[std::path::PathBuf]) -> Vec<String> {
     list.iter().map(|p| p.display().to_string()).collect()
 }
 
-fn list(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let ignored = bool_param(params, "ignored")?;
     let library = projects.library_mut();
     let specs: Vec<String> = library.catalog().plugins().map(|p| p.spec()).collect();
     let hosting: std::collections::HashMap<String, suhina_plugins::library::Hosting> =
         specs.into_iter().map(|spec| (spec.clone(), library.hosting(&spec))).collect();
+    let off: std::collections::HashSet<String> =
+        hosting.keys().filter(|spec| !library.is_enabled(spec)).cloned().collect();
     let catalog = projects.library_mut().catalog();
     let plugins: Vec<Value> = catalog
         .plugins()
@@ -106,22 +136,29 @@ fn list(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
                 "id": p.id,
                 "name": p.name,
                 "vendor": p.vendor,
+                "type": if crate::is_instrument(p) { "instrument" } else { "effect" },
                 "version": p.version,
                 "features": p.features,
                 "file": p.path.display().to_string(),
                 "hosting": hosting.get(&p.spec()).copied().unwrap_or_default().name(),
+                "enabled": !off.contains(&p.spec()),
             })
         })
         .collect();
-    let failed: Vec<Value> = catalog
-        .entries()
-        .iter()
-        .filter_map(|e| match &e.scanned {
-            Scanned::Failed(why) => Some(json!({ "file": e.path.display().to_string(), "reason": why })),
-            Scanned::Plugins(_) => None,
-        })
-        .collect();
-    Ok(json!({ "plugins": plugins, "failed": failed }))
+    let failed = file_reasons(catalog.failed());
+    let incompatible = file_reasons(catalog.incompatible());
+    let mut listed = json!({ "plugins": plugins, "failed": failed, "incompatible": incompatible });
+    if ignored {
+        listed["ignored"] =
+            catalog.ignored().map(|file| json!({ "file": file.display().to_string(), "reason": NO_PLUGINS })).collect();
+    }
+    Ok(listed)
+}
+
+/// The optional true-or-false parameter `name` (default false).
+fn bool_param(params: &Value, name: &str) -> Result<bool, CommandError> {
+    let value = params.get(name).map(|v| v.as_bool().ok_or_else(|| format!("{name} must be true or false")));
+    Ok(value.transpose()?.unwrap_or(false))
 }
 
 fn report(report: &Report, found: usize) -> Value {
@@ -130,12 +167,25 @@ fn report(report: &Report, found: usize) -> Value {
         "read": paths(&report.read),
         "unchanged": report.unchanged,
         "removed": paths(&report.removed),
-        "failed": report.failed.iter().map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect::<Vec<_>>(),
+        "retried": paths(&report.retried),
+        "ignored": paths(&report.ignored),
+        "failed": reasons(&report.failed),
+        "incompatible": reasons(&report.incompatible),
     })
 }
 
+/// Files with why each gave no plug-ins, as `plugins.list` lists them.
+fn file_reasons<'a>(list: impl Iterator<Item = (&'a Path, &'a str)>) -> Vec<Value> {
+    list.map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect()
+}
+
+/// Files with why each gave no plug-ins, as the reports list them.
+fn reasons(list: &[(std::path::PathBuf, String)]) -> Vec<Value> {
+    list.iter().map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect()
+}
+
 fn scan(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let all = params.get("all").map(|v| v.as_bool().ok_or("all must be true or false")).transpose()?.unwrap_or(false);
+    let all = bool_param(params, "all")?;
     let library = projects.library_mut();
     let done = library.scan(all)?;
     let found = library.catalog().plugins().count();
@@ -144,13 +194,61 @@ fn scan(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
 
 fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let library = projects.library_mut();
-    let custom = paths(library.custom_folders());
-    Ok(json!({ "standard": paths(&suhina_plugins::scan::standard_folders()), "added": custom }))
+    let custom = paths(&library.custom_folders());
+    let every: Vec<Value> = library
+        .folder_list()
+        .into_iter()
+        .map(|f| {
+            json!({
+                "folder": f.path.display().to_string(),
+                "format": f.format.name(),
+                "enabled": f.enabled,
+                "standard": f.standard,
+            })
+        })
+        .collect();
+    Ok(json!({ "standard": paths(&suhina_plugins::scan::standard_folders()), "added": custom, "folders": every }))
 }
 
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let added = projects.library_mut().add_folder(folder_param(params)?)?;
-    Ok(json!({ "added": added, "folders": paths(projects.library_mut().custom_folders()) }))
+    let format = match params.get("format") {
+        None => FolderFormat::Any,
+        Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3 or clap")?,
+    };
+    if !format.hosted() {
+        return Err("VST2 plug-ins are not hosted yet, so a VST2 folder cannot be added yet".into());
+    }
+    let added = projects.library_mut().add_folder_as(folder_param(params)?, format)?;
+    Ok(json!({ "added": added, "folders": paths(&projects.library_mut().custom_folders()) }))
+}
+
+fn set_folder_enabled(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let changed = projects.library_mut().set_folder_enabled(folder_param(params)?, enabled)?;
+    Ok(json!({ "changed": changed, "enabled": enabled }))
+}
+
+fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let name = params.get("plugin").and_then(Value::as_str).ok_or("plugin must be a plug-in name, id or spec")?;
+    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let library = projects.library_mut();
+    let catalog = library.catalog();
+    let plugin = catalog
+        .plugins()
+        .find(|p| p.spec() == name)
+        .or_else(|| catalog.find(name))
+        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugins.list lists them"))?;
+    let (spec, shown) = (plugin.spec(), plugin.name.clone());
+    library.set_enabled(&spec, enabled)?;
+    Ok(json!({ "plugin": shown, "spec": spec, "enabled": enabled }))
+}
+
+fn scan_file(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let file = params.get("file").and_then(Value::as_str).filter(|f| !f.is_empty()).ok_or("file must be a path")?;
+    let library = projects.library_mut();
+    let done = library.scan_file_again(Path::new(file))?;
+    let found = library.catalog().plugins().count();
+    Ok(report(&done, found))
 }
 
 fn set_hosting(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
@@ -174,7 +272,7 @@ fn set_hosting(projects: &mut Projects, params: &Value) -> Result<Value, Command
 
 fn remove_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let removed = projects.library_mut().remove_folder(folder_param(params)?)?;
-    Ok(json!({ "removed": removed, "folders": paths(projects.library_mut().custom_folders()) }))
+    Ok(json!({ "removed": removed, "folders": paths(&projects.library_mut().custom_folders()) }))
 }
 
 /// What the catalog has for one device: `None` for devices that are not plug-ins.
@@ -217,7 +315,9 @@ fn check(projects: &mut Projects, params: &Value) -> Result<Value, CommandError>
         .iter()
         .flat_map(|c| c.devices.iter().map(|d| (c.name.clone(), d.clone())))
         .collect();
-    let catalog = projects.library_mut().catalog();
+    // What sessions load: a plug-in switched off is missing to a project that uses it.
+    let enabled = projects.library_mut().enabled_catalog();
+    let catalog = &enabled;
     let mut missing = 0;
     let list: Vec<Value> = devices
         .iter()

@@ -127,6 +127,20 @@ cargo build --release
 cargo test --workspace
 ```
 
+### When a build cannot write files (Windows)
+
+Every build is a new, unsigned program, and security software that judges programs by reputation
+may stop it from writing: Suhina then says "writing was denied" when it saves its settings, and
+tests fail with "Access is denied" (os error 5) in `%APPDATA%` or `%TEMP%`. Exclude the `target`
+folder (or Cargo's `target-dir`) from scanning in the security software, or allow the programs in
+it. In Windows Security that is *Virus & threat protection › Manage settings › Exclusions*, and
+*Ransomware protection › Allow an app through Controlled folder access* when that is on.
+
+When only programs started from one folder are denied, look at that folder's integrity label:
+`icacls <folder>` lists `Mandatory Label\Low Mandatory Level` when another tool's sandbox left
+one, and every program built inside it then runs at low integrity and cannot write to the user's
+folders. Build into a folder without the label (Cargo's `build.target-dir` outside it).
+
 ### ASIO on Windows
 
 A default Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›

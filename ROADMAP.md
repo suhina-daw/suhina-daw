@@ -124,7 +124,11 @@ commands; plugdata is expected to load as an ordinary CLAP or VST3 plug-in now t
 but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), proposed).
 
 **ARA** after VST3 hosting works in the sandbox: Arrangement first, since looping, quantised
-Session clips do not fit ARA's linear timeline; Session view later. ADR before implementation.
+Session clips do not fit ARA's linear timeline; Session view later. The design is
+[ADR 0028](docs/decisions/0028-ara-hosting.md) (proposed) and the stages are the epic
+[#587](https://github.com/suhina-daw/suhina-daw/issues/587): the document lives in the plug-in host,
+audio reaches it through shared memory, and an ARA clip that would overlap another audio clip is
+refused or suspended, never by losing its edits.
 
 ## What works now
 
@@ -204,13 +208,16 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   active one or to a named one ([ADR 0007](docs/decisions/0007-several-open-projects.md)).
 - `suhina-cli mcp` serves them to agents over the Model Context Protocol, with file access
   only below granted roots ([`docs/mcp.md`](docs/mcp.md)).
+- `suhina-cli mcp --attach` lets an agent work on the projects open in the running app, once the
+  person turns it on in Settings and allows the connection: its edits show in the window at once
+  and undo with Ctrl+Z; starting a build that is running opens the project there as a tab
+  ([ADR 0028](docs/decisions/0028-mcp-in-the-running-app.md)).
 - Edits and undo/redo are heard by a playing engine from its next audio block, without a gap:
   a new graph is swapped in at an exact frame and playing clips carry on; device parameters go
   as messages, without a new graph
   ([ADR 0005](docs/decisions/0005-edits-while-playing.md)).
 - Projects are saved in Suhina's own format, `.suhina` (versioned JSON, plug-in state included,
-  audio referred to by path): `project.save { path?, copy? }`; `.suhina` files, and `.locr`
-  files saved before October 2026, open in the app,
+  audio referred to by path): `project.save { path?, copy? }`; `.suhina` files open in the app,
   `suhina-cli` and MCP like Live Sets do ([ADR 0010](docs/decisions/0010-project-files.md),
   [spec](docs/spec/suhina-format.md)).
 - Automation envelopes for a track's volume, pan and mute and every built-in and `.sd` device parameter:
@@ -233,6 +240,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   track) or never, written on a background thread, the newest 20 kept; after a crash the
   next start offers the backup back, to open as an unsaved project tied to its file
   (`project.autosave`, Settings › General › Backups, [spec](docs/spec/backups.md)).
+- Clips, arrangement lanes and scenes have ids that stay the same when they are moved or edited and
+  are never used twice; commands name a clip by its id (`clip`), so an agent's target does not move
+  when other clips do, and the positional `index` is deprecated
+  ([#568](https://github.com/suhina-daw/suhina-daw/issues/568),
+  [ADR 0025](docs/decisions/0025-object-identity.md)).
 - Still to do: more commands (notes, [#200](https://github.com/suhina-daw/suhina-daw/issues/200);
   clips), MCP resources.
 
@@ -450,18 +462,33 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   from the browser: on the slot, lane or empty space under the pointer, outlined while they hover
   (`clip.addFiles`). Where the system reports no pointer position during the drag, they go where
   Enter puts them ([spec](docs/spec/browser.md#files-from-the-system)).
-- The browser's **plug-ins in three views** (the Plug-ins category): grouped by vendor as
-  ever, grouped by type (Instruments and Effects, Suhina's groups from the formats' own
-  sub-categories), or one flat list whose columns (name, vendor, type, format, date modified)
-  sort by clicking their headings; the choice is kept with the library, and pins and tags work
-  on plug-in rows like on files
-  ([spec](docs/spec/plugin-browsing.md)).
+- The browser's **Plug-ins category** lists the plug-in instruments or the plug-in effects (a
+  switch kept with the library) as one list of name and format, sorted by clicking a heading;
+  the name always shows, the format column drops when the browser is narrow. The other
+  categories keep the plug-ins under their vendors, and pins and tags work on plug-in rows like
+  on files ([spec](docs/spec/plugin-browsing.md)).
+- The browser's **Sample map** is a button of its own in the category row; a place stays chosen
+  on a second click and its × lets go of it, and a recent group's place brings its category
+  ([spec](docs/spec/browser.md)).
+- The **plug-in manager** (Settings › Plug-ins › Manage plug-ins): every plug-in found and every
+  file that gave none in one table (on, name, vendor, type, format, version, status, file),
+  sorted by any column and searched; a plug-in switched off is not offered and does not load,
+  and a failed file is read again with its **Scan again**
+  ([spec](docs/spec/plugin-manager.md)).
+- Plug-in **folders per format**: each added folder for CLAP, VST3 or both, any folder switched
+  off without removing it (`plugins.setFolderEnabled`); VST2 folders are ready for when VST2
+  plug-ins are hosted.
+- Plug-in **scans try failures again**: a file that failed is read once more, one at a time, in
+  the same scan, and later scans try it again (one that hung at most once a day); a file that
+  holds no plug-ins, or is built only for another processor (read from its header without
+  loading it, such as an Intel-only plug-in on an Apple silicon Mac), is settled and listed
+  apart.
 - **Missing files**: a project whose audio files cannot be found says so in a bar when it opens
   (Find…, Later; View › Missing files). The panel lists them with the clips that use them, finds
   them by name in the browser's folders and the project's folder at once, or in a folder typed or
   dropped on it (walked in the background), best match first; Apply relinks them in one undo step
   ([spec](docs/spec/missing-files.md)).
-- The **sample map** (the browser's List | Map switch, large in the main area, or in a window of its own for a second screen, Ctrl+Alt+M, which keeps its place): the samples
+- The **sample map** (the browser's Sample map button, large in the main area, or in a window of its own for a second screen, Ctrl+Alt+M, which keeps its place): the samples
   of the browser's place laid out by how they sound, coloured by kind (kick, snare, clap, hats,
   toms, cymbals, percussion, bass, tonal, vocal, effect), as a free cloud or snapped to a grid that follows the view's shape (`soundmap.layout`
   takes `aspect`), with the kinds' names over their regions and a
@@ -549,6 +576,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
+- `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
+  spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
+  ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - Arrangement clips split and consolidate: Ctrl+E cuts the selected clip at the playhead and
   a clip's right-click menu has Split here (`clip.split`, the second part playing on from where
   the clip was); Ctrl+J or Consolidate turns a range of one track into one clip, MIDI by joining
@@ -652,8 +682,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Suhina's render block and the note names the period Windows gives the device, in milliseconds.
   A device is not given up over a size its driver refuses: the same output is tried without one
   before anything falls back.
-- Settings › Plug-ins: the folders scanned (add, remove), Scan and Rescan all in the background,
-  and the plug-ins found and the files that failed.
+- Settings › Plug-ins: the folders scanned (add with a format, remove, switch off), Scan and
+  Rescan all in the background, and the plug-in manager.
 - Every key is the user's to change: Settings › Shortcuts and `keymap.json` bind any command
   that needs no parameters, the actions on the selection (copy, cut, paste, duplicate, delete,
   group) and the window's own ([shortcuts](docs/shortcuts.md)).

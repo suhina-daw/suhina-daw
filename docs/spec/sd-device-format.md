@@ -3,7 +3,7 @@ description: Version 4 of the data-only Suhina device graph format, SDK, track l
 read_when: .sd, Suhina device, device graph, device SDK, community effect, visual node, device UI
 type: spec
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-10-18
 covers:
   - crates/device-sdk/Cargo.toml
   - crates/device-sdk/src/lib.rs

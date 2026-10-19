@@ -163,8 +163,8 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "library.setPluginsView",
-        label: "Choose how the browser shows the installed plug-ins, kept for the next start: grouped by vendor (the default), by type, or as one flat list",
-        params: &[param("view", ParamType::Text, "grouped (default), type or flat")],
+        label: "Choose which installed plug-ins the browser's Plug-ins category lists, kept for the next start: the instruments (the default) or the effects",
+        params: &[param("view", ParamType::Text, "instruments (default) or effects")],
         kind: CommandKind::Library,
         run: set_plugins_view,
     },
@@ -631,7 +631,7 @@ fn pin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 fn set_plugins_view(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let name = text(params, "view")?;
     let view = suhina_library::store::PluginsView::parse(name)
-        .ok_or_else(|| CommandError("view must be grouped, type or flat".into()))?;
+        .ok_or_else(|| CommandError("view must be instruments or effects".into()))?;
     projects.file_library_mut().set_plugins_view(view).map_err(CommandError)?;
     Ok(json!({ "view": view.name() }))
 }

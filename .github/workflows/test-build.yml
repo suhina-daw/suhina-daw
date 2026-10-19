@@ -74,7 +74,7 @@ jobs:
     steps:
       # Every branch and the pull request's merge commit, whose second parent is its head; no
       # code is built or run but scripts/branch_update.py.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: github.event.action == 'synchronize'
         with:
           fetch-depth: 0
@@ -136,7 +136,7 @@ jobs:
     steps:
       # The merge of the pull request's head into main as it was when the event happened
       # (github.sha), so a push after the label is not what gets built.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 2
@@ -154,7 +154,7 @@ jobs:
             *) echo "::error::the merge commit is not of the pull request's head $HEAD_SHA"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: github.event_name == 'workflow_dispatch'
         with:
           ref: main
@@ -285,7 +285,7 @@ jobs:
           fi
 
       # The artifact is a zip: of the package folder on Windows, of its .tar.gz elsewhere.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         id: upload
         with:
           name: ${{ steps.name.outputs.package }}

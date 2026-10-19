@@ -45,7 +45,7 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           # `docs.py stamp` reads each document's history; a shallow clone would date them all.
@@ -74,7 +74,7 @@ jobs:
           python3 scripts/parity/charts.py
       # Every document, since `stamp` may change any of them; publish copies back only the ones
       # that differ and checks what changed in them.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: generated-docs
           path: |
@@ -94,14 +94,14 @@ jobs:
       - name: Token of the docs bot app
         id: app-token
         if: env.HAS_APP == 'true'
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.DOCS_BOT_APP_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: generated-docs
           path: ${{ runner.temp }}/generated

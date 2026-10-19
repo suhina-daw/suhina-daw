@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-10-18
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/settings_rows.rs
@@ -32,13 +32,14 @@ is on exactly one page, under one heading.
 |---|---|---|
 | General | Projects | When opening a project, At start, Projects folder, Templates folder, Start template (shown with At start › Template) |
 | General | Backups | Backups, Clean up backups, Last backup (read only) |
+| General | Agents | Let agents work on open projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
 | General | Dropping files | Several files, Warp mode |
 | Audio | Output | Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
 | Audio | Cue | Cue output, Cue volume |
 | Audio | Now | Output, Latency, Key to sound, Input now (read only), List devices again |
 | MIDI | MIDI inputs | Each MIDI input port, On or Off |
 | Plug-ins | Editors | Editors (Window, Device view) |
-| Plug-ins | Library | Folders, Scan and Rescan all, the plug-ins found |
+| Plug-ins | Library | Folders (each on or off, with its format; add with a format, remove), Scan and Rescan all with a count of what was found, Plug-in manager (opens the [plug-in manager](plugin-manager.md)) |
 | Arrangement | Clips | Allow sample stacking, Allow MIDI stacking |
 | Arrangement | Tracks | Track headers |
 | Session and mixer | Launching | Select on launch |

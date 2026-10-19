@@ -13,6 +13,7 @@ use suhina_session::Session;
 
 fn clip(content: u32, start: f64) -> Clip {
     Clip {
+        id: Default::default(),
         content: ContentId(content),
         start,
         length: 4.0,
@@ -32,6 +33,13 @@ fn clip(content: u32, start: f64) -> Clip {
 /// Track 1 "Keys": arrangement clips at beat 0 (index 0) and beat 8 (index 1), both 4 beats long
 /// and not looping; a clip in the slot of scene 1, and an empty slot in scene 2.
 fn project() -> Project {
+    // Ids on its lanes, clips and scenes, as a session gives them.
+    let mut project = project_built();
+    assert_eq!(project.assign_ids(), Ok(()));
+    project
+}
+
+fn project_built() -> Project {
     let track = Track {
         id: TrackId(1),
         name: "Keys".into(),
@@ -58,6 +66,7 @@ fn project() -> Project {
         contents: vec![content(1), content(2), content(3)],
         arrangement: Arrangement {
             lanes: vec![ArrangementLane {
+                id: Default::default(),
                 name: "Keys".into(),
                 track: Some(TrackId(1)),
                 clips: vec![clip(1, 0.0), clip(2, 8.0)],
@@ -110,7 +119,8 @@ fn an_arrangement_clips_loop_is_set_by_start_and_end_in_one_undo_step() {
     let mut session = Session::new(project());
     let before = arranged(&session, 0);
     let set = run(&mut session, "clip.setLoop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 3.0 })).unwrap();
-    assert_eq!(set, json!({ "index": 0, "loop": true, "start": 1.0, "end": 3.0 }));
+    let id = arranged(&session, 0).id.0;
+    assert_eq!(set, json!({ "clip": id, "index": 0, "loop": true, "start": 1.0, "end": 3.0 }));
     assert_eq!(arranged(&session, 0).loop_range, Some(LoopRange { start: 1.0, end: 3.0 }));
     // Only one end, while it loops: the other stays.
     run(&mut session, "clip.setLoop", json!({ "track": 1, "index": 0, "end": 6.0 })).unwrap();
@@ -162,8 +172,10 @@ fn set_loop_refuses_bad_input_and_changes_nothing() {
 #[test]
 fn the_length_changes_in_one_undo_step_and_never_runs_into_the_next_clip() {
     let mut session = Session::new(project());
-    let set = run(&mut session, "clip.setLength", json!({ "track": 1, "index": 0, "length": 6.0 })).unwrap();
-    assert_eq!(set, json!({ "index": 0, "length": 6.0 }));
+    // By the clip's id; the result names it by id and by where it is.
+    let id = arranged(&session, 0).id.0;
+    let set = run(&mut session, "clip.setLength", json!({ "clip": id, "length": 6.0 })).unwrap();
+    assert_eq!(set, json!({ "clip": id, "index": 0, "length": 6.0 }));
     assert_eq!(arranged(&session, 0).length, 6.0);
     assert_eq!(arranged(&session, 0).start, 0.0);
     // Up to the next clip, at beat 8, and no further.
@@ -221,7 +233,8 @@ fn set_length_refuses_bad_input_and_changes_nothing() {
 fn the_start_marker_keeps_the_end_of_a_clip_that_does_not_loop() {
     let mut session = Session::new(project());
     let set = run(&mut session, "clip.setStart", json!({ "track": 1, "index": 0, "offset": 1.0 })).unwrap();
-    assert_eq!(set, json!({ "index": 0, "offset": 1.0, "length": 3.0 }));
+    let id = arranged(&session, 0).id.0;
+    assert_eq!(set, json!({ "clip": id, "index": 0, "offset": 1.0, "length": 3.0 }));
     let clip = arranged(&session, 0);
     assert_eq!((clip.start, clip.offset, clip.length), (0.0, 1.0, 3.0));
     undo(&mut session);

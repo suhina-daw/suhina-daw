@@ -137,7 +137,7 @@ fn candidates_from_the_index_and_the_project_folder_are_capped_together() {
         wav(&library_folder.join(format!("pack{i:02}")).join("kick.wav"));
         wav(&project_folder.join(format!("take{i:02}")).join("kick.wav"));
     }
-    let song = project_folder.join("song.locr");
+    let song = project_folder.join("song.suhina");
     Session::new(blank_project()).save(&song, false).unwrap();
     let (session, _) = Session::open(&song).unwrap();
 

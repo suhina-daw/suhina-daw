@@ -31,6 +31,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphic
 x11rb = "0.13"  # MIT OR Apache-2.0
 libc = "0.2"  # MIT OR Apache-2.0
 
+[build-dependencies]
+winresource.workspace = true
+
 [dev-dependencies]
 # Plug-ins in the engine's track chains, run through a session (tests/engine.rs).
 suhina-engine.workspace = true

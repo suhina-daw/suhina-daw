@@ -15,7 +15,7 @@ jobs:
   notice:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The branch name goes through an environment variable, never into the script's text, so
       # nothing in it runs as shell.
       - name: The branch follows the naming rule

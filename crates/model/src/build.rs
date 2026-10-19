@@ -9,8 +9,8 @@
 //! (issue #462). They are not serialisation defaults: a reader that misses a field still says so.
 
 use crate::{
-    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ContentId, ContentKinds, Device, DeviceKind,
-    Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
+    AudioInput, AudioRegion, Channel, ChannelId, ChannelRole, Clip, ClipId, ContentId, ContentKinds, Device,
+    DeviceKind, Extensions, FadeCurve, FollowAction, LaunchSettings, MidiInput, Note, StretchMode, Track, TrackId,
 };
 
 impl Note {
@@ -75,6 +75,7 @@ impl Clip {
     /// default follow action and launch settings.
     pub fn new(content: ContentId, start: f64, length: f64) -> Self {
         Self {
+            id: ClipId::NONE,
             content,
             start,
             length,
