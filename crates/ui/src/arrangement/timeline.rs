@@ -430,6 +430,27 @@ impl Timeline {
 
     /// Takes the transport, playhead and play start marker from the engine, leaving the rest as
     /// it was built.
+    /// The headers show what automation plays while the transport runs, the project's values
+    /// otherwise: volume and pan, on returns and Main too (#706). Called every frame, after
+    /// [`Timeline::follow`].
+    pub fn follow_automation(&mut self, project: &Project) {
+        let channel_of = |track: TrackId| {
+            let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
+            project.channels.iter().find(|c| c.id == id)
+        };
+        for lane in &mut self.lanes {
+            let Some(channel) = channel_of(lane.track) else { continue };
+            let (volume, pan) =
+                if self.running { crate::interaction::grid::played_mixer(channel, self.beat) } else { (None, None) };
+            lane.volume_db = volume.unwrap_or_else(|| gain_to_db(channel.volume));
+            lane.pan = pan.unwrap_or(channel.pan);
+        }
+        if let Some(main) = project.channels.iter().find(|c| c.role == ChannelRole::Master) {
+            let played = if self.running { crate::interaction::grid::played_mixer(main, self.beat).0 } else { None };
+            self.main_volume_db = Some(played.unwrap_or_else(|| gain_to_db(main.volume)));
+        }
+    }
+
     pub fn follow(&mut self, monitor: Option<&LauncherMonitor>) {
         let (running, beat, start) = monitor.map_or((false, 0.0, 0.0), |m| (m.running(), m.beat(), m.start_beat()));
         let beats = |b: f64| if b.is_finite() { b.max(0.0) } else { 0.0 };
@@ -808,6 +829,30 @@ mod tests {
         let after = Timeline::build_after(&project, None, &before.stack_rows);
         assert_eq!(row_at(&after, middle.start), Some(2));
         assert_eq!(row_at(&after, middle.start + cut), Some(2), "the end part stays on the row");
+    }
+
+    #[test]
+    fn headers_show_what_automation_plays_while_it_plays() {
+        use suhina_engine::model::{AutomationLane, AutomationPoint};
+        let mut project = demo_project();
+        let track = project.tracks[0].id;
+        let channel = project.tracks[0].channel.unwrap();
+        let c = project.channels.iter_mut().find(|c| c.id == channel).unwrap();
+        c.volume = 1.0;
+        c.automation.push(AutomationLane {
+            param: "volume".into(),
+            points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(8.0, 0.5)],
+            enabled: true,
+        });
+        let mut timeline = Timeline::build(&project, None);
+        let volume = |t: &Timeline| t.lanes.iter().find(|l| l.track == track).unwrap().volume_db;
+        timeline.running = true;
+        timeline.beat = 8.0;
+        timeline.follow_automation(&project);
+        assert!((volume(&timeline) + 6.02).abs() < 0.05, "{}", volume(&timeline));
+        timeline.running = false;
+        timeline.follow_automation(&project);
+        assert!(volume(&timeline).abs() < 1e-9, "stopped: the project's own value");
     }
 
     #[test]

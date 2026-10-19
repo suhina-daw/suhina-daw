@@ -383,6 +383,55 @@ pub enum Detail {
     Nothing,
 }
 
+impl Detail {
+    /// While the transport runs, the panels show what automation plays at `beat`: every enabled
+    /// lane of a device's parameter sets the value its knob, slider and text show (#706).
+    pub fn follow_automation(&mut self, project: &Project, beat: f64) {
+        let chain = match self {
+            Self::Devices(chain) | Self::Clip(_, chain) => chain,
+            Self::Nothing => return,
+        };
+        let Some(channel) = project
+            .tracks
+            .iter()
+            .find(|t| t.id == chain.track)
+            .and_then(|t| t.channel)
+            .and_then(|c| project.channels.iter().find(|ch| ch.id == c))
+        else {
+            return;
+        };
+        fn follow(boxes: &mut [DeviceBox], devices: &[suhina_engine::model::Device], beat: f64) {
+            for device_box in boxes {
+                if let Some(group) = device_box.group.as_mut() {
+                    for branch in &mut group.branches {
+                        follow(&mut branch.devices, devices, beat);
+                    }
+                }
+                let Some(device) = suhina_engine::model::device_at(devices, &device_box.at.0) else { continue };
+                for lane in device.automation.iter().filter(|l| l.enabled && !l.points.is_empty()) {
+                    let Some(value) = lane.value_at(beat, false) else { continue };
+                    for (id, v) in &mut device_box.values {
+                        if *id == lane.param {
+                            *v = value;
+                        }
+                    }
+                    for (id, text) in &mut device_box.params {
+                        if *id == lane.param {
+                            *text = format_value(value);
+                        }
+                    }
+                    if let Some(graph) = device_box.graph.as_mut() {
+                        for parameter in graph.parameters.iter_mut().filter(|p| p.id == lane.param) {
+                            parameter.value = value;
+                        }
+                    }
+                }
+            }
+        }
+        follow(&mut chain.devices, &channel.devices, beat);
+    }
+}
+
 /// The detail for a selected clip (it wins, with its own track's chain) or track.
 pub fn build(project: &Project, track: Option<TrackId>, clip: Option<ClipRef>) -> Detail {
     build_with(project, track, clip, &mut |_, _| None, crate::detail::nam_panel::Lists::default())

@@ -2333,6 +2333,7 @@ impl App {
                             // project keeps (`launcher.setQuantization`).
                             self.arrangement.grid = session.quantization();
                             let mut timeline = timeline;
+                            timeline.follow_automation(session.project());
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
                             // What ARA plug-ins found in the audio clips, as it is now (#720).
                             timeline.ara_notes = timeline
@@ -2887,6 +2888,13 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
+        // Automated parameters show what plays, while it plays (#706).
+        if let Some(session) = self.session()
+            && let Some(monitor) = session.player().map(suhina_session::Player::monitor)
+            && monitor.running()
+        {
+            shown.follow_automation(session.project(), monitor.beat());
+        }
         if let Some(session) = self.session() {
             for channel in session.project().channels.iter().filter(|channel| {
                 session
