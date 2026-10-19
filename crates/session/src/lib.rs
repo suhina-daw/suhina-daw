@@ -795,6 +795,12 @@ impl Session {
         self.ara_tracks().into_iter().find(|(t, _)| *t == track).map(|(_, device)| device)
     }
 
+    /// Whether clips' edits are still on their way to another track's plug-in (ADR 0028 step 6):
+    /// a clip moved there with its edits kept, waiting for that plug-in to run with it.
+    pub fn carrying_ara_edits(&self) -> bool {
+        self.plugins.carrying()
+    }
+
     /// Takes the editor of the plug-in device `device` on `track`, one that edits clips, out of
     /// the window to float in one of its own, or back into the clip's place (`float` false).
     pub fn set_ara_floating(

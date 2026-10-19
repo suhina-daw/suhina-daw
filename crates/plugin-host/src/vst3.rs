@@ -971,6 +971,16 @@ impl Vst3Plugin {
         self.ara.as_ref().map(|ara| ara.take_notes()).unwrap_or_default()
     }
 
+    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    pub(crate) fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
+        self.ara.as_ref().ok_or("the plug-in is not bound to an ARA document")?.export(modification, source)
+    }
+
+    /// Gives the bound document edits another track's stored for one of its modifications.
+    pub(crate) fn ara_import(&self, id: &str, bytes: &[u8], from: &str, to: &str, source: &str) -> Result<(), String> {
+        self.ara.as_ref().ok_or("the plug-in is not bound to an ARA document")?.import(id, bytes, from, to, source)
+    }
+
     pub(crate) fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
         let edited = self.ara.as_mut().ok_or("the plug-in is not bound to an ARA document")?.edit(document)?;
         if edited.changes_renderers() {

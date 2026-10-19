@@ -290,6 +290,10 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
     Ok(json!({ "clips": placed }))
 }
 
+/// What edits a clip about to move (ADR 0028 step 6): the key and device of the plug-in on its
+/// track, its content and its audio (the pool key); `None` for a clip no plug-in edits.
+type Edited = Option<(u64, usize, suhina_model::ContentId, String)>;
+
 /// `clip.moveMany {clips, beats, to_track?, tracks_by?, to_new_track?, stack?}`: moves several
 /// arrangement clips by the same number of beats at once, so none replaces another on the way;
 /// `to_track` takes them to another track when they are all on one, `tracks_by` takes each that
@@ -305,6 +309,36 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         Some(v) => Some(v.as_i64().ok_or("tracks_by must be a whole number of tracks")?),
     };
     let new_track = params.get("to_new_track").and_then(Value::as_bool).unwrap_or(false);
+    // A clip a plug-in edits (ADR 0028), going to another track: its edits go along, the
+    // plug-in added there when it has none (`keep`), or it starts there without them (`new`).
+    let keep_edits = match params.get("ara_edits") {
+        None | Some(Value::Null) => false,
+        Some(v) => match v.as_str() {
+            Some("keep") => true,
+            Some("new") => false,
+            _ => return Err("ara_edits must be keep or new".into()),
+        },
+    };
+    // Each chosen clip's plug-in that edits it (its key and device), content and audio (the
+    // pool key), before it moves.
+    let edited: Vec<Edited> = chosen
+        .iter()
+        .map(|(track, index)| {
+            if !keep_edits {
+                return None;
+            }
+            let device = session.ara_device(*track)?;
+            let key = crate::plugin_key_at(&session.project, *track, device)?;
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
+            let clip = lane.clips.get(*index)?;
+            let content = session.project.content(clip.content)?;
+            let source = content.lanes.iter().find_map(|l| match &l.data {
+                suhina_model::LaneData::Audio(region) => Some(region.pool_key().into_owned()),
+                suhina_model::LaneData::Notes(_) => None,
+            })?;
+            Some((key, device, clip.content, source))
+        })
+        .collect();
     if [params.get("to_track").is_some_and(|v| !v.is_null()), by.is_some(), new_track].iter().filter(|b| **b).count()
         > 1
     {
@@ -359,9 +393,13 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     let p = &mut session.project;
     // Taken out first, the highest index of each lane first so the others keep theirs.
     let mut taken: Vec<(TrackId, Clip)> = Vec::with_capacity(chosen.len());
+    // Where each taken clip came from and what edited it there, in the same order.
+    let mut came: Vec<(TrackId, Edited)> = Vec::new();
     let mut order = chosen.clone();
     order.sort_by_key(|c| std::cmp::Reverse(c.1));
     for (track, index) in order {
+        let at = chosen.iter().position(|c| *c == (track, index));
+        came.push((track, at.and_then(|at| edited.get(at).cloned().flatten())));
         let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)).ok_or("the track has no lane")?;
         // Copied, the clip stays where it is; its copy plays a content of its own.
         let clip =
@@ -401,6 +439,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         }
     }
     let mut placed = Vec::with_capacity(taken.len());
+    came.reverse();
     for (track, mut clip) in taken.into_iter().rev() {
         clip.start = (clip.start + beats).max(0.0);
         let lane = lane_of(p, track)?;
@@ -412,6 +451,23 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         placed.push((track, clip));
     }
+    // The edits of clips that left their plug-in's track go along (ADR 0028 step 6).
+    let mut carried = 0;
+    for ((track, clip), (from_track, origin)) in placed.iter().zip(&came) {
+        let Some((key, device, content, source)) = origin else { continue };
+        if *track == *from_track {
+            continue;
+        }
+        add_editor_like(session, *from_track, *device, *track)?;
+        session.plugins.carry(
+            *key,
+            *track,
+            (format!("content-{}", content.0), format!("content-{}", clip.content.0)),
+            source.clone(),
+            format!("clip-{}", clip.id.0),
+        );
+        carried += 1;
+    }
     let p = &session.project;
     let clips: Vec<Value> = placed
         .iter()
@@ -421,5 +477,26 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             Some(json!({ "clip": clip.id.0, "track": track.0, "index": index, "start": clip.start }))
         })
         .collect();
-    Ok(json!({ "clips": clips }))
+    Ok(json!({ "clips": clips, "edits_carried": carried }))
+}
+
+/// Puts on `to`'s channel, first, the plug-in that edits clips on `from` (device `device`)
+/// when `to` has no such plug-in yet: a clip moved there with its edits kept is edited there by
+/// the same plug-in (ADR 0028 step 6). It starts without the other's state; the edits come by
+/// the carry.
+fn add_editor_like(session: &mut Session, from: TrackId, device: usize, to: TrackId) -> Result<(), CommandError> {
+    let p = &mut session.project;
+    let channel_of = |p: &suhina_model::Project, track: TrackId| p.tracks.iter().find(|t| t.id == track)?.channel;
+    let source = channel_of(p, from)
+        .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| c.devices.get(device))
+        .map(|d| (d.name.clone(), d.kind.clone()))
+        .ok_or("the plug-in that edits the clip is missing")?;
+    let target = channel_of(p, to).ok_or("the track has no channel")?;
+    let channel = p.channels.iter_mut().find(|c| c.id == target).ok_or("the track has no channel")?;
+    if channel.devices.iter().any(|d| d.kind == source.1) {
+        return Ok(());
+    }
+    channel.devices.insert(0, suhina_model::Device::new(source.0, source.1));
+    Ok(())
 }

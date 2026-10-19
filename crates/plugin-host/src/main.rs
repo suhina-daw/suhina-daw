@@ -307,6 +307,22 @@ impl Loaded {
         }
     }
 
+    /// The edits of one modification and its source, stored on their own (ADR 0028 step 6).
+    fn ara_export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
+        match self {
+            Self::Vst3(plugin) => plugin.ara_export(modification, source),
+            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
+        }
+    }
+
+    /// Gives the plug-in edits another track's stored, for one of its modifications.
+    fn ara_import(&self, id: &str, bytes: &[u8], from: &str, to: &str, source: &str) -> Result<(), String> {
+        match self {
+            Self::Vst3(plugin) => plugin.ara_import(id, bytes, from, to, source),
+            _ => Err("only a VST3 plug-in can be bound to an ARA document".into()),
+        }
+    }
+
     /// Whether the plug-in supports ARA.
     fn edits_clips(&self) -> bool {
         matches!(self, Self::Vst3(plugin) if plugin.edits_clips())
@@ -742,6 +758,20 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         Message::AraUpdate { instance, document } => {
             match instances.get_mut(&instance).map(|l| l.ara_update(&document)) {
                 Some(Ok(())) => Message::AraUpdated { instance },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::AraExport { instance, modification, source } => {
+            match instances.get(&instance).map(|l| l.ara_export(&modification, &source)) {
+                Some(Ok((archive_id, data))) => Message::AraExported { instance, archive_id, data },
+                Some(Err(message)) => failed(instance, message),
+                None => missing(instance),
+            }
+        }
+        Message::AraImport { instance, archive_id, data, from, to, source } => {
+            match instances.get(&instance).map(|l| l.ara_import(&archive_id, &data, &from, &to, &source)) {
+                Some(Ok(())) => Message::AraImported { instance },
                 Some(Err(message)) => failed(instance, message),
                 None => missing(instance),
             }

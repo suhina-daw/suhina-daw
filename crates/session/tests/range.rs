@@ -241,3 +241,22 @@ fn clips_move_by_tracks_or_to_a_new_track() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().tracks.len(), tracks);
 }
+
+/// `ara_edits` (ADR 0028 step 6): keep carries the edits of clips a plug-in edits; clips no
+/// plug-in edits move as ever and carry nothing; anything but keep or new is refused.
+#[test]
+fn keeping_ara_edits_moves_plain_clips_as_ever() {
+    let mut session = Session::new(project());
+    let one = json!([{ "track": 1, "index": 0 }]);
+    let moved =
+        run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 0.0, "to_track": 2, "ara_edits": "keep" }))
+            .unwrap();
+    assert_eq!(moved["edits_carried"], 0, "no plug-in edits these clips");
+    assert!(spans(&session, 1).is_empty());
+    assert!(!session.carrying_ara_edits());
+    let back = json!([{ "track": 2, "index": 0 }]);
+    assert!(
+        run(&mut session, "clip.moveMany", json!({ "clips": back, "beats": 0.0, "to_track": 1, "ara_edits": "maybe" }))
+            .is_err()
+    );
+}

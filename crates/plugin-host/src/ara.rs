@@ -588,11 +588,90 @@ impl Document {
         (stored != 0).then_some((id, archive.bytes))
     }
 
-    /// Gives the plug-in back the edits [`Document::store`] took, for the objects with the same
-    /// persistent ids (the same clips). Refused when the archive is of a kind the plug-in does
-    /// not read (another plug-in's, or a newer version's).
-    pub(crate) fn restore(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
+    /// The edits of one modification (`content-<id>`) and its source (the pool key), stored on
+    /// their own (a partial archive, ADR 0028 step 6): to give another track's plug-in when a
+    /// clip goes there with its edits kept. The plug-in's document archive id and the bytes.
+    pub(crate) fn export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
+        // What the plug-in has queued goes into the archive too.
+        self.notify_model_updates();
         let dc = self.controller().ok_or("no document controller")?;
+        // SAFETY: as in `store`.
+        let factory = unsafe { self.factory.as_ref() }.ok_or("no ARA factory")?;
+        let id = text_of(factory.documentArchiveID).ok_or("the plug-in names no archive kind")?;
+        let store = dc.interface.storeObjectsToArchive.ok_or("the plug-in cannot store edits")?;
+        let at = |ids: &[String], wanted: &str| ids.iter().position(|i| i == wanted);
+        let modification_ref = at(&self.modification_ids, modification)
+            .and_then(|i| self.modifications.get(i).copied())
+            .ok_or_else(|| format!("the document has no {modification}"))?;
+        let source_ref = at(&self.source_ids, source)
+            .and_then(|i| self.sources.get(i).copied())
+            .ok_or("the document does not have the clip's audio")?;
+        let filter = ARAStoreObjectsFilter {
+            structSize: size_of::<ARAStoreObjectsFilter>(),
+            documentData: 0,
+            audioSourceRefsCount: 1,
+            audioSourceRefs: &source_ref,
+            audioModificationRefsCount: 1,
+            audioModificationRefs: &modification_ref,
+        };
+        let mut archive = Archive { bytes: Vec::new(), id: CString::new(id.clone()).map_err(|_| "a bad archive id")? };
+        let writer: ARAArchiveWriterHostRef = std::ptr::from_mut(&mut archive).cast();
+        // SAFETY: a live document controller, not being edited, on its model thread; the archive,
+        // the filter and the refs it points at live for the call.
+        let stored = unsafe { store(dc.reference, writer, &filter) };
+        if stored == 0 {
+            return Err("the plug-in could not store the clip's edits".into());
+        }
+        Ok((id, archive.bytes))
+    }
+
+    /// Gives the plug-in the edits [`Document::export`] stored in another track's document,
+    /// for its modification `to` (it was `from` there) of the same `source`: a clip moved or
+    /// copied to this track with its edits kept. Refused while the document has no `to` yet
+    /// (the clip has not reached it), or for an archive of a kind the plug-in does not read.
+    pub(crate) fn import(&self, id: &str, bytes: &[u8], from: &str, to: &str, source: &str) -> Result<(), String> {
+        if !self.modification_ids.iter().any(|m| m == to) {
+            return Err(format!("the document has no {to} yet"));
+        }
+        if !self.source_ids.iter().any(|s| s == source) {
+            return Err("the document does not have the clip's audio yet".into());
+        }
+        self.check_archive(id)?;
+        let dc = self.controller().ok_or("no document controller")?;
+        let (Some(begin), Some(end), Some(restore)) =
+            (dc.interface.beginEditing, dc.interface.endEditing, dc.interface.restoreObjectsFromArchive)
+        else {
+            return Err("the plug-in cannot restore edits".into());
+        };
+        let texts = [source, from, to].map(CString::new);
+        let [Ok(source), Ok(from), Ok(to)] = texts else { return Err("a bad persistent id".into()) };
+        let source_id = source.as_ptr();
+        let (from_id, to_id) = (from.as_ptr(), to.as_ptr());
+        let filter = ARARestoreObjectsFilter {
+            structSize: size_of::<ARARestoreObjectsFilter>(),
+            documentData: 0,
+            audioSourceIDsCount: 1,
+            audioSourceArchiveIDs: &source_id,
+            audioSourceCurrentIDs: &source_id,
+            audioModificationIDsCount: 1,
+            audioModificationArchiveIDs: &from_id,
+            audioModificationCurrentIDs: &to_id,
+        };
+        let mut archive = Archive { bytes: bytes.to_vec(), id: CString::new(id).map_err(|_| "a bad archive id")? };
+        let reader: ARAArchiveReaderHostRef = std::ptr::from_mut(&mut archive).cast();
+        // SAFETY: a live document controller on its model thread, inside an edit; the archive,
+        // the filter and the texts it points at live for the call.
+        unsafe { begin(dc.reference) };
+        // SAFETY: as above.
+        let restored = unsafe { restore(dc.reference, reader, &filter) };
+        // SAFETY: as above, closing the edit.
+        unsafe { end(dc.reference) };
+        self.notify_model_updates();
+        if restored == 0 { Err("the plug-in could not read the clip's edits".into()) } else { Ok(()) }
+    }
+
+    /// Whether the plug-in reads archives of kind `id`: its own, or one it lists as compatible.
+    fn check_archive(&self, id: &str) -> Result<(), String> {
         // SAFETY: as in `store`.
         let factory = unsafe { self.factory.as_ref() }.ok_or("no ARA factory")?;
         let mut known = vec![text_of(factory.documentArchiveID)];
@@ -603,9 +682,19 @@ impl Document {
                 known.push(text_of(unsafe { factory.compatibleDocumentArchiveIDs.wrapping_add(index).read() }));
             }
         }
-        if !known.iter().flatten().any(|k| k == id) {
-            return Err("the plug-in does not read these saved edits".into());
+        if known.iter().flatten().any(|k| k == id) {
+            Ok(())
+        } else {
+            Err("the plug-in does not read these saved edits".into())
         }
+    }
+
+    /// Gives the plug-in back the edits [`Document::store`] took, for the objects with the same
+    /// persistent ids (the same clips). Refused when the archive is of a kind the plug-in does
+    /// not read (another plug-in's, or a newer version's).
+    pub(crate) fn restore(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
+        let dc = self.controller().ok_or("no document controller")?;
+        self.check_archive(id)?;
         let (Some(begin), Some(end), Some(restore)) =
             (dc.interface.beginEditing, dc.interface.endEditing, dc.interface.restoreObjectsFromArchive)
         else {

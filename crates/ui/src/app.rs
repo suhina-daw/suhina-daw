@@ -22,7 +22,8 @@ use suhina_engine::model::{ClipId, TrackId};
 use suhina_session::{CommandKind, PluginStatus, ProjectId, Projects, Session};
 
 use crate::app::project_dialog::{
-    AboutChoice, AgentChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt, UnsavedChoice,
+    AboutChoice, AgentChoice, AraEditsChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt,
+    UnsavedChoice,
 };
 use crate::app::start_panel::{AudioSummary, StartChoice, StartState};
 use crate::arrangement::arrangement_view::{self, ArrangementViewState};
@@ -273,6 +274,9 @@ pub struct App {
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
+    /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
+    /// new (ADR 0028 step 6): the move, and the plug-in's name.
+    ara_prompt: Option<(Action, String)>,
     /// What to do once the project is saved, when Save in that question first asks for a name.
     save_then: Option<Leaving>,
     /// Every project with unsaved changes was answered for: the window may close.
@@ -477,6 +481,7 @@ impl App {
             stashes: HashMap::new(),
             open_prompt: None,
             unsaved_prompt: None,
+            ara_prompt: None,
             save_then: None,
             quit_confirmed: false,
             quit_now: false,
@@ -1629,6 +1634,14 @@ impl App {
                 None => {}
             }
         }
+        if let Some((action, plugin)) = self.ara_prompt.take() {
+            match project_dialog::show_ara_edits(ui, window, &plugin) {
+                Some(AraEditsChoice::Keep) => self.run(&self.with_ara_edits(&action, "keep")),
+                Some(AraEditsChoice::New) => self.run(&self.with_ara_edits(&action, "new")),
+                Some(AraEditsChoice::Cancel) => {}
+                None => self.ara_prompt = Some((action, plugin)),
+            }
+        }
         if let Some(leaving) = self.unsaved_prompt.take() {
             let name = self.projects.name(leaving.project).unwrap_or("Untitled").to_string();
             let doing = match leaving.then {
@@ -1644,6 +1657,73 @@ impl App {
                 None => self.unsaved_prompt = Some(leaving),
             }
         }
+    }
+
+    /// The name of the plug-in that edits clips which `action` moves or copies to another track
+    /// (ADR 0028 step 6), so Keep edits or Copy as new is asked first; `None` otherwise, and for
+    /// a move that already says (`ara_edits`).
+    fn ara_clips_leaving(&self, action: &Action) -> Option<String> {
+        if !matches!(action.id, "clip.move" | "clip.moveMany") || !action.params["ara_edits"].is_null() {
+            return None;
+        }
+        let p = &action.params;
+        let to = p["to_track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
+        let other_track =
+            to.is_some() || p["tracks_by"].as_i64().is_some_and(|by| by != 0) || p["to_new_track"] == true;
+        if !other_track {
+            return None;
+        }
+        let session = self.session()?;
+        let project = session.project();
+        let ids: Vec<u32> = match action.id {
+            "clip.move" => p["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).into_iter().collect(),
+            _ => p["clips"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["clip"].as_u64().and_then(|c| u32::try_from(c).ok()))
+                .collect(),
+        };
+        ids.iter().find_map(|id| {
+            let lane = project.arrangement.lanes.iter().find(|l| l.clips.iter().any(|c| c.id.0 == *id))?;
+            let track = lane.track?;
+            if to == Some(track) {
+                return None;
+            }
+            let device = session.ara_device(track)?;
+            let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
+            let channel = project.channels.iter().find(|c| c.id == channel)?;
+            channel.devices.get(device).map(|d| d.name.clone())
+        })
+    }
+
+    /// `action` (a clip's move or a selection's) as `clip.moveMany` with `ara_edits` set.
+    fn with_ara_edits(&self, action: &Action, edits: &str) -> Action {
+        let mut params = action.params.clone();
+        if action.id == "clip.move" {
+            let id = params["clip"].as_u64().unwrap_or_default();
+            let start = self
+                .session()
+                .and_then(|s| {
+                    s.project()
+                        .arrangement
+                        .lanes
+                        .iter()
+                        .flat_map(|l| &l.clips)
+                        .find(|c| u64::from(c.id.0) == id)
+                        .map(|c| c.start)
+                })
+                .unwrap_or_default();
+            let beats = params["start"].as_f64().unwrap_or(start) - start;
+            if let Some(map) = params.as_object_mut() {
+                map.remove("clip");
+                map.remove("start");
+            }
+            params["clips"] = json!([{ "clip": id }]);
+            params["beats"] = json!(beats);
+        }
+        params["ara_edits"] = json!(edits);
+        Action::new("clip.moveMany", params)
     }
 
     /// The window's title: the active project, with a dot while it has unsaved changes.
@@ -2618,6 +2698,11 @@ impl App {
                 && self.unsaved(project)
             {
                 self.unsaved_prompt = Some(Leaving { project, then: AfterLeaving::Close });
+                continue;
+            }
+            // Clips a plug-in edits, going to another track: Keep edits or Copy as new first.
+            if let Some(plugin) = self.ara_clips_leaving(action) {
+                self.ara_prompt = Some((action.clone(), plugin));
                 continue;
             }
             // What the chain was, before a removal about to run: its undo or redo later says

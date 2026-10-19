@@ -225,6 +225,17 @@ the list below, in a first form). Where it differs from the decisions above it i
   file whose span holds its own. The host makes the new modification with
   `cloneAudioModification`, so it starts with those edits; a plug-in that cannot clone gets a new
   one, as before.
+- **Edits taken to another track** (stage 6 in part, #722). A clip an ARA plug-in edits that is
+  moved or copied to another track asks first: **Keep edits** or **Copy as new** (or Cancel).
+  `clip.moveMany` takes it as `ara_edits` (`keep`, or `new`, the default). With keep, the track it
+  goes to gets the same plug-in first in its chain when it has none (with no state of its own),
+  and the clip's edits go along: the first track's plug-in stores the clip's modification and its
+  source on their own (`storeObjectsToArchive` with a filter, a partial archive: `ara_export`),
+  and once the other track's plug-in runs with the clip, it restores them for the clip's
+  modification there (`restoreObjectsFromArchive` with a filter mapping the old persistent id to
+  the new one, `ara_import`; protocol version 13). The session keeps each carry until it is done,
+  for at most 60 s, and says when it could not be. With one document per instance (below) the
+  edits cannot be cloned across tracks inside one document, which is why they go by archive.
 - **Notes on the clips** (#720). After a model update in which the plug-in said a region's,
   modification's or source's notes may have changed (not with "note scope remains unchanged"),
   and after the host's own edits, the host reads every region's notes with a playback-region

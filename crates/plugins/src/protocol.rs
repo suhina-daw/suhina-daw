@@ -6,8 +6,8 @@
 //!
 //! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `fit_editor`, `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
-//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `memory`,
+//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
 //! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
 //! `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 12;
+pub const VERSION: u64 = 13;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -442,6 +442,36 @@ pub enum Message {
     AraUpdated {
         instance: u32,
     },
+    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0028),
+    /// by its persistent id (`content-<id>`), with its audio source's (`source`, the pool key):
+    /// stored on their own (a partial archive), to give another track's plug-in. Answered with
+    /// `AraExported`, or an error when the plug-in cannot store them.
+    AraExport {
+        instance: u32,
+        modification: String,
+        source: String,
+    },
+    AraExported {
+        instance: u32,
+        /// The plug-in's document archive id the edits are stored for.
+        archive_id: String,
+        data: Vec<u8>,
+    },
+    /// Gives a plug-in loaded with an ARA document the edits `AraExport` stored in another
+    /// track's, for its modification `to` (they were `from` there) of the same source: a clip
+    /// moved or copied to this track with its edits kept. Answered with `AraImported`, or an
+    /// error (no modification `to` in the document yet, or a plug-in that cannot restore).
+    AraImport {
+        instance: u32,
+        archive_id: String,
+        data: Vec<u8>,
+        from: String,
+        to: String,
+        source: String,
+    },
+    AraImported {
+        instance: u32,
+    },
     /// The plug-in gave its editor a new size (unasked, in both modes).
     EditorResized {
         instance: u32,
@@ -510,6 +540,10 @@ impl Message {
             | Self::FitEditor { instance, .. }
             | Self::AraUpdate { instance, .. }
             | Self::AraUpdated { instance }
+            | Self::AraExport { instance, .. }
+            | Self::AraExported { instance, .. }
+            | Self::AraImport { instance, .. }
+            | Self::AraImported { instance }
             | Self::EditorResized { instance, .. }
             | Self::LatencyChanged { instance, .. }
             | Self::AraNotes { instance, .. }
@@ -578,6 +612,17 @@ impl Message {
                 json!({ "op": "ara_update", "instance": instance, "document": document.to_json() })
             }
             Self::AraUpdated { instance } => json!({ "op": "ara_updated", "instance": instance }),
+            Self::AraExport { instance, modification, source } => {
+                json!({ "op": "ara_export", "instance": instance, "modification": modification, "source": source })
+            }
+            Self::AraExported { instance, archive_id, data } => {
+                json!({ "op": "ara_exported", "instance": instance, "archive_id": archive_id, "data": hex(data) })
+            }
+            Self::AraImport { instance, archive_id, data, from, to, source } => json!({
+                "op": "ara_import", "instance": instance, "archive_id": archive_id, "data": hex(data),
+                "from": from, "to": to, "source": source,
+            }),
+            Self::AraImported { instance } => json!({ "op": "ara_imported", "instance": instance }),
             Self::AraNotes { instance, region, notes, truncated } => json!({
                 "op": "ara_notes", "instance": instance, "region": region, "truncated": truncated,
                 "notes": notes.iter().map(|n| n.to_json()).collect::<Vec<_>>(),
@@ -698,6 +743,25 @@ impl Message {
                 Self::AraUpdate { instance: instance()?, document: AraDocument::from_json(value.get("document")?)? }
             }
             "ara_updated" => Self::AraUpdated { instance: instance()? },
+            "ara_export" => Self::AraExport {
+                instance: instance()?,
+                modification: text("modification").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                source: text("source").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+            },
+            "ara_exported" => Self::AraExported {
+                instance: instance()?,
+                archive_id: text("archive_id").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                data: bytes("data")?,
+            },
+            "ara_import" => Self::AraImport {
+                instance: instance()?,
+                archive_id: text("archive_id").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                data: bytes("data")?,
+                from: text("from").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                to: text("to").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+                source: text("source").filter(|t| t.len() <= MAX_ARA_TEXT)?,
+            },
+            "ara_imported" => Self::AraImported { instance: instance()? },
             "ara_notes" => Self::AraNotes {
                 instance: instance()?,
                 region: value.get("region")?.as_str().filter(|t| t.len() <= MAX_ARA_TEXT)?.to_string(),
@@ -823,7 +887,7 @@ mod tests {
 
     #[test]
     fn every_message_round_trips() {
-        assert_eq!(VERSION, 12);
+        assert_eq!(VERSION, 13);
         let messages = [
             Message::Hello { version: VERSION },
             Message::TransportKey,
@@ -878,6 +942,17 @@ mod tests {
                 placement: Placement { x: -40, y: 620, clip_x: 0, clip_y: 600, clip_width: 1280, clip_height: 0 },
             },
             Message::AraSelect { instance: 6, region: Some("clip-7".into()) },
+            Message::AraExport { instance: 6, modification: "content-3".into(), source: "C:\\a\\take.wav".into() },
+            Message::AraExported { instance: 6, archive_id: "com.example.edits".into(), data: vec![1, 2, 0xff] },
+            Message::AraImport {
+                instance: 7,
+                archive_id: "com.example.edits".into(),
+                data: vec![1, 2, 0xff],
+                from: "content-3".into(),
+                to: "content-9".into(),
+                source: "C:\\a\\take.wav".into(),
+            },
+            Message::AraImported { instance: 7 },
             Message::AraSelect { instance: 6, region: None },
             Message::AraUpdate { instance: 6, document: ara_document() },
             Message::AraUpdated { instance: 6 },

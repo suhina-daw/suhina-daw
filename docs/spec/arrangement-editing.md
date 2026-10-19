@@ -95,7 +95,9 @@ moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_tra
 to_new_track?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
 or down, a selection on one track goes to the track under the pointer, and a selection on several
 tracks moves each clip by as many tracks from its own (`tracks_by`), refused where a clip would
-land on a track that cannot hold it. Dropped on the empty space under the tracks, outlined there
+land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
+track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
+has none, **Copy as new** starts it there without them (`ara_edits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
 after the last (`to_new_track`), in the same undo step.
 

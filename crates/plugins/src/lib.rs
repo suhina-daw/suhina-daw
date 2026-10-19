@@ -958,6 +958,45 @@ impl Plugin {
         Ok(())
     }
 
+    /// The edits of one modification (`content-<id>`) of a plug-in bound to an ARA document and
+    /// its source (the pool key), stored on their own to give another track's plug-in (ADR 0028
+    /// step 6): the plug-in's document archive id and the bytes. Waits for the answer.
+    pub fn ara_export(&mut self, modification: &str, source: &str) -> Result<(String, Vec<u8>), PluginError> {
+        let instance = self.instance;
+        let reply = self.request(
+            &Message::AraExport { instance, modification: modification.to_string(), source: source.to_string() },
+            "ara_export",
+            |m| matches!(m, Message::AraExported { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::AraExported { archive_id, data, .. } => Ok((archive_id, data)),
+            _ => Err(PluginError::Protocol("expected the exported edits".into())),
+        }
+    }
+
+    /// Gives a plug-in bound to an ARA document edits another track's stored with
+    /// [`Plugin::ara_export`], for its modification `to` (it was `from` there) of `source`.
+    /// Fails while its document has no `to` yet. Waits for the answer.
+    pub fn ara_import(
+        &mut self,
+        (archive_id, data): (&str, &[u8]),
+        from: &str,
+        to: &str,
+        source: &str,
+    ) -> Result<(), PluginError> {
+        let instance = self.instance;
+        let message = Message::AraImport {
+            instance,
+            archive_id: archive_id.to_string(),
+            data: data.to_vec(),
+            from: from.to_string(),
+            to: to.to_string(),
+            source: source.to_string(),
+        };
+        self.request(&message, "ara_import", |m| matches!(m, Message::AraImported { instance: i } if *i == instance))?;
+        Ok(())
+    }
+
     /// Tells a plug-in bound to an ARA document which region (`clip-<id>`) the engine has
     /// selected, or none. Never waits, as [`Plugin::place_editor`]: returns `false` when the
     /// host process was busy and it was not sent, so the caller sends it again later.

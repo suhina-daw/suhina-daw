@@ -872,6 +872,11 @@ static COMMANDS: &[CommandSpec] = &[
                 "instead of to_track: true makes a track of the clips' kind after the last and moves them there, in the same undo step",
             ),
             optional(
+                "ara_edits",
+                ParamType::Text,
+                "for clips a plug-in edits (Melodyne) going to another track: keep takes their edits along and puts the plug-in on that track when it has none; new (default) starts them there without",
+            ),
+            optional(
                 "color",
                 ParamType::Text,
                 "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
