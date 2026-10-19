@@ -2013,13 +2013,22 @@ fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
     harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowDown);
     harness.run_steps(2);
     assert_eq!(harness.state().arrangement().waveform_zoom, 1.0, "never below the clips' own size");
-    // The slider by the ruler: a double-click puts it back to ×1.
-    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowUp);
+    // The slider by the ruler, plain to see: a click at its right end zooms all the way.
+    let slider = harness.get_by_label("Waveform zoom").rect();
+    assert!(slider.width() >= 80.0 && slider.height() >= 10.0, "a slider to see and grab: {slider:?}");
+    harness.hover_at(egui::pos2(slider.right() - 1.0, slider.center().y));
+    harness.step();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: egui::pos2(slider.right() - 1.0, slider.center().y),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        harness.step();
+    }
     harness.run_steps(2);
-    harness.get_by_label("Waveform zoom").click();
-    harness.get_by_label("Waveform zoom").click();
-    harness.run_steps(2);
-    assert!(harness.query_by_label("Waveform zoom").is_some());
+    assert!(harness.state().arrangement().waveform_zoom > 12.0, "{}", harness.state().arrangement().waveform_zoom);
 }
 
 #[test]

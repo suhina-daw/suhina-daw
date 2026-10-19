@@ -162,8 +162,8 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
 /// The height of a clip's name bar, and the least a clip's height must be to have a body under
 /// it for selecting time.
 const CLIP_NAME_BAR: f32 = 16.0;
-/// The waveform zoom slider's width, in the header column's corner.
-const WAVEFORM_ZOOM_WIDTH: f32 = 8.0;
+/// The waveform zoom slider's track width, in the header column's corner.
+const WAVEFORM_ZOOM_WIDTH: f32 = 72.0;
 /// The grid's lines this frame, as (x, on a bar), for the clips' bodies.
 const CLIP_GRID: &str = "arrangement-clip-grid";
 /// The waveform zoom this frame, for `paint_clip`.
@@ -1382,20 +1382,40 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             ui.close();
         }
     });
-    // The waveform zoom: a thin slider at the corner's outer edge. Up draws audio clips'
-    // waveforms larger, the sound unchanged; the wheel steps it, a double-click puts it back.
-    let zoom_bar = {
-        let x = if state.headers_left { corner.left() + 4.0 } else { corner.right() - 4.0 - WAVEFORM_ZOOM_WIDTH };
-        Rect::from_min_max(Pos2::new(x, corner.top() + 4.0), Pos2::new(x + WAVEFORM_ZOOM_WIDTH, corner.bottom() - 4.0))
+    // The waveform zoom, on the corner's lower line: a waveform mark, a slider and its value.
+    // Right draws audio clips' waveforms larger, the sound unchanged; a click puts the handle
+    // there, the wheel steps it, a double-click puts it back to ×1.
+    let zoom_row = {
+        let width = 14.0 + 4.0 + WAVEFORM_ZOOM_WIDTH + 4.0 + 34.0;
+        let x = if state.headers_left { corner.left() + 6.0 } else { corner.right() - 6.0 - width };
+        Rect::from_min_size(Pos2::new(x, corner.bottom() - 18.0), Vec2::new(width, 14.0)).intersect(corner)
     };
     {
-        let response = ui.interact(zoom_bar, Id::new("arrangement-waveform-zoom"), Sense::click_and_drag());
+        let mark = Rect::from_min_size(zoom_row.min, Vec2::new(14.0, zoom_row.height()));
+        let track = Rect::from_min_size(
+            Pos2::new(mark.right() + 4.0, zoom_row.top()),
+            Vec2::new(WAVEFORM_ZOOM_WIDTH, zoom_row.height()),
+        );
+        let value = Rect::from_min_max(Pos2::new(track.right() + 4.0, zoom_row.top()), zoom_row.max);
+        let span = (WAVEFORM_ZOOM_RANGE.1 / WAVEFORM_ZOOM_RANGE.0).log2();
+        let share_of = |zoom: f32| ((zoom / WAVEFORM_ZOOM_RANGE.0).log2() / span).clamp(0.0, 1.0);
+        let zoom_at = |x: f32| {
+            let share = ((x - track.left()) / track.width()).clamp(0.0, 1.0);
+            WAVEFORM_ZOOM_RANGE.0 * 2f32.powf(share * span)
+        };
+        let response = ui.interact(
+            Rect::from_min_max(mark.min, track.max),
+            Id::new("arrangement-waveform-zoom"),
+            Sense::click_and_drag(),
+        );
         response.widget_info(|| egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom"));
-        if response.dragged() {
-            // Thirty points up doubles it.
-            let delta = -response.drag_delta().y / 30.0;
-            state.waveform_zoom =
-                (state.waveform_zoom * 2f32.powf(delta)).clamp(WAVEFORM_ZOOM_RANGE.0, WAVEFORM_ZOOM_RANGE.1);
+        if response.double_clicked() {
+            state.waveform_zoom = 1.0;
+        } else if (response.clicked() || response.dragged())
+            && let Some(pointer) = response.interact_pointer_pos()
+            && pointer.x >= track.left() - 4.0
+        {
+            state.waveform_zoom = zoom_at(pointer.x);
         }
         if response.hovered() {
             // One step a wheel tick, from the events themselves rather than egui's smoothed scroll.
@@ -1412,32 +1432,51 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             if wheel != 0.0 {
                 state.waveform_zoom = waveform_zoom_step(state.waveform_zoom, if wheel > 0.0 { 1 } else { -1 });
             }
-            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-        }
-        if response.double_clicked() {
-            state.waveform_zoom = 1.0;
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         let response = response.on_hover_text(format!(
-            "Waveform zoom ×{:.1}: audio clips drawn larger, the sound unchanged. Drag or scroll; double-click for ×1",
+            "Waveform zoom ×{:.1}: audio clips drawn larger, the sound unchanged. Drag, click or scroll; double-click for ×1; Ctrl+Alt+Up and Down",
             state.waveform_zoom
         ));
         let hover = widgets::hover(ui, &response);
-        painter.rect_filled(zoom_bar, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-        let share = (state.waveform_zoom / WAVEFORM_ZOOM_RANGE.0).log2()
-            / (WAVEFORM_ZOOM_RANGE.1 / WAVEFORM_ZOOM_RANGE.0).log2();
-        let filled = Rect::from_min_max(
-            Pos2::new(zoom_bar.left(), zoom_bar.bottom() - zoom_bar.height() * share.clamp(0.0, 1.0)),
-            zoom_bar.max,
+        let ink = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
+        // The mark: a small waveform, so the slider says what it zooms.
+        let c = mark.center();
+        let wave: Vec<Pos2> =
+            [(-6.0, 0.0), (-4.0, -2.0), (-2.0, 4.0), (0.0, -5.0), (2.0, 3.0), (4.0, -2.0), (6.0, 0.0)]
+                .into_iter()
+                .map(|(dx, dy)| Pos2::new(c.x + dx, c.y + dy))
+                .collect();
+        painter.add(egui::Shape::line(wave, egui::Stroke::new(1.2, ink)));
+        // The track, filled up to the handle, and the handle.
+        let mid = track.center().y;
+        let handle_x = track.left() + track.width() * share_of(state.waveform_zoom);
+        painter.line_segment(
+            [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
+            egui::Stroke::new(2.0, theme::control_background()),
         );
-        painter.rect_filled(filled, 2.0, theme::text_secondary());
+        painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], egui::Stroke::new(2.0, ink));
+        painter.circle_filled(
+            Pos2::new(handle_x, mid),
+            4.5,
+            motion::mix(theme::text_secondary(), theme::text_value(), hover),
+        );
+        widgets::text_in(
+            &painter,
+            value,
+            Align2::LEFT_CENTER,
+            &format!("×{:.1}", state.waveform_zoom),
+            theme::mono_font(theme::TEXT_TINY),
+            theme::text_hint(),
+        );
     }
     // The return tracks' rows along the bottom go and come back with a button here.
     if has_returns && focus.is_none() {
         let label = if state.returns_hidden { "Show returns" } else { "Hide returns" };
         let font = theme::ui_font(theme::TEXT_SMALL);
         let width = widgets::text_width(ui, label, font.clone()) + 12.0;
-        let gap = WAVEFORM_ZOOM_WIDTH + 8.0;
-        let x = if state.headers_left { corner.left() + gap } else { corner.right() - gap - width };
+        // On the corner's top line, the zoom under it.
+        let x = if state.headers_left { corner.left() + 6.0 } else { corner.right() - 6.0 - width };
         let button = Rect::from_min_size(Pos2::new(x, corner.top() + 4.0), Vec2::new(width, 18.0)).intersect(corner);
         let response = widgets::button_area(ui, button, Id::new("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
