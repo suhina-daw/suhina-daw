@@ -291,7 +291,7 @@ fn arrangement_app() -> Harness<'static, App> {
 #[test]
 fn dragging_a_clip_moves_it_on_the_bar_grid() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 6.0);
     // 8 points a beat by default, so 64 points are two bars.
     let to = from + egui::vec2(64.0, 0.0);
     harness.hover_at(from);
@@ -320,7 +320,7 @@ fn moving_the_view_with_the_middle_button_over_a_clip_leaves_the_clip_alone() {
         h.state().session().map(|s| s.project().arrangement.lanes[0].clips.iter().map(|c| c.start).collect::<Vec<_>>())
     };
     let before = starts(&harness);
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 6.0);
     let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
         pos,
         button: egui::PointerButton::Middle,
@@ -341,10 +341,20 @@ fn moving_the_view_with_the_middle_button_over_a_clip_leaves_the_clip_alone() {
     assert_eq!(starts(&harness), before);
 }
 
+/// Clicks the name bar of the clip labelled `label`, which picks it whole.
+fn click_name_bar(harness: &mut Harness<'static, App>, label: &str) {
+    let at = harness.get_by_label(label).rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+}
+
 /// Drags the clip labelled `label` by `by` points in the Arrangement view.
 fn drag_clip(harness: &mut Harness<'static, App>, label: &str, by: egui::Vec2) {
-    // By its lower half: the upper half paints time.
-    let from = harness.get_by_label(label).rect().center_bottom() - egui::vec2(0.0, 8.0);
+    // By its name bar: its body selects time.
+    let from = harness.get_by_label(label).rect().center_top() + egui::vec2(0.0, 6.0);
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -381,7 +391,7 @@ fn a_dropped_clip_replaces_what_it_covers_unless_midi_stacking_is_on() {
 #[test]
 fn dragging_a_clip_down_moves_it_to_the_next_track() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 6.0);
     // Lanes are 48 points high with a line between them.
     let to = from + egui::vec2(0.0, 49.0);
     harness.hover_at(from);
@@ -768,9 +778,8 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
         render_a_block(renderer);
     };
 
-    // By default Play starts from the selected clip.
-    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
-    harness.run();
+    // By default Play starts from the selected clip: picked whole, by its name bar.
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
     harness.get_by_label("Play").click();
     harness.run_steps(2);
     render_a_block(&mut renderer);
@@ -803,19 +812,32 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     );
     harness.get_by_label("Close settings").click();
     harness.run();
-    harness.get_by_label("Clip Beat A on Drums at bar 1").click();
-    harness.run();
+    click_name_bar(&mut harness, "Clip Beat A on Drums at bar 1");
     harness.key_press(Key::Space);
     harness.run_steps(2);
     render_a_block(&mut renderer);
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 0.0));
     stop(&mut harness, &mut renderer);
-    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
-    harness.run();
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
     harness.get_by_label("Play").click();
     harness.run_steps(2);
     render_a_block(&mut renderer);
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
+    stop(&mut harness, &mut renderer);
+
+    // A click in the body of the selected clip sets where play starts, the clip still picked:
+    // two bars in (8 points a beat), Play starts there and not from the clip's start.
+    let body = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().left_center() + egui::vec2(64.0, 0.0);
+    harness.hover_at(body);
+    harness.run();
+    harness.drag_at(body);
+    harness.drop_at(body);
+    harness.run_steps(2);
+    assert!(harness.state().arrangement().selected_clip().is_some(), "the clip stays picked");
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 72.0));
     stop(&mut harness, &mut renderer);
 
     // In the Session view the selection is not shown, so Play starts from the marker; stopping
@@ -3665,8 +3687,8 @@ fn zoom_in_at_beat_b(harness: &mut Harness<'static, App>) -> f32 {
 /// view when zoomed in.
 fn drag_beat_b(harness: &mut Harness<'static, App>, by: egui::Vec2) {
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
-    // By its lower half: the upper half paints time.
-    let from = egui::pos2(clip.left() + 16.0, clip.bottom() - 8.0);
+    // By its name bar: its body selects time.
+    let from = egui::pos2(clip.left() + 16.0, clip.top() + 6.0);
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -4181,7 +4203,7 @@ fn wait_over(harness: &mut Harness<'static, App>, at: egui::Pos2) {
 #[test]
 fn an_arrangement_clip_dragged_over_the_session_switch_drops_into_a_slot() {
     let mut harness = arrangement_app();
-    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_bottom() - egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
     let switch = harness.get_by_label("Session view").rect().center();
     harness.hover_at(from);
     harness.step();
@@ -4719,7 +4741,7 @@ fn ctrl_dragging_a_clip_copies_it_and_leaves_the_original() {
         p.arrangement.lanes.iter().find(|l| l.track == track).unwrap().clips.iter().map(|c| c.start).collect::<Vec<_>>()
     };
     let before = starts(&harness);
-    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_bottom() - egui::vec2(0.0, 8.0);
+    let from = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center_top() + egui::vec2(0.0, 6.0);
     let to = from + egui::vec2(256.0, 0.0);
     harness.hover_at(from);
     harness.run();

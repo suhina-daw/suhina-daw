@@ -400,6 +400,16 @@ pub struct ArrangementViewState {
     /// opens a clip editor closed by hand again (`docs/spec/ui-clip-editor.md` › Least height
     /// and closing).
     pub clip_clicked: bool,
+    /// The clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste): play
+    /// starts from the first of them, as the setting says. A click in a clip's body picks it
+    /// too, but play starts where it was clicked, as the insert marker shows.
+    pub picked_whole: bool,
+    /// A clip moves by its name bar and selects time from its body (the default); off
+    /// (Mirror), its lower half moves it and its upper half selects time.
+    pub name_bar_moves: bool,
+    /// Where the last click in a lane or a clip's body put the play start, on which track: a
+    /// thin line there in that lane while the play start is still there.
+    pub insert: Option<(TrackId, f64)>,
     /// A track header was double-clicked this frame: the window shows that track's devices
     /// (`docs/spec/ui-clip-editor.md` › Where it opens).
     pub open_devices: Option<TrackId>,
@@ -465,6 +475,9 @@ impl Default for ArrangementViewState {
             meters: Meters::default(),
             focus: None,
             clip_clicked: false,
+            picked_whole: true,
+            name_bar_moves: true,
+            insert: None,
             open_devices: None,
             automation: LanesState::default(),
             marker_drag: None,
@@ -518,6 +531,7 @@ impl ArrangementViewState {
     /// Selects every clip in `keys`, as Ctrl+A does.
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
         self.track_focus = false;
+        self.picked_whole = true;
         self.anchor = keys.first().copied();
         self.selected = keys;
     }
@@ -1478,7 +1492,9 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             if let Some(pointer) = body.interact_pointer_pos() {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
-                actions.push(Action::new("transport.setPosition", json!({ "beats": ruler_beat(raw, grid, free) })));
+                let beat = ruler_beat(raw, grid, free);
+                state.insert = Some((clips_lane.track, beat));
+                actions.push(Action::new("transport.setPosition", json!({ "beats": beat })));
             }
         }
         if (lane.notes || lane.plays_audio)
@@ -1522,6 +1538,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     actions,
                 );
                 ghost = ghost.or(found);
+            }
+        }
+        // The insert marker: where a click in this lane put the play start, while it is there.
+        if let Some((track, beat)) = state.insert
+            && track == clips_lane.track
+            && !timeline.running
+            && (timeline.start_beat - beat).abs() < 1e-6
+        {
+            let x = x_of(beat).round() + 0.5;
+            if lanes_area.x_range().contains(x) {
+                lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, theme::text_primary()));
             }
         }
         let header = Rect::from_x_y_ranges(headers, row.time.y_range());
@@ -2212,7 +2239,17 @@ fn clip_box<'a>(
     // The cursor says what a drag does: the lower half moves the clip (a hand; with the copy key
     // held, the copy cursor), the upper half selects time (a text cursor).
     let copy_key = ui.input(|i| if state.time_select_ctrl { i.modifiers.shift } else { i.modifiers.command });
-    let in_body = |y: f32| !state.time_select_ctrl && clip_grab_area(visible).is_some_and(|grab| y < grab.top());
+    // A click on the name bar picks the whole clip; one in the body below it sets where play
+    // starts.
+    let on_bar = |y: f32| clip_name_bar(visible).is_some_and(|bar| y < bar.bottom());
+    // Where a plain drag selects time: the body under the name bar (the default, the name bar
+    // moving the clip), or the upper half (Mirror, the lower half moving it); with Ctrl held
+    // instead when that setting is on.
+    let bar_moves = state.name_bar_moves && clip_name_bar(visible).is_some();
+    let selects_at = |y: f32| {
+        if bar_moves { !on_bar(y) } else { clip_grab_area(visible).is_some_and(|grab| y < grab.top()) }
+    };
+    let in_body = |y: f32| !state.time_select_ctrl && selects_at(y);
     if state.clip_drag.is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
     } else if response.hover_pos().is_some_and(|p| in_body(p.y)) {
@@ -2270,7 +2307,7 @@ fn clip_box<'a>(
             if state.time_select_ctrl {
                 command
             } else {
-                clip_grab_area(visible).is_some_and(|grab| origin.y < grab.top())
+                selects_at(origin.y)
             }
         });
     if selects_time {
@@ -2287,16 +2324,28 @@ fn clip_box<'a>(
         // The clips drawn before this one this frame still show the old selection: one more
         // frame at once, or the old highlight stays until the pointer moves again (#695).
         ui.ctx().request_repaint();
-        // A click on a clip also moves the play position there, on the grid (Alt: free), as a
-        // click on an empty lane does; an ARA plug-in's editor follows it (#717).
-        if let Some(pointer) = response.interact_pointer_pos() {
-            let free = ui.input(|i| i.modifiers.alt);
-            let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
-            actions.push(Action::new("transport.setPosition", json!({ "beats": ruler_beat(raw, grid, free) })));
+        // A click on its name bar picks the whole clip: play starts from its start, as the
+        // setting says. A click in its body also moves the play position there, on the grid
+        // (Alt: free), as a click on an empty lane does, and play starts there however the clip
+        // is picked; an ARA plug-in's editor follows it (#717).
+        match response.interact_pointer_pos() {
+            Some(pointer) if !on_bar(pointer.y) => {
+                let free = ui.input(|i| i.modifiers.alt);
+                let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
+                let beat = ruler_beat(raw, grid, free);
+                state.picked_whole = false;
+                state.insert = Some((lane.track, beat));
+                actions.push(Action::new("transport.setPosition", json!({ "beats": beat })));
+            }
+            _ => {
+                state.picked_whole = true;
+                state.insert = None;
+            }
         }
     } else if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && !state.is_selected(key) {
         // Pressing a clip that is already selected keeps the selection, so a drag can start there.
         state.pick_clip(key, shift, command, clip_order);
+        state.picked_whole = true;
         ui.ctx().request_repaint();
     }
     if response.clicked() || (response.drag_started_by(egui::PointerButton::Primary) && !selects_time) {

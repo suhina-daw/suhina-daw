@@ -125,10 +125,18 @@ clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track ba
 track's colour; *Rename all clips* (`track.renameClips`) names them after the track. The track
 headers are tinted with their track's colour, deeper while selected.
 
-A lane and its clips are split in two: a drag from the upper half paints a
-time selection (a text cursor) over the tracks it crosses, clips or not; from the lower half it
-moves a clip (a hand cursor) or, on an empty spot, draws a rectangle that picks whole clips and
-paints no time. A clip on a lane under 36 px moves from anywhere. With *Ctrl+drag selects time
+A clip on a lane at least 36 px tall has a name bar along its top. By default (Settings ›
+Arrangement › *Moving a clip*: **Name bar**, `clip_drag = name_bar`) a drag from the name bar
+moves the clip (a hand cursor) and a drag from its body below paints a time selection (a text
+cursor) over the tracks it crosses. **Mirror** (`clip_drag = halves`) splits the clip in two
+instead: its upper half paints time and its lower half moves it. An empty spot of a lane is split
+in two either way: its upper half paints time, its lower half draws a rectangle that picks whole
+clips and paints no time. A clip on a lane under 36 px moves from its lower half.
+
+A click on a clip's name bar picks the whole clip. A click in its body picks it too and sets the
+play start where it was clicked, on the grid (Alt: free), as a click on an empty spot of a lane
+does; a thin line (the insert marker) shows it in that lane while the play start is there and the
+transport is stopped. With *Ctrl+drag selects time
 over clips* on, a plain drag moves clips and Ctrl paints time.
 Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
 they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
@@ -181,10 +189,10 @@ not on whole clips. It is made by:
 
 - a drag from an empty spot of a lane (the rectangle's tracks and beats);
 - a drag on the ruler: that time over every track;
-- over a clip, as Settings › Arrangement › *Ctrl+drag selects time over clips* says: off (the
-  default) a drag from the upper half of a clip on a lane at least 36 px tall selects time and
-  the clip moves from its lower half; on, a drag with Ctrl held selects time anywhere and a plain
-  drag moves the clip.
+- over a clip, as Settings › Arrangement › *Moving a clip* and *Ctrl+drag selects time over
+  clips* say: off (the default) a drag from the clip's body selects time and the clip moves by
+  its name bar (with **Mirror**, from its upper and lower half); on, a drag with Ctrl held
+  selects time anywhere and a plain drag moves the clip.
 
 Its edges are on the grid (Alt: free). A click on a clip, or moving one, ends it, so clicked
 clips act whole again (Ctrl+A, Shift and Ctrl clicks still pick whole clips).
@@ -525,7 +533,7 @@ pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
 Play button pass the setting **Play from** (Settings › General): **Selected clip** (default) or
-**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked while stopped (a click, a rectangle, Ctrl+A), the play start marker also moves to the first of them.
+**Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
 clip selected, or while the Session view is shown (where the selection is not seen), they play

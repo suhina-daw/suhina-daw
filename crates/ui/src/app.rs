@@ -913,9 +913,12 @@ impl App {
     fn play_action(&self, selected: bool) -> Action {
         // A clip an ARA plug-in edits plays from where its editor and a click set the position,
         // never from the clip's start (the plug-in's timeline is where the user points).
+        // A click in the clip's body set where play starts; only a clip picked whole plays from
+        // its start.
         let clip = (selected || self.settings.play_from == PlayFrom::Clip)
             .then(|| self.selected_arrangement_clip())
             .flatten()
+            .filter(|_| self.arrangement.picked_whole)
             .filter(|(track, _)| !self.ara_track(*track));
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
@@ -2018,6 +2021,7 @@ impl App {
         });
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
+        self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.stretch_alt = self.settings.view.stretch_alt;
         // Any press ends a device panel's hold on Delete and the mute key; a click on a panel
         // takes it again when the button comes up, whether or not the detail area is shown.
@@ -2381,7 +2385,12 @@ impl App {
                             // Never for a clip an ARA plug-in edits: its editor and a click on
                             // the clip set the position there.
                             let ara = picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
-                            if picked != self.clips_before.as_slice() && (!self.settings.view.play_from_clip || ara) {
+                            // Nor for a clip picked by a click in its body: play starts where
+                            // that click put it.
+                            let body = !self.arrangement.picked_whole;
+                            if picked != self.clips_before.as_slice()
+                                && (!self.settings.view.play_from_clip || ara || body)
+                            {
                                 self.clips_before = picked.to_vec();
                             } else if picked != self.clips_before.as_slice() {
                                 let first = picked

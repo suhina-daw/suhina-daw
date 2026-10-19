@@ -296,6 +296,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Clips",
+        "Moving a clip",
+        "Name bar: a clip moves by the bar with its name and is picked whole there (play then starts from its start), its body selects time and a click there sets where play starts; Mirror: its lower half moves it and its upper half selects time",
+        &["clip_drag"],
+        |cx, r| cx.choose(r, &[("Name bar", false), ("Mirror", true)], |s| &mut s.view.clip_halves),
+    ),
+    row(
+        Page::Arrangement,
+        "Clips",
         "Alt-drag on an edge stretches audio",
         "An audio clip's edge dragged with Alt held time-stretches its audio to the new length, its pitch kept; off, Alt does nothing there",
         &["stretch_alt_drag"],
