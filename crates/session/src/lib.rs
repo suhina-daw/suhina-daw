@@ -266,6 +266,9 @@ pub struct Session {
     /// saved elsewhere, because the decoded audio is kept under those paths; saving writes them
     /// relative to the new file.
     audio_folder: Option<PathBuf>,
+    /// The audio outside the project's folder it may read: the person's own saved files and
+    /// library folders (`docs/spec/missing-files.md` › Project file boundaries).
+    trusted: suhina_media::Trusted,
     /// Counts changes to the project (edits, undo, redo), and the count when it was last saved.
     changes: u64,
     saved_at: u64,
@@ -339,6 +342,7 @@ impl Session {
             project,
             source: None,
             audio_folder: None,
+            trusted: suhina_media::Trusted::default(),
             changes: 0,
             saved_at: 0,
             undo: Vec::new(),
@@ -403,6 +407,48 @@ impl Session {
     /// The project's decoded audio, which players are started with (ADR 0011).
     pub fn audio(&self) -> &suhina_engine::AudioPool {
         &self.audio
+    }
+
+    /// The audio outside the project's folder that it may read (› Project file boundaries in
+    /// `docs/spec/missing-files.md`); the app gives it before the audio is decoded.
+    pub fn set_trusted(&mut self, trusted: suhina_media::Trusted) {
+        self.trusted = trusted;
+    }
+
+    pub fn trusted(&self) -> &suhina_media::Trusted {
+        &self.trusted
+    }
+
+    /// The absolute paths of the audio files the project names that are decoded now: what the
+    /// person loaded or relinked, or what was trusted when it opened. Saving keeps them as
+    /// trusted, so the project opens with them again.
+    pub fn loaded_audio_paths(&self) -> Vec<PathBuf> {
+        let loaded = |file: &str| {
+            self.audio.files.contains_key(file) || self.audio.files.contains_key(&suhina_model::stream_key(file, 0))
+        };
+        let from = self.audio_from();
+        let path = |file: &str, absolute: Option<&str>| {
+            absolute.map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| from.join(file))
+        };
+        let mut out: Vec<PathBuf> = Vec::new();
+        let devices = self.project.channels.iter().flat_map(|c| &c.devices);
+        let named = devices.filter_map(|d| d.sample_file().map(|f| (f, d.sample_absolute_file()))).chain(
+            self.project.contents.iter().flat_map(|c| &c.lanes).filter_map(|l| match &l.data {
+                suhina_model::LaneData::Audio(region) if !region.file.is_empty() => {
+                    Some((region.file.as_str(), region.absolute_file.as_deref()))
+                }
+                _ => None,
+            }),
+        );
+        for (file, absolute) in named {
+            if loaded(file) {
+                let path = path(file, absolute);
+                if path.is_absolute() && !out.contains(&path) {
+                    out.push(path);
+                }
+            }
+        }
+        out
     }
 
     /// Gives the session its project's decoded audio (`media::load_project_audio`), before a

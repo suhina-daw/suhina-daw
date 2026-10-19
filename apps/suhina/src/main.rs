@@ -511,7 +511,11 @@ impl Window {
     /// Decodes a session's audio, starts it playing (stopped) and shows it.
     fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) {
         let folder = session.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-        let (audio, audio_warnings) = suhina_media::load_project_audio(session.project(), &folder);
+        // Outside the project's folder only the person's own saved files and library folders
+        // are read (`docs/spec/missing-files.md` › Project file boundaries).
+        let trusted = self.app.projects_mut().trusted_audio();
+        let (audio, audio_warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder, &trusted);
+        session.set_trusted(trusted);
         warnings.extend(audio_warnings);
         let waveforms = suhina_ui::kit::waveform::from_pool(&audio);
         session.set_audio(audio);

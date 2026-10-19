@@ -19,6 +19,8 @@ pub const MAX_FOLDERS: usize = 256;
 pub const MAX_PINS: usize = 1000;
 /// Recent items kept per group.
 pub const MAX_RECENT: usize = 50;
+/// Audio files outside projects' folders kept as trusted; the oldest go first.
+pub const MAX_TRUSTED_AUDIO: usize = 20_000;
 /// Tags there may be by default, and at most.
 pub const DEFAULT_TAG_LIMIT: usize = 64;
 pub const MAX_TAG_LIMIT: usize = 1024;
@@ -154,6 +156,10 @@ pub struct Store {
     pub tag_limit: usize,
     /// How the browser shows plug-ins.
     pub plugins_view: PluginsView,
+    /// Audio files outside a project's folder that the person loaded into a project and saved
+    /// it with, which opening a project may read (`docs/spec/missing-files.md` › Project file
+    /// boundaries). Newest first.
+    pub trusted_audio: Vec<PathBuf>,
 }
 
 impl Default for Store {
@@ -166,6 +172,7 @@ impl Default for Store {
             tagged: BTreeMap::new(),
             tag_limit: DEFAULT_TAG_LIMIT,
             plugins_view: PluginsView::Instruments,
+            trusted_audio: Vec::new(),
         }
     }
 }
@@ -221,7 +228,12 @@ impl Store {
         let folders =
             texts(map.get("folders"), MAX_FOLDERS, "folders", warnings).into_iter().map(PathBuf::from).collect();
         let pins = texts(map.get("pinned"), MAX_PINS, "pinned", warnings);
-        let mut store = Self { folders, pins, ..Self::default() };
+        let trusted_audio = texts(map.get("trusted_audio"), MAX_TRUSTED_AUDIO, "trusted_audio", warnings)
+            .into_iter()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .collect();
+        let mut store = Self { folders, pins, trusted_audio, ..Self::default() };
         if let Some(recent) = map.get("recent") {
             match recent.as_object() {
                 Some(groups) => {
@@ -310,6 +322,7 @@ impl Store {
             "tagged": self.tagged,
             "tag_limit": self.tag_limit,
             "plugins_view": self.plugins_view.name(),
+            "trusted_audio": self.trusted_audio.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
         })
     }
 

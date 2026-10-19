@@ -266,6 +266,10 @@ impl Projects {
             .or_else(|| session.source().and_then(|s| s.file_stem()).map(|s| s.to_string_lossy().into_owned()))
             .unwrap_or_else(|| format!("Untitled {}", id.0));
         self.close_preview_output();
+        let mut session = session;
+        if session.trusted() == &suhina_media::Trusted::default() {
+            session.set_trusted(self.trusted_audio());
+        }
         self.open.push(Open { id, name, session });
         self.activate(id);
         Ok(id)
@@ -421,6 +425,16 @@ impl Projects {
         &mut self.files
     }
 
+    /// The audio outside a project's folder that opening it may read: the files the person
+    /// loaded into a project and saved it with, and the browser's library folders
+    /// (`docs/spec/missing-files.md` › Project file boundaries).
+    pub fn trusted_audio(&mut self) -> suhina_media::Trusted {
+        suhina_media::Trusted {
+            folders: self.files.folders().into_iter().map(|f| f.path).collect(),
+            files: self.files.trusted_audio().into_iter().collect(),
+        }
+    }
+
     /// The window plug-in editors open over (a Win32 `HWND`, an X11 window id): the desktop
     /// app's main window, so editors float above it. `None` gives them windows of their own.
     pub fn set_editor_owner(&mut self, owner: Option<u64>) {
@@ -567,6 +581,21 @@ impl Projects {
                 open.name = stem.to_string_lossy().into_owned();
             }
             self.backups_after_save(target);
+        }
+        // The audio a saved project plays is the person's own choice: it opens with it again,
+        // even from outside the project's folder.
+        if id == "project.save"
+            && result.is_ok()
+            && let Some(session) = target.and_then(|t| self.get(t))
+        {
+            let files = session.loaded_audio_paths();
+            if let Err(e) = self.files.trust_audio(files) {
+                suhina_plugins::trace!("trusted audio not kept: {e}");
+            }
+            let trusted = self.trusted_audio();
+            if let Some(session) = target.and_then(|t| self.get_mut(t)) {
+                session.set_trusted(trusted);
+            }
         }
         result
     }

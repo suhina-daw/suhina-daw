@@ -113,10 +113,19 @@ Over MCP, `folder` and every `to` path must be inside the server's read root ([`
 
 ## Project file boundaries
 
-On project open, audio clips and sampler sources are resolved only inside the
-project folder. Symbolic links and junctions are not followed. Parent traversal and
-external absolute paths are treated as missing without reading the external file.
-Choose an external file explicitly through Locate/Apply to use it in the current
-session. To reopen without another relink, keep source audio inside the project
-folder. A direct browser/file drop or explicit CLI/MCP load remains a user-selected
-operation; MCP paths still stay inside its configured read root.
+On project open, audio clips and sampler sources are resolved inside the project
+folder, without following symbolic links or junctions. Outside it, the app reads only
+what the person chose themselves:
+
+- **Files they loaded and saved a project with.** Saving a project keeps the absolute
+  paths of the audio it has decoded (dropped, loaded, recorded or relinked) as trusted,
+  in `browser.json` beside the settings (`trusted_audio`, newest first, at most 20,000).
+  Any project that names one of them opens with it on this machine.
+- **The browser's library folders**, the folders the person added; a path with a parent
+  step out of one is not inside it.
+
+Anything else a project names outside its folder (another person's paths, a network
+share) is treated as missing, decided from the path alone before anything is read.
+Choose such a file through Locate/Apply to use it; saving then trusts it. The CLI and
+the MCP server open projects with the folder rule alone; MCP paths stay inside its
+configured read root.

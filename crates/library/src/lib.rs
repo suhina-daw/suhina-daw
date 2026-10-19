@@ -532,6 +532,30 @@ impl Library {
         Ok(out)
     }
 
+    /// The audio files outside projects' folders that opening a project may read.
+    pub fn trusted_audio(&mut self) -> Vec<PathBuf> {
+        self.load();
+        self.store.trusted_audio.clone()
+    }
+
+    /// Keeps `files` (absolute paths) as trusted audio, newest first, and saves when that
+    /// changed anything. Returns whether it did.
+    pub fn trust_audio(&mut self, files: Vec<PathBuf>) -> Result<bool, String> {
+        self.load();
+        let trusted = &mut self.store.trusted_audio;
+        let before = trusted.clone();
+        for file in files.into_iter().filter(|f| f.is_absolute()) {
+            trusted.retain(|t| *t != file);
+            trusted.insert(0, file);
+        }
+        trusted.truncate(store::MAX_TRUSTED_AUDIO);
+        if *trusted == before {
+            return Ok(false);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn pinned(&mut self) -> Vec<String> {
         self.load();
         self.store.pins.clone()

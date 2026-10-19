@@ -30,7 +30,7 @@ impl Session {
     /// The audio files the project's clips name that cannot be found.
     pub fn missing_files(&self) -> Vec<suhina_media::MissingAudio> {
         let folder = self.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-        suhina_media::missing_audio(self.project(), &folder)
+        suhina_media::missing_audio_trusted(self.project(), &folder, self.trusted())
             .into_iter()
             .filter(|missing| {
                 // Already decoded paths were explicitly loaded or safely resolved on open.

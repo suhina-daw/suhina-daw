@@ -53,11 +53,31 @@ pub fn load_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, 
     decode_project_audio(project, project_dir)
 }
 
+/// Loads every audio file the project uses, those outside its folder too when `trusted` names
+/// them. Same as [`decode_project_audio_trusted`].
+pub fn load_project_audio_trusted(
+    project: &Project,
+    project_dir: &Path,
+    trusted: &Trusted,
+) -> (AudioPool, Vec<String>) {
+    decode_project_audio_trusted(project, project_dir, trusted)
+}
+
 /// Decodes every audio file the project uses, on all cores. `project_dir` is the folder the
 /// project file is in; references are resolved only inside it, without following links.
 /// External references require an explicit user load or relink. Files that cannot be found or decoded are reported in the returned warnings and
 /// left out.
 pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, Vec<String>) {
+    decode_project_audio_trusted(project, project_dir, &Trusted::default())
+}
+
+/// [`decode_project_audio`], reading too the files outside the project's folder that `trusted`
+/// names (› Project file boundaries in `docs/spec/missing-files.md`).
+pub fn decode_project_audio_trusted(
+    project: &Project,
+    project_dir: &Path,
+    trusted: &Trusted,
+) -> (AudioPool, Vec<String>) {
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
@@ -65,7 +85,7 @@ pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool
         if let Some(file) = device.sample_file()
             && !wanted.iter().any(|(key, _, _)| key == file)
         {
-            let candidates = locate(file, device.sample_absolute_file(), project_dir).into_iter().collect();
+            let candidates = locate(file, device.sample_absolute_file(), project_dir, trusted).into_iter().collect();
             wanted.push((file.into(), candidates, false));
         }
     }
@@ -80,7 +100,8 @@ pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool
             if wanted.iter().any(|(file, _, s)| *file == region.file && *s == streams) {
                 continue;
             }
-            let candidates = locate(&region.file, region.absolute_file.as_deref(), project_dir).into_iter().collect();
+            let candidates =
+                locate(&region.file, region.absolute_file.as_deref(), project_dir, trusted).into_iter().collect();
             wanted.push((region.file.clone(), candidates, streams));
         }
     }
@@ -146,9 +167,69 @@ pub struct MissingAudio {
     pub clips: usize,
 }
 
-/// A project-named file inside its folder, with no parent traversal or symbolic links.
-pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path) -> Option<PathBuf> {
+/// Audio files outside a project's folder that opening it may read (› Project file boundaries
+/// in `docs/spec/missing-files.md`): files the person loaded into a project on this machine and
+/// saved it with, and the browser's library folders. Anything else outside the folder stays
+/// missing until the person chooses it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Trusted {
+    /// Folders whose files may be read: the browser's library folders.
+    pub folders: Vec<PathBuf>,
+    /// Single files that may be read, by absolute path.
+    pub files: std::collections::BTreeSet<PathBuf>,
+}
+
+impl Trusted {
+    /// `path` when it names a trusted file, or a file inside a trusted folder, that is there. It
+    /// is decided from the path alone before anything is read, so a path that is neither (a
+    /// network share a project names) is never touched.
+    pub fn find(&self, path: &Path) -> Option<PathBuf> {
+        if !path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return None;
+        }
+        if !self.files.contains(path) {
+            let folder = self.folders.iter().find(|f| f.is_absolute() && path.starts_with(f))?;
+            // Inside the folder as it is on disk too, links followed.
+            let canonical_folder = folder.canonicalize().ok()?;
+            if !path.canonicalize().ok()?.starts_with(&canonical_folder) {
+                return None;
+            }
+        }
+        path.is_file().then(|| path.to_path_buf())
+    }
+}
+
+/// `file` from `root` with its `..` taken away by name, without reading anything.
+fn joined(root: &Path, file: &str) -> Option<PathBuf> {
+    let mut out = root.to_path_buf();
+    for part in Path::new(file).components() {
+        match part {
+            std::path::Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(name) => out.push(name),
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+/// A project-named file inside its folder, with no parent traversal or symbolic links; or,
+/// outside it, one that `trusted` names.
+pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path, trusted: &Trusted) -> Option<PathBuf> {
     let root = std::path::absolute(project_dir).ok()?;
+    inside(file, absolute, &root).or_else(|| {
+        let from_root = joined(&root, file);
+        [absolute.map(PathBuf::from), from_root].into_iter().flatten().find_map(|path| trusted.find(&path))
+    })
+}
+
+/// [`locate`]'s part inside the project's folder `root`.
+fn inside(file: &str, absolute: Option<&str>, root: &Path) -> Option<PathBuf> {
+    let root = root.to_path_buf();
     let canonical_root = root.canonicalize().ok()?;
     [Some(file), absolute].into_iter().flatten().find_map(|name| {
         let path = Path::new(name);
@@ -174,10 +255,15 @@ pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path) -> Option<
 /// The project's audio files that cannot be found, each once, in the order the project names
 /// them. Only looks at whether files exist; nothing is decoded.
 pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio> {
+    missing_audio_trusted(project, project_dir, &Trusted::default())
+}
+
+/// [`missing_audio`], with the files outside the project's folder that `trusted` names found.
+pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Trusted) -> Vec<MissingAudio> {
     let mut out: Vec<MissingAudio> = Vec::new();
     for device in project.channels.iter().flat_map(|c| &c.devices) {
         if let Some(file) = device.sample_file()
-            && locate(file, device.sample_absolute_file(), project_dir).is_none()
+            && locate(file, device.sample_absolute_file(), project_dir, trusted).is_none()
             && !out.iter().any(|m| m.file == file)
         {
             out.push(MissingAudio {
@@ -198,7 +284,7 @@ pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio>
             if found.contains(&region.file.as_str()) || out.iter().any(|m| m.file == region.file) {
                 continue;
             }
-            if locate(&region.file, region.absolute_file.as_deref(), project_dir).is_some() {
+            if locate(&region.file, region.absolute_file.as_deref(), project_dir, trusted).is_some() {
                 found.push(&region.file);
                 continue;
             }
@@ -374,14 +460,16 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(dir.join("outside.wav"), dir.join("set/link.wav")).unwrap();
-            assert!(locate("link.wav", None, &dir.join("set")).is_none());
+            assert!(locate("link.wav", None, &dir.join("set"), &Trusted::default()).is_none());
         }
         #[cfg(windows)]
         {
             if std::os::windows::fs::symlink_file(dir.join("outside.wav"), dir.join("set/link.wav")).is_ok() {
-                assert!(locate("link.wav", None, &dir.join("set")).is_none());
+                assert!(locate("link.wav", None, &dir.join("set"), &Trusted::default()).is_none());
             }
-            assert!(locate(r"\\untrusted-server\share\sound.wav", None, &dir.join("set")).is_none());
+            assert!(
+                locate(r"\\untrusted-server\share\sound.wav", None, &dir.join("set"), &Trusted::default()).is_none()
+            );
         }
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -429,7 +517,10 @@ mod tests {
         assert_eq!(missing[0].clips, project.arrangement.lanes.iter().map(|l| l.clips.len()).sum::<usize>());
         project = project_with_audio("here.wav", None);
         assert!(missing_audio(&project, &dir.join("set")).is_empty());
-        assert_eq!(locate("here.wav", None, &dir.join("set")), Some(dir.join("set").join("here.wav")));
+        assert_eq!(
+            locate("here.wav", None, &dir.join("set"), &Trusted::default()),
+            Some(dir.join("set").join("here.wav"))
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
