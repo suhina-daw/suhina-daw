@@ -765,7 +765,10 @@ fn chain_row(
     let mut tallest: f32 = 0.0;
     for (device, (width, height)) in entries.iter().zip(boxes) {
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
-        let rect = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(width, height.min(area.height())));
+        // A panel with its editor embedded takes the area's whole height, and the editor is
+        // fitted to it (#689).
+        let shown_height = if editor.is_some() { area.height() } else { height.min(area.height()) };
+        let rect = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(width, shown_height));
         x = rect.right() + 1.0;
         tallest = tallest.max(height);
         if rect.right() < area.left() {
@@ -1013,7 +1016,10 @@ fn editor_place(
             clip_height: span(shown.top(), shown.bottom()),
         }
     };
-    EditorPlace { track, device: device.index, placement, fit: None }
+    // The editor takes the panel's room under its header, when it can be resized (#689).
+    let room = Vec2::new(rect.right() - PAD - origin.x, rect.bottom() - PAD - origin.y);
+    let fit = (room.x >= 1.0 && room.y >= 1.0).then(|| (span(0.0, room.x), span(0.0, room.y)));
+    EditorPlace { track, device: device.index, placement, fit }
 }
 
 /// A plug-in device's button under its state line: opens or closes its editor while it runs,

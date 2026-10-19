@@ -339,6 +339,11 @@ pub struct App {
     /// How tall the device chain's panels were last frame, when the detail area showed only the
     /// chain: the area is kept no taller.
     detail_cap: Option<f32>,
+    /// The embedded plug-in editors the detail area has grown to fit, once each as they open:
+    /// after that its height is the user's, and the editor is fitted to it (#689).
+    fitted_editors: std::collections::HashSet<(TrackId, Vec<usize>)>,
+    /// An editor is embedded in the chain shown: the area may be taller than the panels.
+    editor_in_chain: bool,
     /// A clip being renamed (Rename in its menu, Ctrl+R): the command's target, the name typed
     /// so far, and whether the field has had the keyboard yet.
     rename: Option<(serde_json::Value, String, bool)>,
@@ -494,6 +499,8 @@ impl App {
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
             detail_cap: None,
+            fitted_editors: std::collections::HashSet::new(),
+            editor_in_chain: false,
             rename: None,
             tab_switcher: None,
             clips_before: Vec::new(),
@@ -2634,17 +2641,26 @@ impl App {
                 }
             }
         }
+        // An editor embedded in a panel: the area opens tall enough for it, once, as it opens;
+        // after that the user sets the height and the editor is fitted to it (#689). An ARA
+        // editor in the clip's place is fitted to the room there instead.
+        let embedded: Vec<_> = reports
+            .iter()
+            .filter(|(_, r)| !r.ara && r.editor_embedded.is_some())
+            .map(|(k, r)| (k.clone(), r.editor_embedded))
+            .collect();
+        self.editor_in_chain = !embedded.is_empty();
         if !stacked {
             let scale = ui.ctx().pixels_per_point();
-            // An ARA editor in the clip's place is fitted to the room there instead.
-            let needed = reports
-                .values()
-                .filter(|r| !r.ara)
-                .filter_map(|r| r.editor_embedded)
+            let needed = embedded
+                .iter()
+                .filter(|(key, _)| !self.fitted_editors.contains(key))
+                .filter_map(|(_, embedded)| *embedded)
                 .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
                 .fold(0.0, f32::max);
             self.detail_height = self.detail_height.max(needed);
         }
+        self.fitted_editors = embedded.into_iter().map(|(key, _)| key).collect();
         // A MIDI clip shows its notes in the piano roll beside its properties; under the
         // Arrangement view it can be pulled to the top.
         let mut piano = self.piano_clip(clip);
@@ -2740,6 +2756,7 @@ impl App {
             // Only the chain shown: no taller than its panels.
             if piano.is_none()
                 && clip.is_none()
+                && !self.editor_in_chain
                 && let Some(cap) = self.detail_cap
             {
                 self.detail_height = self.detail_height.min(cap.max(least));
