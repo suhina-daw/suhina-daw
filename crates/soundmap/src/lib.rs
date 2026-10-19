@@ -165,6 +165,9 @@ struct Queue {
     ready: Condvar,
 }
 
+/// A folder's cache to write, and where.
+type CacheSave = (PathBuf, FolderCache);
+
 /// The analysis of a library's samples, cached per folder.
 pub struct SoundMap {
     data_folder: Option<PathBuf>,
@@ -181,6 +184,9 @@ pub struct SoundMap {
     layouts: HashMap<u64, Vec<[f32; 2]>>,
     /// Kinds set by hand, by absolute path; read from the data folder when first needed.
     hand_kinds: Option<HashMap<PathBuf, Kind>>,
+    /// The thread that writes caches to disk, started with the first save: a cache written on
+    /// the window's thread (serialised, written and synced) held it up for half a second.
+    saver: Option<(Sender<CacheSave>, JoinHandle<()>)>,
 }
 
 impl SoundMap {
@@ -200,6 +206,7 @@ impl SoundMap {
             threads: threads.max(1),
             layouts: HashMap::new(),
             hand_kinds: None,
+            saver: None,
         }
     }
 
@@ -312,6 +319,15 @@ impl SoundMap {
             }
         }
         self.save_due(true);
+        self.finish_saves();
+    }
+
+    /// Waits until every cache handed to the saving thread is on disk.
+    fn finish_saves(&mut self) {
+        if let Some((to, thread)) = self.saver.take() {
+            drop(to);
+            let _ = thread.join();
+        }
     }
 
     fn save_due(&mut self, all: bool) {
@@ -325,9 +341,23 @@ impl SoundMap {
             return;
         }
         for folder in due {
-            if let Some(cache) = self.caches.get(&folder)
-                && cache.save(&dir.join(cache::file_name(&folder))).is_ok()
-            {
+            let Some(cache) = self.caches.get(&folder) else { continue };
+            let path = dir.join(cache::file_name(&folder));
+            // Handed to the saving thread as it is now; written there, in order, so a later
+            // save of the same folder lands last.
+            if self.saver.is_none() {
+                let (to, from) = channel::<CacheSave>();
+                let thread = std::thread::Builder::new().name("sound map saves".into()).spawn(move || {
+                    for (path, cache) in from {
+                        let _ = cache.save(&path);
+                    }
+                });
+                if let Ok(thread) = thread {
+                    self.saver = Some((to, thread));
+                }
+            }
+            let sent = self.saver.as_ref().is_some_and(|(to, _)| to.send((path.clone(), cache.clone())).is_ok());
+            if sent || cache.save(&path).is_ok() {
                 self.unsaved.remove(&folder);
             }
         }
@@ -719,6 +749,7 @@ impl Drop for SoundMap {
             let _ = worker.join();
         }
         self.save_due(true);
+        self.finish_saves();
     }
 }
 

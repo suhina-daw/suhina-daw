@@ -49,8 +49,15 @@ pub fn path() -> Option<&'static Path> {
 pub fn line(line: std::fmt::Arguments<'_>) {
     let Some((_, file)) = file() else { return };
     let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    // One write a line: the app and its hosts append to the same file, and a line written in
+    // pieces was cut up by the others' lines.
+    let text = format!(
+        "{ms} [{}] {line}
+",
+        std::process::id()
+    );
     let mut file = file.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let _ = writeln!(file, "{ms} [{}] {line}", std::process::id());
+    let _ = file.write_all(text.as_bytes());
 }
 
 /// `trace!("…", args)`: a line in the trace file, when tracing is on.

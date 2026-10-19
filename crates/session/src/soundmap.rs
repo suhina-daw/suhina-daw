@@ -119,14 +119,14 @@ impl Projects {
             library.poll();
             let revision = library.revision();
             if self.sound_map_revision != Some(revision) {
-                let files = sample_files(self);
-                self.sound_map_mut().update(&files);
+                let files = suhina_plugins::trace::timed("sound map: the library's samples", || sample_files(self));
+                suhina_plugins::trace::timed("sound map: update", || self.sound_map_mut().update(&files));
                 self.sound_map_revision = Some(revision);
                 changed = true;
             }
         }
         if let Some(map) = &mut self.sound_map {
-            changed |= map.poll();
+            changed |= suhina_plugins::trace::timed("sound map: results", || map.poll());
         }
         changed
     }
