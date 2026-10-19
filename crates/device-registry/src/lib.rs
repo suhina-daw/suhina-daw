@@ -8,10 +8,12 @@
 use std::sync::Arc;
 
 use suhina_device_api::{Device, DeviceInfo};
+pub mod stock;
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 13] = [
+pub const DEVICES: [&DeviceInfo; 14] = [
     &suhina_device_fm_synth::INFO,
+    &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
     &suhina_device_auto_pan::INFO,
     &suhina_device_dj_eq::INFO,
@@ -31,10 +33,16 @@ pub fn info(id: &str) -> Option<&'static DeviceInfo> {
     DEVICES.iter().copied().find(|info| info.id == id)
 }
 
+/// Native instruments can author their panel with the same SDK widgets as .sd graphs.
+pub fn panel(id: &str) -> Option<(suhina_device_sdk::ui::DeviceUi, Vec<suhina_device_sdk::Parameter>)> {
+    (id == "sampler").then(|| (suhina_device_sampler::panel(), suhina_device_sampler::parameters()))
+}
+
 /// A new device with this id at its defaults, prepared for 48 kHz, or `None` for an unknown
 /// id. Allocates: call it off the audio thread.
 pub fn create(id: &str) -> Option<Box<dyn Device>> {
     Some(match id {
+        "sampler" => Box::new(suhina_device_sampler::Sampler::new()),
         "fm-synth" => Box::new(suhina_device_fm_synth::FmSynth::new()),
         "utility" => Box::new(suhina_device_utility::Utility::new()),
         "auto-pan" => Box::new(suhina_device_auto_pan::AutoPan::new()),

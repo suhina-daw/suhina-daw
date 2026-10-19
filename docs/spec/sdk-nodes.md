@@ -63,6 +63,7 @@ The JSON catalog uses the same records and includes a minimal configuration exam
 <!-- sdk-nodes:begin -->
 | JSON kind / Rust variant | Inputs (default, unit) | Behaviour |
 |---|---|---|
+| `native_device` / `NativeDevice` | `in` (0, signal) | Whole-device native wrapper. Effects wire audio_input -> native_device -> audio_output; instruments wire native_device -> audio_output. Requires the host's registered factory via prepare_native_at; no arbitrary code or feedback. Parameters preserve the native contract. Processing/reset/events use Device's real-time-safe API. |
 | `audio_input` / `AudioInput` | None | Stereo input of the track; no state. |
 | `audio_output` / `AudioOutput` | `in` (required, signal) | Final stereo output; no state. |
 | `gain` / `Gain` | `in` (required, signal) | Multiplies by the declared parameter in linear amplitude; legacy gain node. |
@@ -130,3 +131,9 @@ tempo*division/160; tempo*division/360; tempo/(15*division).
 The synchronized divisor describes 1/division of a whole note; the 16th mode counts
 sixteenth notes per cycle. Inputs are clamped before conversion. It has no state to reset,
 allocations, latency or signal-dependent processing.
+
+Native Sampler wrappers from revisions 1-11 may retain their original parameter
+prefix without the appended LFO destinations, shape, source fades, warp controls,
+LFO timing selectors and Source BPM; the oldest may also omit
+`panel_view`. New depths and fades default to zero; shape defaults to Sine. All declared audio parameter contracts
+still match exactly; other omissions or changed native parameters remain errors.

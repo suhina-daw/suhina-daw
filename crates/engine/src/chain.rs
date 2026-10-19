@@ -85,6 +85,7 @@ pub(crate) struct Chain {
     /// The project's device ids in order (a plug-in's by its key), so a graph swap can tell
     /// whether a new chain holds the same devices as an old one.
     ids: Vec<String>,
+    sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
     /// Every parameter's value from the project (its default when the project has none), per
     /// device.
     params: Vec<Vec<f64>>,
@@ -149,6 +150,16 @@ pub(crate) struct Chain {
 }
 
 impl Chain {
+    pub(crate) fn sample_positions(&self) -> Option<(usize, [Option<f32>; 32])> {
+        self.slots.iter().zip(&self.positions).find_map(|(slot, &position)| match slot {
+            Slot::Device(device) => {
+                let positions = device.sample_positions();
+                positions.iter().any(Option::is_some).then_some((position, positions))
+            }
+            _ => None,
+        })
+    }
+
     /// The chain for `track` at `sample_rate`, or `None` when its channel holds no device
     /// Suhina can run (other DAWs' devices and plug-ins that are not installed pass the sound
     /// through). Plug-in devices take their processors from `plugins` (one without a processor
@@ -157,6 +168,7 @@ impl Chain {
     /// ([docs/spec/nam-amp-and-cab.md]). Allocates: call it off the audio thread.
     pub(crate) fn build(
         project: &Project,
+        audio: &crate::AudioPool,
         track: TrackId,
         column: u32,
         post: (f32, f32),
@@ -270,6 +282,10 @@ impl Chain {
             };
             let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| assets.get(path));
             let Some(mut device) = suhina_device_registry::create_with(id, asset) else { continue };
+            if let Some(source) = stored.sample_file().and_then(|file| audio.files.get(file)) {
+                device.load_shared_sample(source.sample_rate, source.channels, source.clone());
+            }
+            device.load_sample_slices(stored.sample_slices().map(std::sync::Arc::from));
             if device.prepare(f64::from(sample_rate)).is_err() {
                 continue;
             }
@@ -290,7 +306,8 @@ impl Chain {
             slots.push(if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) });
             positions.push(position);
             // A device that holds a file changes with the file: its identity carries the state's
-            // hash, the `.sd` devices' trick, so a model swap rebuilds one device alone.
+            // hash, the `.sd` devices' trick, so a model swap rebuilds one device alone; a
+            // Sampler's carries its sample (#600).
             if suhina_device_registry::is_file_device(id) {
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 use std::hash::{Hash, Hasher};
@@ -303,7 +320,13 @@ impl Chain {
                 };
                 ids.push(format!("{id}:{hashed:016x}"));
             } else {
-                ids.push(id.clone());
+                ids.push(stored.sample_file().map_or_else(
+                    || id.clone(),
+                    |file| {
+                        let source = audio.files.get(file).map(std::sync::Arc::as_ptr);
+                        format!("{id}:{file}:{source:?}")
+                    },
+                ));
             }
             params.push(values);
         }
@@ -324,6 +347,12 @@ impl Chain {
             track,
             column,
             slots,
+            sample_slices: positions
+                .iter()
+                .map(|&i| {
+                    channel.devices.get(i).and_then(suhina_model::Device::sample_slices).map(std::sync::Arc::from)
+                })
+                .collect(),
             positions,
             ids,
             params,
@@ -367,6 +396,7 @@ impl Chain {
             slots: Vec::new(),
             positions: Vec::new(),
             ids: Vec::new(),
+            sample_slices: Vec::new(),
             params: Vec::new(),
             instrument: false,
             latency: 0,
@@ -942,6 +972,9 @@ impl Chain {
         {
             match (slot, fresh) {
                 (Slot::Device(device) | Slot::MidiDevice(device), _) => {
+                    if let Some(points) = self.sample_slices.get_mut(position) {
+                        device.swap_sample_slices(points);
+                    }
                     // A parameter that follows a lane keeps its running value until the lane
                     // sets it in the next block.
                     for (index, &value) in
@@ -1182,6 +1215,8 @@ pub(crate) fn run_device(
     context: &ProcessContext,
     sample_rate: f64,
 ) {
+    // Give context-dependent instruments the tempo before an event at frame zero.
+    device.set_context(context);
     let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], from: usize, to: usize| {
         process(device, buffer, from, to, &span_context(context, from, sample_rate));
     };
@@ -1506,5 +1541,83 @@ mod span_tests {
         for (n, (a, b)) in whole.iter().zip(&split).enumerate() {
             assert!((a - b).abs() < 1e-5, "sample {n}: {a} whole against {b} split");
         }
+    }
+}
+
+#[cfg(test)]
+mod sampler_regressions {
+    use super::*;
+    #[test]
+    fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
+        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        sampler.load_sample(48000, 1, vec![0.2; 48000].into());
+        for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
+            sampler.set_param(sampler.info().param_index(id).unwrap(), value);
+        }
+        let mut buffer = vec![0.; 960];
+        let mut context = ProcessContext { tempo: 120., playing: true, ..ProcessContext::default() };
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            480,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+            48_000.0,
+        );
+        assert!((sampler.sample_position().unwrap() - 0.005).abs() < 1e-6);
+        context.tempo = 60.;
+        run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context, 48_000.0);
+        assert!((sampler.sample_position().unwrap() - 0.0075).abs() < 1e-6);
+        sampler.set_param(sampler.info().param_index("warp_beats").unwrap(), 2.);
+        run_device(&mut sampler, 0, &mut buffer, 0, 480, &[], &DeviceLanes::none(), &context, 48_000.0);
+        assert!((sampler.sample_position().unwrap() - 0.0125).abs() < 1e-6);
+    }
+    #[test]
+    fn first_beat_slice_uses_context_before_frame_zero_note() {
+        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let source =
+            std::sync::Arc::new(crate::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.5; 96000] });
+        sampler.load_shared_sample(48000, 1, source.clone());
+        assert_eq!(std::sync::Arc::strong_count(&source), 2, "PCM must be shared");
+        for (id, value) in [("playback", 3.), ("slice_by", 1.), ("sensitivity", 0.4), ("attack", 0.), ("sustain", 1.)] {
+            sampler.set_param(sampler.info().param_index(id).unwrap(), value);
+        }
+        let mut context = ProcessContext { tempo: 60., ..ProcessContext::default() };
+        let mut buffer = vec![0.; 2048];
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            1024,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+            48_000.0,
+        );
+        for _ in 0..28 {
+            run_device(&mut sampler, 0, &mut buffer, 0, 1024, &[], &DeviceLanes::none(), &context, 48_000.0);
+        }
+        assert!(buffer.iter().any(|s| *s > 0.1), "one-beat slice at 60 BPM must outlast half a second");
+        context.tempo = 120.;
+        sampler.reset();
+        run_device(
+            &mut sampler,
+            0,
+            &mut buffer,
+            0,
+            1024,
+            &[(0, NoteEvent::On { key: 60, velocity: 1. })],
+            &DeviceLanes::none(),
+            &context,
+            48_000.0,
+        );
+        for _ in 0..28 {
+            run_device(&mut sampler, 0, &mut buffer, 0, 1024, &[], &DeviceLanes::none(), &context, 48_000.0);
+        }
+        assert!(buffer.iter().all(|s| *s == 0.), "one-beat slice at 120 BPM ends after half a second");
     }
 }

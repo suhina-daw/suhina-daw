@@ -40,6 +40,7 @@ muda = { version = "0.21", default-features = false }  # MIT OR Apache-2.0
 
 [build-dependencies]
 winresource.workspace = true
+suhina-device-bundle.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Opening the window as an X11 one when an X server is there (eframe's own winit).

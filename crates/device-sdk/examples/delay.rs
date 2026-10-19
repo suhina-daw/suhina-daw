@@ -255,13 +255,13 @@ fn number(ui: &mut DeviceUi, id: &str, bounds: [f32; 4], decimals: usize, log: b
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![],
     });
 }
 fn dial(ui: &mut DeviceUi, id: &str, label: &str, bounds: [f32; 4], log: bool) {
     ui.controls.push(CustomControl {
-        widget: Some(Widget::Dial { label: label.into() }),
+        widget: Some(Widget::Dial { label: label.into(), decimals: 0, format: TextFormat::Number }),
         id: id.into(),
         name: if label.is_empty() {
             if id == "feedback" { "Feedback".into() } else { "Mix".into() }
@@ -273,7 +273,7 @@ fn dial(ui: &mut DeviceUi, id: &str, label: &str, bounds: [f32; 4], log: bool) {
         visible_when: None,
         gesture: UiGesture::Drag,
         x: None,
-        y: Some(UiBinding { parameter: id.into(), logarithmic: log }),
+        y: Some(UiBinding { parameter: id.into(), logarithmic: log, drag_scale: 1. }),
         drawing: vec![],
     });
 }
@@ -380,7 +380,7 @@ fn build_panel(parameters: &[Parameter]) -> DeviceUi {
         bounds: [384.0, 74., 166., 80.],
         visible_when: None,
         gesture: UiGesture::Position,
-        x: Some(UiBinding { parameter: "cutoff".into(), logarithmic: true }),
+        x: Some(UiBinding { parameter: "cutoff".into(), logarithmic: true, drag_scale: 1. }),
         y: Some(UiBinding::new("width")),
         drawing: vec![],
     });

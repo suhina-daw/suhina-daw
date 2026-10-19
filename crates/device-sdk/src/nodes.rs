@@ -39,18 +39,32 @@ pub enum FilterMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NodeKind {
+    /// A whole-device wrapper resolved only through the host's registered factory.
+    NativeDevice {
+        device: String,
+    },
     AudioInput,
     AudioOutput,
     MidiInput,
     MidiOutput,
-    MidiTranspose { semitones: i8 },
-    MidiTransposeParameter { parameter: String },
+    MidiTranspose {
+        semitones: i8,
+    },
+    MidiTransposeParameter {
+        parameter: String,
+    },
     MidiKey,
     MidiVelocity,
     MidiGate,
-    Gain { parameter: String },
-    Constant { value: f64 },
-    Parameter { parameter: String },
+    Gain {
+        parameter: String,
+    },
+    Constant {
+        value: f64,
+    },
+    Parameter {
+        parameter: String,
+    },
     Add,
     Subtract,
     Multiply,
@@ -81,15 +95,27 @@ pub enum NodeKind {
     MidSideEncode,
     MidSideDecode,
     Pan,
-    Oscillator { shape: Waveform },
-    SyncedLfo { shape: Waveform },
-    Noise { seed: u32 },
+    Oscillator {
+        shape: Waveform,
+    },
+    SyncedLfo {
+        shape: Waveform,
+    },
+    Noise {
+        seed: u32,
+    },
     Smooth,
-    Envelope { rms: bool },
+    Envelope {
+        rms: bool,
+    },
     SampleHold,
-    Filter { mode: FilterMode },
+    Filter {
+        mode: FilterMode,
+    },
     SampleDelay,
-    Delay { max_seconds: f64 },
+    Delay {
+        max_seconds: f64,
+    },
     Tempo,
     LfoRate,
     Beat,
@@ -113,6 +139,17 @@ pub struct NodeInfo {
     pub example: &'static str,
     pub rust_variant: &'static str,
 }
+
+const NATIVE_DEVICE: NodeInfo = NodeInfo {
+    kind: "native_device",
+    name: "Native device",
+    rust_variant: "NativeDevice",
+    inputs: &[PortInfo { name: "in", default: Some(0.), unit: "signal" }],
+    outputs: &["out", "left", "right"],
+    description: "Whole-device native wrapper. Effects wire audio_input -> native_device -> audio_output; instruments wire native_device -> audio_output. Requires the host's registered factory via prepare_native_at; no arbitrary code or feedback. Parameters preserve the native contract. Processing/reset/events use Device's real-time-safe API.",
+    configuration: "device: stable registered device id, 1..128 bytes",
+    example: r#"{"kind":"native_device","device":"utility"}"#,
+};
 /// Catalog for humans, CLI tooling and AI agents; serialize with serde_json.
 mod io;
 mod math;
@@ -121,6 +158,7 @@ mod modulation;
 mod stereo;
 mod transport;
 pub static NODE_CATALOG: &[NodeInfo] = &[
+    NATIVE_DEVICE,
     io::AUDIO_INPUT,
     io::AUDIO_OUTPUT,
     io::GAIN,
@@ -181,6 +219,7 @@ pub static NODE_CATALOG: &[NodeInfo] = &[
 impl NodeKind {
     pub fn info(&self) -> &'static NodeInfo {
         match self {
+            Self::NativeDevice { .. } => &NATIVE_DEVICE,
             Self::AudioInput => &io::AUDIO_INPUT,
             Self::AudioOutput => &io::AUDIO_OUTPUT,
             Self::Gain { .. } => &io::GAIN,

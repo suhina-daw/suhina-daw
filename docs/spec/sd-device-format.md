@@ -76,7 +76,7 @@ missing required inputs and cycles are rejected with node/port diagnostics. Only
 of sample_delay/delay breaks a cycle; its input is written after all current-frame evaluations.
 Delay time is an ordinary dependency, so a cycle through it is rejected.
 
-File size is capped at 2 MiB, graphs at 128 nodes, 640 connections and 128 parameters.
+File size is capped at 2 MiB, graphs at 128 nodes, 640 connections and 256 parameters.
 Shared delay history is capped at 2,000,000 stereo frames and validated at 384 kHz, before
 allocating history. Accepted graphs fit all supported rates (8..384 kHz). Non-finite signals
 become zero and finite results are limited to the f32 range after every node.
@@ -281,3 +281,10 @@ Declare reciprocal links for bidirectional pairs. While the toggle is enabled, e
 updates both stored values. When enabling the toggle, the earlier parameter in each reciprocal
 pair is copied to the later one. The complete edit shares one undo snapshot and all messages
 reach the attached player; undo, redo and project saving preserve the pair.
+
+## Registered native devices
+
+A `native_device` node names a trusted registered implementation with `device`.
+It is restricted to a whole-device wrapper and requires `prepare_native_at` with
+a host factory. Parameters must match the native order and ranges, have valid
+native defaults and zero SDK smoothing. See [stock bundles](stock-device-bundle.md).

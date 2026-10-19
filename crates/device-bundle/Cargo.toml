@@ -1,0 +1,20 @@
+[package]
+name = "suhina-device-bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+suhina-device-sdk.workspace = true
+suhina-model.workspace = true
+
+[build-dependencies]
+suhina-device-registry.workspace = true
+suhina-device-sdk.workspace = true
+
+[dev-dependencies]
+suhina-device-registry.workspace = true
+
+[lints]
+workspace = true

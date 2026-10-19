@@ -31,6 +31,14 @@ impl Session {
     pub fn missing_files(&self) -> Vec<suhina_media::MissingAudio> {
         let folder = self.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         suhina_media::missing_audio(self.project(), &folder)
+            .into_iter()
+            .filter(|missing| {
+                // Already decoded paths were explicitly loaded or safely resolved on open.
+                let loaded = self.audio().files.contains_key(&missing.file)
+                    || self.audio().files.contains_key(&suhina_model::stream_key(&missing.file, 0));
+                !loaded || !missing.last_path.is_file()
+            })
+            .collect()
     }
 }
 
@@ -66,7 +74,12 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         // The streams of a Stems file that clips play, so each is decoded with it.
         let mut streams: Option<u16> = None;
-        let mut named = false;
+        let mut named = session
+            .project()
+            .channels
+            .iter()
+            .flat_map(|c| &c.devices)
+            .any(|d| d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str()));
         for content in &session.project().contents {
             for lane in &content.lanes {
                 if let LaneData::Audio(region) = &lane.data
@@ -95,6 +108,12 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         let key = target.display().to_string();
         let mut regions = 0;
+        for device in session.project.channels.iter_mut().flat_map(|c| &mut c.devices) {
+            if device.sample_file() == Some(file.as_str()) || device.sample_absolute_file() == Some(file.as_str()) {
+                device.set_sample_file(&key);
+                regions += 1;
+            }
+        }
         for content in &mut session.project.contents {
             for lane in &mut content.lanes {
                 if let LaneData::Audio(region) = &mut lane.data

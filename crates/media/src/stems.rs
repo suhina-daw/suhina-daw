@@ -21,7 +21,7 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-use crate::MAX_SECONDS;
+use crate::{decode_limit, reserve_audio};
 
 /// Most audio tracks a Stems file may have (the master and up to 15 stems).
 pub const MAX_TRACKS: usize = 16;
@@ -294,18 +294,23 @@ pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
     for track in &boxes.audio {
         let t = format.tracks().iter().find(|t| t.id == track.id).ok_or("an audio track symphonia cannot see")?;
         let params = t.codec_params.as_ref().and_then(|p| p.audio()).ok_or("no audio codec parameters")?.clone();
-        let sample_rate = params.sample_rate.filter(|r| (1..=1_000_000).contains(r)).ok_or("unknown sample rate")?;
+        let sample_rate = params.sample_rate.ok_or("unknown sample rate")?;
         let channels = params
             .channels
             .as_ref()
             .map(|c| c.count())
-            .filter(|c| (1..=64).contains(c))
+            .filter(|c| (1..=32).contains(c))
             .ok_or("unknown channel count")?;
         let channels = u16::try_from(channels).map_err(|_| "too many channels")?;
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
             .map_err(|e| format!("unsupported codec: {e}"))?;
-        let max_samples = (MAX_SECONDS * f64::from(sample_rate)) as usize * usize::from(channels);
+        let max_samples = decode_limit(sample_rate, usize::from(channels))?;
+        if t.num_frames
+            .is_some_and(|frames| frames.checked_mul(u64::from(channels)).is_none_or(|n| n > max_samples as u64))
+        {
+            return Err("Stems header exceeds the duration or 1 GiB memory budget".into());
+        }
         outs.push(Out { id: track.id, decoder, sample_rate, channels, samples: Vec::new(), max_samples });
     }
     if outs.iter().any(|o| o.sample_rate != outs.first().map_or(0, |f| f.sample_rate)) {
@@ -313,20 +318,29 @@ pub fn decode_streams(path: &Path) -> Result<Vec<AudioData>, String> {
     }
 
     let mut packet_samples = Vec::new();
+    let mut total_samples = 0usize;
     loop {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) | Err(SymphoniaError::ResetRequired) => break,
             Err(e) => return Err(format!("read error: {e}")),
         };
+        let capacity_left =
+            crate::MAX_DECODED_SAMPLES.saturating_sub(outs.iter().map(|out| out.samples.capacity()).sum());
         let Some(out) = outs.iter_mut().find(|o| o.id == packet.track_id) else { continue };
         match out.decoder.decode(&packet) {
             Ok(decoded) => {
+                let count = decoded.samples_interleaved();
+                total_samples = total_samples
+                    .checked_add(count)
+                    .filter(|n| *n <= crate::MAX_DECODED_SAMPLES)
+                    .ok_or("Stems audio exceeds the 1 GiB memory budget")?;
+                let limit = out.max_samples.min(out.samples.capacity().saturating_add(capacity_left));
+                reserve_audio(&mut out.samples, count, limit)?;
+                packet_samples.clear();
+                reserve_audio(&mut packet_samples, count, out.max_samples)?;
                 decoded.copy_to_vec_interleaved(&mut packet_samples);
                 out.samples.extend_from_slice(&packet_samples);
-                if out.samples.len() > out.max_samples {
-                    return Err(format!("longer than {} hours", MAX_SECONDS / 3600.0));
-                }
             }
             // A damaged packet is skipped, as players do.
             Err(SymphoniaError::DecodeError(_) | SymphoniaError::IoError(_)) => continue,

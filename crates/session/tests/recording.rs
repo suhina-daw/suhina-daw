@@ -331,3 +331,32 @@ fn an_audio_take_is_written_to_a_file_and_becomes_a_clip() {
     assert!(rig.session.project().arrangement.lanes.iter().all(|l| l.clips.is_empty()));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn sampler_recording_replaces_source_without_creating_a_clip() {
+    let dir = std::env::temp_dir().join(format!("suhina-sampler-recording-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = project();
+    p.tracks[0].audio_input.channels = InputChannels::Mono(1);
+    let mut rig = rig(p);
+    rig.session.save(&dir.join("song.suhina"), false).unwrap();
+    rig.run("device.add", json!({"track":1,"id":"sampler"})).unwrap();
+    rig.run("track.setArm", json!({"track":1,"armed":true})).unwrap();
+    rig.run("transport.play", json!({})).unwrap();
+    rig.render_to(BEAT, 0.25);
+    rig.run("device.recordSample", json!({"track":1,"device":0,"on":true})).unwrap();
+    assert!(rig.session.recording_sampler(TrackId(1), 0));
+    rig.render_to(BEAT * 3, 0.25);
+    rig.run("device.recordSample", json!({"track":1,"device":0,"on":false})).unwrap();
+    rig.render_to(BEAT * 3 + BLOCK * 4, 0.25);
+    let notices = rig.settle();
+    assert!(notices.is_empty(), "{notices:?}");
+    let file = rig.session.project().channels[0].devices[0].sample_file().unwrap().to_string();
+    assert!(std::path::Path::new(&file).is_file());
+    assert!(rig.session.audio().files[&file].samples.iter().all(|s| *s == 0.25));
+    assert!(rig.session.project().arrangement.lanes.iter().all(|l| l.clips.is_empty()));
+    rig.run("edit.undo", json!({})).unwrap();
+    assert!(rig.session.project().channels[0].devices[0].sample_file().is_none());
+    assert!(std::path::Path::new(&file).is_file(), "undo preserves the recorded file");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

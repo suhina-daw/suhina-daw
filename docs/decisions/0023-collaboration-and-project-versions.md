@@ -224,7 +224,7 @@ A feasibility pass produced these findings, all of which the decisions below res
   <https://jamulus.app/wiki/Getting-Started>,
   <https://ccrma.stanford.edu/groups/soundwire/software/jacktrip/index.html>. SonoBus is GPL-3.0 and
   JackTrip is MIT, so either may be ported with its notices kept and credited in `ATTRIBUTION.md`
-  under rule 9; the clean-room rule concerns proprietary products and neither is one. What ports is
+  under rule 10; the clean-room rule concerns proprietary products and neither is one. What ports is
   the streaming structure and the jitter buffer — the alignment problem, which is the hard part, this
   project already solves (ADR 0005, ADR 0006).
 - This repository: ADR 0001, ADR 0002, ADR 0005, ADR 0006, ADR 0010, ADR 0011, ADR 0012, ADR 0013,

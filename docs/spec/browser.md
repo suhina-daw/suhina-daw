@@ -21,6 +21,11 @@ covers:
 
 # Browser
 
+A single sample dropped on a Sampler waveform replaces that instrument's source
+through `device.loadSample`; it creates no clip or track. This applies to browser
+items and files dragged from the operating system. MIDI and multi-file drops are
+not accepted by the waveform. Other drop targets keep their existing behavior.
+
 The panel at the side of the main window where samples, MIDI files, presets, built-in
 instruments and effects and installed plug-ins are found, previewed and dragged into the
 project.
@@ -435,3 +440,12 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)).
 - Previewing in time with the project, and hot-swapping a device or sample by double-click.
 - Key detection by analysis.
 - A system file dialog for adding a folder (today a path is typed or a folder dropped).
+
+Stock instrument and effect entries come from the embedded build-time `.sd` bundle.
+Availability does not depend on resource files beside the executable. Imported native
+wrappers preserve their SDK definitions in the project; see
+[stock bundles](stock-device-bundle.md).
+
+A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)
+adds Sampler and loads its source without creating an audio clip. Tracks with devices
+are left intact. A pending file drop is cancelled when another project is active.

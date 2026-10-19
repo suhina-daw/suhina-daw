@@ -16,7 +16,7 @@ last_verified: 2026-10-12
   (see *To observe*).
 - **Used by:** the browser and the sample map ([`sample-map.md`](sample-map.md) › NKS presets).
 - **Naming:** in user-facing text "Native Instruments preset files (.nksf)"; never the NKS logo,
-  never "NKS-ready" or "NKS-compatible" as Suhina's own branding (AGENTS.md rule 8).
+  never "NKS-ready" or "NKS-compatible" as Suhina's own branding (AGENTS.md rule 9).
 
 ## Files
 

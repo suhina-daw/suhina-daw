@@ -22,9 +22,31 @@ use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-/// Longest file we decode, so one huge or hostile file cannot exhaust memory (about 2.6 GiB of
-/// stereo f32 at 48 kHz).
+/// Longest decoded duration; the independent byte budget also applies.
 pub(crate) const MAX_SECONDS: f64 = 60.0 * 60.0 * 2.0;
+const MAX_DECODED_SAMPLES: usize = 1024 * 1024 * 1024 / std::mem::size_of::<f32>();
+pub(crate) fn decode_limit(rate: u32, channels: usize) -> Result<usize, String> {
+    if !(1000..=384000).contains(&rate) || !(1..=32).contains(&channels) {
+        return Err("audio needs 1000..384000 Hz and 1..32 channels".into());
+    }
+    Ok(((MAX_SECONDS as usize)
+        .checked_mul(rate as usize)
+        .and_then(|n| n.checked_mul(channels))
+        .ok_or("audio size overflow")?)
+    .min(MAX_DECODED_SAMPLES))
+}
+pub(crate) fn reserve_audio(samples: &mut Vec<f32>, additional: usize, limit: usize) -> Result<(), String> {
+    let needed = samples
+        .len()
+        .checked_add(additional)
+        .filter(|n| *n <= limit)
+        .ok_or("decoded audio exceeds the duration or 1 GiB memory budget")?;
+    if needed > samples.capacity() {
+        let capacity = samples.capacity().saturating_mul(2).max(needed).min(limit);
+        samples.try_reserve_exact(capacity - samples.len()).map_err(|_| "cannot allocate decoded audio")?;
+    }
+    Ok(())
+}
 
 /// Loads every audio file the project uses. Same as [`decode_project_audio`].
 pub fn load_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, Vec<String>) {
@@ -32,13 +54,21 @@ pub fn load_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, 
 }
 
 /// Decodes every audio file the project uses, on all cores. `project_dir` is the folder the
-/// project file is in; a region's relative path is resolved from there first, then its absolute
-/// path is tried. Files that cannot be found or decoded are reported in the returned warnings and
+/// project file is in; references are resolved only inside it, without following links.
+/// External references require an explicit user load or relink. Files that cannot be found or decoded are reported in the returned warnings and
 /// left out.
 pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool, Vec<String>) {
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
+    for device in project.channels.iter().flat_map(|c| &c.devices) {
+        if let Some(file) = device.sample_file()
+            && !wanted.iter().any(|(key, _, _)| key == file)
+        {
+            let candidates = locate(file, device.sample_absolute_file(), project_dir).into_iter().collect();
+            wanted.push((file.into(), candidates, false));
+        }
+    }
     for content in &project.contents {
         for lane in &content.lanes {
             let LaneData::Audio(region) = &lane.data else { continue };
@@ -50,10 +80,7 @@ pub fn decode_project_audio(project: &Project, project_dir: &Path) -> (AudioPool
             if wanted.iter().any(|(file, _, s)| *file == region.file && *s == streams) {
                 continue;
             }
-            let mut candidates = vec![project_dir.join(&region.file)];
-            if let Some(absolute) = &region.absolute_file {
-                candidates.push(PathBuf::from(absolute));
-            }
+            let candidates = locate(&region.file, region.absolute_file.as_deref(), project_dir).into_iter().collect();
             wanted.push((region.file.clone(), candidates, streams));
         }
     }
@@ -119,19 +146,47 @@ pub struct MissingAudio {
     pub clips: usize,
 }
 
-/// Where a region's file is: its path from the project's folder, then its absolute path.
+/// A project-named file inside its folder, with no parent traversal or symbolic links.
 pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path) -> Option<PathBuf> {
-    let relative = project_dir.join(file);
-    if relative.is_file() {
-        return Some(relative);
-    }
-    absolute.map(PathBuf::from).filter(|p| p.is_file())
+    let root = std::path::absolute(project_dir).ok()?;
+    let canonical_root = root.canonicalize().ok()?;
+    [Some(file), absolute].into_iter().flatten().find_map(|name| {
+        let path = Path::new(name);
+        if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return None;
+        }
+        let candidate = root.join(path);
+        if !candidate.starts_with(&root) {
+            return None;
+        }
+        let mut component = root.clone();
+        for part in candidate.strip_prefix(&root).ok()?.components() {
+            component.push(part);
+            if std::fs::read_link(&component).is_ok() {
+                return None;
+            }
+        }
+        let canonical = candidate.canonicalize().ok()?;
+        (canonical.starts_with(&canonical_root) && canonical.is_file()).then_some(candidate)
+    })
 }
 
 /// The project's audio files that cannot be found, each once, in the order the project names
 /// them. Only looks at whether files exist; nothing is decoded.
 pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio> {
     let mut out: Vec<MissingAudio> = Vec::new();
+    for device in project.channels.iter().flat_map(|c| &c.devices) {
+        if let Some(file) = device.sample_file()
+            && locate(file, device.sample_absolute_file(), project_dir).is_none()
+            && !out.iter().any(|m| m.file == file)
+        {
+            out.push(MissingAudio {
+                file: file.into(),
+                last_path: device.sample_absolute_file().map_or_else(|| project_dir.join(file), PathBuf::from),
+                clips: 0,
+            });
+        }
+    }
     let mut found: Vec<&str> = Vec::new();
     for content in &project.contents {
         for lane in &content.lanes {
@@ -192,11 +247,17 @@ pub fn decode_file(path: &Path) -> Result<AudioData, String> {
     let track = format.default_track(TrackType::Audio).ok_or("no audio track")?;
     let track_id = track.id;
     let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("no audio codec parameters")?.clone();
-    let sample_rate = params.sample_rate.filter(|r| (1..=1_000_000).contains(r)).ok_or("unknown sample rate")?;
+    let sample_rate = params.sample_rate.ok_or("unknown sample rate")?;
     let channels =
-        params.channels.as_ref().map(|c| c.count()).filter(|c| (1..=64).contains(c)).ok_or("unknown channel count")?;
+        params.channels.as_ref().map(|c| c.count()).filter(|c| (1..=32).contains(c)).ok_or("unknown channel count")?;
     let channels = u16::try_from(channels).map_err(|_| "too many channels")?;
-    let max_samples = (MAX_SECONDS * f64::from(sample_rate)) as usize * usize::from(channels);
+    let max_samples = decode_limit(sample_rate, usize::from(channels))?;
+    if track
+        .num_frames
+        .is_some_and(|frames| frames.checked_mul(u64::from(channels)).is_none_or(|n| n > max_samples as u64))
+    {
+        return Err("audio header exceeds the duration or 1 GiB memory budget".into());
+    }
 
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(&params, &AudioDecoderOptions::default())
@@ -214,11 +275,12 @@ pub fn decode_file(path: &Path) -> Result<AudioData, String> {
         }
         match decoder.decode(&packet) {
             Ok(decoded) => {
+                let count = decoded.samples_interleaved();
+                reserve_audio(&mut samples, count, max_samples)?;
+                packet_samples.clear();
+                reserve_audio(&mut packet_samples, count, max_samples)?;
                 decoded.copy_to_vec_interleaved(&mut packet_samples);
                 samples.extend_from_slice(&packet_samples);
-                if samples.len() > max_samples {
-                    return Err(format!("longer than {} hours", MAX_SECONDS / 3600.0));
-                }
             }
             // A damaged packet is skipped, as players do.
             Err(SymphoniaError::DecodeError(_) | SymphoniaError::IoError(_)) => continue,
@@ -275,6 +337,56 @@ mod tests {
     }
 
     #[test]
+    fn decode_budgets_reject_hostile_formats_and_growth_before_allocating() {
+        assert!(decode_limit(1_000_000, 64).is_err());
+        assert!(decode_limit(999, 1).is_err());
+        assert_eq!(decode_limit(384000, 32).unwrap(), MAX_DECODED_SAMPLES);
+        let mut samples = vec![0.; 8];
+        let capacity = samples.capacity();
+        assert!(reserve_audio(&mut samples, 9, 16).is_err());
+        assert!(reserve_audio(&mut samples, usize::MAX, 16).is_err());
+        assert_eq!(samples.capacity(), capacity);
+        reserve_audio(&mut samples, 8, 16).unwrap();
+        assert!(samples.capacity() <= 16);
+    }
+
+    #[test]
+    fn project_sources_cannot_escape_by_absolute_path_parent_or_symlink() {
+        let dir = temp_dir("confined");
+        write_wav(&dir.join("outside.wav"), 1, 16);
+        for name in ["../outside.wav".to_string(), dir.join("outside.wav").display().to_string()] {
+            let mut project = project_with_audio(&name, Some(name.clone()));
+            project.channels.push(Channel::new(ChannelId(1), "Sampler"));
+            project.channels[0].devices.push(Device {
+                name: "Sampler".into(),
+                kind: DeviceKind::Builtin("sampler".into()),
+                enabled: true,
+                state: None,
+                params: vec![],
+                automation: vec![],
+                extensions: Extensions::default(),
+            });
+            project.channels[0].devices[0].set_sample_file(&name);
+            let (pool, warnings) = load_project_audio(&project, &dir.join("set"));
+            assert!(pool.files.is_empty() && !warnings.is_empty());
+            assert!(!missing_audio(&project, &dir.join("set")).is_empty());
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.join("outside.wav"), dir.join("set/link.wav")).unwrap();
+            assert!(locate("link.wav", None, &dir.join("set")).is_none());
+        }
+        #[cfg(windows)]
+        {
+            if std::os::windows::fs::symlink_file(dir.join("outside.wav"), dir.join("set/link.wav")).is_ok() {
+                assert!(locate("link.wav", None, &dir.join("set")).is_none());
+            }
+            assert!(locate(r"\\untrusted-server\share\sound.wav", None, &dir.join("set")).is_none());
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn decodes_wav_to_interleaved_f32() {
         let dir = temp_dir("decode");
         let path = dir.join("tone.wav");
@@ -286,16 +398,16 @@ mod tests {
     }
 
     #[test]
-    fn resolves_relative_paths_from_the_project_folder_then_absolute() {
+    fn project_paths_stay_inside_the_project_folder() {
         let dir = temp_dir("resolve");
         write_wav(&dir.join("shared.wav"), 1, 100);
-        // Relative to the project's folder, as a Live Set (.als) stores "../file.wav".
+        // A shared project cannot read a sibling folder.
         let (pool, warnings) = load_project_audio(&project_with_audio("../shared.wav", None), &dir.join("set"));
-        assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(pool.files["../shared.wav"].channels, 1);
+        assert!(pool.files.is_empty() && warnings.len() == 1);
+        write_wav(&dir.join("set/shared.wav"), 1, 100);
 
         // Relative path broken, absolute path still good.
-        let absolute = dir.join("shared.wav").display().to_string();
+        let absolute = dir.join("set/shared.wav").display().to_string();
         let (pool, warnings) =
             load_project_audio(&project_with_audio("moved/away.wav", Some(absolute)), &dir.join("set"));
         assert!(warnings.is_empty(), "{warnings:?}");

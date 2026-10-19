@@ -1044,7 +1044,7 @@ impl Graph {
         };
         // Device chains, group buses and latency compensation: every track is heard as late as
         // the path whose devices delay it most.
-        let (chains, latency) = buses::build(project, sample_rate, plugins, column_of, assets);
+        let (chains, latency) = buses::build(project, audio, sample_rate, plugins, column_of, assets);
         let mut events = Vec::new();
         let mut audio_events = Vec::new();
         let mut stretch_events = Vec::new();

@@ -24,8 +24,8 @@ project opens and helps find the files again.
 
 ## Terms
 
-- **Missing file:** a file the project's audio clips name (by its relative path from the
-  project's folder, or its absolute path) that is not found at either place.
+- **Missing file:** a clip or sampler source that cannot be resolved inside the project
+  folder, or an explicitly loaded source whose file has since moved.
 - **Candidate:** a file elsewhere with the same name (compared without regard to case), which
   may be the missing one.
 - **Relink:** point every clip that names a missing file at another file.
@@ -74,19 +74,25 @@ Rows with no candidate stay missing.
 
 ## What relinking changes
 
+Sampler source paths participate in missing-file discovery and relinking alongside
+audio regions. Relinking decodes the replacement before changing the source and
+uses the same project undo step; the source remains silent while missing.
+
 Every audio clip that names the missing file (by its relative or absolute path) is pointed at the
 candidate: both its path and its absolute path become the candidate's absolute path, as for a
 sample added from the browser. Nothing else about the clips changes (start, length, warp markers,
 gain). Stems files are relinked the same way, each of their audio tracks with them. Saving the
-project keeps the new paths; Undo goes back to the old ones.
+project keeps the new paths in the file. External paths are reported missing on
+reopen, so an external relink lasts only for the current session. Undo goes back
+to the old paths.
 
 ## Commands
 
 | Command | Kind | Params | Does |
 |---|---|---|---|
-| `project.missingFiles` | read | | the files the project's audio clips name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips` |
+| `project.missingFiles` | read | | the files the project's audio clips and sampler sources name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips` |
 | `library.findFiles` | library | `names`, `folder?` | candidates for each file name: from the browser's index and the active project's folder, or, with `folder`, from walking that folder; each name with its paths |
-| `project.relinkFiles` | edit | `files`, `to` | points the clips naming each of `files` at the file at the same place in `to`, one undo step; refused when a `to` file does not exist or cannot be decoded |
+| `project.relinkFiles` | edit | `files`, `to` | points the clips and sampler sources naming each of `files` at the file at the same place in `to`, one undo step; refused when a `to` file does not exist or cannot be decoded |
 
 Over MCP, `folder` and every `to` path must be inside the server's read root ([`mcp.md`](../mcp.md)).
 
@@ -104,3 +110,13 @@ Over MCP, `folder` and every `to` path must be inside the server's read root ([`
 - Matching by content (length, sample rate) when names differ.
 - Collecting a project's files into its folder ("collect and save").
 - Missing plug-ins are reported by the plug-in loading dialog (ADR 0006), not here.
+
+## Project file boundaries
+
+On project open, audio clips and sampler sources are resolved only inside the
+project folder. Symbolic links and junctions are not followed. Parent traversal and
+external absolute paths are treated as missing without reading the external file.
+Choose an external file explicitly through Locate/Apply to use it in the current
+session. To reopen without another relink, keep source audio inside the project
+folder. A direct browser/file drop or explicit CLI/MCP load remains a user-selected
+operation; MCP paths still stay inside its configured read root.

@@ -156,3 +156,25 @@ fn candidates_from_the_index_and_the_project_folder_are_capped_together() {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[test]
+fn external_project_sources_require_explicit_relink_after_reopening() {
+    let folder = temp("external-project");
+    let outside = temp("external-source");
+    let audio = outside.join("tone.wav");
+    wav(&audio);
+    let mut session = Session::new(blank_project());
+    session.execute("clip.addFiles", &json!({"paths":[audio],"start":0.})).unwrap();
+    assert!(session.missing_files().is_empty());
+    let song = folder.join("song.suhina");
+    session.save(&song, false).unwrap();
+    let (mut reopened, _) = Session::open(&song).unwrap();
+    assert!(reopened.audio().files.is_empty());
+    let missing = reopened.missing_files();
+    assert_eq!(missing.len(), 1);
+    reopened.execute("project.relinkFiles", &json!({"files":[missing[0].file],"to":[audio]})).unwrap();
+    assert!(reopened.missing_files().is_empty());
+    assert!(!reopened.audio().files.is_empty());
+    let _ = std::fs::remove_dir_all(folder);
+    let _ = std::fs::remove_dir_all(outside);
+}

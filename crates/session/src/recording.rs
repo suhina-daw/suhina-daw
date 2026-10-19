@@ -40,6 +40,7 @@ const MIN_NOTE: f64 = 1.0 / 128.0;
 /// Where a take goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target {
+    Sampler { device: usize },
     Slot { scene: usize },
     Arrangement,
 }
@@ -122,6 +123,12 @@ fn track_name(p: &Project, track: TrackId) -> String {
 }
 
 impl Session {
+    pub fn recording_sampler(&self, track: TrackId, device: usize) -> bool {
+        self.recording
+            .takes
+            .iter()
+            .any(|t| t.track == track && t.target == Target::Sampler { device } && t.end.is_none())
+    }
     /// The count-in recording waits for when it starts the transport, in bars (0 for none).
     /// The metronome as `transport.setMetronome` left it: on, its level in dB and its sound.
     pub fn metronome(&self) -> (bool, f64, suhina_engine::ClickSound) {
@@ -141,7 +148,7 @@ impl Session {
     pub fn recording_slot(&self, track: TrackId) -> Option<usize> {
         self.recording.takes.iter().find(|t| t.track == track && t.end.is_none()).and_then(|t| match t.target {
             Target::Slot { scene } => Some(scene),
-            Target::Arrangement => None,
+            Target::Arrangement | Target::Sampler { .. } => None,
         })
     }
 
@@ -204,7 +211,7 @@ impl Session {
                     track,
                     path: path.clone(),
                     start,
-                    by_clock: target != Target::Arrangement,
+                    by_clock: matches!(target, Target::Slot { .. }),
                 })?;
             }
         }
@@ -380,6 +387,17 @@ impl Session {
 
     /// Makes `take` a clip: one undo step.
     fn commit_take(&mut self, take: Take, now_clock: f64) -> Result<(), CommandError> {
+        if let Target::Sampler { device } = take.target {
+            let path = take.file.as_ref().ok_or("sampler recording has no audio file")?;
+            if take.finished.as_ref().is_none_or(|(frames, _, _)| *frames < 2) {
+                return Err(format!("sample recording was empty: {}", path.display()).into());
+            }
+            self.execute(
+                "device.loadSample",
+                &json!({"track": take.track.0, "device": device, "path": path.display().to_string()}),
+            )?;
+            return Ok(());
+        }
         let end = take.end.unwrap_or(take.start);
         let tempo = self.clock().map_or(self.project.transport.tempo_bpm, |c| c.4);
         let (lane, length) = match &take.file {
@@ -463,6 +481,7 @@ impl Session {
                     }
                     placed_slot = Some((column, row));
                 }
+                Target::Sampler { .. } => return Err("sampler take must be committed as a source".into()),
                 Target::Arrangement => {
                     crate::files::place_clip(p, take.track, source, None, take.start.max(0.0), false)?;
                 }
@@ -565,6 +584,53 @@ pub(crate) fn record_clip(session: &mut Session, params: &Value) -> Result<Value
     }))
 }
 
+/// Record the track's selected audio input directly into its sampler source.
+pub(crate) fn record_sample(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    session.player_mut()?;
+    let track = track_id(session.project(), params)?;
+    let device = params
+        .get("device")
+        .and_then(Value::as_u64)
+        .and_then(|v| usize::try_from(v).ok())
+        .ok_or("device must be an index")?;
+    let on = params.get("on").and_then(Value::as_bool).ok_or("on must be a boolean")?;
+    let (running, clock, launch, start_marker, _) =
+        session.clock().ok_or("open an audio output before recording a sample")?;
+    if !on {
+        let take = session
+            .recording
+            .takes
+            .iter_mut()
+            .find(|t| t.track == track && t.target == Target::Sampler { device } && t.end.is_none())
+            .ok_or("this sampler is not recording")?;
+        take.end = Some(clock.max(take.start));
+        take.asked = Some(Instant::now());
+        session.send_ends();
+        return Ok(json!({"recording": false}));
+    }
+    let t = session.project.tracks.iter().find(|t| t.id == track).ok_or("track is missing")?;
+    let stored = t
+        .channel
+        .and_then(|id| session.project.channels.iter().find(|c| c.id == id))
+        .and_then(|c| c.devices.get(device))
+        .ok_or("device is missing")?;
+    if !matches!(&stored.kind, suhina_model::DeviceKind::Builtin(id) if id == "sampler") {
+        return Err("recordSample needs a Sampler instrument".into());
+    }
+    if kind_of(&session.project, track) != Some(true) {
+        return Err("select an audio input on this track before recording a sample".into());
+    }
+    if !session.is_armed(track) {
+        return Err("arm this track before recording a sample".into());
+    }
+    if session.recording.take_on(track).is_some() {
+        return Err("this track already has a recording in progress".into());
+    }
+    let _ = launch;
+    session.begin_takes(&[track], Target::Sampler { device }, if running { clock } else { start_marker }, running)?;
+    Ok(json!({"recording": true}))
+}
+
 /// `transport.record`: records every armed track into the arrangement, or ends every take.
 pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     session.player_mut()?;
@@ -576,6 +642,7 @@ pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Resul
         for take in session.recording.takes.iter_mut().filter(|t| t.end.is_none()) {
             take.end = Some(match take.target {
                 Target::Arrangement => clock,
+                Target::Sampler { .. } => clock.max(take.start),
                 Target::Slot { .. } if running => launch.max(take.start),
                 Target::Slot { .. } => take.start,
             });
@@ -634,7 +701,7 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
             json!({
                 "track": t.track.0,
                 "track_name": track_name(p, t.track),
-                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene + 1 }), Target::Arrangement => json!("arrangement") },
+                "into": match t.target { Target::Slot { scene } => json!({ "scene": scene + 1 }), Target::Arrangement => json!("arrangement"), Target::Sampler { device } => json!({"device": device}) },
                 "kind": if t.file.is_some() { "audio" } else { "midi" },
                 "start_beat": t.start,
                 "end_beat": t.end,

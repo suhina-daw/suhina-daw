@@ -45,7 +45,7 @@ request changes this text (`scripts/docs.py stamp`; the docs bot's regenerations
 set by hand by someone who checks the text against the code without changing it.
 
 This is an internal status measurement, not product text: it names Live and its devices only to
-say what Suhina does and does not have yet (AGENTS.md rule 8 keeps those names out of Suhina's own
+say what Suhina does and does not have yet (AGENTS.md rule 9 keeps those names out of Suhina's own
 documentation and UI). The scope decision it leads to is
 [ADR 0016](../decisions/0016-parity-target.md).
 

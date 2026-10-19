@@ -53,7 +53,7 @@ CHAPTERS = [
     (4, "Working with the Browser", 60, 0.49, "partial",
      "Search, categories, folders watched on disk, pins, recent, colour tags, preview through the "
      "engine, sample map by sound similarity (smooth with 200 000 items, also while its window is resized) with kinds recognised from the sound and set by hand; samples and MIDI files dragged from the system's file "
-     "manager land like a browser drag (exact placement waits for pointer positions from the "
+     "manager land like a browser drag; dropping one sample on an empty MIDI track adds Sampler (exact placement waits for pointer positions from the "
      "windowing layer); installed plug-ins grouped by vendor in the tree, and in the Plug-ins "
      "category as the instruments or the effects by name and format, with pins and tags on them. "
      "Missing collections/tag editor depth, packs, Splice, "
@@ -136,7 +136,7 @@ CHAPTERS = [
      "generative or shape-based tools."),
     (12, "Editing MPE", 10, 0.00, "absent", "No MPE data, editing or MPE-aware devices."),
     (13, "Converting Audio to MIDI", 5, 0.05, "planned",
-     "Spec written (docs/spec/audio-to-midi.md); slicing and the four detectors are roadmap."),
+     "Spec written (docs/spec/audio-to-midi.md); Sampler slicing, dynamic manual boundaries and waveform zoom/pan are available; audio-to-MIDI detectors remain roadmap."),
     (14, "Using Grooves", 6, 0.00, "absent", "No groove pool, extraction or commit."),
     (15, "Using Tuning Systems", 9, 0.00, "absent", "No .scl/.ascl tuning systems."),
     (16, "Launching Clips", 12, 0.77, "partial",
@@ -217,8 +217,9 @@ CHAPTERS = [
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
      "window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect "
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
-    (31, "Live Instrument Reference", 120, 0.08, "started",
-     "One instrument: the FM synth (DX7-style, MSFA port) against 13 instruments; no sampler, "
+    (31, "Live Instrument Reference", 120, 0.12, "started",
+     "FM synth and single-source sample/granular instrument against 13 instruments; "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; "

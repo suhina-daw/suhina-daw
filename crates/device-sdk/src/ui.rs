@@ -133,6 +133,15 @@ impl ImageAsset {
     }
 }
 
+/// Shared oscillator preview for waveform menus and drawing expressions.
+pub fn waveform(shape: usize, cycles: f64) -> f64 {
+    if let Some(shape) = suhina_dsp::lfo::Shape::ALL.get(shape) {
+        suhina_dsp::lfo::wave(*shape, cycles)
+    } else {
+        (cycles * 8.).sin() * 0.6 + (cycles * 3.).cos() * 0.4
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UiValue {
@@ -172,6 +181,10 @@ pub enum UiExpression {
     },
     Cos {
         value: UiValue,
+    },
+    Wave {
+        shape: UiValue,
+        cycles: UiValue,
     },
 }
 impl From<f32> for UiValue {
@@ -220,6 +233,9 @@ impl UiValue {
                 UiExpression::Log { value } => value.eval(parameter, depth + 1).ln(),
                 UiExpression::Sin { value } => value.eval(parameter, depth + 1).sin(),
                 UiExpression::Cos { value } => value.eval(parameter, depth + 1).cos(),
+                UiExpression::Wave { shape, cycles } => {
+                    waveform(shape.eval(parameter, depth + 1) as usize, cycles.eval(parameter, depth + 1))
+                }
             },
         };
         if v.is_finite() { v.clamp(-1e12, 1e12) } else { 0.0 }
@@ -260,6 +276,11 @@ pub enum TextFormat {
     #[default]
     Number,
     Frequency,
+    Tempo,
+    Seconds,
+    Percent,
+    Decibels,
+    Balance,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -358,6 +379,8 @@ pub enum UiGesture {
     Menu,
     /// Set the X parameter to a literal value, for segmented selectors.
     Set(u16),
+    /// Select a tab; selecting the active tab returns to value zero.
+    Tab(u16),
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -365,10 +388,12 @@ pub struct UiBinding {
     pub parameter: String,
     #[serde(default)]
     pub logarithmic: bool,
+    #[serde(default = "one")]
+    pub drag_scale: f32,
 }
 impl UiBinding {
     pub fn new(parameter: impl Into<String>) -> Self {
-        Self { parameter: parameter.into(), logarithmic: false }
+        Self { parameter: parameter.into(), logarithmic: false, drag_scale: 1. }
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -440,9 +465,40 @@ impl DeviceUi {
             }
             if let Some(widget) = &c.widget {
                 let valid = match widget {
-                    Widget::Label { .. } | Widget::Separator => c.x.is_none() && c.y.is_none(),
+                    Widget::Label { .. }
+                    | Widget::Panel { .. }
+                    | Widget::Separator
+                    | Widget::SampleWaveform
+                    | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
+                    Widget::Envelope { attack, decay, level, release } => {
+                        let ids: Vec<_> =
+                            [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
+                        c.x.is_none()
+                            && c.y.is_none()
+                            && c.bounds[2] >= 40.
+                            && c.bounds[3] >= 32.
+                            && ids.iter().collect::<HashSet<_>>().len() == ids.len()
+                            && ids.iter().enumerate().all(|(i, id)| {
+                                parameters.iter().any(|p| {
+                                    p.id == id.as_str()
+                                        && p.min < p.max
+                                        && if i == 2 {
+                                            if release.is_some() {
+                                                p.min == 0. && p.max == 1.
+                                            } else {
+                                                p.min < 0. && p.max > 0.
+                                            }
+                                        } else {
+                                            p.min == 0. && p.max <= 60.
+                                        }
+                                })
+                            })
+                    }
                     Widget::Button { .. } => {
-                        matches!(c.gesture, UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_))
+                        matches!(
+                            c.gesture,
+                            UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_)
+                        )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
                     Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
@@ -467,11 +523,20 @@ impl DeviceUi {
                             })
                     }
                     Widget::Menu => c.gesture == UiGesture::Menu,
+                    Widget::WaveformPreview { shape } => {
+                        c.gesture == UiGesture::Position
+                            && c.x.is_some()
+                            && c.y.is_none()
+                            && parameters.iter().any(|p| p.id == *shape && p.min == 0. && matches!(p.max, 5. | 6.))
+                    }
                     Widget::WaveformMenu => {
                         c.gesture == UiGesture::Menu
                             && c.x.as_ref().is_some_and(|binding| {
                                 parameters.iter().any(|p| {
-                                    p.id == binding.parameter && p.min == 0. && p.max == 6. && p.ui.options.len() == 7
+                                    p.id == binding.parameter
+                                        && p.min == 0.
+                                        && matches!(p.max, 5. | 6.)
+                                        && p.ui.options.len() == p.max as usize + 1
                                 })
                             })
                     }
@@ -487,6 +552,15 @@ impl DeviceUi {
                 };
                 if !valid {
                     return Err(fail("widget has incompatible gesture, bindings or frequency range"));
+                }
+            }
+            if let UiGesture::Tab(value) = c.gesture {
+                let valid = value > 0
+                    && c.x.as_ref().is_some_and(|b| {
+                        !b.logarithmic && parameters.iter().any(|p| p.id == b.parameter && p.min == 0.)
+                    });
+                if !valid {
+                    return Err(fail("tabs require a positive value and a zero-based linear parameter"));
                 }
             }
             let [x, y, w, h] = c.bounds;
@@ -509,18 +583,36 @@ impl DeviceUi {
             if let Some(condition) = &c.visible_when {
                 condition.validate(&ids, 0, &mut expression_budget)?;
             }
-            if c.x.is_none() && c.y.is_none() && !matches!(c.widget, Some(Widget::Label { .. } | Widget::Separator)) {
+            if c.x.is_none()
+                && c.y.is_none()
+                && !matches!(
+                    c.widget,
+                    Some(
+                        Widget::Label { .. }
+                            | Widget::Panel { .. }
+                            | Widget::Separator
+                            | Widget::SampleWaveform
+                            | Widget::SampleRecording
+                            | Widget::Envelope { .. }
+                    )
+                )
+            {
                 return Err(fail("custom control needs a parameter binding"));
             }
             if c.x.as_ref().zip(c.y.as_ref()).is_some_and(|(x, y)| x.parameter == y.parameter) {
                 return Err(fail("X and Y must bind different parameters"));
             }
-            if matches!(c.gesture, UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Menu)
-                && (c.x.is_none() || c.y.is_some())
+            if matches!(
+                c.gesture,
+                UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
+            ) && (c.x.is_none() || c.y.is_some())
             {
                 return Err(fail("button gestures require only X binding"));
             }
             for binding in [c.x.as_ref(), c.y.as_ref()].into_iter().flatten() {
+                if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale) {
+                    return Err(fail("drag scale must be finite and within 0.01..100"));
+                }
                 let p = parameters
                     .iter()
                     .find(|p| p.id == binding.parameter)
@@ -535,7 +627,7 @@ impl DeviceUi {
                 if p.min >= p.max || (binding.logarithmic && p.min <= 0.0) {
                     return Err(fail("binding needs a nonempty range; logarithmic range must be positive"));
                 }
-                if let UiGesture::Set(value) = c.gesture
+                if let UiGesture::Set(value) | UiGesture::Tab(value) = c.gesture
                     && !(p.min..=p.max).contains(&f64::from(value))
                 {
                     return Err(fail("button value is outside the bound parameter range"));
@@ -567,7 +659,10 @@ impl UiValue {
                         return Err(fail());
                     }
                 }
-                UiExpression::Add { a, b } | UiExpression::Multiply { a, b } | UiExpression::Equal { a, b } => {
+                UiExpression::Add { a, b }
+                | UiExpression::Multiply { a, b }
+                | UiExpression::Equal { a, b }
+                | UiExpression::Wave { shape: a, cycles: b } => {
                     a.validate(ids, depth + 1, budget)?;
                     b.validate(ids, depth + 1, budget)?;
                 }
@@ -635,5 +730,109 @@ impl Draw {
             value.validate(ids, 0, budget)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waveform_expressions_round_trip_and_validate_parameter_references() {
+        let value = UiValue::Expression(Box::new(UiExpression::Wave {
+            shape: UiValue::parameter("shape", false),
+            cycles: 0.25.into(),
+        }));
+        let saved = serde_json::to_string(&value).unwrap();
+        assert_eq!(serde_json::from_str::<UiValue>(&saved).unwrap(), value);
+        assert_eq!(value.evaluate(&|_, _, _| 1.), 1.);
+        assert!(value.validate(&HashSet::from(["shape"]), 0, &mut 32768).is_ok());
+        assert!(value.validate(&HashSet::new(), 0, &mut 32768).is_err());
+    }
+
+    #[test]
+    fn waveform_preview_round_trips_and_rejects_missing_shape() {
+        let mut shape = Parameter::new("shape", "Shape", (0., 5.), 0.);
+        shape.ui.options = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random"].map(String::from).to_vec();
+        let params = [Parameter::new("rate", "Rate", (0.01, 20.), 1.), shape];
+        let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
+        ui.controls.push(CustomControl {
+            id: "preview".into(),
+            name: "Preview".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 200., 60.],
+            widget: Some(Widget::WaveformPreview { shape: "shape".into() }),
+            gesture: UiGesture::Position,
+            x: Some(UiBinding::new("rate")),
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        });
+        ui.validate(&params).unwrap();
+        assert_eq!(serde_json::from_str::<DeviceUi>(&serde_json::to_string(&ui).unwrap()).unwrap(), ui);
+        assert!(!ui.controls[0].drawings().is_empty());
+        ui.controls[0].widget = Some(Widget::WaveformPreview { shape: "missing".into() });
+        assert!(ui.validate(&params).is_err());
+    }
+
+    #[test]
+    fn envelope_widgets_round_trip_and_reject_invalid_stage_references() {
+        let params = [
+            Parameter::new("a", "Attack", (0., 10.), 0.),
+            Parameter::new("d", "Decay", (0., 10.), 0.),
+            Parameter::new("s", "Sustain", (0., 1.), 1.),
+            Parameter::new("r", "Release", (0., 10.), 0.),
+        ];
+        let widget =
+            Widget::Envelope { attack: "a".into(), decay: "d".into(), level: "s".into(), release: Some("r".into()) };
+        let mut ui = DeviceUi {
+            controls: vec![CustomControl {
+                widget: Some(widget),
+                visible_when: None,
+                id: "env".into(),
+                name: "Envelope".into(),
+                tooltip: String::new(),
+                bounds: [0., 0., 284., 40.],
+                gesture: UiGesture::Position,
+                x: None,
+                y: None,
+                drawing: vec![],
+            }],
+            ..DeviceUi::default()
+        };
+        ui.validate(&params).unwrap();
+        assert_eq!(serde_json::from_str::<DeviceUi>(&serde_json::to_string(&ui).unwrap()).unwrap(), ui);
+        for attack in ["missing", "d"] {
+            if let Some(Widget::Envelope { attack: a, .. }) = &mut ui.controls[0].widget {
+                *a = attack.into();
+            }
+            assert!(ui.validate(&params).is_err());
+        }
+    }
+
+    #[test]
+    fn drag_scale_defaults_to_one_and_rejects_invalid_values() {
+        let old: UiBinding = serde_json::from_str(r#"{"parameter":"amount"}"#).unwrap();
+        assert_eq!(old.drag_scale, 1.);
+        let mut ui = DeviceUi {
+            controls: vec![CustomControl {
+                widget: None,
+                visible_when: None,
+                id: "amount".into(),
+                name: "Amount".into(),
+                tooltip: String::new(),
+                bounds: [0., 0., 40., 20.],
+                gesture: UiGesture::Drag,
+                x: Some(old),
+                y: None,
+                drawing: vec![],
+            }],
+            ..DeviceUi::default()
+        };
+        let parameters = [Parameter::new("amount", "Amount", (0., 1.), 0.)];
+        for scale in [1., 2., 0., -1., f32::NAN, f32::INFINITY, 101.] {
+            ui.controls[0].x.as_mut().unwrap().drag_scale = scale;
+            assert_eq!(ui.validate(&parameters).is_ok(), scale == 1. || scale == 2.);
+        }
     }
 }

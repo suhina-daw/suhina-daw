@@ -99,6 +99,7 @@ const SWITCH_HOVER: f64 = 0.5;
 
 /// A drop whose samples are being decoded on another thread before its commands run.
 struct PendingDrop {
+    project: Option<ProjectId>,
     commands: Vec<(&'static str, serde_json::Value)>,
     /// Each decoded file (a Stems file once per audio track, with its stream number).
     decoded: std::sync::mpsc::Receiver<Vec<DecodedDrop>>,
@@ -411,6 +412,7 @@ pub struct App {
     pending_drop: Option<PendingDrop>,
     /// Where the detail area is this frame and the track it shows, for drops on its devices.
     detail_drop: Option<(Rect, TrackId)>,
+    sample_drops: Vec<crate::detail::device_canvas::SampleTarget>,
     /// The piano roll a selected MIDI clip shows in the detail area.
     piano_roll: PianoRollState,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
@@ -520,6 +522,7 @@ impl App {
             map_window: MapWindow::default(),
             pending_drop: None,
             detail_drop: None,
+            sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
             recovery: Vec::new(),
             recovery_open: None,
@@ -1987,6 +1990,13 @@ impl App {
             let inner = if browser_shown && !full_width { self.browser_panel(ui, inner) } else { inner };
             let mut view_area = inner;
             self.detail_drop = None;
+            self.sample_drops.clear();
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(
+                    crate::detail::device_canvas::sample_targets_id(),
+                    Vec::<crate::detail::device_canvas::SampleTarget>::new(),
+                )
+            });
             // A clip selected (or clicked) while the editor was closed by hand opens it again.
             let shown_clip = self.shown_clip();
             let clicked = std::mem::take(&mut self.arrangement.clip_clicked);
@@ -2668,6 +2678,66 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
+        if let Some(session) = self.session() {
+            for channel in session.project().channels.iter().filter(|channel| {
+                session
+                    .project()
+                    .tracks
+                    .iter()
+                    .any(|t| Some(t.id) == clip.map(ClipRef::track).or(track) && t.channel == Some(channel.id))
+            }) {
+                let Some(track) =
+                    session.project().tracks.iter().find(|t| Some(t.id) == clip.map(ClipRef::track).or(track))
+                else {
+                    continue;
+                };
+                for (index, device) in channel.devices.iter().enumerate() {
+                    if device.sample_file().is_none()
+                        && device.kind != suhina_engine::model::DeviceKind::Builtin("sampler".into())
+                    {
+                        continue;
+                    }
+                    let id = crate::detail::device_canvas::sample_source_id(track.id, index);
+                    ui.ctx().data_mut(|d| {
+                        let version = (self.projects.active(), self.revision);
+                        if d.get_temp::<(Option<ProjectId>, u64)>(id.with("manual-revision")) == Some(version) {
+                            return;
+                        }
+                        d.insert_temp(id.with("manual-revision"), version);
+                        if let Some(points) = device.sample_slices() {
+                            d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
+                        } else {
+                            d.remove::<std::sync::Arc<[f64]>>(id.with("manual-points"));
+                        }
+                    });
+                    let position =
+                        session.player().map_or([None; 32], |p| p.meter_monitor().sample_positions(track.id, index));
+                    ui.ctx().data_mut(|d| d.insert_temp(id.with("position"), position));
+                    let channels =
+                        session.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(id.with("input"), (track.audio_input, channels, session.is_armed(track.id)))
+                    });
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(
+                            id.with("name"),
+                            device
+                                .sample_file()
+                                .and_then(|file| std::path::Path::new(file).file_name())
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                        )
+                    });
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(id.with("recording"), session.recording_sampler(track.id, index)));
+                    if let Some(data) = device.sample_file().and_then(|file| session.audio().files.get(file)) {
+                        ui.ctx().data_mut(|d| d.insert_temp(id, data.clone()));
+                    } else {
+                        ui.ctx().data_mut(|d| d.remove::<std::sync::Arc<suhina_engine::AudioData>>(id));
+                    }
+                }
+            }
+        }
         // What the piano roll has selected, described for the clip column (› Clip column).
         if let (detail_view::Detail::Clip(info, _), Some(piano), Some(session)) = (&mut shown, &piano, self.session()) {
             info.selection = detail_view::SelectionInfo::of(
@@ -2764,6 +2834,14 @@ impl App {
             self.pending_device_remove = None;
         }
         self.place_editors(&places);
+        self.sample_drops = ui
+            .ctx()
+            .data(|d| {
+                d.get_temp::<Vec<crate::detail::device_canvas::SampleTarget>>(
+                    crate::detail::device_canvas::sample_targets_id(),
+                )
+            })
+            .unwrap_or_default();
         // The toolbar's × hides the editor.
         if std::mem::take(&mut self.piano_roll.hide_requested) {
             self.hide_editor();
@@ -4705,13 +4783,21 @@ impl App {
 
     /// The target the views found under the pointer, or the detail area's track for devices.
     fn drop_target(&self, items: &[BrowserItem], pointer: Option<Pos2>) -> Option<DropTarget> {
+        if let Some(pointer) = pointer
+            && items.len() == 1
+            && items[0].kind == crate::interaction::drop::ItemKind::Sample
+            && let Some((_, track, device)) = self.sample_drops.iter().find(|(area, _, _)| area.contains(pointer))
+        {
+            return Some(DropTarget::Sampler { track: *track, device: *device });
+        }
         let target = match self.shown {
             View::Session => self.view.drop.as_ref().and_then(|p| p.target),
             View::Arrangement => self.arrangement.drop.as_ref().and_then(|p| p.target),
         };
         match (target, pointer, self.detail_drop) {
             (None, Some(pointer), Some((detail, track)))
-                if detail.contains(pointer) && items.iter().any(|i| i.kind.is_device()) =>
+                if detail.contains(pointer)
+                    && items.iter().any(|i| i.kind.is_device() || i.kind == drop::ItemKind::Sample) =>
             {
                 Some(DropTarget::Track(track))
             }
@@ -4972,6 +5058,31 @@ impl App {
         let project = self.session()?.project();
         let name =
             |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
+        if let [sample] = items
+            && sample.kind == drop::ItemKind::Sample
+            && sample.path().is_some_and(|path| !suhina_media::stems::is_stems_path(&path))
+            && let Some(track_id) = match target {
+                DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
+                _ => None,
+            }
+            && let Some(track) = project.tracks.iter().find(|t| t.id == track_id)
+            && track.content.notes
+            && !track.content.audio
+            && let Some(channel) = project.channels.iter().find(|c| Some(c.id) == track.channel)
+            && channel.devices.is_empty()
+        {
+            let mut plan = drop::plan(
+                items,
+                DropTarget::Sampler { track: track_id, device: 0 },
+                separate,
+                self.settings.warp_mode.param(),
+                false,
+                &name,
+            )?;
+            plan.commands.insert(0, ("device.add", json!({"track":track_id.0,"id":"sampler"})));
+            plan.label = format!("Add Sampler to {}", name(track_id));
+            return Some(plan);
+        }
         let stack = self.settings.sample_stacking || self.settings.midi_stacking;
         drop::plan(items, target, separate, self.settings.warp_mode.param(), stack, &name)
     }
@@ -5028,18 +5139,35 @@ impl App {
         match started {
             Ok(_) => {
                 self.status = Status::Hint(format!("Reading {count} sample{}", if count == 1 { "" } else { "s" }));
-                self.pending_drop = Some(PendingDrop { commands, decoded });
+                self.pending_drop = Some(PendingDrop { project: self.projects.active(), commands, decoded });
             }
-            Err(_) => self.run_drop(commands),
+            Err(_) => self.status = Status::Error("could not start the sample decoder".into()),
         }
     }
 
     /// Picks up the samples of a drop once they are decoded and runs its commands.
     fn poll_drop(&mut self, ctx: &egui::Context) {
         let Some(pending) = &self.pending_drop else { return };
+        if pending.project != self.projects.active() {
+            self.pending_drop = None;
+            self.status = Status::Hint("Sample drop cancelled after switching projects".into());
+            return;
+        }
         match pending.decoded.try_recv() {
             Ok(decoded) => {
                 let Some(pending) = self.pending_drop.take() else { return };
+                if pending.commands.iter().any(|(id, params)| {
+                    *id == "device.loadSample"
+                        && !decoded.iter().any(|(path, _, data, _)| {
+                            params["path"].as_str().is_some_and(|p| Path::new(p) == path)
+                                && data.frames() >= 2
+                                && (1..=32).contains(&data.channels)
+                                && (1000..=384000).contains(&data.sample_rate)
+                        })
+                }) {
+                    self.status = Status::Error("sample could not be decoded; the track was left unchanged".into());
+                    return;
+                }
                 let mut waveforms = (*self.waveforms).clone();
                 if let Ok(session) = self.projects.session_mut(None) {
                     for (path, stream, data, peaks) in decoded {
@@ -5194,6 +5322,7 @@ impl App {
         }
         x = browser_rect.right() + 4.0;
         let tempo_rect = row(x, 56.0);
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("sampler-tempo"), grid.tempo_bpm));
         let tempo_shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
         let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", format!("{tempo_shown:.2}"));
         match widgets::drag_value(ui, &response, &mut self.tempo_drag, grid.tempo_bpm, 0.1, 1.0, (20.0, 999.0), 120.0) {
@@ -5745,6 +5874,197 @@ mod tests {
         // Where the map's window cannot tell (no pointer over it yet), nothing is under the drag.
         app.map_window.drag = Some(RemoteDrag { screen: None, released: false, escape: false, ctrl: false });
         assert_eq!(drag_pointer_in(&app, main, None), None);
+    }
+
+    #[test]
+    fn failed_sampler_decode_leaves_the_empty_track_unchanged() {
+        let mut app = App::new();
+        app.set_session(Session::new(suhina_session::blank_project()), &[]);
+        let item = drop::system_file(Path::new("/invalid.wav")).unwrap();
+        let plan = app.plan_drop(&[item], DropTarget::Track(TrackId(1)), false).unwrap();
+        let before = app.session().unwrap().project().clone();
+        for short in [false, true] {
+            let (send, decoded) = std::sync::mpsc::channel();
+            let data =
+                std::sync::Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.] });
+            let result = if short {
+                vec![(PathBuf::from("/invalid.wav"), None, data.clone(), crate::kit::waveform::peaks(&data))]
+            } else {
+                vec![]
+            };
+            send.send(result).unwrap();
+            app.pending_drop =
+                Some(PendingDrop { project: app.projects.active(), commands: plan.commands.clone(), decoded });
+            app.poll_drop(&egui::Context::default());
+            assert_eq!(app.session().unwrap().project(), &before);
+            assert!(matches!(app.status, Status::Error(_)));
+        }
+    }
+
+    #[test]
+    fn sampler_source_uses_the_shown_track_when_two_tracks_share_a_channel() {
+        let mut project = suhina_session::blank_project();
+        project.tracks[1].channel = project.tracks[0].channel;
+        let mut session = Session::new(project);
+        session.execute("device.add", &json!({"track":2,"id":"sampler"})).unwrap();
+        let mut project = session.project().clone();
+        project.channels[0].devices[0].set_sample_file("shared.wav");
+        let mut session = Session::new(project);
+        let mut audio = suhina_engine::AudioPool::new();
+        audio.files.insert(
+            "shared.wav".into(),
+            std::sync::Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.25; 480] }),
+        );
+        session.set_audio(audio);
+        let mut app = App::new();
+        app.set_session(session, &[]);
+        app.view.selected = Some(TrackId(2));
+        app.detail_open = true;
+        app.detail_showing = detail_view::Showing::Devices;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280., 800.))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.step();
+        harness.step();
+        harness.ctx.data(|data| {
+            assert!(
+                data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(
+                    crate::detail::device_canvas::sample_source_id(TrackId(2), 0)
+                )
+                .is_some()
+            );
+            assert!(
+                data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(
+                    crate::detail::device_canvas::sample_source_id(TrackId(1), 0)
+                )
+                .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn sample_drops_into_empty_device_area_load_sampler() {
+        #[derive(Debug)]
+        struct TestFile(PathBuf);
+        impl egui::DroppedFile for TestFile {
+            fn path(&self) -> &Path {
+                &self.0
+            }
+            fn bytes(&self) -> Result<Vec<u8>, String> {
+                Ok(Vec::new())
+            }
+        }
+        let path = std::env::temp_dir().join(format!("suhina-device-drop-{}.wav", std::process::id()));
+        let mut writer = hound::WavWriter::create(
+            &path,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 8000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..800 {
+            writer.write_sample(1000i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        for system in [true, false] {
+            let mut app = App::new();
+            app.set_session(Session::new(suhina_session::blank_project()), &[]);
+            app.view.selected = Some(TrackId(1));
+            app.detail_open = true;
+            app.detail_showing = detail_view::Showing::Devices;
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(Vec2::new(1280., 800.))
+                .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+            harness.run();
+            let target = harness.state().detail_drop.unwrap().0.center();
+            harness.hover_at(target);
+            harness.step();
+            if system {
+                harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile(path.clone())));
+            } else {
+                harness.drag_at(target);
+                harness.step();
+                harness.state_mut().browser.drag = Some(vec![drop::system_file(&path).unwrap()]);
+                harness.drop_at(target);
+            }
+            harness.step();
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while std::time::Instant::now() < end {
+                harness.step();
+                if harness.state().session().unwrap().project().channels[0]
+                    .devices
+                    .first()
+                    .is_some_and(|d| d.sample_file().is_some())
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let session = harness.state().session().unwrap();
+            let devices = &session.project().channels[0].devices;
+            assert_eq!(devices.len(), 1, "system={system}: {:?}", harness.state().status);
+            assert_eq!(devices[0].kind, suhina_engine::model::DeviceKind::Builtin("sampler".into()));
+            assert!(devices[0].sample_file().is_some());
+            assert!(session.project().arrangement.lanes[0].clips.is_empty());
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn empty_midi_track_drop_adds_sampler_before_loading_source() {
+        use suhina_engine::model::*;
+        let mut app = App::new();
+        app.set_session(
+            Session::new(Project {
+                tracks: vec![Track {
+                    content: ContentKinds { notes: true, audio: false },
+                    channel: Some(ChannelId(1)),
+                    ..Track::new(TrackId(1), "MIDI")
+                }],
+                channels: vec![Channel::new(ChannelId(1), "MIDI")],
+                ..Project::default()
+            }),
+            &[],
+        );
+        let sample = drop::system_file(Path::new("/test.wav")).unwrap();
+        for target in [
+            DropTarget::Track(TrackId(1)),
+            DropTarget::Slot { track: TrackId(1), scene: 0 },
+            DropTarget::Lane { track: TrackId(1), beat: 0. },
+        ] {
+            let plan = app.plan_drop(std::slice::from_ref(&sample), target, false).unwrap();
+            assert_eq!(
+                plan.commands,
+                vec![
+                    ("device.add", json!({"track":1,"id":"sampler"})),
+                    ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
+                ]
+            );
+        }
+        let stems = drop::system_file(Path::new("/test.stem.mp4")).unwrap();
+        let plan = app.plan_drop(&[stems], DropTarget::Lane { track: TrackId(1), beat: 0. }, false).unwrap();
+        assert_eq!(plan.commands[0].0, "clip.addFiles");
+        app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
+        assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn pending_drop_is_cancelled_when_another_project_is_active() {
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        let project = app.projects.active();
+        let (send, decoded) = std::sync::mpsc::channel();
+        send.send(Vec::new()).unwrap();
+        app.pending_drop =
+            Some(PendingDrop { project, decoded, commands: vec![("device.add", json!({"track":1,"id":"sampler"}))] });
+        app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab);
+        let before = app.session().unwrap().project().clone();
+        app.poll_drop(&egui::Context::default());
+        assert!(app.pending_drop.is_none());
+        assert_eq!(app.session().unwrap().project(), &before);
     }
 
     #[test]

@@ -37,7 +37,9 @@ suhina-device-nam-cab-loader = { path = "devices/nam-cab-loader" }
 suhina-device-delay = { path = "devices/delay" }
 suhina-device-reverb = { path = "devices/reverb" }
 suhina-device-pitch = { path = "devices/pitch" }
+suhina-device-sampler = { path = "devices/sampler" }
 suhina-device-registry = { path = "crates/device-registry" }
+suhina-device-bundle = { path = "crates/device-bundle" }
 suhina-stretch = { path = "crates/stretch" }
 suhina-output = { path = "crates/output" }
 suhina-realtime = { path = "crates/realtime" }

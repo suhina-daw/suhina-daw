@@ -18,6 +18,20 @@ covers:
 
 # MCP server
 
+Sampler uses the common commands: `device.add {"track":1,"id":"sampler"}`,
+`device.loadSample {"track":1,"device":0,"path":"/path/to/sample.wav"}` and
+`device.setParam` for its stable parameters. Sample paths are confined to the
+read root. `device.recordSample {"track":1,"device":0,"on":true}` records the
+armed track's selected audio input; `on:false` finishes and loads the take, as one
+undo step. Save the project and open an audio output before recording.
+
+Loading a sample initializes `source_bpm` from its metadata, filename or detected
+tempo, falling back to the current project/playback tempo; `device.loadSample`
+returns `source_bpm` too. Set `warp` to 1 to follow project BPM using that original
+tempo. Correct `source_bpm` explicitly when known, or set it to 0 to request fresh
+detection. The legacy `warp_beats` parameter remains readable; setting it explicitly
+returns to beat-length timing. Source and tempo changes persist and undo together.
+
 `suhina-cli mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io) on
 stdin/stdout (the official `rmcp` SDK), so an agent can open, inspect, edit and render projects.
 It follows the same conventions as [PhotoCraft](https://github.com/storytold/photocraft)'s MCP server.
@@ -476,3 +490,13 @@ Or, to work on the projects open in the running app:
 ```sh
 claude mcp add suhina-app -- /path/to/suhina-cli mcp --attach
 ```
+
+Sampler manual boundaries are edited with `device.setSampleSlices` (`track`,
+`device`, `points`: normalized source positions strictly between 0 and 1). The
+command validates, sorts and deduplicates the list and supports undo/redo; an
+empty list clears the map. Optional `continue` groups consecutive drag edits.
+
+`track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
+
+`device.updateSd` applies the same read-root confinement as `device.addSd` and
+`device.loadSample`, including symlink resolution.

@@ -35,6 +35,12 @@ pub struct AudioData {
     pub samples: Vec<f32>,
 }
 
+impl AsRef<[f32]> for AudioData {
+    fn as_ref(&self) -> &[f32] {
+        &self.samples
+    }
+}
+
 impl AudioData {
     pub fn frames(&self) -> usize {
         self.samples.len() / usize::from(self.channels.max(1))

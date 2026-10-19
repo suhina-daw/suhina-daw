@@ -348,7 +348,49 @@ pub fn check_sample_rate(sample_rate: f64) -> Result<f64, DeviceError> {
 /// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
 /// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
 pub trait Device: Send {
+    /// Current normalized sample read position, when a sample voice is active.
+    fn sample_position(&self) -> Option<f32> {
+        None
+    }
+    /// Independent sample read heads; inactive voices are None. No allocation.
+    fn sample_positions(&self) -> [Option<f32>; 32] {
+        let mut positions = [None; 32];
+        positions[0] = self.sample_position();
+        positions
+    }
+
     fn info(&self) -> &'static DeviceInfo;
+
+    /// Refresh block context before MIDI events, including events at frame zero. Never allocates.
+    fn set_context(&mut self, context: &ProcessContext) {
+        let _ = context;
+    }
+
+    /// Share host-owned decoded PCM without copying it. Called off the audio thread.
+    fn load_shared_sample(
+        &mut self,
+        sample_rate: u32,
+        channels: u16,
+        samples: std::sync::Arc<dyn AsRef<[f32]> + Send + Sync>,
+    ) {
+        let _ = (sample_rate, channels, samples);
+    }
+
+    /// Installs decoded source audio off the audio thread. Replacing or dropping the
+    /// source may free storage; hosts must rebuild the device graph for replacement.
+    fn load_sample(&mut self, sample_rate: u32, channels: u16, samples: std::sync::Arc<[f32]>) {
+        let _ = (sample_rate, channels, samples);
+    }
+
+    /// Installs an immutable manual sample map off the audio thread. None uses legacy parameters.
+    fn load_sample_slices(&mut self, slices: Option<std::sync::Arc<[f64]>>) {
+        let _ = slices;
+    }
+
+    /// Exchanges a validated, sorted sample map during graph adoption, without freeing storage.
+    fn swap_sample_slices(&mut self, slices: &mut Option<std::sync::Arc<[f64]>>) {
+        let _ = slices;
+    }
 
     /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.
     /// A device is usable right after construction, prepared for 48 kHz.

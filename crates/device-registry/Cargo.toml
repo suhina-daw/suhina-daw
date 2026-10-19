@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 suhina-device-api.workspace = true
+suhina-device-sdk.workspace = true
 suhina-device-utility.workspace = true
 suhina-device-auto-pan.workspace = true
 suhina-device-dj-eq.workspace = true
@@ -22,6 +23,7 @@ suhina-device-reverb.workspace = true
 suhina-dsp.workspace = true
 nam-rs.workspace = true
 suhina-device-pitch.workspace = true
+suhina-device-sampler.workspace = true
 
 [lints]
 workspace = true

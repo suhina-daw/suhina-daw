@@ -124,3 +124,7 @@ metadata.
 - Writing Stems files (exporting a group's tracks as one).
 - Stems in Ogg and Matroska, as the IETF drafts describe them: the same model, read by another
   container reader.
+
+All decoded streams together have a 1 GiB PCM budget. Each stream accepts
+1000..384000 Hz and 1..32 channels; header and packet sizes are checked before
+growing output buffers, with fallible allocation.

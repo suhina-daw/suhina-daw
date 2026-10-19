@@ -73,6 +73,20 @@ session will hold it and `media` will write its stems (planned, #146). The built
 `devices/` depends only on `dsp` and `device-api` ([ADR 0004](decisions/0004-built-in-devices.md)).
 The engine runs them in chains on tracks, made through `device-registry`.
 
+The sampler in `devices/sampler` uses the shared SDK sample runtime and SDK UI
+widgets. A sampler's versioned source path is kept in `Device.state`; media loads
+it into the same audio pool as clips. Chain preparation installs immutable decoded
+source audio off the audio thread. Dynamic manual slice maps persist in the
+device's `suhina/sample_slices` extension, with legacy fixed parameters as fallback.
+The command `device.setSampleSlices` edits the list with snapshot undo. Preparation
+validates immutable maps, and graph adoption swaps their Arc storage without
+allocating or freeing on the audio thread; held voices keep their current bounds.
+Source identity participates in graph transfer,
+so replacing a sample cannot keep an old voice reading the previous source.
+The sample instrument publishes up to 32 independent voice positions through the
+Device API and fixed atomic meter slots; the UI polls them without audio-thread
+allocation or locking.
+
 | Crate | Owns | Depends on |
 |---|---|---|
 | `model` | The DAW-neutral project: tracks, mixer channels, a pool of clip contents, clips that place them, the launcher grid ([ADR 0001](decisions/0001-daw-neutral-model.md)). Validation, with groups nested at most 16 deep and never inside themselves, and the one conversion from beats to time and bars through the tempo and time-signature changes (`TempoMap`, `Meter`; [spec](spec/tempo-map.md)), and which audio clips overlap on a track (`audio_overlaps`, [ADR 0028](decisions/0028-ara-hosting.md)). No behaviour beyond that. | nothing |
@@ -95,6 +109,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `suhina-cli` | The command line: render, play, mcp (with `--audio`, the MIDI inputs too). | all of the above |
 | `suhina` | The desktop app: opens a project (argument, a dropped `.suhina` or `.als`, or the project dialog), makes new ones (blank or from a template), keeps the recent projects, decodes its audio into the session, plays it stopped through `output` and runs `ui` in an eframe window; starts the browser's library (`browser.json` and its indexes in the app-data folder) and records opened projects among its recent ones; folders dropped on the window join the browser, and samples and MIDI files dropped on it land like a drag from the browser; shows the system's file and folder dialogs (`rfd`) that the window's **Browse…** buttons ask for and hands back the path chosen, and forgets a recent project the start panel takes off the list; loads and saves the settings, keymap and theme files (a theme file saved elsewhere is read again; theme backups and the theme template are zips in `exports/`, and theme files or zips dropped on the window are added); opens the MIDI inputs the settings leave on. Starting, it reads the settings, keymap and themes, opens the window and shows the splash ([components](design/components.md#splash)); only once the splash is on screen does it start the library and the sample map and open the project asked for, so nothing slow runs before the window. Once the window is up it checks for updates (Settings › General › Updates), and after *Restart now* starts the updated build as it closes. | engine, session, media, library, plugins, output, midi, ui, update |
 | `dsp` | Signal-processing blocks for devices: dB conversions, parameter smoothing, biquad filters, a DC blocker, Linkwitz-Riley crossovers (24 and 48 dB/octave), LFO waveforms (with a smoothly wandering random one), waveshapers, a 2× oversampler, first-order filters and shelves, delay lines with linear and cubic interpolation and a Schroeder allpass, a trim delay that moves smoothly while running, a windowed-sinc polyphase resampler and IR convolution (uniform-partitioned, `fft-convolver`) with its `Ir`. Real-time safe, panic-free on any input. | nothing |
+| `device-bundle` | Generates and validates stock `.sd` files, embeds them for startup and browser discovery, and exports them beside the app. See [stock bundles](spec/stock-device-bundle.md). | model, device-sdk; build: device-registry |
 | `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, and lists them. | device-api, devices/* |
 | `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect) and `ParamInfo` (plain values in their unit, conversion to knob travel), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
 | `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` audio-effect, MIDI-effect and instrument graphs; stereo DSP graphs support branching, modulation and delayed feedback, MIDI effects preserve event frame offsets, and monophonic instruments turn MIDI controls into audio, with a shared node catalog, generated parameter UI and embedded custom canvases. It contains no executable Rust in `.sd` files. | dsp, device-api, serde, serde_json, base64, image (PNG/JPEG) |
@@ -361,3 +376,7 @@ to parameters; device examples compose these controls. The UI prepares and cache
 the drawing programs per canvas alongside its image resources, then evaluates them
 against current parameter values. Widgets use the existing command/undo path and
 do not add DSP graph nodes or run on the audio thread.
+
+Sampler read-head positions travel through the engine meter monitor as atomic values. The UI reads them without accessing audio-thread device state.
+
+Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through Device::load_shared_sample without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.

@@ -39,7 +39,11 @@ that describe them (*Code and its documents*). Read only the documents that matc
    params and tests. The UI, CLI and MCP all dispatch the same commands.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
    formats, golden-file renders for DSP and engine behaviour.
-8. **Other DAWs are named only where a format is handled.** Product names such as Ableton,
+8. **Build every device on the SDK.** Every built-in MIDI effect, instrument and audio effect
+   must use `device-sdk` shared nodes and its UI/panel system. When a device needs DSP that the
+   shared nodes cannot provide, add it as a native SDK node and use that node in the device graph
+   ([issue #406](https://github.com/suhina-daw/suhina-daw/issues/406)).
+9. **Other DAWs are named only where a format is handled.** Product names such as Ableton,
    Live or FL Studio may appear in format crates (`crates/als`), their tests, `docs/spec/` and
    `docs/decisions/`, to say which file format the code reads, and in the design brief
    (`docs/design/brief.md`), to say what Suhina's look must not resemble. They also appear in
@@ -56,12 +60,12 @@ that describe them (*Code and its documents*). Read only the documents that matc
    UI describe concepts neutrally ("a clip that belongs to one track", "a shared pattern").
    User-facing text may name a file format when it imports or exports it ("a Live Set to
    import"), never as Suhina's own branding.
-9. **GPL-compatible dependencies only.** Suhina is GPL-3.0-or-later. Dependencies must be
+10. **GPL-compatible dependencies only.** Suhina is GPL-3.0-or-later. Dependencies must be
    compatible with GPLv3: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0. Not GPL-2.0-only,
    not proprietary or "non-commercial" licences. CI checks it with `cargo-deny`
    ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`); run `cargo deny check` before adding
    or updating a dependency ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
-10. **No links to private agent sessions.** The repository is public. Never put a link to an
+11. **No links to private agent sessions.** The repository is public. Never put a link to an
     agent's own session (such as `https://claude.ai/code/session_...`) in a commit message, a pull
     request description, an issue or a comment, even when the tool's default attribution adds
     one: leave that line out. The `Co-Authored-By:` trailer stays.
@@ -99,13 +103,15 @@ crates/
   ui       L3 the main window, the browser and the views (egui, ADR 0009); every change is a command
   dsp      L0 signal-processing blocks for built-in effects and instruments: smoothing, filters, crossovers, LFOs, shapers, oversampling, delay lines (ADR 0004)
   device-api L0 the Device trait, parameter descriptions, contract tests every device runs
-  device-sdk L0 builds and validates data-only `.sd` effect graphs, compiles DSP primitives and delayed feedback for real-time execution; shared node contracts and embedded custom UI canvases/images for authors and agents
+  device-sdk L0 builds and validates data-only `.sd` effect graphs, compiles DSP primitives and delayed feedback for real-time execution; shared node contracts and embedded custom UI canvases/images for authors and agents; native sampler tempo synchronisation uses stretch
+  device-bundle L1 generates, validates and embeds stock `.sd` definitions at build time
   device-registry L1 every built-in effect, instrument or MIDI effect by its stable id: makes and lists them (ADR 0004)
   ipc      L0 audio blocks to a plug-in host process: shared memory, block sync with a deadline (ADR 0006; may use unsafe)
   realtime L0 real-time priority for audio threads: MMCSS Pro Audio on Windows, SCHED_FIFO or rtkit on Linux
   plugins  L1 the engine's side of plug-in hosting: start a host process, control protocol, health, state, restart; scanning; offline runs
   plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins
 devices/
+  sampler  single-source sample and granular instrument; SDK runtime and theme-aware panel
   utility  gain, balance, width, mono, bass mono, phase, channels, DC filter; depends on dsp, device-api
   auto-pan LFO panning and tremolo, free in Hz or synced to the song position
   dj-eq    three bands with kills, Linkwitz-Riley crossovers at 24 or 48 dB/octave
@@ -294,6 +300,13 @@ cargo deny check   # when Cargo.lock changed (CONTRIBUTING.md › Dependencies)
 ```
 
 Keep the tree building at every step.
+
+**Build and verify built-in devices.** When building the desktop app, build every built-in device
+as an `.sd` definition and bundle it into the app so it is available to users. After changing a
+built-in device, its SDK runtime, parameters or panel, rebuild the affected device and desktop app;
+verify the app contains current `.sd` definitions for all built-in devices and report the app and
+definition paths. Do this automatically without waiting for a separate rebuild request.
+
 
 **A change in what Suhina does comes with steps to check it.** When a pull request changes
 anything a user sees, hears or does, in the app or outside it (a view, a menu, a dialog, a
