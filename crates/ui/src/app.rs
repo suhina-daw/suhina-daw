@@ -2213,6 +2213,26 @@ impl App {
                 if panel.show(ui, inner, browser, projects, settings, self.revision) {
                     self.settings_changed = true;
                 }
+                // A close button at its top right, and Escape, put the views back (#710).
+                let close =
+                    Rect::from_min_size(Pos2::new(inner.right() - 28.0, inner.top() + 4.0), Vec2::new(24.0, 20.0));
+                let over =
+                    ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("sample-map-close")));
+                let response = widgets::button_area(ui, close, Id::new("sample-map-close"), "Close sample map")
+                    .on_hover_text("Close the sample map (Esc)");
+                let fill =
+                    motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+                over.rect_filled(close, 0.0, fill);
+                let ink = theme::text_primary();
+                for (from, to) in
+                    [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
+                {
+                    over.line_segment([close.center() + from, close.center() + to], egui::Stroke::new(1.3, ink));
+                }
+                let escape = !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(Key::Escape));
+                if response.clicked() || escape {
+                    self.close_large_map();
+                }
             } else {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| match (&grid, self.shown) {
                     // The piano roll pulled to the top over the whole window: no view.
@@ -6386,6 +6406,28 @@ mod tests {
         assert_eq!(plan.commands[0].0, "clip.addFiles");
         app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
         assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn the_large_sample_map_closes_with_its_button_and_with_escape() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        harness.state_mut().do_action("view.sampleMap", &mut Vec::new());
+        harness.run();
+        assert!(harness.state().sample_map.view.large);
+        harness.get_by_label("Close sample map").click();
+        harness.run();
+        assert!(!harness.state().sample_map.view.large, "the button closes it");
+        harness.state_mut().do_action("view.sampleMap", &mut Vec::new());
+        harness.run();
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        assert!(!harness.state().sample_map.view.large, "Escape closes it");
     }
 
     #[test]
