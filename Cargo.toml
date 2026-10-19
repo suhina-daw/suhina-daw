@@ -34,6 +34,8 @@ suhina-device-compressor = { path = "devices/compressor" }
 suhina-device-limiter = { path = "devices/limiter" }
 suhina-device-nam-amp-modeler = { path = "devices/nam-amp-modeler" }
 suhina-device-nam-cab-loader = { path = "devices/nam-cab-loader" }
+suhina-device-delay = { path = "devices/delay" }
+suhina-device-reverb = { path = "devices/reverb" }
 suhina-device-registry = { path = "crates/device-registry" }
 suhina-stretch = { path = "crates/stretch" }
 suhina-output = { path = "crates/output" }

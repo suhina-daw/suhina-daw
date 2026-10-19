@@ -19,7 +19,7 @@ use suhina_device_api::{
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::db_to_gain;
-use suhina_dsp::{Biquad, Coefficients, Convolver, DelayLine, Ir, Smoother};
+use suhina_dsp::{Biquad, Coefficients, Convolver, Ir, Smoother, TrimDelay};
 
 /// Ramp for the volume and the delay.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -108,7 +108,7 @@ pub struct CabLoader {
     /// Staging for one chunk's convolution, per side.
     conv_in: [Vec<f32>; 2],
     conv_out: [Vec<f32>; 2],
-    delay: [DelayLine; 2],
+    delay: [TrimDelay; 2],
     /// The volume in linear gain, and the delay in frames, both smoothed.
     volume: Smoother,
     delay_frames: Smoother,
@@ -148,7 +148,7 @@ impl CabLoader {
             out_pos: 0,
             conv_in: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             conv_out: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            delay: [DelayLine::new(sample_rate, MAX_DELAY_SECONDS), DelayLine::new(sample_rate, MAX_DELAY_SECONDS)],
+            delay: [TrimDelay::new(sample_rate, MAX_DELAY_SECONDS), TrimDelay::new(sample_rate, MAX_DELAY_SECONDS)],
             volume: Smoother::new(1.0, 1),
             delay_frames: Smoother::new(0.0, 1),
         };
@@ -207,7 +207,7 @@ impl CabLoader {
         self.ready_right.fill(0.0);
         self.in_pos = 0;
         self.out_pos = 0;
-        self.delay = [DelayLine::new(sr, MAX_DELAY_SECONDS), DelayLine::new(sr, MAX_DELAY_SECONDS)];
+        self.delay = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
         let volume_now = db_to_gain(self.value(param::VOLUME) as f32);
         self.volume.reset(volume_now);
         self.volume.set_ramp(ramp);

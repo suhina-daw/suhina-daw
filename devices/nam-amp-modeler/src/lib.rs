@@ -26,7 +26,7 @@ use suhina_device_api::{
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::db_to_gain;
 use suhina_dsp::resampler::HALF_TAPS;
-use suhina_dsp::{Biquad, Coefficients, DcBlocker, DelayLine, Resampler, Smoother};
+use suhina_dsp::{Biquad, Coefficients, DcBlocker, Resampler, Smoother, TrimDelay};
 
 /// Ramp for the trims and the delay.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -132,7 +132,7 @@ pub struct NamAmp {
     model_io: [Vec<f32>; 2],
     dc_staged: [Vec<f64>; 2],
     stage_out: [Vec<f64>; 2],
-    delays: [DelayLine; 2],
+    delays: [TrimDelay; 2],
     /// The trims and the delay, all smoothed.
     input_gain: Smoother,
     delay_frames: Smoother,
@@ -178,7 +178,7 @@ impl NamAmp {
             model_io: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             dc_staged: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
             stage_out: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            delays: [DelayLine::new(sample_rate, MAX_DELAY_SECONDS), DelayLine::new(sample_rate, MAX_DELAY_SECONDS)],
+            delays: [TrimDelay::new(sample_rate, MAX_DELAY_SECONDS), TrimDelay::new(sample_rate, MAX_DELAY_SECONDS)],
             input_gain: Smoother::new(1.0, 1),
             delay_frames: Smoother::new(0.0, 1),
             output_volume: Smoother::new(1.0, 1),
@@ -260,7 +260,7 @@ impl NamAmp {
         self.ready_right.fill(0.0);
         self.in_pos = 0;
         self.produced_pos = 0;
-        self.delays = [DelayLine::new(sr, MAX_DELAY_SECONDS), DelayLine::new(sr, MAX_DELAY_SECONDS)];
+        self.delays = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
         // The legs' staging is sized for the rate pair: what the legs move is within a chunk
         // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
         // path never runs out.

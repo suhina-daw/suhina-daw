@@ -208,10 +208,11 @@ CHAPTERS = [
      "locking, simplifying envelopes."),
     (27, "Clip Envelopes", 13, 0.00, "absent", "No clip envelopes."),
     (28, "Working with Video", 6, 0.00, "absent", "No video import or window."),
-    (29, "Live Audio Effect Reference", 139, 0.15, "partial",
-     "Suhina has 7 effects (utility, auto-pan, three-band DJ EQ, vinyl distortion, overdrive, "
-     "compressor, limiter) against 42 documented audio effects; several are close equivalents in "
-     "kind but far narrower in parameters and modes."),
+    (29, "Live Audio Effect Reference", 139, 0.19, "partial",
+     "Suhina has 9 effects (utility, auto-pan, three-band DJ EQ, vinyl distortion, overdrive, "
+     "compressor, limiter, delay, reverb) against 42 documented audio effects; the delay and reverb "
+     "take every parameter of their counterparts, several others are close in kind but far "
+     "narrower in parameters and modes."),
     (30, "Live MIDI Effect Reference", 13, 0.00, "absent",
      "SDK MIDI-effect graphs run before the instrument; the MIDI-transpose example shifts notes. "
      "None of the 8 documented MIDI effects is implemented in full."),

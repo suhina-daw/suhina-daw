@@ -116,6 +116,9 @@ pub(crate) struct Chain {
     /// transport.
     deadline: Option<Instant>,
     context: ProcessContext,
+    /// The sample rate its devices were prepared for, which turns a span's first frame into its
+    /// song position.
+    sample_rate: f64,
     /// Frames of the current block the devices have run over.
     done: usize,
     /// When the block runs in stages with other chains ([`Chain::advance`]): the next slot to
@@ -321,6 +324,7 @@ impl Chain {
             midi_scratch: Vec::with_capacity(MAX_PENDING * 2),
             deadline: None,
             context: ProcessContext::default(),
+            sample_rate: f64::from(sample_rate),
             done: 0,
             stage: 0,
             waiting: None,
@@ -360,6 +364,8 @@ impl Chain {
             midi_scratch: Vec::new(),
             deadline: None,
             context: ProcessContext::default(),
+            // It runs no devices, so nothing reads it.
+            sample_rate: 48_000.0,
             done: 0,
             stage: 0,
             waiting: None,
@@ -462,6 +468,7 @@ impl Chain {
             done,
             deadline,
             context,
+            sample_rate,
             stage,
             waiting,
             device_lanes,
@@ -475,11 +482,11 @@ impl Chain {
         while let Some(slot) = slots.get_mut(*stage) {
             match slot {
                 Slot::Device(device) => {
-                    run_device(device, *stage, buffer, from, to, pending, device_lanes, context);
+                    run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     *stage += 1;
                 }
                 Slot::Group(group) => {
-                    group.run(buffer, from, to, pending, context, *deadline);
+                    group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
                     *stage += 1;
                 }
                 Slot::Sd(effect) => {
@@ -707,6 +714,7 @@ impl Chain {
             done,
             deadline,
             context,
+            sample_rate,
             device_lanes,
             joined,
             ..
@@ -716,11 +724,11 @@ impl Chain {
         while let Some(slot) = slots.get_mut(index) {
             match slot {
                 Slot::Device(device) => {
-                    run_device(device, index, buffer, from, to, pending, device_lanes, context);
+                    run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     index += 1;
                 }
                 Slot::Group(group) => {
-                    group.run(buffer, from, to, pending, context, *deadline);
+                    group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
                     index += 1;
                 }
                 Slot::Sd(effect) => {
@@ -1100,7 +1108,8 @@ pub(crate) enum Placed {
 
 /// Runs a built-in device (slot `slot` of its chain) over the block's frames `from..to`,
 /// split where a note event or a change of a parameter that follows a lane falls; at one frame
-/// the parameter changes before the note.
+/// the parameter changes before the note. Each span gets the song position of its own first
+/// frame, as [`run_sd_effect`] gives it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_device(
     device: &mut Box<dyn Device>,
@@ -1111,26 +1120,30 @@ pub(crate) fn run_device(
     pending: &[(usize, NoteEvent)],
     lanes: &DeviceLanes,
     context: &ProcessContext,
+    sample_rate: f64,
 ) {
+    let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], from: usize, to: usize| {
+        process(device, buffer, from, to, &span_context(context, from, sample_rate));
+    };
     let mut at_done = from;
     let mut changes = lanes.changes(slot, from, to).peekable();
     for &(at, event) in pending {
         let at = at.clamp(at_done, to);
         while let Some(change) = changes.next_if(|c| c.frame <= at) {
-            process(device, buffer, at_done, change.frame.max(at_done), context);
+            run_span(device, buffer, at_done, change.frame.max(at_done));
             at_done = change.frame.max(at_done);
             device.set_param(change.param, change.value);
         }
-        process(device, buffer, at_done, at, context);
+        run_span(device, buffer, at_done, at);
         at_done = at;
         device.event(event);
     }
     for change in changes {
-        process(device, buffer, at_done, change.frame.max(at_done), context);
+        run_span(device, buffer, at_done, change.frame.max(at_done));
         at_done = change.frame.max(at_done);
         device.set_param(change.param, change.value);
     }
-    process(device, buffer, at_done, to, context);
+    run_span(device, buffer, at_done, to);
 }
 
 #[derive(Clone, Copy)]
@@ -1151,13 +1164,13 @@ pub(crate) fn run_sd_effect(
     for change in lanes.changes(slot, run.from, run.to) {
         let end = change.frame.max(at).min(run.to);
         if let Some(span) = buffer.get_mut(at * 2..end * 2) {
-            effect.process_context(&sd_context(run.context, at, effect.sample_rate()), span);
+            effect.process_context(&span_context(run.context, at, effect.sample_rate()), span);
         }
         effect.set_parameter(change.param, change.value);
         at = end;
     }
     if let Some(span) = buffer.get_mut(at * 2..run.to * 2) {
-        effect.process_context(&sd_context(run.context, at, effect.sample_rate()), span);
+        effect.process_context(&span_context(run.context, at, effect.sample_rate()), span);
     }
 }
 
@@ -1198,7 +1211,11 @@ fn run_sd_instrument_span(
             .then_some((frame.saturating_sub(start.saturating_sub(run.from)), event))
     }));
     if let Some(span) = buffer.get_mut(start * 2..end * 2) {
-        instrument.process_instrument_context(&sd_context(run.context, start, instrument.sample_rate()), scratch, span);
+        instrument.process_instrument_context(
+            &span_context(run.context, start, instrument.sample_rate()),
+            scratch,
+            span,
+        );
     }
 }
 
@@ -1227,7 +1244,9 @@ pub(crate) fn run_sd_midi(
     output.truncate(written);
 }
 
-fn sd_context(context: &ProcessContext, frame: usize, sample_rate: f64) -> ProcessContext {
+/// `context` for a span that starts `frame` frames into the block: while the transport runs, the
+/// song position moves on to that frame.
+fn span_context(context: &ProcessContext, frame: usize, sample_rate: f64) -> ProcessContext {
     let mut context = *context;
     if context.playing {
         context.beat += frame as f64 * context.tempo / (60.0 * sample_rate);
@@ -1273,5 +1292,94 @@ mod sd_tests {
             SdRun { from: 100, to: 200, context: &ProcessContext::default() },
         );
         assert_eq!(output, [(150, NoteEvent::On { key: 72, velocity: 0.8 })]);
+    }
+}
+
+#[cfg(test)]
+mod span_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use suhina_device_api::{DeviceError, DeviceInfo, Role};
+
+    const SR: f64 = 48_000.0;
+    /// Two beats per second: one beat is 24 000 frames.
+    const PLAYING: ProcessContext = ProcessContext { tempo: 120.0, beat: 8.0, playing: true };
+    const NOTE: NoteEvent = NoteEvent::On { key: 60, velocity: 0.8 };
+
+    static RECORDER: DeviceInfo = DeviceInfo { id: "test.recorder", name: "Recorder", role: Role::Effect, params: &[] };
+
+    /// Notes the song position and length of every span it is given.
+    struct Recorder(Arc<Mutex<Vec<(f64, usize)>>>);
+
+    impl Device for Recorder {
+        fn info(&self) -> &'static DeviceInfo {
+            &RECORDER
+        }
+        fn prepare(&mut self, _sample_rate: f64) -> Result<(), DeviceError> {
+            Ok(())
+        }
+        fn reset(&mut self) {}
+        fn set_param(&mut self, _index: usize, _value: f64) {}
+        fn param(&self, _index: usize) -> Option<f64> {
+            None
+        }
+        fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
+            if let Ok(mut spans) = self.0.lock() {
+                spans.push((context.beat, buffer.len() / 2));
+            }
+        }
+    }
+
+    /// The spans a device is run over for frames 100..400 of a block with notes at 200 and 300.
+    fn spans(context: &ProcessContext) -> Vec<(f64, usize)> {
+        let spans = Arc::new(Mutex::new(Vec::new()));
+        let mut device: Box<dyn Device> = Box::new(Recorder(Arc::clone(&spans)));
+        let mut buffer = vec![0.0; 400 * 2];
+        let pending = [(200, NOTE), (300, NOTE)];
+        run_device(&mut device, 0, &mut buffer, 100, 400, &pending, &DeviceLanes::none(), context, SR);
+        spans.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    #[test]
+    fn each_span_gets_the_song_position_of_its_first_frame() {
+        let beat = |frame: f64| 8.0 + frame / 24_000.0;
+        assert_eq!(spans(&PLAYING), [(beat(100.0), 100), (beat(200.0), 100), (beat(300.0), 100)]);
+    }
+
+    #[test]
+    fn a_stopped_transport_keeps_the_song_position_for_every_span() {
+        let stopped = ProcessContext { playing: false, ..PLAYING };
+        assert_eq!(spans(&stopped), [(8.0, 100), (8.0, 100), (8.0, 100)]);
+    }
+
+    /// The delay with its LFO synced to sixteenth notes at full depth on the time and the band,
+    /// over a block of clicks, its frames split at `splits` by notes it ignores.
+    fn synced_delay(splits: &[usize]) -> Vec<f32> {
+        let Some(mut device) = suhina_device_registry::create("delay") else { panic!("no delay") };
+        let info = device.info();
+        let index = |id: &str| info.params.iter().position(|p| p.id == id).unwrap_or_else(|| panic!("{id}"));
+        // Synced mode, 1/16 per cycle, the shortest time so the repeats are heard in one block.
+        device.set_param(index("lfoMode"), 2.0);
+        device.set_param(index("lfoSynced"), 17.0);
+        device.set_param(index("lfoToTime"), 1.0);
+        device.set_param(index("lfoToFilter"), 1.0);
+        device.set_param(index("syncLeft"), 0.0);
+        device.set_param(index("syncRight"), 0.0);
+        device.set_param(index("timeLeft"), 0.002);
+        device.set_param(index("timeRight"), 0.002);
+        device.reset();
+        let mut buffer: Vec<f32> = (0..2_048).map(|n| if n % 200 < 2 { 1.0 } else { 0.0 }).collect();
+        let pending: Vec<_> = splits.iter().map(|&at| (at, NOTE)).collect();
+        run_device(&mut device, 0, &mut buffer, 0, 1_024, &pending, &DeviceLanes::none(), &PLAYING, SR);
+        buffer
+    }
+
+    #[test]
+    fn a_split_block_sounds_like_a_whole_one() {
+        let whole = synced_delay(&[]);
+        let split = synced_delay(&[300, 700]);
+        for (n, (a, b)) in whole.iter().zip(&split).enumerate() {
+            assert!((a - b).abs() < 1e-5, "sample {n}: {a} whole against {b} split");
+        }
     }
 }

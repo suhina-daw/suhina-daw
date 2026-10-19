@@ -263,7 +263,9 @@ from `true` to `false`) and `UserName@Value` (empty unless renamed).
 gain of EQ Eight is `Bands.2/ParameterA/Gain/Manual` (+3 dB stored as `3`). `LastPresetRef`
 points at the default preset the device was loaded from. The importer keeps them as
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
-with their parameters mapped (`crates/als/src/devices.rs`; so far the Utility, below).
+with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, and the Delay
+and Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
+[`reverb.md`](reverb.md) › Import).
 
 **Plug-ins** are `PluginDevice` elements whose `PluginDesc` holds one of:
 

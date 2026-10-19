@@ -22,7 +22,8 @@ used.
 - **Observed with:** Live 12.4.6, as in [`als-format.md`](als-format.md).
 - **Test files:** the device series of the corpus ([`als-corpus.md`](als-corpus.md)): series 3
   (devices, plug-ins) and series 6 (Utility, Auto Pan-Tremolo, EQ Three, Vinyl Distortion,
-  Overdrive). Only the Utility files are imported and checked so far.
+  Overdrive). The Utility files are imported and checked; the Delay and Reverb are checked
+  against the behaviour-run sets of the device notes (their specs, Known differences).
 
 The Suhina devices themselves, what they do and how far they are, are in
 [`ROADMAP.md`](../../ROADMAP.md) › Built-in effects and instruments. This document is the format side: which
@@ -77,8 +78,10 @@ comes in as it (otherwise as a placeholder):
 | Glue Compressor | bus compressor | own, Airwindows (MIT) for reference | planned |
 | Limiter | limiter: brickwall, 1.5 ms lookahead | own | DSP done; import planned |
 | Multiband Dynamics | multiband dynamics, upward and downward | own crossovers and detectors | planned |
-| Delay, Echo | delays | own delay lines | planned |
-| Reverb, Hybrid Reverb | algorithmic and convolution reverb | Dragonfly Reverb (GPL-3.0), own convolution | planned |
+| Delay | delay ([spec](delay.md)) | own delay lines | DSP done; import done |
+| Echo | modulation delay | own delay lines | planned |
+| Reverb | reverb ([spec](reverb.md)) | own | DSP done; import done |
+| Hybrid Reverb | convolution and algorithmic reverb | own convolution, the reverb | planned |
 | Saturator, Roar | multi-stage saturation | own, oversampled | planned |
 | EQ Eight, Auto Filter | EQ, filter | own (`dsp` filters) | planned |
 | Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |

@@ -17,6 +17,8 @@ suhina-device-compressor.workspace = true
 suhina-device-limiter.workspace = true
 suhina-device-nam-amp-modeler.workspace = true
 suhina-device-nam-cab-loader.workspace = true
+suhina-device-delay.workspace = true
+suhina-device-reverb.workspace = true
 suhina-dsp.workspace = true
 nam-rs.workspace = true
 

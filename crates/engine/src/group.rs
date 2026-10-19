@@ -423,6 +423,7 @@ impl GroupSlot {
         to: usize,
         pending: &[(usize, NoteEvent)],
         context: &ProcessContext,
+        sample_rate: f64,
         deadline: Option<Instant>,
     ) {
         if to <= from {
@@ -438,7 +439,7 @@ impl GroupSlot {
             span.copy_from_slice(input);
             events.clear();
             events.extend_from_slice(pending.get(..pending.len().min(MAX_EVENTS)).unwrap_or_default());
-            let run = Span { from, to, context, deadline };
+            let run = Span { from, to, context, sample_rate, deadline };
             run_slots(&mut branch.slots, &mut branch.buffer, events, span_events, midi_scratch, lanes, run);
             if let Some(span) = branch.buffer.get_mut(from * 2..to * 2) {
                 branch.delay.run(span);
@@ -531,6 +532,8 @@ pub(crate) struct Span<'a> {
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) context: &'a ProcessContext,
+    /// The song's sample rate, for each span's song position.
+    pub(crate) sample_rate: f64,
     pub(crate) deadline: Option<Instant>,
 }
 
@@ -546,11 +549,11 @@ pub(crate) fn run_slots(
     lanes: &DeviceLanes,
     run: Span<'_>,
 ) {
-    let Span { from, to, context, deadline } = run;
+    let Span { from, to, context, sample_rate, deadline } = run;
     for (index, slot) in slots.iter_mut().enumerate() {
         match slot {
             Slot::Device(device) => {
-                crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context);
+                crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
             }
             Slot::Sd(effect) => {
                 crate::chain::run_sd_effect(effect, index, buffer, lanes, crate::chain::SdRun { from, to, context });
@@ -589,7 +592,7 @@ pub(crate) fn run_slots(
                     plugin.run(span, span_events, deadline);
                 }
             }
-            Slot::Group(group) => group.run(buffer, from, to, pending, context, deadline),
+            Slot::Group(group) => group.run(buffer, from, to, pending, context, sample_rate, deadline),
         }
     }
 }

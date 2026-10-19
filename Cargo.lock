@@ -4542,6 +4542,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-delay"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-dsp",
+]
+
+[[package]]
 name = "suhina-device-dj-eq"
 version = "0.0.1"
 dependencies = [
@@ -4598,14 +4606,24 @@ dependencies = [
  "suhina-device-api",
  "suhina-device-auto-pan",
  "suhina-device-compressor",
+ "suhina-device-delay",
  "suhina-device-dj-eq",
  "suhina-device-fm-synth",
  "suhina-device-limiter",
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-overdrive",
+ "suhina-device-reverb",
  "suhina-device-utility",
  "suhina-device-vinyl-distortion",
+ "suhina-dsp",
+]
+
+[[package]]
+name = "suhina-device-reverb"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
  "suhina-dsp",
 ]
 

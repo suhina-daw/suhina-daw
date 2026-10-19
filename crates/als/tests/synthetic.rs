@@ -77,7 +77,7 @@ fn live_set() -> String {
       </AudioTrack>
       <ReturnTrack Id="2">
         <Name><EffectiveName Value="A-Reverb"/></Name><TrackGroupId Value="-1"/>
-        <DeviceChain>{mixer_return}<DeviceChain><Devices><Reverb Id="0"/></Devices></DeviceChain></DeviceChain>
+        <DeviceChain>{mixer_return}<DeviceChain><Devices><Eq8 Id="0"/></Devices></DeviceChain></DeviceChain>
       </ReturnTrack>
     </Tracks>
     <MainTrack>
@@ -186,7 +186,7 @@ fn reads_scenes_and_session_slots() {
 fn unsupported_content_becomes_warnings() {
     let import = read_xml(&live_set()).unwrap();
     assert!(import.warnings.iter().any(|w| w.contains("has no file")), "{:?}", import.warnings);
-    assert!(import.warnings.iter().any(|w| w.contains("Reverb")), "{:?}", import.warnings);
+    assert!(import.warnings.iter().any(|w| w.contains("Eq8")), "{:?}", import.warnings);
     assert!(import.project.launcher.columns[1].slots[0].clip.is_none());
 }
 

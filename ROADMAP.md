@@ -36,7 +36,8 @@ The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-parity-ta
    the cue output works.
 5. **Arrangement editing:** the loop brace ([#98](https://github.com/suhina-daw/suhina-daw/issues/98)),
    locators ([#99](https://github.com/suhina-daw/suhina-daw/issues/99)).
-6. **EQ and filter**, then bus compressor, delays and reverb (see the devices below).
+6. **EQ and filter**, then bus compressor and a modulation delay (see the devices below; the delay
+   and reverb are done).
 7. **Launching from live MIDI notes** (the rest of M4, [#264](https://github.com/suhina-daw/suhina-daw/issues/264)).
 
 Finishing what is in flight (M3's commands, M6's automation and editors, M7, M8's installers and
@@ -66,7 +67,8 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
   most used ones. Which stored device lands in which Suhina device, and how each mapping is learnt
   and tested: [`docs/spec/device-import.md`](docs/spec/device-import.md). The sampler and drum
   sampler as import targets: [#101](https://github.com/suhina-daw/suhina-daw/issues/101).
-- **Order:** EQ and filter first, then bus compressor, delays and reverb; multiband dynamics,
+- **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
+  reverb are done); multiband dynamics,
   saturation, the sampler and drum sampler later
   ([ADR 0016](docs/decisions/0016-parity-target.md)).
 
@@ -88,8 +90,10 @@ exists in `devices/`, passes its tests and runs in track chains.
 | NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
 | NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
 | multiband dynamics, upward and downward | own crossovers and detectors | planned |
-| delays | own delay lines | planned |
-| algorithmic and convolution reverb | Dragonfly Reverb (GPL-3.0), own convolution | planned |
+| delay: stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze | own (`dsp` delay lines) | done |
+| modulation delay | own delay lines | planned |
+| reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
+| convolution reverb | own convolution | planned |
 | multi-stage saturation | own, oversampled | planned |
 | EQ, filter | own (`dsp` filters) | planned |
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
@@ -165,6 +169,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - device chains: VST2 and VST3 plug-ins with their id and state kept; the format's own devices:
   those Suhina has a counterpart for with their settings, the rest as placeholders
   ([device import](docs/spec/device-import.md))
+- a delay and an algorithmic reverb; the matching devices in a Live Set to import come in as them
+  with their panel settings; the delay's Equal-Loudness option is not read and imports as the
+  linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
+  [import](docs/spec/device-import.md))
 - anything not understood yet is skipped with a warning; the project still opens
 
 ### M2 Playing
