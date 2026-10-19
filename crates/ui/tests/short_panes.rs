@@ -12,7 +12,7 @@
 use egui::{Key, Modifiers, Pos2, Rect, Shape, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use suhina_engine::model::{LaneData, Note};
+use suhina_engine::model::{Device, DeviceKind, LaneData, Note};
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::detail::piano_roll::key_name;
@@ -466,4 +466,36 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
     h.get_by_label(CLIP).click();
     h.run();
     assert!(piano_shows(&h));
+}
+
+/// A track whose chain is short (one plug-in without its editor embedded) still
+/// lets the detail area be dragged up to its default height: the cap that keeps the area no
+/// taller than its panels never holds it under that height (PR #727, a tester's report).
+#[test]
+fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
+    let mut project = demo_project();
+    let keys = project.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).expect("Keys has a channel");
+    // Only a plug-in on the track, its editor not embedded: a short panel.
+    project.channels.iter_mut().find(|c| c.id == keys).expect("its channel").devices =
+        vec![Device::new("Verb", DeviceKind::Vst3 { id: "ABC".into() })];
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut h = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(0.05)
+        .with_max_steps(20)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&h.ctx);
+    h.run();
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let bottom = detail_bottom(&h);
+    let header = h.get_by_label("Track Keys").rect();
+    click(&mut h, pos2(header.left() + 30.0, header.center().y));
+    // Down to a short area, then up past the default height.
+    pull_to(&mut h, bottom - 80.0);
+    pull_to(&mut h, bottom - 400.0);
+    let height = bottom - splitter(&h).bottom();
+    assert!(height >= 199.0, "the area goes up to its default height at least: {height}");
 }

@@ -2907,13 +2907,15 @@ impl App {
                 Rect::from_min_max(Pos2::new(x, area.top()), area.max),
             )
         } else {
-            // Only the chain shown: no taller than its panels.
+            // Only the chain shown: no taller than its panels, but never held under the area's
+            // default height. A chain of short panels (a plug-in whose editor is not embedded,
+            // or no devices at all) would otherwise keep the area too short to drag up.
             if piano.is_none()
                 && clip.is_none()
                 && !self.editor_in_chain
                 && let Some(cap) = self.detail_cap
             {
-                self.detail_height = self.detail_height.min(cap.max(least));
+                self.detail_height = self.detail_height.min(cap.max(least).max(DETAIL_HEIGHT));
             }
             self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
             let y = if pulled {
