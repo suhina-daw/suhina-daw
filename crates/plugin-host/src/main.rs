@@ -543,8 +543,8 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();
     let mut last_memory = Instant::now();
-    // A message read while placements were gathered, to answer next.
-    let mut held: Option<Message> = None;
+    // Messages read while placements and sizes were gathered, to answer next, in order.
+    let mut held: std::collections::VecDeque<Message> = std::collections::VecDeque::new();
     loop {
         // Between messages: the plug-ins' main-thread callbacks and their editors' windows.
         window::pump();
@@ -582,28 +582,48 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
-        let message = match held.take().map_or_else(|| next_message(&messages), Ok) {
+        let message = match held.pop_front().map_or_else(|| next_message(&messages), Ok) {
             Ok(message) => message,
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
-        // Placements of an editor queued while the host was busy: only the newest counts, so
-        // the editor goes straight to where the window is now rather than through every place
-        // it was on the way.
+        // Placements and sizes of an editor queued while the host was busy (a splitter dragged:
+        // one of each a frame): only the newest of each counts, so the editor goes straight to
+        // where and how big the window wants it now rather than laying itself out again for
+        // every step on the way, which a heavy editor (Melodyne) took longer to do than a frame.
         let message = match message {
-            Message::PlaceEditor { instance, mut placement } => {
-                while let Ok(next) = messages.try_recv() {
-                    match next {
-                        Message::PlaceEditor { instance: same, placement: newer } if same == instance => {
-                            placement = newer;
-                        }
-                        other => {
-                            held = Some(other);
-                            break;
-                        }
+            Message::PlaceEditor { instance, .. } | Message::FitEditor { instance, .. } if held.is_empty() => {
+                let (mut place, mut fit) = (None, None);
+                let mut keep = |message: Message| match message {
+                    Message::PlaceEditor { instance: same, .. } | Message::FitEditor { instance: same, .. }
+                        if same != instance =>
+                    {
+                        Some(message)
                     }
+                    Message::PlaceEditor { .. } => {
+                        place = Some(message);
+                        None
+                    }
+                    Message::FitEditor { .. } => {
+                        fit = Some(message);
+                        None
+                    }
+                    other => Some(other),
+                };
+                let mut rest = keep(message);
+                while rest.is_none() {
+                    let Ok(next) = messages.try_recv() else { break };
+                    rest = keep(next);
                 }
-                Message::PlaceEditor { instance, placement }
+                held.extend(fit);
+                held.extend(rest);
+                match place {
+                    Some(place) => place,
+                    None => match held.pop_front() {
+                        Some(first) => first,
+                        None => continue,
+                    },
+                }
             }
             other => other,
         };
