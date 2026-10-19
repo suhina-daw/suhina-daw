@@ -161,13 +161,18 @@ pub struct LoopBrace {
     pub enabled: bool,
 }
 
+/// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`], with the span
+/// it had: the next build keeps it there, and a new clip inside that span (a split's parts) takes
+/// that row.
+pub type StackRows = std::collections::HashMap<(TrackId, (u32, u64)), (usize, f64, f64)>;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Timeline {
     /// Tracks in project order, then return tracks.
     pub lanes: Vec<Lane>,
     /// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`]: the next
     /// build keeps them there, so deleting one clip of a stack leaves the others where they are.
-    pub stack_rows: std::collections::HashMap<(TrackId, (u32, u64)), usize>,
+    pub stack_rows: StackRows,
     /// The MIDI input ports there are, for the tracks' MIDI inputs; set by the app.
     pub midi_ports: Vec<String>,
     /// The channels of the audio input device open now (0 when none is); set by the app.
@@ -259,11 +264,7 @@ impl Timeline {
     }
 
     /// [`Timeline::build`], with the sub-rows the previous build gave stacked clips kept.
-    pub fn build_after(
-        project: &Project,
-        monitor: Option<&LauncherMonitor>,
-        rows_before: &std::collections::HashMap<(TrackId, (u32, u64)), usize>,
-    ) -> Self {
+    pub fn build_after(project: &Project, monitor: Option<&LauncherMonitor>, rows_before: &StackRows) -> Self {
         let mut stack_rows = std::collections::HashMap::new();
         let ts = project.transport.time_signature;
         let bar_beats =
@@ -579,12 +580,7 @@ fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<Audi
 /// while that row is free where it plays, the others in the first row free where they start;
 /// every clip learns the lane's count, and `after` what each got. A row left empty between others
 /// stays, so the clips under it do not move up.
-fn sub_rows(
-    mut clips: Vec<ClipBox>,
-    track: TrackId,
-    before: &std::collections::HashMap<(TrackId, (u32, u64)), usize>,
-    after: &mut std::collections::HashMap<(TrackId, (u32, u64)), usize>,
-) -> Vec<ClipBox> {
+fn sub_rows(mut clips: Vec<ClipBox>, track: TrackId, before: &StackRows, after: &mut StackRows) -> Vec<ClipBox> {
     let mut rows: Vec<Vec<(f64, f64)>> = Vec::new();
     let free = |rows: &Vec<Vec<(f64, f64)>>, row: usize, from: f64, to: f64| {
         rows.get(row).is_none_or(|spans| spans.iter().all(|(s, e)| to <= *s + 1e-9 || from >= *e - 1e-9))
@@ -597,7 +593,7 @@ fn sub_rows(
     for &i in &order {
         let Some(clip) = clips.get_mut(i) else { continue };
         let (from, to) = (clip.start, clip.start + clip.length);
-        if let Some(&row) = before.get(&(track, clip.stack_key))
+        if let Some(&(row, _, _)) = before.get(&(track, clip.stack_key))
             && free(&rows, row, from, to)
         {
             if rows.len() <= row {
@@ -615,7 +611,17 @@ fn sub_rows(
         }
         let Some(clip) = clips.get_mut(i) else { continue };
         let (from, to) = (clip.start, clip.start + clip.length);
-        let row = (0..=rows.len()).find(|&r| free(&rows, r, from, to)).unwrap_or(rows.len());
+        // A new clip inside where one was on this track (a split's parts, #703) takes that
+        // clip's row, when it is free; else the first row free.
+        let inherited = before
+            .iter()
+            .filter(|((t, _), (_, start, end))| *t == track && *start <= from + 1e-9 && *end >= to - 1e-9)
+            .map(|(_, (row, start, end))| (*row, end - start))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(row, _)| row)
+            .filter(|&row| free(&rows, row, from, to));
+        let row =
+            inherited.unwrap_or_else(|| (0..=rows.len()).find(|&r| free(&rows, r, from, to)).unwrap_or(rows.len()));
         if rows.len() <= row {
             rows.resize(row + 1, Vec::new());
         }
@@ -629,7 +635,7 @@ fn sub_rows(
     let count = rows.len().max(1);
     for clip in &mut clips {
         clip.rows = count;
-        after.insert((track, clip.stack_key), clip.row);
+        after.insert((track, clip.stack_key), (clip.row, clip.start, clip.start + clip.length));
     }
     clips
 }
@@ -738,6 +744,39 @@ mod tests {
         assert_eq!(rows[0], (0, 2));
         assert_eq!(rows[1], (1, 2));
         assert!(Timeline::build(&demo_project(), None).lanes.iter().flat_map(|l| &l.clips).all(|c| c.rows == 1));
+    }
+
+    #[test]
+    fn a_split_clip_in_a_stack_keeps_both_parts_on_its_row() {
+        // Three clips stacked: the first from 0, the third from a quarter of its length, the
+        // middle one from half of it, in row 2. Its end part, split off, lies where rows 0 and 1
+        // are free again: it stays in row 2 all the same (#703).
+        let mut project = demo_project();
+        let lane = &mut project.arrangement.lanes[0];
+        let first = lane.clips[0].clone();
+        let length = first.length;
+        lane.clips = vec![first.clone(), first.clone(), first.clone()];
+        for (clip, at) in lane.clips.iter_mut().zip([0.0, 0.5, 0.25]) {
+            clip.start = first.start + at * length;
+        }
+        let before = Timeline::build(&project, None);
+        let row_at =
+            |t: &Timeline, start: f64| t.lanes[0].clips.iter().find(|c| (c.start - start).abs() < 1e-9).map(|c| c.row);
+        let middle = project.arrangement.lanes[0].clips[1].clone();
+        assert_eq!(row_at(&before, middle.start), Some(2));
+        let cut = 0.75 * length;
+        let mut tail = middle.clone();
+        tail.start = middle.start + cut;
+        tail.length = middle.length - cut;
+        tail.content = suhina_engine::model::ContentId(9_000);
+        let content = project.content(middle.content).cloned().unwrap();
+        project.contents.push(ClipContent { id: suhina_engine::model::ContentId(9_000), ..content });
+        let lane = &mut project.arrangement.lanes[0];
+        lane.clips[1].length = cut;
+        lane.clips.push(tail);
+        let after = Timeline::build_after(&project, None, &before.stack_rows);
+        assert_eq!(row_at(&after, middle.start), Some(2));
+        assert_eq!(row_at(&after, middle.start + cut), Some(2), "the end part stays on the row");
     }
 
     #[test]
