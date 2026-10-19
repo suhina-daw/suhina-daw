@@ -203,7 +203,10 @@ the list below, in a first form). Where it differs from the decisions above it i
   `ara_playback` (protocol version 12), and the window plays, stops or moves the play position
   through the tempo map. A newer position replaces one not sent yet. The loop (cycle) requests
   are not followed; the loop region is set in the ruler. A click on a clip in the arrangement
-  moves the play position there, so the editor follows the clip it shows (#717).
+  moves the play position there, so the editor follows the clip it shows (#717) The rules that play
+  from a selected clip's start (Settings › Play from, and a clip picked while stopped) give way
+  on a track with an ARA plug-in, always: there the editor's timeline and a click set where
+  play starts.
 - **Copies keep their edits** (decision 5). A clip that gets its own content (a paste, a split's
   second part, notes copied on edit) names in the update the modification it is a copy of
   (`clone_of`): the same clip's earlier one, or for a new clip the narrowest region of the same

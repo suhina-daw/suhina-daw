@@ -904,12 +904,22 @@ impl App {
     /// selected in the Arrangement view when the setting **Play from** says so (or `selected`
     /// asks for it whatever the setting), from the play start marker otherwise.
     fn play_action(&self, selected: bool) -> Action {
-        let clip =
-            (selected || self.settings.play_from == PlayFrom::Clip).then(|| self.selected_arrangement_clip()).flatten();
+        // A clip an ARA plug-in edits plays from where its editor and a click set the position,
+        // never from the clip's start (the plug-in's timeline is where the user points).
+        let clip = (selected || self.settings.play_from == PlayFrom::Clip)
+            .then(|| self.selected_arrangement_clip())
+            .flatten()
+            .filter(|(track, _)| !self.ara_track(*track));
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
         }
+    }
+
+    /// Whether `track` has a plug-in that edits its clips (ARA, ADR 0028): the play-from-clip
+    /// rules give way there, always.
+    fn ara_track(&self, track: TrackId) -> bool {
+        self.session().is_some_and(|s| s.ara_device(track).is_some())
     }
 
     /// The clip selected in the Arrangement view, while that view is shown.
@@ -2351,7 +2361,10 @@ impl App {
                             // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
                             // paste): play starts from the first of them, as the setting says (#721).
                             let picked = self.arrangement.selected_clips();
-                            if picked != self.clips_before.as_slice() && !self.settings.view.play_from_clip {
+                            // Never for a clip an ARA plug-in edits: its editor and a click on
+                            // the clip set the position there.
+                            let ara = picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
+                            if picked != self.clips_before.as_slice() && (!self.settings.view.play_from_clip || ara) {
                                 self.clips_before = picked.to_vec();
                             } else if picked != self.clips_before.as_slice() {
                                 let first = picked
@@ -2794,14 +2807,17 @@ impl App {
             None => self.ara_was_open = None,
         }
         let least = self.least_detail_height();
-        let pullable = !stacked && piano.is_some() && self.shown == View::Arrangement;
+        // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
+        // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are).
+        let pullable = !stacked && (piano.is_some() || ara.is_some()) && self.shown == View::Arrangement;
         let pulled = pullable && self.detail_max;
         // With the switch on Devices the track's devices take the editor's place, and nothing is
         // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
         let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
-        let (pullable, pulled) = (pullable && piano.is_some(), pulled && piano.is_some());
+        let edits = piano.is_some() || ara.is_some();
+        let (pullable, pulled) = (pullable && edits, pulled && edits);
         let focus = match clip {
             Some(detail_view::ClipRef::Arrangement(track, _))
                 if pulled && self.settings.piano_roll_top == PianoRollTop::Track =>

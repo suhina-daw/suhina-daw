@@ -281,7 +281,8 @@ track's devices, or the hint.
 ### Pulled to the top
 
 **Built ([#442](https://github.com/suhina-daw/suhina-daw/issues/442)):** while the piano roll shows a
-clip under the Arrangement view, its splitter can be dragged all the way up. Past the view's least
+clip under the Arrangement view, or an ARA plug-in's editor shows an audio clip in its place, its
+splitter can be dragged all the way up. Past the view's least
 height (160 px) the piano roll snaps to the top; dragged down again past that height, the view comes
 back at the height the drag reaches. A double-click on the splitter closes the detail area, as a
 double-click on a split view's divider does on macOS; a double-click on the closed splitter opens it
