@@ -238,6 +238,8 @@ pub(crate) struct Document {
     notes_sent: RefCell<Vec<(String, u64)>>,
     /// Regions' notes read and not yet taken by the main loop: id, notes, whether cut.
     notes_out: RefCell<Vec<(String, Vec<AraNote>, bool)>>,
+    /// The sources whose notes the host asked the plug-in to find (once each).
+    analysis_asked: RefCell<Vec<ARAAudioSourceRef>>,
     /// The texts handed to the plug-in, kept for as long as the document.
     _texts: Vec<CString>,
     _entry: Interface,
@@ -331,6 +333,7 @@ impl Document {
             factory,
             notes_sent: RefCell::new(Vec::new()),
             notes_out: RefCell::new(Vec::new()),
+            analysis_asked: RefCell::new(Vec::new()),
             _texts: Vec::new(),
             _entry: entry,
         };
@@ -432,6 +435,7 @@ impl Document {
     /// what was sent; a region gone is forgotten, so its notes are sent again if it comes back.
     fn read_notes(&self) {
         let Some(dc) = self.controller() else { return };
+        self.ask_for_notes(&dc);
         let mut sent = self.notes_sent.borrow_mut();
         sent.retain(|(id, _)| self.region_described.iter().any(|r| r.id == *id));
         let mut out = self.notes_out.borrow_mut();
@@ -447,6 +451,42 @@ impl Document {
             }
             out.retain(|(id, ..)| *id != described.id);
             out.push((described.id.clone(), notes, truncated));
+        }
+    }
+
+    /// Asks the plug-in to find the notes of each source it has not analysed yet, once, when it
+    /// says it can (ADR 0028): the notes then show on the clips without the editor being opened.
+    /// The work is the plug-in's, in this process; it says when it is done with a content change.
+    fn ask_for_notes(&self, dc: &Controller) {
+        let notes_type = kARAContentTypeNotes as ARAContentType;
+        // SAFETY: the plug-in's factory, valid while its module is loaded.
+        let Some(factory) = (unsafe { self.factory.as_ref() }) else { return };
+        let types = factory.analyzeableContentTypes;
+        let count = factory.analyzeableContentTypesCount.min(64);
+        if types.is_null() {
+            return;
+        }
+        // SAFETY: the factory's list of `count` content types, valid while its module is loaded.
+        let listed = unsafe { std::slice::from_raw_parts(types, count) };
+        if !listed.contains(&notes_type) {
+            return;
+        }
+        let (Some(incomplete), Some(request)) =
+            (dc.interface.isAudioSourceContentAnalysisIncomplete, dc.interface.requestAudioSourceContentAnalysis)
+        else {
+            return;
+        };
+        let mut asked = self.analysis_asked.borrow_mut();
+        for source in &self.sources {
+            if asked.contains(source) {
+                continue;
+            }
+            asked.push(*source);
+            // SAFETY: a live controller, not being edited, for a source of this document.
+            if unsafe { incomplete(dc.reference, *source, notes_type) } != 0 {
+                // SAFETY: as above, with a list of one content type.
+                unsafe { request(dc.reference, *source, 1, &notes_type) };
+            }
         }
     }
 
