@@ -98,6 +98,8 @@ impl Projects {
     /// tests and the CLI never analyse a user's folders unasked.
     pub fn start_sound_map(&mut self) {
         self.sound_map_started = true;
+        // A large cache is read off the caller's thread (the window's).
+        self.sound_map_mut().read_in_background(true);
         self.poll_sound_map();
     }
 

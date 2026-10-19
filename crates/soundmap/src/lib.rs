@@ -191,6 +191,13 @@ pub struct SoundMap {
     /// The thread that writes caches to disk, started with the first save: a cache written on
     /// the window's thread (serialised, written and synced) held it up for half a second.
     saver: Option<(Sender<CacheSave>, JoinHandle<()>)>,
+    /// Folders whose cache file is being read on a thread of its own (a large one took the
+    /// window's thread 600 ms), with the files an update has for them meanwhile.
+    loading: HashMap<PathBuf, Vec<SourceFile>>,
+    /// Whether caches are read on a thread of their own ([`SoundMap::read_in_background`]).
+    background_reads: bool,
+    loaded_to: Sender<(PathBuf, FolderCache)>,
+    loaded: Receiver<(PathBuf, FolderCache)>,
 }
 
 impl SoundMap {
@@ -198,6 +205,7 @@ impl SoundMap {
     /// threads start with the first [`SoundMap::update`] that finds work, at most `threads`.
     pub fn new(data_folder: Option<PathBuf>, threads: usize) -> Self {
         let (sender, results) = channel();
+        let (loaded_to, loaded) = channel();
         SoundMap {
             data_folder,
             caches: HashMap::new(),
@@ -211,7 +219,18 @@ impl SoundMap {
             layouts: HashMap::new(),
             hand_kinds: None,
             saver: None,
+            loading: HashMap::new(),
+            background_reads: false,
+            loaded_to,
+            loaded,
         }
+    }
+
+    /// Reads a folder's cache on a thread of its own when an update first needs it, comparing
+    /// its files when it is in (at a later [`SoundMap::poll`]): for the window, which a large
+    /// cache held up for 600 ms. Off, an update reads it at once (tests, the CLI).
+    pub fn read_in_background(&mut self, on: bool) {
+        self.background_reads = on;
     }
 
     /// Half the cores, at least one (ADR 0013 › Threads).
@@ -235,6 +254,22 @@ impl SoundMap {
         for file in files {
             let relative = relative(&file.path, &file.folder);
             present.entry(file.folder.clone()).or_default().insert(relative.clone());
+            // A folder whose cache is not read yet: read on a thread of its own, and its files
+            // compared when it is in (`poll`).
+            if self.background_reads
+                && !self.caches.contains_key(&file.folder)
+                && let Some(dir) = &self.data_folder
+            {
+                if !self.loading.contains_key(&file.folder) {
+                    let (folder, to) = (file.folder.clone(), self.loaded_to.clone());
+                    let path = dir.join(cache::file_name(&folder));
+                    let _ = std::thread::Builder::new()
+                        .name("sound map cache read".into())
+                        .spawn(move || drop(to.send((folder, FolderCache::load(&path)))));
+                }
+                self.loading.entry(file.folder.clone()).or_default().push(file.clone());
+                continue;
+            }
             let current = self.cache(&file.folder).current(&relative, file.size, file.modified).is_some();
             if !current && !self.queued.contains(&file.path) {
                 work.push((relative, file.clone()));
@@ -249,8 +284,10 @@ impl SoundMap {
                 self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
             }
         }
-        self.caches.retain(|folder, _| present.contains_key(folder));
-        self.unsaved.retain(|folder, _| present.contains_key(folder));
+        // A folder being read is kept: its update comes when it is in.
+        let loading = &self.loading;
+        self.caches.retain(|folder, _| present.contains_key(folder) || loading.contains_key(folder));
+        self.unsaved.retain(|folder, _| present.contains_key(folder) || loading.contains_key(folder));
         if !work.is_empty() {
             self.enqueue(work);
         }
@@ -293,7 +330,7 @@ impl SoundMap {
     /// Takes in finished analyses and writes caches that have gathered enough. Returns whether
     /// anything changed. Called often (each frame of the UI, or before a command answers).
     pub fn poll(&mut self) -> bool {
-        let mut changed = false;
+        let mut changed = self.take_loaded();
         while let Ok((file, analysis)) = self.results.try_recv() {
             self.queued.remove(&file.path);
             let relative = relative(&file.path, &file.folder);
@@ -309,6 +346,16 @@ impl SoundMap {
 
     /// Waits until nothing is queued (for tests and the CLI).
     pub fn wait(&mut self) {
+        while !self.loading.is_empty() {
+            match self.loaded.recv_timeout(std::time::Duration::from_millis(50)) {
+                Ok(done) => {
+                    let _ = self.loaded_to.send(done);
+                    self.take_loaded();
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
         while !self.queued.is_empty() {
             match self.results.recv_timeout(std::time::Duration::from_millis(50)) {
                 Ok(done) => {
@@ -326,6 +373,39 @@ impl SoundMap {
         }
         self.save_due(true);
         self.finish_saves();
+    }
+
+    /// Takes in the caches read since, and brings each folder in line with the files the
+    /// updates had for it meanwhile. Returns whether any came in.
+    fn take_loaded(&mut self) -> bool {
+        let mut any = false;
+        while let Ok((folder, cache)) = self.loaded.try_recv() {
+            any = true;
+            let Some(files) = self.loading.remove(&folder) else { continue };
+            // Read here meanwhile (a status asked for): that one stands.
+            self.caches.entry(folder.clone()).or_insert(cache);
+            let mut work = Vec::new();
+            let mut present = HashSet::new();
+            for file in &files {
+                let relative = relative(&file.path, &file.folder);
+                present.insert(relative.clone());
+                let current = self.cache(&folder).current(&relative, file.size, file.modified).is_some();
+                if !current && !self.queued.contains(&file.path) {
+                    work.push((relative, file.clone()));
+                }
+            }
+            if let Some(cache) = self.caches.get_mut(&folder) {
+                let gone: Vec<PathBuf> = cache.entries.keys().filter(|p| !present.contains(*p)).cloned().collect();
+                for path in gone {
+                    cache.entries.remove(&path);
+                    self.unsaved.entry(folder.clone()).or_default().0.push(Change::Remove(path));
+                }
+            }
+            if !work.is_empty() {
+                self.enqueue(work);
+            }
+        }
+        any
     }
 
     /// Waits until every cache handed to the saving thread is on disk.
