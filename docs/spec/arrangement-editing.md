@@ -86,8 +86,9 @@ lines show beats and bars by the zoom alone.
 ## Selecting clips
 
 A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection or takes it out,
-and **Shift** takes the run of clips between the clip clicked last and this one, in the order the
-lanes draw them (top lane first, clips in their lane from left to right). Ctrl+A selects every clip
+and **Shift** takes the rectangle from the clip clicked last to this one: the lanes between them,
+as the view draws them, by the time from the earlier start to the later end, every clip that
+touches it (#694). Ctrl+A selects every clip
 in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
 start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
 moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, stack?}`, one

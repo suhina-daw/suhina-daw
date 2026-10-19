@@ -516,18 +516,27 @@ impl ArrangementViewState {
         self.selected = keys;
     }
 
-    /// Picks the clip at `key` the way a click on it does: Shift takes the run of clips between
-    /// the last one picked and this one (in the order the lanes draw them), Ctrl (Cmd) adds it or
-    /// takes it away, and a plain click leaves it the only one.
-    fn pick_clip(&mut self, key: (TrackId, ClipId), shift: bool, command: bool, order: &[(TrackId, ClipId)]) {
+    /// Picks the clip at `key` the way a click on it does: Shift takes the rectangle from the last
+    /// one picked to this one, the lanes between them (as the view draws them) by the time from
+    /// the earlier start to the later end, every clip that touches it (#694); Ctrl (Cmd) adds it
+    /// or takes it away, and a plain click leaves it the only one.
+    fn pick_clip(&mut self, key: (TrackId, ClipId), shift: bool, command: bool, order: &[ClipSpot]) {
         self.track_focus = false;
+        let spot = |k: (TrackId, ClipId)| order.iter().find(|s| s.key == k).copied();
         if shift
             && let Some(anchor) = self.anchor
-            && let (Some(from), Some(to)) =
-                (order.iter().position(|k| *k == anchor), order.iter().position(|k| *k == key))
+            && let (Some(from), Some(to)) = (spot(anchor), spot(key))
         {
-            let (from, to) = if from <= to { (from, to) } else { (to, from) };
-            self.selected = order.get(from..=to).map(<[(TrackId, ClipId)]>::to_vec).unwrap_or_default();
+            let rows = from.row.min(to.row)..=from.row.max(to.row);
+            let (start, end) = (from.start.min(to.start), from.end.max(to.end));
+            self.selected = order
+                .iter()
+                .filter(|s| rows.contains(&s.row) && s.start < end - 1e-9 && s.end > start + 1e-9)
+                .map(|s| s.key)
+                .collect();
+            if !self.selected.contains(&key) {
+                self.selected.push(key);
+            }
             return;
         }
         if command {
@@ -1317,14 +1326,19 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // The clips and the tracks in the order the view draws them: what a Shift-click takes its run
     // of clips or of tracks from.
-    let mut clip_order: Vec<(TrackId, ClipId)> = Vec::new();
+    let mut clip_order: Vec<ClipSpot> = Vec::new();
     let mut track_order: Vec<TrackId> = Vec::new();
-    for shown in &drawn {
+    for (row, shown) in drawn.iter().enumerate() {
         if let Some(lane) = timeline.lanes.get(shown.lane) {
             track_order.push(lane.track);
         }
         let Some(clips_lane) = timeline.lanes.get(shown.clips) else { continue };
-        clip_order.extend(clips_lane.clips.iter().map(|clip| (clips_lane.track, clip.id)));
+        clip_order.extend(clips_lane.clips.iter().map(|clip| ClipSpot {
+            key: (clips_lane.track, clip.id),
+            row,
+            start: clip.start,
+            end: clip.start + clip.length,
+        }));
     }
 
     // Lanes.
@@ -2110,7 +2124,7 @@ fn clip_box<'a>(
     bar_beats: f64,
     lane_at: &dyn Fn(Pos2) -> Option<TrackId>,
     timeline: &Timeline,
-    clip_order: &[(TrackId, ClipId)],
+    clip_order: &[ClipSpot],
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) -> Option<(&'a Lane, &'a ClipBox, f64)> {
@@ -2738,6 +2752,16 @@ fn saturated(colour: Color32) -> Color32 {
     hsva.s = (hsva.s * 1.3).min(1.0);
     hsva.v = (hsva.v * 1.12).min(1.0);
     hsva.into()
+}
+
+/// A clip as a Shift-click's rectangle finds it: its key, the row its lane is drawn in, and
+/// its span in beats.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ClipSpot {
+    key: (TrackId, ClipId),
+    row: usize,
+    start: f64,
+    end: f64,
 }
 
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
@@ -3597,6 +3621,25 @@ fn empty_lane_menu(ui: &mut Ui, track: TrackId, notes: bool, state: &Arrangement
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shift_click_takes_the_rectangle_from_the_anchor_across_tracks() {
+        // Two tracks alike, each with a clip at bar 1 and one at bar 5 (#694).
+        let spot = |track: u32, clip: u32, row: usize, start: f64| ClipSpot {
+            key: (TrackId(track), ClipId(clip)),
+            row,
+            start,
+            end: start + 16.0,
+        };
+        let order = [spot(1, 1, 0, 0.0), spot(1, 2, 0, 16.0), spot(2, 3, 1, 0.0), spot(2, 4, 1, 16.0)];
+        let mut state = ArrangementViewState::default();
+        state.pick_clip((TrackId(1), ClipId(2)), false, false, &order);
+        state.pick_clip((TrackId(2), ClipId(4)), true, false, &order);
+        assert_eq!(state.selected, [(TrackId(1), ClipId(2)), (TrackId(2), ClipId(4))], "the later clip on both");
+        state.pick_clip((TrackId(1), ClipId(2)), false, false, &order);
+        state.pick_clip((TrackId(2), ClipId(3)), true, false, &order);
+        assert_eq!(state.selected.len(), 4, "from bar 1 to bar 9 on both tracks");
+    }
 
     #[test]
     fn zoom_reaches_ten_times_further_in_than_before_and_stops() {
