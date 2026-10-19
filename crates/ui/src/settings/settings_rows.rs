@@ -312,6 +312,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Clips",
+        "Waveform zoom",
+        "How much larger audio clips' waveforms are drawn, the sound unchanged; also the thin slider beside the ruler, Ctrl+Alt+Up and Ctrl+Alt+Down",
+        &["waveform_zoom"],
+        |cx, r| cx.choose(r, &[("×1", 100), ("×2", 200), ("×4", 400), ("×8", 800)], |s| &mut s.view.waveform_zoom),
+    ),
+    row(
+        Page::Arrangement,
+        "Clips",
         "Alt-drag on an edge stretches audio",
         "An audio clip's edge dragged with Alt held time-stretches its audio to the new length, its pitch kept; off, Alt does nothing there",
         &["stretch_alt_drag"],

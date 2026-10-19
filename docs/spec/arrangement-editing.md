@@ -151,6 +151,13 @@ Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leave
 where they were, an empty row between them staying until the rows above it empty too. A new clip
 inside the span a clip had on the same track (a split's parts) takes that clip's row (#703).
 
+**Waveform zoom.** A thin slider at the outer edge of the header column's top corner, by the
+ruler, draws every audio clip's waveform in the Arrangement larger, ×1 … ×16: one zoom for all
+tracks, the display only, never the sound or a clip's gain. Drag it up or down (thirty points
+double it), scroll over it a step at a time (×1.25), double-click it for ×1; Ctrl+Alt+Up and
+Ctrl+Alt+Down step it too. It is kept as a setting (Settings › Arrangement › *Waveform zoom*,
+`waveform_zoom`, the factor).
+
 The **Hide returns** button in the header column's top corner, by the ruler, takes the return
 tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
 (Settings › Arrangement › Return tracks, `arrangement_returns`). Main's row stays.

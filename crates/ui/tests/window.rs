@@ -2001,6 +2001,28 @@ fn hide_returns_takes_the_return_rows_out_of_the_arrangement_and_show_brings_the
 }
 
 #[test]
+fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
+    let mut harness = arrangement_app();
+    assert_eq!(harness.state().arrangement().waveform_zoom, 1.0);
+    // One zoom for the whole Arrangement: the keys step it, the setting keeps it.
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowUp);
+    harness.run_steps(2);
+    assert!((harness.state().arrangement().waveform_zoom - 1.25).abs() < 1e-6);
+    assert_eq!(harness.state().settings().view.waveform_zoom, 125);
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowDown);
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowDown);
+    harness.run_steps(2);
+    assert_eq!(harness.state().arrangement().waveform_zoom, 1.0, "never below the clips' own size");
+    // The slider by the ruler: a double-click puts it back to ×1.
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::ALT, Key::ArrowUp);
+    harness.run_steps(2);
+    harness.get_by_label("Waveform zoom").click();
+    harness.get_by_label("Waveform zoom").click();
+    harness.run_steps(2);
+    assert!(harness.query_by_label("Waveform zoom").is_some());
+}
+
+#[test]
 fn ctrl_tab_shows_the_open_projects_and_switches_when_ctrl_is_let_go() {
     let mut app = App::new();
     for _ in 0..3 {

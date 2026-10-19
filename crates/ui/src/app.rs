@@ -701,10 +701,12 @@ impl App {
     fn restore(&mut self, id: ProjectId, stash: Stash) {
         let (headers_left, header_width) = (self.arrangement.headers_left, self.arrangement.header_width);
         let returns_hidden = self.arrangement.returns_hidden;
+        let waveform_zoom = self.arrangement.waveform_zoom;
         self.view = stash.view;
         self.arrangement = stash.arrangement.unwrap_or_default();
         self.arrangement.headers_left = headers_left;
         self.arrangement.returns_hidden = returns_hidden;
+        self.arrangement.waveform_zoom = waveform_zoom;
         self.arrangement.header_width = header_width;
         self.selected_device = stash.selected_device;
         self.revision = stash.revision.wrapping_add(1);
@@ -987,6 +989,7 @@ impl App {
         motion::set_enabled(ctx, settings.animations);
         self.arrangement.headers_left = settings.track_headers == Side::Left;
         self.arrangement.returns_hidden = settings.view.returns_hidden;
+        self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
         if settings.map_window {
             self.sample_map.set_window(true, &mut self.browser);
         }
@@ -2444,6 +2447,11 @@ impl App {
                                 self.settings.view.returns_hidden = self.arrangement.returns_hidden;
                                 self.settings_changed = true;
                             }
+                            let zoom = (self.arrangement.waveform_zoom * 100.0).round() as u32;
+                            if zoom != self.settings.view.waveform_zoom {
+                                self.settings.view.waveform_zoom = zoom;
+                                self.settings_changed = true;
+                            }
                         }
                     }
                     (None, _) => self.start_panel(ui),
@@ -3841,6 +3849,7 @@ impl App {
             motion::set_enabled(ui.ctx(), self.settings.animations);
             self.arrangement.headers_left = self.settings.track_headers == Side::Left;
             self.arrangement.returns_hidden = self.settings.view.returns_hidden;
+            self.arrangement.waveform_zoom = self.settings.view.waveform_zoom as f32 / 100.0;
             self.settings_changed = true;
         }
         if outcome.close {
@@ -4222,6 +4231,11 @@ impl App {
             }
             "view.sampleMapWindow" => self.toggle_map_window(),
             "view.zoomIn" => self.step_zoom(1),
+            "view.waveformZoomIn" | "view.waveformZoomOut" => {
+                let steps = if action == "view.waveformZoomIn" { 1 } else { -1 };
+                self.arrangement.waveform_zoom =
+                    crate::arrangement::arrangement_view::waveform_zoom_step(self.arrangement.waveform_zoom, steps);
+            }
             "view.zoomOut" => self.step_zoom(-1),
             "view.zoomReset" => {
                 if self.settings.zoom != crate::settings::ZOOM {

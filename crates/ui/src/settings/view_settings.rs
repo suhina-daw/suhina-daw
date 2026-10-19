@@ -51,6 +51,9 @@ pub struct ViewSettings {
     pub clip_halves: bool,
     /// The grid shows through the clips in the Arrangement view (on by default).
     pub grid_in_clips: bool,
+    /// The Arrangement's waveform zoom in percent, 100 … 1600 (×1 … ×16): audio clips drawn
+    /// larger, never louder. Saved as the factor.
+    pub waveform_zoom: u32,
     /// Alt held while an audio clip's edge is dragged stretches its audio (on by default).
     pub stretch_alt: bool,
     /// Ctrl+R with several clips selected renames them all at once (on by default, #693).
@@ -80,6 +83,7 @@ impl Default for ViewSettings {
             time_select_ctrl: false,
             clip_halves: false,
             grid_in_clips: true,
+            waveform_zoom: 100,
             stretch_alt: true,
             rename_selected: true,
             play_from_clip: true,
@@ -94,7 +98,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -110,6 +114,7 @@ impl ViewSettings {
             if self.returns_hidden { "hidden" } else { "shown" },
             if self.clip_halves { "halves" } else { "name_bar" },
             if self.grid_in_clips { "on" } else { "off" },
+            f64::from(self.waveform_zoom) / 100.0,
         )
     }
 
@@ -139,6 +144,10 @@ impl ViewSettings {
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             ("clip_drag", "halves" | "name_bar") => self.clip_halves = value == "halves",
             ("clip_grid", "on" | "off") => self.grid_in_clips = value == "on",
+            ("waveform_zoom", zoom) => match zoom.parse::<f32>() {
+                Ok(zoom) if zoom.is_finite() => self.waveform_zoom = (zoom.clamp(1.0, 16.0) * 100.0).round() as u32,
+                _ => return false,
+            },
             _ => return false,
         }
         true
@@ -162,6 +171,7 @@ mod tests {
             time_select_ctrl: true,
             clip_halves: true,
             grid_in_clips: false,
+            waveform_zoom: 400,
             stretch_alt: false,
             rename_selected: false,
             play_from_clip: false,

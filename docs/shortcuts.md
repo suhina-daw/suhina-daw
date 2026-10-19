@@ -110,6 +110,7 @@ status bar.
 | Search in the browser (`browser.search`; shows it when hidden). In the search field: Up and Down move through the results, Enter adds the selection to the selected track, Escape clears the search and then leaves the field | Ctrl+F |
 | Open or close Settings (`settings.open`) | Ctrl+, |
 | Make the whole window larger, smaller, its normal size (`view.zoomIn`, `view.zoomOut`, `view.zoomReset`; 50–200 % in 10 % steps, kept in `settings.txt`, [spec](spec/window-zoom.md)) | Ctrl+Plus, Ctrl+Equals; Ctrl+Minus; Ctrl+0 |
+| Draw audio clips' waveforms larger or smaller in the Arrangement, the sound unchanged (`view.waveformZoomIn`, `view.waveformZoomOut`; ×1–×16 in ×1.25 steps, [spec](spec/arrangement-editing.md)) | Ctrl+Alt+Up; Ctrl+Alt+Down |
 | Undo, redo (`edit.undo`, `edit.redo`) | Ctrl+Z; Ctrl+Shift+Z, Ctrl+Y |
 | Copy, cut, paste the selected clips (`selection.copy`, `.cut`, `.paste`) | Ctrl+C, Ctrl+X, Ctrl+V |
 | Duplicate, delete the selected clips (`selection.duplicate`, `.delete`); in the piano roll, after a click in it, Delete deletes the selected notes instead. The duplicate key is Ctrl+D, or Ctrl+B with the Draw-first preset | Ctrl+D; Delete, Backspace |

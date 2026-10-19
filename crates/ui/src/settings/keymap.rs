@@ -110,7 +110,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 68] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 70] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -132,6 +132,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 68] = [
     ("view.zoomIn", "Make the whole window larger", "View"),
     ("view.zoomOut", "Make the whole window smaller", "View"),
     ("view.zoomReset", "Make the whole window its normal size", "View"),
+    ("view.waveformZoomIn", "Draw audio clips' waveforms larger, the sound unchanged", "View"),
+    ("view.waveformZoomOut", "Draw audio clips' waveforms smaller, down to their own size", "View"),
     ("selection.copy", "Copy the selected clips, or the selected notes in the piano roll", "Edit"),
     ("selection.cut", "Cut the selected clips, or the selected notes in the piano roll", "Edit"),
     (
@@ -423,7 +425,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 69] = [
+const DEFAULTS: [(&str, &[&str]); 71] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -446,6 +448,8 @@ const DEFAULTS: [(&str, &[&str]); 69] = [
     ("view.zoomIn", &["Ctrl+Plus", "Ctrl+Equals"]),
     ("view.zoomOut", &["Ctrl+Minus"]),
     ("view.zoomReset", &["Ctrl+0"]),
+    ("view.waveformZoomIn", &["Ctrl+Alt+Up"]),
+    ("view.waveformZoomOut", &["Ctrl+Alt+Down"]),
     ("edit.undo", &["Ctrl+Z"]),
     ("edit.redo", &["Ctrl+Shift+Z", "Ctrl+Y"]),
     ("selection.copy", &["Ctrl+C"]),

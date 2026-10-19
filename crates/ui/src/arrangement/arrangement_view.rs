@@ -164,8 +164,19 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
 /// The height of a clip's name bar, and the least a clip's height must be to have a body under
 /// it for selecting time.
 const CLIP_NAME_BAR: f32 = 16.0;
+/// The waveform zoom slider's width, in the header column's corner.
+const WAVEFORM_ZOOM_WIDTH: f32 = 8.0;
 /// The grid's lines this frame, as (x, on a bar), for the clips' bodies.
 const CLIP_GRID: &str = "arrangement-clip-grid";
+/// The waveform zoom this frame, for `paint_clip`.
+const WAVEFORM_ZOOM: &str = "arrangement-waveform-zoom";
+/// The waveform zoom's range.
+pub const WAVEFORM_ZOOM_RANGE: (f32, f32) = (1.0, 16.0);
+
+/// `zoom` a step of the keys or the wheel up (`steps` > 0) or down, kept in its range.
+pub fn waveform_zoom_step(zoom: f32, steps: i32) -> f32 {
+    (zoom * 1.25f32.powi(steps)).clamp(WAVEFORM_ZOOM_RANGE.0, WAVEFORM_ZOOM_RANGE.1)
+}
 const CLIP_BODY_LEAST: f32 = 36.0;
 
 /// `#RRGGBB`, as colour parameters take it.
@@ -414,6 +425,9 @@ pub struct ArrangementViewState {
     /// The grid's lines show through the clips' bodies, faintly (Settings › Arrangement ›
     /// Grid in clips; on by default).
     pub grid_in_clips: bool,
+    /// How much larger audio clips' waveforms are drawn, 1 … 16: the display only, never the
+    /// sound or the clip's gain (the slider by the ruler; Ctrl+Alt+Up and Down).
+    pub waveform_zoom: f32,
     /// Where the last click in a lane or a clip's body put the play start, on which track: a
     /// thin line there in that lane while the play start is still there.
     pub insert: Option<(TrackId, f64)>,
@@ -486,6 +500,7 @@ impl Default for ArrangementViewState {
             picked_whole: true,
             name_bar_moves: true,
             grid_in_clips: true,
+            waveform_zoom: 1.0,
             insert: None,
             open_devices: None,
             automation: LanesState::default(),
@@ -1215,7 +1230,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if !state.grid_in_clips {
         grid_xs.clear();
     }
-    ui.ctx().data_mut(|d| d.insert_temp(Id::new(CLIP_GRID), std::sync::Arc::new(grid_xs)));
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(Id::new(CLIP_GRID), std::sync::Arc::new(grid_xs));
+        d.insert_temp(Id::new(WAVEFORM_ZOOM), state.waveform_zoom);
+    });
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
@@ -1366,12 +1384,63 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             ui.close();
         }
     });
+    // The waveform zoom: a thin slider at the corner's outer edge. Up draws audio clips'
+    // waveforms larger, the sound unchanged; the wheel steps it, a double-click puts it back.
+    let zoom_bar = {
+        let x = if state.headers_left { corner.left() + 4.0 } else { corner.right() - 4.0 - WAVEFORM_ZOOM_WIDTH };
+        Rect::from_min_max(Pos2::new(x, corner.top() + 4.0), Pos2::new(x + WAVEFORM_ZOOM_WIDTH, corner.bottom() - 4.0))
+    };
+    {
+        let response = ui.interact(zoom_bar, Id::new("arrangement-waveform-zoom"), Sense::click_and_drag());
+        response.widget_info(|| {
+            egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom")
+        });
+        if response.dragged() {
+            // Thirty points up doubles it.
+            let delta = -response.drag_delta().y / 30.0;
+            state.waveform_zoom =
+                (state.waveform_zoom * 2f32.powf(delta)).clamp(WAVEFORM_ZOOM_RANGE.0, WAVEFORM_ZOOM_RANGE.1);
+        }
+        if response.hovered() {
+            // One step a wheel tick, from the events themselves rather than egui's smoothed scroll.
+            let wheel: f32 = ui.input(|i| {
+                i.raw
+                    .events
+                    .iter()
+                    .filter_map(|e| match e {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        _ => None,
+                    })
+                    .sum()
+            });
+            if wheel != 0.0 {
+                state.waveform_zoom = waveform_zoom_step(state.waveform_zoom, if wheel > 0.0 { 1 } else { -1 });
+            }
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        if response.double_clicked() {
+            state.waveform_zoom = 1.0;
+        }
+        let response = response.on_hover_text(format!(
+            "Waveform zoom ×{:.1}: audio clips drawn larger, the sound unchanged. Drag or scroll; double-click for ×1",
+            state.waveform_zoom
+        ));
+        let hover = widgets::hover(ui, &response);
+        painter.rect_filled(zoom_bar, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+        let share = (state.waveform_zoom / WAVEFORM_ZOOM_RANGE.0).log2() / (WAVEFORM_ZOOM_RANGE.1 / WAVEFORM_ZOOM_RANGE.0).log2();
+        let filled = Rect::from_min_max(
+            Pos2::new(zoom_bar.left(), zoom_bar.bottom() - zoom_bar.height() * share.clamp(0.0, 1.0)),
+            zoom_bar.max,
+        );
+        painter.rect_filled(filled, 2.0, theme::text_secondary());
+    }
     // The return tracks' rows along the bottom go and come back with a button here.
     if has_returns && focus.is_none() {
         let label = if state.returns_hidden { "Show returns" } else { "Hide returns" };
         let font = theme::ui_font(theme::TEXT_SMALL);
         let width = widgets::text_width(ui, label, font.clone()) + 12.0;
-        let x = if state.headers_left { corner.left() + 4.0 } else { corner.right() - 4.0 - width };
+        let gap = WAVEFORM_ZOOM_WIDTH + 8.0;
+        let x = if state.headers_left { corner.left() + gap } else { corner.right() - gap - width };
         let button = Rect::from_min_size(Pos2::new(x, corner.top() + 4.0), Vec2::new(width, 18.0)).intersect(corner);
         let response = widgets::button_area(ui, button, Id::new("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
@@ -3028,6 +3097,9 @@ fn paint_clip(
         // One column per point in view: the stretch of the file it shows, scaled by the clip's
         // gain and its fades, drawn as `docs/spec/waveforms.md` says, inside the clip.
         let gain = if shown.gain_db.is_finite() { 10f32.powf(shown.gain_db as f32 / 20.0) } else { 0.0 };
+        // The waveform zoom: drawn larger, heard the same.
+        let zoom = painter.ctx().data(|d| d.get_temp::<f32>(Id::new(WAVEFORM_ZOOM))).unwrap_or(1.0);
+        let gain = gain * zoom;
         let from = rect.left().max(view_rect(painter).left()).floor();
         let to = rect.right().min(view_rect(painter).right()).ceil();
         let per_point = 1.0 / f64::from(beat_width);
