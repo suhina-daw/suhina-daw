@@ -789,7 +789,10 @@ fn chain_row(
             // the plain device width.
             let authored_base =
                 if device.file_device.is_some() { crate::detail::nam_panel::NAM_WIDTH } else { DEVICE_WIDTH };
-            let authored_width = device.graph.as_ref().map_or(authored_base, |graph| {
+            // A NAM panel draws its own controls: the stock graph every built-in has (#600) does
+            // not size it, or its controls are crowded over each other.
+            let graph = device.graph.as_ref().filter(|_| device.file_device.is_none());
+            let authored_width = graph.map_or(authored_base, |graph| {
                 graph.canvas.as_ref().map_or_else(
                     || {
                         parameter_layout(&graph.parameters, DEVICE_WIDTH - PAD * 2.0, &[])

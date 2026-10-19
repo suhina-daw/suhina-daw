@@ -286,10 +286,12 @@ Both panels, top to bottom:
    - **The On button** at the Amp Modeler's controls area's top left ("Amp Modeler: device
      on" / "… off"): a bigger copy of the header's square, the same `device.setEnabled`, lit
      while the device runs; both always show the same state.
-   - Amp Modeler under it, left to right: **Gain**; **Bass / Mid / Treble** with the **Mid
+   - Amp Modeler: the **EQ** and **HQ** buttons beside the On button, on its row; under them
+     one row of knobs, left to right: **Gain**; **Bass / Mid / Treble** with the **Mid
      Freq**'s line under them — a line with a diamond handle at the value's place, a drag
-     along it sets the frequency, a click jumps — and the **EQ** button under that; **HQ**,
-     **Delay** and **Volume** at the right, Volume last.
+     along it sets the frequency, a click jumps —; **Delay**; **Volume** last. The panel is
+     its own width (440 points) whatever the stock graph every built-in has would give it,
+     and everything fits a detail area of its default height, no control over another.
    - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; **Bass / Mid /
      Treble** with **Mid Freq** under them; **Delay**; a vertical **Volume** slider.
    - Toggles are lit when on: On, EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler:

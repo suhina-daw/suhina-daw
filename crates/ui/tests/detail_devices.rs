@@ -334,6 +334,32 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     for label in ["Amp Modeler: eq", "Amp Modeler: hq"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
     }
+    // At the width the panel gets, no control is drawn over another (PR #727, a tester's
+    // screenshot: Delay over Mid, HQ beside Treble).
+    let controls: Vec<(&str, egui::Rect)> = [
+        "Amp Modeler: device on",
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: volume",
+        "Amp Modeler: mid freq",
+        "Amp Modeler: delay",
+        "Amp Modeler: eq",
+        "Amp Modeler: hq",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (i, (a, ra)) in controls.iter().enumerate() {
+        for (b, rb) in &controls[i + 1..] {
+            assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
+        }
+    }
+    // The file row's name is cut short beside its steppers, never under them.
+    let file = harness.get_by_label("Amp Modeler: model file").rect();
+    let stepper = harness.get_by_label("Amp Modeler: previous file").rect();
+    assert!(file.right() <= stepper.left() + 1.0, "the file row {file:?} runs under its stepper {stepper:?}");
     // The pack row with its steppers and the file row with its own; the pack is listed.
     for label in [
         "Amp Modeler: pack",
@@ -361,6 +387,24 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     assert!(harness.query_by_label("Cab Loader: bypass").is_none(), "no bypass toggle");
     for label in ["Cab Loader: phase", "Cab Loader: hp"] {
         assert!(harness.query_by_label(label).is_some(), "missing {label} toggle");
+    }
+    let controls: Vec<(&str, egui::Rect)> = [
+        "Cab Loader: phase",
+        "Cab Loader: hp",
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+        "Cab Loader: volume",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (i, (a, ra)) in controls.iter().enumerate() {
+        for (b, rb) in &controls[i + 1..] {
+            assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
+        }
     }
     for label in [
         "Cab Loader: pack",

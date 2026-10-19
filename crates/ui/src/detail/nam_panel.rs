@@ -413,8 +413,10 @@ fn file_row(
         shown.to_owned()
     };
     let mut choice: Option<String> = None;
+    // Cut short to the row, never drawn under the steppers beside it.
     let response = egui::ComboBox::from_id_salt(id_salt)
-        .width(rect.width() - 52.0)
+        .width((rect.width() - 16.0).max(24.0))
+        .truncate()
         .selected_text(egui::RichText::new(current_name).font(theme::ui_font(theme::TEXT_SMALL)))
         .show_ui(&mut row, |ui| {
             if files.is_empty() {
@@ -618,8 +620,8 @@ fn controls_rect(rect: Rect, top: f32, bottom: f32) -> Rect {
 }
 
 /// The NAM Amp Modeler's panel, drawn in `rect` ([docs/spec/nam-amp-and-cab.md] › The panels):
-/// Gain at the left, the EQ's trio with the Mid Freq's value and the EQ and HQ buttons under
-/// it in the middle, Delay and Volume at the right.
+/// the On, EQ and HQ buttons on the top row; under them one row of knobs, Gain, the EQ's trio
+/// with the Mid Freq's line under it, Delay and Volume.
 pub(crate) fn show_amp(
     ui: &mut Ui,
     rect: Rect,
@@ -648,51 +650,26 @@ pub(crate) fn show_amp(
         &prefix,
         actions,
     );
-    // The Gain and Volume columns at the sides; the middle holds the trio, the Mid Freq's
-    // line and the EQ button. Under the Bypass row, which tops the panel's controls.
+    // EQ and HQ beside the On button, on its row: the knobs and the Mid Freq's line then fit
+    // under it in a detail area of its default height.
+    for (n, id) in [(1.0, "eqOn"), (2.0, "hq")] {
+        let at =
+            Rect::from_min_size(egui::pos2(controls.left() + n * 54.0, controls.top()), egui::vec2(48.0, ROW_HEIGHT));
+        let parameter = amp_parameter(id);
+        toggle(ui, at, track, &device.at, &prefix, parameter, on_of(device, parameter), actions);
+    }
+    // One row of knobs under it, left to right: Gain, the EQ's trio, Delay, Volume last, each
+    // cell as wide; the Mid Freq's line under the trio. No control is drawn over another.
     let rows_top = controls.top() + ROW_HEIGHT + 2.0;
-    let (left, right) = (60.0, 60.0);
-    let gain_cell =
-        Rect::from_min_max(egui::pos2(controls.left(), rows_top), egui::pos2(controls.left() + left, rows_top + 56.0));
-    knob(
-        ui,
-        gain_cell.shrink(2.0),
-        track,
-        &device.at,
-        &prefix,
-        amp_parameter("inputGain"),
-        value_of(device, amp_parameter("inputGain")),
-        actions,
-    );
-    let volume_cell = Rect::from_min_max(
-        egui::pos2(controls.right() - right, rows_top),
-        egui::pos2(controls.right(), rows_top + 56.0),
-    );
-    knob(
-        ui,
-        volume_cell.shrink(2.0),
-        track,
-        &device.at,
-        &prefix,
-        amp_parameter("outputVolume"),
-        value_of(device, amp_parameter("outputVolume")),
-        actions,
-    );
-    let middle_rect = Rect::from_min_max(
-        egui::pos2(controls.left() + left + 4.0, rows_top),
-        egui::pos2(controls.right() - right - 4.0, controls.bottom()),
-    );
-    let trio = Rect::from_min_max(middle_rect.left_top(), egui::pos2(middle_rect.right(), middle_rect.top() + 56.0));
-    let cells = split(trio, 3);
-    for (cell, id) in cells.iter().zip(["eqBass", "eqMid", "eqTreble"]) {
+    let row = Rect::from_min_max(egui::pos2(controls.left(), rows_top), egui::pos2(controls.right(), rows_top + 56.0));
+    let cells = split(row, 6);
+    for (cell, id) in cells.iter().zip(["inputGain", "eqBass", "eqMid", "eqTreble", "delay", "outputVolume"]) {
         let parameter = amp_parameter(id);
         knob(ui, cell.shrink(2.0), track, &device.at, &prefix, parameter, value_of(device, parameter), actions);
     }
-    // Under the trio: the Mid Freq's line with its handle, then the EQ button under that. The
-    // Delay knob and the HQ button share a narrow column at the trio's right.
     let mid_freq_rect = Rect::from_min_max(
-        egui::pos2(middle_rect.left(), trio.bottom() + 2.0),
-        egui::pos2(middle_rect.left() + middle_rect.width() - 78.0, trio.bottom() + 30.0),
+        egui::pos2(cells[1].left(), row.bottom() + 2.0),
+        egui::pos2(cells[3].right(), (row.bottom() + 30.0).min(controls.bottom())),
     );
     mid_freq_line(
         ui,
@@ -704,40 +681,6 @@ pub(crate) fn show_amp(
         value_of(device, amp_parameter("eqMidFreq")),
         actions,
     );
-    let eq_row = Rect::from_min_max(
-        egui::pos2(
-            middle_rect.left(),
-            (mid_freq_rect.bottom() + 2.0).min((controls.bottom() - ROW_HEIGHT).max(mid_freq_rect.top() + ROW_HEIGHT)),
-        ),
-        egui::pos2(mid_freq_rect.right(), controls.bottom()),
-    );
-    toggle(
-        ui,
-        Rect::from_center_size(egui::pos2(eq_row.left() + 32.0, eq_row.center().y), egui::vec2(48.0, ROW_HEIGHT)),
-        track,
-        &device.at,
-        &prefix,
-        amp_parameter("eqOn"),
-        on_of(device, amp_parameter("eqOn")),
-        actions,
-    );
-    // The narrow column at the middle's right: the Delay's knob, the HQ button under it.
-    let aux = Rect::from_min_max(
-        egui::pos2(mid_freq_rect.right() + 8.0, trio.top()),
-        egui::pos2(middle_rect.right(), controls.bottom()),
-    );
-    knob(
-        ui,
-        Rect::from_min_max(aux.left_top(), egui::pos2(aux.right(), aux.top() + 56.0)).shrink(2.0),
-        track,
-        &device.at,
-        &prefix,
-        amp_parameter("delay"),
-        value_of(device, amp_parameter("delay")),
-        actions,
-    );
-    let hq_cell = Rect::from_center_size(egui::pos2(aux.center().x, aux.top() + 70.0), egui::vec2(48.0, ROW_HEIGHT));
-    toggle(ui, hq_cell, track, &device.at, &prefix, amp_parameter("hq"), on_of(device, amp_parameter("hq")), actions);
     // The failure note, beside the file row's left, over the file row's line.
     if let Some(note) = note_of(device, lists) {
         widgets::text_in(
