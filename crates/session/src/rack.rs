@@ -1326,7 +1326,10 @@ impl Rack {
                     instance.control = Some(control);
                     // Loaded again with its track's new clips: its editor was open, so it opens
                     // again where it was.
-                    if self.reopen_after_rebind.remove(&started.key) && instance.status == PluginStatus::Running {
+                    let wanted = instance.editor_wanted.take() == Some(true);
+                    if (self.reopen_after_rebind.remove(&started.key) || wanted)
+                        && instance.status == PluginStatus::Running
+                    {
                         reopen.push(started.key);
                     }
                 }
@@ -1662,12 +1665,25 @@ impl Rack {
         self.running(key)?.close_editor().map_err(|e| CommandError(e.to_string()))
     }
 
-    /// Whether the control half of running plug-in `key` is out on a thread of its own: the
-    /// editor `open` (or closed) is then remembered and done when it is back
-    /// ([`Rack::take_returned`]), so a click while it edits or opens never says it is busy.
+    /// Whether plug-in `key` cannot take the editor's opening or closing now: its control half
+    /// is out on a thread of its own, it is still starting, or it is being loaded again with its
+    /// track's clips. The editor `open` (or closed) is then remembered and done when it can be
+    /// ([`Rack::take_returned`], [`Rack::receive`]), so a click then never says it is busy or
+    /// still starting.
     fn lent_out(&mut self, key: u64, open: bool) -> bool {
+        // Being loaded again with its track's clips: its editor opens (or stays shut) once it is.
+        if self.rebinding.contains(&key) && !self.instances.contains_key(&key) {
+            if open {
+                self.reopen_after_rebind.insert(key);
+            } else {
+                self.reopen_after_rebind.remove(&key);
+            }
+            return true;
+        }
         let Some(instance) = self.instances.get_mut(&key) else { return false };
-        let out = instance.status == PluginStatus::Running && instance.control.is_none();
+        // Still starting, or busy on another thread: the editor follows when it is free.
+        let out = instance.status == PluginStatus::Loading
+            || (instance.status == PluginStatus::Running && instance.control.is_none());
         if out {
             instance.editor_wanted = Some(open);
         }
