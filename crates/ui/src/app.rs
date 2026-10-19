@@ -6203,6 +6203,31 @@ mod tests {
     }
 
     #[test]
+    fn a_device_dropped_on_a_return_column_goes_on_the_return() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        let at = harness.get_by_label("A Reverb channel strip").rect().center();
+        let delay = BrowserItem {
+            key: "device:delay".into(),
+            name: "Delay".into(),
+            kind: crate::interaction::drop::ItemKind::AudioEffect,
+            plugin: false,
+        };
+        harness.state_mut().browser.drag = Some(vec![delay]);
+        harness.hover_at(at);
+        harness.run();
+        let project = harness.state().session().map(|s| s.project().clone()).unwrap();
+        let channel = project.tracks.iter().find(|t| t.name == "A Reverb").and_then(|t| t.channel).unwrap();
+        let devices = &project.channels.iter().find(|c| c.id == channel).unwrap().devices;
+        assert!(devices.iter().any(|d| d.name == "Delay"), "{devices:?}");
+    }
+
+    #[test]
     fn pending_drop_is_cancelled_when_another_project_is_active() {
         let mut app = App::new();
         app.set_session(Session::new(crate::demo::demo_project()), &[]);

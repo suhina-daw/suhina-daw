@@ -250,6 +250,8 @@ pub fn show(
     };
     // Where each track column is this frame, for a dragged header to find its place.
     let mut spans: Vec<(&Column, egui::Rangef)> = Vec::new();
+    // The returns' columns too, which take dropped devices and plug-ins as a track's do (#687).
+    let mut return_spans: Vec<(&Column, egui::Rangef)> = Vec::new();
     let mut track_x = area.left() - state.scroll.x;
     let mut return_x = returns_x;
     let mut track_number = 0;
@@ -267,7 +269,9 @@ pub fn show(
         };
         let span = egui::Rangef::new(*x, *x + width);
         *x += width + 1.0;
-        if column.kind != ColumnKind::Return {
+        if column.kind == ColumnKind::Return {
+            return_spans.push((column, span));
+        } else {
             spans.push((column, span));
         }
         if span.max < clip.left() || span.min > clip.right() {
@@ -290,6 +294,12 @@ pub fn show(
     }
     if let Some(probe) = state.drop.as_mut() {
         let row_of = |y: f32| ((y - bands.top) / PITCH).floor().max(0.0) as usize;
+        if probe.devices && !probe.files && !probe.clip {
+            for (column, span) in &return_spans {
+                let whole = Rect::from_x_y_ranges(*span, egui::Rangef::new(header.top(), mixer.bottom()));
+                probe.offer(whole.intersect(returns_clip), DropTarget::Track(column.track));
+            }
+        }
         for (column, span) in &spans {
             // Devices alone land on the track wherever its column is under the pointer: the
             // header, the slots or the mixer strip, a group's and a return's too.
