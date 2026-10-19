@@ -14,14 +14,14 @@
 //!
 //! [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::{CString, c_void};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use suhina_ipc::AudioSource;
-use suhina_plugins::protocol::{AraDocument, AraPlayback, AraRegion};
+use suhina_plugins::protocol::{AraDocument, AraNote, AraPlayback, AraRegion, MAX_ARA_NOTES};
 use vst3::ComPtr;
 use vst3::Steinberg::Vst::IComponent;
 use vst3::Steinberg::{FUnknown, FUnknownVtbl, TUID, kResultOk};
@@ -198,6 +198,9 @@ struct Host {
     sources: Vec<Box<Source>>,
     /// The plug-in said its document data changed (ARA 2.3), so the project has unsaved edits.
     changed: AtomicBool,
+    /// The plug-in said a region's, modification's or source's notes may have changed, or the
+    /// host changed the regions: the notes are read again after the next model update (#720).
+    notes_changed: AtomicBool,
 }
 
 /// How often the host lets the plug-in send the model changes it has queued, when it is not
@@ -230,6 +233,11 @@ pub(crate) struct Document {
     editor_view: Option<(ARAEditorViewRef, *const ARAEditorViewInterface)>,
     /// The plug-in's factory, valid while its module is loaded.
     factory: *const ARAFactory,
+    /// The notes last sent for each region (its id and a digest of them), so only a change is
+    /// sent again.
+    notes_sent: RefCell<Vec<(String, u64)>>,
+    /// Regions' notes read and not yet taken by the main loop: id, notes, whether cut.
+    notes_out: RefCell<Vec<(String, Vec<AraNote>, bool)>>,
     /// The texts handed to the plug-in, kept for as long as the document.
     _texts: Vec<CString>,
     _entry: Interface,
@@ -290,6 +298,8 @@ impl Document {
             },
             sources,
             changed: AtomicBool::new(false),
+            // Read once the document is built.
+            notes_changed: AtomicBool::new(true),
         });
         let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut host).cast();
         host.instance.audioAccessControllerHostRef = host_ref.cast();
@@ -319,6 +329,8 @@ impl Document {
             extension: std::ptr::null(),
             editor_view: None,
             factory,
+            notes_sent: RefCell::new(Vec::new()),
+            notes_out: RefCell::new(Vec::new()),
             _texts: Vec::new(),
             _entry: entry,
         };
@@ -408,7 +420,40 @@ impl Document {
     pub(crate) fn tick(&self) {
         if self.last_model_update.get().elapsed() >= MODEL_UPDATES_EVERY {
             self.notify_model_updates();
+            // What the plug-in said changed reached the host inside that call; the notes are
+            // read now, outside it, as the API asks.
+            if self.host.notes_changed.swap(false, Ordering::AcqRel) {
+                self.read_notes();
+            }
         }
+    }
+
+    /// Reads every region's notes and keeps for [`Document::take_notes`] those that differ from
+    /// what was sent; a region gone is forgotten, so its notes are sent again if it comes back.
+    fn read_notes(&self) {
+        let Some(dc) = self.controller() else { return };
+        let mut sent = self.notes_sent.borrow_mut();
+        sent.retain(|(id, _)| self.region_described.iter().any(|r| r.id == *id));
+        let mut out = self.notes_out.borrow_mut();
+        for (region, described) in self.regions.iter().zip(&self.region_described) {
+            let Some((notes, truncated)) = region_notes(&dc, *region, described.start) else { continue };
+            let digest = notes_digest(&notes, truncated);
+            match sent.iter_mut().find(|(id, _)| *id == described.id) {
+                Some((_, last)) if *last == digest => continue,
+                Some((_, last)) => *last = digest,
+                // A region with no notes is not sent until it has some.
+                None if notes.is_empty() => continue,
+                None => sent.push((described.id.clone(), digest)),
+            }
+            out.retain(|(id, ..)| *id != described.id);
+            out.push((described.id.clone(), notes, truncated));
+        }
+    }
+
+    /// The regions' notes read since the last call: region id, its notes as they are now
+    /// (empty when it has none any more), and whether there were more than the protocol carries.
+    pub(crate) fn take_notes(&self) -> Vec<(String, Vec<AraNote>, bool)> {
+        std::mem::take(&mut *self.notes_out.borrow_mut())
     }
 
     /// The plug-in's edits as an archive: its document archive id and the bytes. `None` when it
@@ -663,6 +708,8 @@ impl Document {
         unsafe { end(dc.reference) };
         // The plug-in redraws the change once it may send what the edit set off.
         self.notify_model_updates();
+        // Moved, trimmed or new regions: the plug-in need not say so, so their notes are read.
+        self.host.notes_changed.store(true, Ordering::Release);
         edited
     }
 
@@ -1110,32 +1157,107 @@ unsafe extern "C" fn analysis_progress(
 }
 
 unsafe extern "C" fn source_changed(
-    _host: ARAModelUpdateControllerHostRef,
+    host: ARAModelUpdateControllerHostRef,
     _source: ARAAudioSourceHostRef,
     _range: *const ARAContentTimeRange,
-    _flags: ARAContentUpdateFlags,
+    flags: ARAContentUpdateFlags,
 ) {
+    // An analysis done, say: the regions of the source have notes to read.
+    // SAFETY: as in `modification_changed`.
+    notes_may_have_changed(unsafe { host.cast::<Host>().as_ref() }, flags);
+}
+
+/// Marks the notes to be read again, unless the plug-in says they stayed as they were.
+fn notes_may_have_changed(host: Option<&Host>, flags: ARAContentUpdateFlags) {
+    if let Some(host) = host
+        && flags & kARAContentUpdateNoteScopeRemainsUnchanged as ARAContentUpdateFlags == 0
+    {
+        host.notes_changed.store(true, Ordering::Release);
+    }
+}
+
+/// The notes the plug-in has for `region`, which starts `start` seconds into the song: times
+/// from the region's start, read with a playback-region content reader as the API asks of a host
+/// that shows them. `Some` with none when it has no notes for it, `None` when they cannot be read.
+fn region_notes(dc: &Controller, region: ARAPlaybackRegionRef, start: f64) -> Option<(Vec<AraNote>, bool)> {
+    let i = &dc.interface;
+    let (Some(available), Some(create), Some(count), Some(data), Some(destroy)) = (
+        i.isPlaybackRegionContentAvailable,
+        i.createPlaybackRegionContentReader,
+        i.getContentReaderEventCount,
+        i.getContentReaderDataForEvent,
+        i.destroyContentReader,
+    ) else {
+        return None;
+    };
+    let notes_type = kARAContentTypeNotes as ARAContentType;
+    // SAFETY: a live controller, not being edited, for a region of this document.
+    if unsafe { available(dc.reference, region, notes_type) } == 0 {
+        return Some((Vec::new(), false));
+    }
+    // SAFETY: as above; a null range reads the whole region.
+    let reader = unsafe { create(dc.reference, region, notes_type, std::ptr::null()) };
+    if reader.is_null() {
+        return None;
+    }
+    // SAFETY: the reader just made, destroyed below.
+    let total = usize::try_from(unsafe { count(dc.reference, reader) }).unwrap_or(0);
+    let mut notes = Vec::with_capacity(total.min(MAX_ARA_NOTES));
+    for index in 0..total.min(MAX_ARA_NOTES) {
+        let Ok(index) = i32::try_from(index) else { break };
+        // SAFETY: an index below the count, for the live reader.
+        let event = unsafe { data(dc.reference, reader, index) }.cast::<ARAContentNote>();
+        if event.is_null() {
+            continue;
+        }
+        // SAFETY: the plug-in's note, valid until the next call; packed, so read unaligned.
+        let note = unsafe { event.read_unaligned() };
+        let Ok(pitch) = u8::try_from(note.pitchNumber) else { continue };
+        let (at, length, volume) = (note.startPosition - start, note.noteDuration, note.volume);
+        if pitch > 127 || !(at.is_finite() && length.is_finite() && length >= 0.0 && volume.is_finite()) {
+            continue;
+        }
+        notes.push(AraNote { start: at, length, pitch, volume: volume.clamp(0.0, 1.0) });
+    }
+    // SAFETY: the reader made above, not used again.
+    unsafe { destroy(dc.reference, reader) };
+    Some((notes, total > MAX_ARA_NOTES))
+}
+
+/// A digest of a region's notes, to send them only when they change.
+fn notes_digest(notes: &[AraNote], truncated: bool) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    truncated.hash(&mut hasher);
+    for note in notes {
+        (note.start.to_bits(), note.length.to_bits(), note.pitch, note.volume.to_bits()).hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 unsafe extern "C" fn modification_changed(
     host: ARAModelUpdateControllerHostRef,
     _modification: ARAAudioModificationHostRef,
     _range: *const ARAContentTimeRange,
-    _flags: ARAContentUpdateFlags,
+    flags: ARAContentUpdateFlags,
 ) {
     // An edit in the plug-in: the project has unsaved changes.
     // SAFETY: the host ref is the document's boxed `Host`, live while the plug-in calls back.
-    if let Some(host) = unsafe { host.cast::<Host>().as_ref() } {
+    let host = unsafe { host.cast::<Host>().as_ref() };
+    if let Some(host) = host {
         host.changed.store(true, Ordering::Release);
     }
+    notes_may_have_changed(host, flags);
 }
 
 unsafe extern "C" fn region_changed(
-    _host: ARAModelUpdateControllerHostRef,
+    host: ARAModelUpdateControllerHostRef,
     _region: ARAPlaybackRegionHostRef,
     _range: *const ARAContentTimeRange,
-    _flags: ARAContentUpdateFlags,
+    flags: ARAContentUpdateFlags,
 ) {
+    // SAFETY: as in `modification_changed`.
+    notes_may_have_changed(unsafe { host.cast::<Host>().as_ref() }, flags);
 }
 
 unsafe extern "C" fn document_changed(host: ARAModelUpdateControllerHostRef) {

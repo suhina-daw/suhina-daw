@@ -365,6 +365,9 @@ struct Group {
     resized_editors: Vec<(u32, (u32, u32))>,
     /// Instances whose plug-in reported another latency (the latest), not yet taken in.
     latencies: Vec<(u32, u32)>,
+    /// The notes ARA plug-ins found in their regions (the latest per instance and region), not
+    /// yet taken in (#720).
+    ara_notes: Vec<(u32, String, Vec<protocol::AraNote>)>,
     /// The process's resident memory, in bytes, the host last reported; gone once the
     /// process ends, so a dead host is never counted.
     ram: Option<u64>,
@@ -379,6 +382,7 @@ impl Group {
             closed_editors: Vec::new(),
             resized_editors: Vec::new(),
             latencies: Vec::new(),
+            ara_notes: Vec::new(),
             ram: None,
             next_ping: 0,
         }
@@ -396,6 +400,7 @@ impl Group {
         self.closed_editors.clear();
         self.resized_editors.clear();
         self.latencies.clear();
+        self.ara_notes.clear();
         self.ram = None;
     }
 
@@ -438,6 +443,12 @@ impl Group {
                 self.latencies.retain(|(i, _)| i != instance);
                 if self.latencies.len() < MAX_CLOSED_EDITORS {
                     self.latencies.push((*instance, *latency));
+                }
+            }
+            Message::AraNotes { instance, region, notes, .. } => {
+                self.ara_notes.retain(|(i, r, _)| !(i == instance && r == region));
+                if self.ara_notes.len() < protocol::MAX_ARA_OBJECTS {
+                    self.ara_notes.push((*instance, region.clone(), notes.clone()));
                 }
             }
             Message::TransportKey => {
@@ -486,6 +497,19 @@ impl Group {
     fn take_resized(&mut self, instance: u32) -> Option<(u32, u32)> {
         let at = self.resized_editors.iter().position(|(i, _)| *i == instance)?;
         Some(self.resized_editors.swap_remove(at).1)
+    }
+
+    /// The notes the host sent for `instance`'s regions since the last call (and forgets them).
+    fn take_ara_notes(&mut self, instance: u32) -> Vec<(String, Vec<protocol::AraNote>)> {
+        let mut taken = Vec::new();
+        self.ara_notes.retain_mut(|(i, region, notes)| {
+            if *i != instance {
+                return true;
+            }
+            taken.push((std::mem::take(region), std::mem::take(notes)));
+            false
+        });
+        taken
     }
 
     /// The latency the host said `instance`'s plug-in now has, if any (and forgets it).
@@ -689,6 +713,18 @@ impl Plugin {
             }
         }
         self.latency
+    }
+
+    /// The notes the ARA plug-in found in its regions since the last call, by region id
+    /// (`clip-<id>`): each the region's notes as they are now, empty when it has none (#720).
+    /// Never waits: while the process is busy with another request, nothing yet.
+    pub fn take_ara_notes(&mut self) -> Vec<(String, Vec<protocol::AraNote>)> {
+        let Some(mut group) = try_lock(&self.group) else { return Vec::new() };
+        if group.generation != self.generation {
+            return Vec::new();
+        }
+        group.drain();
+        group.take_ara_notes(self.instance)
     }
 
     /// The host process's id (0 when it has none running), for tests and diagnostics.

@@ -232,6 +232,14 @@ impl Loaded {
 
     /// A latency the plug-in reported since this was last asked, after restarting its
     /// processing where its format asks for that: the engine is to be told.
+    /// The notes an ARA plug-in found in its regions since the last call (#720).
+    fn take_ara_notes(&self) -> Vec<(String, Vec<suhina_plugins::protocol::AraNote>, bool)> {
+        match self {
+            Self::Vst3(plugin) => plugin.take_ara_notes(),
+            Self::Clap(_) | Self::Test { .. } => Vec::new(),
+        }
+    }
+
     fn latency_changed(&mut self) -> Option<u32> {
         match self {
             Self::Clap(plugin) => plugin.latency_changed(),
@@ -513,6 +521,9 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
         for (instance, loaded) in &mut instances {
             loaded.tick();
+            for (region, notes, truncated) in loaded.take_ara_notes() {
+                send(&mut writer, &Message::AraNotes { instance: *instance, region, notes, truncated })?;
+            }
             if let Some(latency) = loaded.latency_changed() {
                 send(&mut writer, &Message::LatencyChanged { instance: *instance, latency })?;
             }

@@ -955,6 +955,11 @@ impl Vst3Plugin {
         }
     }
 
+    /// The notes a bound ARA document read since the last call (#720).
+    pub(crate) fn take_ara_notes(&self) -> Vec<(String, Vec<suhina_plugins::protocol::AraNote>, bool)> {
+        self.ara.as_ref().map(|ara| ara.take_notes()).unwrap_or_default()
+    }
+
     pub(crate) fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
         let edited = self.ara.as_mut().ok_or("the plug-in is not bound to an ARA document")?.edit(document)?;
         if edited.changes_renderers() {

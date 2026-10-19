@@ -126,6 +126,37 @@ impl Placement {
 pub const MAX_ARA_OBJECTS: usize = 4096;
 /// Longest name or id in an ARA document, in bytes.
 pub const MAX_ARA_TEXT: usize = 1024;
+/// Most notes one `ara_notes` message carries for a region; more are cut, and the message says so.
+pub const MAX_ARA_NOTES: usize = 16_384;
+
+/// A note an ARA plug-in found in a clip (#720): `start` seconds after the region starts,
+/// lasting `length` seconds, at MIDI pitch `pitch`, as loud as `volume` (0 to 1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AraNote {
+    pub start: f64,
+    pub length: f64,
+    pub pitch: u8,
+    pub volume: f32,
+}
+
+impl AraNote {
+    fn to_json(self) -> Value {
+        json!([self.start, self.length, self.pitch, self.volume])
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        let list = value.as_array().filter(|l| l.len() == 4)?;
+        let number = |i: usize| list.get(i).and_then(Value::as_f64).filter(|v| v.is_finite());
+        let (start, length) = (number(0)?, number(1)?);
+        let pitch = u8::try_from(list.get(2)?.as_u64()?).ok().filter(|p| *p <= 127)?;
+        let volume = number(3)?;
+        if length < 0.0 || !(0.0..=1.0).contains(&volume) {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation, reason = "a volume from 0 to 1")]
+        Some(Self { start, length, pitch, volume: volume as f32 })
+    }
+}
 
 /// The ARA document a plug-in instance is bound to as it loads ([ADR 0028]): the audio sources
 /// it may read and the playback regions it renders and edits, on one region sequence (the
@@ -371,6 +402,15 @@ pub enum Message {
     /// An ARA plug-in asked the host's transport to play, stop or move (unasked): its own
     /// transport buttons and a click in its editor's timeline (#717).
     AraPlayback(AraPlayback),
+    /// The notes an ARA plug-in found in one of the instance's regions, all of them, oldest
+    /// first (unasked): sent when they change, and empty when it has none (any more) (#720).
+    /// `truncated` when there were more than [`MAX_ARA_NOTES`].
+    AraNotes {
+        instance: u32,
+        region: String,
+        notes: Vec<AraNote>,
+        truncated: bool,
+    },
     CloseEditor {
         instance: u32,
     },
@@ -409,6 +449,7 @@ impl Message {
             | Self::AraUpdated { instance }
             | Self::EditorResized { instance, .. }
             | Self::LatencyChanged { instance, .. }
+            | Self::AraNotes { instance, .. }
             | Self::CloseEditor { instance }
             | Self::EditorClosed { instance } => Some(*instance),
             Self::Error { instance, .. } => *instance,
@@ -474,6 +515,10 @@ impl Message {
                 json!({ "op": "ara_update", "instance": instance, "document": document.to_json() })
             }
             Self::AraUpdated { instance } => json!({ "op": "ara_updated", "instance": instance }),
+            Self::AraNotes { instance, region, notes, truncated } => json!({
+                "op": "ara_notes", "instance": instance, "region": region, "truncated": truncated,
+                "notes": notes.iter().map(|n| n.to_json()).collect::<Vec<_>>(),
+            }),
             Self::AraSelect { instance, region } => {
                 json!({ "op": "ara_select", "instance": instance, "region": region })
             }
@@ -590,6 +635,18 @@ impl Message {
                 Self::AraUpdate { instance: instance()?, document: AraDocument::from_json(value.get("document")?)? }
             }
             "ara_updated" => Self::AraUpdated { instance: instance()? },
+            "ara_notes" => Self::AraNotes {
+                instance: instance()?,
+                region: value.get("region")?.as_str().filter(|t| t.len() <= MAX_ARA_TEXT)?.to_string(),
+                notes: value
+                    .get("notes")?
+                    .as_array()
+                    .filter(|l| l.len() <= MAX_ARA_NOTES)?
+                    .iter()
+                    .map(AraNote::from_json)
+                    .collect::<Option<Vec<_>>>()?,
+                truncated: value.get("truncated")?.as_bool()?,
+            },
             "ara_select" => Self::AraSelect {
                 instance: instance()?,
                 region: match value.get("region") {
@@ -708,6 +765,13 @@ mod tests {
             Message::AraPlayback(AraPlayback::Start),
             Message::AraPlayback(AraPlayback::Stop),
             Message::AraPlayback(AraPlayback::Position(12.5)),
+            Message::AraNotes {
+                instance: 4,
+                region: "clip-12".into(),
+                notes: vec![AraNote { start: 0.5, length: 0.25, pitch: 62, volume: 0.75 }],
+                truncated: false,
+            },
+            Message::AraNotes { instance: 4, region: "clip-13".into(), notes: Vec::new(), truncated: true },
             Message::Load {
                 instance: 3,
                 plugin: "test:gain".into(),
