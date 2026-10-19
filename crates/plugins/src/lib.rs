@@ -1169,6 +1169,23 @@ pub fn host_memory() -> Vec<u64> {
         .collect()
 }
 
+/// What wakes the window when a host sends something it shows unasked (#714): Space in a
+/// plug-in's window, an ARA plug-in's transport request or notes, an editor closed by hand.
+type Waker = std::sync::Arc<dyn Fn() + Send + Sync>;
+static WAKER: Mutex<Option<Waker>> = Mutex::new(None);
+
+/// Sets what wakes the window when a host sends something it shows unasked, so it answers at
+/// once rather than on its next frame. The window gives its repaint request.
+pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
+    *lock(&WAKER) = Some(std::sync::Arc::new(waker));
+}
+
+fn wake() {
+    if let Some(waker) = lock(&WAKER).clone() {
+        waker();
+    }
+}
+
 /// Reads messages from `stream` on a thread of its own, so replies can be waited for with a
 /// timeout. Unknown lines are skipped; the channel closes when the stream ends.
 pub fn read_lines(stream: Stream) -> Receiver<Message> {
@@ -1181,10 +1198,21 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
             match (&mut reader).take(MAX_LINE as u64 + 1).read_line(&mut line) {
                 Ok(0) | Err(_) => return,
                 Ok(_) => {
-                    if let Some(message) = Message::decode(line.trim_end())
-                        && sender.send(message).is_err()
-                    {
-                        return;
+                    if let Some(message) = Message::decode(line.trim_end()) {
+                        let shown = matches!(
+                            message,
+                            Message::TransportKey
+                                | Message::AraPlayback(_)
+                                | Message::AraNotes { .. }
+                                | Message::EditorClosed { .. }
+                        );
+                        if sender.send(message).is_err() {
+                            return;
+                        }
+                        // After it is queued, so the frame it wakes takes it in.
+                        if shown {
+                            wake();
+                        }
                     }
                 }
             }

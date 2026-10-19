@@ -441,6 +441,8 @@ pub struct App {
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
     /// index.
     device_carry: Option<(TrackId, usize)>,
+    /// The hosts' reader threads wake this window ([`suhina_plugins::set_waker`]).
+    waker_set: bool,
     switch_hover: Option<(View, f64)>,
     /// Agents (ADR 0028): connections waiting for the person's answer, the answers for the app,
     /// the agents let in, and those the person disconnected, for the app.
@@ -550,6 +552,7 @@ impl App {
             next_ram: None,
             carry: None,
             device_carry: None,
+            waker_set: false,
             switch_hover: None,
             agent_asks: Vec::new(),
             agent_answers: Vec::new(),
@@ -1934,6 +1937,13 @@ impl App {
     /// should hear about in the status bar. While the project has plug-ins, the window looks
     /// again a few times a second, so one that starts or crashes is noticed without input.
     fn poll_plugins(&mut self, ctx: &egui::Context) {
+        // A host's unasked news (Space in a plug-in's window, an ARA plug-in's transport request)
+        // wakes the window at once (#714).
+        if !self.waker_set {
+            let ctx = ctx.clone();
+            suhina_plugins::set_waker(move || ctx.request_repaint());
+            self.waker_set = true;
+        }
         self.projects.set_editor_embedding(self.settings.plugin_editors == EditorPlacement::DeviceView);
         // Tracks keep the colour they show when others come and go (#690, #709).
         if let Ok(session) = self.projects.session_mut(None) {
