@@ -443,6 +443,8 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
+    /// The audio's health counters last traced: device underruns and late stretched frames.
+    audio_traced: (u64, u64),
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -561,6 +563,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
+            audio_traced: (0, 0),
             carry: None,
             device_carry: None,
             browser_part: 1.0,
@@ -984,6 +987,36 @@ impl App {
         if let Some(next) = tick.next {
             ctx.request_repaint_after(next + std::time::Duration::from_millis(50));
         }
+    }
+
+    /// With tracing on, once a second: the audio's health when it went wrong since the last
+    /// look (`docs/debugging.md` › Audio dropouts): device buffers not filled in time, stretched
+    /// clips' frames not ready (they play as silence), and the engine's load when it is high.
+    fn trace_audio(&mut self) {
+        if !suhina_plugins::trace::on() {
+            return;
+        }
+        let Some(player) = self.session().and_then(Session::player) else { return };
+        let info = player.output_info();
+        let device = info.as_ref().map_or(0, |i| i.underruns);
+        let stretched = player.stretch_underruns();
+        let cpu = player.cpu_monitor().load_milli();
+        let running = player.monitor().running();
+        let (was_device, was_stretched) = self.audio_traced;
+        if device > was_device || stretched > was_stretched || cpu >= 700 {
+            suhina_plugins::trace!(
+                "audio: device underruns {device} (+{}), stretched frames late {stretched} (+{}), engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}",
+                device.saturating_sub(was_device),
+                stretched.saturating_sub(was_stretched),
+                f64::from(cpu) / 10.0,
+                if running { "playing" } else { "stopped" },
+                info.as_ref().map_or(0, |i| i.buffer_frames),
+                info.as_ref().map_or(0, |i| i.engine_block),
+                info.as_ref().map_or(0.0, |i| i.latency_ms),
+                if info.as_ref().is_some_and(|i| i.failed) { ", the device failed" } else { "" },
+            );
+        }
+        self.audio_traced = (device, stretched);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
@@ -2124,6 +2157,7 @@ impl App {
             }
             self.ram = own.map_or(hosts, |own| Some(own.saturating_add(hosts.unwrap_or(0)))).or(hosts);
             self.next_ram = Some(ui.ctx().time() + 1.0);
+            self.trace_audio();
         }
         let ram = self.ram;
         self.frame_trace.mark("grid");

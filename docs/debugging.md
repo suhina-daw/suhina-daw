@@ -73,6 +73,8 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 | `ara musical context changed` | host | the tempo map or time signatures sent to the plug-in again |
 | `slow frame N ms: part ms, …; what was shown` | app (`kit/frame_trace.rs`) | a frame whose drawing took 25 ms or more, part by part (› UI time) |
 | `frames: N in 1.0 s …` | app | once a second while the window draws: frames, drawing time on average and the longest, the longest wait between frames |
+| `audio: device underruns N (+n), stretched frames late N (+n), engine load …` | app | once a second, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
+| `slow <work>: N ms` | app | library listings, browser rows, the sample map and its cache, a drop, adding to a track: anything that took 5 ms or more |
 
 ### UI time
 
@@ -95,6 +97,21 @@ Once a second a `frames:` line sums up: how many frames, their drawing time on a
 longest, and the longest wait between two frames. A long wait with short drawing means the time
 went elsewhere: egui laying out and painting the shapes, the GPU, or the window at rest (it
 draws only when something changes, so a wait of seconds while nothing moves is normal).
+
+### Audio dropouts
+
+A sample that sometimes does not sound, or sound that stutters, shows as `audio:` lines while it
+happens. Two counters tell the causes apart:
+
+- **device underruns:** the engine had not filled the audio device's buffer in time, so the
+  device played silence for what was missing. The engine load and the buffer size on the line say
+  whether the engine was too slow (a high load) or the buffer too small for the machine.
+- **stretched frames late:** a warped (stretched) clip's audio, made ahead on a thread of its
+  own, was not ready when the engine reached it, so that clip alone played silence. A Live Set
+  with many warped clips leans on this.
+
+Lines come only when a counter grew or the load is high, so a session that plays cleanly writes
+none.
 
 ### Adding a trace point
 

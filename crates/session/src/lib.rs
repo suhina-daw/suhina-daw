@@ -217,6 +217,12 @@ impl Player {
         self.controller.cpu_monitor()
     }
 
+    /// Frames of stretched (warped) clips that were not ready in time and played as silence,
+    /// so far.
+    pub fn stretch_underruns(&self) -> u64 {
+        self.controller.stretch_underruns()
+    }
+
     /// The level meters of the main output and every track.
     pub fn meter_monitor(&self) -> &suhina_engine::MeterMonitor {
         self.controller.meter_monitor()
