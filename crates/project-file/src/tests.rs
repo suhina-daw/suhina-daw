@@ -791,3 +791,28 @@ fn a_bad_scale_is_an_error_naming_where_it_is() {
     let read = with(&content("null")).unwrap();
     assert_eq!(read.contents.first().and_then(|c| c.scale), None);
 }
+
+#[test]
+fn builtin_stock_wrappers_are_discarded_without_losing_values_or_other_extensions() {
+    let mut device = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    device.params.push(DeviceParam::new("gain", -12.));
+    device.set_sample_file("source.wav");
+    device.extensions.0.push(Extension {
+        format: "suhina".into(),
+        key: "stock_sd".into(),
+        data: b"obsolete graph".to_vec(),
+    });
+    let encoded = device_value(&device);
+    assert!(!encoded.to_string().contains("stock_sd"));
+    let mut legacy = encoded;
+    legacy["extensions"].as_array_mut().unwrap().push(json!({
+        "format": "suhina", "key": "stock_sd", "data": BASE64.encode(b"invalid graph")
+    }));
+    let restored = read_device(&legacy, "device").unwrap();
+    device.extensions.0.retain(|e| e.key != "stock_sd");
+    assert_eq!(restored, device);
+    assert_eq!(device_value(&restored), device_value(&device));
+    // The same extension on a foreign device is still opaque importer data.
+    legacy["kind"] = json!({"type":"foreign", "format":"other", "id":"sampler"});
+    assert!(device_value(&read_device(&legacy, "device").unwrap()).to_string().contains("stock_sd"));
+}

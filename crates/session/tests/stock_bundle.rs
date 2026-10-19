@@ -6,7 +6,7 @@ use suhina_model::*;
 use suhina_session::Session;
 
 #[test]
-fn every_stock_sd_imports_and_persists_its_definition() {
+fn every_stock_sd_imports_and_persists_by_id() {
     let folder = std::env::temp_dir().join(format!(
         "suhina-stock-{}-{}",
         std::process::id(),
@@ -33,13 +33,21 @@ fn every_stock_sd_imports_and_persists_its_definition() {
         };
         let mut session = Session::new(project);
         let path = folder.join(format!("{}.sd", stock.id));
+        if stock.id == "sampler" {
+            let mut graph = stock.graph().unwrap();
+            graph.parameters.iter_mut().find(|p| p.id == "gain").unwrap().default = -12.;
+            std::fs::write(&path, graph.to_sd().unwrap()).unwrap();
+        }
         session.execute("device.addSd", &json!({"track":1,"path":path})).unwrap();
         let device = &session.project().channels[0].devices[0];
         assert_eq!(device.kind, DeviceKind::Builtin(stock.id.into()));
-        assert!(device.sd_definition().is_some());
+        assert!(device.state.is_none());
+        assert!(device.extensions.0.is_empty());
+        assert_eq!(suhina_device_bundle::source(device), Some(stock.sd.as_bytes()));
         let restored = suhina_project_file::from_json(&suhina_project_file::to_json(session.project())).unwrap();
         assert_eq!(&restored, session.project());
         if stock.id == "sampler" {
+            assert!(device.params.contains(&DeviceParam::new("gain", -12.)));
             let mut project = session.project().clone();
             project.channels[0].devices[0].set_sample_file("source.wav");
             session = Session::new(project);
@@ -49,7 +57,7 @@ fn every_stock_sd_imports_and_persists_its_definition() {
                 .push(suhina_device_sdk::DeviceMigration { from_version: newer.device_version, parameter_ids: vec![] });
             newer.device_version += 1;
             std::fs::write(&path, newer.to_sd().unwrap()).unwrap();
-            session.execute("device.updateSd", &json!({"track":1,"device":0,"path":path})).unwrap();
+            assert!(session.execute("device.updateSd", &json!({"track":1,"device":0,"path":path})).is_err());
             assert_eq!(session.project().channels[0].devices[0].sample_file(), Some("source.wav"));
         }
         std::fs::remove_file(path).unwrap();

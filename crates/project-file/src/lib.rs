@@ -395,6 +395,14 @@ fn follow_value(f: &FollowAction) -> Value {
     })
 }
 
+// Drop obsolete stock wrappers while retaining source metadata and foreign extensions.
+fn device_extensions(kind: &DeviceKind, mut extensions: Extensions) -> Extensions {
+    if matches!(kind, DeviceKind::Builtin(_)) {
+        extensions.0.retain(|e| !(e.format == "suhina" && e.key == "stock_sd"));
+    }
+    extensions
+}
+
 fn device_value(d: &Device) -> Value {
     let kind = match &d.kind {
         DeviceKind::Builtin(id) => json!({ "type": "builtin", "id": id }),
@@ -416,7 +424,7 @@ fn device_value(d: &Device) -> Value {
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
         }
-        with_extensions(map, &d.extensions);
+        with_extensions(map, &device_extensions(&d.kind, d.extensions.clone()));
     }
     out
 }
@@ -1076,6 +1084,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params.push(DeviceParam { id: required_text(p, "id", &at)?, value: float(p, "value", &at)? });
     }
     let automation = read_lanes(d, at)?;
+    let extensions = device_extensions(&kind, extensions(d, at)?);
     Ok(Device {
         name: text(d, "name", at)?,
         kind,
@@ -1083,7 +1092,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         state: bytes(d, "state", at)?,
         params,
         automation,
-        extensions: extensions(d, at)?,
+        extensions,
     })
 }
 

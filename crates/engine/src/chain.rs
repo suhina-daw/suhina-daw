@@ -255,17 +255,6 @@ impl Chain {
             }
             let info = device.info();
             let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
-            if let Some(graph) = stored
-                .sd_definition()
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                .and_then(|text| suhina_device_sdk::DeviceGraph::from_sd(text).ok())
-            {
-                for p in &graph.parameters {
-                    if let Some(value) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
-                        *value = p.default;
-                    }
-                }
-            }
             for p in &stored.params {
                 if let Some(slot) = info.param_index(&p.id).and_then(|i| values.get_mut(i)) {
                     *slot = p.value;

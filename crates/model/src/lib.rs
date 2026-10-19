@@ -281,14 +281,6 @@ pub struct Device {
 pub const MAX_SAMPLE_SLICES: usize = 4096;
 
 impl Device {
-    /// Embedded stock .sd metadata is separate from native DSP/source state.
-    pub fn sd_definition(&self) -> Option<&[u8]> {
-        self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "stock_sd").map(|e| e.data.as_slice())
-    }
-    pub fn set_sd_definition(&mut self, definition: Vec<u8>) {
-        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "stock_sd"));
-        self.extensions.0.push(Extension { format: "suhina".into(), key: "stock_sd".into(), data: definition });
-    }
     /// Manual source boundaries; None reads legacy fixed slice parameters.
     pub fn sample_slices(&self) -> Option<Vec<f64>> {
         let data = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_slices")?.data;

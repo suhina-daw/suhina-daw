@@ -435,7 +435,7 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)).
 
 Stock instrument and effect entries come from the embedded build-time `.sd` bundle.
 Availability does not depend on resource files beside the executable. Imported native
-wrappers preserve their SDK definitions in the project; see
+wrappers save the built-in id and parameter values; panels come from the running build; see
 [stock bundles](stock-device-bundle.md).
 
 A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)

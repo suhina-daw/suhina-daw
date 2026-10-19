@@ -12,15 +12,11 @@ pub struct StockDevice {
 }
 include!(concat!(env!("OUT_DIR"), "/bundle.rs"));
 
-/// Embedded project definitions take precedence over the shipped revision.
+/// Stock panels come from the running build, resolved by device id.
 pub fn source(device: &suhina_model::Device) -> Option<&[u8]> {
     let suhina_model::DeviceKind::Builtin(id) = &device.kind else { return None };
-    device.sd_definition().or_else(|| find(id).map(|d| d.sd.as_bytes()))
+    find(id).map(|d| d.sd.as_bytes())
 }
-pub fn embed(device: &mut suhina_model::Device, definition: Vec<u8>) {
-    device.set_sd_definition(definition);
-}
-
 pub fn find(id: &str) -> Option<&'static StockDevice> {
     DEVICES.iter().find(|d| d.id == id)
 }
@@ -45,6 +41,16 @@ pub fn write_to(folder: &std::path::Path) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn obsolete_project_wrapper_cannot_override_shipped_panel() {
+        let mut device = suhina_model::Device::new("Sampler", suhina_model::DeviceKind::Builtin("sampler".into()));
+        device.extensions.0.push(suhina_model::Extension {
+            format: "suhina".into(),
+            key: "stock_sd".into(),
+            data: b"invalid wrapper".to_vec(),
+        });
+        assert_eq!(source(&device), Some(find("sampler").unwrap().sd.as_bytes()));
+    }
     #[test]
     fn legacy_sampler_accepts_only_known_ordered_parameter_prefixes() {
         let mut graph = find("sampler").unwrap().graph().unwrap();

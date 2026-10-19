@@ -37,10 +37,10 @@ inside its `OUT_DIR/devices/`, without watching its own output. Startup and brow
 definitions, so moving the executable without that directory does not remove its
 stock instruments or effects. No user files are written at startup.
 
-Importing a native wrapper resolves its trusted implementation and preserves its
-definition in the project's device extensions, separate from sampler source state.
-Its controls use the wrapper's declarations and panel. Existing native device ids
-and project state remain compatible.
+Importing a native wrapper saves the built-in id and parameter values without embedding
+the definition. Controls use the shipped definition resolved by id. Built-ins do not use
+`device.updateSd`; panel updates arrive with Suhina. Obsolete `suhina/stock_sd`
+extensions are ignored on reading and omitted on saving; source metadata is retained.
 
 Set `SUHINA_DEVICES_DIR` when the build should export definitions to a custom directory.
 The explicit export override is optional; ordinary builds write only in `OUT_DIR`.

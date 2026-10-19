@@ -348,7 +348,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     };
     let info = suhina_device_registry::info(id)
         .ok_or_else(|| format!("no built-in effect or instrument {id:?}; devices.list lists them"))?;
-    let definition = suhina_device_bundle::find(id).ok_or("the stock .sd definition is missing")?;
+    suhina_device_bundle::find(id).ok_or("the stock .sd definition is missing")?;
     if info.role == Role::Instrument {
         let track = track_id(&session.project, params)?;
         if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
@@ -393,7 +393,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     if has_instrument && !instrument && position <= midi_prefix {
         return Err("position 0 is the track's instrument; effects go after it".into());
     }
-    let mut device = Device {
+    let device = Device {
         name: info.name.to_string(),
         kind: DeviceKind::Builtin(info.id.to_string()),
         enabled: true,
@@ -404,7 +404,6 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         extensions: Extensions::default(),
         automation: Vec::new(),
     };
-    suhina_device_bundle::embed(&mut device, definition.sd.as_bytes().to_vec());
     channel.devices.insert(position, device);
     Ok(json!({ "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }))
 }
@@ -433,7 +432,6 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
             })
             .map(|p| DeviceParam::new(&p.id, p.default))
             .collect();
-        suhina_device_bundle::embed(device, graph.to_sd().map_err(|e| e.to_string())?.into_bytes());
         return Ok(json!({"device":index,"id":graph.id,"name":graph.name,"kind":"sd","implementation":id}));
     }
     if graph.role != suhina_device_sdk::DeviceRole::Effect {
@@ -516,23 +514,13 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
     let channel = channel_param(session, params)?;
     let index = device_index(channel.devices.len(), params)?;
     let device = channel.devices.get_mut(index).ok_or("the device is missing")?;
-    let native = matches!(device.kind, DeviceKind::Builtin(_)) && device.sd_definition().is_some();
-    if device.kind != DeviceKind::Sd && !native {
+    if device.kind != DeviceKind::Sd {
         return Err("device.updateSd only updates .sd devices".into());
     }
-    let bytes =
-        if native { device.sd_definition() } else { device.state.as_deref() }.ok_or("the .sd graph is missing")?;
+    let bytes = device.state.as_deref().ok_or("the .sd graph is missing")?;
     let text = std::str::from_utf8(bytes).map_err(|_| "the embedded .sd graph is invalid UTF-8")?;
     let current = suhina_device_sdk::DeviceGraph::from_sd(text).map_err(|e| e.to_string())?;
     let newer = suhina_device_sdk::DeviceGraph::read_file(std::path::Path::new(path)).map_err(|e| e.to_string())?;
-    if native {
-        let _prepared = newer.prepare_native_at(48000., &suhina_device_registry::create).map_err(|e| e.to_string())?;
-        if newer.native_device_id().map_err(|e| e.to_string())?
-            != current.native_device_id().map_err(|e| e.to_string())?
-        {
-            return Err("the native implementation must stay the same".into());
-        }
-    }
     if current.id != newer.id || current.role != newer.role {
         return Err("the .sd file must have the same device id and role".into());
     }
@@ -544,11 +532,7 @@ pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, 
     let state = newer.to_sd().map_err(|e| e.to_string())?.into_bytes();
     let from_version = current.device_version;
     device.name = newer.name.clone();
-    if native {
-        device.set_sd_definition(state);
-    } else {
-        device.state = Some(state);
-    }
+    device.state = Some(state);
     device.params = migrated.into_iter().map(|(id, value)| DeviceParam::new(id, value)).collect();
     Ok(
         json!({ "device": index, "id": newer.id, "name": newer.name, "from_version": from_version, "to_version": newer.device_version }),

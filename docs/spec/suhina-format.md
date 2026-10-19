@@ -38,6 +38,9 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 - Binary data (`state`, extension `data`) is standard base64.
 - `extensions` (on the project, a track, channel, device, content or clip) is a list of
   `{ "format", "key", "data" }`: what an importer kept from its format; it is left out when empty.
+- Built-in panels come from the running build, resolved by device id. Obsolete
+  `suhina/stock_sd` device extensions are ignored on reading and omitted on saving;
+  source metadata and other extensions are preserved.
 - The project must hold together as an imported one must: ids unique, every reference resolves,
   fades fit their clip. A file that does not is refused, naming the first problems.
 - A reader refuses a file over 512 MiB.
