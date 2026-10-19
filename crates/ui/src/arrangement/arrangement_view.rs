@@ -1403,6 +1403,13 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     };
     let lanes_painter = painter.with_clip_rect(lanes_area);
     let mut track_number = 0;
+    // The track the editor pulled to the top edits keeps the number it has in the whole view.
+    let focus_number = focus.and_then(|f| {
+        drawn_lanes(&timeline.lanes, &state.folds)
+            .iter()
+            .position(|d| timeline.lanes.get(d.lane).is_some_and(|l| l.track == f))
+            .map(|i| i + 1)
+    });
     let mut ghost = None;
     let mut rows_seen: Vec<(TrackId, Rect)> = Vec::new();
     let mut clip_rects: Vec<((TrackId, ClipId), Rect)> = Vec::new();
@@ -1411,7 +1418,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // A folded group's row draws the clips of the track it stands in for, and that track's
         // colour with them, while its header stays the group's.
         let Some(clips_lane) = timeline.lanes.get(shown.clips) else { continue };
-        track_number += 1;
+        track_number = focus_number.unwrap_or(track_number + 1);
         let Some(row) = row_of(lane.track) else { continue };
         let lane_rect = Rect::from_x_y_ranges(area.x_range(), row.time.y_range());
         let below = state.automation.height(lane.track, &timeline.automation);
@@ -1460,7 +1467,11 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         });
         body.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Lane {}", lane.name)));
         if body.clicked() {
-            state.clear_selected_clip();
+            // With an editor pulled to the top the clip stays its: the view would otherwise go
+            // back to every track under the pointer, mid-click.
+            if focus.is_none() {
+                state.clear_selected_clip();
+            }
             state.time_selection = None;
             // The click also moves the play start marker there, on the clip grid (Alt: free), as
             // a click on the ruler does; while playing, playback jumps there.

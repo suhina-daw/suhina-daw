@@ -292,11 +292,12 @@ What stays above it is a setting, Settings › Clip editor › Piano roll › **
 - **Edited track** (default): the Arrangement view keeps its ruler and the lane of the track whose
   clip is edited, lit (a lighter lane, an accent edge, its header shown as selected); no other
   track, no return tracks and no main track. The view's scroll position is kept for when it comes
-  back.
+  back. Its header keeps the track's number in the whole view. A click on an empty spot of its
+  lane moves the play position and keeps the clip selected, so the editor stays up.
 - **Whole window**: the piano roll fills the whole area under the control bar.
 
-It stays pulled up while MIDI clips are edited; selecting something else (an audio clip, a track,
-nothing), hiding the detail area (Shift+Tab) or the Session view shows the view as before. With the
+It stays pulled up while MIDI clips (or, with an ARA plug-in, audio clips) are edited; selecting
+something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Session view shows the view as before. With the
 device chain as a column beside the view (Settings › Detail area) there is nothing to
 pull up.
 
