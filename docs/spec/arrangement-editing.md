@@ -158,7 +158,9 @@ never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Le
   than the content's start.
 - A clip that does not loop ends at most where its audio ends; a MIDI clip can be made as long as
   wanted, its content growing with it.
-- A looping clip goes on as far as its edge is dragged, its loop repeating.
+- A looping clip goes on as far as its edge is dragged, its loop repeating. Its repeats are
+  drawn as the clip itself, in its colour; where each pass starts it has a notch in its top and
+  bottom edges and a dashed line between them (#700).
 - The handle at a clip's lower right corner (the loop handle) turns the loop on over what
   the clip plays now and makes the clip longer (`clip.trim` with `loop: true`).
 

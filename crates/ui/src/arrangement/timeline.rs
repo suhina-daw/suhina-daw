@@ -85,6 +85,9 @@ pub struct ClipBox {
     /// For an audio clip, how to draw its waveform.
     pub audio_view: Option<AudioView>,
     pub notes: Vec<NoteMark>,
+    /// Where a looping clip starts another pass through its loop, in beats from its start: the
+    /// clip marks each with notches and a dashed line (#700).
+    pub seams: Vec<f64>,
     /// The sub-row the clip is drawn in, and how many the lane has: more than one where clips
     /// overlap (stacked), so each stays visible.
     pub row: usize,
@@ -325,6 +328,7 @@ impl Timeline {
                                     .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
                                 audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
                                 notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
+                                seams: loop_seams(clip),
                                 row: 0,
                                 rows: 1,
                             }
@@ -694,6 +698,23 @@ fn sub_rows(mut clips: Vec<ClipBox>, track: TrackId, before: &StackRows, after: 
 
 /// The notes a clip plays, from its start: the content from `offset`, then its loop again and
 /// again until the clip ends.
+/// Where `clip` starts another pass through its loop, in beats from its start, as the engine
+/// plays it: the first pass runs from its offset (or the loop's start, for an offset past the
+/// loop) to the loop's end, each after it through the whole loop. None when it does not loop.
+pub fn loop_seams(clip: &Clip) -> Vec<f64> {
+    let Some(range) = clip.loop_range.filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start) else {
+        return Vec::new();
+    };
+    let pass = range.end - range.start;
+    let mut at = if clip.offset >= range.end { pass } else { range.end - clip.offset };
+    let mut seams = Vec::new();
+    while at < clip.length - 1e-9 && seams.len() < MAX_MARKS {
+        seams.push(at);
+        at += pass;
+    }
+    seams
+}
+
 pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     let notes: Vec<_> = content
         .lanes
@@ -904,6 +925,24 @@ mod tests {
         assert_eq!(marks.len(), 64);
         assert_eq!(marks[4].start, 4.0);
         assert!(marks.iter().all(|m| m.start < clip.length));
+    }
+
+    #[test]
+    fn a_looping_clip_marks_where_each_pass_starts() {
+        let project = demo_project();
+        let mut clip = project.arrangement.lanes[0].clips[0].clone();
+        clip.loop_range = Some(suhina_engine::model::LoopRange { start: 1.0, end: 3.0 });
+        clip.length = 7.0;
+        // From the offset to the loop's end, then every two beats, none at the clip's end.
+        clip.offset = 0.0;
+        assert_eq!(loop_seams(&clip), [3.0, 5.0]);
+        clip.length = 5.0;
+        assert_eq!(loop_seams(&clip), [3.0]);
+        // An offset past the loop starts at the loop's start, a whole pass first.
+        clip.offset = 4.0;
+        assert_eq!(loop_seams(&clip), [2.0, 4.0]);
+        clip.loop_range = None;
+        assert!(loop_seams(&clip).is_empty());
     }
 
     #[test]

@@ -2895,11 +2895,17 @@ fn paint_clip(
         let to = rect.right().min(view_rect(painter).right()).ceil();
         let per_point = 1.0 / f64::from(beat_width);
         let count = (to - from).max(0.0) as usize;
+        // The file stays where it plays in the song while an edge is dragged: `start` is the
+        // clip's start, which the left edge (`rect`) has moved away from, so a trim only takes
+        // away what it covers. The fades go by the edges.
+        let anchor = x_of(start);
+        let length = f64::from(rect.width() / beat_width);
         let columns: Vec<waveform::Column> = (0..count)
             .map(|i| {
                 let x = from + i as f32;
-                let elapsed = f64::from(x - rect.left()) * per_point;
-                let gain = gain * fade_gain(elapsed + per_point / 2.0, clip.length, &shown);
+                let elapsed = f64::from(x - anchor) * per_point;
+                let from_edge = f64::from(x - rect.left()) * per_point;
+                let gain = gain * fade_gain(from_edge + per_point / 2.0, length, &shown);
                 let (a, b) = (view.seconds(elapsed), view.seconds(elapsed + per_point));
                 waveform::Column { x: x + 0.5, from: a.min(b), to: a.max(b), gain }
             })
@@ -2931,6 +2937,40 @@ fn paint_clip(
         && marks.height() >= 4.0
     {
         paint_ara_notes(painter, rect, marks, notes, tempo, start, clip.length, x_of, beat_width, ink);
+    }
+    // Where a looping clip starts another pass: a notch in its top and bottom edges and a
+    // dashed line between them, the repeats drawn as the clip itself (#700).
+    if !clip.seams.is_empty() {
+        let mark = motion::mix(body, ink, 0.55);
+        let top = bar.map_or(rect.top(), |bar| bar.bottom());
+        let (first, last) = (view.left() - 4.0, view.right() + 4.0);
+        for seam in &clip.seams {
+            let x = x_of(start + seam).round() + 0.5;
+            if x < first || x > last || x <= rect.left() || x >= rect.right() {
+                continue;
+            }
+            painter.add(egui::Shape::dashed_line(
+                &[Pos2::new(x, top), Pos2::new(x, rect.bottom())],
+                theme::hairline(mark),
+                3.0,
+                3.0,
+            ));
+            let notch = 4.0;
+            painter.add(egui::Shape::convex_polygon(
+                vec![Pos2::new(x - notch, rect.top()), Pos2::new(x + notch, rect.top()), Pos2::new(x, rect.top() + notch)],
+                mark,
+                egui::Stroke::NONE,
+            ));
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    Pos2::new(x - notch, rect.bottom()),
+                    Pos2::new(x, rect.bottom() - notch),
+                    Pos2::new(x + notch, rect.bottom()),
+                ],
+                mark,
+                egui::Stroke::NONE,
+            ));
+        }
     }
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
