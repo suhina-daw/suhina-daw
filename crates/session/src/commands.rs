@@ -1703,6 +1703,13 @@ static COMMANDS: &[CommandSpec] = &[
         run: device_groups::duplicate,
     },
     CommandSpec {
+        id: "device.duplicateMany",
+        label: "Copy several devices of a track (groups with everything in them) right after the last of them, in their order, as one undo step; the device clipboard stays as it was",
+        params: &[TRACK, DEVICES],
+        kind: CommandKind::Edit,
+        run: devices::duplicate_many,
+    },
+    CommandSpec {
         id: "branch.add",
         label: "Add an empty branch to a device group",
         params: &[

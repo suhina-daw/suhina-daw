@@ -852,3 +852,25 @@ fn devices_are_copied_pasted_and_removed_together_in_one_step_each() {
     assert_eq!(names(&session), before, "one undo step");
     assert!(run(&mut session, "device.removeMany", json!({ "track": "Keys", "devices": [7] })).is_err());
 }
+
+#[test]
+fn picked_devices_are_duplicated_after_the_last_in_one_step_and_the_clipboard_stays() {
+    let mut session = Session::new(project());
+    for id in ["utility", "overdrive", "delay"] {
+        run(&mut session, "device.add", json!({ "track": "Keys", "id": id })).unwrap();
+    }
+    let names = |s: &Session| {
+        let p = s.project();
+        let channel = p.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).unwrap();
+        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+    };
+    let before = names(&session);
+    run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [2] })).unwrap();
+    let made = run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [1, 0] })).unwrap();
+    assert_eq!(made["devices"], json!([2, 3]));
+    let after = names(&session);
+    assert_eq!(after, [&before[0], &before[1], &before[0], &before[1], &before[2]].map(String::clone));
+    assert_eq!(session.copied_devices(), 1, "the clipboard is as it was");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), before, "one undo step");
+}

@@ -1836,6 +1836,20 @@ impl App {
                         (None, None) => self.view.selected = Some(track),
                     }
                 }
+                // Duplicated devices: the copies are picked, so the next Ctrl+D copies them on.
+                if action.id == "device.duplicateMany"
+                    && let Some(track) = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok())
+                    && let Some(made) = result["devices"].as_array()
+                {
+                    let copies: Vec<(TrackId, usize)> = made
+                        .iter()
+                        .filter_map(|d| Some((TrackId(track), usize::try_from(d.as_u64()?).ok()?)))
+                        .collect();
+                    if let Some(last) = copies.last().copied() {
+                        self.selected_device = Some(last);
+                        self.device_picks = copies;
+                    }
+                }
                 // Duplicated clips: the copies are selected, so the next Ctrl+D copies them on.
                 if action.id == "clip.duplicate"
                     && let Some(made) = result["clips"].as_array()
@@ -2295,6 +2309,7 @@ impl App {
             self.settings_dialog(ui, window);
         }
         self.update_title(ui.ctx());
+        let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
         for action in &actions {
             // Closing a project with unsaved changes asks first (Save, Don't save, Cancel).
             let closing = (action.id == "projects.close")
@@ -4119,6 +4134,13 @@ impl App {
                 let after = picks.iter().map(|(_, i)| *i).max().unwrap_or(0) + 1;
                 actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
             }
+            // Ctrl+D copies the picked devices right after the last of them (#685).
+            "selection.duplicate" if self.device_focus && self.selected_device.is_some() => {
+                let picks = self.device_picks();
+                let Some((track, _)) = picks.first().copied() else { return };
+                let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                actions.push(Action::new("device.duplicateMany", json!({ "track": track.0, "devices": devices })));
+            }
             "selection.copy" | "selection.paste" if self.shown == View::Session => {
                 let Some((track, scene)) = self.view.selected_slot else {
                     self.status = Status::Hint("Click a clip slot first".into());
@@ -4462,6 +4484,24 @@ impl App {
             }
             command => actions.push(Action::new_owned(command, json!({}))),
         }
+    }
+
+    /// The X on one of several picked devices removes every picked device, as Delete does
+    /// (#686): its `device.remove` becomes `device.removeMany` of the picks, and the picks go.
+    fn remove_every_pick(&mut self, action: Action) -> Action {
+        if action.id != "device.remove" || self.device_picks.len() < 2 {
+            return action;
+        }
+        let track = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
+        let index = action.params["device"].as_u64().and_then(|i| usize::try_from(i).ok());
+        let (Some(track), Some(index)) = (track, index) else { return action };
+        if !self.device_picks.contains(&(track, index)) || self.device_picks.iter().any(|(t, _)| *t != track) {
+            return action;
+        }
+        let devices: Vec<usize> = self.device_picks.iter().map(|(_, i)| *i).collect();
+        self.selected_device = None;
+        self.device_picks.clear();
+        Action::new("device.removeMany", json!({ "track": track.0, "devices": devices }))
     }
 
     /// Whether a clip of this kind (audio, or notes) leaves the clips it lands on as they are:
