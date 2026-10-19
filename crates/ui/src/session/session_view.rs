@@ -636,6 +636,11 @@ fn column_header(
         text.min.x = (text.min.x + FOLD_ARROW).min(text.max.x);
     }
     widgets::text_in(painter, text, Align2::LEFT_CENTER, &column.name, theme::ui_font(theme::TEXT), color);
+    // The name's place, for a rename in place (Ctrl+R, #696).
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(column.track.0))), (text, pass));
+    });
 }
 
 #[allow(clippy::too_many_arguments)]

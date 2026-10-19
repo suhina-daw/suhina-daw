@@ -4759,3 +4759,48 @@ fn a_drag_on_the_ruler_selects_time_and_delete_removes_only_what_is_inside() {
     let total = |c: &[(f64, f64)]| c.iter().map(|(_, l)| l).sum::<f64>();
     assert!(total(&after) < total(&before), "the inside went");
 }
+
+#[test]
+fn ctrl_r_after_a_header_click_renames_the_track_in_its_header() {
+    let mut harness = arrangement_app();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
+    harness.run();
+    assert!(harness.query_by_label("Track name").is_some(), "Ctrl+R edits the track's name");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Track name").type_text("Sub");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let names: Vec<String> =
+        harness.state().session().unwrap().project().tracks.iter().map(|t| t.name.clone()).collect();
+    assert!(names.contains(&"Sub".to_string()) && !names.contains(&"Bass".to_string()), "{names:?}");
+}
+
+#[test]
+fn ctrl_r_with_several_clips_selected_renames_them_all() {
+    let mut harness = arrangement_app();
+    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    let count = harness.state().arrangement().selected_clips().len();
+    assert!(count > 1, "Ctrl+A selects several");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Clip name").type_text("Same");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let project = harness.state().session().unwrap().project().clone();
+    let named = project
+        .arrangement
+        .lanes
+        .iter()
+        .flat_map(|l| &l.clips)
+        .filter(|c| project.contents.iter().any(|x| x.id == c.content && x.name == "Same"))
+        .count();
+    assert_eq!(named, count);
+}

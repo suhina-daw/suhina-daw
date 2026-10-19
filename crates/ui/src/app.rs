@@ -1426,14 +1426,17 @@ impl App {
             // The field sits on the clip's name, where the views drew it last frame: Enter or a
             // click elsewhere renames, Escape leaves the name as it was.
             let track = target.get("track").and_then(serde_json::Value::as_u64).unwrap_or(0);
-            // An arrangement clip by its id, a slot's clip by its track and scene.
-            let key = match target.get("clip").and_then(serde_json::Value::as_u64) {
-                Some(clip) => egui::Id::new((NAME_RECT_CLIP, clip)),
-                None => {
+            // A track by its id, an arrangement clip by its id, a slot's clip by its track and scene.
+            let renamed_track = target.get("rename_track").and_then(serde_json::Value::as_u64);
+            let key = match (renamed_track, target.get("clip").and_then(serde_json::Value::as_u64)) {
+                (Some(track), _) => egui::Id::new((NAME_RECT_TRACK, track)),
+                (None, Some(clip)) => egui::Id::new((NAME_RECT_CLIP, clip)),
+                (None, None) => {
                     let scene = target.get("scene").and_then(serde_json::Value::as_u64).unwrap_or(0);
                     egui::Id::new((NAME_RECT_SLOT, track, scene))
                 }
             };
+            let what = if renamed_track.is_some() { "Track name" } else { "Clip name" };
             let now = ui.ctx().cumulative_pass_nr();
             let place = ui
                 .ctx()
@@ -1453,9 +1456,7 @@ impl App {
                                     .font(theme::ui_font(theme::TEXT_SMALL))
                                     .desired_width(rect.width().max(120.0)),
                             );
-                            field.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Clip name")
-                            });
+                            field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, what));
                             if !focused {
                                 field.request_focus();
                             }
@@ -1463,9 +1464,23 @@ impl App {
                             if escape {
                                 keep = false;
                             } else if field.lost_focus() && focused {
-                                let mut params = target.clone();
-                                params["name"] = json!(draft.trim());
-                                apply = Some(Action::new("clip.rename", params));
+                                let name = draft.trim();
+                                apply = match (renamed_track, target.get("clips")) {
+                                    // A track keeps a name: an empty one leaves it as it was.
+                                    (Some(_), _) if name.is_empty() => None,
+                                    (Some(track), _) => {
+                                        Some(Action::new("track.rename", json!({ "track": track, "name": name })))
+                                    }
+                                    (None, Some(clips)) => Some(Action::new(
+                                        "clip.renameMany",
+                                        json!({ "clips": clips.clone(), "name": name }),
+                                    )),
+                                    (None, None) => {
+                                        let mut params = target.clone();
+                                        params["name"] = json!(name);
+                                        Some(Action::new("clip.rename", params))
+                                    }
+                                };
                                 keep = false;
                             }
                         });
@@ -4336,6 +4351,37 @@ impl App {
                 actions.push(Action::new(id, params));
             }
             "selection.rename" => {
+                // A track header clicked last: the track's name, in its header (#696).
+                let focused_track = match self.shown {
+                    View::Arrangement if self.arrangement.track_focus => {
+                        self.arrangement.selected_tracks.first().copied()
+                    }
+                    View::Session if self.view.track_focus => self.view.selected,
+                    _ => None,
+                };
+                if let Some(track) = focused_track {
+                    let name = self
+                        .session()
+                        .and_then(|s| s.project().tracks.iter().find(|t| t.id == track))
+                        .map(|t| t.name.clone())
+                        .unwrap_or_default();
+                    self.rename = Some((json!({ "rename_track": track.0 }), name, false));
+                    return;
+                }
+                // Several clips selected, with the setting on: every one of them (#693).
+                let selected = self.arrangement.selected_clips().to_vec();
+                if self.shown == View::Arrangement && selected.len() > 1 && self.settings.view.rename_selected {
+                    let (_, id) = self.arrangement.selected_clip().unwrap_or(selected[0]);
+                    let name = self
+                        .timeline
+                        .as_ref()
+                        .and_then(|(_, _, t)| t.lanes.iter().flat_map(|l| &l.clips).find(|c| c.id == id))
+                        .map(|c| c.name.clone())
+                        .unwrap_or_default();
+                    let clips: Vec<serde_json::Value> = selected.iter().map(|(_, c)| json!({ "clip": c.0 })).collect();
+                    self.rename = Some((json!({ "clip": id.0, "clips": clips }), name, false));
+                    return;
+                }
                 // The selected clip: the Arrangement's, or the Session view's slot.
                 let target = match self.shown {
                     View::Arrangement => self.arrangement.selected_clip().map(|(track, id)| {
@@ -6068,6 +6114,8 @@ fn ram_text(bytes: u64) -> String {
 pub(crate) const NAME_RECT_CLIP: &str = "clip-name-rect";
 /// Where a clip slot's name is drawn, by (track, scene from 1).
 pub(crate) const NAME_RECT_SLOT: &str = "slot-name-rect";
+/// Where a track's name is drawn in its header, by track id, in the view shown (#696).
+pub(crate) const NAME_RECT_TRACK: &str = "track-name-rect";
 
 /// One menu of the menu bar. While another of the bar's menus is open, the pointer over this
 /// one's title opens it, as system menu bars do.

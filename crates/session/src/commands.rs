@@ -608,6 +608,13 @@ static COMMANDS: &[CommandSpec] = &[
         run: rename_clip,
     },
     CommandSpec {
+        id: "clip.renameMany",
+        label: "Give several arrangement clips the same name, as one undo step; clips that play the same content share the name",
+        params: &[CLIPS, param("name", ParamType::Text, "the new name (empty clears it)")],
+        kind: CommandKind::Edit,
+        run: rename_clips,
+    },
+    CommandSpec {
         id: "clip.setGain",
         label: "Set an audio clip's gain (every clip that plays the same audio content follows)",
         params: &[
@@ -3461,6 +3468,30 @@ fn rename_clip(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
     content.name.clone_from(&name);
     Ok(json!({ "name": name }))
+}
+
+/// `clip.renameMany {clips, name}` (#693).
+fn rename_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let name = match params.get("name") {
+        Some(Value::String(name)) => name.trim().to_string(),
+        _ => return Err("name must be a text (empty clears it)".into()),
+    };
+    let p = &mut session.project;
+    let mut contents = Vec::new();
+    for (track, index) in clip_list(p, params)? {
+        let clip = p
+            .arrangement
+            .lanes
+            .iter()
+            .find(|l| l.track == Some(track))
+            .and_then(|l| l.clips.get(index))
+            .ok_or("the clip is missing")?;
+        contents.push(clip.content);
+    }
+    for content in p.contents.iter_mut().filter(|c| contents.contains(&c.id)) {
+        content.name.clone_from(&name);
+    }
+    Ok(json!({ "name": name, "clips": contents.len() }))
 }
 
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read

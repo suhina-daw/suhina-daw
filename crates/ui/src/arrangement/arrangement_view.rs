@@ -3216,6 +3216,11 @@ fn track_header(
     );
     let name_color = if lane.mute { theme::text_hint() } else { theme::text_primary() };
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(theme::TEXT), name_color);
+    // The name's place, for a rename in place (Ctrl+R, #696).
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), (name.intersect(clip), pass));
+    });
     if solo.intersects(clip)
         && let Some(action) =
             widgets::solo_button(ui, painter, solo, id.with("solo"), &controlled, &lane.name, lane.solo)

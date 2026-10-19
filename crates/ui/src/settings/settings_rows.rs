@@ -303,6 +303,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Clips",
+        "Ctrl+R renames every selected clip",
+        "With several clips selected, the name typed after Ctrl+R goes to all of them, as one undo step; off, only the clip clicked last is renamed",
+        &["rename_selected_clips"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.rename_selected),
+    ),
+    row(
+        Page::Arrangement,
         "Tracks",
         "Track headers",
         "Which side of the timeline they are on",
