@@ -26,10 +26,12 @@
 
 mod doorbell;
 mod events;
+mod keyboard;
 mod region;
 mod source;
 
 pub use events::{Event, EventKind, MAX_EVENTS};
+pub use keyboard::take_keyboard_back;
 pub use source::{AudioSource, MAX_SOURCE_FRAMES};
 
 use std::fmt;

@@ -333,6 +333,14 @@ pub(crate) static ROWS: &[Entry] = &[
         &["track_headers"],
         |cx, r| cx.choose(r, &[("Left", Side::Left), ("Right", Side::Right)], |s| &mut s.track_headers),
     ),
+    row(
+        Page::Arrangement,
+        "Tracks",
+        "Return tracks",
+        "Whether the Arrangement shows the return tracks' rows along the bottom; its Hide returns button by the ruler switches it too",
+        &["arrangement_returns"],
+        |cx, r| cx.choose(r, &[("Shown", false), ("Hidden", true)], |s| &mut s.view.returns_hidden),
+    ),
     // Session view and mixer.
     row(
         Page::Session,

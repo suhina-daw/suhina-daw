@@ -43,7 +43,7 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
-pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome};
+pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome, take_keyboard_back};
 use suhina_ipc::{IpcError, Link};
 
 use protocol::{AraDocument, MAX_LINE, Message, VERSION};

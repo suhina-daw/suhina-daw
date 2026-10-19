@@ -59,6 +59,8 @@ pub struct ViewSettings {
     /// The browser shows Recent's kinds as chips over its list rather than as items indented
     /// under it in the sidebar (#711).
     pub recent_chips: bool,
+    /// The Arrangement view leaves out the return tracks' rows (its "Hide returns" button).
+    pub returns_hidden: bool,
 }
 
 impl Default for ViewSettings {
@@ -76,6 +78,7 @@ impl Default for ViewSettings {
             play_from_clip: true,
             fixed_track_colour: false,
             recent_chips: false,
+            returns_hidden: false,
         }
     }
 }
@@ -84,7 +87,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -97,6 +100,7 @@ impl ViewSettings {
             if self.play_from_clip { "on" } else { "off" },
             if self.fixed_track_colour { "fixed" } else { "alternating" },
             if self.recent_chips { "chips" } else { "indented" },
+            if self.returns_hidden { "hidden" } else { "shown" },
         )
     }
 
@@ -123,6 +127,7 @@ impl ViewSettings {
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
+            ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             _ => return false,
         }
         true
@@ -149,6 +154,7 @@ mod tests {
             play_from_clip: false,
             fixed_track_colour: true,
             recent_chips: true,
+            returns_hidden: true,
         };
         let settings = Settings { view, ..Settings::default() };
         let (read, warnings) = Settings::from_text(&settings.to_text());

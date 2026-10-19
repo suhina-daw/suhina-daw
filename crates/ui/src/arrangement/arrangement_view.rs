@@ -309,6 +309,8 @@ pub struct ArrangementViewState {
     pub grid: Quantization,
     /// Track headers on the left of the timeline instead of the right.
     pub headers_left: bool,
+    /// The return tracks' rows are left out (the "Hide returns" button by the ruler).
+    pub returns_hidden: bool,
     /// Moved clips stack on others instead of replacing them: audio clips, MIDI clips.
     pub stack_audio: bool,
     pub stack_midi: bool,
@@ -421,6 +423,7 @@ impl Default for ArrangementViewState {
             beat_width: DEFAULT_BEAT_WIDTH,
             grid: Quantization::Bars(1),
             headers_left: false,
+            returns_hidden: false,
             stack_audio: false,
             stack_midi: false,
             time_select_ctrl: false,
@@ -1015,8 +1018,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let marker_row =
         Rect::from_min_size(Pos2::new(time.left(), loop_row.bottom() + 1.0), Vec2::new(time.width(), MARKER_ROW));
     // Return tracks and the main track are fixed rows along the bottom.
-    let returns: Vec<&Lane> =
-        timeline.lanes.iter().filter(|l| l.kind == ColumnKind::Return && focus.is_none()).collect();
+    let has_returns = timeline.lanes.iter().any(|l| l.kind == ColumnKind::Return);
+    let returns: Vec<&Lane> = timeline
+        .lanes
+        .iter()
+        .filter(|l| l.kind == ColumnKind::Return && focus.is_none() && !state.returns_hidden)
+        .collect();
     let main_volume_db = timeline.main_volume_db.filter(|_| focus.is_none());
     // The tracks in their groups, and those a folded group hides.
     let places: Vec<Place> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).map(Lane::place).collect();
@@ -1318,6 +1325,21 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             ui.close();
         }
     });
+    // The return tracks' rows along the bottom go and come back with a button here.
+    if has_returns && focus.is_none() {
+        let label = if state.returns_hidden { "Show returns" } else { "Hide returns" };
+        let font = theme::ui_font(theme::TEXT_SMALL);
+        let width = widgets::text_width(ui, label, font.clone()) + 12.0;
+        let x = if state.headers_left { corner.left() + 4.0 } else { corner.right() - 4.0 - width };
+        let button = Rect::from_min_size(Pos2::new(x, corner.top() + 4.0), Vec2::new(width, 18.0)).intersect(corner);
+        let response = widgets::button_area(ui, button, Id::new("arrangement-returns-toggle"), label);
+        let hover = widgets::hover(ui, &response);
+        painter.rect_filled(button, 2.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+        widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, theme::text_secondary());
+        if response.clicked() {
+            state.returns_hidden = !state.returns_hidden;
+        }
+    }
     let edge_x = if state.headers_left { headers.max + 0.5 } else { headers.min - 0.5 };
     painter.vline(edge_x, area.y_range(), theme::hairline(theme::border_strong()));
 

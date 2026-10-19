@@ -359,6 +359,9 @@ pub struct App {
     /// and the detail area's height a splitter drag has reached so far, unclamped.
     detail_max: bool,
     detail_drag: Option<f32>,
+    /// The app's own window (`set_editor_owner`): a press on its controls takes the keyboard
+    /// back from an embedded plug-in editor (`kit::keyboard`).
+    window: Option<u64>,
     /// The detail area was closed as an editor (the splitter dragged down, the toolbar's ×, View ›
     /// Hide editor): selecting a clip opens it again. And the clip shown last frame, to tell when
     /// another is selected (`docs/spec/ui-clip-editor.md` › Least height and closing).
@@ -512,6 +515,7 @@ impl App {
             clips_before: Vec::new(),
             detail_max: false,
             detail_drag: None,
+            window: None,
             editor_closed: false,
             last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
@@ -696,9 +700,11 @@ impl App {
     /// header column's side and width) carry over.
     fn restore(&mut self, id: ProjectId, stash: Stash) {
         let (headers_left, header_width) = (self.arrangement.headers_left, self.arrangement.header_width);
+        let returns_hidden = self.arrangement.returns_hidden;
         self.view = stash.view;
         self.arrangement = stash.arrangement.unwrap_or_default();
         self.arrangement.headers_left = headers_left;
+        self.arrangement.returns_hidden = returns_hidden;
         self.arrangement.header_width = header_width;
         self.selected_device = stash.selected_device;
         self.revision = stash.revision.wrapping_add(1);
@@ -737,6 +743,7 @@ impl App {
     /// The window plug-in editors open over: the native handle of the app's main window (a
     /// Win32 `HWND`, an X11 window id), so they float above it (ADR 0006).
     pub fn set_editor_owner(&mut self, owner: Option<u64>) {
+        self.window = owner;
         self.projects.set_editor_owner(owner);
     }
 
@@ -976,6 +983,7 @@ impl App {
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
         motion::set_enabled(ctx, settings.animations);
         self.arrangement.headers_left = settings.track_headers == Side::Left;
+        self.arrangement.returns_hidden = settings.view.returns_hidden;
         if settings.map_window {
             self.sample_map.set_window(true, &mut self.browser);
         }
@@ -2066,6 +2074,13 @@ impl App {
             self.next_ram = Some(ui.ctx().time() + 1.0);
         }
         let ram = self.ram;
+        // A press on the window's own controls: keys typed next are the window's, not those of an
+        // embedded plug-in editor clicked before.
+        if ui.input(|i| i.pointer.any_pressed())
+            && let Some(window) = self.window
+        {
+            suhina_plugins::take_keyboard_back(window);
+        }
         // Space pressed in a plug-in's editor window: play or stop, as Space here does.
         for _ in 0..suhina_plugins::take_transport_keys() {
             self.do_action("transport.toggle", &mut actions);
@@ -2394,6 +2409,10 @@ impl App {
                             let side = if self.arrangement.headers_left { Side::Left } else { Side::Right };
                             if side != self.settings.track_headers {
                                 self.settings.track_headers = side;
+                                self.settings_changed = true;
+                            }
+                            if self.arrangement.returns_hidden != self.settings.view.returns_hidden {
+                                self.settings.view.returns_hidden = self.arrangement.returns_hidden;
                                 self.settings_changed = true;
                             }
                         }
@@ -3792,6 +3811,7 @@ impl App {
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
             motion::set_enabled(ui.ctx(), self.settings.animations);
             self.arrangement.headers_left = self.settings.track_headers == Side::Left;
+            self.arrangement.returns_hidden = self.settings.view.returns_hidden;
             self.settings_changed = true;
         }
         if outcome.close {

@@ -1965,6 +1965,20 @@ fn a_return_in_the_arrangement_has_a_tracks_controls_and_main_a_volume_bar_and_t
 }
 
 #[test]
+fn hide_returns_takes_the_return_rows_out_of_the_arrangement_and_show_brings_them_back() {
+    let mut harness = arrangement_app();
+    assert!(harness.query_by_label("A Reverb volume").is_some());
+    harness.get_by_label("Hide returns").click();
+    harness.run_steps(3);
+    assert!(harness.query_by_label("A Reverb volume").is_none(), "the return's row is gone");
+    assert!(harness.query_by_label("Main volume").is_some(), "Main stays");
+    assert!(harness.state().settings().view.returns_hidden, "kept as a setting");
+    harness.get_by_label("Show returns").click();
+    harness.run_steps(3);
+    assert!(harness.query_by_label("A Reverb volume").is_some(), "back again");
+}
+
+#[test]
 fn ctrl_tab_shows_the_open_projects_and_switches_when_ctrl_is_let_go() {
     let mut app = App::new();
     for _ in 0..3 {

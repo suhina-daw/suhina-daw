@@ -140,6 +140,9 @@ Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leave
 where they were, an empty row between them staying until the rows above it empty too. A new clip
 inside the span a clip had on the same track (a split's parts) takes that clip's row (#703).
 
+The **Hide returns** button in the header column's top corner, by the ruler, takes the return
+tracks' rows out of the view and **Show returns** brings them back; it is kept as a setting
+(Settings › Arrangement › Return tracks, `arrangement_returns`). Main's row stays.
 Return tracks, along the bottom, have a track's header: volume and pan, the on switch and solo,
 the menu, automation lanes under them (shown with the header's button), a click to select them
 (the detail area shows their devices) and a top edge that sets their height (tall enough for
