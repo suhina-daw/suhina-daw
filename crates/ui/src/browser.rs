@@ -251,6 +251,8 @@ pub struct BrowserState {
     pub plugin_sort: (u8, bool),
     /// Put the cursor in the search field on the next frame.
     pub focus_search: bool,
+    /// And select what it says, so typing replaces it (Ctrl+F).
+    pub select_search: bool,
     /// The search field had the keyboard last frame.
     pub search_focused: bool,
     /// Escape in the search field asked for the preview to stop.
@@ -297,6 +299,7 @@ impl Default for BrowserState {
             tag_counts: None,
             plugin_sort: (0, false),
             focus_search: false,
+            select_search: false,
             search_focused: false,
             stop_preview: false,
             new_folder: None,

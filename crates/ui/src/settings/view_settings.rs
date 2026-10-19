@@ -49,6 +49,8 @@ pub struct ViewSettings {
     /// Mirror: a clip's lower half moves it and its upper half selects time; off (the
     /// default), its name bar moves it and its body selects time.
     pub clip_halves: bool,
+    /// The grid shows through the clips in the Arrangement view (on by default).
+    pub grid_in_clips: bool,
     /// Alt held while an audio clip's edge is dragged stretches its audio (on by default).
     pub stretch_alt: bool,
     /// Ctrl+R with several clips selected renames them all at once (on by default, #693).
@@ -77,6 +79,7 @@ impl Default for ViewSettings {
             notes_replace: true,
             time_select_ctrl: false,
             clip_halves: false,
+            grid_in_clips: true,
             stretch_alt: true,
             rename_selected: true,
             play_from_clip: true,
@@ -91,7 +94,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -106,6 +109,7 @@ impl ViewSettings {
             if self.recent_chips { "chips" } else { "indented" },
             if self.returns_hidden { "hidden" } else { "shown" },
             if self.clip_halves { "halves" } else { "name_bar" },
+            if self.grid_in_clips { "on" } else { "off" },
         )
     }
 
@@ -134,6 +138,7 @@ impl ViewSettings {
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             ("clip_drag", "halves" | "name_bar") => self.clip_halves = value == "halves",
+            ("clip_grid", "on" | "off") => self.grid_in_clips = value == "on",
             _ => return false,
         }
         true
@@ -156,6 +161,7 @@ mod tests {
             notes_replace: false,
             time_select_ctrl: true,
             clip_halves: true,
+            grid_in_clips: false,
             stretch_alt: false,
             rename_selected: false,
             play_from_clip: false,

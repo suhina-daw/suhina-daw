@@ -164,6 +164,8 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
 /// The height of a clip's name bar, and the least a clip's height must be to have a body under
 /// it for selecting time.
 const CLIP_NAME_BAR: f32 = 16.0;
+/// The grid's lines this frame, as (x, on a bar), for the clips' bodies.
+const CLIP_GRID: &str = "arrangement-clip-grid";
 const CLIP_BODY_LEAST: f32 = 36.0;
 
 /// `#RRGGBB`, as colour parameters take it.
@@ -407,6 +409,9 @@ pub struct ArrangementViewState {
     /// A clip moves by its name bar and selects time from its body (the default); off
     /// (Mirror), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
+    /// The grid's lines show through the clips' bodies, faintly (Settings › Arrangement ›
+    /// Grid in clips; on by default).
+    pub grid_in_clips: bool,
     /// Where the last click in a lane or a clip's body put the play start, on which track: a
     /// thin line there in that lane while the play start is still there.
     pub insert: Option<(TrackId, f64)>,
@@ -477,6 +482,7 @@ impl Default for ArrangementViewState {
             clip_clicked: false,
             picked_whole: true,
             name_bar_moves: true,
+            grid_in_clips: true,
             insert: None,
             open_devices: None,
             automation: LanesState::default(),
@@ -1162,10 +1168,13 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     // when zoomed out; bar lines stronger than the lines between them. When the time signature
     // changes, the bars come from the meter instead: a line at every bar and, zoomed in, at
     // every beat.
+    // Where the lines are, for the clips to draw them over their bodies too (`paint_clip`).
+    let mut grid_xs: Vec<(f32, bool)> = Vec::new();
     if meter.is_constant() {
         let max_lines = (time.width() / MIN_GRID_SPACING).ceil().max(1.0) as usize * 2 + 4;
         for (beat, on_bar) in grid.lines(first_beat, last_beat, max_lines) {
             let x = x_of(beat).round() + 0.5;
+            grid_xs.push((x, on_bar));
             let stroke = theme::hairline(if on_bar { theme::border() } else { theme::panel_background() });
             for band in grid_bands.iter().filter(|b| b.span() > 0.0) {
                 grid_painter.vline(x, *band, stroke);
@@ -1176,6 +1185,14 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let start = meter.bar_start(bar);
             let this_bar_beats = meter.position(start).bar_beats;
             let x = x_of(start).round() + 0.5;
+            if bar_width >= 6.0 || bar % label_every == 0 {
+                grid_xs.push((x, true));
+            }
+            if state.beat_width >= 10.0 {
+                for beat in 1..this_bar_beats.ceil() as u32 {
+                    grid_xs.push((x_of(start + f64::from(beat)).round() + 0.5, false));
+                }
+            }
             for band in grid_bands.iter().filter(|b| b.span() > 0.0) {
                 if bar_width >= 6.0 || bar % label_every == 0 {
                     grid_painter.vline(x, *band, theme::hairline(theme::border()));
@@ -1189,6 +1206,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             }
         }
     }
+    if !state.grid_in_clips {
+        grid_xs.clear();
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(Id::new(CLIP_GRID), std::sync::Arc::new(grid_xs)));
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
@@ -2932,6 +2953,16 @@ fn paint_clip(
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, base);
     }
     let ink = ink_on(body);
+    // The grid shows through the body, faintly, the bars a little stronger.
+    let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
+    if let Some(lines) = lines.filter(|l| !l.is_empty()) {
+        let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
+        let span = egui::Rangef::new(below, rect.bottom());
+        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
+        for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
+            painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
+        }
+    }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims under them
     // so both read (ADR 0028, #720).
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());

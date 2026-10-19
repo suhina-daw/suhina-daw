@@ -78,7 +78,9 @@ From top to bottom (sizes in components.md › Browser):
 The panel is on the left of the main view, or on the right (Settings › Browser ›
 Side). Its width is dragged at its inner edge (from 200 px to half the window, default 300) and kept. Ctrl+B and
 View › Show browser show and hide it; hidden, it takes no space. Ctrl+F shows it if hidden and
-puts the cursor in the search field.
+puts the cursor in the search field, and it always searches everything: it chooses All (and no
+place) and selects what the field says, so typing replaces it. To search one kind, choose it in
+the sidebar and click the field: a kind chosen keeps the search and narrows it to that kind.
 
 **Keyboard focus:** only the search field (and the fields for a folder's path or a tag's name,
 while they show) takes the keyboard. Clicking a row, a filter or a

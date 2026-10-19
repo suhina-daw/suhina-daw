@@ -304,6 +304,14 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Clips",
+        "Grid in clips",
+        "The grid's lines show through the clips, faintly, so a clip's beats and bars are seen on it",
+        &["clip_grid"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.grid_in_clips),
+    ),
+    row(
+        Page::Arrangement,
+        "Clips",
         "Alt-drag on an edge stretches audio",
         "An audio clip's edge dragged with Alt held time-stretches its audio to the new length, its pitch kept; off, Alt does nothing there",
         &["stretch_alt_drag"],

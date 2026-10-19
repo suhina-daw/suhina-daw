@@ -434,6 +434,42 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// Ctrl+F always searches everything: All is chosen and the search kept, selected, so typing
+/// replaces it; a kind chosen afterwards keeps the search and narrows it to that kind.
+#[test]
+fn ctrl_f_searches_all_and_a_kind_chosen_after_keeps_the_search() {
+    let (settings, folder) = (temp("all-settings"), temp("all"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All, "Ctrl+F chooses All");
+    assert_eq!(harness.state().browser.place, None);
+    harness.input_mut().events.push(egui::Event::Text("snare".into()));
+    harness.run();
+    assert_eq!(harness.state().browser.search, "snare");
+
+    // A kind chosen keeps the search, and the search looks in that kind only.
+    harness.get_by_label("Show Samples").click();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::Samples);
+    assert_eq!(harness.state().browser.search, "snare");
+
+    // Ctrl+F again: All, the search selected, so what is typed replaces it.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All);
+    harness.input_mut().events.push(egui::Event::Text("kick".into()));
+    harness.run();
+    assert_eq!(harness.state().browser.search, "kick", "typing replaced the selected search");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 #[test]
 fn a_midi_file_dragged_onto_a_slot_becomes_a_clip_there() {
     let (settings, folder) = (temp("slot-settings"), temp("slot"));

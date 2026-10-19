@@ -2022,6 +2022,7 @@ impl App {
         self.piano_roll.notes_replace = self.settings.view.notes_replace;
         self.arrangement.time_select_ctrl = self.settings.view.time_select_ctrl;
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
+        self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
         self.arrangement.stretch_alt = self.settings.view.stretch_alt;
         // Any press ends a device panel's hold on Delete and the mute key; a click on a panel
         // takes it again when the button comes up, whether or not the detail area is shown.
@@ -4214,7 +4215,13 @@ impl App {
                     self.toggle_browser();
                 }
                 self.settings_open = false;
+                // Ctrl+F searches everything: All is chosen, and what the field says is selected
+                // so typing replaces it. To search one kind, choose it and click the field.
+                self.browser.place = None;
+                self.browser.category = suhina_session::Category::All;
+                self.browser.scroll = 0.0;
                 self.browser.focus_search = true;
+                self.browser.select_search = true;
             }
             _ if !has_project => {}
             "file.save" => self.save_active(false),

@@ -383,6 +383,16 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     if std::mem::take(&mut state.focus_search) {
         response.request_focus();
     }
+    if std::mem::take(&mut state.select_search)
+        && let Some(mut text) = egui::TextEdit::load_state(ui.ctx(), id)
+    {
+        let all = egui::text::CCursorRange::two(
+            egui::text::CCursor::new(0),
+            egui::text::CCursor::new(state.search.chars().count()),
+        );
+        text.cursor.set_char_range(Some(all));
+        text.store(ui.ctx(), id);
+    }
     state.search_focused = response.has_focus();
     if response.changed() {
         state.scroll = 0.0;
