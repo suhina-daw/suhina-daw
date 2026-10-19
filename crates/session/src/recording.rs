@@ -657,9 +657,17 @@ pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Resul
     if session.recording.arrangement {
         return Ok(json!({ "recording": true }));
     }
-    let tracks: Vec<TrackId> =
-        session.armed().into_iter().filter(|t| kind_of(session.project(), *t).is_some()).collect();
+    let armed = session.armed();
+    let tracks: Vec<TrackId> = armed.iter().copied().filter(|t| kind_of(session.project(), *t).is_some()).collect();
     if tracks.is_empty() {
+        // Armed, but hearing no input: say which, so the input can be chosen (#682).
+        if let Some(track) = armed.first() {
+            return Err(format!(
+                "track {:?} hears no audio input: choose one for it (track.setAudioInput), then record",
+                track_name(session.project(), *track)
+            )
+            .into());
+        }
         return Err("arm a track that has an audio input or plays notes first (track.setArm)".into());
     }
     if let Some(busy) = tracks.iter().find(|t| session.recording.take_on(**t).is_some()) {

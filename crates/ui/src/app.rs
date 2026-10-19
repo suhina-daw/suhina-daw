@@ -1801,6 +1801,26 @@ impl App {
         // A critical operation is backed up first, when the settings say so.
         self.projects.back_up_before(action.id);
         let Ok(session) = self.projects.session_mut(None) else { return };
+        // An audio track armed while it hears no input gets the device's first input (a stereo
+        // pair where there are two channels), so Record has something to record and stays on
+        // (#682). Without one, recording refuses the track.
+        if action.id == "track.setArm"
+            && action.params["armed"].as_bool() == Some(true)
+            && let Some(track) = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
+            && session.project().tracks.iter().any(|t| {
+                t.id == track && !t.content.notes && t.audio_input.channels == suhina_engine::model::InputChannels::None
+            })
+        {
+            let inputs = session.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
+            let input = match inputs {
+                0 => None,
+                1 => Some("1"),
+                _ => Some("1/2"),
+            };
+            if let Some(input) = input {
+                let _ = session.execute("track.setAudioInput", &json!({ "track": track.0, "input": input }));
+            }
+        }
         match session.execute(action.id, &action.params) {
             Ok(result) => {
                 // A clip made by a double-click is selected, ready to edit: in the Arrangement

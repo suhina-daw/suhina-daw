@@ -33,7 +33,10 @@ names no other program's behaviour.
     (`track.setMidiInput`), as a MIDI clip;
   - a track with an audio input (`track.setAudioInput`) records the input's channel or pair,
     before the track's devices and mixer, as an audio clip. Monitoring (In, Auto, Off) changes
-    only what is heard while recording, not what is recorded.
+    only what is heard while recording, not what is recorded. An audio track armed in the
+    window while it hears no input gets the device's first input (channels 1/2, or 1 on a
+    one-channel device), so Record has something to record; recording an armed track that
+    hears none is refused with the track's name.
 - **Notes as they were heard.** A note starts when its key went down and ends when the sound
   was let go: at the key's release, or, while the sustain pedal is down, when the pedal comes
   up. A note still held when the take ends is cut at the take's end. Notes are kept with their
