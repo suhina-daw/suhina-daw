@@ -231,13 +231,16 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     let kind = match text(params, "kind")? {
         Some(k) => TrackKind::parse(k).ok_or("kind must be audio or midi")?,
         None => match device_role {
-            Some(Role::Instrument) => TrackKind::Midi,
+            Some(Role::Instrument | Role::MidiEffect) => TrackKind::Midi,
             Some(Role::Effect) => TrackKind::Audio,
             None => return Err("kind must be audio or midi (or name a device)".into()),
         },
     };
     if kind == TrackKind::Audio && device_role == Some(Role::Instrument) {
         return Err("an instrument goes on a MIDI track".into());
+    }
+    if kind == TrackKind::Audio && device_role == Some(Role::MidiEffect) {
+        return Err("a MIDI effect goes on a MIDI track".into());
     }
     let after = match params.get("after") {
         None | Some(Value::Null) => None,

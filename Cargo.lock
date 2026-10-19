@@ -4480,6 +4480,8 @@ version = "0.0.1"
 dependencies = [
  "flate2",
  "roxmltree",
+ "suhina-device-pitch",
+ "suhina-engine",
  "suhina-model",
 ]
 
@@ -4599,6 +4601,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-pitch"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+]
+
+[[package]]
 name = "suhina-device-registry"
 version = "0.0.1"
 dependencies = [
@@ -4613,6 +4622,7 @@ dependencies = [
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-overdrive",
+ "suhina-device-pitch",
  "suhina-device-reverb",
  "suhina-device-utility",
  "suhina-device-vinyl-distortion",

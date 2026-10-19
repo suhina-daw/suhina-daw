@@ -1427,7 +1427,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "devices.list",
-        label: "List the built-in effects and instruments (id, name, effect or instrument) with their parameters (id, range, default, unit, options)",
+        label: "List the built-in effects, instruments and MIDI effects (id, name, role) with their parameters (id, range, default, unit, options)",
         params: &[],
         kind: CommandKind::Read,
         run: devices::list,
@@ -1441,25 +1441,25 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.devices",
-        label: "List the devices on a track in order, with the parameter values of every built-in effect and instrument",
+        label: "List the devices on a track in order, with each built-in and .sd device's role and parameter values",
         params: &[TRACK],
         kind: CommandKind::Read,
         run: devices::track_devices,
     },
     CommandSpec {
         id: "device.add",
-        label: "Add a built-in effect or instrument to a track; an instrument goes first and plays the track's notes, an effect goes last unless a position is given",
+        label: "Add a built-in effect, instrument or MIDI effect to a track; MIDI effects go first and change the notes, the instrument right after them plays the notes, an effect goes last unless a position is given",
         params: &[
             TRACK,
             optional(
                 "id",
                 ParamType::Text,
-                "id of a built-in effect or instrument, from devices.list (not needed with a preset)",
+                "id of a built-in effect, instrument or MIDI effect, from devices.list (not needed with a preset)",
             ),
             optional(
                 "position",
                 ParamType::DevicePath,
-                "where in the chain, from 0 (default: last; an instrument is always first), or inside a group as a path such as \"2/1/3\"",
+                "where in the chain, from 0 (default: last; an instrument always goes right after the MIDI effects, a MIDI effect among them), or inside a group as a path such as \"2/1/3\"",
             ),
             optional("preset", ParamType::Text, "a preset file to load: DX7 voice data (.syx) for the FM synth"),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1 (default 1)"),
@@ -1476,7 +1476,7 @@ static COMMANDS: &[CommandSpec] = &[
             optional(
                 "position",
                 ParamType::DevicePath,
-                "where in the chain, from 0 (default: last), or inside a group as a path such as \"2/1/3\"",
+                "where in the chain, from 0 (default: last; an instrument always goes right after the MIDI effects, a MIDI effect among them, an effect after both), or inside a group as a path such as \"2/1/3\"",
             ),
         ],
         kind: CommandKind::Edit,
@@ -1499,7 +1499,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.add",
-        label: "Add an audio or MIDI track with its mixer channel, clip slots and arrangement lane, optionally with a device (an instrument makes a MIDI track, an effect an audio track)",
+        label: "Add an audio or MIDI track with its mixer channel, clip slots and arrangement lane, optionally with a device (an instrument or MIDI effect makes a MIDI track, an effect an audio track)",
         params: &[
             optional("kind", ParamType::Text, "audio or midi (default: from the device)"),
             optional("name", ParamType::Text, "the track's name (default: the device's, or Audio n / MIDI n)"),
@@ -1965,14 +1965,14 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.addPlugin",
-        label: "Add an installed plug-in to a track; an instrument goes first and plays the track's notes, an effect goes last unless a position is given. It starts while the project plays",
+        label: "Add an installed plug-in to a track; an instrument goes right after the MIDI effects and plays the track's notes, an effect goes last unless a position is given. It starts while the project plays",
         params: &[
             TRACK,
             param("plugin", ParamType::Text, "plug-in name, id or file, from plugins.list"),
             optional(
                 "position",
                 ParamType::DevicePath,
-                "where in the chain, from 0 (default: last; an instrument is always first), or inside a group as a path such as \"2/1/3\"",
+                "where in the chain, from 0 (default: last; an instrument always goes right after the MIDI effects), or inside a group as a path such as \"2/1/3\"",
             ),
         ],
         kind: CommandKind::Edit,

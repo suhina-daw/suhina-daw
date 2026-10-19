@@ -26,6 +26,8 @@ pub enum ItemKind {
     Instrument,
     Effect,
     AudioEffect,
+    /// A built-in MIDI effect: it goes before a MIDI track's instrument.
+    MidiEffect,
     /// A heading in the tree (Instruments, Plug-ins, a vendor).
     Heading,
 }
@@ -38,7 +40,7 @@ impl ItemKind {
 
     /// Whether it becomes a device on a track.
     pub fn is_device(self) -> bool {
-        matches!(self, Self::Instrument | Self::Effect | Self::AudioEffect | Self::Preset)
+        matches!(self, Self::Instrument | Self::Effect | Self::AudioEffect | Self::MidiEffect | Self::Preset)
     }
 }
 
@@ -359,6 +361,15 @@ mod tests {
             plan(&[synth], DropTarget::NewTracks { beat: Some(0.0), scene: None }, false, "rhythmic", false, &name)
                 .unwrap();
         assert_eq!(new.commands, vec![("track.add", json!({ "device": "fm-synth" }))]);
+        // A MIDI effect is a device like the others: the session puts it before the instrument.
+        let pitch = item("device:pitch", ItemKind::MidiEffect);
+        let on_track =
+            plan(std::slice::from_ref(&pitch), DropTarget::Track(TrackId(2)), false, "rhythmic", false, &name).unwrap();
+        assert_eq!(on_track.commands, vec![("device.add", json!({ "id": "pitch", "track": 2 }))]);
+        let new =
+            plan(&[pitch], DropTarget::NewTracks { beat: Some(0.0), scene: None }, false, "rhythmic", false, &name)
+                .unwrap();
+        assert_eq!(new.commands, vec![("track.add", json!({ "device": "pitch" }))]);
         assert!(
             plan(&[item("/s/dir", ItemKind::Folder)], DropTarget::Track(TrackId(1)), false, "rhythmic", false, &name)
                 .is_none()

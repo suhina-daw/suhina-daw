@@ -102,6 +102,7 @@ def headline(devices) -> str:
     live_total = sum(len(devices[key]) for key in ("audio_effects", "midi_effects", "instruments"))
     effects = sum(1 for d in devices["suhina_devices"] if d[1] == "effect")
     own_instruments = sum(1 for d in devices["suhina_devices"] if d[1] == "instrument")
+    own_midi = sum(1 for d in devices["suhina_devices"] if d[1] == "MIDI effect")
     lines = [
         "| Measure | Value |",
         "|---|---|",
@@ -116,12 +117,12 @@ def headline(devices) -> str:
         f"**{metrics['zero']} ({metrics['zero'] / metrics['total'] * 100:.0f} %)** sit in chapters "
         f"Suhina has not started at all |",
         f"| Built-in devices | **{len(devices['suhina_devices'])}** ({effects} effects, "
-        f"{own_instruments} instrument) against Live's {live_total} "
+        f"{own_midi} MIDI effect, {own_instruments} instrument) against Live's {live_total} "
         f"({len(devices['audio_effects'])} audio effects, {len(devices['midi_effects'])} MIDI effects, "
         f"{len(devices['instruments'])} instruments) |",
         f"| Commands | **{score.COMMANDS}**, every one reachable from the UI, the CLI and MCP |",
         "| Still absent as whole features | MPE, Grooves, Tuning, Comping, "
-        "Racks, Clip Envelopes, MIDI effects, Push, Link, video, accessibility |",
+        "Racks, Clip Envelopes, Push, Link, video, accessibility |",
     ]
     return block("\n".join(lines))
 
@@ -130,7 +131,8 @@ def device_counts(devices) -> str:
     audio, midi, instruments = (tally(devices[key]) for key in
                                 ("audio_effects", "midi_effects", "instruments"))
     live_total = sum(len(devices[key]) for key in ("audio_effects", "midi_effects", "instruments"))
-    have = audio["equivalent"] + midi["equivalent"] + instruments["equivalent"] + instruments["close"]
+    have = (audio["equivalent"] + midi["equivalent"] + midi["close"] + instruments["equivalent"]
+            + instruments["close"])
     planned = audio["planned"] + midi["planned"] + instruments["planned"]
     never = audio["none"] + midi["none"] + instruments["none"]
     lines = [
@@ -138,7 +140,7 @@ def device_counts(devices) -> str:
         "|---|---|---|---|---|",
         f"| Audio effects | {len(devices['audio_effects'])} | {audio['equivalent']} | "
         f"{audio['planned']} | {audio['none']} |",
-        f"| MIDI effects | {len(devices['midi_effects'])} | {midi['equivalent']} | "
+        f"| MIDI effects | {len(devices['midi_effects'])} | {midi['equivalent'] + midi['close']} | "
         f"{midi['planned']} | {midi['none']} |",
         f"| Instruments | {len(devices['instruments'])} | "
         f"{instruments['equivalent'] + instruments['close']} | {instruments['planned']} | "
@@ -156,7 +158,8 @@ def device_none(devices) -> str:
     return block(
         "Read the last two columns together: **even if every device the ROADMAP names is built, "
         f"{never} of Live's {live_total} devices ({never / live_total * 100:.0f} %)\n"
-        "still have no counterpart** - all 8 MIDI effects, the amp and cabinet models, the "
+        f"still have no counterpart** - {midi['none']} of the {len(devices['midi_effects'])} MIDI "
+        "effects, the amp and cabinet models, the "
         "modulated-delay\nfamily (chorus, ensemble, vibrato, phaser, flanger, doubler), the spectral "
         "pair, the analysers\n(Spectrum, Tuner), the gate, the grain and beat repeaters, the vocoder, "
         "and the synths the roadmap\ndoes not name (Meld, Electric, Impulse, External Instrument)."

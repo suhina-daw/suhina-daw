@@ -236,7 +236,7 @@ fn the_tree_lists_devices_and_folders_and_opens_them() {
     let (settings, folder) = (temp("tree-settings"), temp("tree"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
-    for heading in ["Instruments", "Effects", "Plug-ins"] {
+    for heading in ["Instruments", "Effects", "MIDI Effects", "Plug-ins"] {
         assert!(harness.query_by_label(&row(heading)).is_some(), "{heading}");
     }
     harness.get_by_label(&row("Instruments")).click();
@@ -688,6 +688,47 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
     harness.get_by_label("Place Effects").click();
     harness.run();
     assert!(harness.query_by_label(&row("Overdrive")).is_some(), "Recent › Effects lists it");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The browser lists MIDI effects under a heading of their own, and an instrument dragged onto a
+/// track lands after the MIDI effect dragged there first.
+#[test]
+fn midi_effects_have_their_own_heading_and_go_before_the_instrument() {
+    let (settings, folder) = (temp("midi-effect-settings"), temp("midi-effect"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    assert!(harness.query_by_label(&row("Pitch")).is_none(), "closed headings hide their devices");
+    harness.get_by_label(&row("MIDI Effects")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Pitch")).is_some(), "MIDI Effects lists the pitch effect");
+    harness.get_by_label(&row("Effects")).click();
+    harness.run();
+    assert!(harness.query_by_label(&row("Pitch")).is_some(), "and Effects does not take it over");
+    let bass_devices = |app: &App| {
+        app.session().map_or(Vec::new(), |s| {
+            let p = s.project();
+            let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
+            p.channels
+                .iter()
+                .find(|c| c.id == channel)
+                .map_or(Vec::new(), |c| c.devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>())
+        })
+    };
+    let to = harness.get_by_label("Track Bass").rect().center();
+    let from = harness.get_by_label(&row("Pitch")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(until(&mut harness, |app| bass_devices(app) == ["Pitch"]), "{:?}", bass_devices(harness.state()));
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    let from = harness.get_by_label(&row("FM Synth")).rect().center();
+    drag(&mut harness, from, to);
+    assert!(
+        until(&mut harness, |app| bass_devices(app) == ["Pitch", "FM Synth"]),
+        "the instrument goes after the MIDI effect: {:?}",
+        bass_devices(harness.state())
+    );
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

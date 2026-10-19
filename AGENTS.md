@@ -100,7 +100,7 @@ crates/
   dsp      L0 signal-processing blocks for built-in effects and instruments: smoothing, filters, crossovers, LFOs, shapers, oversampling, delay lines (ADR 0004)
   device-api L0 the Device trait, parameter descriptions, contract tests every device runs
   device-sdk L0 builds and validates data-only `.sd` effect graphs, compiles DSP primitives and delayed feedback for real-time execution; shared node contracts and embedded custom UI canvases/images for authors and agents
-  device-registry L1 every built-in effect or instrument by its stable id: makes and lists them (ADR 0004)
+  device-registry L1 every built-in effect, instrument or MIDI effect by its stable id: makes and lists them (ADR 0004)
   ipc      L0 audio blocks to a plug-in host process: shared memory, block sync with a deadline (ADR 0006; may use unsafe)
   realtime L0 real-time priority for audio threads: MMCSS Pro Audio on Windows, SCHED_FIFO or rtkit on Linux
   plugins  L1 the engine's side of plug-in hosting: start a host process, control protocol, health, state, restart; scanning; offline runs
@@ -118,6 +118,7 @@ devices/
   nam-cab-loader  a `.wav` impulse response through the `dsp` convolver, with a phase invert, high pass, tone cuts, delay, volume
   delay    stereo delay: synced or free times, band-pass in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze
   reverb   algorithmic reverb: input band, early reflections, damped feedback delay network, chorus, freeze
+  pitch    MIDI effect: transposes notes by semitones or scale degrees, keeps them in a key window (Block, Fold, Limit)
 apps/
   suhina-cli   headless CLI: render, play, mcp, commands, audio, plugins, plugin, fm-synth
   suhina       the desktop app (eframe): opens a project and shows it in the ui

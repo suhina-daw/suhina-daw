@@ -125,7 +125,7 @@ def fig_overview(path: Path):
     counts = device_counts()
     categories = ["audio\neffects", "MIDI\neffects", "instruments"]
     live = [counts["audio_effects"], counts["midi_effects"], counts["instruments"]]
-    suhina = [counts["audio_effects_equivalent"], 0, counts["instruments_equivalent"]]
+    suhina = [counts["audio_effects_equivalent"], counts["midi_effects_equivalent"], counts["instruments_equivalent"]]
     xs = range(3)
     ax2.bar([i - 0.19 for i in xs], live, width=0.36, color=COLOURS["grey"], label="Live 12")
     ax2.bar([i + 0.19 for i in xs], suhina, width=0.36, color=COLOURS["green"], label="Suhina")
@@ -162,6 +162,7 @@ def device_counts() -> dict:
         "midi_effects": len(midi),
         "instruments": len(instruments),
         "audio_effects_equivalent": sum(1 for r in audio if r[3] == "equivalent"),
+        "midi_effects_equivalent": sum(1 for r in midi if r[3] in ("equivalent", "close")),
         "instruments_equivalent": sum(1 for r in instruments if r[3] in ("equivalent", "close")),
     }
 

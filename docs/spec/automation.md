@@ -77,7 +77,9 @@ audio thread.
   that falls inside a block and at every 64th frame of the arrangement (1.3 ms at 48 kHz) where its
   value changed, and at a block's first frame when the transport has just started or moved. The
   device's chain splits its block there, so a jump lands on its frame and the device smooths the
-  change as it smooths any parameter (ADR 0004, decision 5). `.sd` processors receive the same
+  change as it smooths any parameter (ADR 0004, decision 5); a MIDI effect's span of events
+  splits there too, the change coming before the events at its frame (ADR 0004 › 14), and its
+  semitone, scale-degree and key values show as `+5 st`, `+2 sd` and `C3`. `.sd` processors receive the same
   changes through their parameter API; integer, toggle, button and choice controls step. A fresh
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at

@@ -21,6 +21,7 @@ suhina-device-delay.workspace = true
 suhina-device-reverb.workspace = true
 suhina-dsp.workspace = true
 nam-rs.workspace = true
+suhina-device-pitch.workspace = true
 
 [lints]
 workspace = true

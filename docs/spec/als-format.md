@@ -1,12 +1,13 @@
 ---
-description: The Live Set (.als) format as observed: container, tracks, clips, notes, audio, warp markers, devices, locators
-read_when: reading .als, importer, XML element, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
+description: The Live Set (.als) format as observed: container, tracks, clips, notes, a clip's scale, audio, warp markers, devices and MIDI effects, locators
+read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
 type: spec
 status: current
 last_verified: 2026-10-15
 covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
+  - crates/als/src/scale.rs
   - crates/als/src/vst2.rs
   - crates/als/tests/synthetic.rs
   - crates/als/tests/corpus.rs
@@ -173,6 +174,40 @@ those notes ([project files](../decisions/0010-project-files.md)).
 Live names MIDI note 60 "C3" (so 64 is E3, 67 is G3). Notes drawn without changing anything got
 velocity 100 in one clip and 98 in another.
 
+### Scale
+
+A clip's scale, which MIDI effects with Use Current Scale on follow (see *MIDI effects* below,
+and Pitch in [`pitch.md`](pitch.md)), is stored in the clip. The same elements also sit at the top of
+`LiveSet`, for the set's own scale **(hypothesis: the one new clips take)**.
+
+| What | Where | Encoding |
+|---|---|---|
+| Scale on | `IsInKey@Value` (in the clip); `InKey@Value` (in `LiveSet`) | `true`/`false`: the clip's Scale Mode switch |
+| Root | `ScaleInformation/Root@Value` | 0 – 11, the semitones up from C |
+| Scale | `ScaleInformation/Name@Value` | the scale's position in the clip's Scale Name list, from 0 |
+
+Not from the corpus: from the set Live saved for the MIDI effect measurements
+(`populate-midi-12.4.6.als`, a clip in C Major: `true`, `0`, `0`), and from sets generated with
+other scales whose recordings Live played as those scales (Pitch, Chord, Random, Scale and
+Arpeggiator with Use Current Scale on; every output note fell inside the scale written). Those
+confirm Root `0` C, `2` D and `9` A, and Name `0` Major, `1` Minor, `2` Dorian and `11` Minor
+Pentatonic. **(Hypothesis:)** the rest of the Name list is the Scale device's list of scales
+(`MidiScale`'s `InternalScale`) without its first entry, the user's own grid, so Name n is
+`InternalScale` n + 1. Not observed yet: whether a clip with Scale Mode off keeps its root and
+scale, and the scale of an audio clip (possible since Live 12.1).
+
+The importer reads a MIDI clip's scale into its content's scale
+([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: clip scales;
+`crates/als/src/scale.rs`), so MIDI effects that follow the scale, such as Pitch, follow it in
+Suhina too. Twelve of Live's scales have a Suhina mode: Name `0` Major, `1` Minor, `2` Dorian,
+`3` Mixolydian, `4` Lydian, `5` Phrygian, `6` Locrian, `10` Minor Blues (Suhina's Blues, the
+same six notes), `11` Minor Pentatonic, `12` Major Pentatonic, `13` Harmonic Minor and `17`
+Melodic Minor; those past `2` and `11` rest on the hypothesis above. A clip with Scale Mode off,
+or without `IsInKey` (sets from before Live 12), has no scale. A clip with Scale Mode on comes in
+without a scale, with a warning, when its scale has no Suhina mode (Whole Tone and the 22 others),
+or when Root or Name is missing, not a whole number, or out of range (Root past 11, Name past
+34). The set's own scale (`InKey`) is not read yet.
+
 ## Audio clips
 
 Corpus: series 2, files `30`–`35` (one 4-second, 48 kHz WAV rendered by Suhina).
@@ -263,9 +298,11 @@ from `true` to `false`) and `UserName@Value` (empty unless renamed).
 gain of EQ Eight is `Bands.2/ParameterA/Gain/Manual` (+3 dB stored as `3`). `LastPresetRef`
 points at the default preset the device was loaded from. The importer keeps them as
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
-with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, and the Delay
-and Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
-[`reverb.md`](reverb.md) › Import).
+with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, the Delay and
+Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
+[`reverb.md`](reverb.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
+table is in [`pitch.md`](pitch.md) › Import). A MIDI track's MIDI effects come first in its
+`Devices`, before the instrument.
 
 **Plug-ins** are `PluginDevice` elements whose `PluginDesc` holds one of:
 
@@ -336,6 +373,49 @@ Still open: how Mid/Side between the ends scales mid and side in the sound (the 
 linear in the display; Suhina keeps one at full and turns the other down linearly), and
 whether Width and Mid/Side sound like Suhina's at the same settings. Both need bounces of
 `118` and of the 50M and 50S files (`120-utility-midside-mid-50M.als`, `…-50S.als`).
+
+### MIDI effects
+
+Not from the corpus series but from three measurements of Live 12.4.6 kept in the device-specs
+repository (`measurements/`):
+
+- **A parameter dump.** Every MIDI effect was loaded fresh, and each parameter's name, range,
+  default and choices were read through Live's API (`dump-midi-12.4.6.json`).
+- **The set Live saved from it** (`populate-midi-12.4.6.als`): one MIDI track per device. It
+  gives the element names and every stored element of a fresh device.
+- **A calibration set.** A generated set holds one track per parameter element, with only that
+  element's stored value changed from the default. Live opened it, and the API reported which
+  parameter moved and to what (`als-map-12.4.6.json`). Every parameter element of the eight
+  devices matched exactly one API parameter, with no element and no parameter left over.
+
+The device is an element in the track's `Devices`, before the instrument, as on every device:
+`On/Manual@Value` is the device switch and `UserName@Value` the name the user gave it.
+Every parameter is stored in `<Element>/Manual@Value`. Unless the table says otherwise, the
+stored number is the one the API shows: a choice (marked *index*) is stored as its position in
+the list, from 0, and a switch as `true`/`false`. A stored number with a fraction is cut towards
+zero when Live loads it, for every parameter in whole steps (−51.2 semitones reads as −51, a
+Lowest of 88.9 as 88).
+
+| Device | Element | Parameter elements and the ranges stored | Stored differently from the API |
+|---|---|---|---|
+| Arpeggiator | `MidiArpeggiator` | `Mode` (Style, index 0 – 17), `PatternOffset` (−8 – 8), `RepeatCount` (0 – 16, 0 = endless), `SyncState`, `SyncedRate` (index 0 – 13), `Groove` (index 0 – 3), `FreeRate`, `Gate` (% 1 – 200), `Retrigger` (index 0 – 2), `RetriggerInterval` (index 0 – 14), `Hold`, `TransposeMode` (index 0 – 35, 0 = Chromatic), `TransposeKey` (0 – 11 from C), `TransposeSteps` (0 – 8), `TransposeDistance` (semitones −24 – 24), `VelocitySwitch`, `RetriggerVelocity`, `VelocityDecay`, `VelocityTarget` (0 – 127), `UseCurrentScale` | `FreeRate` and `VelocityDecay` in milliseconds as displayed; the API takes 0 – 1 along a curve |
+| CC Control | `MidiCcControl` | `ModWheel` (0 – 127), `PitchBend` (−64 – 64), `Pressure` (0 – 127), `CustomBoolValue`, `CustomFloatValues.0` … `.11` (0 – 127) | none. Also stored: each custom control's name (`CustomBoolName`, `CustomFloatNames.n`) and the controller it sends (`CustomBoolTarget`, `CustomFloatTargets.n`); whether a target is the CC number or a position in the list is not known yet |
+| Chord | `MidiChord` | per note n = 1 … 6: `Shiftn` (semitones −36 – 36), `ShiftScaleDegreesn` (−36 – 36), `Velocityn` (a factor 0.01 – 2), `Chancen` (0 – 1); then `Strum`, `StrumTension` and `StrumCrescendo` (% −100 – 100), `UseCurrentScale` | `Strum` in milliseconds (−400 – 400) = sign(x)·x² of the API's −20 – 20. Also stored: the two right-click options, `PlayDuplicateNotesWhenStrumming` and `SendPerNoteEventsToGeneratedNotes` |
+| Note Length | `MidiNoteLength` | `Mode` (Trigger Source, a switch), `Latch`, `SyncState`, `SyncedLength` (index 0 – 9), `TimeLength`, `Gate` (% 1 – 200), `Balance` (Release Velocity, % 0 – 100), `DecayTime`, `DecayKeyScale` (−1 – 1) | `TimeLength` and `DecayTime` in milliseconds (10 – 60000); the API takes 0 – 1 along a curve |
+| Pitch | `MidiPitcher` | see [`pitch.md`](pitch.md) › Import | none |
+| Random | `MidiRandom` | `Chance` (0 – 1), `Choices` (1 – 24), `Scale` (Interval, 1 – 24), `Sign` (index 0 – 2), `Alternate` (Mode: `false` random, `true` alternate), `UseCurrentScale` | none |
+| Scale | `MidiScale` | `Base` (0 – 11 from C), `InternalScale` (index 0 – 35, 0 = the user's own grid), `UseCurrentScale`, `Transpose` (semitones −36 – 36), `Fold`, `Lowest` (0 – 127), `Range` (0 – 128), `Mapping.0` … `.11` (−1 – 12, the grid) | none |
+| Velocity | `MidiVelocity` | `Drive` (−1 – 1), `Compand` (−1 – 1), `Random` (0 – 64), `Mode` (index 0 – 2), `Operation` (index 0 – 2), `MaxOut` (Out Hi, 0 – 127), `MinOut` (Out Low, 0 – 127), `Range` (0 – 127), `Lowest` (0 – 127) | none |
+
+Several devices also store view positions that are not part of the device (`…ScrollPos…`,
+`…RelativePosition`), and Arpeggiator stores four `…CompatibilityMode` switches, all `false` in
+a fresh device **(hypothesis: `true` in sets from older versions, to keep their behaviour)**.
+Sets saved before Live 12 are not observed: Arpeggiator's transposition and Random's mode were
+stored differently then.
+
+Only Pitch has a Suhina device; the importer maps it and keeps the other seven as placeholders
+([device import](device-import.md)), which pass notes on unchanged. Not observed yet: the MIDI
+Effect Rack, and a Max MIDI effect (series 8, file `406`).
 
 ## Noise: ignore when importing or diffing
 

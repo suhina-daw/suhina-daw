@@ -162,6 +162,77 @@ fn a_deactivated_note_is_read_as_muted() {
     assert_eq!((notes[1].time, notes[1].duration, notes[1].key), (1.0, 1.0, 60));
 }
 
+/// One MIDI track with `devices` and an arrangement clip holding D3 (key 62) for a beat, with
+/// the scale elements a Live 12 clip stores (`docs/spec/als-format.md` › MIDI clips › Scale).
+fn scaled_clip_set(in_key: &str, root: &str, name: &str, devices: &str) -> String {
+    let scale = format!(
+        r#"<IsInKey Value="{in_key}"/><ScaleInformation><Root Value="{root}"/><Name Value="{name}"/></ScaleInformation>"#
+    );
+    let note = r#"<MidiNoteEvent Time="0" Duration="1" Velocity="100" OffVelocity="64" NoteId="1"/>"#;
+    let clip = midi_clip("0", "0", "2", "false", "2", &key_track(62, note))
+        .replace("</MidiClip>", &format!("{scale}</MidiClip>"));
+    format!(
+        r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="Keys"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain>
+             <MainSequencer><ClipTimeable><ArrangerAutomation><Events>{clip}</Events></ArrangerAutomation></ClipTimeable></MainSequencer>
+           </DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+/// A clip's Scale Mode, root and scale become the content's scale; a scale Suhina cannot hold,
+/// or a stored number out of range, imports as no scale with a warning.
+#[test]
+fn reads_a_clips_scale() {
+    use suhina_model::{Scale, ScaleMode};
+    let scale_of = |in_key: &str, root: &str, name: &str| {
+        let import = read_xml(&scaled_clip_set(in_key, root, name, "")).unwrap();
+        let scale = import.project.contents.first().expect("the clip's content").scale;
+        let warned = import.warnings.iter().any(|w| w.contains("without a scale"));
+        (scale, warned)
+    };
+    assert_eq!(scale_of("true", "0", "0"), (Scale::new(0, ScaleMode::Major), false), "C Major");
+    assert_eq!(scale_of("true", "2", "2"), (Scale::new(2, ScaleMode::Dorian), false), "D Dorian");
+    assert_eq!(scale_of("true", "9", "11"), (Scale::new(9, ScaleMode::MinorPentatonic), false), "A minor pentatonic");
+    assert_eq!(scale_of("false", "2", "2"), (None, false), "Scale Mode off");
+    assert_eq!(scale_of("true", "2", "35"), (None, true), "Name past the end of the list");
+    assert_eq!(scale_of("true", "2", "-1"), (None, true), "negative Name");
+    assert_eq!(scale_of("true", "12", "0"), (None, true), "Root past B");
+    assert_eq!(scale_of("true", "0", "7"), (None, true), "Whole Tone, which Suhina has no mode for");
+}
+
+/// An imported Pitch with Use Current Scale on moves the notes by degrees of the clip's imported
+/// scale: two degrees up from D in D Dorian is F, three semitones, not the two it would be
+/// without the scale.
+#[test]
+fn imported_pitch_follows_the_imported_clip_scale() {
+    let manual = |name: &str, value: &str| format!(r#"<{name}><Manual Value="{value}"/></{name}>"#);
+    let pitch = format!(
+        r#"<MidiPitcher Id="0">{}{}{}<UserName Value=""/></MidiPitcher>"#,
+        manual("On", "true"),
+        manual("UseCurrentScale", "true"),
+        manual("PitchScaleDegrees", "2")
+    );
+    let imported = read_xml(&scaled_clip_set("true", "2", "2", &pitch)).unwrap().project;
+    let render = |p: &suhina_model::Project| suhina_engine::render_offline(p, 48_000, 512).unwrap();
+    let out = render(&imported);
+    assert!(out.iter().any(|s| s.abs() > 0.05), "the note plays");
+
+    // The same set with Pitch moving three semitones on its own, and no scale.
+    let semitones = |by: f64| {
+        let mut p = imported.clone();
+        p.contents[0].scale = None;
+        let channel = p.channels.iter_mut().find(|c| c.name == "Keys").unwrap();
+        let params = &mut channel.devices[0].params;
+        params.retain(|param| param.id != "followScale" && param.id != "pitch");
+        params.push(suhina_model::DeviceParam::new("followScale", 0.0));
+        params.push(suhina_model::DeviceParam::new("pitch", by));
+        render(&p)
+    };
+    let max_diff = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0f32, f32::max);
+    assert!(max_diff(&out, &semitones(3.0)) < 1e-6, "{}", max_diff(&out, &semitones(3.0)));
+    assert!(max_diff(&out, &semitones(2.0)) > 0.05, "without the scale the degrees would count as semitones");
+}
+
 #[test]
 fn reads_scenes_and_session_slots() {
     let p = read_xml(&live_set()).unwrap().project;
@@ -283,6 +354,65 @@ fn reads_plugins_and_placeholders() {
 
     assert_eq!(eq.kind, DeviceKind::Foreign { format: "als".into(), id: "Eq8".into() });
     assert!(!eq.enabled);
+}
+
+/// MIDI effects come before the instrument and keep that order: Pitch becomes Suhina's pitch, a
+/// MIDI effect without a Suhina device a placeholder (`docs/spec/als-format.md` › MIDI effects).
+#[test]
+fn midi_effects_keep_their_place_before_the_instrument() {
+    use suhina_model::DeviceKind;
+    let manual = |name: &str, value: &str| format!(r#"<{name}><Manual Value="{value}"/></{name}>"#);
+    let pitch: String = [
+        ("On", "true"),
+        ("Pitch", "-5.6"),
+        ("PitchScaleDegrees", "2"),
+        ("Lowest", "48"),
+        ("Range", "24"),
+        ("RangeMode", "1"),
+        ("UseCurrentScale", "false"),
+        ("StepWidth", "12"),
+    ]
+    .iter()
+    .map(|(name, value)| manual(name, value))
+    .collect();
+    let chord = format!(r#"{}{}<UserName Value="Stack"/>"#, manual("On", "false"), manual("Shift1", "7"));
+    let devices = format!(
+        r#"<MidiChord Id="0">{chord}</MidiChord>
+           <MidiPitcher Id="1">{pitch}<UserName Value=""/></MidiPitcher>
+           <OriginalSimpler Id="2">{}<UserName Value=""/></OriginalSimpler>"#,
+        manual("On", "true")
+    );
+    let xml = format!(
+        r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="M"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
+    );
+    let import = read_xml(&xml).unwrap();
+    let channel = import.project.channels.iter().find(|c| c.name == "M").unwrap();
+    let [chord, pitch, simpler] = channel.devices.as_slice() else {
+        panic!("expected three devices: {:?}", channel.devices)
+    };
+
+    assert_eq!(chord.kind, DeviceKind::Foreign { format: "als".into(), id: "MidiChord".into() });
+    assert_eq!(chord.name, "Stack");
+    assert!(!chord.enabled);
+    assert!(chord.params.is_empty());
+
+    assert_eq!(pitch.kind, DeviceKind::Builtin("pitch".into()));
+    assert_eq!(pitch.name, "Pitch");
+    assert!(pitch.enabled);
+    let value = |id: &str| pitch.params.iter().find(|p| p.id == id).map(|p| p.value);
+    // The stored number goes in as it is; the device drops the fraction, as Live does.
+    assert_eq!(value("pitch"), Some(-5.6));
+    assert_eq!(value("pitchDegrees"), Some(2.0));
+    assert_eq!(value("followScale"), Some(0.0));
+    assert_eq!(value("lowest"), Some(48.0));
+    assert_eq!(value("range"), Some(24.0));
+    assert_eq!(value("mode"), Some(1.0));
+
+    assert_eq!(simpler.kind, DeviceKind::Foreign { format: "als".into(), id: "OriginalSimpler".into() });
+    let placeholders: Vec<_> = import.warnings.iter().filter(|w| w.contains("placeholder")).collect();
+    assert_eq!(placeholders.len(), 2, "{:?}", import.warnings);
+    assert!(placeholders.iter().any(|w| w.contains("MidiChord")), "{placeholders:?}");
 }
 
 /// Locators become arrangement markers in beat order; one without a usable time is skipped with

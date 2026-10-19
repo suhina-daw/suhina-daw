@@ -89,6 +89,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | limiter: brickwall, 1.5 ms lookahead | own | done |
 | NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
 | NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
+| pitch, a MIDI effect: transposes by semitones or scale degrees, Block, Fold or Limit to a key window | own | done; step buttons planned |
 | multiband dynamics, upward and downward | own crossovers and detectors | planned |
 | delay: stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze | own (`dsp` delay lines) | done |
 | modulation delay | own delay lines | planned |
@@ -173,6 +174,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   with their panel settings; the delay's Equal-Loudness option is not read and imports as the
   linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
   [import](docs/spec/device-import.md))
+- the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
+- a MIDI clip's scale (root and mode), which Pitch follows; a scale Suhina has no mode for comes
+  in as none, with a warning
 - anything not understood yet is skipped with a warning; the project still opens
 
 ### M2 Playing
@@ -195,6 +199,13 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
   the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
   it ([nam spec](docs/spec/nam-amp-and-cab.md)).
+- MIDI effects run before a track's instrument: the pitch effect transposes the notes by
+  semitones or by steps along the playing clip's scale and keeps them inside a window of keys
+  (Block, Fold, Limit); a note-off always ends the key its note started
+  ([spec](docs/spec/pitch.md)). On a track with no instrument the changed notes play as the
+  track's sine tones. It is in the browser under **MIDI Effects** and is set through
+  `device.setParam` or an automation lane; the device panel shows no controls for built-in
+  devices yet.
 - Sends and return tracks play: each track sends to each return before or after its fader; a
   return runs its devices over what it is sent and plays into the main channel or a group, with
   latency compensation on every send; loops are refused (`track.setSend`, `track.setSendMode`,

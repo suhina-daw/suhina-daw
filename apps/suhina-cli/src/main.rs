@@ -389,10 +389,10 @@ fn read_voices(path: &std::path::Path) -> Result<suhina_device_fm_synth::patch::
     Ok(voices)
 }
 
-/// Puts the FM synth with `patch` first on the channel of every track that plays notes, in
-/// place of an instrument already there.
+/// Puts the FM synth with `patch` on the channel of every track that plays notes, first after
+/// its MIDI effects, in place of an instrument already there.
 fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_synth::Patch) {
-    use suhina_device_api::Device as _;
+    use suhina_device_api::{Device as _, Role};
     let mut synth = suhina_device_fm_synth::FmSynth::new();
     synth.load_patch(patch);
     let params: Vec<DeviceParam> = suhina_device_fm_synth::INFO
@@ -412,15 +412,18 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
     };
     let channels: Vec<ChannelId> =
         project.tracks.iter().filter(|t| t.content.notes).filter_map(|t| t.channel).collect();
+    let role = |d: &Device| match &d.kind {
+        DeviceKind::Builtin(id) => suhina_device_registry::info(id).map(|info| info.role),
+        _ => None,
+    };
     for channel in project.channels.iter_mut().filter(|c| channels.contains(&c.id)) {
-        let first_is_instrument = channel.devices.first().is_some_and(|d| {
-            matches!(&d.kind, DeviceKind::Builtin(id) if suhina_device_registry::info(id)
-                .is_some_and(|i| i.role == suhina_device_api::Role::Instrument))
-        });
-        if first_is_instrument {
-            channel.devices.remove(0);
+        // The synth goes after the MIDI effects that lead the chain, in place of a built-in
+        // instrument there.
+        let at = channel.devices.iter().take_while(|d| role(d) == Some(Role::MidiEffect)).count();
+        if channel.devices.get(at).is_some_and(|d| role(d) == Some(Role::Instrument)) {
+            channel.devices.remove(at);
         }
-        channel.devices.insert(0, device.clone());
+        channel.devices.insert(at, device.clone());
     }
 }
 
@@ -1074,5 +1077,12 @@ mod tests {
         let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.05 && peak <= 1.0, "peak {peak}");
         let _ = std::fs::remove_file(path);
+
+        // A MIDI effect leading a chain stays before the synth.
+        let pitch = Device::new("Pitch", DeviceKind::Builtin("pitch".into()));
+        project.channels[0].devices.insert(0, pitch);
+        put_fm_synth_on_note_tracks(&mut project, &loaded);
+        let ids: Vec<&DeviceKind> = project.channels[0].devices.iter().map(|d| &d.kind).collect();
+        assert_eq!(ids, [&DeviceKind::Builtin("pitch".into()), &DeviceKind::Builtin("fm-synth".into())]);
     }
 }

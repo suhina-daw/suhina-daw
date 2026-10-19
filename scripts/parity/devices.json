@@ -45,11 +45,11 @@
     ["Vocoder", "29.42", "vocoder", "none", ""]
   ],
   "midi_effects": [
-    ["Arpeggiator", "30.1", "arpeggiator", "none", "Suhina has no MIDI effect devices of any kind"],
+    ["Arpeggiator", "30.1", "arpeggiator", "none", ""],
     ["CC Control", "30.2", "MIDI CC out", "none", ""],
     ["Chord", "30.3", "chord from one note", "none", ""],
     ["Note Length", "30.4", "note length", "none", ""],
-    ["Pitch", "30.5", "pitch transpose", "none", ""],
+    ["Pitch", "30.5", "pitch transpose", "close", "Suhina pitch: semitones or scale degrees with the clip's scale, Block, Fold or Limit to a key window; the step buttons are planned"],
     ["Random", "30.6", "random pitch", "none", ""],
     ["Scale", "30.7", "scale remap", "none", ""],
     ["Velocity", "30.8", "velocity remap", "none", ""]
@@ -79,6 +79,7 @@
     ["limiter", "effect", "brickwall, 1.5 ms lookahead (3 parameters)"],
     ["delay", "effect", "stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters)"],
     ["reverb", "effect", "algorithmic: input band, early reflections, feedback delay network with damping, chorus, freeze (32 parameters)"],
+    ["pitch", "MIDI effect", "transposes by semitones or scale degrees, keeps notes in a key window: Block, Fold, Limit (6 parameters)"],
     ["fm-synth", "instrument", "six operators, 32 algorithms, DX7 voice files (173 parameters)"]
   ]
 }

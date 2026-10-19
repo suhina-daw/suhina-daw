@@ -206,7 +206,9 @@ impl Builder<'_> {
         }
         device.reset();
         let latency = device.latency();
-        Some(Built { slot: Slot::Device(device), id: id.to_owned(), values, latency })
+        // A built-in MIDI effect runs on the events, as in a chain (#678).
+        let slot = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
+        Some(Built { slot, id: id.to_owned(), values, latency })
     }
 
     fn sd(&self, stored: &suhina_model::Device) -> Option<Built> {
@@ -335,7 +337,7 @@ pub(crate) fn is_instrument(slot: &Slot) -> bool {
         Slot::Plugin(slot) => slot.instrument,
         Slot::InstrumentSd(_) => true,
         Slot::Group(group) => group.instrument,
-        Slot::Sd(_) | Slot::MidiSd(_) => false,
+        Slot::MidiDevice(_) | Slot::Sd(_) | Slot::MidiSd(_) => false,
     }
 }
 
@@ -343,7 +345,7 @@ fn set_sd(slot: &mut Slot, index: usize, value: f64) {
     match slot {
         Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
         Slot::MidiSd(effect) => effect.set_parameter(index, value),
-        Slot::Device(_) | Slot::Plugin(_) | Slot::Group(_) => {}
+        Slot::Device(_) | Slot::MidiDevice(_) | Slot::Plugin(_) | Slot::Group(_) => {}
     }
 }
 
@@ -571,6 +573,19 @@ pub(crate) fn run_slots(
                     lanes,
                     crate::chain::SdRun { from, to, context },
                 );
+            }
+            // A built-in MIDI effect (#678) changes the branch's events as in a chain.
+            Slot::MidiDevice(device) => {
+                crate::chain::run_midi_device(
+                    device,
+                    index,
+                    pending,
+                    span_events,
+                    midi_scratch,
+                    lanes,
+                    crate::chain::SdRun { from, to, context },
+                );
+                std::mem::swap(pending, midi_scratch);
             }
             Slot::MidiSd(effect) => {
                 crate::chain::run_sd_midi(

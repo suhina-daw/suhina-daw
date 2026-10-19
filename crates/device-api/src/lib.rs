@@ -11,7 +11,9 @@
 //! 0..1 range a knob or an automation lane uses.
 //!
 //! Instruments also take notes: the host hands them [`NoteEvent`]s through [`Device::event`]
-//! between blocks, splitting a block where an event falls, as it does for automation.
+//! between blocks, splitting a block where an event falls, as it does for automation. MIDI
+//! effects change the notes on their way to the instrument: the host hands them a span's events
+//! through [`Device::process_events`] and passes on what they send.
 //!
 //! This crate depends on nothing in Suhina, so devices can be built, tested and later shipped
 //! as plug-ins without the engine.
@@ -33,6 +35,12 @@ pub enum Unit {
     Balance,
     /// A bandwidth in octaves.
     Octaves,
+    /// A distance in pitch, in semitones.
+    Semitones,
+    /// A distance in steps along the scale the notes are in.
+    ScaleDegrees,
+    /// A MIDI key, shown as a note name (60 is C3).
+    Key,
 }
 
 /// How a continuous parameter maps onto a knob's travel.
@@ -151,7 +159,7 @@ impl ParamInfo {
     }
 }
 
-/// Whether a device changes the sound it gets or makes its own from notes.
+/// Whether a device changes the sound it gets, makes its own from notes, or changes the notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     /// Processes the signal in the buffer.
@@ -159,6 +167,9 @@ pub enum Role {
     /// Plays the notes it gets through [`Device::event`] and writes its output over the
     /// buffer, whatever was in it.
     Instrument,
+    /// Changes the notes on their way to the instrument through [`Device::process_events`];
+    /// the sound is not its business, and the host never asks it to process a buffer.
+    MidiEffect,
 }
 
 /// What a device is: its stable id (the model's `DeviceKind::Builtin` id), the name the user
@@ -217,6 +228,80 @@ pub enum NoteEvent {
     Pressure(f32),
     /// Every held note is released, as if each key came up and the sustain pedal was lifted.
     AllNotesOff,
+    /// The scale of the notes that follow: the host sends it before the first note of a clip
+    /// whose scale differs from the last one sent, `None` for a clip without a scale. MIDI
+    /// effects that follow the scale keep it and pass it on; everything else ignores it.
+    Scale(Option<MusicalScale>),
+}
+
+/// The scale the notes a track plays are written in: a root and the pitch classes it holds.
+/// Always valid: the root is 0 (C) to 11 (B) and the scale holds at least one pitch class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MusicalScale {
+    root: u8,
+    /// Bit `n` is set when pitch class `n` (0 is C) is in the scale.
+    classes: u16,
+}
+
+impl MusicalScale {
+    /// The scale over `root` (0 to 11) holding the pitch classes `intervals` semitones above
+    /// it; `None` for a root over 11, an interval over 11, or no intervals.
+    pub fn new(root: u8, intervals: &[u8]) -> Option<Self> {
+        if root > 11 || intervals.is_empty() {
+            return None;
+        }
+        let mut classes = 0u16;
+        for &interval in intervals {
+            if interval > 11 {
+                return None;
+            }
+            classes |= 1 << ((root + interval) % 12);
+        }
+        Some(Self { root, classes })
+    }
+
+    /// The root pitch class, 0 (C) to 11 (B).
+    pub fn root(self) -> u8 {
+        self.root
+    }
+
+    /// Whether `key` (any whole number of semitones, 60 being C3) is in the scale.
+    pub fn contains(self, key: i32) -> bool {
+        self.classes & (1 << key.rem_euclid(12)) != 0
+    }
+
+    /// The key nearest to `key` that the scale holds; a tie goes to the lower key.
+    pub fn nearest(self, key: i32) -> i32 {
+        for distance in 0..=6 {
+            if self.contains(key - distance) {
+                return key - distance;
+            }
+            if self.contains(key + distance) {
+                return key + distance;
+            }
+        }
+        key
+    }
+
+    /// The key `degrees` steps along the scale from `key`, counted from the scale's key nearest
+    /// to it ([`nearest`](Self::nearest)): in C major one step up from C is D, from B is the C
+    /// above, and one step down from C is the B below. Steps beyond a thousand either way count
+    /// as a thousand.
+    pub fn step(self, key: i32, degrees: i32) -> i32 {
+        let mut key = self.nearest(key);
+        let direction = degrees.signum();
+        for _ in 0..degrees.unsigned_abs().min(1_000) {
+            key += direction;
+            // At most eleven semitones to the next key of the scale, which holds one at least.
+            for _ in 0..11 {
+                if self.contains(key) {
+                    break;
+                }
+                key += direction;
+            }
+        }
+        key
+    }
 }
 
 /// MIDI controller numbers instruments commonly read from [`NoteEvent::Controller`].
@@ -294,6 +379,32 @@ pub trait Device: Send {
         let _ = event;
     }
 
+    /// A MIDI effect's work on a span of `frames` frames: `input` holds the events that reach
+    /// it, in frame order, at frames counted from the span's start; the device writes the events
+    /// it sends on into `output`, in frame order and before `frames`, and returns how many it
+    /// wrote. It writes no more than `output.len()`: at least `input.len()`, and twice that
+    /// while the block has space. With more to send than fits, it leaves out note-ons (and
+    /// then their note-offs) before any note-off of a note it sent, keeping room for the
+    /// note-offs and all-notes-off still in `input`, so no note it started is left sounding.
+    /// The host splits a span where a parameter changes, so a change lands
+    /// between the events either side of it; the result must not depend on how the stream is
+    /// divided otherwise. [`reset`](Self::reset) forgets the notes it holds. Effects and
+    /// instruments are never asked; by default the events pass unchanged.
+    fn process_events(
+        &mut self,
+        context: &ProcessContext,
+        frames: usize,
+        input: &[(usize, NoteEvent)],
+        output: &mut [(usize, NoteEvent)],
+    ) -> usize {
+        let _ = (context, frames);
+        let written = input.len().min(output.len());
+        if let (Some(to), Some(from)) = (output.get_mut(..written), input.get(..written)) {
+            to.copy_from_slice(from);
+        }
+        written
+    }
+
     /// Delay the device adds, in frames, for the host to compensate.
     fn latency(&self) -> u32 {
         0
@@ -347,6 +458,36 @@ mod tests {
         let empty = ParamInfo::choice("x", "X", &[], 0);
         assert_eq!(empty.to_normalized(0.0), 0.0);
         assert_eq!(empty.from_normalized(0.5), 0.0);
+    }
+
+    /// A scale knows its keys in every octave, snaps a key outside it to the nearest one (a tie going
+    /// down) and steps by degrees, whatever its root.
+    #[test]
+    fn a_scale_snaps_and_steps_along_its_keys() {
+        let major = MusicalScale::new(0, &[0, 2, 4, 5, 7, 9, 11]).unwrap();
+        assert!(major.contains(60) && !major.contains(61) && major.contains(-1));
+        // C# and D# go down (ties), F# down to F.
+        assert_eq!([61, 63, 66, 68, 70].map(|k| major.nearest(k)), [60, 62, 65, 67, 69]);
+        assert_eq!([60, 64, 71].map(|k| major.step(k, 1)), [62, 65, 72]);
+        assert_eq!(major.step(60, -1), 59);
+        assert_eq!(major.step(60, 7), 72);
+        assert_eq!(major.step(61, 0), 60);
+        // A scale's root does not change its keys.
+        let dorian = MusicalScale::new(2, &[0, 2, 3, 5, 7, 9, 10]).unwrap();
+        assert!((0..128).all(|k| dorian.step(k, 3) == major.step(k, 3)));
+        assert_eq!(dorian.root(), 2);
+        // Five keys to the octave; E (a tie between E flat and F) goes down.
+        let pentatonic = MusicalScale::new(0, &[0, 3, 5, 7, 10]).unwrap();
+        assert_eq!(pentatonic.step(60, 5), 72);
+        assert_eq!([60, 67, 70, 62, 64].map(|k| pentatonic.step(k, 1)), [63, 70, 72, 65, 65]);
+        // One key only, and steps far past any keyboard.
+        let one = MusicalScale::new(5, &[0]).unwrap();
+        assert_eq!(one.step(60, 2), 89);
+        assert_eq!(one.step(0, i32::MIN), 5 - 12 * 1_000);
+        assert_eq!(major.step(0, i32::MAX), 12 * (1_000 / 7) + 11);
+        for bad in [MusicalScale::new(12, &[0]), MusicalScale::new(0, &[]), MusicalScale::new(0, &[12])] {
+            assert!(bad.is_none());
+        }
     }
 
     #[test]

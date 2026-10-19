@@ -9,7 +9,10 @@
 //! and volume apply. When the first device is an instrument, the track's notes go to it as
 //! [`NoteEvent`]s instead of starting sine voices; the chain runs in pieces split at each event,
 //! so a note lands on its frame. A track without devices is mixed straight into the output, as
-//! before.
+//! before. MIDI effects before the instrument change those events on the way: each takes the
+//! block's events and hands on what it makes of them ([`Device::process_events`]). Before the
+//! first note of a clip whose scale differs from the last one sent, the chain sends the clip's
+//! scale ([`NoteEvent::Scale`]) for the MIDI effects that follow it.
 //!
 //! A plug-in device takes a [`PluginSlot`] in the chain (ADR 0006): it gets the block's events
 //! with their frames and runs once per block, so the devices run one after another over the
@@ -27,7 +30,7 @@
 
 use std::time::{Duration, Instant};
 
-use suhina_device_api::{Device, NoteEvent, ProcessContext};
+use suhina_device_api::{Device, MusicalScale, NoteEvent, ProcessContext, Role};
 use suhina_model::{DeviceKind, Project, TrackId};
 
 use crate::automation::{DeviceLanes, MixLanes};
@@ -36,6 +39,7 @@ use crate::plugin::{
 };
 use crate::plugin_params::SlotParams;
 use crate::sends::SendOut;
+use crate::sine::{self, SineTones};
 
 /// The most frames one block of a chain holds; the renderer splits longer blocks.
 pub(crate) const MAX_BLOCK: usize = 1024;
@@ -49,6 +53,8 @@ pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
 /// One device of a chain: built in, or a plug-in in a host process.
 pub(crate) enum Slot {
     Device(Box<dyn Device>),
+    /// A built-in MIDI effect: it changes the chain's events, not its sound.
+    MidiDevice(Box<dyn Device>),
     Sd(suhina_device_sdk::PreparedEffect),
     InstrumentSd(suhina_device_sdk::PreparedEffect),
     MidiSd(suhina_device_sdk::PreparedMidiEffect),
@@ -63,7 +69,7 @@ impl Slot {
         match self {
             Slot::Sd(effect) | Slot::InstrumentSd(effect) => effect.set_parameter(index, value),
             Slot::MidiSd(effect) => effect.set_parameter(index, value),
-            Slot::Device(_) | Slot::Plugin(_) | Slot::Group(_) => {}
+            Slot::Device(_) | Slot::MidiDevice(_) | Slot::Plugin(_) | Slot::Group(_) => {}
         }
     }
 }
@@ -138,6 +144,8 @@ pub(crate) struct Chain {
     /// Per key, the renderer frame its note ends at, or `NOT_HELD`.
     held: [u64; 128],
     next_off: u64,
+    /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
+    scale: Option<Option<MusicalScale>>,
 }
 
 impl Chain {
@@ -279,7 +287,7 @@ impl Chain {
             }
             device.reset();
             latency = latency.saturating_add(device.latency());
-            slots.push(Slot::Device(device));
+            slots.push(if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) });
             positions.push(position);
             // A device that holds a file changes with the file: its identity carries the state's
             // hash, the `.sd` devices' trick, so a model swap rebuilds one device alone.
@@ -299,7 +307,19 @@ impl Chain {
             }
             params.push(values);
         }
-        let instrument = slots.iter().any(crate::group::is_instrument);
+        let mut instrument = slots.iter().any(crate::group::is_instrument);
+        // MIDI effects with no instrument after them play the notes they change as the sine
+        // tones the track would play without them (ADR 0004 › 14).
+        let is_midi = |slot: &Slot| matches!(slot, Slot::MidiDevice(_) | Slot::MidiSd(_));
+        if !instrument && slots.iter().any(is_midi) {
+            let at = slots.iter().take_while(|slot| is_midi(slot)).count();
+            device_lanes.insert_slot(at);
+            slots.insert(at, Slot::Device(Box::new(SineTones::new(sample_rate))));
+            positions.insert(at, usize::MAX);
+            ids.insert(at, sine::INFO.id.to_string());
+            params.insert(at, Vec::new());
+            instrument = true;
+        }
         (!slots.is_empty()).then(|| Self {
             track,
             column,
@@ -334,6 +354,7 @@ impl Chain {
             joined: Joined::default(),
             held: [NOT_HELD; 128],
             next_off: NOT_HELD,
+            scale: None,
         })
     }
 
@@ -375,6 +396,7 @@ impl Chain {
             joined: Joined::default(),
             held: [NOT_HELD; 128],
             next_off: NOT_HELD,
+            scale: None,
         }
     }
 
@@ -487,6 +509,19 @@ impl Chain {
                 }
                 Slot::Group(group) => {
                     group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
+                    *stage += 1;
+                }
+                Slot::MidiDevice(device) => {
+                    run_midi_device(
+                        device,
+                        *stage,
+                        pending,
+                        span_events,
+                        midi_scratch,
+                        device_lanes,
+                        SdRun { from, to, context },
+                    );
+                    std::mem::swap(pending, midi_scratch);
                     *stage += 1;
                 }
                 Slot::Sd(effect) => {
@@ -632,6 +667,17 @@ impl Chain {
         self.next_off = self.next_off.min(end.max(position + 1));
     }
 
+    /// Tells the devices, at `frame` of the block, that the notes that follow are in `scale`
+    /// (`None` for a clip without one), unless that is the scale they were last told. Only an
+    /// instrument chain takes notes, so only it is told.
+    pub(crate) fn set_scale(&mut self, frame: usize, scale: Option<MusicalScale>) {
+        if !self.instrument || self.scale == Some(scale) {
+            return;
+        }
+        self.scale = Some(scale);
+        self.push(frame, NoteEvent::Scale(scale));
+    }
+
     /// Releases the notes that end by renderer frame `position`, at `frame` of the block.
     pub(crate) fn release_due(&mut self, frame: usize, position: u64) {
         if position < self.next_off {
@@ -729,6 +775,19 @@ impl Chain {
                 }
                 Slot::Group(group) => {
                     group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
+                    index += 1;
+                }
+                Slot::MidiDevice(device) => {
+                    run_midi_device(
+                        device,
+                        index,
+                        pending,
+                        span_events,
+                        midi_scratch,
+                        device_lanes,
+                        SdRun { from, to, context },
+                    );
+                    std::mem::swap(pending, midi_scratch);
                     index += 1;
                 }
                 Slot::Sd(effect) => {
@@ -840,7 +899,7 @@ impl Chain {
     pub(crate) fn set_param(&mut self, position: usize, param: usize, value: f64) {
         let Some(index) = self.positions.iter().position(|&p| p == position) else { return };
         match self.slots.get_mut(index) {
-            Some(Slot::Device(device)) => {
+            Some(Slot::Device(device) | Slot::MidiDevice(device)) => {
                 device.set_param(param, value);
                 if let Some(slot) = self.params.get_mut(index).and_then(|values| values.get_mut(param)) {
                     *slot = device.param(param).unwrap_or(value);
@@ -882,7 +941,7 @@ impl Chain {
             self.slots.iter_mut().zip(&self.params).zip(old.slots.iter_mut()).enumerate()
         {
             match (slot, fresh) {
-                (Slot::Device(device), _) => {
+                (Slot::Device(device) | Slot::MidiDevice(device), _) => {
                     // A parameter that follows a lane keeps its running value until the lane
                     // sets it in the next block.
                     for (index, &value) in
@@ -906,6 +965,7 @@ impl Chain {
         }
         self.held = old.held;
         self.next_off = old.next_off;
+        self.scale = old.scale;
         self.delay.adopt(&mut old.delay);
         self.adopt_sends(old);
         true
@@ -1244,8 +1304,73 @@ pub(crate) fn run_sd_midi(
     output.truncate(written);
 }
 
-/// `context` for a span that starts `frame` frames into the block: while the transport runs, the
-/// song position moves on to that frame.
+/// Runs a built-in MIDI effect (slot `slot` of its chain) over the block's frames `from..to`:
+/// `events` (at block frames) go in, what it sends on goes to `output` (at block frames), split
+/// where a parameter that follows a lane changes, a change at a frame coming before the events
+/// at that frame. `input` is scratch for each span's events. Never allocates: the device gets
+/// the room `output`'s capacity has left, at least as many events as it is handed (the block's
+/// events never outnumber that capacity), and leaves out what does not fit, note-ons first.
+pub(crate) fn run_midi_device(
+    device: &mut Box<dyn Device>,
+    slot: usize,
+    events: &[(usize, NoteEvent)],
+    input: &mut Vec<(usize, NoteEvent)>,
+    output: &mut Vec<(usize, NoteEvent)>,
+    lanes: &DeviceLanes,
+    run: SdRun<'_>,
+) {
+    output.clear();
+    let mut start = run.from;
+    let mut next = 0;
+    for change in lanes.changes(slot, run.from, run.to) {
+        let end = change.frame.clamp(start, run.to);
+        if end > start {
+            midi_span(device, events, &mut next, input, output, SdRun { from: start, to: end, ..run }, false);
+        }
+        device.set_param(change.param, change.value);
+        start = end;
+    }
+    midi_span(device, events, &mut next, input, output, SdRun { from: start, ..run }, true);
+}
+
+/// One span `from..to` of [`run_midi_device`]: the events from `next` that fall before `to`
+/// (all that are left, when `rest`) go through the device. An event outside the span is handed
+/// over at its nearest frame, as `run_device` does.
+fn midi_span(
+    device: &mut Box<dyn Device>,
+    events: &[(usize, NoteEvent)],
+    next: &mut usize,
+    input: &mut Vec<(usize, NoteEvent)>,
+    output: &mut Vec<(usize, NoteEvent)>,
+    span: SdRun<'_>,
+    rest: bool,
+) {
+    let SdRun { from: start, to: end, context } = span;
+    let frames = end.saturating_sub(start);
+    let final_frame = frames.saturating_sub(1);
+    input.clear();
+    while let Some(&(at, event)) = events.get(*next)
+        && (rest || at < end)
+        && input.len() < input.capacity()
+    {
+        input.push((at.saturating_sub(start).min(final_frame), event));
+        *next += 1;
+    }
+    let written = output.len();
+    // The events of the block's later spans keep their room, so every span has room for at
+    // least as many events as it hands over (ADR 0004 › 14).
+    let later = events.len().saturating_sub(*next);
+    output.resize(output.capacity().saturating_sub(later).max(written), (0, NoteEvent::AllNotesOff));
+    let sent = match output.get_mut(written..) {
+        Some(room) => device.process_events(context, frames, input, room),
+        None => 0,
+    };
+    output.truncate(written + sent);
+    for event in output.iter_mut().skip(written) {
+        event.0 = (event.0 + start).min(start + final_frame);
+    }
+}
+
 fn span_context(context: &ProcessContext, frame: usize, sample_rate: f64) -> ProcessContext {
     let mut context = *context;
     if context.playing {

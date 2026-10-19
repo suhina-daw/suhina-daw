@@ -213,9 +213,10 @@ CHAPTERS = [
      "compressor, limiter, delay, reverb) against 42 documented audio effects; the delay and reverb "
      "take every parameter of their counterparts, several others are close in kind but far "
      "narrower in parameters and modes."),
-    (30, "Live MIDI Effect Reference", 13, 0.00, "absent",
-     "SDK MIDI-effect graphs run before the instrument; the MIDI-transpose example shifts notes. "
-     "None of the 8 documented MIDI effects is implemented in full."),
+    (30, "Live MIDI Effect Reference", 13, 0.10, "started",
+     "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
+     "window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect "
+     "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
     (31, "Live Instrument Reference", 120, 0.08, "started",
      "One instrument: the FM synth (DX7-style, MSFA port) against 13 instruments; no sampler, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),

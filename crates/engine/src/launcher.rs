@@ -495,6 +495,8 @@ struct PlanNote {
     bus: u32,
     /// The track's meter slot.
     meter: u32,
+    /// The scale of the clip.
+    scale: Option<suhina_device_api::MusicalScale>,
 }
 
 struct PlanAudio {
@@ -1040,6 +1042,7 @@ fn plan_clip(
                         gain_right: gain_right * velocity,
                         bus,
                         meter,
+                        scale: crate::musical_scale(content.scale),
                     });
                 }
             }
@@ -1763,6 +1766,7 @@ impl Renderer {
                 column: column_id,
                 bus: note.bus,
                 meter: note.meter,
+                scale: note.scale,
             };
             start_note(voices, chains, frame, *position, *sample_rate, end, start);
         };

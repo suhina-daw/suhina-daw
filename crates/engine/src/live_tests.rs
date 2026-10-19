@@ -534,3 +534,33 @@ fn a_drivers_stamps_are_placed_on_the_live_clock() {
     }
     assert!(crate::live_now() >= 1);
 }
+
+/// Notes from a MIDI controller pass through the pitch effect before the instrument, sound as
+/// the transposed key played straight in, and end when the key is let go.
+#[test]
+fn live_notes_go_through_the_midi_effects_before_the_instrument_and_end() {
+    // A key through the pitch effect sounds as the transposed key played straight in.
+    let play = |devices: Vec<Device>, key: u8| {
+        let mut renderer = stopped(&project(Vec::new(), 1.0, devices));
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+        live.send(LiveEvent::NoteOn { key, velocity: 1.0 });
+        let mut out = blocks(&mut renderer, 20, 256);
+        live.send(LiveEvent::NoteOff { key });
+        out.extend(blocks(&mut renderer, 200, 256));
+        out
+    };
+    let pitch = || device("pitch", &[("pitch", 7.0)]);
+    for (pitched, plain) in [
+        (play(vec![pitch(), device("fm-synth", &[])], 60), play(vec![device("fm-synth", &[])], 67)),
+        // Without an instrument the sine tones play what the effect sends (a pitch effect at 0
+        // still brings the tones in for the key played straight).
+        (play(vec![pitch()], 60), play(vec![device("pitch", &[])], 67)),
+    ] {
+        assert!(peak(&plain) > 0.01);
+        let diff = pitched.iter().zip(&plain).fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(diff < 1e-6, "{diff}");
+        assert!(peak(&pitched[pitched.len() - 512..]) < 1e-4, "the note ends");
+    }
+}

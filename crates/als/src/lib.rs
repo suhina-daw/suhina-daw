@@ -10,6 +10,7 @@
 //! [`Import::warnings`], so a project still opens with everything else intact.
 
 mod devices;
+mod scale;
 mod vst2;
 
 use std::fmt;
@@ -633,8 +634,15 @@ impl Reader {
     /// Reads one clip into the content pool and returns its placement.
     fn clip(&mut self, node: Node, arrangement: bool, track: &str) -> Option<Clip> {
         let name = value(node, &["Name"]).unwrap_or_default().to_string();
+        let mut scale = None;
         let data = match node.tag_name().name() {
-            "MidiClip" => LaneData::Notes(self.notes(node, &name, track)),
+            "MidiClip" => {
+                scale = scale::clip_scale(node).unwrap_or_else(|reason| {
+                    self.warn(format!("track {track}: clip {name:?} imported without a scale: {reason}"));
+                    None
+                });
+                LaneData::Notes(self.notes(node, &name, track))
+            }
             "AudioClip" => LaneData::Audio(self.audio(node, &name, track)?),
             other => {
                 self.warn(format!("track {track}: {other} is not imported yet"));
@@ -658,7 +666,7 @@ impl Reader {
             length: loop_end.max(out_marker).max(0.0),
             lanes: vec![ContentLane { target: None, data }],
             extensions: Extensions::default(),
-            scale: None,
+            scale,
         });
 
         let (offset, loop_range) = if loop_on && loop_end > loop_start {

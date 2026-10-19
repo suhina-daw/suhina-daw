@@ -109,6 +109,24 @@ fn hide_detail_area(harness: &mut Harness<'static, App>) {
     assert!(harness.query_by_label("Show Clip").is_none() && !piano(harness), "the detail area is hidden");
 }
 
+/// The device chain in the detail area shows a MIDI effect first, then the instrument, then the
+/// audio effects.
+#[test]
+fn a_midi_effect_shows_before_the_instrument_in_the_chain() {
+    let mut project = project();
+    let synth = Device { name: "FM Synth".into(), kind: DeviceKind::Builtin("fm-synth".into()), ..device("Pitch") };
+    project.channels[0].devices = vec![device("Pitch"), synth, device("Utility")];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    let x = |name: &str| harness.get_by_label(&format!("Device {name}")).rect().center().x;
+    assert!(x("Pitch") < x("FM Synth") && x("FM Synth") < x("Utility"), "MIDI effect, instrument, effect");
+}
+
 #[test]
 fn the_switch_goes_from_the_clip_to_its_tracks_devices_and_back() {
     let mut harness = arrangement();

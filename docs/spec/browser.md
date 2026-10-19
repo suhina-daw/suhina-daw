@@ -105,15 +105,17 @@ the Pinned place, the recent projects and the folders hold any kind and keep the
 
 **No search text:** a tree. With no place selected its top level is:
 
-- *Instruments* (built-in instruments), *Effects* (built-in effects), *Plug-ins* (installed
-  plug-ins in a folder per vendor, *Unknown vendor* last), then each added folder.
+- *Instruments* (built-in instruments), *Effects* (built-in effects), *MIDI Effects* (built-in
+  MIDI effects, such as [the pitch effect](pitch.md)), *Plug-ins* (installed plug-ins in a folder
+  per vendor, *Unknown vendor* last), then each added folder.
 
 With a place selected the tree is that place: the folder's contents, the pinned items or the
 recent group's items (a flat list).
 
 **The category filter** narrows what the tree shows: Samples, MIDI and Presets show files of
 that kind and the folders that hold any (by the index; a folder not indexed yet is shown);
-Instruments and Effects show only those built-in effects and instruments, `.sd` AudioEffects, and plug-ins with that role
+Instruments and Effects show only those built-in effects and instruments (Effects with the
+built-in MIDI effects), `.sd` AudioEffects, and plug-ins with that role
 (a plug-in with the *instrument* feature counts as an instrument); Plug-ins shows only
 plug-ins. All shows everything.
 
@@ -391,7 +393,7 @@ the CLI can do the same.
 
 | Command | Params | Does |
 |---|---|---|
-| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugins.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` instruments and MIDI effects create MIDI tracks |
+| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugins.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
 | `clip.addFiles` | `paths`, `track?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group), from beat `start` in the Arrangement or from `scene` (1-based) in the Session (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
 | `device.add` | adds `preset?` and `voice?` (1–32) | the built-in effect or instrument with a preset's values |
 

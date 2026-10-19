@@ -186,7 +186,8 @@ All three roles execute. Instrument graphs expose `midi_key`, `midi_velocity` an
 signals to the existing audio nodes to generate sound. This initial instrument runtime is
 monophonic: the latest note controls the graph, and note-off releases its gate. MIDI effects go
 before the track instrument; their event buffers are prepared with the chain, so processing does
-not allocate on the audio thread.
+not allocate on the audio thread. On a track with no instrument the notes they send play as the
+track's sine tones, as for built-in MIDI effects ([ADR 0004](../decisions/0004-built-in-devices.md) › 13).
 The `.sd` file contains data only. FFT, sample assets, oversampled nonlinear processing and
 freely arranged graph editing are not implemented; accepted graphs need none of these to load.
 

@@ -230,6 +230,14 @@ impl DeviceLanes {
         }
     }
 
+    /// Makes room for a slot at `slot`: the lanes of that slot and the ones after it move up
+    /// one.
+    pub(crate) fn insert_slot(&mut self, slot: usize) {
+        for lane in self.lanes.iter_mut().filter(|l| l.slot >= slot) {
+            lane.slot += 1;
+        }
+    }
+
     /// Whether parameter `param` of slot `slot` follows a lane.
     pub(crate) fn covers(&self, slot: usize, param: usize) -> bool {
         self.lanes.iter().any(|l| l.slot == slot && l.param == param)

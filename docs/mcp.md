@@ -357,8 +357,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   built-in devices too. Setting an automated parameter by hand turns its lane off (the answer
   says `"automation": "off"`) until `automation.setEnabled` turns it on again
   ([automation spec](spec/automation.md)).
-  An instrument (`fm-synth`) goes first, on a MIDI track, and plays the track's notes; effects
-  follow. `device.add {preset, voice?}` adds the FM synth playing a DX7 voice from a `.syx` file.
+  MIDI effects (`pitch`) go first, on a MIDI track, and change the notes on their way to the
+  instrument (`fm-synth`), which goes right after them and plays the notes; audio effects
+  follow. `track.devices` gives each built-in and `.sd` device's `role` (`effect`,
+  `instrument`, `midi_effect`). `device.add {preset, voice?}` adds the FM synth playing a DX7 voice from a `.syx` file.
   `devices.sdNodes` returns every SDK node contract, ports, units, defaults, configuration examples
   limits and custom canvas capabilities (including equality expressions and literal-value selector buttons, conditional controls, choice menus and text alignment) for effect authoring by agents ([guide](device-sdk.md)).
   `device.setParam` applies declared conditional peer links as one undo gesture and sends all affected values to the player.

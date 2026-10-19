@@ -178,6 +178,41 @@ decision 9.
     devices', the group's the largest of its branches' (cut at 2 s), every branch is delayed by
     what it lacks of that and the dry signal by all of it, with delay lines made with the graph,
     and the group reports its latency to its chain like any device.
+14. **Built-in MIDI effects change the events before the instrument** (added 2026-10-18, with
+    the first one, [the pitch effect](../spec/pitch.md)). `DeviceInfo::role` has a third value,
+    `MidiEffect`. The host never asks such a device to process a buffer; it calls
+    `Device::process_events` with the events of a span (at frames from the span's start) and an
+    output, and the device writes what it sends on, in frame order. Nothing on the audio thread
+    allocates, so the room is fixed: a chain holds at most 512 events a block for its MIDI
+    effects (it runs its devices up to the frame it has reached whenever 256 notes wait), and
+    each span gets the room left of those, at least as many events as it hands over, twice as
+    many while the block has space. A device with more to send than fits leaves out note-ons
+    first: it keeps room for the note-offs and all-notes-off still to come, and a note-on it
+    leaves out is not counted as sounding, so its note-off goes too. A key played again with no
+    room to end its note keeps the old note until that key's note-off. So no note a MIDI effect
+    started is left sounding, however crowded the block; the contract tests run with room for
+    no more events than the device gets.
+    The chain splits the span where one of the device's parameters follows a lane, a change
+    coming before the events at its frame, as for instruments; what one MIDI effect sends is what
+    the next device gets, so they run in order before the instrument. Notes are paired by key:
+    a MIDI effect that changes a note-on's key remembers it, so the note-off ends the same key
+    whatever its settings are by then. A clip's scale reaches the devices as an event,
+    `NoteEvent::Scale(Option<MusicalScale>)`, which the chain sends before the first note of a
+    clip whose scale differs from the last one sent; instruments and plug-ins ignore it.
+    `MusicalScale` is the root and the set of pitch classes, with the steps along it a
+    scale-aware device needs. Three units come with it: semitones, scale degrees and a MIDI key.
+    The contract tests add, for MIDI effects, the same events in spans of every size at every
+    parameter's ends, `reset` while notes are held, hostile events, too little room to write, and
+    that no key still sounds after every key played is released, after all-notes-off too.
+    `device.add` places a MIDI effect among the MIDI effects that lead the chain, only on a MIDI
+    track; an instrument goes right after them (built-in, `.sd` or plug-in). A chain whose MIDI
+    effects have no instrument after them plays the notes they change as the sine tones a MIDI
+    track without an instrument plays (an instrument of the engine's own, after the MIDI
+    effects and before the audio effects), so adding a MIDI effect never silences a track and
+    never passes its notes by; notes from a MIDI input reach those tones too. MIDI effects run in
+    the same chain code offline and in real time (golden rule 4): `render_offline`, the player
+    and the launcher all start notes through it, so the offline renders in
+    `crates/engine/src/midi_effect_tests.rs` are the oracle for playback as well.
 
 ## Not decided yet
 

@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use suhina_device_api::{Device, DeviceInfo};
 
-/// The built-in effects and instruments, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 12] = [
+/// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
+pub const DEVICES: [&DeviceInfo; 13] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_utility::INFO,
     &suhina_device_auto_pan::INFO,
@@ -23,6 +23,7 @@ pub const DEVICES: [&DeviceInfo; 12] = [
     &suhina_device_nam_cab_loader::INFO,
     &suhina_device_delay::INFO,
     &suhina_device_reverb::INFO,
+    &suhina_device_pitch::INFO,
 ];
 
 /// What the device with this id is, or `None` for an unknown id.
@@ -46,6 +47,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "nam-cab-loader" => Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
         "delay" => Box::new(suhina_device_delay::Delay::new()),
         "reverb" => Box::new(suhina_device_reverb::Reverb::new()),
+        "pitch" => Box::new(suhina_device_pitch::Pitch::new()),
         _ => return None,
     })
 }

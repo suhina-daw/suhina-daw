@@ -96,7 +96,7 @@ Suhina is pre-alpha with milestones M0-M2, M5 done and M3, M4, M6, M8 in progres
   hosting, commands with undo, the CLI and MCP, the Session and Arrangement views, the browser with
   an index on disk and the sample map.
 - **Not started at all:** recording (audio or MIDI), automation of any kind, clip envelopes, racks
-  (macros, parallel chains, zones, drum pads), MIDI effects, MIDI note editing and MIDI tools,
+  (macros, parallel chains, zones, drum pads), MIDI note editing and MIDI tools,
   grooves, tuning systems, MPE, comping, take lanes, video, Link and MIDI-clock sync, MIDI remote
   mapping, Push, and any control-surface support.
 - **Started but narrow:** the device catalogue (section 5), the clip view, arrangement editing
@@ -364,9 +364,9 @@ Two observations the numbers make plain:
 1. **The device catalogue is the single largest lever.** The device reference chapters are the
    biggest block of the manual and Suhina covers the smallest share of them. Nothing else moves the
    headline number as much.
-2. **Whole features, not thin features, dominate the rest.** Racks, comping and MIDI effects are
-   each absent, not partial. They are also the areas where a DAW is judged by people
-   coming from Live, because a missing channel is felt at once.
+2. **Whole features, not thin features, dominate the rest.** Racks and comping are each absent,
+   not partial, and MIDI effects have only begun, with the pitch effect. They are also the areas
+   where a DAW is judged by people coming from Live, because a missing channel is felt at once.
 
 ## 8. What the roadmap covers, and what nothing covers
 
@@ -381,7 +381,7 @@ Two observations the numbers make plain:
 | Session and Arrangement views, browser, sample map, settings, installers | M8 |
 | Sends and returns, automation, MIDI controllers and Push, patch devices, ARA | "Later, not ordered" |
 | Audio to MIDI, stem separation | own section of the roadmap |
-| **Recording (ch 19), comping (ch 21), bounce (ch 20), racks (ch 25), automation (ch 26), clip envelopes (ch 27), MIDI effects (ch 30), MIDI tools (ch 11), MPE (ch 12), grooves (ch 14), tuning (ch 15), MIDI remote (ch 34), Link and sync (ch 37), video (ch 28), accessibility (ch 41)** | **nothing, or "later, not ordered" at best** |
+| **Recording (ch 19), comping (ch 21), bounce (ch 20), racks (ch 25), automation (ch 26), clip envelopes (ch 27), MIDI effects other than pitch (ch 30), MIDI tools (ch 11), MPE (ch 12), grooves (ch 14), tuning (ch 15), MIDI remote (ch 34), Link and sync (ch 37), video (ch 28), accessibility (ch 41)** | **nothing, or "later, not ordered" at best** |
 
 Two areas are named in the roadmap only as devices ("a sampler and drum sampler", "delays,
 reverbs"): the mixer work that would carry sends, and the editing work that would carry a MIDI

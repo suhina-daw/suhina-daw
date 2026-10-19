@@ -327,10 +327,12 @@ fn push_event(out: &mut Vec<Event>, frame: u32, event: DeviceEvent) {
             push(EventKind::Controller { channel: 0, number: SUSTAIN, value: 0.0 });
             push(EventKind::Controller { channel: 0, number: ALL_NOTES_OFF, value: 0.0 });
         }
+        // A plug-in has no use for the scale the notes are in.
         DeviceEvent::On { .. }
         | DeviceEvent::Off { .. }
         | DeviceEvent::Controller { .. }
-        | DeviceEvent::Pressure(_) => {}
+        | DeviceEvent::Pressure(_)
+        | DeviceEvent::Scale(_) => {}
     }
 }
 
