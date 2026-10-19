@@ -389,5 +389,7 @@ fn one_row_of_a_stack_consolidates_alone() {
     assert!(clips.contains(&second), "the other row's clip is untouched");
     assert!(!clips.iter().any(|c| c.id == first.id), "the joined clip took the first one's place");
     // A malformed list is refused.
-    assert!(run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 4.0, "clips": "x" })).is_err());
+    assert!(
+        run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 4.0, "clips": "x" })).is_err()
+    );
 }

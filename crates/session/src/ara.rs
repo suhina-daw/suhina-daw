@@ -195,12 +195,13 @@ impl Layout {
     }
 }
 
-/// Seconds into the file where `clip` starts playing, as the engine reads it: through the warp
-/// markers of a warped region that has two or more, otherwise at the song's starting tempo.
+/// A bar signature for ARA: numerator, denominator, and the quarter note of the bar's start.
+type BarSignature = (u32, u32, f64);
+
 /// The song's tempo map as ARA tempo entries (seconds, quarter notes) and its time signatures
 /// as bar signatures (numerator, denominator, quarter note of the bar's start). A beat is a
 /// quarter note. Between two entries ARA takes the tempo as even, so a ramp gets one a beat.
-fn musical_context(project: &Project) -> (Vec<(f64, f64)>, Vec<(u32, u32, f64)>) {
+fn musical_context(project: &Project) -> (Vec<(f64, f64)>, Vec<BarSignature>) {
     let transport = &project.transport;
     let map = transport.tempo_map(1.0);
     let mut changes: Vec<&suhina_model::TempoPoint> =
@@ -264,6 +265,8 @@ fn passes(clip: &Clip) -> Vec<(f64, f64, f64)> {
     passes
 }
 
+/// Seconds into the file at the content's `beat`, as the engine reads it: through the warp
+/// markers of a warped region that has two or more, otherwise at `tempo_bpm`.
 fn file_seconds(region: &AudioRegion, beat: f64, tempo_bpm: f64) -> f64 {
     let mut markers: Vec<(f64, f64)> = region
         .warp_markers
@@ -405,10 +408,7 @@ mod tests {
             .filter(|r| r.modification == "content-10" && r.id.starts_with("clip-1"))
             .map(|r| (r.id.as_str(), r.start, r.duration, r.offset))
             .collect();
-        assert_eq!(
-            passes,
-            [("clip-1", 0.0, 0.75, 0.5), ("clip-1-1", 0.75, 0.75, 0.5), ("clip-1-2", 1.5, 0.5, 0.5)]
-        );
+        assert_eq!(passes, [("clip-1", 0.0, 0.75, 0.5), ("clip-1-1", 0.75, 0.75, 0.5), ("clip-1-2", 1.5, 0.5, 0.5)]);
         // The clip's notes and selection go by its first pass.
         assert!(layout.has_region("clip-1"));
     }
@@ -417,8 +417,7 @@ mod tests {
     fn the_document_carries_the_songs_tempo_map_and_time_signatures() {
         let (mut project, audio) = project();
         // 120 bpm, then 60 from beat 8; 4/4, then 3/4 from bar 2 (beat 8).
-        project.transport.tempo_changes =
-            vec![suhina_model::TempoPoint { beat: 8.0, bpm: 60.0, ramp: false }];
+        project.transport.tempo_changes = vec![suhina_model::TempoPoint { beat: 8.0, bpm: 60.0, ramp: false }];
         project.transport.time_signature_changes = vec![suhina_model::TimeSignatureChange {
             bar: 2,
             time_signature: suhina_model::TimeSignature { numerator: 3, denominator: 4 },

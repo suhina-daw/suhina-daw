@@ -1169,8 +1169,8 @@ impl Drop for Vst3Plugin {
         if self.separate_controller
             && let Some(controller) = self.controller.take()
         {
-            // SAFETY: a live controller, terminated once before it is released.
             suhina_plugins::trace!("vst3 drop: controller terminate");
+            // SAFETY: a live controller, terminated once before it is released.
             let _ = unsafe { controller.terminate() };
         }
         suhina_plugins::trace!("vst3 drop: controller release");

@@ -14,12 +14,12 @@ pub fn take_keyboard_back(window: u64) {
     if let Ok(window) = usize::try_from(window) {
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
         let own = window as windows_sys::Win32::Foundation::HWND;
-        // SAFETY: plain Win32 calls on the app's own window handle, from its window thread;
-        // a handle that is no window makes them fail, nothing else.
-        unsafe {
-            if GetFocus() != own {
-                SetFocus(own);
-            }
+        // SAFETY: a plain Win32 call from the app's window thread; it takes no pointers.
+        let focus = unsafe { GetFocus() };
+        if focus != own {
+            // SAFETY: the app's own window handle, from its window thread; a handle that is no
+            // window makes the call fail, nothing else.
+            unsafe { SetFocus(own) };
         }
     }
     #[cfg(not(windows))]

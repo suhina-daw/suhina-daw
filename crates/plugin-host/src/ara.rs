@@ -766,7 +766,13 @@ impl Document {
     fn region_properties(&mut self, region: &AraRegion) -> ARAPlaybackRegionProperties {
         suhina_plugins::trace!(
             "ara region {} {:?}: start {:.3}s duration {:.3}s offset {:.3}s modification {} clone_of {:?}",
-            region.id, region.name, region.start, region.duration, region.offset, region.modification, region.clone_of
+            region.id,
+            region.name,
+            region.start,
+            region.duration,
+            region.offset,
+            region.modification,
+            region.clone_of
         );
         ARAPlaybackRegionProperties {
             structSize: size_of::<ARAPlaybackRegionProperties>(),
@@ -1253,7 +1259,7 @@ unsafe extern "C" fn context_reader(
     _range: *const ARAContentTimeRange,
 ) -> ARAContentReaderHostRef {
     // Every entry, whatever the range: those around it are among them, as ARA asks.
-    context_kind(kind).map_or(std::ptr::null_mut(), |reader| std::ptr::without_provenance_mut(reader))
+    context_kind(kind).map_or(std::ptr::null_mut(), std::ptr::without_provenance_mut)
 }
 
 unsafe extern "C" fn no_source_content(
