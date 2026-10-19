@@ -452,7 +452,17 @@ impl Document {
         sent.retain(|(id, _)| self.region_described.iter().any(|r| r.id == *id));
         let mut out = self.notes_out.borrow_mut();
         for (region, described) in self.regions.iter().zip(&self.region_described) {
-            let Some((notes, truncated)) = region_notes(&dc, *region, described.start) else { continue };
+            let Some((notes, truncated)) = region_notes(&dc, *region, described.start) else {
+                suhina_plugins::trace!("ara notes {}: cannot be read", described.id);
+                continue;
+            };
+            suhina_plugins::trace!(
+                "ara notes {}: {} notes, first at {:?}s, last ends {:?}s (from region start)",
+                described.id,
+                notes.len(),
+                notes.first().map(|n| n.start),
+                notes.iter().map(|n| n.start + n.length).reduce(f64::max)
+            );
             let digest = notes_digest(&notes, truncated);
             match sent.iter_mut().find(|(id, _)| *id == described.id) {
                 Some((_, last)) if *last == digest => continue,
@@ -702,6 +712,10 @@ impl Document {
 
     /// A region's properties as ARA takes them.
     fn region_properties(&mut self, region: &AraRegion) -> ARAPlaybackRegionProperties {
+        suhina_plugins::trace!(
+            "ara region {} {:?}: start {:.3}s duration {:.3}s offset {:.3}s modification {} clone_of {:?}",
+            region.id, region.name, region.start, region.duration, region.offset, region.modification, region.clone_of
+        );
         ARAPlaybackRegionProperties {
             structSize: size_of::<ARAPlaybackRegionProperties>(),
             transformationFlags: 0,
@@ -1204,8 +1218,9 @@ unsafe extern "C" fn analysis_progress(
     host: ARAModelUpdateControllerHostRef,
     _source: ARAAudioSourceHostRef,
     state: ARAAnalysisProgressState,
-    _value: f32,
+    value: f32,
 ) {
+    suhina_plugins::trace!("ara analysis progress state {state} value {value:.2}");
     // An analysis done: its notes are there to read, whether or not the plug-in also says the
     // content changed.
     if state == kARAAnalysisProgressCompleted as ARAAnalysisProgressState {
@@ -1227,6 +1242,7 @@ unsafe extern "C" fn source_changed(
 
 /// Marks the notes to be read again, unless the plug-in says they stayed as they were.
 fn notes_may_have_changed(host: Option<&Host>, flags: ARAContentUpdateFlags) {
+    suhina_plugins::trace!("ara content changed flags {flags:#x}");
     if let Some(host) = host
         && flags & kARAContentUpdateNoteScopeRemainsUnchanged as ARAContentUpdateFlags == 0
     {
@@ -1341,6 +1357,7 @@ static PLAYBACK_REQUESTS: Mutex<Vec<AraPlayback>> = Mutex::new(Vec::new());
 const MAX_PLAYBACK_REQUESTS: usize = 16;
 
 fn ask(request: AraPlayback) {
+    suhina_plugins::trace!("ara plug-in asks transport {request:?}");
     let mut requests = PLAYBACK_REQUESTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let AraPlayback::Position(_) = request {
         requests.retain(|r| !matches!(r, AraPlayback::Position(_)));

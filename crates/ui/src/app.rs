@@ -1865,6 +1865,7 @@ impl App {
                 let _ = session.execute("track.setAudioInput", &json!({ "track": track.0, "input": input }));
             }
         }
+        suhina_plugins::trace!("action {} {}", action.id, action.params);
         match session.execute(action.id, &action.params) {
             Ok(result) => {
                 // A clip made by a double-click is selected, ready to edit: in the Arrangement
@@ -2079,6 +2080,7 @@ impl App {
                 AraPlayback::Position(seconds) => {
                     if let Some(session) = self.session() {
                         let beats = session.project().transport.tempo_map(1.0).beat_at(seconds);
+                        suhina_plugins::trace!("app: ara position {seconds:.3}s -> beat {beats:.3}");
                         actions.push(Action::new("transport.setPosition", json!({ "beats": beats })));
                     }
                 }
@@ -2827,6 +2829,16 @@ impl App {
             _ => None,
         };
         self.arrangement.focus = focus;
+        suhina_plugins::trace::state(
+            "detail",
+            format!(
+                "ara {:?} piano {} pullable {pullable} pulled {pulled} detail_max {} focus {focus:?} showing {:?}",
+                ara.map(|(t, c, d, open)| (t.0, c.0, d, open)),
+                piano.is_some(),
+                self.detail_max,
+                self.detail_showing,
+            ),
+        );
         let (view, splitter, detail) = if stacked {
             self.detail_width = self.detail_width.clamp(180.0, (area.width() - 240.0).max(180.0));
             let x = area.right() - self.detail_width;

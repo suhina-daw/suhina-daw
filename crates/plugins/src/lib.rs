@@ -24,6 +24,7 @@ pub mod offline;
 pub mod protocol;
 pub mod scan;
 pub mod scan_pool;
+pub mod trace;
 pub mod vst2;
 
 use std::collections::BTreeMap;

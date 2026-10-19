@@ -728,8 +728,12 @@ impl Instance {
     /// Sends the embedded editor its placement now; `false` when it could not be sent (the
     /// host gone: the placer is let go, and taken again from the next control half).
     fn send_placement(&mut self, placement: Placement) -> bool {
-        let Some(placer) = self.placer() else { return false };
+        let Some(placer) = self.placer() else {
+            suhina_plugins::trace!("placement waits (no placer): {placement:?}");
+            return false;
+        };
         let sent = placer.place(placement);
+        suhina_plugins::trace!("placement sent {sent}: {placement:?}");
         if !sent {
             self.placer = None;
         }
@@ -918,9 +922,12 @@ impl Rack {
     /// back to be kept for when the device's plug-in starts again.
     fn stop(&self, key: u64, mut control: Plugin) {
         let sender = self.returned_sender.clone();
+        suhina_plugins::trace!("rack stops key {key}");
         let _detached = std::thread::Builder::new().name("suhina-plugin-stop".into()).spawn(move || {
             let state = (control.health() == Health::Running).then(|| control.save_state().ok()).flatten();
+            suhina_plugins::trace!("rack stop key {key}: state {}", state.is_some());
             drop(control);
+            suhina_plugins::trace!("rack stop key {key}: let go");
             let _gone = sender.send(Returned { key, generation: 0, control: None, done: Done::Stopped(state) });
         });
     }
@@ -1264,6 +1271,7 @@ impl Rack {
             }
         }
         for key in &rebind {
+            suhina_plugins::trace!("rack rebinds key {key}");
             let Some(instance) = self.instances.remove(key) else { continue };
             if instance.editor_open {
                 self.reopen_after_rebind.insert(*key);
@@ -1385,6 +1393,7 @@ impl Rack {
                 if !layout.has_region(&region) {
                     continue;
                 }
+                suhina_plugins::trace!("app gets ara notes for {region}: {}", notes.len());
                 match crate::ara::ClipNotes::new(notes) {
                     Some(notes) => self.ara_notes.insert(clip, notes),
                     None => self.ara_notes.remove(&clip),
@@ -1730,8 +1739,14 @@ fn read_state(control: &mut Plugin) -> Done {
 /// Starts a plug-in on a thread of its own and sends the result.
 fn spawn_start(sender: Sender<Started>, key: u64, generation: u64, launch: Launch, state: Option<SavedState>) {
     let fallback = sender.clone();
+    suhina_plugins::trace!(
+        "rack starts key {key} generation {generation} ara {} (regions {})",
+        launch.ara.is_some(),
+        launch.ara.as_ref().map_or(0, |a| a.regions.len())
+    );
     let spawned = std::thread::Builder::new().name("suhina-plugin-start".into()).spawn(move || {
         let mut result = start(launch, state).map_err(|e| e.to_string());
+        suhina_plugins::trace!("rack started key {key} generation {generation}: {:?}", result.as_ref().map(|_| ()));
         let first_state = result.as_mut().ok().and_then(|(plugin, _, _)| plugin.save_state().ok());
         let _gone = sender.send(Started { key, generation, result, first_state });
     });
