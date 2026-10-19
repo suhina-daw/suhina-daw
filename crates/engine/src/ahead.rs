@@ -24,6 +24,16 @@
 //! to move to, the worker stops pushing and says so, the audio side empties the rings, and the
 //! worker moves its voices there and fills the rings again.
 //!
+//! A new graph (an edit, ADR 0005) takes over the voices of the clips that did not change from
+//! the graph it replaces, with their stretchers and their rings, as a chain takes over its
+//! running devices: the worker thread hands each such voice's writer over when the new graph's
+//! worker joins it (`StretchWorker::adopt_from`), and the audio thread hands the ring's reading
+//! end over when it swaps the graph in (`AheadReader::adopt_from`). The two agree through one
+//! slot per voice that only one of them can claim first, so a ring's two ends always meet:
+//! a voice the worker had not handed over by the swap starts afresh instead. Without it every
+//! edit started every stretcher again and filled the rings of the clips playing on the caller's
+//! thread first (#743).
+//!
 //! Without a worker thread (offline rendering) the reader fills the rings itself just before it
 //! reads them, through the same voices and rings, so offline renders stay the test oracle for
 //! real-time playback (AGENTS.md rule 4).
@@ -45,6 +55,13 @@ const BLOCK_FRAMES: usize = 1024;
 const IDLE: Duration = Duration::from_millis(1);
 /// How far past the playhead, in rings' lengths, voices are rendered ahead at all.
 const HORIZON_RINGS: u64 = 4;
+/// A voice's handover slot ([`Shared::adopted`]) the audio side closed at the swap: too late for
+/// the worker to hand the voice over.
+const CLOSED: u64 = u64::MAX;
+
+/// The rings made so far, so each has its own number (a voice's handover names the ring).
+static RINGS: AtomicU64 = AtomicU64::new(1);
+
 /// Frames from the start point each voice must have rendered before the transport rolls.
 const START_FRAMES: u64 = 4 * BLOCK_FRAMES as u64;
 /// What a voice that fell behind jumps past the frame it was asked for, in blocks: time for the
@@ -78,12 +95,20 @@ struct Shared {
     playhead: AtomicU64,
     /// Each voice's jump ahead, in the voices' order.
     jumps: Vec<Jump>,
+    /// Each voice's handover from the graph before: 0 while open, the number of the ring the
+    /// worker handed over to it, or [`CLOSED`] once the audio side swapped the graph in without
+    /// one. Whichever side writes it first decides.
+    adopted: Vec<AtomicU64>,
 }
 
 /// One voice on the worker side.
 struct Writer {
     voice: StretchVoice,
     producer: Producer<f32>,
+    /// What the voice plays ([`voice_key`] of its clip): equal keys render the same frames.
+    key: u64,
+    /// The number of the ring `producer` writes.
+    ring: u64,
     /// The clip's first arrangement frame.
     start: u64,
     /// Frames of the clip pushed so far, and the clip's length in frames.
@@ -99,6 +124,8 @@ struct Writer {
 /// One voice on the audio side.
 struct Reader {
     consumer: Consumer<f32>,
+    /// The number of the ring `consumer` reads.
+    ring: u64,
     start: u64,
     length: u64,
     /// The clip frame at the head of the ring.
@@ -165,6 +192,49 @@ impl StretchWorker {
             }
         }
         did
+    }
+
+    /// Takes over from `before`, the worker of the graph this one replaces, the voices of the
+    /// clips that did not change: each one's stretcher, the frames it rendered and its ring's
+    /// writing end, in exchange for this graph's fresh ones, which `before` then leaves alone.
+    /// Nothing while either has a rewind under way, nor a voice with a jump under way. Runs on
+    /// the worker thread as the worker joins it; allocates a map of `before`'s voices.
+    fn adopt_from(&mut self, before: &mut StretchWorker) {
+        if before.shared.requested.load(Ordering::Acquire) != before.generation
+            || self.shared.requested.load(Ordering::Acquire) != self.generation
+        {
+            return;
+        }
+        let mut by_key: std::collections::HashMap<u64, usize> =
+            before.writers.iter().enumerate().map(|(index, w)| (w.key, index)).collect();
+        for (index, writer) in self.writers.iter_mut().enumerate() {
+            let Some(old_index) = by_key.remove(&writer.key) else { continue };
+            let (Some(old), Some(old_jump), Some(slot)) =
+                (before.writers.get_mut(old_index), before.shared.jumps.get(old_index), self.shared.adopted.get(index))
+            else {
+                continue;
+            };
+            if old_jump.requested.load(Ordering::Acquire) != old.jumped
+                || (old.start, old.length) != (writer.start, writer.length)
+            {
+                continue;
+            }
+            // Claimed first, or the audio side has swapped the graph in already: then this
+            // voice starts afresh, as its reader keeps its own ring.
+            if slot.compare_exchange(0, old.ring, Ordering::AcqRel, Ordering::Acquire).is_err() {
+                continue;
+            }
+            std::mem::swap(&mut writer.voice, &mut old.voice);
+            std::mem::swap(&mut writer.producer, &mut old.producer);
+            std::mem::swap(&mut writer.ring, &mut old.ring);
+            writer.produced = old.produced;
+            writer.seek_to = old.seek_to.take();
+            if let Some(jump) = self.shared.jumps.get(index) {
+                writer.jumped = jump.requested.load(Ordering::Acquire);
+            }
+            // The fresh voice it got back renders nothing: its graph is about to go.
+            old.produced = old.length;
+        }
     }
 
     /// Works until every ring is full.
@@ -254,7 +324,11 @@ impl StretchThread {
         let handle = std::thread::Builder::new().name("suhina-stretch".into()).spawn(move || {
             let mut workers: Vec<StretchWorker> = Vec::new();
             while !stop_flag.load(Ordering::Relaxed) {
-                while let Ok(worker) = incoming.pop() {
+                while let Ok(mut worker) = incoming.pop() {
+                    // The graph it replaces is the newest one here: its voices carry over.
+                    if let Some(before) = workers.last_mut() {
+                        worker.adopt_from(before);
+                    }
                     workers.push(worker);
                 }
                 // A worker whose reader (its graph) is gone has nobody to render for.
@@ -298,16 +372,18 @@ pub(crate) struct AheadReader {
 impl AheadReader {
     /// Splits `voices` (each with its clip's start and length in arrangement frames) into a reader
     /// and its worker, with a ring per voice holding [`AHEAD_SECONDS`] at `sample_rate`.
-    pub(crate) fn new(voices: Vec<(StretchVoice, u64, u64)>, sample_rate: u32) -> Self {
+    pub(crate) fn new(voices: Vec<(StretchVoice, u64, u64, u64)>, sample_rate: u32) -> Self {
         let frames = ((AHEAD_SECONDS * f64::from(sample_rate)) as usize).max(2 * BLOCK_FRAMES);
         let jumps = voices.iter().map(|_| Jump::default()).collect();
-        let shared = Arc::new(Shared { jumps, ..Shared::default() });
+        let adopted = voices.iter().map(|_| AtomicU64::new(0)).collect();
+        let shared = Arc::new(Shared { jumps, adopted, ..Shared::default() });
         let mut readers = Vec::with_capacity(voices.len());
         let mut writers = Vec::with_capacity(voices.len());
-        for (voice, start, length) in voices {
+        for (voice, start, length, key) in voices {
             let (producer, consumer) = RingBuffer::new(frames * 2);
-            readers.push(Reader { consumer, start, length, next: 0, rewound: false, jumping: None, heard: true });
-            writers.push(Writer { voice, producer, start, produced: 0, length, jumped: 0, seek_to: None });
+            let ring = RINGS.fetch_add(1, Ordering::Relaxed);
+            readers.push(Reader { consumer, ring, start, length, next: 0, rewound: false, jumping: None, heard: true });
+            writers.push(Writer { voice, producer, key, ring, start, produced: 0, length, jumped: 0, seek_to: None });
         }
         let worker = StretchWorker {
             writers,
@@ -330,6 +406,32 @@ impl AheadReader {
         let mut worker = self.inline.take()?;
         worker.fill_due();
         Some(worker)
+    }
+
+    /// Hands the worker to a thread of its own as it is: the thread takes the unchanged clips'
+    /// voices over from the graph before and renders the rest ahead of the swap, so nothing is
+    /// rendered on the caller's thread (#743). `None` once taken.
+    pub(crate) fn take_worker_unfilled(&mut self) -> Option<StretchWorker> {
+        self.inline.take()
+    }
+
+    /// Takes over from `before`, the graph swapped out, the rings of the voices the worker
+    /// handed over: each one's reading end and where it is, so the clip plays on without a
+    /// break. A voice not handed over yet is closed to it and starts afresh. On the audio
+    /// thread at the swap; never allocates.
+    pub(crate) fn adopt_from(&mut self, before: &mut AheadReader) {
+        for (reader, slot) in self.readers.iter_mut().zip(&self.shared.adopted) {
+            let ring = match slot.compare_exchange(0, CLOSED, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => continue,
+                Err(ring) => ring,
+            };
+            let Some(old) = before.readers.iter_mut().find(|r| r.ring == ring) else { continue };
+            std::mem::swap(&mut reader.consumer, &mut old.consumer);
+            std::mem::swap(&mut reader.ring, &mut old.ring);
+            reader.next = old.next;
+            reader.rewound = old.rewound;
+            reader.jumping = None;
+        }
     }
 
     /// Asks for the voices to continue from arrangement frame `to`; until the worker has moved
@@ -495,4 +597,30 @@ impl AheadReader {
     pub(crate) fn underruns(&self) -> u64 {
         self.shared.underruns.load(Ordering::Relaxed)
     }
+}
+
+/// What a stretch voice plays, as a number: equal for two graphs' voices that render the same
+/// frames (the same clip, placed and cut the same, of the same audio, warped the same, on the
+/// same tempo map), so the new graph can take the old one's voice over.
+pub(crate) fn voice_key(
+    clip: &suhina_model::Clip,
+    region: &suhina_model::AudioRegion,
+    (start, length): (u64, u64),
+    tempo: u64,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    clip.id.0.hash(&mut hasher);
+    (start, length, tempo).hash(&mut hasher);
+    for value in [clip.start, clip.length, clip.offset] {
+        value.to_bits().hash(&mut hasher);
+    }
+    clip.loop_range.map(|r| (r.start.to_bits(), r.end.to_bits())).hash(&mut hasher);
+    region.pool_key().hash(&mut hasher);
+    (region.warped, region.transpose.to_bits()).hash(&mut hasher);
+    std::mem::discriminant(&region.stretch).hash(&mut hasher);
+    for marker in &region.warp_markers {
+        (marker.time.to_bits(), marker.audio_time.to_bits()).hash(&mut hasher);
+    }
+    hasher.finish()
 }
