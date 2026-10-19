@@ -14,9 +14,11 @@
 //!
 //! [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
 
+use std::cell::Cell;
 use std::ffi::{CString, c_void};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use suhina_ipc::AudioSource;
 use suhina_plugins::protocol::{AraDocument, AraRegion};
@@ -198,9 +200,16 @@ struct Host {
     changed: AtomicBool,
 }
 
+/// How often the host lets the plug-in send the model changes it has queued, when it is not
+/// editing: the ARA API asks for it periodically; 250 ms keeps an edit's echo in the plug-in's
+/// editor prompt without a busy loop.
+const MODEL_UPDATES_EVERY: Duration = Duration::from_millis(250);
+
 /// An ARA document controller and the objects made in it, bound to one plug-in instance.
 pub(crate) struct Document {
     controller: *const ARADocumentControllerInstance,
+    /// When `notifyModelUpdates` was last called.
+    last_model_update: Cell<Instant>,
     host: Box<Host>,
     context: ARAMusicalContextRef,
     sequence: ARARegionSequenceRef,
@@ -297,6 +306,7 @@ impl Document {
         let controller = unsafe { create(&host.instance, &properties) };
         let mut made = Self {
             controller,
+            last_model_update: Cell::new(Instant::now()),
             host,
             context: std::ptr::null_mut(),
             sequence: std::ptr::null_mut(),
@@ -382,9 +392,30 @@ impl Document {
         self.host.changed.swap(false, Ordering::AcqRel)
     }
 
+    /// Lets the plug-in send the model changes it has queued (`notifyModelUpdates`): what it
+    /// worked out after an edit (its analysis, the regions it changed) reaches its editor now
+    /// rather than on its own timer. Called outside an edit, on the model thread.
+    pub(crate) fn notify_model_updates(&self) {
+        self.last_model_update.set(Instant::now());
+        let Some(dc) = self.controller() else { return };
+        let Some(notify) = dc.interface.notifyModelUpdates else { return };
+        // SAFETY: a live document controller, not being edited, on its model thread.
+        unsafe { notify(dc.reference) };
+    }
+
+    /// Calls [`Document::notify_model_updates`] when [`MODEL_UPDATES_EVERY`] has passed since
+    /// the last call. The host's main loop calls it between messages.
+    pub(crate) fn tick(&self) {
+        if self.last_model_update.get().elapsed() >= MODEL_UPDATES_EVERY {
+            self.notify_model_updates();
+        }
+    }
+
     /// The plug-in's edits as an archive: its document archive id and the bytes. `None` when it
     /// cannot store them.
     pub(crate) fn store(&self) -> Option<(String, Vec<u8>)> {
+        // What the plug-in has queued goes into the archive too.
+        self.notify_model_updates();
         let dc = self.controller()?;
         // SAFETY: the factory the document was made with, valid while its module is loaded.
         let factory = unsafe { self.factory.as_ref() }?;
@@ -430,6 +461,7 @@ impl Document {
         let restored = unsafe { restore(dc.reference, reader, std::ptr::null()) };
         // SAFETY: as above, closing the edit.
         unsafe { end(dc.reference) };
+        self.notify_model_updates();
         if restored == 0 { Err("the plug-in could not read its saved edits".into()) } else { Ok(()) }
     }
 
@@ -611,6 +643,8 @@ impl Document {
         let edited = self.apply(&dc, document, new_sources);
         // SAFETY: as above, closing the edit `begin` opened.
         unsafe { end(dc.reference) };
+        // The plug-in redraws the change once it may send what the edit set off.
+        self.notify_model_updates();
         edited
     }
 

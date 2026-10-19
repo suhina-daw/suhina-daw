@@ -193,6 +193,11 @@ the list below, in a first form). Where it differs from the decisions above it i
   `ARAVST3.h` are declared by hand in `crates/plugin-host/src/ara.rs`. The headers pack structs
   to 1 byte on x86 and to 8 on ARM; the bindings are generated for x86-64, and an ARM build
   needs them generated there.
+- **Model updates.** The host calls the document controller's `notifyModelUpdates` every 250 ms
+  while it is not editing, right after every edit and restore, and before storing the edits, as
+  the API asks ("periodically by the host whenever not editing"). Without it a plug-in sends what
+  an edit set off only on its own timer, which showed as a clip resize drawn about 2 s late in
+  the editor (#718).
 - **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
   name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
   (clip id, content id, start, length and offset in seconds). The host queries the component for

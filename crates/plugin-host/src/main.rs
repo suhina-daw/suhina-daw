@@ -343,8 +343,10 @@ impl Loaded {
     }
 
     fn tick(&mut self) {
-        if let Self::Clap(plugin) = self {
-            plugin.tick();
+        match self {
+            Self::Clap(plugin) => plugin.tick(),
+            Self::Vst3(plugin) => plugin.tick(),
+            Self::Test { .. } => {}
         }
     }
 

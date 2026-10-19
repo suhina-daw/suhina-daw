@@ -948,6 +948,13 @@ impl Vst3Plugin {
     /// Moved or trimmed clips change in place while it plays; adding or taking out regions
     /// needs its renderers changed, which ARA allows only while it does not render, so its
     /// processing stops for that and starts again, as for a latency change.
+    /// Between messages: lets a bound ARA document send its queued model changes (#718).
+    pub(crate) fn tick(&self) {
+        if let Some(ara) = &self.ara {
+            ara.tick();
+        }
+    }
+
     pub(crate) fn ara_update(&mut self, document: &suhina_plugins::protocol::AraDocument) -> Result<(), String> {
         let edited = self.ara.as_mut().ok_or("the plug-in is not bound to an ARA document")?.edit(document)?;
         if edited.changes_renderers() {
