@@ -72,6 +72,34 @@ const EDITOR_TICK: Duration = Duration::from_millis(1);
 /// How long unloading waits for an instance's audio thread to stop; one still running then is
 /// stuck in the plug-in, and the instance is left behind rather than taking the process with it.
 pub(crate) const UNLOAD_WAIT: Duration = Duration::from_secs(1);
+/// How long a VST3 plug-in has to settle after it loads before it is released: one let go of
+/// sooner (loaded again at once as ARA, say) is kept, stopped and silent, until then.
+const SETTLE: Duration = Duration::from_secs(5);
+
+thread_local! {
+    /// VST3 plug-ins unloaded before they settled, and when each is released. Some finish
+    /// starting up through the main thread's messages after they load, and releasing one before
+    /// that waits for it on this very thread: Melodyne, let go of a tenth of a second after it
+    /// loaded, held the host until the engine gave up on it. Released from the main loop
+    /// ([`release_settled`]), the messages flowing meanwhile.
+    static SETTLING: std::cell::RefCell<Vec<(Instant, vst3::Vst3Plugin)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Releases the plug-ins in [`SETTLING`] whose time has come.
+fn release_settled() {
+    let due: Vec<vst3::Vst3Plugin> = SETTLING.with(|settling| {
+        let Ok(mut settling) = settling.try_borrow_mut() else { return Vec::new() };
+        let now = Instant::now();
+        let (due, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut *settling).into_iter().partition(|(at, _)| *at <= now);
+        *settling = keep;
+        due.into_iter().map(|(_, plugin)| plugin).collect()
+    });
+    for plugin in due {
+        suhina_plugins::trace!("vst3: releasing a plug-in that has settled");
+        drop(plugin);
+    }
+}
 /// How often the process reports its RAM to the engine's control bar.
 const MEMORY_EVERY: Duration = Duration::from_secs(1);
 /// Most instances one process runs.
@@ -372,8 +400,18 @@ impl Loaded {
                 }
             }
             Self::Vst3(mut plugin) => {
+                suhina_plugins::trace!("vst3 unload: close editor");
                 plugin.close_editor();
+                suhina_plugins::trace!("vst3 unload: stop audio");
                 if plugin.stop_audio(UNLOAD_WAIT) {
+                    let age = plugin.age();
+                    if age < SETTLE {
+                        suhina_plugins::trace!("vst3 unload: {age:?} old; released later");
+                        let at = Instant::now() + (SETTLE - age);
+                        SETTLING.with(|settling| settling.borrow_mut().push((at, plugin)));
+                        return;
+                    }
+                    suhina_plugins::trace!("vst3 unload: audio stopped; drop");
                     drop(plugin);
                 } else {
                     std::mem::forget(plugin);
@@ -438,6 +476,11 @@ fn start(
 
 /// Writes one message to the engine.
 fn send(writer: &mut impl Write, message: &Message) -> std::io::Result<()> {
+    if suhina_plugins::trace::on() && !matches!(message, Message::AraNotes { .. }) {
+        let text = format!("{message:?}");
+        let cut = text.char_indices().nth(300).map_or(text.len(), |(i, _)| i);
+        suhina_plugins::trace!("host sends {}", &text[..cut]);
+    }
     let mut out = message.encode();
     out.push('\n');
     writer.write_all(out.as_bytes())?;
@@ -505,6 +548,7 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         // Between messages: the plug-ins' main-thread callbacks and their editors' windows.
         window::pump();
+        release_settled();
         // Space in an editor window plays or stops the engine, as it does in Suhina's own.
         for _ in 0..window::take_transport_keys() {
             send(&mut writer, &Message::TransportKey)?;
@@ -566,6 +610,11 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
         if message == Message::Quit {
             break;
         }
+        if suhina_plugins::trace::on() {
+            let text = format!("{message:?}");
+            let cut = text.char_indices().nth(400).map_or(text.len(), |(i, _)| i);
+            suhina_plugins::trace!("host gets {}", &text[..cut]);
+        }
         if let Some(reply) = answer(&mut instances, message) {
             send(&mut writer, &reply)?;
         }
@@ -573,6 +622,8 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     for (_, loaded) in std::mem::take(&mut instances) {
         loaded.unload();
     }
+    // The process ends: what has not settled is left to it rather than waited for.
+    SETTLING.with(|settling| std::mem::forget(settling.take()));
     Ok(())
 }
 
@@ -602,7 +653,10 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
         }
         Message::Unload { instance } => {
             if let Some(loaded) = instances.remove(&instance) {
+                let began = std::time::Instant::now();
+                suhina_plugins::trace!("host unloads {instance}");
                 loaded.unload();
+                suhina_plugins::trace!("host unloaded {instance} in {:?}", began.elapsed());
             }
             Message::Unloaded { instance }
         }

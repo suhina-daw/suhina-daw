@@ -610,6 +610,8 @@ pub(crate) struct Vst3Plugin {
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
+    /// When it was loaded: let go of soon after, it is released later (`Loaded::unload`).
+    loaded_at: std::time::Instant,
     module: Module,
 }
 
@@ -682,6 +684,7 @@ impl Vst3Plugin {
             component,
             _handler: handler,
             _host: host,
+            loaded_at: std::time::Instant::now(),
             module,
         };
         plugin.connect();
@@ -862,6 +865,11 @@ impl Vst3Plugin {
             let _ = unsafe { self.component.activateBus(event, input, 0, 1) };
         }
         (in_channels, out_channels)
+    }
+
+    /// How long ago it was loaded.
+    pub(crate) fn age(&self) -> std::time::Duration {
+        self.loaded_at.elapsed()
     }
 
     /// Asks the audio thread to stop and waits up to `wait` for it; whether it stopped.
@@ -1138,12 +1146,16 @@ impl Drop for Vst3Plugin {
     fn drop(&mut self) {
         self.close_editor();
         self.stop.store(true, Ordering::Release);
+        suhina_plugins::trace!("vst3 drop: joining the audio thread");
         if let Some(audio) = self.audio.take() {
             let _ = audio.join();
         }
+        suhina_plugins::trace!("vst3 drop: setActive(0)");
         // SAFETY: a live component; processing has stopped.
         let _ = unsafe { self.component.setActive(0) };
+        suhina_plugins::trace!("vst3 drop: ARA document");
         self.ara = None;
+        suhina_plugins::trace!("vst3 drop: disconnect, controller");
         if let Some((a, b)) = self.connections.take() {
             // SAFETY: the two connection points connected in `connect`.
             let _ = unsafe { a.disconnect(b.as_ptr()) };
@@ -1158,12 +1170,16 @@ impl Drop for Vst3Plugin {
             && let Some(controller) = self.controller.take()
         {
             // SAFETY: a live controller, terminated once before it is released.
+            suhina_plugins::trace!("vst3 drop: controller terminate");
             let _ = unsafe { controller.terminate() };
         }
+        suhina_plugins::trace!("vst3 drop: controller release");
         self.controller = None;
+        suhina_plugins::trace!("vst3 drop: component terminate");
         // SAFETY: a live component, terminated once; it is released when `self` is dropped,
         // before the module (declared last) unloads the code.
         let _ = unsafe { self.component.terminate() };
+        suhina_plugins::trace!("vst3 drop: terminated; releasing");
         let _ = &self.module;
     }
 }
@@ -1191,8 +1207,10 @@ fn serve(
         if flush.load(Ordering::Acquire) && waiting.lock().is_ok_and(|w| !w.is_empty()) {
             block.flush();
         }
+        suhina_plugins::trace!("vst3 audio: setProcessing(0)");
         // SAFETY: as above.
         let _ = unsafe { block.processor.setProcessing(0) };
+        suhina_plugins::trace!("vst3 audio: stopped");
     }
     served
 }
