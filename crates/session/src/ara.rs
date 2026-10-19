@@ -11,7 +11,25 @@
 use suhina_engine::AudioPool;
 use suhina_model::{AudioRegion, Clip, LaneData, Project, TrackId};
 use suhina_plugins::AudioSource;
-use suhina_plugins::protocol::{AraDocument, AraRegion, AraSource, MAX_ARA_OBJECTS};
+use suhina_plugins::protocol::{AraDocument, AraNote, AraRegion, AraSource, MAX_ARA_OBJECTS};
+
+/// The notes an ARA plug-in found in a clip (#720), for the arrangement to draw over its
+/// waveform: times in seconds from the clip's start, and the lowest and highest pitch.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipNotes {
+    pub notes: std::sync::Arc<[AraNote]>,
+    pub low: u8,
+    pub high: u8,
+}
+
+impl ClipNotes {
+    /// `None` for no notes.
+    pub(crate) fn new(notes: Vec<AraNote>) -> Option<Self> {
+        let low = notes.iter().map(|n| n.pitch).min()?;
+        let high = notes.iter().map(|n| n.pitch).max()?;
+        Some(Self { notes: notes.into(), low, high })
+    }
+}
 
 /// What a track's document holds, without the samples: its name, the files its clips play (by
 /// audio pool key) and the regions, whose `source` is an index into those files. Cheap to work
@@ -96,6 +114,11 @@ impl Layout {
                     .map(|r| r.modification.clone())
             })
             .collect()
+    }
+
+    /// Whether it has the region `id` (`clip-<id>`).
+    pub(crate) fn has_region(&self, id: &str) -> bool {
+        self.regions.iter().any(|r| r.id == id)
     }
 
     /// Whether it has no regions: the plug-in then runs without a document.
@@ -314,6 +337,14 @@ mod tests {
         let empty = Layout::of(&project, &audio, TrackId(1)).document_with(&audio, &mut kept).unwrap();
         assert!(empty.regions.is_empty());
         assert_eq!(kept.len(), shared, "the files stay shared, for an undo");
+    }
+
+    #[test]
+    fn clip_notes_know_their_lowest_and_highest_pitch() {
+        let note = |pitch| AraNote { start: 0.0, length: 0.5, pitch, volume: 1.0 };
+        assert!(ClipNotes::new(Vec::new()).is_none());
+        let notes = ClipNotes::new(vec![note(64), note(57), note(71)]).unwrap();
+        assert_eq!((notes.low, notes.high, notes.notes.len()), (57, 71, 3));
     }
 
     #[test]

@@ -2189,6 +2189,14 @@ impl App {
                             self.arrangement.grid = session.quantization();
                             let mut timeline = timeline;
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
+                            // What ARA plug-ins found in the audio clips, as it is now (#720).
+                            timeline.ara_notes = timeline
+                                .lanes
+                                .iter()
+                                .flat_map(|l| &l.clips)
+                                .filter(|c| c.audio)
+                                .filter_map(|c| Some((c.id, session.clip_notes(c.id)?.clone())))
+                                .collect();
                             timeline.input_channels = session
                                 .player()
                                 .and_then(suhina_session::Player::output_info)

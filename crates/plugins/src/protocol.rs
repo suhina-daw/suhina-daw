@@ -8,14 +8,14 @@
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
 //! `fit_editor`, `ara_select`, `ara_update`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `memory`,
-//! `transport_key`, `ara_playback`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
+//! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
 //! `ara_select` and `quit` (so the engine never waits on them).
 //! `editor_closed` also comes unasked, when the user closes an editor's window; `editor_resized`
 //! only comes unasked, when a plug-in gives its editor a new size, `latency_changed` only
 //! comes unasked, when a running plug-in reports another latency, `memory` only comes unasked,
 //! once a second, `transport_key` only comes unasked, when Space is pressed in a plug-in's
-//! window, and `ara_playback` only comes unasked, when an ARA plug-in asks the transport to play,
-//! stop or move.
+//! window, `ara_playback` only comes unasked, when an ARA plug-in asks the transport to play,
+//! stop or move, and `ara_notes` only comes unasked, when the notes it found in a region change.
 //!
 //! One host process runs several plug-in instances. The engine names each with an `instance`
 //! number when it loads it; every message about one instance, and its reply, carries that

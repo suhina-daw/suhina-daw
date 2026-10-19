@@ -754,6 +754,11 @@ pub struct Rack {
     /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
     /// plug-in device key; told to it whenever it runs ([`Rack::select_ara`]).
     ara_selection: HashMap<u64, Option<String>>,
+    /// The notes ARA plug-ins found in the clips they edit, by clip (#720); none for a plug-in
+    /// that is bypassed or not running.
+    ara_notes: HashMap<suhina_model::ClipId, crate::ara::ClipNotes>,
+    /// Of those, the clips whose plug-in is bypassed: kept, not shown (ADR 0028).
+    ara_notes_hidden: std::collections::HashSet<suhina_model::ClipId>,
 }
 
 impl Default for Rack {
@@ -779,6 +784,8 @@ impl Default for Rack {
             rebinding: std::collections::HashSet::new(),
             reopen_after_rebind: std::collections::HashSet::new(),
             ara_selection: HashMap::new(),
+            ara_notes: HashMap::new(),
+            ara_notes_hidden: std::collections::HashSet::new(),
             ara_found: std::collections::HashSet::new(),
         }
     }
@@ -1132,6 +1139,7 @@ impl Rack {
         changed |= self.receive(player, &mut notices);
         self.take_returned(&mut notices);
         changed |= self.follow_latencies();
+        self.follow_notes(project, &devices);
         self.send_placements();
         self.watch(&mut notices);
         if changed {
@@ -1300,6 +1308,62 @@ impl Rack {
             }
         }
         changed
+    }
+
+    /// Takes in the notes ARA plug-ins found in their clips, and forgets those of clips no
+    /// running, enabled plug-in edits any more (moved off its track, deleted, the device bypassed
+    /// or removed).
+    fn follow_notes(&mut self, project: &Project, devices: &[suhina_engine::PluginDevice]) {
+        let enabled = |key: u64| {
+            devices.iter().find(|d| d.key == key).is_some_and(|found| {
+                project
+                    .channels
+                    .iter()
+                    .find(|c| c.id == found.channel)
+                    .and_then(|c| suhina_model::device_at(&c.devices, &found.path))
+                    .is_some_and(|d| d.enabled)
+            })
+        };
+        // Taken in from a bypassed plug-in too, only not shown: the host sends notes when they
+        // change, so they are there when it is switched on again.
+        let (mut live, mut shown): (Vec<&crate::ara::Layout>, Vec<&crate::ara::Layout>) = (Vec::new(), Vec::new());
+        for (key, instance) in &mut self.instances {
+            if instance.status != PluginStatus::Running {
+                continue;
+            }
+            let (Some(layout), Some(control)) = (&instance.ara_layout, instance.control.as_mut()) else { continue };
+            for (region, notes) in control.take_ara_notes() {
+                let Some(clip) = region.strip_prefix("clip-").and_then(|n| n.parse().ok()).map(suhina_model::ClipId)
+                else {
+                    continue;
+                };
+                if !layout.has_region(&region) {
+                    continue;
+                }
+                match crate::ara::ClipNotes::new(notes) {
+                    Some(notes) => self.ara_notes.insert(clip, notes),
+                    None => self.ara_notes.remove(&clip),
+                };
+            }
+            live.push(layout);
+            if enabled(*key) {
+                shown.push(layout);
+            }
+        }
+        let has = |layouts: &[&crate::ara::Layout], clip: &suhina_model::ClipId| {
+            let region = format!("clip-{}", clip.0);
+            layouts.iter().any(|l| l.has_region(&region))
+        };
+        self.ara_notes.retain(|clip, _| has(&live, clip));
+        self.ara_notes_hidden = self.ara_notes.keys().filter(|clip| !has(&shown, clip)).copied().collect();
+    }
+
+    /// The notes an ARA plug-in found in `clip`, if any (#720).
+    pub(crate) fn clip_notes(&self, clip: suhina_model::ClipId) -> Option<&crate::ara::ClipNotes> {
+        if self.ara_notes_hidden.contains(&clip) {
+            return None;
+        }
+        self.ara_notes.get(&clip)
     }
 
     /// Notices plug-ins that crashed or hung, and now and then reads each one's state.

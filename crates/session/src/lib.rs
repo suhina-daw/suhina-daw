@@ -48,6 +48,7 @@ use serde_json::Value;
 use suhina_engine::{Controller, LauncherMonitor, Quantization};
 use suhina_model::Project;
 
+pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
 pub use blank::blank_project;
 pub use commands::{CommandKind, CommandSpec, Param, ParamType, Run, commands, parse_quantization};
@@ -712,6 +713,12 @@ impl Session {
         for device in suhina_engine::plugin_devices(&self.project).into_iter().filter(|d| d.channel == channel) {
             self.plugins.select_ara(device.key, region.clone());
         }
+    }
+
+    /// The notes the ARA plug-in that edits `clip` found in it, for the arrangement to draw
+    /// (#720): `None` when it has none, or its plug-in is bypassed or not running.
+    pub fn clip_notes(&self, clip: suhina_model::ClipId) -> Option<&ClipNotes> {
+        self.plugins.clip_notes(clip)
     }
 
     /// The first device on `track` that runs a plug-in bound to its audio clips (ARA), by its

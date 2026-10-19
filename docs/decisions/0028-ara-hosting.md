@@ -210,6 +210,14 @@ the list below, in a first form). Where it differs from the decisions above it i
   file whose span holds its own. The host makes the new modification with
   `cloneAudioModification`, so it starts with those edits; a plug-in that cannot clone gets a new
   one, as before.
+- **Notes on the clips** (#720). After a model update in which the plug-in said a region's,
+  modification's or source's notes may have changed (not with "note scope remains unchanged"),
+  and after the host's own edits, the host reads every region's notes with a playback-region
+  content reader, outside the update as the API asks, and sends those that changed as
+  `ara_notes` (times from the region's start, pitch, volume; at most 16 384 a region). The
+  session keeps them by clip while the plug-in runs; the arrangement draws them as bars over
+  the clip's waveform, which dims under them, placed through the tempo map. A bypassed
+  plug-in's notes are kept and not shown.
 - **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
   name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
   (clip id, content id, start, length and offset in seconds). The host queries the component for

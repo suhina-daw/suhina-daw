@@ -196,6 +196,10 @@ pub struct Timeline {
     pub overrides: bool,
     /// Waveforms of the project's audio files, set by the app once they are decoded.
     pub waveforms: Arc<Waveforms>,
+    /// The notes ARA plug-ins found in audio clips, by clip, set by the app every frame (#720).
+    pub ara_notes: std::collections::HashMap<ClipId, suhina_session::ClipNotes>,
+    /// The project's tempo map in seconds, to place those notes, which come in seconds.
+    pub tempo: Option<suhina_engine::model::TempoMap>,
     /// The parameters each track's automation lanes can show, with their points.
     pub automation: crate::arrangement::automation_lanes::Params,
 }
@@ -400,6 +404,8 @@ impl Timeline {
             project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| gain_to_db(c.volume));
         let mut timeline = Self {
             stack_rows,
+            ara_notes: std::collections::HashMap::new(),
+            tempo: Some(project.transport.tempo_map(1.0)),
             midi_ports: Vec::new(),
             input_channels: 0,
             lanes,

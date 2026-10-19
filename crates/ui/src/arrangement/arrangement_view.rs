@@ -22,7 +22,7 @@ use crate::interaction::nesting::{self, Place};
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
-use crate::kit::waveform::{self, Waveforms};
+use crate::kit::waveform;
 use crate::kit::widgets::{self, Action, Drag, VOLUME_RANGE, volume_position};
 
 /// Width of the track header column: the default and how far it can be dragged.
@@ -1430,7 +1430,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     &x_of,
                     bar_beats,
                     &lane_at,
-                    &timeline.waveforms,
+                    timeline,
                     &clip_order,
                     state,
                     actions,
@@ -1574,7 +1574,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     &x_of,
                     bar_beats,
                     &lane_at,
-                    &timeline.waveforms,
+                    timeline,
                     &clip_order,
                     state,
                     actions,
@@ -1672,7 +1672,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             start,
             &x_of,
             state.beat_width,
-            &timeline.waveforms,
+            timeline,
             true,
         );
     }
@@ -2057,7 +2057,7 @@ fn clip_box<'a>(
     x_of: &dyn Fn(f64) -> f32,
     bar_beats: f64,
     lane_at: &dyn Fn(Pos2) -> Option<TrackId>,
-    waveforms: &Waveforms,
+    timeline: &Timeline,
     clip_order: &[(TrackId, ClipId)],
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
@@ -2258,7 +2258,7 @@ fn clip_box<'a>(
             start,
             x_of,
             state.beat_width,
-            waveforms,
+            timeline,
             true,
         );
         return None;
@@ -2547,7 +2547,7 @@ fn clip_box<'a>(
             start,
             x_of,
             state.beat_width,
-            waveforms,
+            timeline,
             selected,
         );
     };
@@ -2586,7 +2586,7 @@ fn clip_box<'a>(
                 start,
                 x_of,
                 state.beat_width,
-                waveforms,
+                timeline,
                 selected,
             );
             None
@@ -2641,6 +2641,44 @@ fn view_rect(painter: &egui::Painter) -> Rect {
     painter.clip_rect()
 }
 
+/// Draws the notes an ARA plug-in found in an audio clip drawn at beat `start`: bars from each
+/// note's start to its end, its pitch between the clip's lowest and highest (a row spare at each
+/// side), more opaque the louder. Times come in seconds from the clip's start and go to beats
+/// through the tempo map; only the notes in view, and in the clip, are drawn.
+#[allow(clippy::too_many_arguments)]
+fn paint_ara_notes(
+    painter: &egui::Painter,
+    rect: Rect,
+    marks: Rect,
+    notes: &suhina_session::ClipNotes,
+    tempo: &suhina_engine::model::TempoMap,
+    start: f64,
+    length: f64,
+    x_of: &dyn Fn(f64) -> f32,
+    beat_width: f32,
+    ink: Color32,
+) {
+    let view = painter.clip_rect().intersect(rect);
+    if !view.is_positive() {
+        return;
+    }
+    let at = tempo.time_at(start);
+    let beat_at_x = |x: f32| start + f64::from((x - x_of(start)) / beat_width);
+    let (first, last) = (tempo.time_at(beat_at_x(view.left())) - at, tempo.time_at(beat_at_x(view.right())) - at);
+    let end = tempo.time_at(start + length) - at;
+    let rows = f32::from(notes.high - notes.low) + 3.0;
+    let height = (marks.height() / rows).clamp(2.0, 6.0);
+    let painter = painter.with_clip_rect(view);
+    for note in notes.notes.iter().filter(|n| n.start + n.length >= first.max(0.0) && n.start <= last.min(end)) {
+        let from = x_of(tempo.beat_at(at + note.start.max(0.0)));
+        let to = x_of(tempo.beat_at(at + (note.start + note.length).min(end))).max(from + 1.0);
+        let row = f32::from(note.pitch - notes.low) + 1.0;
+        let y = marks.bottom() - (row + 0.5) / rows * marks.height();
+        let bar = Rect::from_min_max(Pos2::new(from, y - height / 2.0), Pos2::new(to, y + height / 2.0));
+        painter.rect_filled(bar, 1.0, ink.gamma_multiply(0.45 + 0.55 * note.volume));
+    }
+}
+
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
 #[allow(clippy::too_many_arguments)]
 fn paint_clip(
@@ -2652,7 +2690,7 @@ fn paint_clip(
     start: f64,
     x_of: &dyn Fn(f64) -> f32,
     beat_width: f32,
-    waveforms: &Waveforms,
+    timeline: &Timeline,
     selected: bool,
 ) {
     let view = painter.clip_rect();
@@ -2672,7 +2710,11 @@ fn paint_clip(
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, base);
     }
     let ink = ink_on(body);
-    let dim = |_: Color32| ink;
+    // Notes an ARA plug-in found in an audio clip go over its waveform, which dims under them
+    // so both read (ADR 0028, #720).
+    let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
+    let wave_ink = if ara_notes.is_some() { motion::mix(body, ink, 0.4) } else { ink };
+    let dim = |_: Color32| wave_ink;
     let color = ink;
     let text_color = ink_on(if bar.is_some() { base } else { body });
     // The name's place, for a rename in place (Ctrl+R).
@@ -2704,7 +2746,7 @@ fn paint_clip(
         Pos2::new(rect.right(), rect.bottom() - 3.0),
     );
     if let Some(view) = clip.audio_view.as_ref().filter(|_| marks.height() >= 4.0)
-        && let Some(peaks) = waveforms.get(&view.file)
+        && let Some(peaks) = timeline.waveforms.get(&view.file)
     {
         // One column per point in view: the stretch of the file it shows, scaled by the clip's
         // gain and its fades, drawn as `docs/spec/waveforms.md` says, inside the clip.
@@ -2744,6 +2786,11 @@ fn paint_clip(
             let y = marks.bottom() - (row + 0.5) / rows * marks.height();
             painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, dim(color));
         }
+    }
+    if let Some((notes, tempo)) = ara_notes
+        && marks.height() >= 4.0
+    {
+        paint_ara_notes(painter, rect, marks, notes, tempo, start, clip.length, x_of, beat_width, ink);
     }
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
