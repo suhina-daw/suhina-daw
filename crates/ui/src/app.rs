@@ -3404,6 +3404,7 @@ impl App {
                     | PluginRequest::RemoveFolder(..)
                     | PluginRequest::SetFolderEnabled(..)
                     | PluginRequest::SetEnabled(..)
+                    | PluginRequest::SetEnabledMany(..)
             )
         {
             self.status =
@@ -3446,6 +3447,23 @@ impl App {
                     }
                     Err(e) => self.status = Status::Error(e.0),
                 }
+                self.plugins_read = false;
+            }
+            PluginRequest::SetEnabledMany(specs, enabled) => {
+                let mut done = 0;
+                for spec in &specs {
+                    match self.projects.execute("plugins.setEnabled", &json!({ "plugin": spec, "enabled": enabled })) {
+                        Ok(_) => done += 1,
+                        Err(e) => {
+                            self.status = Status::Error(e.0);
+                            break;
+                        }
+                    }
+                }
+                if done == specs.len() {
+                    self.status = Status::Done(format!("{done} plug-ins are {}", if enabled { "on" } else { "off" }));
+                }
+                self.browser.relist();
                 self.plugins_read = false;
             }
             PluginRequest::ScanFile(file) => {

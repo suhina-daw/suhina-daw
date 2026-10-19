@@ -153,6 +153,8 @@ pub enum PluginRequest {
     SetFolderEnabled(String, bool),
     /// Switch a plug-in (by spec) on or off.
     SetEnabled(String, bool),
+    /// Switch several plug-ins (by spec) on or off together (#725).
+    SetEnabledMany(Vec<String>, bool),
     /// Read one file again now.
     ScanFile(String),
 }

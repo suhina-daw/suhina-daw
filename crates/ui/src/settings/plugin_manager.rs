@@ -32,6 +32,37 @@ pub struct ManagerState {
     pub search: String,
     /// The column sorted by (an index into the columns) and whether descending.
     pub sort: (usize, bool),
+    /// The plug-ins' rows picked, by spec, and the one picked last, which Shift picks the run
+    /// from (#725).
+    pub picked: Vec<String>,
+    pub anchor: Option<String>,
+}
+
+impl ManagerState {
+    /// Picks the row of `spec` the way a click does: alone, with Ctrl (Cmd) added or taken out,
+    /// with Shift the run from the last one picked in the order shown (`order`).
+    pub fn pick(&mut self, spec: &str, command: bool, shift: bool, order: &[String]) {
+        if shift
+            && let Some(anchor) = &self.anchor
+            && let (Some(from), Some(to)) =
+                (order.iter().position(|s| s == anchor), order.iter().position(|s| s == spec))
+        {
+            let (from, to) = if from <= to { (from, to) } else { (to, from) };
+            self.picked = order.get(from..=to).map(<[String]>::to_vec).unwrap_or_default();
+            return;
+        }
+        if command {
+            match self.picked.iter().position(|s| s == spec) {
+                Some(at) => {
+                    self.picked.remove(at);
+                }
+                None => self.picked.push(spec.to_string()),
+            }
+        } else {
+            self.picked = vec![spec.to_string()];
+        }
+        self.anchor = Some(spec.to_string());
+    }
 }
 
 /// What a row stands for.
@@ -252,16 +283,57 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         return out;
     }
     let mut toggled: Option<(String, bool)> = None;
+    let mut toggled_many: Option<(Vec<String>, bool)> = None;
+    let mut pick: Option<(String, bool, bool)> = None;
+    let order: Vec<String> = lines
+        .iter()
+        .filter_map(|l| match l.kind {
+            Kind::Plugin(i) => plugins.found.get(i).map(|p| p.spec.clone()),
+            _ => None,
+        })
+        .collect();
+    let picked = plugins.manager.picked.clone();
     let scanning = plugins.scanning;
     let mut again: Option<String> = None;
     ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW, lines.len(), |ui, range| {
             for line in lines.get(range).unwrap_or_default() {
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(body.width(), ROW), Sense::hover());
+                let (rect, row) = ui.allocate_exact_size(Vec2::new(body.width(), ROW), Sense::click());
                 let columns = spans(rect);
                 let row_painter = ui.painter_at(rect);
-                if ui.rect_contains_pointer(rect) {
+                let spec = match line.kind {
+                    Kind::Plugin(i) => plugins.found.get(i).map(|p| p.spec.clone()),
+                    _ => None,
+                };
+                let lit = spec.as_ref().is_some_and(|s| picked.contains(s));
+                if lit {
+                    row_painter.rect_filled(rect, 0.0, theme::control_active());
+                } else if ui.rect_contains_pointer(rect) {
                     row_painter.rect_filled(rect, 0.0, theme::panel_hover());
+                }
+                // A click picks the row (Ctrl adds, Shift takes the run); the right-click menu
+                // switches every picked plug-in off or on (#725).
+                if let Some(spec) = &spec {
+                    if row.clicked() {
+                        let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+                        pick = Some((spec.clone(), command, shift));
+                    }
+                    if row.secondary_clicked() && !picked.contains(spec) {
+                        pick = Some((spec.clone(), false, false));
+                    }
+                    let these: Vec<String> = if picked.contains(spec) { picked.clone() } else { vec![spec.clone()] };
+                    row.context_menu(|ui| {
+                        let what =
+                            if these.len() > 1 { format!("{} plug-ins", these.len()) } else { "the plug-in".into() };
+                        if ui.add_enabled(!scanning, egui::Button::new(format!("Turn off {what}"))).clicked() {
+                            toggled_many = Some((these.clone(), false));
+                            ui.close();
+                        }
+                        if ui.add_enabled(!scanning, egui::Button::new(format!("Turn on {what}"))).clicked() {
+                            toggled_many = Some((these.clone(), true));
+                            ui.close();
+                        }
+                    });
                 }
                 for (index, ((left, right), text)) in columns.iter().zip(&line.cells).enumerate() {
                     let cell =
@@ -317,7 +389,12 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
             }
         });
     });
-    if let Some((spec, enabled)) = toggled {
+    if let Some((spec, command, shift)) = pick {
+        plugins.manager.pick(&spec, command, shift, &order);
+    }
+    if let Some((specs, enabled)) = toggled_many {
+        out.request = Some(PluginRequest::SetEnabledMany(specs, enabled));
+    } else if let Some((spec, enabled)) = toggled {
         out.request = Some(PluginRequest::SetEnabled(spec, enabled));
     } else if let Some(file) = again {
         out.request = Some(PluginRequest::ScanFile(file));
@@ -328,6 +405,21 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rows_are_picked_alone_with_ctrl_and_as_a_run_with_shift() {
+        let order: Vec<String> = ["a", "b", "c", "d"].map(String::from).to_vec();
+        let mut state = ManagerState::default();
+        state.pick("b", false, false, &order);
+        state.pick("d", true, false, &order);
+        assert_eq!(state.picked, ["b", "d"]);
+        state.pick("b", true, false, &order);
+        assert_eq!(state.picked, ["d"], "Ctrl takes a picked row out");
+        state.pick("a", false, true, &order);
+        assert_eq!(state.picked, ["a", "b"], "Shift takes the run from the row clicked last");
+        state.pick("c", false, false, &order);
+        assert_eq!(state.picked, ["c"], "a plain click picks that row only");
+    }
     use crate::settings::settings_view::PluginRow;
 
     fn view() -> PluginsView {
