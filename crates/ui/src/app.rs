@@ -6494,16 +6494,18 @@ mod tests {
             .with_size(Vec2::new(1280.0, 800.0))
             .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
         harness.run();
+        // Stepped while the map shows: it asks for frames while it lays out the files, which on
+        // a slow machine outlasts what `run` waits for.
         harness.state_mut().do_action("view.sampleMap", &mut Vec::new());
-        harness.run();
+        harness.run_steps(3);
         assert!(harness.state().sample_map.view.large);
         harness.get_by_label("Close sample map").click();
-        harness.run();
+        harness.run_steps(3);
         assert!(!harness.state().sample_map.view.large, "the button closes it");
         harness.state_mut().do_action("view.sampleMap", &mut Vec::new());
-        harness.run();
+        harness.run_steps(3);
         harness.key_press(egui::Key::Escape);
-        harness.run();
+        harness.run_steps(3);
         assert!(!harness.state().sample_map.view.large, "Escape closes it");
     }
 
