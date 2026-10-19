@@ -127,12 +127,15 @@ enum EdgeGrab {
     Right,
 }
 
-/// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far.
+/// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far;
+/// the beat it was at and where the button went down, which the edge follows the pointer from.
 #[derive(Debug, Clone, Copy)]
 struct EdgeDrag {
     key: (TrackId, ClipId),
     grab: EdgeGrab,
     raw: f64,
+    from: f64,
+    origin: f32,
 }
 
 /// Where a clip's edges are while `drag` moves one: on the grid (free with `free`), kept at
@@ -2677,12 +2680,18 @@ fn clip_box<'a>(
             let mine_edge = |d: &EdgeDrag| d.key == key && d.grab == grab;
             if response.drag_started_by(egui::PointerButton::Primary) {
                 let raw = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
-                state.edge_drag = Some(EdgeDrag { key, grab, raw });
+                // Where the button went down, not where the drag was recognised: summing the
+                // frames' movement left out the few points before that, and the edge trailed
+                // the pointer by them for the whole drag.
+                let origin =
+                    ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos()).map_or(0.0, |p| p.x);
+                state.edge_drag = Some(EdgeDrag { key, grab, raw, from: raw, origin });
             }
             if response.dragged_by(egui::PointerButton::Primary)
+                && let Some(pointer) = response.interact_pointer_pos()
                 && let Some(drag) = state.edge_drag.as_mut().filter(|d| mine_edge(d))
             {
-                drag.raw += f64::from(response.drag_delta().x / state.beat_width);
+                drag.raw = drag.from + f64::from((pointer.x - drag.origin) / state.beat_width);
             }
             if response.drag_stopped_by(egui::PointerButton::Primary)
                 && let Some(drag) = state.edge_drag.take_if(|d| mine_edge(d))
@@ -2932,6 +2941,16 @@ fn clip_box<'a>(
             None
         }
     };
+    // Picked by a click in its body: not lit (the play start is what the click chose), but
+    // outlined, so the clip the editor and the keys work on is plain to see.
+    if selected && !lit && state.clip_drag.is_none() {
+        painter.with_clip_rect(row.clip).rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.5, theme::text_primary()),
+            StrokeKind::Inside,
+        );
+    }
     // The gain sits on top of the clip.
     if let Some((field, db, hover)) = gain_paint {
         let gain_painter = painter.with_clip_rect(row.clip);

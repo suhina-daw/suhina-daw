@@ -136,8 +136,9 @@ clips and paints no time. A clip on a lane under 36 px moves from its lower half
 A click on a clip's name bar picks the whole clip. A click in its body picks it too and sets the
 play start where it was clicked, on the grid (Alt: free), as a click on an empty spot of a lane
 does; a thin line (the insert marker) shows it in that lane while the play start is there, also
-while the transport plays and the playhead moves on. A clip picked this way looks as one not picked
-(it is still the one the detail area shows and Delete takes); a clip picked whole is lit. The grid's lines show through a clip's body, faintly in its own colour,
+while the transport plays and the playhead moves on. A clip picked this way is not lit but
+outlined, so the clip the detail area shows and Delete takes is plain to see; a clip picked whole
+is lit. The grid's lines show through a clip's body, faintly in its own colour,
 the bars a little stronger (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
 on by default). With *Ctrl+drag selects time
 over clips* on, a plain drag moves clips and Ctrl paints time.
