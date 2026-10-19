@@ -26,7 +26,7 @@ use suhina_ui::{App, NewProject, OpenAs, Status};
 
 const USAGE: &str = "\
 usage: suhina [<project.suhina> | <project.als> | --demo] [--renderer wgpu|glow] [--no-animations]
-              [--new-instance]
+              [--new-instance] [--trace <file>]
 
   <project.suhina>   a Suhina project to open, or a Live Set (.als) to import
   --demo             open a small built-in project
@@ -35,6 +35,8 @@ usage: suhina [<project.suhina> | <project.als> | --demo] [--renderer wgpu|glow]
   --no-animations    turn the interface's animations off this time
   --new-instance     start another window even though this build is running (for
                      development); it serves no agents
+  --trace <file>     append a diagnostic log to <file>, the plug-in hosts' too (for
+                     development, docs/debugging.md); SUHINA_TRACE=<file> does the same
 While this build of Suhina is running, starting it again opens the project in the running
 window as a tab instead. Agents reach the running window with suhina-cli mcp --attach once
 Options > Settings > General > Let agents work on open projects is on.
@@ -246,6 +248,11 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
             }
             "--no-animations" => {
                 parsed.animations = false;
+                continue;
+            }
+            "--trace" => {
+                let file = it.next().ok_or("--trace takes the file to write the log to")?;
+                suhina_plugins::trace::start(std::path::Path::new(file));
                 continue;
             }
             "--renderer" => {

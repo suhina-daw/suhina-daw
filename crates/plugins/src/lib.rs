@@ -1117,6 +1117,10 @@ pub fn host_command(host: &std::path::Path) -> Command {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    // A traced run's hosts trace to the same file (`docs/debugging.md`).
+    if let Some(path) = trace::path() {
+        command.env(trace::VARIABLE, path);
+    }
     command
 }
 
