@@ -316,7 +316,7 @@ is added. Other files are an error in the status bar.
 
 | Dropped on | Result |
 |---|---|
-| A track (its header, an Arrangement lane, a Session slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track, or a second instrument on a track, is refused with a message. |
+| A track (its header, an Arrangement lane, a Session slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track is refused with a message. A track plays one instrument: an instrument added to a track that has one takes its place (effects after it stay), as one undo step. |
 | The empty area | A new track with the device: a note track for an instrument, an audio track for an effect, named after the device. |
 
 A **preset** is its device with the preset's values: a DX7 voice is the FM synth playing that

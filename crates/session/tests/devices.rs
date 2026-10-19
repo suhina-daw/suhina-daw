@@ -133,7 +133,6 @@ fn bad_device_edits_are_refused_and_change_nothing() {
     let before = session.project().clone();
     for (id, params) in [
         ("device.add", json!({ "track": 1, "id": "no-such-device" })),
-        ("device.add", json!({ "track": 1, "id": "fm-synth" })),
         ("device.add", json!({ "track": 1, "id": "utility", "position": 0 })),
         ("device.add", json!({ "track": 1, "id": "utility", "position": 5 })),
         ("device.add", json!({ "track": 9, "id": "utility" })),
@@ -901,4 +900,38 @@ fn a_device_moves_or_copies_to_another_track_in_one_step() {
     assert!(
         run(&mut session, "device.moveToTrack", json!({ "track": "Keys", "device": 0, "to_track": "Keys" })).is_err()
     );
+}
+
+/// A track plays one instrument: one added to a track that has one takes its place, with the
+/// effects after it kept, as one undo step; built-in and plug-in instruments alike.
+#[test]
+fn an_added_instrument_replaces_the_one_on_the_track() {
+    let names = |session: &Session| -> Vec<String> {
+        session.project().channels[0].devices.iter().map(|d| d.name.clone()).collect()
+    };
+    let mut session = Session::new(project());
+    session.set_plugin_env(plugin_env());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "pitch" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    assert_eq!(names(&session), ["Pitch", "Sampler", "Utility"]);
+
+    let synth = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Synth" })).unwrap();
+    assert_eq!((synth["device"].as_u64(), synth["replaced"].as_str()), (Some(1), Some("Sampler")));
+    assert_eq!(names(&session), ["Pitch", "Synth", "Utility"]);
+
+    let fm = run(&mut session, "device.add", json!({ "track": 1, "id": "fm-synth" })).unwrap();
+    assert_eq!(fm["replaced"], "Synth");
+    assert_eq!(names(&session), ["Pitch", "FM Synth", "Utility"]);
+
+    // An effect replaces nothing.
+    let verb = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Verb" })).unwrap();
+    assert!(verb["replaced"].is_null());
+    assert_eq!(names(&session), ["Pitch", "FM Synth", "Utility", "Verb"]);
+
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), ["Pitch", "Synth", "Utility"]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(names(&session), ["Pitch", "Sampler", "Utility"]);
 }

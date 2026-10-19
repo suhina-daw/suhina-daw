@@ -129,6 +129,27 @@ fn chain_role(device: &Device) -> Option<Role> {
     }
 }
 
+/// The track's instrument (or instrument group, a plug-in one too) in its chain: where it is
+/// and its name. An instrument added to the track takes its place, one undo step: a track
+/// plays one instrument.
+fn instrument_in(session: &Session, params: &Value) -> Result<Option<(usize, String)>, CommandError> {
+    use crate::device_groups::{Kind, kind_of};
+    let devices = &channel_read(session, params)?.devices;
+    let at = devices.iter().position(|d| kind_of(session, d) == Kind::Instrument);
+    Ok(at.and_then(|at| devices.get(at).map(|d| (at, d.name.clone()))))
+}
+
+/// Takes the instrument `replaced` names out of `devices`; the place the new one goes.
+fn take_out(devices: &mut Vec<Device>, replaced: Option<&(usize, String)>, position: usize) -> usize {
+    match replaced {
+        Some((at, _)) if *at < devices.len() => {
+            devices.remove(*at);
+            *at
+        }
+        _ => position,
+    }
+}
+
 /// How many MIDI effects lead a chain: the instrument goes right after them.
 fn midi_prefix(devices: &[Device]) -> usize {
     devices.iter().take_while(|device| chain_role(device) == Some(Role::MidiEffect)).count()
@@ -426,11 +447,11 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             return Err(format!("{what} goes on a MIDI track").into());
         }
     }
+    let replaced = if instrument { instrument_in(session, params)? } else { None };
     let channel = channel_param(session, params)?;
-    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES {
+    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES && replaced.is_none() {
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
     }
-    let has_instrument = channel.devices.iter().any(|device| chain_role(device) == Some(Role::Instrument));
     let midi_prefix = midi_prefix(&channel.devices);
     let position = match params.get("position") {
         None => {
@@ -446,9 +467,6 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             .filter(|&n| n <= channel.devices.len())
             .ok_or_else(|| format!("position must be from 0 to {}", channel.devices.len()))?,
     };
-    if instrument && has_instrument {
-        return Err("the track has an instrument already; remove it first".into());
-    }
     if instrument && position != midi_prefix {
         return Err(format!("an instrument goes after the track's {midi_prefix} MIDI effects").into());
     }
@@ -461,8 +479,12 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     if !instrument && !midi_effect {
         check_effect_position(&channel.devices, position)?;
     }
+    let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
-    Ok(json!({ "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name) }))
+    Ok(json!({
+        "device": position, "id": info.id, "name": info.name, "preset": preset.map(|p| p.name),
+        "replaced": replaced.map(|(_, name)| name),
+    }))
 }
 
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -504,13 +526,11 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
             return Err("a MIDI effect goes on a MIDI track".into());
         }
     }
+    let instrument = graph.role == suhina_device_sdk::DeviceRole::Instrument;
+    let replaced = if instrument { instrument_in(session, params)? } else { None };
     let channel = channel_param(session, params)?;
-    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES {
+    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES && replaced.is_none() {
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
-    }
-    let has_instrument = channel.devices.iter().any(|device| chain_role(device) == Some(Role::Instrument));
-    if graph.role == suhina_device_sdk::DeviceRole::Instrument && has_instrument {
-        return Err("the track already has an instrument; remove it first".into());
     }
     // A MIDI effect or an instrument goes right after the MIDI effects that lead the chain, an
     // effect at the end.
@@ -540,8 +560,12 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
         suhina_device_sdk::DeviceRole::Effect => check_effect_position(&channel.devices, position)?,
         _ => {}
     }
+    let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
-    Ok(json!({ "device": position, "id": graph.id, "name": graph.name, "kind": "sd" }))
+    Ok(json!({
+        "device": position, "id": graph.id, "name": graph.name, "kind": "sd",
+        "replaced": replaced.map(|(_, name)| name),
+    }))
 }
 
 pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -741,12 +765,16 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
         let what = if instrument { "an instrument" } else { "a MIDI effect" };
         return Err(format!("{what} goes on a MIDI track").into());
     }
+    let replaced = if instrument { instrument_in(session, &json!({ "track": to.0 }))? } else { None };
     let chain =
         &session.project.channels.iter().find(|c| c.id == target).ok_or("the track's channel is missing")?.devices;
-    if instrument && chain.iter().any(|d| chain_role(d) == Some(Role::Instrument)) {
-        return Err("the track has an instrument already; remove it first".into());
-    }
-    if suhina_model::count_devices(chain) + suhina_model::count_devices(std::slice::from_ref(&device)) > MAX_DEVICES {
+    let leaving = replaced
+        .as_ref()
+        .and_then(|(at, _)| chain.get(*at))
+        .map_or(0, |d| suhina_model::count_devices(std::slice::from_ref(d)));
+    if suhina_model::count_devices(chain) + suhina_model::count_devices(std::slice::from_ref(&device)) - leaving
+        > MAX_DEVICES
+    {
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
     }
     let position = if instrument || midi_effect { midi_prefix(chain) } else { chain.len() };
@@ -767,8 +795,9 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
         .find(|c| c.id == target)
         .ok_or("the track's channel is missing")?
         .devices;
+    let position = take_out(chain, replaced.as_ref(), position);
     chain.insert(position, device);
-    Ok(json!({ "track": to.0, "device": position, "copied": copy }))
+    Ok(json!({ "track": to.0, "device": position, "copied": copy, "replaced": replaced.map(|(_, name)| name) }))
 }
 
 /// `device.paste {track, position?}`: puts the copied devices into a track's chain at
@@ -1150,8 +1179,9 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
             return Err("an instrument goes on a MIDI track".into());
         }
     }
+    let replaced = if instrument { instrument_in(session, params)? } else { None };
     let channel = channel_param(session, params)?;
-    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES {
+    if suhina_model::count_devices(&channel.devices) >= MAX_DEVICES && replaced.is_none() {
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
     }
     // An instrument goes right after the MIDI effects that lead the chain, first when there are
@@ -1179,6 +1209,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     // before it would not be heard: it goes first, wherever it was asked for.
     let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
     let position = if plugin.ara { 0 } else { position };
+    let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
     Ok(json!({
         "device": position,
@@ -1188,6 +1219,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
         "instrument": instrument,
         "ara": plugin.ara,
         "moved_first": moved_first,
+        "replaced": replaced.map(|(_, name)| name),
     }))
 }
 
