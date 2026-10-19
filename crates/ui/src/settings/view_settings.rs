@@ -50,6 +50,9 @@ pub struct ViewSettings {
     pub stretch_alt: bool,
     /// Ctrl+R with several clips selected renames them all at once (on by default, #693).
     pub rename_selected: bool,
+    /// Clips picked while stopped move the play start marker to the first one's start (on by
+    /// default, #721).
+    pub play_from_clip: bool,
 }
 
 impl Default for ViewSettings {
@@ -64,6 +67,7 @@ impl Default for ViewSettings {
             time_select_ctrl: false,
             stretch_alt: true,
             rename_selected: true,
+            play_from_clip: true,
         }
     }
 }
@@ -72,7 +76,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -82,6 +86,7 @@ impl ViewSettings {
             if self.time_select_ctrl { "ctrl_drag" } else { "clip_lower_half" },
             if self.stretch_alt { "on" } else { "off" },
             if self.rename_selected { "on" } else { "off" },
+            if self.play_from_clip { "on" } else { "off" },
         )
     }
 
@@ -105,6 +110,7 @@ impl ViewSettings {
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
             ("stretch_alt_drag", "on" | "off") => self.stretch_alt = value == "on",
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
+            ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             _ => return false,
         }
         true
@@ -128,6 +134,7 @@ mod tests {
             time_select_ctrl: true,
             stretch_alt: false,
             rename_selected: false,
+            play_from_clip: false,
         };
         let settings = Settings { view, ..Settings::default() };
         let (read, warnings) = Settings::from_text(&settings.to_text());

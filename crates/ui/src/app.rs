@@ -2338,9 +2338,11 @@ impl App {
                                 .map_or(0, |i| i.input_channels);
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
                             // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
-                            // paste): play starts from the first of them.
+                            // paste): play starts from the first of them, as the setting says (#721).
                             let picked = self.arrangement.selected_clips();
-                            if picked != self.clips_before.as_slice() {
+                            if picked != self.clips_before.as_slice() && !self.settings.view.play_from_clip {
+                                self.clips_before = picked.to_vec();
+                            } else if picked != self.clips_before.as_slice() {
                                 let first = picked
                                     .iter()
                                     .filter_map(|(track, id)| {

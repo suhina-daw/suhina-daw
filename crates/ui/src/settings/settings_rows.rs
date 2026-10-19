@@ -311,6 +311,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Clips",
+        "Play from the selected clip",
+        "Clips picked while stopped move the play start marker to the first one's start, so play starts there; off, a click on a clip puts it where it was clicked",
+        &["play_from_selected_clip"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.play_from_clip),
+    ),
+    row(
+        Page::Arrangement,
         "Tracks",
         "Track headers",
         "Which side of the timeline they are on",
