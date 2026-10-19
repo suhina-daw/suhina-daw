@@ -3224,8 +3224,7 @@ fn track_header(
     if rect.height() >= SHOWS_MIXER {
         let top = row.bottom() + PAD;
         let pan = Rect::from_min_max(Pos2::new(inner.right() - PAN_FIELD, top), Pos2::new(inner.right(), top + FIELD));
-        // The sends, a knob per return before the pan, as many as leave the volume bar its room
-        // (Ableton Live's track header has them too).
+        // The sends, a knob per return before the pan, as many as leave the volume bar its room.
         let step = FIELD + SEND_GAP;
         let room = ((pan.left() - 4.0 - inner.left() - LEAST_VOLUME) / step).floor().max(0.0) as usize;
         let shown = lane.sends.len().min(room);
