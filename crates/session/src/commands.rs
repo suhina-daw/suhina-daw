@@ -1587,6 +1587,17 @@ static COMMANDS: &[CommandSpec] = &[
         run: crate::relink::relink_files,
     },
     CommandSpec {
+        id: "project.collect",
+        label: "Copy the audio the project plays from outside its folder into Samples/Collected there and point the clips at the copies, as one undo step; save afterwards to keep it (Collect and save)",
+        params: &[optional(
+            "folder",
+            ParamType::Text,
+            "the folder to collect into: the project's own by default; needed before it is saved",
+        )],
+        kind: CommandKind::Edit,
+        run: crate::relink::collect,
+    },
+    CommandSpec {
         id: "clip.addFiles",
         label: "Place samples and MIDI files as clips: on a track (or new tracks when none is given), one after another from a beat in the arrangement or down the clip slots from a scene; separate gives each clip a track of its own",
         params: &[

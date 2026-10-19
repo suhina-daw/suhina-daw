@@ -556,6 +556,38 @@ impl Library {
         Ok(true)
     }
 
+    /// The folders outside `project` (its project file) that its audio was loaded from.
+    pub fn project_folders(&mut self, project: &Path) -> Vec<PathBuf> {
+        self.load();
+        self.store.project_folders.get(&project.display().to_string()).cloned().unwrap_or_default()
+    }
+
+    /// Adds `folders` (absolute paths) to `project`'s source folders, newest first, and saves
+    /// when that changed anything. Returns whether it did.
+    pub fn add_project_folders(&mut self, project: &Path, folders: Vec<PathBuf>) -> Result<bool, String> {
+        self.load();
+        let key = project.display().to_string();
+        let mut list = self.store.project_folders.get(&key).cloned().unwrap_or_default();
+        let before = list.clone();
+        for folder in folders.into_iter().filter(|f| f.is_absolute()) {
+            list.retain(|f| *f != folder);
+            list.insert(0, folder);
+        }
+        list.truncate(store::MAX_PROJECT_FOLDERS);
+        if list == before {
+            return Ok(false);
+        }
+        if !self.store.project_folders.contains_key(&key)
+            && self.store.project_folders.len() >= store::MAX_PROJECTS_WITH_FOLDERS
+            && let Some(oldest) = self.store.project_folders.keys().next().cloned()
+        {
+            self.store.project_folders.remove(&oldest);
+        }
+        self.store.project_folders.insert(key, list);
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn pinned(&mut self) -> Vec<String> {
         self.load();
         self.store.pins.clone()

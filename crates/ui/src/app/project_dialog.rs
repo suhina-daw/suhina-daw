@@ -165,6 +165,8 @@ pub struct SavePrompt {
     pub folder: String,
     /// The name field takes the keys when the prompt appears.
     pub focus: bool,
+    /// Collect and save: the audio from outside the folder is copied into it first.
+    pub collect: bool,
 }
 
 /// What the user did with the save prompt.
@@ -661,7 +663,8 @@ mod tests {
 
     #[test]
     fn the_save_prompt_makes_the_path_from_name_and_folder() {
-        let prompt = SavePrompt { template: false, name: String::new(), folder: "songs".into(), focus: true };
+        let prompt =
+            SavePrompt { template: false, name: String::new(), folder: "songs".into(), focus: true, collect: false };
         let mut harness = Harness::builder().with_size(egui::vec2(900.0, 600.0)).build_ui_state(
             |ui, (prompt, chosen): &mut (SavePrompt, Option<SaveChoice>)| {
                 let area = ui.max_rect();

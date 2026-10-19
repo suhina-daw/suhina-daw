@@ -4,6 +4,8 @@
 //! Several open projects, one of them active, like tabs. Commands go to the active project
 //! unless a caller names another; only the active project plays (ADR 0007).
 
+use std::path::{Path, PathBuf};
+
 use serde_json::{Value, json};
 
 use suhina_plugins::library::Library;
@@ -268,7 +270,8 @@ impl Projects {
         self.close_preview_output();
         let mut session = session;
         if session.trusted() == &suhina_media::Trusted::default() {
-            session.set_trusted(self.trusted_audio());
+            let source = session.source().map(Path::to_path_buf);
+            session.set_trusted(self.trusted_audio_for(source.as_deref()));
         }
         self.open.push(Open { id, name, session });
         self.activate(id);
@@ -429,10 +432,17 @@ impl Projects {
     /// loaded into a project and saved it with, and the browser's library folders
     /// (`docs/spec/missing-files.md` › Project file boundaries).
     pub fn trusted_audio(&mut self) -> suhina_media::Trusted {
-        suhina_media::Trusted {
-            folders: self.files.folders().into_iter().map(|f| f.path).collect(),
-            files: self.files.trusted_audio().into_iter().collect(),
+        self.trusted_audio_for(None)
+    }
+
+    /// [`Projects::trusted_audio`] for the project saved as `project`: with the folders outside
+    /// it that its audio was loaded from (kept on this machine, not in the project).
+    pub fn trusted_audio_for(&mut self, project: Option<&Path>) -> suhina_media::Trusted {
+        let mut folders: Vec<PathBuf> = self.files.folders().into_iter().map(|f| f.path).collect();
+        if let Some(project) = project {
+            folders.extend(self.files.project_folders(&std::path::absolute(project).unwrap_or_default()));
         }
+        suhina_media::Trusted { folders, files: self.files.trusted_audio().into_iter().collect() }
     }
 
     /// The window plug-in editors open over (a Win32 `HWND`, an X11 window id): the desktop
@@ -589,10 +599,24 @@ impl Projects {
             && let Some(session) = target.and_then(|t| self.get(t))
         {
             let files = session.loaded_audio_paths();
+            let source = session.source().and_then(|s| std::path::absolute(s).ok());
+            // The folders the audio came from outside the project's own, kept for this project.
+            let own = source.as_deref().and_then(Path::parent).map(Path::to_path_buf);
+            let mut folders: Vec<PathBuf> = Vec::new();
+            for folder in files.iter().filter_map(|f| f.parent()) {
+                if own.as_deref().is_none_or(|own| !folder.starts_with(own)) && !folders.iter().any(|f| f == folder) {
+                    folders.push(folder.to_path_buf());
+                }
+            }
             if let Err(e) = self.files.trust_audio(files) {
                 suhina_plugins::trace!("trusted audio not kept: {e}");
             }
-            let trusted = self.trusted_audio();
+            if let Some(source) = &source
+                && let Err(e) = self.files.add_project_folders(source, folders)
+            {
+                suhina_plugins::trace!("project folders not kept: {e}");
+            }
+            let trusted = self.trusted_audio_for(source.as_deref());
             if let Some(session) = target.and_then(|t| self.get_mut(t)) {
                 session.set_trusted(trusted);
             }

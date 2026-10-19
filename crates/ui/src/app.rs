@@ -1347,17 +1347,47 @@ impl App {
     /// Saves the active project: to its own `.suhina` file, or, the first time and when `ask`,
     /// to a name and folder the user gives.
     fn save_active(&mut self, ask: bool) {
+        self.save_active_collecting(ask, false);
+    }
+
+    /// File › Collect and save: the audio the project plays from outside its folder is copied
+    /// into it, then the project is saved (asking for a name when it has no file yet).
+    fn collect_and_save(&mut self) {
+        self.save_active_collecting(false, true);
+    }
+
+    /// Copies the project's audio from outside `path`'s folder into it (`project.collect`).
+    /// Returns whether that went well.
+    fn collect_into(&mut self, path: &Path) -> bool {
+        let folder = path.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        match self.projects.execute("project.collect", &json!({ "folder": folder.display().to_string() })) {
+            Ok(_) => true,
+            Err(e) => {
+                self.status = Status::Error(e.0);
+                false
+            }
+        }
+    }
+
+    fn save_active_collecting(&mut self, ask: bool, collect: bool) {
         let Some(id) = self.projects.active() else { return };
         match self.own_file(id) {
             Some(path) if !ask => {
-                self.save_to(&path, false);
+                if !collect || self.collect_into(&path) {
+                    self.save_to(&path, false);
+                }
             }
             own => {
                 let folder =
                     own.as_deref().and_then(Path::parent).map_or_else(|| self.projects_folder(), Path::to_path_buf);
                 let name = self.projects.name(id).unwrap_or("Untitled").to_string();
-                self.save_prompt =
-                    Some(SavePrompt { template: false, name, folder: folder.display().to_string(), focus: true });
+                self.save_prompt = Some(SavePrompt {
+                    template: false,
+                    name,
+                    folder: folder.display().to_string(),
+                    focus: true,
+                    collect,
+                });
             }
         }
     }
@@ -1372,7 +1402,7 @@ impl App {
         let Some(id) = self.projects.active() else { return };
         let name = self.projects.name(id).unwrap_or("Template").to_string();
         let folder = self.templates_folder().display().to_string();
-        self.save_prompt = Some(SavePrompt { template: true, name, folder, focus: true });
+        self.save_prompt = Some(SavePrompt { template: true, name, folder, focus: true, collect: false });
     }
 
     /// Runs `project.save` on the active project; a template is a copy. Returns whether it was
@@ -1418,7 +1448,8 @@ impl App {
         if let Some(mut prompt) = self.save_prompt.take() {
             match project_dialog::show_save(ui, window, &mut prompt) {
                 Some(SaveChoice::Save(path)) => {
-                    let saved = self.save_to(&path, prompt.template);
+                    let collected = !prompt.collect || self.collect_into(&path);
+                    let saved = collected && self.save_to(&path, prompt.template);
                     if let Some(leaving) = self.save_then.take()
                         && saved
                     {
@@ -3893,6 +3924,13 @@ impl App {
                     .clicked()
                 {
                     self.save_active(true);
+                }
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Collect and save"))
+                    .on_hover_text("Copy the audio the project plays from other folders into its own folder, then save")
+                    .clicked()
+                {
+                    self.collect_and_save();
                 }
                 if ui
                     .add_enabled(

@@ -111,6 +111,15 @@ Over MCP, `folder` and every `to` path must be inside the server's read root ([`
 - Collecting a project's files into its folder ("collect and save").
 - Missing plug-ins are reported by the plug-in loading dialog (ADR 0006), not here.
 
+## Collect and save
+
+File › Collect and save copies the audio the project plays from outside its folder into
+`Samples/Collected` in that folder, points every clip and sampler at the copies
+(`project.collect`, one undo step) and saves. A copy of the same name and size already there
+is used; another file of the same name gets a number, as `kick (2).wav`. A project not saved
+yet asks for its name first and collects into the folder chosen. Afterwards the folder holds
+everything the project plays, so it can be moved or shared as it is.
+
 ## Project file boundaries
 
 On project open, audio clips and sampler sources are resolved inside the project
@@ -123,6 +132,12 @@ what the person chose themselves:
   Any project that names one of them opens with it on this machine.
 - **The browser's library folders**, the folders the person added; a path with a parent
   step out of one is not inside it.
+- **The folders a project's audio came from.** Saving also keeps, for that project file, the
+  folders outside it that its audio was loaded from (`project_folders` in `browser.json`, at
+  most 64 a project). Opening the project reads them, and the missing files search looks in
+  them as it does in the project's folder, so a sample moved inside the folder it was
+  dropped from is found by name. They are kept on this machine, never in the project file:
+  a project from someone else cannot name folders to read.
 
 Anything else a project names outside its folder (another person's paths, a network
 share) is treated as missing, decided from the path alone before anything is read.

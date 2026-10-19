@@ -423,6 +423,18 @@ impl Session {
     /// person loaded or relinked, or what was trusted when it opened. Saving keeps them as
     /// trusted, so the project opens with them again.
     pub fn loaded_audio_paths(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        for (_, path) in self.loaded_audio() {
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+        out
+    }
+
+    /// [`Session::loaded_audio_paths`] with the name the clips and devices give each (the key
+    /// of its decoded audio), each name once.
+    pub(crate) fn loaded_audio(&self) -> Vec<(String, PathBuf)> {
         let loaded = |file: &str| {
             self.audio.files.contains_key(file) || self.audio.files.contains_key(&suhina_model::stream_key(file, 0))
         };
@@ -430,7 +442,7 @@ impl Session {
         let path = |file: &str, absolute: Option<&str>| {
             absolute.map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| from.join(file))
         };
-        let mut out: Vec<PathBuf> = Vec::new();
+        let mut out: Vec<(String, PathBuf)> = Vec::new();
         let devices = self.project.channels.iter().flat_map(|c| &c.devices);
         let named = devices.filter_map(|d| d.sample_file().map(|f| (f, d.sample_absolute_file()))).chain(
             self.project.contents.iter().flat_map(|c| &c.lanes).filter_map(|l| match &l.data {
@@ -441,10 +453,10 @@ impl Session {
             }),
         );
         for (file, absolute) in named {
-            if loaded(file) {
+            if loaded(file) && !out.iter().any(|(f, _)| f == file) {
                 let path = path(file, absolute);
-                if path.is_absolute() && !out.contains(&path) {
-                    out.push(path);
+                if path.is_absolute() {
+                    out.push((file.to_string(), path));
                 }
             }
         }

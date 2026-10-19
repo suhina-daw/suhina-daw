@@ -130,6 +130,74 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
     Ok(json!({ "relinked": relinked }))
 }
 
+/// The folder [`collect`] copies into, inside the project's folder.
+pub const COLLECTED: [&str; 2] = ["Samples", "Collected"];
+
+/// `project.collect {folder?}`: copies the audio the project plays from outside `folder` (the
+/// project's own folder by default) into `Samples/Collected` there and points every clip and
+/// device at the copies, as one undo step, so the folder holds everything the project needs
+/// (› Collect and save in `docs/spec/missing-files.md`). A copy of the same name and size that
+/// is already there is used; another of the same name gets a number.
+pub(crate) fn collect(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let folder = match params.get("folder") {
+        None | Some(Value::Null) => session
+            .source()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .ok_or("the project has no folder yet; give the folder to collect into")?,
+        Some(v) => PathBuf::from(v.as_str().ok_or("folder must be a text")?),
+    };
+    let folder = crate::files::absolute(&folder);
+    std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    let own = folder.canonicalize().map_err(|e| format!("{}: {e}", folder.display()))?;
+    let into = COLLECTED.iter().fold(folder.clone(), |p, part| p.join(part));
+    let (mut files, mut to) = (Vec::new(), Vec::new());
+    for (key, path) in session.loaded_audio() {
+        let Ok(real) = path.canonicalize() else { continue };
+        if real.starts_with(&own) || !real.is_file() {
+            continue;
+        }
+        std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
+        let copy = copy_name(&into, &real)?;
+        if !copy.exists() {
+            std::fs::copy(&real, &copy).map_err(|e| format!("{}: {e}", copy.display()))?;
+        }
+        // The copy plays what the original did, decoded once.
+        if let Some(data) = session.audio.files.get(&key).cloned() {
+            session.audio.files.insert(copy.display().to_string(), data);
+        }
+        files.push(key);
+        to.push(copy.display().to_string());
+    }
+    if files.is_empty() {
+        return Ok(json!({ "collected": [], "folder": into.display().to_string() }));
+    }
+    let relinked = relink_files(session, &json!({ "files": files, "to": to }))?;
+    Ok(json!({ "collected": relinked["relinked"], "folder": into.display().to_string() }))
+}
+
+/// Where in `into` a copy of `file` goes: its own name, or with a number when another file of
+/// that name and a different size is there already.
+fn copy_name(into: &Path, file: &Path) -> Result<PathBuf, CommandError> {
+    let name = file.file_name().ok_or("the file has no name")?;
+    let size = std::fs::metadata(file).map(|m| m.len()).ok();
+    let same = |p: &Path| !p.exists() || std::fs::metadata(p).map(|m| m.len()).ok() == size;
+    let first = into.join(name);
+    if same(&first) {
+        return Ok(first);
+    }
+    let path = Path::new(name);
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    for n in 2..10_000 {
+        let candidate = into.join(format!("{stem} ({n}){extension}"));
+        if same(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(format!("no free name for {} in {}", path.display(), into.display()).into())
+}
+
 /// `library.findFiles`: candidates for each name, best first for the active project's missing
 /// file of that name.
 pub(crate) fn find_files(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
@@ -177,6 +245,9 @@ pub fn search(
         })
         .unwrap_or_default();
     let project_folder = session.and_then(|s| s.audio_folder()).map(Path::to_path_buf);
+    // The folders this project's audio was loaded from: a file moved inside one is found there.
+    let source = session.and_then(|s| s.source()).and_then(|s| std::path::absolute(s).ok());
+    let source_folders = source.map(|s| projects.file_library_mut().project_folders(&s)).unwrap_or_default();
     let (mut found, note) = match folder {
         Some(folder) => {
             let walked = walk_for_names(folder, names, stop, walked).map_err(CommandError)?;
@@ -185,10 +256,10 @@ pub fn search(
         None => {
             let mut found = projects.file_library_mut().find_by_names(names);
             let mut note = None;
-            if let Some(dir) = project_folder.filter(|d| d.is_dir())
-                && let Ok(more) = walk_for_names(&dir, names, stop, walked)
-            {
-                note = more.note;
+            let dirs = project_folder.into_iter().chain(source_folders).filter(|d| d.is_dir());
+            for dir in dirs {
+                let Ok(more) = walk_for_names(&dir, names, stop, walked) else { continue };
+                note = note.or(more.note);
                 for ((_, paths), (_, extra)) in found.iter_mut().zip(more.found) {
                     for path in extra {
                         if !paths.contains(&path) {

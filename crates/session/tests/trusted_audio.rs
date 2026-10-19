@@ -108,3 +108,82 @@ fn only_trusted_files_and_library_folders_are_read_outside_the_project() {
     assert_eq!(relative, Some(in_library));
     assert_eq!(suhina_media::locate("../elsewhere/other.wav", None, &project, &folder_only), None);
 }
+
+/// Projects with a library in `settings` and a project with a sampler that plays `sample`,
+/// saved as `song`.
+fn saved_with_sample(settings: &Path, sample: &Path, song: &Path) -> Projects {
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut projects = Projects::with_library(plugins);
+    projects.set_file_library(Library::new(Some(settings.to_path_buf())));
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: true, audio: false },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Keys")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Keys")],
+        ..Project::default()
+    };
+    projects.add(Session::new(project), None).unwrap();
+    run(&mut projects, "device.add", json!({ "track": 1, "id": "sampler" }));
+    run(&mut projects, "device.loadSample", json!({ "track": 1, "device": 0, "path": sample }));
+    std::fs::create_dir_all(song.parent().unwrap()).unwrap();
+    run(&mut projects, "project.save", json!({ "path": song }));
+    projects
+}
+
+/// The folder a sample was dropped from is kept for its project, on this machine, and the
+/// missing files search looks there: a sample moved inside it is found by name.
+#[test]
+fn the_folder_a_sample_came_from_is_searched_when_it_moves() {
+    let root = temp("folders");
+    let settings = root.join("settings");
+    let samples = root.join("samples");
+    let sample = samples.join("kick.wav");
+    wav(&sample);
+    let song = root.join("project").join("song.suhina");
+    let mut projects = saved_with_sample(&settings, &sample, &song);
+    assert_eq!(projects.file_library_mut().project_folders(&song), vec![samples.clone()]);
+
+    // Moved inside the folder: missing, and found there by name.
+    let moved = samples.join("one-shots").join("kick.wav");
+    std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    std::fs::rename(&sample, &moved).unwrap();
+    let (reopened, _) = Session::open(&song).unwrap();
+    let id = projects.add(reopened, None).unwrap();
+    assert_eq!(projects.get(id).unwrap().missing_files().len(), 1);
+    let found = run(&mut projects, "library.findFiles", json!({ "names": ["kick.wav"] }));
+    let paths: Vec<&str> = found["found"][0]["paths"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    assert!(paths.contains(&moved.display().to_string().as_str()), "found in the folder it came from: {paths:?}");
+}
+
+/// Collect and save: the audio from outside the project's folder is copied into
+/// Samples/Collected there, the project plays the copies, and it opens with the folder alone.
+#[test]
+fn collect_copies_the_audio_from_outside_into_the_project() {
+    let root = temp("collect");
+    let settings = root.join("settings");
+    let sample = root.join("samples").join("kick.wav");
+    wav(&sample);
+    let song = root.join("project").join("song.suhina");
+    let mut projects = saved_with_sample(&settings, &sample, &song);
+
+    let collected = run(&mut projects, "project.collect", json!({}));
+    let copy = song.parent().unwrap().join("Samples").join("Collected").join("kick.wav");
+    assert!(copy.is_file(), "{collected}");
+    assert_eq!(collected["collected"].as_array().unwrap().len(), 1);
+    let active = projects.active().unwrap();
+    let file = projects.get(active).unwrap().project().channels[0].devices[0].sample_file().unwrap().to_string();
+    assert_eq!(file, copy.display().to_string());
+    // Nothing left outside: collecting again copies nothing.
+    assert_eq!(run(&mut projects, "project.collect", json!({}))["collected"].as_array().unwrap().len(), 0);
+    run(&mut projects, "project.save", json!({}));
+
+    let (reopened, _) = Session::open(&song).unwrap();
+    let folder = reopened.audio_folder().unwrap().to_path_buf();
+    assert!(suhina_media::missing_audio(reopened.project(), &folder).is_empty(), "inside the folder, no trust needed");
+    // One undo step puts the original back.
+    run(&mut projects, "edit.undo", json!({}));
+    let back = projects.get(active).unwrap().project().channels[0].devices[0].sample_file().unwrap().to_string();
+    assert_ne!(back, copy.display().to_string());
+}

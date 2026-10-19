@@ -21,6 +21,9 @@ pub const MAX_PINS: usize = 1000;
 pub const MAX_RECENT: usize = 50;
 /// Audio files outside projects' folders kept as trusted; the oldest go first.
 pub const MAX_TRUSTED_AUDIO: usize = 20_000;
+/// Projects whose source folders are kept, and folders kept for each.
+pub const MAX_PROJECTS_WITH_FOLDERS: usize = 2000;
+pub const MAX_PROJECT_FOLDERS: usize = 64;
 /// Tags there may be by default, and at most.
 pub const DEFAULT_TAG_LIMIT: usize = 64;
 pub const MAX_TAG_LIMIT: usize = 1024;
@@ -160,6 +163,10 @@ pub struct Store {
     /// it with, which opening a project may read (`docs/spec/missing-files.md` › Project file
     /// boundaries). Newest first.
     pub trusted_audio: Vec<PathBuf>,
+    /// For each project file (its absolute path), the folders outside it that its audio was
+    /// loaded from: opening it reads them and the missing files panel searches them. Kept on
+    /// this machine, never in the project file, so a project cannot name folders to read.
+    pub project_folders: BTreeMap<String, Vec<PathBuf>>,
 }
 
 impl Default for Store {
@@ -173,6 +180,7 @@ impl Default for Store {
             tag_limit: DEFAULT_TAG_LIMIT,
             plugins_view: PluginsView::Instruments,
             trusted_audio: Vec::new(),
+            project_folders: BTreeMap::new(),
         }
     }
 }
@@ -234,6 +242,24 @@ impl Store {
             .filter(|p| p.is_absolute())
             .collect();
         let mut store = Self { folders, pins, trusted_audio, ..Self::default() };
+        if let Some(projects) = map.get("project_folders") {
+            match projects.as_object() {
+                Some(projects) => {
+                    for (project, folders) in projects.iter().take(MAX_PROJECTS_WITH_FOLDERS) {
+                        let what = format!("project_folders of {project}");
+                        let folders: Vec<PathBuf> = texts(Some(folders), MAX_PROJECT_FOLDERS, &what, warnings)
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .filter(|p| p.is_absolute())
+                            .collect();
+                        if !folders.is_empty() && project.len() <= MAX_KEY {
+                            store.project_folders.insert(project.clone(), folders);
+                        }
+                    }
+                }
+                None => warnings.push("browser.json: project_folders is not an object; ignored".into()),
+            }
+        }
         if let Some(recent) = map.get("recent") {
             match recent.as_object() {
                 Some(groups) => {
@@ -323,6 +349,11 @@ impl Store {
             "tag_limit": self.tag_limit,
             "plugins_view": self.plugins_view.name(),
             "trusted_audio": self.trusted_audio.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
+            "project_folders": self
+                .project_folders
+                .iter()
+                .map(|(p, folders)| (p.clone(), json!(folders.iter().map(|f| f.display().to_string()).collect::<Vec<_>>())))
+                .collect::<Map<String, Value>>(),
         })
     }
 
