@@ -1,11 +1,12 @@
 ---
 description: How to find out what the running app does around a bug: the trace log (suhina --trace), adding trace points, reading the log, and reading a screen recording frame by frame
-read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet
+read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet
 type: howto
 status: current
 last_verified: 2026-10-19
 covers:
   - crates/plugins/src/trace.rs
+  - crates/ui/src/kit/frame_trace.rs
   - scripts/video_frames.py
 ---
 
@@ -70,6 +71,30 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 | `ara analysis progress …`, `ara content changed …`, `ara notes …` | host | the plug-in's analysis and content notifications, and the notes read |
 | `ara plug-in asks transport …` | host | the plug-in's play, stop and position requests |
 | `ara musical context changed` | host | the tempo map or time signatures sent to the plug-in again |
+| `slow frame N ms: part ms, …; what was shown` | app (`kit/frame_trace.rs`) | a frame whose drawing took 25 ms or more, part by part (› UI time) |
+| `frames: N in 1.0 s …` | app | once a second while the window draws: frames, drawing time on average and the longest, the longest wait between frames |
+
+### UI time
+
+A lagging window shows in the log by itself, with no trace point to add. Each frame of the
+window is timed part by part, and one that takes 25 ms or more (under 40 frames a second) is
+written out:
+
+```text
+1760887012345 [9120] slow frame 41.3 ms: input 0.6, grid 1.2, bars 0.8, browser 2.1, detail 3.4, view setup 0.7, timeline 22.9, arrangement view 8.8, commands 0.4; arrangement, 6 lanes, 24 clips, playing running, timeline rebuilt, 1 commands
+```
+
+The parts, in the order the frame draws them: `input` (keys, polls, the sample map window),
+`grid` (the session's state for the views), `bars` (menu, control and status bars), `browser`,
+`detail` (the detail area: clip column, devices, piano roll), `view setup`, `timeline` (the
+Arrangement's lanes and clips, rebuilt only after the project changed: `timeline rebuilt`),
+`arrangement view` or `session view` (drawing it), `views`, `drags`, `dialogs`, `commands`
+(running what the frame asked for) and `rest`. The part that stands out is where to look.
+
+Once a second a `frames:` line sums up: how many frames, their drawing time on average and the
+longest, and the longest wait between two frames. A long wait with short drawing means the time
+went elsewhere: egui laying out and painting the shapes, the GPU, or the window at rest (it
+draws only when something changes, so a wait of seconds while nothing moves is normal).
 
 ### Adding a trace point
 

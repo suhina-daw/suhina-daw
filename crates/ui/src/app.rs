@@ -341,6 +341,8 @@ pub struct App {
     /// How tall the device chain's panels were last frame, when the detail area showed only the
     /// chain: the area is kept no taller.
     detail_cap: Option<f32>,
+    /// Where each frame's time goes, written to the trace log when tracing is on.
+    frame_trace: crate::kit::frame_trace::FrameTrace,
     /// The embedded plug-in editors the detail area has grown to fit, once each as they open:
     /// after that its height is the user's, and the editor is fitted to it (#689).
     fitted_editors: std::collections::HashSet<(TrackId, Vec<usize>)>,
@@ -508,6 +510,7 @@ impl App {
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
             detail_cap: None,
+            frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             fitted_editors: std::collections::HashSet::new(),
             editor_in_chain: false,
             rename: None,
@@ -2043,6 +2046,7 @@ impl App {
 
     /// Draws the window into `ui` and runs what the user asked for.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.frame_trace.start();
         if self.projects.active().is_some() {
             // The start panel reads its lists again when it next appears.
             self.start_lists = false;
@@ -2084,6 +2088,7 @@ impl App {
             crate::kit::waveform::Scale::Linear
         };
         crate::kit::waveform::set_scale(ui.ctx(), scale);
+        self.frame_trace.mark("input");
 
         let grid = self.session().map(|s| {
             let mut grid = Grid::build(s.project(), s.player().map(|p| p.monitor()));
@@ -2113,6 +2118,7 @@ impl App {
             self.next_ram = Some(ui.ctx().time() + 1.0);
         }
         let ram = self.ram;
+        self.frame_trace.mark("grid");
         // A press on the window's own controls: keys typed next are the window's, not those of an
         // embedded plug-in editor clicked before.
         if ui.input(|i| i.pointer.any_pressed())
@@ -2159,6 +2165,7 @@ impl App {
             .exact_size(theme::STATUS_BAR)
             .frame(egui::Frame::NONE.fill(theme::panel_background()))
             .show(ui, |ui| self.status_bar(ui, grid.as_ref()));
+        self.frame_trace.mark("bars");
         // Samples and MIDI files from the system: dropped this frame, or still over the window.
         let system = match (self.browser.drag.is_some(), dropped.is_empty()) {
             (true, _) => None,
@@ -2192,7 +2199,9 @@ impl App {
             // It slides in and out from its side, with animations on (#708).
             self.browser_part = motion::toward(ui.ctx(), Id::new("browser-shown"), browser_wanted, BROWSER_SLIDE);
             let browser_shown = self.browser_part > 0.001;
+            self.frame_trace.mark("bars");
             let inner = if browser_shown && !full_width { self.browser_panel(ui, inner) } else { inner };
+            self.frame_trace.mark("browser");
             let mut view_area = inner;
             self.detail_drop = None;
             self.sample_drops.clear();
@@ -2233,6 +2242,7 @@ impl App {
                     inner
                 }
             };
+            self.frame_trace.mark("detail");
             let inner = if browser_shown && full_width {
                 let rest = self.browser_panel(ui, inner);
                 view_area = Rect::from_min_max(
@@ -2243,6 +2253,7 @@ impl App {
             } else {
                 inner
             };
+            self.frame_trace.mark("browser");
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));
@@ -2322,7 +2333,10 @@ impl App {
                         self.view.strip_fader = self.settings.view.strip_fader as f32;
                         self.view.double_click_does_nothing = !self.settings.view.double_click_clip;
                         self.view.device_picks = self.device_picks();
+                        self.frame_trace.mark("view setup");
                         session_view::show(ui, grid, &progress, &mut self.view, &mut actions);
+                        self.frame_trace.mark("session view");
+                        self.frame_trace.note(|| format!("session view, {} tracks", grid.columns.len()));
                         match self.view.device_event.take() {
                             Some(session_view::DeviceEvent::Pick { track, index, add, run }) => {
                                 self.pick_device(track, index, add, run);
@@ -2377,6 +2391,8 @@ impl App {
                             self.arrangement.reconcile(session.project());
                             // Clips and their notes are rebuilt only after the project changed; the
                             // playhead is read every frame.
+                            self.frame_trace.mark("view setup");
+                            let mut rebuilt = false;
                             let timeline = match self.timeline.take() {
                                 Some((revision, folds, mut timeline))
                                     if revision == self.revision && folds == self.arrangement.folds =>
@@ -2385,6 +2401,7 @@ impl App {
                                     timeline
                                 }
                                 before => {
+                                    rebuilt = true;
                                     // Stacked clips keep the sub-rows the last build gave them.
                                     let rows = before.map(|(_, _, t)| t.stack_rows).unwrap_or_default();
                                     let mut timeline = Timeline::build_after(session.project(), monitor, &rows);
@@ -2435,7 +2452,18 @@ impl App {
                                 .player()
                                 .and_then(suhina_session::Player::output_info)
                                 .map_or(0, |i| i.input_channels);
+                            self.frame_trace.mark("timeline");
                             arrangement_view::show(ui, &timeline, &mut self.arrangement, &mut actions);
+                            self.frame_trace.mark("arrangement view");
+                            self.frame_trace.note(|| {
+                                let clips: usize = timeline.lanes.iter().map(|l| l.clips.len()).sum();
+                                format!(
+                                    "arrangement, {} lanes, {clips} clips, {} running, timeline {}",
+                                    timeline.lanes.len(),
+                                    if timeline.running { "playing" } else { "stopped" },
+                                    if rebuilt { "rebuilt" } else { "kept" },
+                                )
+                            });
                             // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
                             // paste): play starts from the first of them, as the setting says (#721).
                             let picked = self.arrangement.selected_clips();
@@ -2498,8 +2526,10 @@ impl App {
         if let Some((items, dropped)) = system {
             self.system_drag(ui, items, dropped);
         }
+        self.frame_trace.mark("views");
         self.carry_clip(ui);
         self.poll_drop(ui.ctx());
+        self.frame_trace.mark("drags");
 
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
@@ -2509,7 +2539,9 @@ impl App {
             self.settings_dialog(ui, window);
         }
         self.update_title(ui.ctx());
+        self.frame_trace.mark("dialogs");
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
+        let ran = actions.len();
         for action in &actions {
             // Closing a project with unsaved changes asks first (Save, Don't save, Cancel).
             let closing = (action.id == "projects.close")
@@ -2597,6 +2629,8 @@ impl App {
                 ui.ctx().copy_text(format!("Suhina: {what} copied"));
             }
         }
+        self.frame_trace.mark("commands");
+        self.frame_trace.note(|| format!("{ran} commands"));
         self.guard_quit(ui.ctx());
         // The views drew before the actions and drops of this frame ran: when the project changed,
         // ask for a frame at once, so what the user just did (a moved clip, a file that landed)
@@ -2609,6 +2643,7 @@ impl App {
         }) {
             ui.ctx().request_repaint();
         }
+        self.frame_trace.finish();
     }
 
     /// File › Open recent: the recent projects the project dialog lists, newest first, each opened
