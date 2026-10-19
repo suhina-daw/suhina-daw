@@ -135,8 +135,9 @@ clips and paints no time. A clip on a lane under 36 px moves from its lower half
 
 A click on a clip's name bar picks the whole clip. A click in its body picks it too and sets the
 play start where it was clicked, on the grid (Alt: free), as a click on an empty spot of a lane
-does; a thin line (the insert marker) shows it in that lane while the play start is there and the
-transport is stopped. The grid's lines show through a clip's body, faintly in its own colour,
+does; a thin line (the insert marker) shows it in that lane while the play start is there, also
+while the transport plays and the playhead moves on. A clip picked this way looks as one not picked
+(it is still the one the detail area shows and Delete takes); a clip picked whole is lit. The grid's lines show through a clip's body, faintly in its own colour,
 the bars a little stronger (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
 on by default). With *Ctrl+drag selects time
 over clips* on, a plain drag moves clips and Ctrl paints time.
@@ -752,7 +753,9 @@ default.
 Where clips on a lane overlap, the lane shows them side by side in sub-rows (each clip in the
 first sub-row free at its start), so every clip stays visible and can be grabbed. The rows are
 only where clips overlap: the clips that overlap one another, directly or through others, share
-the lane in as many rows as they use, and a clip that overlaps none fills the lane (#697).
+the lane in as many rows as they use, and a clip that overlaps none fills the lane (#697). A thin
+line between the rows runs along the whole lane, under the clips, so each row reads as one in the
+empty stretches too.
 
 ## Folded groups
 

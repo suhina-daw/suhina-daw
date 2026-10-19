@@ -1538,6 +1538,13 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let edge = Rect::from_min_size(row.time.min, Vec2::new(2.0, row.time.height()));
             lanes_painter.rect_filled(edge, 0.0, theme::accent());
         }
+        // A lane its stacked clips split into rows: a line between the rows along the whole lane,
+        // empty stretches too, so each row reads as one.
+        let rows = clips_lane.clips.iter().map(|c| c.rows).max().unwrap_or(1);
+        for below in 1..rows {
+            let y = sub_row(row.time, below, rows).top() - 0.5;
+            lanes_painter.hline(row.time.x_range(), y, theme::hairline(theme::border()));
+        }
         for clip in &clips_lane.clips {
             let span = egui::Rangef::new(x_of(clip.start), x_of(clip.start + clip.length));
             // A stacked clip is hit only in its own row, as it is drawn.
@@ -1564,7 +1571,6 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         // The insert marker: where a click in this lane put the play start, while it is there.
         if let Some((track, beat)) = state.insert
             && track == clips_lane.track
-            && !timeline.running
             && (timeline.start_beat - beat).abs() < 1e-6
         {
             let x = x_of(beat).round() + 0.5;
@@ -2598,6 +2604,9 @@ fn clip_box<'a>(
     let mut curves = Vec::new();
     let rect = clip_rect(space, live_start, live_length, x_of);
     let selected = state.is_selected(key);
+    // A clip picked by a click in its body (the insert marker set there) looks as one not
+    // picked, as the play start is what the click chose; picked whole, it is lit.
+    let lit = selected && state.picked_whole;
     let fading = state.fade_drag.is_some_and(|d| d.key == key) || state.curve_drag.is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
     let fits = rect.width() >= 3.0 * FADE_HANDLE && rect.height() >= 2.0 * FADE_HANDLE;
@@ -2773,7 +2782,7 @@ fn clip_box<'a>(
             x_of,
             state.beat_width,
             timeline,
-            selected,
+            lit,
         );
     };
     let result = match state.clip_drag {
@@ -2812,7 +2821,7 @@ fn clip_box<'a>(
                 x_of,
                 state.beat_width,
                 timeline,
-                selected,
+                lit,
             );
             None
         }
@@ -2958,7 +2967,7 @@ fn paint_clip(
     if let Some(lines) = lines.filter(|l| !l.is_empty()) {
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
-        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
+        let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.035), motion::mix(body, ink, 0.07));
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
         }
