@@ -596,6 +596,26 @@ impl ClapPlugin {
         }
     }
 
+    /// Gives an embedded editor the room the engine has for it, when the plug-in can be resized:
+    /// the size the plug-in takes nearest to it (#689).
+    pub(crate) fn fit_editor(&mut self, size: crate::window::Size) {
+        let Some(gui) = self.gui_extension() else { return };
+        let handle = self.instance.plugin_handle();
+        let Some(editor) = &mut self.editor else { return };
+        if size.width == 0 || size.height == 0 || !gui.can_resize(&handle) {
+            return;
+        }
+        let asked = GuiSize { width: size.width, height: size.height };
+        let fitted = gui.adjust_size(&handle, asked).unwrap_or(asked);
+        let got = crate::window::Size { width: fitted.width.clamp(1, 16_384), height: fitted.height.clamp(1, 16_384) };
+        if got == editor.size || gui.set_size(&handle, fitted).is_err() {
+            return;
+        }
+        crate::window::resize(editor.window.id(), got);
+        editor.size = got;
+        editor.resized = Some(got);
+    }
+
     /// A size the editor got since this was last asked.
     pub(crate) fn editor_resized(&mut self) -> Option<crate::window::Size> {
         self.editor.as_mut().and_then(|e| e.resized.take())

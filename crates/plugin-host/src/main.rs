@@ -613,8 +613,10 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
             }
         }
         Message::FitEditor { instance, width, height } => {
-            if let Some(Loaded::Vst3(plugin)) = instances.get_mut(&instance) {
-                plugin.fit_editor(window::Size { width, height });
+            match instances.get_mut(&instance) {
+                Some(Loaded::Vst3(plugin)) => plugin.fit_editor(window::Size { width, height }),
+                Some(Loaded::Clap(plugin)) => plugin.fit_editor(window::Size { width, height }),
+                _ => {}
             }
             return None;
         }
