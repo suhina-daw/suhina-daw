@@ -186,34 +186,52 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         stop_preview(state, projects);
     }
 
-    // The category filters, then the sample map's button when there is a map, wrapping.
+    // The sidebar alone chooses what the list shows (#711). Over the list: Recent's kinds as
+    // chips while Recent is chosen and the setting says chips, and the List / Map switch while
+    // Samples is.
     let mut y = search.bottom() + 4.0;
     let mut x = area.left() + PAD;
     let small = theme::ui_font(theme::TEXT_SMALL);
     let map = other_results.is_some();
-    let buttons = Category::ALL.into_iter().map(Some).chain(map.then_some(None));
-    for category in buttons {
-        let title = category.map_or(SAMPLE_MAP, Category::title);
+    let recent = matches!(state.place, Some(Place::Recent(_)));
+    let samples = state.place.is_none() && state.category == Category::Samples;
+    let chips: Vec<(String, Chip)> = if recent && settings.view.recent_chips {
+        std::iter::once(("All".to_string(), Chip::Recent(None)))
+            .chain(Group::ALL.into_iter().map(|g| (g.title().to_string(), Chip::Recent(Some(g)))))
+            .collect()
+    } else if samples && map {
+        vec![("List".to_string(), Chip::List), (SAMPLE_MAP.to_string(), Chip::Map)]
+    } else {
+        Vec::new()
+    };
+    let showing_map = state.mode == crate::browser::ResultsMode::Other;
+    for (title, chip) in &chips {
         let width = widgets::text_width(ui, title, small.clone()) + FILTER_PAD * 2.0;
         if x + width > area.right() - PAD && x > area.left() + PAD {
             x = area.left() + PAD;
             y += FILTER + FILTER_GAP;
         }
         let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, FILTER));
-        let label = match category {
-            Some(category) => format!("Show {}", category.title()),
-            None => "Show the samples laid out by how they sound".to_string(),
+        let label = match chip {
+            Chip::Recent(_) => format!("Recent {title}"),
+            Chip::List => "Show the samples as a list".to_string(),
+            Chip::Map => "Show the samples laid out by how they sound".to_string(),
         };
-        let response = widgets::button_area(ui, rect, Id::new(("browser-filter", title)), label);
-        let showing_map = state.mode == crate::browser::ResultsMode::Other;
-        let chosen = match category {
-            Some(category) => state.category == category && !showing_map,
-            None => showing_map,
+        let response = widgets::button_area(ui, rect, Id::new(("browser-filter", title.as_str())), label);
+        let chosen = match chip {
+            Chip::Recent(group) => state.place == Some(Place::Recent(*group)),
+            Chip::List => !showing_map,
+            Chip::Map => showing_map,
         };
         if response.clicked() {
-            match category {
-                Some(category) => choose_category(state, category),
-                None => state.mode = crate::browser::ResultsMode::Other,
+            match chip {
+                Chip::Recent(group) => {
+                    state.place = Some(Place::Recent(*group));
+                    state.category = Place::Recent(*group).category().unwrap_or(Category::All);
+                    state.mode = crate::browser::ResultsMode::List;
+                }
+                Chip::List => state.mode = crate::browser::ResultsMode::List,
+                Chip::Map => state.mode = crate::browser::ResultsMode::Other,
             }
             state.scroll = 0.0;
         }
@@ -224,6 +242,13 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, small.clone(), text);
         x = rect.right() + FILTER_GAP;
     }
+    // The map belongs to the samples: anywhere else the list shows.
+    if !samples && !recent {
+        state.mode = crate::browser::ResultsMode::List;
+    }
+    if chips.is_empty() {
+        y -= FILTER + 2.0;
+    }
     y += FILTER + 6.0;
     painter.hline(area.x_range(), y - 0.5, theme::hairline(theme::border()));
 
@@ -231,7 +256,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let sidebar = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(area.left() + SIDEBAR, bottom));
     let results = Rect::from_min_max(Pos2::new(sidebar.right() + 1.0, y), Pos2::new(area.right(), bottom));
     painter.vline(sidebar.right() + 0.5, sidebar.y_range(), theme::hairline(theme::border()));
-    sidebar_view(ui, sidebar, state, projects, &mut out);
+    sidebar_view(ui, sidebar, state, projects, settings.view.recent_chips, &mut out);
 
     if let Err(e) = state.refresh_rows(projects) {
         out.status = Some(Status::Error(e));
@@ -391,7 +416,30 @@ fn move_selection(state: &mut BrowserState, step: isize) {
     }
 }
 
-fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
+/// What a chip over the list stands for (#711).
+#[derive(Clone, Copy)]
+enum Chip {
+    /// A kind of recent item, or all of them.
+    Recent(Option<Group>),
+    /// The samples as a list, or laid out by how they sound.
+    List,
+    Map,
+}
+
+/// What a sidebar item chooses: a place, or a kind of the library shown whole (#711).
+enum Target {
+    Place(Place),
+    Category(Category),
+}
+
+fn sidebar_view(
+    ui: &mut Ui,
+    area: Rect,
+    state: &mut BrowserState,
+    projects: &mut Projects,
+    recent_chips: bool,
+    out: &mut BrowserOut,
+) {
     let painter = ui.painter_at(area);
     let title_font = theme::ui_font(theme::TEXT_SMALL);
     let item_font = theme::ui_font(theme::TEXT_SMALL);
@@ -402,12 +450,49 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
         widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::text_hint());
         *y += 12.0;
     };
-    let mut entry = |ui: &mut Ui, y: &mut f32, place: Place, label: &str, note: Option<&str>| -> egui::Response {
+    let mut entry = |ui: &mut Ui, y: &mut f32, target: Target, label: &str, note: Option<&str>| -> egui::Response {
         let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
         *y += ROW;
-        let response = ui.interact(rect.intersect(area), Id::new(("browser-place", place.param())), Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Place {label}")));
-        let chosen = state.place.as_ref() == Some(&place);
+        let key = match &target {
+            Target::Place(place) => place.param(),
+            Target::Category(category) => format!("library:{}", category.title()),
+        };
+        let response = ui.interact(rect.intersect(area), Id::new(("browser-place", key.as_str())), Sense::click());
+        // Screen readers and tests: "Show Samples" for the library's kinds, "Place Recent MIDI"
+        // for a recent kind, "Place Pinned" and the like for the rest.
+        let name = match &target {
+            Target::Category(category) => format!("Show {}", category.title()),
+            Target::Place(Place::Recent(Some(group))) => format!("Place Recent {}", group.title()),
+            Target::Place(_) => format!("Place {}", label.trim()),
+        };
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        // A kind of the library is chosen while no place is: the whole of it shows.
+        let chosen = match &target {
+            Target::Place(place) => state.place.as_ref() == Some(place),
+            Target::Category(category) => state.place.is_none() && state.category == *category,
+        };
+        let place = match target {
+            Target::Place(place) => place,
+            Target::Category(category) => {
+                if response.clicked() && !chosen {
+                    state.place = None;
+                    state.category = category;
+                    state.scroll = 0.0;
+                }
+                if rect.intersects(area) {
+                    let fill = if chosen {
+                        theme::control_active()
+                    } else {
+                        motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
+                    };
+                    painter.rect_filled(rect.intersect(area), 0.0, fill);
+                    let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
+                    let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
+                    widgets::text_in(&painter, text, Align2::LEFT_CENTER, label, item_font.clone(), color);
+                }
+                return response;
+            }
+        };
         let fill = if chosen {
             theme::control_active()
         } else {
@@ -442,25 +527,31 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
             widgets::text_in(&painter, clear, Align2::CENTER_CENTER, "×", item_font.clone(), color);
             if cleared.clicked() {
                 state.place = None;
+                state.category = Category::All;
                 state.scroll = 0.0;
                 return response;
             }
         }
         if response.clicked() && !chosen {
-            // A recent group's place shows its own kind, so its category comes with it.
-            if let Some(category) = place.category() {
-                state.category = category;
-            }
+            // A place lists any kind, or a recent group's own: the category follows it, so
+            // nothing the place lists is hidden (#711).
+            state.category = place.category().unwrap_or(Category::All);
             state.place = Some(place);
             state.scroll = 0.0;
         }
         response
     };
     title(&mut y, "Pinned");
-    entry(ui, &mut y, Place::Pinned, "Pinned", None);
-    title(&mut y, "Recent");
-    for group in Group::ALL {
-        entry(ui, &mut y, Place::Recent(group), group.title(), None);
+    entry(ui, &mut y, Target::Place(Place::Pinned), "Pinned", None);
+    entry(ui, &mut y, Target::Place(Place::Recent(None)), "Recent", None);
+    if !recent_chips {
+        for group in Group::ALL {
+            entry(ui, &mut y, Target::Place(Place::Recent(Some(group))), &format!("    {}", group.title()), None);
+        }
+    }
+    title(&mut y, "Library");
+    for category in Category::ALL {
+        entry(ui, &mut y, Target::Category(category), category.title(), None);
     }
     title(&mut y, "Folders");
     let mut menus = Vec::new();
@@ -475,7 +566,7 @@ fn sidebar_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mu
             FolderState::Missing => Some("gone"),
             _ => None,
         };
-        let response = entry(ui, &mut y, Place::Folder(folder.path.clone()), &name, note);
+        let response = entry(ui, &mut y, Target::Place(Place::Folder(folder.path.clone())), &name, note);
         menus.push((response, folder.path));
     }
     for (response, folder) in menus {

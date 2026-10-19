@@ -685,7 +685,7 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
         })
     };
     assert!(until(&mut harness, |app| bass_devices(app) == 1));
-    harness.get_by_label("Place Effects").click();
+    harness.get_by_label("Place Recent Effects").click();
     harness.run();
     assert!(harness.query_by_label(&row("Overdrive")).is_some(), "Recent › Effects lists it");
     let _ = std::fs::remove_dir_all(&settings);
@@ -920,7 +920,7 @@ fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
     harness.run();
     assert!(harness.state().browser.place.is_none(), "the cross lets go of it");
     // A recent group brings its category; another category lets go of the group.
-    harness.get_by_label("Place MIDI").click();
+    harness.get_by_label("Place Recent MIDI").click();
     harness.run();
     assert_eq!(harness.state().browser.category, suhina_session::Category::Midi);
     harness.get_by_label("Show Instruments").click();
@@ -932,13 +932,22 @@ fn a_place_stays_chosen_on_a_second_click_and_its_cross_shows_everything() {
     harness.get_by_label("Show Instruments").click();
     harness.run();
     assert!(harness.state().browser.place.is_none());
-    // The sample map is a button of its own in the category row.
+    // The sample map is the samples' other view: List and Sample map over the list while
+    // Samples is chosen, and nowhere else (#711).
+    assert!(harness.query_by_label("Show the samples laid out by how they sound").is_none());
+    harness.get_by_label("Show Samples").click();
+    harness.run();
     harness.get_by_label("Show the samples laid out by how they sound").click();
     harness.run();
     assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::Other);
-    harness.get_by_label("Show Samples").click();
+    harness.get_by_label("Show the samples as a list").click();
     harness.run();
     assert_eq!(harness.state().browser.mode, suhina_ui::browser::ResultsMode::List);
+    // Recent is an item of its own, every kind's recent items together.
+    harness.get_by_label("Place Recent").click();
+    harness.run();
+    assert_eq!(harness.state().browser.place, Some(suhina_ui::browser::Place::Recent(None)));
+    assert_eq!(harness.state().browser.category, suhina_session::Category::All);
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

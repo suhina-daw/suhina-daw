@@ -446,6 +446,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Browser,
+        "Browser",
+        "Recent's kinds",
+        "Indented: Samples, MIDI and the other kinds of recent items are items under Recent in the sidebar; chips: they are chips over the list while Recent is chosen",
+        &["browser_recent"],
+        |cx, r| cx.choose(r, &[("Indented", false), ("Chips", true)], |s| &mut s.view.recent_chips),
+    ),
+    row(
+        Page::Browser,
         "Previews",
         "Auto-play",
         "Selecting a sample or MIDI file previews it",

@@ -56,6 +56,9 @@ pub struct ViewSettings {
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
+    /// The browser shows Recent's kinds as chips over its list rather than as items indented
+    /// under it in the sidebar (#711).
+    pub recent_chips: bool,
 }
 
 impl Default for ViewSettings {
@@ -72,6 +75,7 @@ impl Default for ViewSettings {
             rename_selected: true,
             play_from_clip: true,
             fixed_track_colour: false,
+            recent_chips: false,
         }
     }
 }
@@ -80,7 +84,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -92,6 +96,7 @@ impl ViewSettings {
             if self.rename_selected { "on" } else { "off" },
             if self.play_from_clip { "on" } else { "off" },
             if self.fixed_track_colour { "fixed" } else { "alternating" },
+            if self.recent_chips { "chips" } else { "indented" },
         )
     }
 
@@ -117,6 +122,7 @@ impl ViewSettings {
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
+            ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
             _ => return false,
         }
         true
@@ -142,6 +148,7 @@ mod tests {
             rename_selected: false,
             play_from_clip: false,
             fixed_track_colour: true,
+            recent_chips: true,
         };
         let settings = Settings { view, ..Settings::default() };
         let (read, warnings) = Settings::from_text(&settings.to_text());

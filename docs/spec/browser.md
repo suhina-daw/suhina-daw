@@ -67,11 +67,10 @@ Other files are not listed. Extensions are matched without regard to case.
 From top to bottom (sizes in components.md › Browser):
 
 1. **Search** with the shortcut hint (Ctrl+F).
-2. **Category filters**, a wrapping row of buttons: All, Samples, MIDI, Instruments, Effects,
-   Presets, Plug-ins, then **Sample map**, which shows the results as the sample map
-   ([`sample-map.md`](sample-map.md)). One is selected; All at first. Choosing a category shows
-   the list again; choosing the category already selected shows its whole tree (lets go of the
-   place); a category lets go of a recent group's place of another kind, which it would empty.
+2. **Chips over the list**, only where they belong: while Samples is chosen, **List** and
+   **Sample map** ([`sample-map.md`](sample-map.md)); while Recent is chosen and Settings ›
+   Browser › Recent's kinds is Chips, All and Recent's kinds. The sidebar alone chooses what the
+   list shows (#711): there is no second row of categories to contradict it.
 3. **Sidebar** (left part) and **results** (right part).
 4. **Preview strip** for the selected sample or MIDI file.
 5. **Footer:** the tags (dots that filter) and the count ("312 items", "3 selected").
@@ -89,22 +88,23 @@ place does not, so Space, Tab and the other shortcuts keep working (`app.rs::key
 
 Three sections, each title in small hint text:
 
-- **Pinned:** one entry. Selecting it lists the pinned items.
-- **Recent:** one entry per group: Projects, Samples, MIDI, Instruments, Effects, Plug-ins,
-  Presets. Each lists the last 50 of its kind, newest first. A project counts when it is
-  opened or saved; anything else when it is added to a project (dropped, or added with Enter or
-  a double-click). Previewing does not count.
+- **Pinned:** the entries **Pinned** (the pinned items) and **Recent**: every kind's recent
+  items together, each kind the last 50 newest first. A project counts when it is opened or
+  saved; anything else when it is added to a project (dropped, or added with Enter or a
+  double-click). Previewing does not count. Recent's kinds (Projects, Samples, MIDI,
+  Instruments, Effects, Plug-ins, Presets) are entries indented under it, or with Settings ›
+  Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
+- **Library:** All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins: each shows the whole
+  of its kind, never only the recent ones (Plug-ins lists every plug-in).
 - **Folders:** the added folders by name, each with a mark when it is not plain (`…` while
   scanning, `poll` when it is polled, `gone` when missing), then **+ Add folder**: a field where a path is typed (Enter adds it), with a **Browse…** button
   at its end that picks the folder in the system's folder dialog instead.
   A folder dragged from the system onto the window is added too (and the browser shows). A folder's right-click menu
   has Refresh, Pin and Remove from the browser.
 
-At most one place is selected. Clicking the selected place again keeps it; a **×** at the
-right of the selected place lets go of it (the whole tree shows again), as does clicking the
-selected category. Choosing a recent group (Samples, MIDI, Instruments, Effects, Plug-ins,
-Presets) also chooses its category, so the category never hides everything the place lists;
-the Pinned place, the recent projects and the folders hold any kind and keep the category.
+One entry is selected at a time. Clicking it again keeps it; a **×** at the right of a selected
+place lets go of it (All shows again). A recent kind shows only its kind; Pinned, Recent and the
+folders hold any kind.
 
 ## Results
 

@@ -72,7 +72,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             optional(
                 "place",
                 ParamType::Text,
-                "pinned, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), or a folder",
+                "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
             optional("limit", ParamType::Integer, "at most this many (default and most 500)"),
@@ -387,6 +387,19 @@ pub fn search_items(
     // Pins and recent items are lists of keys, kept in their order.
     let listed: Option<Vec<String>> = match place {
         Some("pinned") => Some(projects.file_library_mut().pinned()),
+        // Every group's recent items, each group in its own order, an item once (#711).
+        Some("recent:all") => {
+            let library = projects.file_library_mut();
+            let mut keys: Vec<String> = Vec::new();
+            for group in Group::ALL {
+                for key in library.recent(group) {
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+            }
+            Some(keys)
+        }
         Some(p) if p.starts_with("recent:") => {
             let group = Group::parse(&p["recent:".len()..]).ok_or_else(|| format!("unknown recent group in {p:?}"))?;
             Some(projects.file_library_mut().recent(group))
