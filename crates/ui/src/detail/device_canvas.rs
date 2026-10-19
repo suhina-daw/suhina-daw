@@ -1930,6 +1930,7 @@ mod tests {
             })
             .collect();
         let canvas = Arc::new(graph.ui.unwrap());
+        let reset_canvas = canvas.clone();
         let mut harness = egui_kittest::Harness::builder().with_size(Vec2::new(956., 210.)).build_ui_state(
             move |ui, state: &mut (Vec<GraphParameter>, Vec<Action>)| {
                 crate::kit::theme::install(ui.ctx());
@@ -2026,6 +2027,30 @@ mod tests {
         assert!(harness.query_by_label("Left delay").is_none());
         assert!(harness.query_by_label("time left").is_some());
         snapshot(&mut harness, "delay-motion.png");
+
+        let feedback = |parameters: &[GraphParameter]| parameters.iter().find(|p| p.id == "feedback").unwrap().value;
+        harness.get_by_label("Feedback").click();
+        harness.run();
+        let before = feedback(&harness.state().0);
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        let normal = feedback(&harness.state().0);
+        assert!(normal > before, "the constructed dial accepts keyboard edits");
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+        harness.run();
+        let fine = feedback(&harness.state().0);
+        assert!(fine > normal && fine - normal < normal - before, "Shift makes the keyboard step finer");
+        let at = harness.get_by_label("Feedback").rect().center();
+        let reset = pointer_gesture_with_clicks(&reset_canvas, &harness.state().0, at, None, 2);
+        assert!(reset.iter().any(|a| a.params["param"] == "feedback" && a.params["value"] == before));
+        for action in reset {
+            if let Some(p) = harness.state_mut().0.iter_mut().find(|p| action.params["param"] == p.id) {
+                p.value = action.params["value"].as_f64().unwrap();
+            }
+            harness.state_mut().1.push(action);
+        }
+        assert_eq!(feedback(&harness.state().0), before, "double click restores the default");
+        assert!(harness.state().1.iter().any(|a| a.params["param"] == "feedback" && a.params["continuous"] == false));
     }
     /// Saves a picture of `harness` to `target/` for the design review when
     /// `SUHINA_UI_SNAPSHOTS` is set; drawing it needs a GPU adapter, which test machines may lack.

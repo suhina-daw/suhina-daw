@@ -25,6 +25,12 @@ covers:
 
 # Suhina device graph (`.sd`)
 
+The Rust `author::GraphBuilder` convenience API writes this same format through `DeviceGraph`.
+Its node and port handles exist only while authoring, are never serialized, and cannot bypass
+validation. Parameter/UI constructors likewise configure the existing fields. Using these
+helpers alone changes neither the file schema version nor the device revision. See the
+[authoring guide](../device-sdk.md#checked-rust-authoring).
+
 An `.sd` file describes a device as data. It contains no Rust source, executable code or external
 assets. The Rust SDK builds and validates the graph, writes the JSON file and can prepare the
 supported graph for audio processing.

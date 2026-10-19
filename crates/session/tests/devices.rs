@@ -704,6 +704,11 @@ fn sdk_linked_delay_values_update_both_directions_and_undo_together() {
     assert_eq!(value(&session, "time_right"), 427.);
     edit(&mut session, "division_left", 16.);
     assert_eq!(value(&session, "division_right"), 16.);
+    let saved_path = std::env::temp_dir().join(format!("suhina-sdk-delay-panel-{}.suhina", std::process::id()));
+    run(&mut session, "project.save", json!({ "path": saved_path })).unwrap();
+    let (reopened, _) = Session::open(&saved_path).unwrap();
+    assert_eq!(reopened.project(), session.project(), "panel and linked values survive save/reopen");
+    std::fs::remove_file(saved_path).unwrap();
 }
 
 /// The NAM devices take a file each: the model's or IR's path in `Device::state`, saved with the

@@ -5,6 +5,7 @@ type: spec
 status: current
 last_verified: 2026-10-15
 covers:
+  - crates/device-sdk/src/ui/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
@@ -14,6 +15,70 @@ covers:
 ---
 
 # Custom device panels
+
+## Rust control constructors
+
+`CustomControl` provides `number`, `dial`, `toggle`, `set_button`, `menu`, `value_menu`,
+`label` and `separator` constructors. They construct the existing serialized controls, with
+standard defaults for gestures, bindings and drawings; the host interaction and theme paths
+are unchanged. `widget` is the lower-level passive-widget constructor for custom composition.
+Number/dial controls bind the vertical axis; toggle, set-button and menu controls bind X.
+Number/dial defaults include the standard precision/reset tooltip and a default accessible
+name, which authors should override when the parameter id is not a meaningful label.
+
+Configure a control before inserting it; no operation implicitly edits the panel's last control:
+
+```rust
+let control = CustomControl::number("time_left", [64., 48., 50., 24.])
+    .name("Left delay time")
+    .logarithmic(true)
+    .visible_when(UiValue::parameter("sync_left", false).equals(0.));
+ui.controls.push(control);
+```
+
+Chainable `bounds`, `id`, `name`, `tooltip`, `visible_when` and `logarithmic` setters retain ordinary
+`CustomControl` fields for custom X/Y bindings. Fallible `format`, `decimals`, `prefix` and
+`off_label` setters configure supported widgets and return an error on an incompatible widget;
+precision must be within 0..8. For example, `.format(TextFormat::Number)?.decimals(2)?`
+overrides inherited formatting. `UiBinding` also provides `logarithmic`.
+`UiValue::equals` constructs the existing bounded equality expression.
+
+`parameter_metadata(&parameter)` reuses the name and the declared linear/logarithmic control
+mapping for matching bindings, leaving other parameter bindings unchanged. Numeric widgets also
+inherit `parameter.ui.decimals`; Choice/Radio controls use choice text, a declared `Hz` unit
+selects frequency text, and other declarations use number formatting. This never infers the
+signal scale from the unit.
+Explicit setters applied afterwards override these defaults. Units and choice
+labels continue to resolve from parameter metadata in the host. It never guesses a scale from
+the id/unit, changes a control id, hides stock parameter rows, or edits a parameter declaration.
+Several controls may bind one parameter, but must have distinct control ids; use `.id(...)`
+when the default parameter-based identity would collide. Label/separator ids are supplied explicitly.
+Set-buttons default to `<parameter>_<value>`; toggles, numbers, dials and menus default to the
+parameter id. Bounds, expressions, parameter references and widget contracts still pass through
+the existing device UI validator when the graph is saved or compiled. Keyboard operation,
+accessibility and gesture-based command/undo behavior are shared with manually built controls.
+
+### Groups with local coordinates
+
+`ControlGroup::new([x, y])?` defines an authoring-only origin. Pass controls with local bounds
+through `group.place(control)?` before inserting them. Changing that origin and rebuilding moves
+all controls placed through the group, including its captions; local drawing coordinates,
+bindings, ids and insertion order remain unchanged. Origins and local bounds must be finite and
+nonnegative, with controls at least 8 pixels wide/high and final bounds within 8192 pixels.
+The normal graph validator also checks placement against the actual canvas size.
+
+```rust
+let tone = ControlGroup::new([384., 0.])?;
+ui.controls.push(tone.place(
+    CustomControl::number("cutoff", [60., 36., 56., 18.])
+        .parameter_metadata(cutoff_parameter)
+        .decimals(0)?,
+)?);
+```
+
+Placement flattens to existing absolute `.sd` bounds. There is no serialized group, runtime
+layout engine, automatic resizing or extra renderer path. Delay uses shared origins for TIME,
+FEEDBACK, MIX, TONE and MOTION; compatibility tests keep the complete saved panel unchanged.
 
 The `custom_panel` example writes `custom-panel.sd`, whose `device.name` is **Velvet Volume**.
 It demonstrates that the file name and the inserted device's name may differ, using a standard

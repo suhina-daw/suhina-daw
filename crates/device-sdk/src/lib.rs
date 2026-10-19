@@ -13,6 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+pub mod author;
 pub mod editor;
 mod graph;
 mod midi;
@@ -576,6 +577,31 @@ impl DeviceGraph {
 }
 
 impl Parameter {
+    pub fn options(mut self, options: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.ui.options = options.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn linked(mut self, peer: impl Into<String>, enabled_by: impl Into<String>) -> Self {
+        self.ui.link = Some(ParameterLink { peer: peer.into(), enabled_by: enabled_by.into() });
+        self
+    }
+
+    pub fn unit(mut self, unit: impl Into<String>) -> Self {
+        self.unit = unit.into();
+        self
+    }
+
+    pub fn control(mut self, control: ParameterControl) -> Self {
+        self.control = control;
+        self
+    }
+
+    pub fn smoothing_ms(mut self, milliseconds: f64) -> Self {
+        self.smoothing_ms = milliseconds;
+        self
+    }
+
     /// Clamp hostile values and preserve discrete parameter semantics.
     pub fn clamp(&self, value: f64) -> f64 {
         let value = if value.is_finite() { value.clamp(self.min, self.max) } else { self.default };

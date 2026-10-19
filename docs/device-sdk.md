@@ -5,6 +5,7 @@ type: howto
 status: current
 last_verified: 2026-10-15
 covers:
+  - crates/device-sdk/src/author.rs
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/examples/stereo_utility.rs
   - crates/device-sdk/examples/auto_pan.rs
@@ -24,6 +25,60 @@ covers:
 ---
 
 # Author a data-only SDK device
+
+## Checked Rust authoring
+
+`author::GraphBuilder` is an additive, off-thread alternative to editing the graph's vectors.
+It owns append-only node storage. Node handles belong to exactly one builder; copying a handle
+shares the same node, and passing a handle from another builder returns an error. Port names use
+the existing node catalog. `connect` rejects missing ports and occupied inputs immediately.
+`op` inserts a node with named inputs; `binary` wires `a` and `b`. A failed `op` or
+`parameter_signal` leaves no partial nodes, connections or parameters behind.
+
+```rust
+use suhina_device_sdk::{author::GraphBuilder, DeviceRole, FilterMode, NodeKind, Parameter,
+    ParameterControl};
+
+fn example() -> Result<(), Box<dyn std::error::Error>> {
+let mut graph = GraphBuilder::new("org.example.filter", "Filter", DeviceRole::Effect);
+let input = graph.node("in", NodeKind::AudioInput)?;
+let output = graph.node("out", NodeKind::AudioOutput)?;
+let cutoff = graph.parameter_signal(
+    Parameter::new("cutoff", "Cutoff", (20., 20000.), 1000.)
+        .unit("Hz").control(ParameterControl::LogKnob),
+)?;
+let filter = graph.op("filter", NodeKind::Filter { mode: FilterMode::Lowpass }, &[
+    ("in", input.out()), ("frequency", cutoff.out()),
+])?;
+graph.connect(filter.out(), output.input("in"))?;
+let graph = graph.finish()?;
+graph.write_file(std::path::Path::new("filter.sd"))?;
+Ok(())
+}
+```
+
+Declare UI-only parameters with `parameter`; it consumes no DSP node. `parameter_signal`
+declares both the parameter and its source node, using the same explicit id. Parameter setters
+`unit`, `control`, `smoothing_ms`, `options` and `linked(peer, enabled_by)` configure data before
+insertion; they do not bypass validation or infer a range from choice labels.
+
+For feedback, declare the summing node first, construct the delayed branch and then `connect`
+the return to the free input. Do not invent a forward string reference. Normal Rust functions
+can add reusable fragments with explicit scoped ids and return node handles. `finish` runs the
+existing full graph validation, including roles, required ports, cycles and resource budgets.
+It consumes the builder and returns an ordinary `DeviceGraph`; set panel, editor and revision
+metadata on that graph and validate again when saving or compiling. Builder handles cannot be
+used to edit the finished graph. Existing low-level authoring remains supported.
+
+The filter, auto-pan and Delay examples use this API. Their ids, parameter contracts, panel data
+and sound are regression-tested against pre-migration `.sd` fixtures. The Delay graph is more
+explicit about its node references; the main reduction in repetition is in its panel construction.
+No new file format, runtime or executable extension is introduced.
+
+UI authors can configure numeric `format`/`decimals` and button labels before insertion,
+inherit parameter names, mapping and numeric formatting with `parameter_metadata`, and place
+controls relative to a shared `ControlGroup` origin. These are Rust authoring conveniences;
+the saved panel remains flat. See [control constructors and groups](spec/sdk-custom-ui.md#rust-control-constructors).
 
 Native sample instruments can also use `sampler::Sampler` from the SDK and author
 their panel with `ui::DeviceUi`; `devices/sampler` is the built-in example. This

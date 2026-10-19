@@ -214,6 +214,9 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 Suhina is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE).
 Contributions are licensed the same way.
 
+Rust authors can use checked graph handles and standard panel-control constructors to reduce
+manual wiring and repeated UI setup ([SDK authoring guide](docs/device-sdk.md#checked-rust-authoring)).
+
 SDK effect panels can include custom vector controls, XY pads, gradients and embedded PNG/JPEG
 icons, photos and repeating backgrounds. Artwork and bindings travel inside the single `.sd`;
 see the [custom panel guide](docs/device-sdk.md#custom-panels-images-and-controls).
