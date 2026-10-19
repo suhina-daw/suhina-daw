@@ -137,7 +137,8 @@ copies show where they will land. Dragging a selection draws every clip of it wh
 the clips with a line at each edge, and as a bar along the ruler.
 
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
-where they were, an empty row between them staying until the rows above it empty too.
+where they were, an empty row between them staying until the rows above it empty too. A new clip
+inside the span a clip had on the same track (a split's parts) takes that clip's row (#703).
 
 Return tracks, along the bottom, have a track's header: volume and pan, the on switch and solo,
 the menu, automation lanes under them (shown with the header's button), a click to select them
@@ -734,8 +735,9 @@ default.
 ## Showing stacked clips
 
 Where clips on a lane overlap, the lane shows them side by side in sub-rows (each clip in the
-first sub-row free at its start), so every clip stays visible and can be grabbed. A lane without
-overlaps shows one row.
+first sub-row free at its start), so every clip stays visible and can be grabbed. The rows are
+only where clips overlap: the clips that overlap one another, directly or through others, share
+the lane in as many rows as they use, and a clip that overlaps none fills the lane (#697).
 
 ## Folded groups
 

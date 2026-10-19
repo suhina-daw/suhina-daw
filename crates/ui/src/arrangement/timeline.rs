@@ -628,13 +628,44 @@ fn sub_rows(mut clips: Vec<ClipBox>, track: TrackId, before: &StackRows, after: 
         rows[row].push((from, to));
         clip.row = row;
     }
-    // Empty rows on top go; the ones between stay.
-    while rows.last().is_some_and(Vec::is_empty) {
-        rows.pop();
+    // Rows only where clips overlap (#697): the clips that overlap one another, directly or
+    // through others, share the lane in as many rows as they use (a row between them left empty
+    // stays); a clip that overlaps none fills the lane.
+    let mut order: Vec<usize> = (0..clips.len()).collect();
+    let starts: Vec<f64> = clips.iter().map(|c| c.start).collect();
+    let at = |i: &usize| starts.get(*i).copied().unwrap_or(0.0);
+    order.sort_by(|a, b| at(a).total_cmp(&at(b)));
+    let mut group: Vec<usize> = Vec::new();
+    let mut group_end = f64::NEG_INFINITY;
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for &i in &order {
+        let Some(clip) = clips.get(i) else { continue };
+        if !group.is_empty() && clip.start >= group_end - 1e-9 {
+            groups.push(std::mem::take(&mut group));
+            group_end = f64::NEG_INFINITY;
+        }
+        group_end = group_end.max(clip.start + clip.length);
+        group.push(i);
     }
-    let count = rows.len().max(1);
-    for clip in &mut clips {
-        clip.rows = count;
+    if !group.is_empty() {
+        groups.push(group);
+    }
+    for members in &groups {
+        if let [only] = members.as_slice() {
+            if let Some(clip) = clips.get_mut(*only) {
+                clip.row = 0;
+                clip.rows = 1;
+            }
+            continue;
+        }
+        let count = members.iter().filter_map(|i| clips.get(*i)).map(|c| c.row + 1).max().unwrap_or(1);
+        for i in members {
+            if let Some(clip) = clips.get_mut(*i) {
+                clip.rows = count;
+            }
+        }
+    }
+    for clip in &clips {
         after.insert((track, clip.stack_key), (clip.row, clip.start, clip.start + clip.length));
     }
     clips
@@ -749,8 +780,8 @@ mod tests {
     #[test]
     fn a_split_clip_in_a_stack_keeps_both_parts_on_its_row() {
         // Three clips stacked: the first from 0, the third from a quarter of its length, the
-        // middle one from half of it, in row 2. Its end part, split off, lies where rows 0 and 1
-        // are free again: it stays in row 2 all the same (#703).
+        // middle one from half of it, in row 2. Its end part, split off, still overlaps the third
+        // one but lies where row 0 is free again: it stays in row 2 all the same (#703).
         let mut project = demo_project();
         let lane = &mut project.arrangement.lanes[0];
         let first = lane.clips[0].clone();
@@ -764,7 +795,7 @@ mod tests {
             |t: &Timeline, start: f64| t.lanes[0].clips.iter().find(|c| (c.start - start).abs() < 1e-9).map(|c| c.row);
         let middle = project.arrangement.lanes[0].clips[1].clone();
         assert_eq!(row_at(&before, middle.start), Some(2));
-        let cut = 0.75 * length;
+        let cut = 0.6 * length;
         let mut tail = middle.clone();
         tail.start = middle.start + cut;
         tail.length = middle.length - cut;
@@ -777,6 +808,22 @@ mod tests {
         let after = Timeline::build_after(&project, None, &before.stack_rows);
         assert_eq!(row_at(&after, middle.start), Some(2));
         assert_eq!(row_at(&after, middle.start + cut), Some(2), "the end part stays on the row");
+    }
+
+    #[test]
+    fn stacked_clips_take_rows_only_where_they_overlap() {
+        // Two clips over each other at the start, a third on its own later (#697).
+        let mut project = demo_project();
+        let lane = &mut project.arrangement.lanes[0];
+        let first = lane.clips[0].clone();
+        let length = first.length;
+        lane.clips = vec![first.clone(), first.clone(), first.clone()];
+        for (clip, at) in lane.clips.iter_mut().zip([0.0, 0.5, 3.0]) {
+            clip.start = first.start + at * length;
+        }
+        let timeline = Timeline::build(&project, None);
+        let rows: Vec<(usize, usize)> = timeline.lanes[0].clips.iter().map(|c| (c.row, c.rows)).collect();
+        assert_eq!(rows, [(0, 2), (1, 2), (0, 1)], "the lone clip fills the lane");
     }
 
     #[test]
