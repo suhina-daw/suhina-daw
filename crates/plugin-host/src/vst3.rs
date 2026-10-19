@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, c_void};
 use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -343,21 +343,25 @@ fn blank<T: Copy>() -> T {
 }
 
 /// A module shared by every instance made from it in this process: the file is loaded, and
-/// its `InitDll`/`ModuleEntry` and `ExitDll`/`ModuleExit` run, once however many instances
-/// use it, as the module API asks.
+/// its `InitDll`/`ModuleEntry` runs, once however many instances use it, as the module API
+/// asks.
 type Module = Rc<ModuleFile>;
 
 thread_local! {
-    /// The modules loaded, by their binary's path (or `test:vst3`), while anything uses them.
-    /// Plug-ins are loaded on the host's main thread only.
-    static MODULES: RefCell<HashMap<PathBuf, Weak<ModuleFile>>> = RefCell::new(HashMap::new());
+    /// The modules loaded, by their binary's path (or `test:vst3`). Once loaded a module stays
+    /// for the process's life and is never unloaded, its `ExitDll` never run: some plug-ins
+    /// wait in it for threads that are still starting (Melodyne, let go of a second after it
+    /// loaded to be loaded again as ARA, held the host for minutes), and the same plug-in is
+    /// often loaded again soon (a device moved, a plug-in found to edit clips). The process
+    /// ending frees them. Plug-ins are loaded on the host's main thread only.
+    static MODULES: RefCell<HashMap<PathBuf, std::mem::ManuallyDrop<Module>>> = RefCell::new(HashMap::new());
 }
 
 /// The module loaded from `key`, or a new one `open` loads (and keeps for the next asker).
 fn shared_module(key: PathBuf, open: impl FnOnce() -> Result<ModuleFile, String>) -> Result<Module, String> {
     let cached = MODULES.with(|modules| {
         let modules = modules.try_borrow().ok()?;
-        modules.get(&key).and_then(Weak::upgrade)
+        modules.get(&key).map(|module| Module::clone(module))
     });
     if let Some(module) = cached {
         return Ok(module);
@@ -365,8 +369,7 @@ fn shared_module(key: PathBuf, open: impl FnOnce() -> Result<ModuleFile, String>
     let module = Rc::new(open()?);
     MODULES.with(|modules| {
         if let Ok(mut modules) = modules.try_borrow_mut() {
-            modules.retain(|_, module| module.strong_count() > 0);
-            modules.insert(key, Rc::downgrade(&module));
+            modules.insert(key, std::mem::ManuallyDrop::new(module.clone()));
         }
     });
     Ok(module)
@@ -1384,16 +1387,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_module_is_loaded_once_while_anything_uses_it() {
+    fn a_module_is_loaded_once_and_kept() {
         let (first, _) = open("test:vst3").unwrap();
         let (second, _) = open("test:vst3").unwrap();
         assert!(Rc::ptr_eq(&first, &second));
         let weak = Rc::downgrade(&first);
         drop((first, second));
-        // Once nothing uses it, it is let go of, and the next open loads it again.
-        assert!(weak.upgrade().is_none());
+        // Nothing uses it, and it stays loaded: the next open gets the same module, and its
+        // `ExitDll` never runs while the process lives.
         let (third, _) = open("test:vst3").unwrap();
-        assert_eq!(Rc::strong_count(&third), 1);
+        assert!(weak.upgrade().is_some_and(|kept| Rc::ptr_eq(&kept, &third)));
     }
 
     #[test]
