@@ -227,7 +227,8 @@ workspace forbids.
    the engine renders in leaves the driver its own, with a notice that says which size plays.
    With ASIO and WASAPI exclusive mode the device's buffer is that size too; WASAPI shared mode
    keeps the period Windows gives it, and the ring holds a device buffer and a block when the
-   device takes more than a block at once. Where the device's buffer is not Suhina's to set, the
+   device takes more than a block at once. WASAPI offers sizes up to 2048 frames: past that a
+   shared stream only gains latency, and interfaces refuse such an exclusive period (N48). Where the device's buffer is not Suhina's to set, the
    Settings row says *Engine block*, since the number is the engine's block and not the device's
    buffer. The session counts each plug-in's blocks and late blocks
    (`device.plugin`: `blocks`, `late_blocks`, `longest_us`, `no_time`), and the device panel

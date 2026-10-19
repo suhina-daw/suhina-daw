@@ -62,11 +62,20 @@ pub fn sample_rates(ranges: &[(u32, u32)]) -> Vec<u32> {
     rates
 }
 
-/// The buffer sizes offered on `host`: WASAPI shared mode plays in the period Windows gives it,
-/// whatever is asked, so there the size is the engine's block alone and any size is offered;
-/// elsewhere the sizes the driver allows.
+/// The largest buffer offered on WASAPI (N48): Windows plays a shared stream in its own period
+/// (about 10 ms), so a larger engine block only adds latency, and exclusive mode asks the device
+/// for the period itself, which interfaces such as Apollo refuse past 2048 frames.
+pub const WASAPI_MOST_FRAMES: u32 = 2048;
+
+/// The buffer sizes offered on `host`: on WASAPI the engine's block, up to
+/// [`WASAPI_MOST_FRAMES`] (Windows decides the device's own buffer); elsewhere the sizes the
+/// driver allows.
 pub fn offered_buffers(host: &str, range: Option<(u32, u32)>) -> Vec<u32> {
-    if host == "WASAPI" { allowed_buffers(None) } else { allowed_buffers(range) }
+    if host == "WASAPI" {
+        allowed_buffers(None).into_iter().filter(|n| *n <= WASAPI_MOST_FRAMES).collect()
+    } else {
+        allowed_buffers(range)
+    }
 }
 
 /// Fits a wanted buffer size to `host` and the driver's `range`: the frames the engine renders
@@ -77,8 +86,9 @@ pub fn fit_for_host(host: &str, wanted: u32, range: Option<(u32, u32)>) -> (u32,
         // Windows plays a shared-mode stream in its own period and takes any positive duration
         // asked for, so the number is the engine's block alone and the device is asked for none
         // of it (cpal's WASAPI stream; `exclusive` mode, which does ask the device, is fitted
-        // separately). See `docs/decisions/0006-plug-in-hosting.md` › the block.
-        return (wanted.clamp(MIN_BUFFER_FRAMES, MAX_BUFFER_FRAMES), None);
+        // separately). See `docs/decisions/0006-plug-in-hosting.md` › the block. A size saved
+        // before the cap (N48) comes down to it.
+        return (wanted.clamp(MIN_BUFFER_FRAMES, MAX_BUFFER_FRAMES.min(WASAPI_MOST_FRAMES)), None);
     }
     let fitted = fit_buffer(wanted, &allowed_buffers(range));
     // Only a size the driver declared is ever asked for: a fit outside its range (a range with
@@ -282,8 +292,8 @@ mod tests {
     fn wasapi_shared_takes_any_size_for_the_engine_and_asks_the_device_for_none() {
         // Windows plays shared WASAPI in its own period (480 frames here), whatever is asked.
         assert_eq!(fit_for_host("WASAPI", 256, Some((480, 480))), (256, None));
-        assert_eq!(fit_for_host("WASAPI", 10_000, Some((480, 480))), (4096, None));
-        assert_eq!(offered_buffers("WASAPI", Some((480, 480))), BUFFER_SIZES.to_vec());
+        assert_eq!(fit_for_host("WASAPI", 10_000, Some((480, 480))), (2048, None), "no more than WASAPI_MOST_FRAMES");
+        assert_eq!(offered_buffers("WASAPI", Some((480, 480))), vec![64, 128, 256, 512, 1024, 2048]);
         // A driver that sets its buffer (ASIO) gets the nearest size it allows.
         assert_eq!(fit_for_host("ASIO", 300, Some((64, 2048))), (256, Some(256)));
         assert_eq!(fit_for_host("ASIO", 300, None), (256, None));
