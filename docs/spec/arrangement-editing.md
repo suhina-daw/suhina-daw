@@ -182,7 +182,9 @@ never gets shorter than a grid step (a 16th of a beat with Shift or no grid). Le
   wanted, its content growing with it.
 - A looping clip goes on as far as its edge is dragged, its loop repeating. Its repeats are
   drawn as the clip itself, in its colour; where each pass starts it has a notch in its top and
-  bottom edges and a dashed line between them (#700).
+  bottom edges and a dashed line between them, and the passes take turns in two shades of its
+  body, so the repeats read as blocks even in an empty clip (#700). A MIDI clip's notes are
+  drawn in every pass.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then

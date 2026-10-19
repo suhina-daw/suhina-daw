@@ -3120,6 +3120,25 @@ fn paint_clip(
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, base);
     }
     let ink = ink_on(body);
+    // A looping clip's passes take turns in two shades, so its repeats read as blocks even with
+    // nothing in it; the seams' dashed lines come later, over the notes.
+    if !clip.seams.is_empty() {
+        let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
+        let shade = motion::mix(body, theme::window_background(), 0.18);
+        let mut edges: Vec<f32> = clip.seams.iter().map(|seam| x_of(start + seam)).collect();
+        edges.insert(0, rect.left());
+        edges.push(rect.right());
+        for (pass, pair) in edges.windows(2).enumerate() {
+            let (left, right) = (pair[0].max(view.left()), pair[1].min(view.right()));
+            if pass % 2 == 1 && right > left {
+                painter.rect_filled(
+                    Rect::from_min_max(Pos2::new(left, below), Pos2::new(right, rect.bottom())),
+                    0.0,
+                    shade,
+                );
+            }
+        }
+    }
     // The grid shows through the body, faintly, the bars a little stronger.
     let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
     if let Some(lines) = lines.filter(|l| !l.is_empty()) {
