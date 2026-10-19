@@ -64,9 +64,38 @@ impl Layout {
                 start,
                 duration,
                 offset: offset.max(0.0),
+                clone_of: None,
             });
         }
         Self { name, tempo_bpm: project.transport.tempo_bpm, files, regions }
+    }
+
+    /// For each region, in order, the modification its new one is a copy of, as it was in
+    /// `before` (the layout the plug-in has): a clip that got its own content keeps its edits
+    /// (ADR 0028 decision 5). The same clip playing another content now (its notes copied on
+    /// edit) copies what it played; a new clip copies the region of the same file whose span
+    /// holds its own (a paste, a split's second part), the narrowest one. `None` for a
+    /// modification the plug-in has already, or with nothing to copy.
+    pub(crate) fn clone_origins(&self, before: &Layout) -> Vec<Option<String>> {
+        let file = |layout: &Layout, region: &AraRegion| layout.files.get(region.source).map(|(key, _)| key.clone());
+        self.regions
+            .iter()
+            .map(|region| {
+                if before.regions.iter().any(|r| r.modification == region.modification) {
+                    return None;
+                }
+                let key = file(self, region)?;
+                let same_file = || before.regions.iter().filter(|r| file(before, r).as_ref() == Some(&key));
+                if let Some(was) = same_file().find(|r| r.id == region.id) {
+                    return Some(was.modification.clone());
+                }
+                let end = region.offset + region.duration;
+                same_file()
+                    .filter(|r| r.offset <= region.offset + 1e-6 && r.offset + r.duration >= end - 1e-6)
+                    .min_by(|a, b| a.duration.total_cmp(&b.duration))
+                    .map(|r| r.modification.clone())
+            })
+            .collect()
     }
 
     /// Whether it has no regions: the plug-in then runs without a document.
@@ -285,5 +314,36 @@ mod tests {
         let empty = Layout::of(&project, &audio, TrackId(1)).document_with(&audio, &mut kept).unwrap();
         assert!(empty.regions.is_empty());
         assert_eq!(kept.len(), shared, "the files stay shared, for an undo");
+    }
+
+    #[test]
+    fn a_clip_with_its_own_content_copies_the_edits_of_the_one_it_came_from() {
+        let (mut project, audio) = project();
+        let before = Layout::of(&project, &audio, TrackId(1));
+        let original = project.arrangement.lanes[0].clips[0].clone();
+        let mut content = project.content(original.content).cloned().unwrap();
+        let old = format!("content-{}", content.id.0);
+        content.id = ContentId(project.contents.iter().map(|c| c.id.0).max().unwrap() + 1);
+        let new = content.id;
+        project.contents.push(content);
+        // A pasted copy: a new clip, a new content of the same file, the same span of it.
+        let mut pasted = original.clone();
+        pasted.id = ClipId(999);
+        pasted.start = original.start + 64.0;
+        pasted.content = new;
+        project.arrangement.lanes[0].clips.push(pasted);
+        let now = Layout::of(&project, &audio, TrackId(1));
+        let origins = now.clone_origins(&before);
+        let at = now.regions.iter().position(|r| r.id == "clip-999").unwrap();
+        assert_eq!(origins[at], Some(old.clone()));
+        assert!(origins.iter().enumerate().all(|(i, o)| i == at || o.is_none()), "{origins:?}");
+        // The same clip playing a content of its own now copies what it played.
+        project.arrangement.lanes[0].clips.pop();
+        project.arrangement.lanes[0].clips[0].content = new;
+        let now = Layout::of(&project, &audio, TrackId(1));
+        let at = now.regions.iter().position(|r| r.id == format!("clip-{}", original.id.0)).unwrap();
+        assert_eq!(now.clone_origins(&before)[at], Some(old));
+        // Nothing changed: nothing to copy.
+        assert!(before.clone_origins(&before).iter().all(Option::is_none));
     }
 }

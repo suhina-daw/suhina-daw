@@ -1184,8 +1184,12 @@ impl Rack {
             // Bound to a document: the change goes to it at once, as an edit (ADR 0028
             // decision 3). Moved and trimmed clips change in place; nothing reloads.
             if !instance.ara_sources.is_empty()
-                && let Some(document) = now.document_with(audio, &mut instance.ara_sources)
+                && let Some(mut document) = now.document_with(audio, &mut instance.ara_sources)
             {
+                // A clip that got its own content starts with the edits of the one it copies.
+                for (region, origin) in document.regions.iter_mut().zip(now.clone_origins(layout)) {
+                    region.clone_of = origin;
+                }
                 instance.ara_layout = Some(now);
                 // The regions may be new: the editor is told the selection again.
                 instance.ara_selection_sent = None;

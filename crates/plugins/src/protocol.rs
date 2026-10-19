@@ -164,6 +164,10 @@ pub struct AraRegion {
     pub start: f64,
     pub duration: f64,
     pub offset: f64,
+    /// For a modification the plug-in does not have yet: the one it is a copy of, so it starts
+    /// with that one's edits (`cloneAudioModification`) rather than none. A pasted, split or
+    /// otherwise copied clip gets its own content, and with this its edits (#722).
+    pub clone_of: Option<String>,
 }
 
 impl AraDocument {
@@ -174,7 +178,7 @@ impl AraDocument {
                 .collect::<Vec<_>>(),
             "regions": self.regions.iter().map(|r| json!({
                 "id": r.id, "name": r.name, "source": r.source, "modification": r.modification,
-                "start": r.start, "duration": r.duration, "offset": r.offset,
+                "start": r.start, "duration": r.duration, "offset": r.offset, "clone_of": r.clone_of,
             })).collect::<Vec<_>>(),
         })
     }
@@ -207,6 +211,10 @@ impl AraDocument {
                     start,
                     duration,
                     offset,
+                    clone_of: match r.get("clone_of") {
+                        None | Some(Value::Null) => None,
+                        Some(_) => Some(text(r, "clone_of")?),
+                    },
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -642,6 +650,7 @@ mod tests {
                 start: 2.0,
                 duration: 4.0,
                 offset: 0.5,
+                clone_of: Some("content-3".into()),
             }],
         }
     }

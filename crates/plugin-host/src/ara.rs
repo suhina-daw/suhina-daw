@@ -568,14 +568,31 @@ impl Document {
             return self.modifications.get(index).copied().ok_or_else(|| "a modification is missing".into());
         }
         let source = *self.sources.get(region.source).ok_or("a region names a source the document lacks")?;
-        let make =
-            dc.interface.createAudioModification.ok_or("the document controller cannot make an audio modification")?;
         let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut self.host).cast();
         let properties = ARAAudioModificationProperties {
             structSize: size_of::<ARAAudioModificationProperties>(),
             name: self.text(&region.name),
             persistentID: self.text(&region.modification),
         };
+        // A copy of a modification this document has starts with its edits (ADR 0028 decision
+        // 5): a pasted or split clip, or one that got its own content. A plug-in that cannot
+        // clone, or a clone it refuses, gets a new modification instead.
+        let original = region
+            .clone_of
+            .as_ref()
+            .and_then(|of| self.modification_ids.iter().position(|id| id == of))
+            .and_then(|index| self.modifications.get(index).copied());
+        if let (Some(original), Some(clone)) = (original, dc.interface.cloneAudioModification) {
+            // SAFETY: a live controller inside an edit, for a modification of this document.
+            let made = unsafe { clone(dc.reference, original, host_ref.cast(), &properties) };
+            if !made.is_null() {
+                self.modifications.push(made);
+                self.modification_ids.push(region.modification.clone());
+                return Ok(made);
+            }
+        }
+        let make =
+            dc.interface.createAudioModification.ok_or("the document controller cannot make an audio modification")?;
         // SAFETY: a live controller inside an edit, for a source of this document.
         let made = unsafe { make(dc.reference, source, host_ref.cast(), &properties) };
         if made.is_null() {
@@ -614,7 +631,8 @@ impl Document {
             return Err(format!("the plug-in refused the playback region {:?}", region.name));
         }
         self.regions.push(made);
-        self.region_described.push(region.clone());
+        // Kept without `clone_of`: a later document names no copy for it, and the region is the same.
+        self.region_described.push(AraRegion { clone_of: None, ..region.clone() });
         Ok(made)
     }
 
@@ -681,7 +699,8 @@ impl Document {
                 .position(|old| old.id == region.id && old.modification == region.modification)
                 .filter(|&index| self.regions.get(index).is_some_and(|r| !edited.removed.contains(r)));
             match found {
-                Some(index) if self.region_described.get(index) == Some(region) => {}
+                Some(index)
+                    if self.region_described.get(index) == Some(&AraRegion { clone_of: None, ..region.clone() }) => {}
                 Some(index) => {
                     let update = dc
                         .interface
@@ -692,7 +711,7 @@ impl Document {
                     // SAFETY: a live controller inside an edit, for a region of this document.
                     unsafe { update(dc.reference, made, &properties) };
                     if let Some(old) = self.region_described.get_mut(index) {
-                        *old = region.clone();
+                        *old = AraRegion { clone_of: None, ..region.clone() };
                     }
                 }
                 None => edited.added.push(self.add_region(dc, region)?),
