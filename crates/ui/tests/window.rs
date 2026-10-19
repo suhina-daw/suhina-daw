@@ -4716,6 +4716,52 @@ fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
     assert_eq!(beat_b(&harness), before + 4.0, "a bar longer");
 }
 
+/// The clip is drawn at its new length from the frame the button comes up on. In the window the
+/// trim runs after that frame is drawn, and the clip showed as it was before the drag for that
+/// one frame; the test harness draws the frame again once the trim ran, so it can only check that
+/// the clip ends where it was let go.
+#[test]
+fn a_released_clip_edge_stays_where_it_was_let_go() {
+    let mut harness = arrangement_app();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    let body_ends = |h: &Harness<'static, App>| -> Vec<f32> {
+        let mut out = Vec::new();
+        for clipped in &h.output().shapes {
+            let mut stack = vec![clipped.shape.clone()];
+            while let Some(shape) = stack.pop() {
+                match shape {
+                    egui::Shape::Vec(inner) => stack.extend(inner),
+                    egui::Shape::Rect(r)
+                        if r.fill.a() > 0
+                            && (r.rect.left() - clip.left()).abs() < 1.5
+                            && (r.rect.top() - clip.top()).abs() < 1.5 =>
+                    {
+                        out.push(r.rect.right());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
+    };
+    let dragged = body_ends(&harness).into_iter().fold(f32::MIN, f32::max);
+    harness.drop_at(to);
+    harness.step();
+    let released = body_ends(&harness).into_iter().fold(f32::MIN, f32::max);
+    assert!((released - dragged).abs() < 1.5, "drawn at {released} the frame it was let go, {dragged} while dragged");
+    assert!(released > clip.right() + 16.0, "not back at its old end {}", clip.right());
+}
+
 #[test]
 fn ctrl_l_loops_the_time_selection_even_with_clips_in_it_selected() {
     let mut harness = arrangement_app();

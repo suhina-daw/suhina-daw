@@ -366,6 +366,10 @@ pub struct ArrangementViewState {
     ruler_select: Option<f64>,
     /// A clip's edge being dragged.
     edge_drag: Option<EdgeDrag>,
+    /// An edge just let go of: the clip, where its edges are now and the frames left to wait.
+    /// It is drawn there until the project has it, or the frame the button came up showed the
+    /// clip as it was before the drag for an instant.
+    edge_released: Option<((TrackId, ClipId), f64, f64, u8)>,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     menu_beat: Option<f64>,
     clip_drag: Option<ClipDrag>,
@@ -474,6 +478,7 @@ impl Default for ArrangementViewState {
             time_selection: None,
             ruler_select: None,
             edge_drag: None,
+            edge_released: None,
             menu_beat: None,
             clip_drag: None,
             value_drag: None,
@@ -1020,6 +1025,13 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
+    // A released edge whose trim never came (refused, undone at once) is let go of in a while.
+    if let Some(released) = state.edge_released.as_mut() {
+        released.3 = released.3.saturating_sub(1);
+        if released.3 == 0 {
+            state.edge_released = None;
+        }
+    }
     // Showing one track, the view is not scrolled down; where it was is kept for later.
     let scrolled = state.scroll.y;
     if state.focus.is_some() {
@@ -2590,12 +2602,19 @@ fn clip_box<'a>(
 
     // While one of its edges is dragged the clip is drawn at the length it has so far; its gain
     // field, its edges' handles and its fade handles follow it on every frame (#698).
+    // An edge let go of: drawn where it was left until the project has it.
+    if state.edge_released.is_some_and(|(k, from, to, _)| {
+        k == key && (clip.start - from).abs() < 1e-9 && (clip.start + clip.length - to).abs() < 1e-9
+    }) {
+        state.edge_released = None;
+    }
+    let released = state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to));
     let (live_start, live_length) = match state.edge_drag.filter(|d| d.key == key) {
         Some(edge) => {
             let (from, to) = edge_extent(clip, edge, &grid, ui.input(|i| i.modifiers.shift));
             (from, to - from)
         }
-        None => (clip.start, clip.length),
+        None => released.map_or((clip.start, clip.length), |(from, to)| (from, to - from)),
     };
     // What the clip shows: the project's values, or those of a drag in progress, so the
     // waveform follows the gain and the fades while they are dragged.
@@ -2707,6 +2726,7 @@ fn clip_box<'a>(
                 let old = if grab == EdgeGrab::Left { clip.start } else { clip.start + clip.length };
                 if (beat - old).abs() > 1e-9 {
                     actions.push(Action::new(if stretch { "clip.stretch" } else { "clip.trim" }, params));
+                    state.edge_released = Some((key, from, to, 30));
                 }
             }
         }
@@ -2918,9 +2938,12 @@ fn clip_box<'a>(
             // An edge being dragged: the clip is drawn at the length it has so far, its content
             // where it plays.
             let shift = ui.input(|i| i.modifiers.shift);
-            let (rect, clip_area) = match state.edge_drag.filter(|d| d.key == key) {
-                Some(edge) => {
-                    let (from, to) = edge_extent(clip, edge, &grid, shift);
+            let extent = match state.edge_drag.filter(|d| d.key == key) {
+                Some(edge) => Some(edge_extent(clip, edge, &grid, shift)),
+                None => state.edge_released.filter(|(k, ..)| *k == key).map(|(_, from, to, _)| (from, to)),
+            };
+            let (rect, clip_area) = match extent {
+                Some((from, to)) => {
                     let rect = clip_rect(space, from, to - from, x_of);
                     (rect, row.clip.intersect(rect))
                 }
