@@ -6,7 +6,8 @@
 //! shared memory.
 //!
 //! For now a clip is described as it plays at its file's own speed: a warped clip's start and
-//! end follow the song, but the plug-in reads it unstretched, and loops are not repeated.
+//! end follow the song, but the plug-in reads it unstretched. A looped clip is one region for
+//! each pass through its loop, all of the same modification, so an edit plays in every repeat.
 
 use suhina_engine::AudioPool;
 use suhina_model::{AudioRegion, Clip, LaneData, Project, TrackId};
@@ -64,26 +65,37 @@ impl Layout {
             if !audio.files.get(&key).is_some_and(|d| d.channels > 0 && d.sample_rate > 0) {
                 continue;
             }
-            let start = map.time_at(clip.start);
-            let duration = map.time_at(clip.start + clip.length) - start;
-            let offset = file_seconds(region, clip, project.transport.tempo_bpm);
-            if !(start.is_finite() && duration.is_finite() && duration > 0.0 && offset.is_finite()) {
-                continue;
+            let mut source = None;
+            for (pass, (from, beat, length)) in passes(clip).into_iter().enumerate() {
+                if regions.len() >= MAX_ARA_OBJECTS {
+                    break;
+                }
+                let start = map.time_at(clip.start + from);
+                let duration = map.time_at(clip.start + from + length) - start;
+                let offset = file_seconds(region, beat, project.transport.tempo_bpm);
+                if !(start.is_finite() && duration.is_finite() && duration > 0.0 && offset.is_finite()) {
+                    continue;
+                }
+                let index = *source.get_or_insert_with(|| {
+                    files.iter().position(|(k, _)| *k == key).unwrap_or_else(|| {
+                        files.push((key.clone(), file_name(&region.file)));
+                        files.len() - 1
+                    })
+                });
+                // The first pass is the clip's own region (its notes, its selection); a repeat
+                // of its loop is named after it.
+                let id = if pass == 0 { format!("clip-{}", clip.id.0) } else { format!("clip-{}-{pass}", clip.id.0) };
+                regions.push(AraRegion {
+                    id,
+                    name: content.name.clone(),
+                    source: index,
+                    modification: format!("content-{}", content.id.0),
+                    start,
+                    duration,
+                    offset: offset.max(0.0),
+                    clone_of: None,
+                });
             }
-            let source = files.iter().position(|(k, _)| *k == key).unwrap_or_else(|| {
-                files.push((key, file_name(&region.file)));
-                files.len() - 1
-            });
-            regions.push(AraRegion {
-                id: format!("clip-{}", clip.id.0),
-                name: content.name.clone(),
-                source,
-                modification: format!("content-{}", content.id.0),
-                start,
-                duration,
-                offset: offset.max(0.0),
-                clone_of: None,
-            });
         }
         Self { name, tempo_bpm: project.transport.tempo_bpm, files, regions }
     }
@@ -178,7 +190,31 @@ impl Layout {
 
 /// Seconds into the file where `clip` starts playing, as the engine reads it: through the warp
 /// markers of a warped region that has two or more, otherwise at the song's starting tempo.
-fn file_seconds(region: &AudioRegion, clip: &Clip, tempo_bpm: f64) -> f64 {
+/// The stretches a clip plays, as the engine plays them: each as (beats from the clip's start,
+/// the content beat it starts at, its length in beats). One without a loop; with one, the part
+/// up to the loop's end and then a pass through the loop for each repeat, the last cut at the
+/// clip's end.
+fn passes(clip: &Clip) -> Vec<(f64, f64, f64)> {
+    let length = clip.length;
+    let looped = clip.loop_range.filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start);
+    let Some(range) = looped else { return vec![(0.0, clip.offset, length)] };
+    let (start, end) = (range.start, range.end);
+    let mut beat = if clip.offset >= end { start } else { clip.offset };
+    let mut passes = Vec::new();
+    let mut from = 0.0;
+    while from < length - 1e-9 && passes.len() < MAX_ARA_OBJECTS {
+        let take = (end - beat).min(length - from);
+        if take <= 1e-9 {
+            break;
+        }
+        passes.push((from, beat, take));
+        from += take;
+        beat = start;
+    }
+    passes
+}
+
+fn file_seconds(region: &AudioRegion, beat: f64, tempo_bpm: f64) -> f64 {
     let mut markers: Vec<(f64, f64)> = region
         .warp_markers
         .iter()
@@ -188,13 +224,12 @@ fn file_seconds(region: &AudioRegion, clip: &Clip, tempo_bpm: f64) -> f64 {
     markers.sort_by(|a, b| a.0.total_cmp(&b.0));
     markers.dedup_by(|a, b| a.0 == b.0);
     if region.warped && markers.len() >= 2 {
-        let beat = clip.offset;
         let i = markers.partition_point(|(b, _)| *b <= beat).clamp(1, markers.len() - 1);
         let (Some(&(b0, s0)), Some(&(b1, s1))) = (markers.get(i - 1), markers.get(i)) else { return 0.0 };
         return if b1 > b0 { s0 + (beat - b0) * (s1 - s0) / (b1 - b0) } else { s0 };
     }
     let bpm = if tempo_bpm.is_finite() && tempo_bpm > 0.0 { tempo_bpm } else { 120.0 };
-    clip.offset * 60.0 / bpm
+    beat * 60.0 / bpm
 }
 
 fn file_name(file: &str) -> String {
@@ -303,6 +338,29 @@ mod tests {
                 ("clip-3", "content-11", 2.0, 2.0, 1.5),
             ]
         );
+    }
+
+    #[test]
+    fn a_looped_clip_is_a_region_for_each_pass_of_one_modification() {
+        let (mut project, audio) = project();
+        // Clip 1: four beats from content beat 1, looping beats 1 to 2.5: the first pass to the
+        // loop's end, then passes of a beat and a half, the last cut at the clip's end.
+        let looped = &mut project.arrangement.lanes[0].clips[0];
+        looped.loop_range = Some(suhina_model::LoopRange { start: 1.0, end: 2.5 });
+        let layout = Layout::of(&project, &audio, TrackId(1));
+        let (document, _) = layout.document(&audio).unwrap();
+        let passes: Vec<_> = document
+            .regions
+            .iter()
+            .filter(|r| r.modification == "content-10" && r.id.starts_with("clip-1"))
+            .map(|r| (r.id.as_str(), r.start, r.duration, r.offset))
+            .collect();
+        assert_eq!(
+            passes,
+            [("clip-1", 0.0, 0.75, 0.5), ("clip-1-1", 0.75, 0.75, 0.5), ("clip-1-2", 1.5, 0.5, 0.5)]
+        );
+        // The clip's notes and selection go by its first pass.
+        assert!(layout.has_region("clip-1"));
     }
 
     #[test]
