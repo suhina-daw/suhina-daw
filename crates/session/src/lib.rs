@@ -288,6 +288,9 @@ pub struct Session {
     pub(crate) param_edits: Vec<ParamEdit>,
     /// Parameter whose live drag has already recorded its single undo snapshot.
     param_gesture: Option<(suhina_model::TrackId, usize, String)>,
+    /// The colours a track without one of its own shows, by its place among the tracks (the
+    /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
+    track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
     /// The project's plug-ins, running while it plays (ADR 0006).
     pub(crate) plugins: rack::Rack,
     /// The project's decoded audio, by the key its regions name (ADR 0011).
@@ -348,6 +351,7 @@ impl Session {
             note_clipboard: None,
             param_edits: Vec::new(),
             param_gesture: None,
+            track_colours: (Vec::new(), None),
             plugins: rack::Rack::default(),
             audio: suhina_engine::AudioPool::new(),
             audio_changed: false,
@@ -997,6 +1001,42 @@ impl Session {
     /// Runs the command `id` with JSON `params` and returns its JSON result. An editing command
     /// records one undo step when it changes the project; if it fails, or leaves a project that
     /// does not validate, the project is restored and an error is returned.
+    /// The colours a track without one of its own shows, by its place among the tracks (the
+    /// window's palette, which follows the theme), and `fixed`, the colour a new track gets
+    /// instead of the palette's, when set. Without a palette, tracks keep no colour of their own.
+    pub fn set_track_colours(&mut self, palette: Vec<suhina_model::Rgb>, fixed: Option<suhina_model::Rgb>) {
+        if self.track_colours.0 != palette || self.track_colours.1 != fixed {
+            self.track_colours = (palette, fixed);
+        }
+    }
+
+    /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
+    /// (#690, #709). A track without a colour of its own showed its place's colour from the
+    /// palette, so it is given that colour now, before the places shift; a new track gets the
+    /// colour of its place, or the fixed one. Part of the same undo step.
+    fn keep_track_colours(&mut self, before: &Project) {
+        let (palette, fixed) = &self.track_colours;
+        if palette.is_empty() {
+            return;
+        }
+        let order = |p: &Project| p.tracks.iter().map(|t| t.id).collect::<Vec<_>>();
+        let was = order(before);
+        if was == order(&self.project) {
+            return;
+        }
+        let colour = |place: usize| palette[place % palette.len()];
+        for (place, track) in before.tracks.iter().enumerate().filter(|(_, t)| t.color.is_none()) {
+            if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none()) {
+                now.color = Some(colour(place));
+            }
+        }
+        for (place, track) in self.project.tracks.iter_mut().enumerate() {
+            if track.color.is_none() && !was.contains(&track.id) {
+                track.color = Some(fixed.unwrap_or_else(|| colour(place)));
+            }
+        }
+    }
+
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         let spec = commands().iter().find(|c| c.id == id).ok_or_else(|| unknown_command(id))?;
         let explicit_gesture = if id == "device.setParam" {
@@ -1077,6 +1117,7 @@ impl Session {
                 let result = (spec.run)(self, params).and_then(|value| {
                     // A lane, clip or scene the command added without an id gets one now.
                     self.project.assign_ids()?;
+                    self.keep_track_colours(&before);
                     Ok(value)
                 });
                 let result = result.and_then(|value| match self.project.validate() {

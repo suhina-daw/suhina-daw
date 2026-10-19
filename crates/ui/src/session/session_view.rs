@@ -57,6 +57,9 @@ pub struct SessionViewState {
     /// or a click on an empty slot selected it. The detail area shows its clip; Ctrl+C and Ctrl+V
     /// act on it.
     pub selected_slot: Option<(TrackId, usize)>,
+    /// A track's header (or a return's column) was the last thing clicked: Delete removes the
+    /// track then (#690). A click on a slot takes it away.
+    pub track_focus: bool,
     /// Something has been copied, so a slot's menu can paste it; the window says so each frame.
     pub can_paste: bool,
     /// A clip slot whose drag started this frame (track, scene from 0): the window carries the
@@ -127,6 +130,7 @@ impl SessionViewState {
 
     /// Selects the clip slot at `scene` (from 0) on `track`, and the track with it.
     pub fn select_slot(&mut self, track: TrackId, scene: usize) {
+        self.track_focus = false;
         self.selected_slot = Some((track, scene));
         self.selected = Some(track);
     }
@@ -530,6 +534,7 @@ fn draw_column(
             if response.clicked() {
                 state.selected = Some(column.track);
                 state.selected_slot = None;
+                state.track_focus = true;
             }
             track_menu_on(&response, column, bands, actions);
         }
@@ -606,6 +611,7 @@ fn column_header(
     if response.clicked() {
         state.selected = Some(column.track);
         state.selected_slot = None;
+        state.track_focus = true;
     }
     if response.double_clicked() {
         state.open_devices = Some(column.track);
@@ -770,6 +776,9 @@ fn column_body(
                 ui.ctx().data_mut(|d| d.remove::<String>(Id::new(("slot-rename", column.track, number))));
             }
             for response in [&launch, &select].into_iter().flatten() {
+                if response.clicked() || response.secondary_clicked() {
+                    state.track_focus = false;
+                }
                 // An empty slot is selected by a click, any slot by a right-click: Ctrl+C and
                 // Ctrl+V act on it.
                 if (!has_clip && response.clicked()) || response.secondary_clicked() {

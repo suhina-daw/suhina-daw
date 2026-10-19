@@ -1898,6 +1898,10 @@ impl App {
     /// again a few times a second, so one that starts or crashes is noticed without input.
     fn poll_plugins(&mut self, ctx: &egui::Context) {
         self.projects.set_editor_embedding(self.settings.plugin_editors == EditorPlacement::DeviceView);
+        // Tracks keep the colour they show when others come and go (#690, #709).
+        if let Ok(session) = self.projects.session_mut(None) {
+            session.set_track_colours(crate::interaction::grid::track_palette().to_vec(), None);
+        }
         let notices = self.projects.poll_plugins();
         if let Some(last) = notices.last() {
             self.status = Status::Hint(last.clone());
@@ -4238,6 +4242,26 @@ impl App {
                     }
                     return;
                 }
+                // A track header clicked last: Delete removes the selected tracks (#690).
+                if action == "selection.delete" {
+                    let tracks: Vec<TrackId> = match self.shown {
+                        View::Arrangement if self.arrangement.track_focus => self.arrangement.selected_tracks.clone(),
+                        View::Session if self.view.track_focus && self.view.selected_slot.is_none() => {
+                            self.view.selected.into_iter().collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    if !tracks.is_empty() {
+                        self.arrangement.selected_tracks.clear();
+                        self.arrangement.track_focus = false;
+                        self.view.track_focus = false;
+                        self.view.selected = None;
+                        for track in tracks {
+                            actions.push(Action::new("track.delete", json!({ "track": track.0 })));
+                        }
+                        return;
+                    }
+                }
                 // The Session view: Delete takes the selected slot's clip off its slot, and the
                 // detail area falls back to the track's devices.
                 if self.shown == View::Session {
@@ -6200,6 +6224,31 @@ mod tests {
         assert_eq!(plan.commands[0].0, "clip.addFiles");
         app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
         assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    }
+
+    #[test]
+    fn delete_after_a_header_click_removes_the_track_not_a_clip() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        let count = |h: &egui_kittest::Harness<'_, App>| h.state().session().map_or(0, |s| s.project().tracks.len());
+        let clips = |h: &egui_kittest::Harness<'_, App>| {
+            h.state().session().map_or(0, |s| {
+                s.project().launcher.columns.iter().flat_map(|c| &c.slots).filter(|s| s.clip.is_some()).count()
+            })
+        };
+        let (tracks, slots) = (count(&harness), clips(&harness));
+        harness.get_by_label("Track Keys").click();
+        harness.run();
+        harness.key_press(egui::Key::Delete);
+        harness.run();
+        assert_eq!(count(&harness), tracks - 1);
+        assert!(harness.state().session().unwrap().project().tracks.iter().all(|t| t.name != "Keys"));
+        assert!(clips(&harness) < slots, "the track's clips went with it, no other clip did");
     }
 
     #[test]

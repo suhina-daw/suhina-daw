@@ -105,6 +105,13 @@ audio clip its waveform the same way ([components](../design/components.md) › 
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
+After a header click Delete removes the selected tracks, not a clip (a clip on the track stays
+selected for the detail area until another is picked); a click on a clip or a lane gives Delete
+back to the clips. In the Session view a header click does the same for its track (#690). The
+header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
+and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
+added, removed or moved: one without a colour of its own gets its place's palette colour stored
+then, in the same undo step, and a new track gets its place's colour stored as it is made.
 
 ## Clip colours
 

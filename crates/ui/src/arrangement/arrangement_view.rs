@@ -360,6 +360,9 @@ pub struct ArrangementViewState {
     split_at: Option<f64>,
     /// Tracks selected by clicking their headers (Ctrl adds, Shift takes a run), for grouping.
     pub selected_tracks: Vec<TrackId>,
+    /// A track header was the last thing clicked: Delete removes the selected tracks then
+    /// (#690). Picking or clearing clips takes it away.
+    pub track_focus: bool,
     /// The track clicked last: where a Shift-click's run of tracks starts.
     track_anchor: Option<TrackId>,
     /// The groups whose tracks are folded away, and what each folded row shows.
@@ -439,6 +442,7 @@ impl Default for ArrangementViewState {
             curve_drag: None,
             split_at: None,
             selected_tracks: Vec::new(),
+            track_focus: false,
             track_anchor: None,
             folds: Folds::default(),
             value_areas: Vec::new(),
@@ -498,10 +502,12 @@ impl ArrangementViewState {
     pub fn clear_selected_clip(&mut self) {
         self.selected.clear();
         self.anchor = None;
+        self.track_focus = false;
     }
 
     /// Selects every clip in `keys`, as Ctrl+A does.
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
+        self.track_focus = false;
         self.anchor = keys.first().copied();
         self.selected = keys;
     }
@@ -510,6 +516,7 @@ impl ArrangementViewState {
     /// the last one picked and this one (in the order the lanes draw them), Ctrl (Cmd) adds it or
     /// takes it away, and a plain click leaves it the only one.
     fn pick_clip(&mut self, key: (TrackId, ClipId), shift: bool, command: bool, order: &[(TrackId, ClipId)]) {
+        self.track_focus = false;
         if shift
             && let Some(anchor) = self.anchor
             && let (Some(from), Some(to)) =
@@ -2679,6 +2686,14 @@ fn paint_ara_notes(
     }
 }
 
+/// `colour` more saturated and a little brighter, for a selected track.
+fn saturated(colour: Color32) -> Color32 {
+    let mut hsva = egui::ecolor::Hsva::from(colour);
+    hsva.s = (hsva.s * 1.3).min(1.0);
+    hsva.v = (hsva.v * 1.12).min(1.0);
+    hsva.into()
+}
+
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
 #[allow(clippy::too_many_arguments)]
 fn paint_clip(
@@ -2992,6 +3007,9 @@ fn track_header(
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
         state.pick_track(lane.track, shift, command, order.tracks);
+        // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected
+        // for the detail area.
+        state.track_focus = true;
     }
     // A double-click shows the track's devices in the detail area.
     if body.double_clicked() {
@@ -3027,9 +3045,17 @@ fn track_header(
         menus::track_menu(ui, &menu, actions);
     });
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    // The header in its track's colour, deeper while selected.
-    let tint = if selected { 0.42 } else { 0.26 };
-    painter.rect_filled(rect, 0.0, motion::mix(theme::panel_background(), rgb(lane.color), tint));
+    // The header in its track's colour; a selected track's is brighter and more saturated, with
+    // an outline, so the selection reads at a glance (#690).
+    let header_fill = if selected {
+        motion::mix(theme::panel_background(), saturated(rgb(lane.color)), 0.85)
+    } else {
+        motion::mix(theme::panel_background(), rgb(lane.color), 0.6)
+    };
+    painter.rect_filled(rect, 0.0, header_fill);
+    if selected {
+        painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, saturated(rgb(lane.color))), StrokeKind::Inside);
+    }
     // The track's colour runs down the header's left edge; a click there opens the palette.
     let band = colour_band(ui, painter, rect, clip, lane, id, actions);
     // The meter stands at the right edge; the rows keep clear of it.
