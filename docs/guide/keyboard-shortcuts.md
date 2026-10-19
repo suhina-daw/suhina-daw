@@ -56,7 +56,7 @@ Suhina can have several projects open at once, each in a tab.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Ctrl+Tab | `projects.next` | Anywhere | Shows the open projects while Ctrl is held: each Tab moves to the next (Shift+Tab back), letting go of Ctrl switches, Escape stays. |
+| Ctrl+Tab | `projects.next` | Anywhere | Shows the open projects while Ctrl is held: each Tab or Down moves to the next (Shift+Tab or Up back), letting go of Ctrl switches, Escape stays. |
 | Ctrl+Shift+Tab | `projects.previous` | Anywhere | Switches to the previous project tab. Before the first tab it goes to the last. |
 
 The project you leave stops playing.

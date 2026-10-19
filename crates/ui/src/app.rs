@@ -1651,6 +1651,26 @@ impl App {
             self.tab_switcher = None;
             return;
         }
+        // Down and Up move through the list too, as Tab and Shift+Tab do; the keys go no further
+        // while it is open (#681).
+        let (down, up) = ctx.input_mut(|i| {
+            let mut moves = (0usize, 0usize);
+            i.events.retain(|event| match event {
+                egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, .. } => {
+                    moves.0 += 1;
+                    false
+                }
+                egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, .. } => {
+                    moves.1 += 1;
+                    false
+                }
+                _ => true,
+            });
+            moves
+        });
+        let count = ids.len();
+        let picked = (picked + down % count + count - up % count) % count;
+        self.tab_switcher = Some(picked);
         let mut chosen = None;
         egui::Area::new(egui::Id::new("project-switcher"))
             .order(egui::Order::Foreground)
