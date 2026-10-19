@@ -333,9 +333,12 @@ pub struct ArrangementViewState {
     /// Where a drag over empty lanes started: the selection rectangle runs from there to the
     /// pointer until the button is let go.
     marquee: Option<Pos2>,
-    /// The drag that started `marquee` paints time (a lane's or a clip's upper half, as Studio
-    /// One's range does) rather than drawing a rectangle that picks whole clips (the lower half).
+    /// The drag that started `marquee` paints time (a lane's or a clip's upper half) rather than
+    /// drawing a rectangle that picks whole clips (the lower half).
     marquee_time: bool,
+    /// The scroll when `marquee` was last placed: the view scrolls under a drag past its edge,
+    /// and the rectangle's start moves with the lanes (#691).
+    marquee_scroll: Vec2,
     /// The span the last selection rectangle covered: its tracks and its beats.
     time_selection: Option<TimeSelection>,
     /// Where a drag on the ruler started, in beats: it selects time over every track.
@@ -428,6 +431,7 @@ impl Default for ArrangementViewState {
             anchor: None,
             marquee: None,
             marquee_time: false,
+            marquee_scroll: Vec2::ZERO,
             time_selection: None,
             ruler_select: None,
             edge_drag: None,
@@ -1294,6 +1298,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         rows.push(Row { track: lane.track, clips, time: lane_time, clip: lane_time.intersect(lanes_area) });
         y += height + 1.0 + state.automation.height(lane.track, &timeline.automation);
     }
+    // Where the lanes end, scrolled as they are: how far a drag past the bottom may scroll.
+    let lanes_end = y;
     let mut y = fixed.top();
     for lane in &returns {
         let height = state.return_height(lane.track);
@@ -1370,6 +1376,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
             state.marquee = Some(origin);
+            state.marquee_scroll = state.scroll;
             state.marquee_time =
                 if state.time_select_ctrl { ui.input(|i| i.modifiers.command) } else { origin.y < row.time.center().y };
         }
@@ -1495,12 +1502,18 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             lanes_painter.vline(lit.right(), lit.y_range(), edge);
         }
     }
+    if let Some(origin) = state.marquee.as_mut() {
+        *origin += state.marquee_scroll - state.scroll;
+        state.marquee_scroll = state.scroll;
+    }
     // The selection rectangle: the clips it touches are selected when the button goes up, and
-    // the span it covers becomes the time selection.
+    // the span it covers becomes the time selection. It reaches the clips out of view too: every
+    // lane's row is known, drawn or not.
     if let Some(origin) = state.marquee
         && let Some(now) = ui.ctx().pointer_latest_pos()
     {
-        let rect = Rect::from_two_pos(origin, now).intersect(lanes_area).intersect(time);
+        let whole = Rect::from_two_pos(origin, now);
+        let rect = whole.intersect(lanes_area).intersect(time);
         let done = ui.input(|i| !i.pointer.primary_down());
         if state.marquee_time {
             // Painting time: the selection follows the pointer, on the grid (Alt: free), over the
@@ -1509,7 +1522,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let free = ui.input(|i| i.modifiers.alt);
             let beat_of = |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free);
             let tracks: Vec<TrackId> =
-                rows_seen.iter().filter(|(_, r)| r.y_range().intersects(rect.y_range())).map(|(t, _)| *t).collect();
+                rows.iter().filter(|r| r.time.y_range().intersects(whole.y_range())).map(|r| r.clips).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             state.time_selection =
                 (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end });
@@ -1527,8 +1540,18 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             if done {
                 state.marquee = None;
                 state.time_selection = None;
-                let picked: Vec<(TrackId, ClipId)> =
-                    clip_rects.iter().filter(|(_, r)| r.intersects(rect)).map(|(key, _)| *key).collect();
+                let picked: Vec<(TrackId, ClipId)> = rows
+                    .iter()
+                    .filter_map(|row| Some((row, timeline.lanes.iter().find(|l| l.track == row.clips)?)))
+                    .flat_map(|(row, lane)| {
+                        lane.clips.iter().map(move |clip| {
+                            let space = if clip.rows > 1 { sub_row(row.time, clip.row, clip.rows) } else { row.time };
+                            ((lane.track, clip.id), clip_rect(space, clip.start, clip.length, &x_of))
+                        })
+                    })
+                    .filter(|(_, r)| r.intersects(whole))
+                    .map(|(key, _)| key)
+                    .collect();
                 if picked.is_empty() {
                     state.selected.clear();
                     state.anchor = None;
@@ -1539,6 +1562,28 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         }
     }
 
+    // A selection rectangle dragged past the lanes' edge scrolls them, the faster the further
+    // past (#691); its start moves with the lanes, so it still starts where the drag did.
+    if state.marquee.is_some()
+        && let Some(now) = ui.ctx().pointer_latest_pos()
+    {
+        let past = |value: f32, low: f32, high: f32| {
+            if value < low {
+                -((low - value) / 2.0).clamp(2.0, 30.0)
+            } else if value > high {
+                ((value - high) / 2.0).clamp(2.0, 30.0)
+            } else {
+                0.0
+            }
+        };
+        let (dx, dy) = (past(now.x, time.left(), time.right()), past(now.y, lanes_area.top(), lanes_area.bottom()));
+        if dx != 0.0 || dy != 0.0 {
+            let most_y = (lanes_end - lanes_area.top() + state.scroll.y - lanes_area.height()).max(0.0);
+            state.scroll.x = (state.scroll.x + dx).max(0.0);
+            state.scroll.y = (state.scroll.y + dy).clamp(0.0, most_y);
+            ui.ctx().request_repaint();
+        }
+    }
     // A track header let go over a lane moves the track (and a group's tracks) there, into the
     // lane's group: above the lane under the pointer, or below it from its lower half; below an
     // open group's header is into that group.
@@ -2158,6 +2203,7 @@ fn clip_box<'a>(
         });
     if selects_time {
         state.marquee = ui.input(|i| i.pointer.press_origin());
+        state.marquee_scroll = state.scroll;
         state.marquee_time = true;
     } else if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
         // Clips picked by a click or moved: the time selection gives way to them.
