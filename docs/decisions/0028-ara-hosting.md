@@ -218,7 +218,10 @@ the list below, in a first form). Where it differs from the decisions above it i
   session keeps them by clip while the plug-in runs; the arrangement draws them as bars over
   the clip's waveform, which dims under them, placed through the tempo map. A bypassed
   plug-in's notes are kept and not shown. When the factory lists notes among what it analyses, the host asks it once
-  for each source whose notes are not found yet, so they show without the editor being opened.
+  for each source whose notes are not found yet, so they show without the editor being opened. A
+  finished analysis (its progress Completed) has the notes read too, and while a region has none
+  yet they are looked for again every second, as a plug-in may finish without saying the content
+  changed.
 - **The document.** `load` carries an optional `ara` document (protocol version 9): the track's
   name, the tempo, the sources (an id, a name and a shared-memory address each) and the regions
   (clip id, content id, start, length and offset in seconds). The host queries the component for

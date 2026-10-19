@@ -208,11 +208,17 @@ struct Host {
 /// editor prompt without a busy loop.
 const MODEL_UPDATES_EVERY: Duration = Duration::from_millis(250);
 
+/// How often the notes of regions that have none yet are looked for again (#720): a plug-in may
+/// finish its analysis without saying the content changed.
+const NOTES_AGAIN_EVERY: Duration = Duration::from_secs(1);
+
 /// An ARA document controller and the objects made in it, bound to one plug-in instance.
 pub(crate) struct Document {
     controller: *const ARADocumentControllerInstance,
     /// When `notifyModelUpdates` was last called.
     last_model_update: Cell<Instant>,
+    /// When the regions' notes were last read.
+    last_notes_read: Cell<Instant>,
     host: Box<Host>,
     context: ARAMusicalContextRef,
     sequence: ARARegionSequenceRef,
@@ -319,6 +325,7 @@ impl Document {
         let mut made = Self {
             controller,
             last_model_update: Cell::new(Instant::now()),
+            last_notes_read: Cell::new(Instant::now()),
             host,
             context: std::ptr::null_mut(),
             sequence: std::ptr::null_mut(),
@@ -425,7 +432,12 @@ impl Document {
             self.notify_model_updates();
             // What the plug-in said changed reached the host inside that call; the notes are
             // read now, outside it, as the API asks.
-            if self.host.notes_changed.swap(false, Ordering::AcqRel) {
+            // While a region still has no notes (its analysis running, or a plug-in that says
+            // nothing when it ends) they are looked for again now and then.
+            let waiting = self.notes_sent.borrow().len() < self.region_described.len();
+            let again = waiting && self.last_notes_read.get().elapsed() >= NOTES_AGAIN_EVERY;
+            if self.host.notes_changed.swap(false, Ordering::AcqRel) || again {
+                self.last_notes_read.set(Instant::now());
                 self.read_notes();
             }
         }
@@ -1189,11 +1201,17 @@ static MODEL_UPDATE: ARAModelUpdateControllerInterface = ARAModelUpdateControlle
 };
 
 unsafe extern "C" fn analysis_progress(
-    _host: ARAModelUpdateControllerHostRef,
+    host: ARAModelUpdateControllerHostRef,
     _source: ARAAudioSourceHostRef,
-    _state: ARAAnalysisProgressState,
+    state: ARAAnalysisProgressState,
     _value: f32,
 ) {
+    // An analysis done: its notes are there to read, whether or not the plug-in also says the
+    // content changed.
+    if state == kARAAnalysisProgressCompleted as ARAAnalysisProgressState {
+        // SAFETY: as in `modification_changed`.
+        notes_may_have_changed(unsafe { host.cast::<Host>().as_ref() }, 0);
+    }
 }
 
 unsafe extern "C" fn source_changed(
