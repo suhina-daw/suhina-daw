@@ -358,3 +358,18 @@ fn a_shared_pattern_is_not_consolidated() {
     let error = run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 4.0 })).unwrap_err();
     assert!(error.contains("shared pattern"), "{error}");
 }
+
+#[test]
+fn stacked_midi_clips_consolidate_into_one_that_plays_them_all() {
+    let notes = vec![note(0.0, 0.5, 60), note(2.0, 0.5, 64)];
+    // Two clips over each other (stacked), the second from beat 1.
+    let mut session = Session::new(midi_project(notes, vec![clip(1, 0.0, 4.0), clip(1, 1.0, 4.0)]));
+    run(&mut session, "clip.consolidate", json!({ "track": 1, "start": 0.0, "end": 5.0 })).unwrap();
+    let clips = lane_clips(&session, 1);
+    assert_eq!(clips.len(), 1, "{clips:?}");
+    let content = session.project().content(clips[0].content).unwrap();
+    let LaneData::Notes(joined) = &content.lanes[0].data else { panic!("not notes") };
+    let mut placed: Vec<(f64, u8)> = joined.iter().map(|n| (n.time, n.key)).collect();
+    placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(placed, [(0.0, 60), (1.0, 60), (2.0, 64), (3.0, 64)]);
+}

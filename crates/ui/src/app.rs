@@ -1906,6 +1906,15 @@ impl App {
                     self.status = Status::Done(done);
                 }
             }
+            // Recording and consolidating audio write files next to the project: an unsaved one
+            // is saved first, so the next try works (#682, #704).
+            Err(e) if e.0.starts_with("save the project first") => {
+                self.status = Status::Hint(format!(
+                    "Save the project first: {}",
+                    e.0.trim_start_matches("save the project first: ")
+                ));
+                self.save_active(false);
+            }
             Err(e) => self.status = Status::Error(e.0),
         }
     }
