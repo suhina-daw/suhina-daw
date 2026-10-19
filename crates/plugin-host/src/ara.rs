@@ -201,6 +201,55 @@ struct Host {
     /// The plug-in said a region's, modification's or source's notes may have changed, or the
     /// host changed the regions: the notes are read again after the next model update (#720).
     notes_changed: AtomicBool,
+    /// The song's tempo map and time signatures, which the plug-in reads through the musical
+    /// context's content readers, so its timeline counts bars as the song does. Changed only
+    /// inside an edit, on the model thread, so what a reader handed out stays put.
+    tempo: Mutex<Vec<ARAContentTempoEntry>>,
+    bars: Mutex<Vec<ARAContentBarSignature>>,
+}
+
+impl Host {
+    /// Takes the tempo map and time signatures of `document`; whether they changed.
+    fn set_context(&self, document: &AraDocument) -> bool {
+        let tempo: Vec<ARAContentTempoEntry> = document
+            .tempo_entries()
+            .into_iter()
+            .map(|(seconds, quarters)| ARAContentTempoEntry { timePosition: seconds, quarterPosition: quarters })
+            .collect();
+        let bars: Vec<ARAContentBarSignature> = document
+            .bar_signatures()
+            .into_iter()
+            .map(|(numerator, denominator, at)| ARAContentBarSignature {
+                numerator: i32::try_from(numerator).unwrap_or(4),
+                denominator: i32::try_from(denominator).unwrap_or(4),
+                position: at,
+            })
+            .collect();
+        let same_tempo = {
+            let now = self.tempo.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            now.len() == tempo.len()
+                && now.iter().zip(&tempo).all(|(a, b)| {
+                    let (a_time, a_quarter, b_time, b_quarter) =
+                        (a.timePosition, a.quarterPosition, b.timePosition, b.quarterPosition);
+                    a_time == b_time && a_quarter == b_quarter
+                })
+        };
+        let same_bars = {
+            let now = self.bars.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            now.len() == bars.len()
+                && now.iter().zip(&bars).all(|(a, b)| {
+                    let (an, ad, ap, bn, bd, bp) =
+                        (a.numerator, a.denominator, a.position, b.numerator, b.denominator, b.position);
+                    an == bn && ad == bd && ap == bp
+                })
+        };
+        if same_tempo && same_bars {
+            return false;
+        }
+        *self.tempo.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = tempo;
+        *self.bars.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = bars;
+        true
+    }
 }
 
 /// How often the host lets the plug-in send the model changes it has queued, when it is not
@@ -308,7 +357,10 @@ impl Document {
             changed: AtomicBool::new(false),
             // Read once the document is built.
             notes_changed: AtomicBool::new(true),
+            tempo: Mutex::new(Vec::new()),
+            bars: Mutex::new(Vec::new()),
         });
+        host.set_context(document);
         let host_ref: *mut c_void = std::ptr::from_mut::<Host>(&mut host).cast();
         host.instance.audioAccessControllerHostRef = host_ref.cast();
         host.instance.archivingControllerHostRef = host_ref.cast();
@@ -786,6 +838,23 @@ impl Document {
         document: &AraDocument,
         new_sources: Vec<(String, String, Box<Source>)>,
     ) -> Result<Edited, String> {
+        // A tempo or time signature changed: the plug-in reads the musical context again.
+        if self.host.set_context(document)
+            && !self.context.is_null()
+            && let Some(update) = dc.interface.updateMusicalContextContent
+        {
+            suhina_plugins::trace!("ara musical context changed");
+            // SAFETY: a live controller inside an edit, for this document's context; a null
+            // range is the whole of it.
+            unsafe {
+                update(
+                    dc.reference,
+                    self.context,
+                    std::ptr::null(),
+                    kARAContentUpdateEverythingChanged as ARAContentUpdateFlags,
+                )
+            };
+        }
         for (id, name, source) in new_sources {
             self.host.sources.push(source);
             self.add_source(dc, self.host.sources.len() - 1, &id, &name)?;
@@ -1129,41 +1198,62 @@ unsafe extern "C" fn archive_id(
 
 static CONTENT_ACCESS: ARAContentAccessControllerInterface = ARAContentAccessControllerInterface {
     structSize: size_of::<ARAContentAccessControllerInterface>(),
-    isMusicalContextContentAvailable: Some(no_context_content),
+    isMusicalContextContentAvailable: Some(context_content),
     getMusicalContextContentGrade: Some(context_grade),
-    createMusicalContextContentReader: Some(no_context_reader),
+    createMusicalContextContentReader: Some(context_reader),
     isAudioSourceContentAvailable: Some(no_source_content),
     getAudioSourceContentGrade: Some(source_grade),
     createAudioSourceContentReader: Some(no_source_reader),
-    getContentReaderEventCount: Some(no_events),
-    getContentReaderDataForEvent: Some(no_event),
+    getContentReaderEventCount: Some(events),
+    getContentReaderDataForEvent: Some(event),
     destroyContentReader: Some(no_reader_to_destroy),
 };
 
-// Suhina describes no content (tempo, chords, notes) to the plug-in yet; it analyses its own.
-unsafe extern "C" fn no_context_content(
+// The musical context has the song's tempo map and time signatures (so the plug-in counts bars
+// as the song does); Suhina describes no other content (chords, notes) yet: the plug-in analyses
+// its own. A reader is the content type it reads, as a pointer-sized number.
+const TEMPO_READER: usize = 1;
+const BARS_READER: usize = 2;
+
+fn context_kind(kind: ARAContentType) -> Option<usize> {
+    if kind == kARAContentTypeTempoEntries as ARAContentType {
+        Some(TEMPO_READER)
+    } else if kind == kARAContentTypeBarSignatures as ARAContentType {
+        Some(BARS_READER)
+    } else {
+        None
+    }
+}
+
+unsafe extern "C" fn context_content(
     _host: ARAContentAccessControllerHostRef,
     _context: ARAMusicalContextHostRef,
-    _kind: ARAContentType,
+    kind: ARAContentType,
 ) -> ARABool {
-    0
+    ARABool::from(context_kind(kind).is_some())
 }
 
 unsafe extern "C" fn context_grade(
     _host: ARAContentAccessControllerHostRef,
     _context: ARAMusicalContextHostRef,
-    _kind: ARAContentType,
+    kind: ARAContentType,
 ) -> ARAContentGrade {
-    kARAContentGradeInitial as ARAContentGrade
+    // The song's own tempo and meter, as the user set them.
+    if context_kind(kind).is_some() {
+        kARAContentGradeAdjusted as ARAContentGrade
+    } else {
+        kARAContentGradeInitial as ARAContentGrade
+    }
 }
 
-unsafe extern "C" fn no_context_reader(
+unsafe extern "C" fn context_reader(
     _host: ARAContentAccessControllerHostRef,
     _context: ARAMusicalContextHostRef,
-    _kind: ARAContentType,
+    kind: ARAContentType,
     _range: *const ARAContentTimeRange,
 ) -> ARAContentReaderHostRef {
-    std::ptr::null_mut()
+    // Every entry, whatever the range: those around it are among them, as ARA asks.
+    context_kind(kind).map_or(std::ptr::null_mut(), |reader| std::ptr::without_provenance_mut(reader))
 }
 
 unsafe extern "C" fn no_source_content(
@@ -1191,16 +1281,32 @@ unsafe extern "C" fn no_source_reader(
     std::ptr::null_mut()
 }
 
-unsafe extern "C" fn no_events(_host: ARAContentAccessControllerHostRef, _reader: ARAContentReaderHostRef) -> ARAInt32 {
-    0
+unsafe extern "C" fn events(host: ARAContentAccessControllerHostRef, reader: ARAContentReaderHostRef) -> ARAInt32 {
+    // SAFETY: the host ref is the document's `Host`, which outlives its controller.
+    let Some(host) = (unsafe { host.cast::<Host>().as_ref() }) else { return 0 };
+    let count = match reader.addr() {
+        TEMPO_READER => host.tempo.lock().map_or(0, |t| t.len()),
+        BARS_READER => host.bars.lock().map_or(0, |b| b.len()),
+        _ => 0,
+    };
+    ARAInt32::try_from(count).unwrap_or(0)
 }
 
-unsafe extern "C" fn no_event(
-    _host: ARAContentAccessControllerHostRef,
-    _reader: ARAContentReaderHostRef,
-    _index: ARAInt32,
+unsafe extern "C" fn event(
+    host: ARAContentAccessControllerHostRef,
+    reader: ARAContentReaderHostRef,
+    index: ARAInt32,
 ) -> *const c_void {
-    std::ptr::null()
+    // SAFETY: as in `events`.
+    let Some(host) = (unsafe { host.cast::<Host>().as_ref() }) else { return std::ptr::null() };
+    let Ok(index) = usize::try_from(index) else { return std::ptr::null() };
+    // The entries change only inside an edit, so the pointer stays good while the plug-in reads.
+    match reader.addr() {
+        TEMPO_READER => host.tempo.lock().ok().and_then(|t| t.get(index).map(|e| std::ptr::from_ref(e).cast())),
+        BARS_READER => host.bars.lock().ok().and_then(|b| b.get(index).map(|e| std::ptr::from_ref(e).cast())),
+        _ => None,
+    }
+    .unwrap_or(std::ptr::null())
 }
 
 unsafe extern "C" fn no_reader_to_destroy(_host: ARAContentAccessControllerHostRef, _reader: ARAContentReaderHostRef) {}

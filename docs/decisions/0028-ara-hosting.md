@@ -198,6 +198,13 @@ the list below, in a first form). Where it differs from the decisions above it i
   the API asks ("periodically by the host whenever not editing"). Without it a plug-in sends what
   an edit set off only on its own timer, which showed as a clip resize drawn about 2 s late in
   the editor (#718).
+- **Musical context.** The document carries the song's tempo map as ARA tempo entries (seconds
+  and quarter notes; a tempo ramp gets one a beat, since ARA takes the tempo as even between two)
+  and its time signatures as bar signatures, and the host's content access controller hands them
+  to the plug-in's musical context readers, so its timeline counts bars as the song does (it
+  counted from 1 at the clip). A change in either reaches it as an edit
+  (`updateMusicalContextContent`). A document without them, from an older engine, is an even
+  tempo in 4/4.
 - **Transport requests.** The plug-in's own play and stop buttons and a click in its editor's
   timeline reach Suhina's transport: the host's playback controller queues them and sends
   `ara_playback` (protocol version 12), and the window plays, stops or moves the play position

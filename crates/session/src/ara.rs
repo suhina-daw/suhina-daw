@@ -39,6 +39,10 @@ impl ClipNotes {
 pub(crate) struct Layout {
     name: String,
     tempo_bpm: f64,
+    /// The song's tempo map and time signatures for the plug-in's musical context, so its
+    /// timeline counts bars as the song does.
+    tempo: Vec<(f64, f64)>,
+    bars: Vec<(u32, u32, f64)>,
     files: Vec<(String, String)>,
     regions: Vec<AraRegion>,
 }
@@ -97,7 +101,8 @@ impl Layout {
                 });
             }
         }
-        Self { name, tempo_bpm: project.transport.tempo_bpm, files, regions }
+        let (tempo, bars) = musical_context(project);
+        Self { name, tempo_bpm: project.transport.tempo_bpm, tempo, bars, files, regions }
     }
 
     /// For each region, in order, the modification its new one is a copy of, as it was in
@@ -182,6 +187,8 @@ impl Layout {
             name: self.name.clone(),
             sequence: self.name.clone(),
             tempo_bpm: self.tempo_bpm,
+            tempo: self.tempo.clone(),
+            bars: self.bars.clone(),
             sources: described,
             regions: self.regions.clone(),
         })
@@ -190,6 +197,49 @@ impl Layout {
 
 /// Seconds into the file where `clip` starts playing, as the engine reads it: through the warp
 /// markers of a warped region that has two or more, otherwise at the song's starting tempo.
+/// The song's tempo map as ARA tempo entries (seconds, quarter notes) and its time signatures
+/// as bar signatures (numerator, denominator, quarter note of the bar's start). A beat is a
+/// quarter note. Between two entries ARA takes the tempo as even, so a ramp gets one a beat.
+fn musical_context(project: &Project) -> (Vec<(f64, f64)>, Vec<(u32, u32, f64)>) {
+    let transport = &project.transport;
+    let map = transport.tempo_map(1.0);
+    let mut changes: Vec<&suhina_model::TempoPoint> =
+        transport.tempo_changes.iter().filter(|p| p.beat.is_finite() && p.beat > 0.0).collect();
+    changes.sort_by(|a, b| a.beat.total_cmp(&b.beat));
+    let mut beats: Vec<f64> = vec![0.0];
+    let mut ramp = false;
+    for change in &changes {
+        if ramp {
+            let mut beat = beats.last().copied().unwrap_or(0.0).floor() + 1.0;
+            while beat < change.beat && beats.len() < MAX_ARA_OBJECTS - 2 {
+                beats.push(beat);
+                beat += 1.0;
+            }
+        }
+        if beats.last().is_some_and(|last| change.beat > *last) && beats.len() < MAX_ARA_OBJECTS - 1 {
+            beats.push(change.beat);
+        }
+        ramp = change.ramp;
+    }
+    // One past the last, so the last tempo is known too.
+    beats.push(beats.last().copied().unwrap_or(0.0) + 1.0);
+    let tempo: Vec<(f64, f64)> = beats.iter().map(|&beat| (map.time_at(beat), beat)).collect();
+    let tempo = if tempo.windows(2).all(|w| w[1].0 > w[0].0) && tempo.iter().all(|(s, _)| s.is_finite()) {
+        tempo
+    } else {
+        Vec::new()
+    };
+    let meter = transport.meter();
+    let first = transport.time_signature;
+    let mut bars = vec![(u32::from(first.numerator), u32::from(first.denominator), 0.0)];
+    for (_, beat, signature) in meter.changes().take(MAX_ARA_OBJECTS - 1) {
+        if bars.last().is_some_and(|(_, _, at)| beat > *at) {
+            bars.push((u32::from(signature.numerator), u32::from(signature.denominator), beat));
+        }
+    }
+    (tempo, bars)
+}
+
 /// The stretches a clip plays, as the engine plays them: each as (beats from the clip's start,
 /// the content beat it starts at, its length in beats). One without a loop; with one, the part
 /// up to the loop's end and then a pass through the loop for each repeat, the last cut at the
@@ -361,6 +411,26 @@ mod tests {
         );
         // The clip's notes and selection go by its first pass.
         assert!(layout.has_region("clip-1"));
+    }
+
+    #[test]
+    fn the_document_carries_the_songs_tempo_map_and_time_signatures() {
+        let (mut project, audio) = project();
+        // 120 bpm, then 60 from beat 8; 4/4, then 3/4 from bar 2 (beat 8).
+        project.transport.tempo_changes =
+            vec![suhina_model::TempoPoint { beat: 8.0, bpm: 60.0, ramp: false }];
+        project.transport.time_signature_changes = vec![suhina_model::TimeSignatureChange {
+            bar: 2,
+            time_signature: suhina_model::TimeSignature { numerator: 3, denominator: 4 },
+        }];
+        let (document, _) = Layout::of(&project, &audio, TrackId(1)).document(&audio).unwrap();
+        // Half a second a beat up to beat 8 (4 s), a second a beat after it.
+        assert_eq!(document.tempo, [(0.0, 0.0), (4.0, 8.0), (5.0, 9.0)]);
+        assert_eq!(document.bars, [(4, 4, 0.0), (3, 4, 8.0)]);
+        // An older engine's document, without them: an even tempo in 4/4.
+        let even = AraDocument { tempo: Vec::new(), bars: Vec::new(), ..document };
+        assert_eq!(even.tempo_entries(), [(0.0, 0.0), (0.5, 1.0)]);
+        assert_eq!(even.bar_signatures(), [(4, 4, 0.0)]);
     }
 
     #[test]

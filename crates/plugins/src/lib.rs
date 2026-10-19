@@ -327,6 +327,8 @@ impl HostProcess {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .spawn()?;
+        let began = Instant::now();
+        crate::trace!("host process started");
         let deadline = Instant::now() + launch.timeout;
         let control = loop {
             match listener.accept() {
@@ -348,6 +350,7 @@ impl HostProcess {
             }
             thread::sleep(Duration::from_millis(1));
         };
+        crate::trace!("host process connected after {:?}", began.elapsed());
         control.set_nonblocking(false)?;
         let replies = read_lines(control.try_clone()?);
         Ok(Self { child, control: std::sync::Arc::new(Mutex::new(control)), replies })

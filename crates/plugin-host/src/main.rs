@@ -538,7 +538,9 @@ fn next_message(messages: &std::sync::mpsc::Receiver<Message>) -> Result<Message
 type Instances = BTreeMap<u32, Loaded>;
 
 fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
+    suhina_plugins::trace!("host up, connecting");
     let stream = suhina_plugins::connect(address)?;
+    suhina_plugins::trace!("host connected");
     let mut writer = stream.try_clone()?;
     let messages = wakeful(suhina_plugins::read_lines(stream));
     let mut instances = Instances::new();

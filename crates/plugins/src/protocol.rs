@@ -170,8 +170,30 @@ pub struct AraDocument {
     /// The region sequence's name: the track's.
     pub sequence: String,
     pub tempo_bpm: f64,
+    /// The song's tempo map as ARA's tempo entries: (seconds, quarter notes), in order, at least
+    /// two; between two entries the tempo is even. Empty: an even `tempo_bpm` from the start.
+    pub tempo: Vec<(f64, f64)>,
+    /// The song's time signatures as ARA's bar signatures: (numerator, denominator, the quarter
+    /// note the bar starts at), in order. Empty: 4/4 from the start.
+    pub bars: Vec<(u32, u32, f64)>,
     pub sources: Vec<AraSource>,
     pub regions: Vec<AraRegion>,
+}
+
+impl AraDocument {
+    /// The tempo entries the plug-in is told: `tempo`, or an even `tempo_bpm` from the start.
+    pub fn tempo_entries(&self) -> Vec<(f64, f64)> {
+        if self.tempo.len() >= 2 {
+            return self.tempo.clone();
+        }
+        let bpm = if self.tempo_bpm.is_finite() && self.tempo_bpm > 0.0 { self.tempo_bpm } else { 120.0 };
+        vec![(0.0, 0.0), (60.0 / bpm, 1.0)]
+    }
+
+    /// The bar signatures the plug-in is told: `bars`, or 4/4 from the start.
+    pub fn bar_signatures(&self) -> Vec<(u32, u32, f64)> {
+        if self.bars.is_empty() { vec![(4, 4, 0.0)] } else { self.bars.clone() }
+    }
 }
 
 /// An audio file's decoded samples, in a region the host maps read only
@@ -205,6 +227,8 @@ impl AraDocument {
     fn to_json(&self) -> Value {
         json!({
             "name": self.name, "sequence": self.sequence, "tempo_bpm": self.tempo_bpm,
+            "tempo": self.tempo.iter().map(|(s, q)| json!([s, q])).collect::<Vec<_>>(),
+            "bars": self.bars.iter().map(|(n, d, q)| json!([n, d, q])).collect::<Vec<_>>(),
             "sources": self.sources.iter().map(|s| json!({ "id": s.id, "name": s.name, "address": s.address }))
                 .collect::<Vec<_>>(),
             "regions": self.regions.iter().map(|r| json!({
@@ -250,7 +274,46 @@ impl AraDocument {
             })
             .collect::<Option<Vec<_>>>()?;
         let tempo_bpm = time(value, "tempo_bpm").filter(|t| *t > 0.0)?;
-        Some(Self { name: text(value, "name")?, sequence: text(value, "sequence")?, tempo_bpm, sources, regions })
+        // Tempo entries and bar signatures, in order; a document without them (an older engine)
+        // has an even tempo in 4/4.
+        let number = |v: &Value| v.as_f64().filter(|n| n.is_finite());
+        let tempo = match value.get("tempo") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .filter(|l| l.len() <= MAX_ARA_OBJECTS)?
+                .iter()
+                .map(|e| Some((number(e.get(0)?)?, number(e.get(1)?)?)))
+                .collect::<Option<Vec<_>>>()?,
+        };
+        if tempo.windows(2).any(|w| !(w[1].0 > w[0].0 && w[1].1 > w[0].1)) {
+            return None;
+        }
+        let bars = match value.get("bars") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(v) => v
+                .as_array()
+                .filter(|l| l.len() <= MAX_ARA_OBJECTS)?
+                .iter()
+                .map(|e| {
+                    let n = u32::try_from(e.get(0)?.as_u64()?).ok().filter(|n| (1..=64).contains(n))?;
+                    let d = u32::try_from(e.get(1)?.as_u64()?).ok().filter(|d| (1..=64).contains(d))?;
+                    Some((n, d, number(e.get(2)?)?))
+                })
+                .collect::<Option<Vec<_>>>()?,
+        };
+        if bars.windows(2).any(|w| w[1].2 <= w[0].2) {
+            return None;
+        }
+        Some(Self {
+            name: text(value, "name")?,
+            sequence: text(value, "sequence")?,
+            tempo_bpm,
+            tempo,
+            bars,
+            sources,
+            regions,
+        })
     }
 }
 
@@ -695,6 +758,8 @@ mod tests {
 
     fn ara_document() -> AraDocument {
         AraDocument {
+            tempo: vec![(0.0, 0.0), (0.5, 1.0), (2.5, 4.0)],
+            bars: vec![(4, 4, 0.0), (3, 4, 8.0)],
             name: "Song".into(),
             sequence: "Vocal".into(),
             tempo_bpm: 120.0,
