@@ -564,3 +564,27 @@ fn a_device_dragged_onto_another_track_moves_there_and_with_ctrl_is_copied() {
     assert_eq!(chain_of(&harness, "Drums"), drums);
     assert_eq!(chain_of(&harness, "Bass").len(), bass.len() + 1);
 }
+
+#[test]
+fn a_clicked_volume_takes_a_typed_number_and_the_arrow_keys() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    let db = |h: &Harness<'static, App>| 20.0 * volume(h).log10();
+    let name = harness.state().session().unwrap().project().channels[0].name.clone();
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.event(egui::Event::Text("-12".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((db(&harness) + 12.0).abs() < 0.05, "typed: {}", db(&harness));
+    // Clicked again, later than a double-click: Up is 1 dB louder, Shift and Down 0.1 dB quieter.
+    harness.run_steps(60);
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert!((db(&harness) + 11.0).abs() < 0.05, "{}", db(&harness));
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowDown);
+    harness.run();
+    assert!((db(&harness) + 11.1).abs() < 0.05, "{}", db(&harness));
+}

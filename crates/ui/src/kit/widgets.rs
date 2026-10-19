@@ -227,9 +227,132 @@ fn wheel_points(ui: &Ui) -> f32 {
     })
 }
 
+/// The value control clicked or dragged last, and the frame it was drawn in: the arrow keys and
+/// typed digits go to it (#707) until a click elsewhere, Enter or Escape.
+const ACTIVE_VALUE: &str = "active-value";
+
+/// Whether a value control takes this frame's keys: an arrow, a digit, Enter, Escape or
+/// Backspace while one is active. The window's shortcuts wait for this frame then, so a digit
+/// typed into it does not pick a tool; Ctrl+Z and Space still reach them.
+pub fn value_active(ctx: &egui::Context) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    let active = ctx
+        .data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::new(ACTIVE_VALUE)))
+        .is_some_and(|(_, drawn)| pass.saturating_sub(drawn) <= 2);
+    active
+        && ctx.input(|i| {
+            i.events.iter().any(|event| match event {
+                egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                    !modifiers.command
+                        && matches!(
+                            key,
+                            egui::Key::ArrowUp
+                                | egui::Key::ArrowDown
+                                | egui::Key::Enter
+                                | egui::Key::Escape
+                                | egui::Key::Backspace
+                        )
+                }
+                egui::Event::Text(text) => text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')),
+                _ => false,
+            })
+        })
+}
+
+/// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
+/// the number typed into it.
+fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
+    let ctx = ui.ctx();
+    let key = egui::Id::new(ACTIVE_VALUE);
+    let typed_id = response.id.with("typed");
+    let pass = ctx.cumulative_pass_nr();
+    if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
+        ctx.data_mut(|d| {
+            d.insert_temp(key, (response.id, pass));
+            d.remove::<String>(typed_id);
+        });
+    }
+    let active = ctx.data(|d| d.get_temp::<(egui::Id, u64)>(key)).is_some_and(|(id, _)| id == response.id);
+    if !active {
+        return (0, false, None);
+    }
+    // A press anywhere else lets it go.
+    if ui.input(|i| i.pointer.any_pressed()) && !response.hovered() {
+        ctx.data_mut(|d| {
+            d.remove::<(egui::Id, u64)>(key);
+            d.remove::<String>(typed_id);
+        });
+        return (0, false, None);
+    }
+    ctx.data_mut(|d| d.insert_temp(key, (response.id, pass)));
+    let mut typed = ctx.data(|d| d.get_temp::<String>(typed_id)).unwrap_or_default();
+    let (mut steps, mut fine, mut enter, mut escape) = (0i32, false, false, false);
+    ctx.input_mut(|i| {
+        i.events.retain(|event| match event {
+            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } => {
+                steps += 1;
+                fine |= modifiers.shift;
+                false
+            }
+            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } => {
+                steps -= 1;
+                fine |= modifiers.shift;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => {
+                enter = true;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
+                escape = true;
+                false
+            }
+            egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                typed.pop();
+                false
+            }
+            egui::Event::Text(text) if text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')) => {
+                typed.push_str(text);
+                false
+            }
+            _ => true,
+        });
+    });
+    if escape {
+        ctx.data_mut(|d| {
+            d.remove::<(egui::Id, u64)>(key);
+            d.remove::<String>(typed_id);
+        });
+        return (0, false, None);
+    }
+    if enter {
+        ctx.data_mut(|d| {
+            d.remove::<(egui::Id, u64)>(key);
+            d.remove::<String>(typed_id);
+        });
+        return (0, fine, Some(typed));
+    }
+    ctx.data_mut(|d| d.insert_temp(typed_id, typed.clone()));
+    // Lit while it takes the keys; what is typed shows over it.
+    let painter = ui.painter_at(response.rect);
+    painter.rect_stroke(response.rect, 0.0, Stroke::new(1.0, theme::accent()), egui::StrokeKind::Inside);
+    if !typed.is_empty() {
+        painter.rect_filled(response.rect.shrink(1.0), 0.0, theme::control_active());
+        painter.text(
+            response.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &typed,
+            theme::mono_font(theme::TEXT_SMALL),
+            theme::text_value(),
+        );
+    }
+    (steps, fine, None)
+}
+
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a
-/// double-click. `per_point` is the change per point of drag and `per_tick` the change per wheel
-/// tick; Shift makes both ten times finer.
+/// double-click; clicked, the arrow keys step it (Shift: ten times finer) and a number typed and
+/// Enter set it (#707). `per_point` is the change per point of drag and `per_tick` the change
+/// per wheel tick or arrow key; Shift makes both ten times finer.
 #[allow(clippy::too_many_arguments)]
 pub fn drag_value(
     ui: &Ui,
@@ -241,6 +364,21 @@ pub fn drag_value(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
+    // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
+    let (steps, fine, typed) = value_keys(ui, response);
+    if let Some(typed) = typed
+        && let Ok(number) = typed.replace(',', ".").trim().parse::<f64>()
+        && number.is_finite()
+    {
+        *preview = None;
+        return Drag::Done(number.clamp(range.0, range.1));
+    }
+    if steps != 0 {
+        let from = if value.is_finite() { value } else { range.0 };
+        let step = f64::from(steps) * per_tick * if fine { 0.1 } else { 1.0 };
+        *preview = None;
+        return Drag::Done((from + step).clamp(range.0, range.1));
+    }
     // The wheel over the control moves it, as a drag would; the caller commits what it is given.
     // Scrolling up raises the value, as dragging up does.
     if response.hovered() {

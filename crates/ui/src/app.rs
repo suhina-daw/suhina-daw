@@ -4052,7 +4052,11 @@ impl App {
             || self.about_open
             || !self.agent_asks.is_empty()
             || self.updates.open;
-        if ui.ctx().egui_wants_keyboard_input() || dialog || (self.settings_open && self.page.capture.is_some()) {
+        if ui.ctx().egui_wants_keyboard_input()
+            || dialog
+            || (self.settings_open && self.page.capture.is_some())
+            || widgets::value_active(ui.ctx())
+        {
             return;
         }
         // The piano roll's own keys only while it has the keyboard; the selected slot's keys
