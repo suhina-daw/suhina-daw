@@ -298,9 +298,11 @@ impl Updates {
             };
             widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, font.clone(), theme::text_hint());
             if let Some((text, choice)) = toggle {
+                // Wide enough for its words, never narrower than the row's two buttons (#716).
+                let width = (widgets::text_width(ui, text, font.clone()) + 24.0).max(WIDE_BUTTON.x);
                 let at = Rect::from_min_size(
-                    Pos2::new(rect.right() - WIDE_BUTTON.x, rect.center().y - WIDE_BUTTON.y / 2.0),
-                    WIDE_BUTTON,
+                    Pos2::new(rect.right() - width, rect.center().y - WIDE_BUTTON.y / 2.0),
+                    Vec2::new(width, WIDE_BUTTON.y),
                 );
                 if button(ui, &painter, at, text, text) {
                     chosen = Some(choice);
@@ -319,17 +321,17 @@ impl Updates {
                 if mine { "  (running)" } else { "" }
             );
             widgets::text_in(&painter, rect, Align2::LEFT_CENTER, &text, font.clone(), theme::text_primary());
-            let install =
-                Rect::from_min_size(Pos2::new(rect.right() - BUTTON.x, rect.center().y - BUTTON.y / 2.0), BUTTON);
-            let page = install.translate(Vec2::new(-(BUTTON.x + PAD), 0.0));
+            // Pull request and Install side by side at the right, the same width; without a
+            // connection only Pull request, in Install's place (#716).
+            let half = Vec2::new((WIDE_BUTTON.x - PAD) / 2.0, BUTTON.y);
+            let install = Rect::from_min_size(Pos2::new(rect.right() - half.x, rect.center().y - half.y / 2.0), half);
+            let installs = !busy && self.token.is_some();
+            let page = if installs { install.translate(Vec2::new(-(half.x + PAD), 0.0)) } else { install };
             let pr = build.pr.unwrap_or_default();
             if button(ui, &painter, page, "Pull request", &format!("Open pull request #{pr}")) {
                 chosen = Some(Choice::Open(build.page.clone()));
             }
-            if !busy
-                && self.token.is_some()
-                && button(ui, &painter, install, "Install", &format!("Install the test build of #{pr}"))
-            {
+            if installs && button(ui, &painter, install, "Install", &format!("Install the test build of #{pr}")) {
                 chosen = Some(Choice::Install(build.clone()));
             }
         }
