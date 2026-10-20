@@ -235,6 +235,9 @@ Several agents often run at once, so an agent never starts work that exists alre
   with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
   start returns. Re-running a failed run does not comment twice.
 
+  This posting rule applies to agents a person runs. Installed reviewers such as Codex and
+  CodeRabbit post through their own apps and follow [Code Review Rules](#code-review-rules).
+
   ```sh
   python -c "import json; print(json.dumps({'pr': '600', \
     'body': open('review.md', encoding='utf-8').read()}))" > request.json
@@ -405,3 +408,23 @@ for a new document. A commit that changes documents without checking them (a ren
 them) carries a `Last-verified: keep` line in its message. CI warns when the date is over 90 days
 old. A new document lists in `covers` the code
 it describes, so `impact` can point the next change to it.
+
+## Code Review Rules
+
+Before reviewing a pull request, read [`docs/code-review.md`](docs/code-review.md). Follow its
+procedure, the rules in this file and any more specific instructions for the changed paths.
+
+Trace changed behaviour through callers, shared code and side effects. Check the agreed scope
+against relevant issues and documents, previous fixes and existing review feedback. Equivalent
+operations share project semantics, but desktop and MCP authorization may deliberately differ;
+batch and nested execution must preserve the caller's restrictions.
+
+Report actionable defects supported by the current code. Keep verified defects, unmeasured
+risks and optional improvements apart. Optional suggestions belong in the summary, not inline
+threads: the merge queue waits until every thread is resolved. State the reviewed head commit
+and material limits; use the severity definitions and reporting limits in the review guide.
+
+Review output does not grant permission to approve, request changes through a formal GitHub
+review, merge or queue a pull request. Only a maintainer adds `ready to merge`
+([CONTRIBUTING.md](CONTRIBUTING.md#merging-many-pull-requests)); a clean review or green tests
+are never permission to merge.
