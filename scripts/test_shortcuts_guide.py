@@ -29,6 +29,14 @@ class ShortcutsGuideTests(unittest.TestCase):
         self.assertEqual(rows['selection.up']['bindings'], rows['pianoRoll.up']['bindings'])
         self.assertNotEqual(rows['selection.up']['context'], rows['pianoRoll.up']['context'])
 
+    def test_registry_actions_keep_the_native_commands_category(self):
+        rows = {row['id']: row for row in guide.catalog()}
+        for action_id in ('edit.undo', 'edit.redo', 'projects.next', 'projects.previous', 'transport.setLoopEnabled'):
+            with self.subTest(action=action_id):
+                self.assertEqual(rows[action_id]['category'], 'Commands')
+        self.assertEqual(rows['transport.toggle']['category'], 'Transport')
+        self.assertEqual(rows['file.new']['category'], 'File')
+
     def test_missing_or_stale_help_and_invalid_references_fail_closed(self):
         first = next(iter(self.authored))
         for field, value in [('description', ''), ('context', ''), ('whenToUse', ''),

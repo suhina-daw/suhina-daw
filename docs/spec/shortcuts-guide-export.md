@@ -33,6 +33,8 @@ Mouse gestures and a user's local keymap import are later additions.
 The envelope is `{schemaVersion: 1, scope: "default-and-window-actions", entries: [...]}`.
 An entry has its stable action `id`, native `name` and `category`, `description`, `context`,
 `whenToUse`, `platformNotes`, `sourceFingerprint`, `helpStatus` and `bindings`.
+Categories preserve the native Shortcuts catalog: commands appended from the session/project
+registries belong to Commands, even when their IDs begin with edit, projects or transport.
 
 `bindings` maps Select-first, Draw-first and Mouse-first to windows, linux and macos. Each OS
 value is an array of alternatives, each an array of key tokens in pressing order. An empty

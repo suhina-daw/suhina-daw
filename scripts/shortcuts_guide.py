@@ -60,8 +60,9 @@ def catalog(root=ROOT):
             found.extend(re.findall(pattern, text))
         if len(found) != 1:
             raise ValueError('Missing or ambiguous command: ' + action_id)
-        category = 'Transport' if action_id.startswith('transport.') else 'File' if action_id.startswith('projects.') else 'Edit'
-        actions[action_id] = (found[0], category)
+        # keymap::actions() appends parameterless registry actions to Commands,
+        # regardless of the command ID's namespace.
+        actions[action_id] = (found[0], 'Commands')
     # The preset algorithm and modifier translation are part of the evidence fingerprint.
     evidence = source.split('#[cfg(test)]', 1)[0]
     digest = hashlib.sha256(evidence.encode()).hexdigest()

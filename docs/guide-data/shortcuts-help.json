@@ -961,7 +961,7 @@
     "description": "Reverses the last undoable edit in the active project.",
     "context": "Requires an open project and an edit in its undo history; an empty history has nothing to undo.",
     "whenToUse": "Compare an edit with the state before it.",
-    "sourceFingerprint": "95e7f19963e614278743d84676d0fcf7d5257bcd2607ff681935779522b2729b",
+    "sourceFingerprint": "d3da82bda59c30b2636812eeb9cc48f0bdf772241528895fd968e0c4a4730e6b",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -975,7 +975,7 @@
     "description": "Reapplies the next edit that was undone in the active project.",
     "context": "Requires an open project with a redo step available.",
     "whenToUse": "Restore an edit after trying Undo.",
-    "sourceFingerprint": "5eae112d082d537c27081da8e9f55dc77365a27b0b1122a2f804093009cf2ec0",
+    "sourceFingerprint": "10e263626c02b7157430329f0f2625b89219938860457b037c9a0fcc35ff5236",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -989,7 +989,7 @@
     "description": "Moves forward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
     "context": "Requires at least two open projects; with fewer projects this action does nothing.",
     "whenToUse": "Switch to the next idea without closing the current project.",
-    "sourceFingerprint": "3b1e764e338759d35eb668662bef5aa17d1754f2f9223cb6f9c393dee473b73f",
+    "sourceFingerprint": "5742993663e3284a01c93c791716502f10f1f8bf1fd1d198ef8161f16437ea84",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1002,7 +1002,7 @@
     "description": "Moves backward in the open-project switcher while the modifier stays held. Releasing Ctrl on Windows/Linux or Cmd on macOS activates the chosen project.",
     "context": "Requires at least two open projects; with fewer projects this action does nothing.",
     "whenToUse": "Return to the previous open project.",
-    "sourceFingerprint": "3a5fb46f5855484dd4a527a4942b25e7ca1d2052fb64351efe5298edda9122e7",
+    "sourceFingerprint": "b3ff405402ea3b536ff0a66f0cd7837b0dcadb552d98866965032e529c04d061",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
@@ -1015,7 +1015,7 @@
     "description": "Loops an Arrangement time selection, otherwise the selected clips' span. Repeating for an already enabled matching region turns looping off. Without a selection it toggles the existing loop; enabling without a region creates one over the first four bars.",
     "context": "Requires an open project. A time selection takes precedence over selected clips.",
     "whenToUse": "Repeat a selected passage while adjusting it.",
-    "sourceFingerprint": "5cc3429648c2b89c712f3b9ab69202dd039e0a37ece0b2ad4cf692bb4b499c8f",
+    "sourceFingerprint": "8c243fabf62bebf10e169520d8a4bbcdd13e6bfa7c23ec42f4bb978b494b0275",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [
       "crates/ui/src/settings/keymap.rs",
