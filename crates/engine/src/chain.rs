@@ -931,11 +931,13 @@ impl Chain {
                     *r += cr * gain_right * fader;
                 }
             }
+            // A pan or mute lane alone leaves the volume to the fader, which still moves live.
             Some(mix) => {
                 for (frame, ([l, r], [cl, cr])) in pairs.enumerate() {
                     let (left, right) = mix.gains(frame);
-                    *l += cl * gain_left * left;
-                    *r += cr * gain_right * right;
+                    let fader = live.at(frame);
+                    *l += cl * gain_left * left * fader;
+                    *r += cr * gain_right * right * fader;
                 }
             }
         }
@@ -1500,6 +1502,44 @@ impl LiveVolume {
 #[cfg(test)]
 #[path = "chain_wait_tests.rs"]
 mod wait_tests;
+
+#[cfg(test)]
+mod live_volume_tests {
+    use super::*;
+    use suhina_model::{AutomationLane, AutomationPoint, Channel, ChannelId};
+
+    /// The left output of a passthrough chain fed ones, after a fader move to `volume` has
+    /// settled, with a pan lane at the centre when `pan_lane`.
+    fn settled(volume: f64, pan_lane: bool) -> f32 {
+        let mut chain = Chain::passthrough(TrackId(1), 0);
+        if pan_lane {
+            let mut channel = Channel::new(ChannelId(1), "C1");
+            channel.automation.push(AutomationLane {
+                param: suhina_model::automation::PAN.into(),
+                points: vec![AutomationPoint::new(0.0, 0.0)],
+                enabled: true,
+            });
+            chain.mix = MixLanes::new(&channel, 24_000.0, true);
+            assert!(chain.mix.is_some());
+        }
+        chain.built_volume = Some(1.0);
+        chain.set_live_volume(volume);
+        let mut out = vec![0.0; 256 * 2];
+        for _ in 0..200 {
+            chain.buffer.fill(1.0);
+            chain.complete(256, &ProcessContext::default());
+            out.fill(0.0);
+            chain.mix(&mut out, &mut [], 256);
+        }
+        out.get(255 * 2).copied().unwrap_or_default()
+    }
+
+    #[test]
+    fn a_fader_move_is_heard_with_and_without_a_pan_lane() {
+        assert!((settled(0.5, false) - 0.5).abs() < 1e-3);
+        assert!((settled(0.5, true) - 0.5).abs() < 1e-3, "{}", settled(0.5, true));
+    }
+}
 
 #[cfg(test)]
 mod sd_tests {

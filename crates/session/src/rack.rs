@@ -1515,6 +1515,10 @@ impl Rack {
                         notices
                             .push(format!("{name} edits clips (ARA): it is loaded again with its track's audio clips"));
                     }
+                    // A restarted plug-in has a new instance number: placements go to it, again.
+                    instance.placer = None;
+                    instance.placement_sent = None;
+                    instance.fit_sent = None;
                     instance.control = Some(control);
                     // Loaded again with its track's new clips: its editor was open, so it opens
                     // again where it was.

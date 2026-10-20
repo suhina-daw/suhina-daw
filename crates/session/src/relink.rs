@@ -177,11 +177,11 @@ pub(crate) fn collect(session: &mut Session, params: &Value) -> Result<Value, Co
 }
 
 /// Where in `into` a copy of `file` goes: its own name, or with a number when another file of
-/// that name and a different size is there already.
+/// that name and other contents is there already (two kits' `Kick.wav` of one length).
 fn copy_name(into: &Path, file: &Path) -> Result<PathBuf, CommandError> {
     let name = file.file_name().ok_or("the file has no name")?;
     let size = std::fs::metadata(file).map(|m| m.len()).ok();
-    let same = |p: &Path| !p.exists() || std::fs::metadata(p).map(|m| m.len()).ok() == size;
+    let same = |p: &Path| !p.exists() || (std::fs::metadata(p).map(|m| m.len()).ok() == size && same_contents(p, file));
     let first = into.join(name);
     if same(&first) {
         return Ok(first);
@@ -196,6 +196,34 @@ fn copy_name(into: &Path, file: &Path) -> Result<PathBuf, CommandError> {
         }
     }
     Err(format!("no free name for {} in {}", path.display(), into.display()).into())
+}
+
+/// Whether files `a` and `b` hold the same bytes, read in chunks; `false` when either cannot
+/// be read.
+fn same_contents(a: &Path, b: &Path) -> bool {
+    use std::io::Read;
+    /// Reads into `buffer` until it is full or the file ends; how much it read.
+    fn fill(file: &mut std::fs::File, buffer: &mut [u8]) -> Option<usize> {
+        let mut read = 0;
+        while let Some(rest) = buffer.get_mut(read..).filter(|r| !r.is_empty()) {
+            match file.read(rest).ok()? {
+                0 => break,
+                n => read += n,
+            }
+        }
+        Some(read)
+    }
+    let (Ok(mut a), Ok(mut b)) = (std::fs::File::open(a), std::fs::File::open(b)) else { return false };
+    let (mut x, mut y) = (vec![0u8; 64 * 1024], vec![0u8; 64 * 1024]);
+    loop {
+        let (Some(n), Some(m)) = (fill(&mut a, &mut x), fill(&mut b, &mut y)) else { return false };
+        if n != m || x.get(..n) != y.get(..m) {
+            return false;
+        }
+        if n == 0 {
+            return true;
+        }
+    }
 }
 
 /// `library.findFiles`: candidates for each name, best first for the active project's missing
@@ -278,4 +306,27 @@ pub fn search(
         paths.truncate(MAX_CANDIDATES);
     }
     Ok((found, note))
+}
+
+#[cfg(test)]
+mod copy_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_of_the_same_name_and_size_but_other_bytes_gets_a_number() {
+        let dir = std::env::temp_dir().join(format!("suhina-copy-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let into = dir.join("Collected");
+        for path in [&into, &dir.join("KitA"), &dir.join("KitB")] {
+            std::fs::create_dir_all(path).unwrap_or_else(|e| panic!("{e}"));
+        }
+        let (a, b) = (dir.join("KitA").join("Kick.wav"), dir.join("KitB").join("Kick.wav"));
+        std::fs::write(&a, [1u8; 100]).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&b, [2u8; 100]).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(into.join("Kick.wav"), [1u8; 100]).unwrap_or_else(|e| panic!("{e}"));
+        let name = |file: &Path| copy_name(&into, file).unwrap_or_else(|e| panic!("{}", e.0));
+        assert_eq!(name(&a), into.join("Kick.wav"), "the same bytes: the copy there is reused");
+        assert_eq!(name(&b), into.join("Kick (2).wav"), "other bytes: a name of its own");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
