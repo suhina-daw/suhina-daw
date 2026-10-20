@@ -225,11 +225,18 @@ The merge method is the queue's (squash). Agents never add the label (`AGENTS.md
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
 `GITHUB_TOKEN`, and those on `main` must run after every merge. Setup, once: the app has Repository
-permissions › **Contents** and **Pull requests**: Read and write; its `DOCS_BOT_APP_ID` and
-`DOCS_BOT_PRIVATE_KEY` are in the `docs-bot` environment, which `pull_request_target` may use
+permissions › **Contents** and **Pull requests**: Read and write; its public Client ID is the
+`DOCS_BOT_CLIENT_ID` variable and its private key the `DOCS_BOT_PRIVATE_KEY` secret in the
+`docs-bot` environment, which `pull_request_target` may use
 because it runs on `main`; and Settings › General › **Allow auto-merge** is on. Without that setting the
 *approve and queue* job fails, and nothing merges. The maintainers are listed in the workflow as in
 the test build's.
+
+Use the Client ID from the app's GitHub settings (or the public `GET /apps/{app_slug}` response),
+not its numeric App ID. `actions/create-github-app-token` v3 deprecates the `app-id` input.
+The issue and PR-comment bot uses the `SUHINA_BOT_CLIENT_ID` variable and the existing
+`SUHINA_BOT_PRIVATE_KEY` secret in the `suhina-bot` environment. Both bots still create tokens
+for this repository only. Client IDs are public; private keys remain environment secrets.
 
 **One build of several pull requests.** To try a batch before merging it, run Actions › Test build
 › Run workflow with their numbers (`302 303 304`), as described under [Test builds](#test-builds):

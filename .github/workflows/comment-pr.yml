@@ -49,17 +49,17 @@ jobs:
         env:
           PR: ${{ inputs.pr }}
           BODY: ${{ inputs.body }}
-          # Only whether the secrets are set; the values stay out of this step.
-          HAS_SUHINA_BOT_APP_ID: ${{ secrets.SUHINA_BOT_APP_ID != '' }}
+          # Only whether the Client ID and private key are set; the values stay out of this step.
+          HAS_SUHINA_BOT_CLIENT_ID: ${{ vars.SUHINA_BOT_CLIENT_ID != '' }}
           HAS_SUHINA_BOT_PRIVATE_KEY: ${{ secrets.SUHINA_BOT_PRIVATE_KEY != '' }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const fail = (message) => { core.setFailed(message); throw new Error(message); };
 
-            for (const name of ["SUHINA_BOT_APP_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
+            for (const name of ["SUHINA_BOT_CLIENT_ID", "SUHINA_BOT_PRIVATE_KEY"]) {
               if (process.env[`HAS_${name}`] !== "true") {
-                fail(`The secret ${name} is missing from the environment suhina-bot.`);
+                fail(`The variable or secret ${name} is missing from the environment suhina-bot.`);
               }
             }
 
@@ -98,7 +98,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.SUHINA_BOT_APP_ID }}
+          client-id: ${{ vars.SUHINA_BOT_CLIENT_ID }}
           private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
           permission-issues: write
           permission-pull-requests: write

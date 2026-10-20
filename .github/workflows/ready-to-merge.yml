@@ -26,8 +26,8 @@ name: Ready to merge
 # It acts with a short-lived token of the repository's GitHub App (the one docs-generated.yml
 # pushes with), not GITHUB_TOKEN: GitHub starts no workflows for a merge made through
 # GITHUB_TOKEN, and the workflows on main must run after every merge. Setup: the app has
-# Repository permissions › Contents: Read and write and Pull requests: Read and write; its App ID
-# and private key are DOCS_BOT_APP_ID and DOCS_BOT_PRIVATE_KEY in the `docs-bot` environment
+# Repository permissions › Contents: Read and write and Pull requests: Read and write; its public
+# Client ID is the DOCS_BOT_CLIENT_ID variable and its key the DOCS_BOT_PRIVATE_KEY secret in `docs-bot`
 # (pull_request_target runs on main, which the environment allows); Settings › General › Allow
 # auto-merge is on.
 
@@ -82,7 +82,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       - name: Approve the commit and turn on merge when ready
         env:
@@ -151,7 +151,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       # Taking the label off starts the `stop` job below, which turns auto-merge off.
       - name: Remove the label
@@ -172,7 +172,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DOCS_BOT_APP_ID }}
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
       - name: Turn off merge when ready, leave the queue, dismiss the approvals
         env:
