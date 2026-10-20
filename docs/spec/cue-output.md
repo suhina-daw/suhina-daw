@@ -1,6 +1,6 @@
 ---
-description: How the cue output works: a second output pair on the same audio device for headphones, where browser previews and tracks whose cue (C) is on are heard apart from the main mix; the cue volume, Same as main, offline renders of the cue, and the commands
-read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, C button, render --cue, multi-channel device
+description: How the cue output works: a second output pair on the same audio device for headphones, where browser previews and tracks whose cue (the headphones button) is on are heard apart from the main mix; the cue volume, Same as main, offline renders of the cue, and the commands
+read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, headphones button, cue button, render --cue, multi-channel device
 type: spec
 status: current
 last_verified: 2026-10-15
@@ -50,7 +50,7 @@ the other audio settings.
 - **A pair of its own:** the main outputs carry the project only; previews are no longer heard
   there. Cued tracks are heard on both: in the mix, as always, and on the cue pair.
 - **Same as main:** the cue has no outputs of its own. Previews play on the main outputs at the
-  cue volume, as they did before the cue existed; a track's C button changes nothing audible
+  cue volume, as they did before the cue existed; a track's headphones button changes nothing audible
   (the track is in the main mix anyway). Settings says so for a device with only two outputs.
 - **A pair the device does not have** (another device was chosen, or one with fewer outputs
   plays in its place): the cue plays as with Same as main, and a notice says the device has no

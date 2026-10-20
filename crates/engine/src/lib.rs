@@ -2292,6 +2292,35 @@ mod tests {
     }
 
     #[test]
+    fn an_edit_refused_by_a_full_queue_leaves_the_playing_voices_alone() {
+        // Edits faster than the audio thread takes them (a fader drag) fill the swap queue; the
+        // one refused must not hand the playing clip's voice to a graph that is then dropped.
+        let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
+        let mut offline = Renderer::with_audio(&project, &pool, SR).unwrap();
+        let reference = blocks(&mut offline, 150, 480, |_| {});
+        let mut renderer = Renderer::with_audio(&project, &pool, SR).unwrap();
+        let mut controller = renderer.controller();
+        controller.run_stretch_worker(&mut renderer).unwrap();
+        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
+        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let mut refused = false;
+        for _ in 0..64 {
+            // A frame apart, as a drag sends them: the stretch thread takes each worker in.
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            if controller.update(&project).is_err() {
+                refused = true;
+                // Time for the stretch thread to act on anything it was handed.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                break;
+            }
+        }
+        assert!(refused, "the queue filled up");
+        out.extend(blocks(&mut renderer, 100, 480, pace));
+        assert_eq!(renderer.stretch_underruns(), 0);
+        assert_eq!(max_diff(&reference, &out), 0.0, "the voice went on as it was");
+    }
+
+    #[test]
     fn an_unwarped_clip_carries_on_through_a_tempo_edit() {
         // Unwarped audio plays at its own speed: a tempo edit must not move it in its file.
         let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);

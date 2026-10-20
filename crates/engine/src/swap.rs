@@ -499,6 +499,12 @@ impl Controller {
         if let Some(arrangement) = arrangement {
             graph.ahead.move_to(arrangement);
         }
+        // The worker may take voices over from the playing graph: it goes to the stretch thread
+        // only when the swap is sure to be queued (this is the queue's one producer), or those
+        // voices would go with this graph.
+        if updater.swaps.is_full() {
+            return Err("the audio engine has not taken the previous edits yet".to_string());
+        }
         if let Some(thread) = updater.stretch.as_mut() {
             let began = std::time::Instant::now();
             // The thread takes the unchanged clips' voices over and renders the rest (#743).
