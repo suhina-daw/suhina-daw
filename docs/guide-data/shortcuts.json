@@ -73,6 +73,11 @@
       "context": "Available without an open project.",
       "whenToUse": "Start another idea without closing the application.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -146,6 +151,11 @@
       "context": "Available without an open project; opening behavior also depends on the General project-opening setting.",
       "whenToUse": "Return to a saved project.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -219,6 +229,11 @@
       "context": "Requires an open project.",
       "whenToUse": "Keep the edits you have just made.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -301,6 +316,11 @@
       "context": "Requires an open project.",
       "whenToUse": "Keep a separate version before trying a different arrangement.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -329,6 +349,11 @@
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Reuse your track and device setup in another project.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -393,6 +418,11 @@
       "context": "Requires an open project; the playhead is the position moving through the song.",
       "whenToUse": "Listen to an edit, then stop without reaching for the transport controls.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -466,6 +496,11 @@
       "context": "Requires an open project and an Arrangement clip selection to use that clip's start.",
       "whenToUse": "Audition the beginning of one selected clip.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -530,6 +565,11 @@
       "context": "Requires an open project; text fields keep Tab while they accept keyboard input.",
       "whenToUse": "Move between launching clips and editing the song timeline.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -558,6 +598,11 @@
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Go directly to the clip grid instead of toggling views.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -586,6 +631,11 @@
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Go directly to the timeline from another main view.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -659,6 +709,11 @@
       "context": "Available without an open project; key capture and text editing can temporarily keep the keyboard.",
       "whenToUse": "Change your audio device or find a preference.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -732,6 +787,11 @@
       "context": "Requires an open project.",
       "whenToUse": "Make more room for the main view, then bring the detail area back.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -814,6 +874,11 @@
       "context": "Requires an open project with a shown clip; without one this action does nothing.",
       "whenToUse": "Temporarily hide the clip editor while keeping the main view visible.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -887,6 +952,11 @@
       "context": "Requires an open project. In mapping mode Delete removes an assignment and Escape leaves mapping mode.",
       "whenToUse": "Assign a convenient key to a frequently launched clip or scene.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -963,6 +1033,11 @@
       "context": "Draw-first changes this binding to Ctrl+Shift+B on Windows/Linux or Cmd+Shift+B on macOS, leaving Ctrl/Cmd+B for Duplicate.",
       "whenToUse": "Make room for editing, then reopen the browser to find a sound.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1036,6 +1111,11 @@
       "context": "Available without an open project. It closes Settings and replaces the current search when you type.",
       "whenToUse": "Find a sample across the library without first choosing a browser category.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1127,6 +1207,11 @@
       "context": "Available without an open project; opening it closes Settings.",
       "whenToUse": "Explore samples visually instead of searching by file name.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1209,6 +1294,11 @@
       "context": "Available without an open project.",
       "whenToUse": "Keep the sample map available while working in the main song view.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1306,6 +1396,11 @@
       "context": "Available without an open project. On macOS use Cmd+=; the alternate Ctrl+Plus binding is not delivered as Plus while Cmd is held.",
       "whenToUse": "Make controls easier to read on a high-resolution display.",
       "platformNotes": "On macOS use Cmd+=. Cmd+Plus is not emitted as Plus by the window. Windows and Linux also accept Ctrl+Plus as well as Ctrl+=.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1379,6 +1474,11 @@
       "context": "Available without an open project; the zoom choice is saved in Settings.",
       "whenToUse": "Fit more interface content on a smaller screen.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1452,6 +1552,11 @@
       "context": "Available without an open project.",
       "whenToUse": "Return to the normal interface size after experimenting with zoom.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1534,6 +1639,11 @@
       "context": "Available without an open project, but the visible effect is on Arrangement audio clips.",
       "whenToUse": "Inspect a quiet recording's waveform without turning up its sound.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1616,6 +1726,11 @@
       "context": "Visible on audio clips in Arrangement; this changes the drawing, not the recorded samples.",
       "whenToUse": "Undo waveform magnification after inspecting a quiet passage.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1689,6 +1804,13 @@
       "context": "Click the intended editor or device panel first. If the piano roll cannot act on notes, copying may fall through to a clip selection.",
       "whenToUse": "Reuse a phrase, clip or device setup elsewhere.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1762,6 +1884,13 @@
       "context": "Click the intended editor or device panel first. Cutting a Session slot's clip is not supported; copy and paste it instead.",
       "whenToUse": "Move a passage or device rather than leave a second copy.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1835,6 +1964,13 @@
       "context": "Requires copied material and a suitable target. Arrangement overlap follows audio/MIDI stacking settings. Suhina also puts text on the system clipboard because the window delivers Paste only for text clipboard content.",
       "whenToUse": "Place copied material at a chosen clip slot, track, note position or device position.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1908,6 +2044,13 @@
       "context": "Click the intended editor or device panel first. Session slot duplication is not supported. Arrangement overlaps follow stacking settings. Draw-first uses Ctrl/Cmd+B instead of Ctrl/Cmd+D.",
       "whenToUse": "Repeat a musical phrase or an effects chain without a separate paste step.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -1999,6 +2142,13 @@
       "context": "Click the intended area first: the focused panel and selection decide what is removed.",
       "whenToUse": "Remove selected notes or an unwanted passage after confirming the correct area is focused.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2063,6 +2213,13 @@
       "context": "The clip action uses the Arrangement clip selection. It is separate from the piano roll's Mute tool.",
       "whenToUse": "Compare the song with and without a clip or selected device.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2136,6 +2293,13 @@
       "context": "Click the track header or clip to choose the target; an empty Session slot has no clip to rename.",
       "whenToUse": "Give tracks and clips meaningful names before the project grows.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2209,6 +2373,13 @@
       "context": "Requires an open project. With piano-roll focus the same key selects notes instead.",
       "whenToUse": "Select the Arrangement's clips before moving or copying them together.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2282,6 +2453,13 @@
       "context": "Requires Arrangement material; move the playhead inside the clip or make a time selection first.",
       "whenToUse": "Separate a passage so you can edit or remove it independently.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2355,6 +2533,13 @@
       "context": "Requires Arrangement clips or a time selection with material. A selected stack row limits the time selection to that row.",
       "whenToUse": "Turn several small edits into a single clip over a chosen passage.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2428,6 +2613,13 @@
       "context": "Device picks must sit next to each other on the same track. Without selected tracks or devices there is nothing to group.",
       "whenToUse": "Organize related tracks or package a sequence of devices together.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2510,6 +2702,13 @@
       "context": "Click the device group first; this shortcut does not ungroup tracks.",
       "whenToUse": "Return a simple device group to individual devices in the chain.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2583,6 +2782,11 @@
       "context": "Requires an open project; the selected track determines the insertion position.",
       "whenToUse": "Add a lane for a recording or imported audio.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2665,6 +2869,11 @@
       "context": "Requires an open project; MIDI notes describe what to play rather than containing recorded sound.",
       "whenToUse": "Create another instrument part.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2747,6 +2956,11 @@
       "context": "Make a time selection that includes a MIDI track first. Audio tracks in the selection do not receive MIDI clips.",
       "whenToUse": "Prepare a blank note clip exactly over the passage you want to write.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2811,6 +3025,11 @@
       "context": "Requires an open project with an Arrangement timeline.",
       "whenToUse": "Reveal volume or device-parameter changes while editing the song.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2875,6 +3094,13 @@
       "context": "Requires Session and a selected clip slot. Piano-roll focus keeps its keys separate from slot navigation.",
       "whenToUse": "Start the slot selected with the arrow keys.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -2939,6 +3165,13 @@
       "context": "Click a Session slot first; with piano-roll focus Up moves selected notes instead.",
       "whenToUse": "Navigate vertically through clip choices without launching them.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3003,6 +3236,13 @@
       "context": "Click a Session slot first; with piano-roll focus Down moves selected notes instead.",
       "whenToUse": "Move to the next Session row before launching its clip.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3067,6 +3307,13 @@
       "context": "Click a Session slot first; with piano-roll focus Left moves selected notes instead.",
       "whenToUse": "Choose a slot on the neighboring track.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3131,6 +3378,13 @@
       "context": "Click a Session slot first; with piano-roll focus Right moves selected notes instead.",
       "whenToUse": "Move across the Session grid to another track.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3204,6 +3458,13 @@
       "context": "The detail area must show a MIDI clip in the piano roll. Unlike the other piano-roll keys, a click to focus that editor is not required.",
       "whenToUse": "Tighten a recorded phrase using the quantise settings you last chose.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3277,6 +3538,13 @@
       "context": "Click the piano-roll note grid first. The same key outside that editor selects Arrangement clips.",
       "whenToUse": "Transpose or copy a whole note phrase.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3341,6 +3609,13 @@
       "context": "Click the piano-roll note grid first; Escape has other uses elsewhere.",
       "whenToUse": "Clear a note selection before drawing or selecting another phrase.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3405,6 +3680,13 @@
       "context": "Click the piano roll and select notes first. Movement near the clip start is constrained so notes do not move before the start.",
       "whenToUse": "Shift a phrase earlier while keeping its rhythm together.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3469,6 +3751,13 @@
       "context": "Click the piano roll and select notes first; the current grid determines the step.",
       "whenToUse": "Delay a phrase by a rhythmic step.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3533,6 +3822,13 @@
       "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try a phrase one piano key higher.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3597,6 +3893,13 @@
       "context": "Click the piano roll and select notes first. A pitch move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try a phrase one piano key lower.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3670,6 +3973,13 @@
       "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Move a melody into a higher register.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3743,6 +4053,13 @@
       "context": "Click the piano roll and select notes first; a move outside the valid note range leaves pitches unchanged.",
       "whenToUse": "Try the same melody in a lower register.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3816,6 +4133,13 @@
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Make a phrase more detached without moving note starts.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3889,6 +4213,13 @@
       "context": "Click the piano roll and select notes first.",
       "whenToUse": "Let a set of notes sustain longer.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -3953,6 +4284,13 @@
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Alternate between adding notes and selecting them.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4017,6 +4355,13 @@
       "context": "Click the piano-roll note grid first. Workflow settings can also make a left-click on empty space draw a note.",
       "whenToUse": "Return to selecting notes after using another tool.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4081,6 +4426,13 @@
       "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
       "whenToUse": "Enter a melody one note at a time.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4145,6 +4497,13 @@
       "context": "Click the piano-roll note grid first; note placement follows the grid and workflow settings.",
       "whenToUse": "Write a run of repeated notes with a drag.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4209,6 +4568,13 @@
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Remove notes by pointing at them instead of making a selection first.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4273,6 +4639,13 @@
       "context": "Click the piano-roll note grid first; slicing follows the grid unless snapping is bypassed.",
       "whenToUse": "Break a sustained note into shorter parts.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4337,6 +4710,11 @@
       "context": "Requires an open project.",
       "whenToUse": "Mark a verse or another useful song position while listening.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4401,6 +4779,13 @@
       "context": "Click the piano-roll note grid first. This is separate from muting an Arrangement clip or device.",
       "whenToUse": "Try leaving individual notes out of a phrase without deleting them.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4474,6 +4859,13 @@
       "context": "Click the piano roll first. If Piano roll grid follows Control bar, the key changes the control bar; a result it cannot represent does nothing. At the finest value the grid stays unchanged.",
       "whenToUse": "Place or move notes in smaller rhythmic steps.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4547,6 +4939,13 @@
       "context": "Click the piano roll first. With the Control bar grid setting it changes the control bar; at the coarsest value the grid stays unchanged.",
       "whenToUse": "Use larger rhythmic steps for a broad edit.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4620,6 +5019,13 @@
       "context": "Click the piano roll first. If the grid follows Control bar, unsupported results such as 1/32 triplets do nothing.",
       "whenToUse": "Write a triplet rhythm instead of evenly paired subdivisions.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4693,6 +5099,13 @@
       "context": "Click the piano roll first. If the grid follows Control bar this changes that control bar's snapping state.",
       "whenToUse": "Adjust note timing freely without changing the visible grid.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4757,6 +5170,13 @@
       "context": "Click the piano-roll note grid first; pitch positions are unchanged.",
       "whenToUse": "Inspect a short phrase without changing the rest of the clip.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4830,6 +5250,13 @@
       "context": "Click the piano-roll note grid first.",
       "whenToUse": "Return to the full phrase after zooming into selected notes.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/ui/src/detail/piano_roll.rs",
+        "docs/spec/ui-clip-editor.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4858,6 +5285,11 @@
       "context": "Available without an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Check which build you are using before reporting a problem.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -4940,6 +5372,11 @@
       "context": "Requires a selected MIDI clip or an audio clip with a compatible clip-editing plug-in; without an editable clip it does nothing.",
       "whenToUse": "Move from note or clip editing to the track's instrument and effects.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5013,6 +5450,11 @@
       "context": "Select an audio clip in Arrangement first and scan/install a compatible ARA plug-in. MIDI clips use the piano roll instead.",
       "whenToUse": "Edit an audio clip using a compatible pitch or timing editor.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5077,6 +5519,11 @@
       "context": "Select a track first; without a running plug-in there is no editor to toggle. This main implementation targets the first running plug-in, rather than a device-panel pick.",
       "whenToUse": "Bring an instrument or effect's own editor into view.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5195,6 +5642,13 @@
       "context": "Requires an open project with a redo step available.",
       "whenToUse": "Restore an edit after trying Undo.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/session/src/commands.rs",
+        "docs/spec/arrangement-editing.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5268,6 +5722,13 @@
       "context": "Requires an open project and an edit in its undo history; an empty history has nothing to undo.",
       "whenToUse": "Compare an edit with the state before it.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/session/src/commands.rs",
+        "docs/spec/arrangement-editing.md"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5341,6 +5802,12 @@
       "context": "Requires at least two open projects; with fewer projects this action does nothing.",
       "whenToUse": "Switch to the next idea without closing the current project.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/session/src/projects.rs"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5423,6 +5890,12 @@
       "context": "Requires at least two open projects; with fewer projects this action does nothing.",
       "whenToUse": "Return to the previous open project.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/session/src/projects.rs"
+      ],
       "helpStatus": "reviewed"
     },
     {
@@ -5496,6 +5969,13 @@
       "context": "Requires an open project. A time selection takes precedence over selected clips.",
       "whenToUse": "Repeat a selected passage while adjusting it.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "crates/ui/src/app.rs",
+        "docs/shortcuts.md",
+        "crates/session/src/commands.rs",
+        "docs/spec/arrangement-editing.md"
+      ],
       "helpStatus": "reviewed"
     }
   ]

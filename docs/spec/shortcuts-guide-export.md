@@ -32,7 +32,10 @@ Mouse gestures and a user's local keymap import are later additions.
 
 The envelope is `{schemaVersion: 1, scope: "default-and-window-actions", entries: [...]}`.
 An entry has its stable action `id`, native `name` and `category`, `description`, `context`,
-`whenToUse`, `platformNotes`, `sourceFingerprint`, `helpStatus` and `bindings`.
+`whenToUse`, `platformNotes`, `sourceFingerprint`, `helpStatus`, `references` and `bindings`.
+`references` preserves the validated repository-relative implementation/spec paths from the
+authored help. Consumers may omit these contributor references from their user-facing display;
+the website does not add raw JSON or source links to individual shortcut explanations.
 Categories preserve the native Shortcuts catalog: commands appended from the session/project
 registries belong to Commands, even when their IDs begin with edit, projects or transport.
 

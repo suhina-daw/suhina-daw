@@ -19,6 +19,16 @@ class ShortcutsGuideTests(unittest.TestCase):
         expected = json.dumps(guide.export(), indent=2, ensure_ascii=False) + '\n'
         self.assertEqual((guide.ROOT / guide.OUTPUT).read_text(encoding='utf-8'), expected)
 
+    def test_export_preserves_validated_references_without_aliasing_authored_input(self):
+        result = guide.export(authored=self.authored)
+        for row in result['entries']:
+            with self.subTest(action=row['id']):
+                refs = self.authored[row['id']]['references']
+                self.assertEqual(row['references'], refs)
+                self.assertIsNot(row['references'], refs)
+        result['entries'][0]['references'].clear()
+        self.assertTrue(self.authored[result['entries'][0]['id']]['references'])
+
     def test_presets_platforms_and_intentionally_unbound_actions(self):
         rows = {row['id']: row for row in guide.export()['entries']}
         self.assertEqual(rows['selection.duplicate']['bindings']['Draw-first']['macos'], [['Cmd', 'B']])

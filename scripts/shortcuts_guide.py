@@ -112,6 +112,7 @@ def export(root=ROOT, authored=None):
         for ref in refs:
             if not isinstance(ref, str) or not (root / ref).resolve().is_relative_to(root.resolve()) or not (root / ref).is_file():
                 raise ValueError('Invalid reference: ' + row['id'])
+        row['references'] = list(refs)
         row['helpStatus'] = 'reviewed'
     return dict(schemaVersion=1, scope='default-and-window-actions', entries=rows)
 
