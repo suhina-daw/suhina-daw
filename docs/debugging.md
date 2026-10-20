@@ -1,5 +1,5 @@
 ---
-description: How to find out what the running app does around a bug: the trace log (suhina --trace), adding trace points, reading the log, and reading a screen recording frame by frame
+description: How to find out what the running app does around a bug: the trace log (suhina --trace), adding trace points, reading the log, reading a screen recording frame by frame, and working a bug through with a tester
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
@@ -204,8 +204,10 @@ flashed"); the trace and a recording say where.
    within one process.
 4. **Ask for a recording** when the bug is something seen (a flash, a jump, a late redraw), and
    read it as in part 2: the frames where the picture changes most, as a contact sheet.
-5. **Fix, then show it with a new trace:** the line that showed the bug is gone, or a line added
-   for it says how long the step takes now.
+5. **Fix, then have the tester repeat the same steps** on a new build and a new trace, and ask
+   what they saw. The line that showed the bug is gone, or a line added for it says how long the
+   step takes now; for something seen, a new recording shows it. A missing line alone proves
+   nothing: the run may not have reached the failing step.
 
 What told the causes apart:
 
@@ -217,8 +219,13 @@ What told the causes apart:
 | The plug-in's editor stalls | The host's calls into the plug-in taking seconds, at a steady interval | The host stored the plug-in's whole state on the thread its editor runs on |
 | Something flashed | Nothing; the recording showed the start panel for two frames before the window closed | The dialog was taken down one frame before the window was gone |
 
-A process whose lines simply stop is waiting or busy, not gone; a line on the other side (`host
-gets Unload` with no `host unloaded`, or the window's frames ceasing) says who waits for whom.
+Lines that simply stop do not say whether a process is waiting, busy or gone: a trace records
+events, not a process's end, and a crash or an exit stops it too. While the bug is still on screen,
+look at the processes first: `Get-Process suhina*` in PowerShell (its `Responding` column is false
+for a window Windows sees as hung) or `ps` elsewhere, and how its processor time moves over a few
+seconds (busy or waiting). A process still there whose lines stopped is waiting or busy; then a
+line on the other side (`host gets Unload` with no `host unloaded`, or the window's frames
+ceasing) says who waits for whom. Ask the tester not to end it before you have looked.
 
 ## When to take a trace point out
 
