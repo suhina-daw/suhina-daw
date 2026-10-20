@@ -235,9 +235,6 @@ Several agents often run at once, so an agent never starts work that exists alre
   with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
   start returns. Re-running a failed run does not comment twice.
 
-  This posting rule applies to agents a person runs. Installed reviewers such as Codex and
-  CodeRabbit post through their own apps and follow [Code Review Rules](#code-review-rules).
-
   ```sh
   python -c "import json; print(json.dumps({'pr': '600', \
     'body': open('review.md', encoding='utf-8').read()}))" > request.json
@@ -245,6 +242,9 @@ Several agents often run at once, so an agent never starts work that exists alre
   run_id="${run_url##*/}"
   gh run watch "$run_id" --exit-status; gh run view "$run_id" --log | grep COMMENTED_PR
   ```
+
+  This posting rule applies to agents a person runs. Installed reviewers such as Codex and
+  CodeRabbit post through their own apps and follow [Code Review Rules](#code-review-rules).
 
 - **Before writing code**, comment `/claim` with the plan and a `Touches:` line naming the paths
   you will change (`Touches: crates/ui/src/detail, crates/session`), and read the bot's answer.
