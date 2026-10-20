@@ -50,8 +50,8 @@
   (`.coderabbit.yaml`) and shows a **CodeRabbit** check beside CI. Its comments are suggestions, not requirements: answer or resolve
   them, and leave DSP and real-time behaviour to the tests and renders. The check is never red and
   never required. Comment `@coderabbitai review` to run it again.
-- **Codex:** review is requested explicitly with `@codex review` in a pull request comment;
-  the same command requests another pass. Automatic Codex review triggers are managed in the
+- **Codex:** comment `@codex review` on a pull request to request a review or another pass.
+  Automatic Codex review triggers are managed in the
   Codex service settings. Codex follows [AGENTS.md](AGENTS.md#code-review-rules) and
   [`docs/code-review.md`](docs/code-review.md). Actionable inline threads must be answered or
   resolved before the merge queue takes the pull request; optional suggestions stay in the
