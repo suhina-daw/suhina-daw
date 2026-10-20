@@ -1467,10 +1467,10 @@ fn alt_and_the_wheel_over_a_fader_change_the_volume_and_the_wheel_alone_does_not
     harness.hover_at(at);
     harness.run();
     let volume = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().channels[0].volume).unwrap_or(1.0);
-    // One line of a wheel upwards, as a wheel reports it (the content moves up).
+    // One line of a wheel turned up, as a wheel reports it (the content moves down).
     let tick = |modifiers: Modifiers| egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Line,
-        delta: egui::vec2(0.0, -1.0),
+        delta: egui::vec2(0.0, 1.0),
         modifiers,
         phase: egui::TouchPhase::Move,
     };
@@ -1542,7 +1542,7 @@ fn a_selections_track_on_and_solo_buttons_take_the_whole_selection() {
 }
 
 #[test]
-fn a_groups_fold_triangle_hides_its_tracks_and_shows_one_of_them() {
+fn a_groups_fold_triangle_hides_its_tracks_and_draws_their_clips_on_its_row() {
     let mut harness = arrangement_app();
     harness.get_by_label("Track Drums").click();
     harness.run();
@@ -1554,16 +1554,12 @@ fn a_groups_fold_triangle_hides_its_tracks_and_shows_one_of_them() {
 
     harness.get_by_label("Fold Group").click();
     harness.run();
-    let row = harness.get_by_label("Track Group").rect();
+    assert!(harness.query_by_label("Track Group").is_some(), "the group keeps its row");
     assert!(harness.query_by_label("Track Drums").is_none(), "folding takes its tracks' lanes away");
     assert!(harness.query_by_label("Track Bass").is_none());
-    // The group's row stands in for the track being worked on (Bass, clicked last): that track's
-    // clip is drawn on the group's row, in that track's place.
-    let clip = harness.get_by_label_contains("Clip Walk on Bass").rect();
-    assert!(
-        clip.center().y > row.top() && clip.center().y < row.bottom(),
-        "the clip of the track the fold shows is drawn on the group's row"
-    );
+    // The group's row draws every track inside it as a thin row of its clips' marks, so it shows
+    // how much is in there and where; the clips themselves are picked once it is unfolded.
+    assert!(harness.query_by_label_contains("Clip Walk on Bass").is_none(), "marks, not clips to pick");
 
     harness.get_by_label("Unfold Group").click();
     harness.run();

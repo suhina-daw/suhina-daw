@@ -280,6 +280,23 @@ pub struct ParamEdit {
     pub value: f64,
 }
 
+/// The edits that change nothing the engine plays, so a playing engine keeps its graph: colours,
+/// names and markers.
+const UNHEARD_EDITS: &[&str] = &[
+    "clip.setColor",
+    "clip.setColorMany",
+    "clip.rename",
+    "clip.renameMany",
+    "track.setColor",
+    "track.colorGroup",
+    "track.rename",
+    "scene.rename",
+    "marker.add",
+    "marker.move",
+    "marker.rename",
+    "marker.delete",
+];
+
 pub struct Session {
     project: Project,
     source: Option<PathBuf>,
@@ -768,6 +785,12 @@ impl Session {
         self.plugins.sync(&self.project, &self.audio, self.player.as_mut())
     }
 
+    /// The plug-ins (by spec) found to edit clips over ARA since the last call although the
+    /// catalog did not say so ([`Rack::take_ara_learned`](crate::rack::Rack::take_ara_learned)).
+    pub fn take_ara_learned(&mut self) -> Vec<String> {
+        self.plugins.take_ara_learned()
+    }
+
     /// The window plug-in editors open over, owned by it (a Win32 `HWND`, an X11 window id):
     /// they float above it, have no taskbar entry of their own and go with it.
     pub fn set_editor_owner(&mut self, owner: Option<u64>) {
@@ -1022,7 +1045,10 @@ impl Session {
     /// The project as it would be saved into `folder`: with the running plug-ins' state as it
     /// is now ([`Session::project_as_heard`]) and audio paths relative to `folder`.
     pub(crate) fn snapshot(&mut self, folder: &Path) -> Project {
-        let mut project = self.project_as_heard();
+        // The plug-in states last read, not asked for now: asking waited up to a second for a
+        // busy plug-in on the window's thread at every backup.
+        let states = self.plugins.known_states();
+        let mut project = self.with_states(&states);
         suhina_project_file::rebase_audio(&mut project, &self.audio_from(), folder);
         project
     }
@@ -1053,8 +1079,13 @@ impl Session {
 
     /// [`Session::project_as_heard`], with the plug-in states it holds by device key.
     fn heard(&mut self) -> (Project, std::collections::HashMap<u64, suhina_plugins::SavedState>) {
-        let mut project = self.project.clone();
         let states = self.plugins.current_states();
+        (self.with_states(&states), states)
+    }
+
+    /// A copy of the project with `states` (by device key) in its plug-in devices.
+    fn with_states(&self, states: &std::collections::HashMap<u64, suhina_plugins::SavedState>) -> Project {
+        let mut project = self.project.clone();
         for device in suhina_engine::plugin_devices(&project) {
             let Some(state) = states.get(&device.key) else { continue };
             let slot = project
@@ -1074,7 +1105,7 @@ impl Session {
                 }
             }
         }
-        (project, states)
+        project
     }
 
     pub fn source(&self) -> Option<&Path> {
@@ -1248,15 +1279,20 @@ impl Session {
                             // A parameter change goes to the engine as a message; anything else,
                             // or a message that cannot be sent, as a new graph.
                             let mixer = std::mem::take(&mut self.mixer_edits);
-                            let sent = match (changes.is_empty(), mixer.is_empty(), self.player.as_mut()) {
-                                (false, _, Some(player)) => {
-                                    changes.into_iter().all(|change| player.set_device_param(change).is_ok())
-                                }
-                                (true, false, Some(player)) => {
-                                    mixer.into_iter().all(|change| player.set_device_param(change).is_ok())
-                                }
-                                _ => false,
-                            };
+                            // An edit that changes nothing the engine plays (a colour, a name, a
+                            // marker) keeps the playing graph: colouring every clip of a large
+                            // project built a graph for each of them, six seconds in all.
+                            let unheard = UNHEARD_EDITS.contains(&id);
+                            let sent = unheard
+                                || match (changes.is_empty(), mixer.is_empty(), self.player.as_mut()) {
+                                    (false, _, Some(player)) => {
+                                        changes.into_iter().all(|change| player.set_device_param(change).is_ok())
+                                    }
+                                    (true, false, Some(player)) => {
+                                        mixer.into_iter().all(|change| player.set_device_param(change).is_ok())
+                                    }
+                                    _ => false,
+                                };
                             if !sent {
                                 match self.update_player(shift) {
                                     Ok(()) => self.player_behind = false,

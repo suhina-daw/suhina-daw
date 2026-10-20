@@ -300,8 +300,9 @@ the list below, in a first form). Where it differs from the decisions above it i
   question when the plug-in is removed, come with the overlap guard.
 - **Found when it loads, too.** The host tells the engine with `loaded` whether the plug-in
   answers `IPlugInEntryPoint` (`edits_clips`). One the scan did not mark (the module's ARA class
-  named differently, say) is then loaded again with its track's clips, with a notice, and is
-  treated as an ARA plug-in from then on.
+  named differently, say, or a catalog from before the scan read ARA) is then loaded again with
+  its track's clips, with a notice, and is treated as an ARA plug-in from then on: the catalog
+  remembers it, so its next device, in any project, starts with its clips at once.
 - **Opened as a host with a pitch editor built in does.** A clip's menu (**Open in** the plug-in)
   and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
   running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is

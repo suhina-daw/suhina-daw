@@ -187,11 +187,11 @@ Let go, it is
   than the content's start.
 - A clip that does not loop ends at most where its audio ends; a MIDI clip can be made as long as
   wanted, its content growing with it.
-- A looping clip goes on as far as its edge is dragged, its loop repeating. Its repeats are
-  drawn as the clip itself, in its colour; where each pass starts it has a notch in its top and
-  bottom edges and a dashed line between them, and the passes take turns in two shades of its
-  body, so the repeats read as blocks even in an empty clip (#700). A MIDI clip's notes are
-  drawn in every pass.
+- A looping clip goes on as far as its edge is dragged, its loop repeating: its right edge into
+  later passes, its left edge back into earlier ones (to the song's start). Its repeats are
+  drawn as the clip itself, in its colour, one colour all along; where each pass starts it has a
+  notch cut into its top and bottom edges and a dashed line between them, so the repeats read as
+  blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then
@@ -646,11 +646,13 @@ under `transport.loop` ([format](suhina-format.md)); a Live Set's arrangement lo
 
 **In the Arrangement view** the loop brace sits in a row of its own between the ruler and the
 marker row: a bar from the loop start to the loop end, bright while looping is on and dim while
-it is off. Dragging along an empty part of the row draws a new region on the grid a ruler click
+it is off. While looping is on, a line in the accent colour runs down every lane at the loop start
+and at the loop end, so the region reads in the lanes too. Dragging along an empty part of the row draws a new region on the grid a ruler click
 uses (Alt held: free) and turns looping on. Dragging within 4 px of an end of the brace moves that
 end; dragging its middle moves the whole region, keeping its length. A click on the brace, the key
 **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
-on** or **Turn loop off**) turn looping on or off.
+on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
+loops their span; pressed again while the loop is on over that very span, it turns looping off.
 
 **Limits.** A time-stretched audio clip in the region is silent for a moment after each wrap in
 real-time playback, until the stretch worker has caught up with the loop start, as after any jump
@@ -702,7 +704,12 @@ output; each group's volume, mute and devices apply on the way ([ADR 0004](../de
 soloed group plays everything inside it at any depth.
 
 A header shows its nesting by stepping in 16 px per level; every header keeps the fold triangle's
-room, so a group's tracks start clearly to the right of their group. A group that holds tracks has
+room, so a group's tracks start clearly to the right of their group, and each level of the indent
+is filled with that group's colour, so a group and its tracks read as one block. A group's menu
+has **Assign track color to all tracks and clips**, which gives every track inside it, at any depth,
+the colour the group shows, and turns the clips of the group and of those tracks back to their
+track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's notches are a
+tenth of a pass wide, from a point and a half to four points, so a zoomed-out clip keeps its body. A group that holds tracks has
 the fold triangle at the start of its header (Folded groups): the lanes of every track inside it, at any
 depth, are hidden while it is folded, and the Session view hides their columns; both views fold
 the same groups, and folding is part of the view, not an edit, so it does not undo. A dragged
@@ -792,11 +799,10 @@ empty stretches too.
 ## Folded groups
 
 A group track's header starts with a small triangle; clicking it **folds** the group. The lanes of
-the tracks inside it go away, and the group's own lane stands in for one of them, drawing that
-track's clips, waveform and colour. Which one: the track the user is working on — the header they
-clicked last, or the track of the selected clip — while it is one of the group's own, else the
-first track inside it. Clicking the triangle again opens the group. A group holding no tracks
-shows no triangle.
+the tracks inside it go away, and the group's own lane shows what is in them: a thin row for each
+track inside it that has clips, every clip a block in its colour where it plays, so the folded lane
+tells how much is in the group and where. Clicking the triangle again opens the group. A group
+holding no tracks shows no triangle.
 
 A group arrives folded when a Stems file makes one: dropping a `.stem.mp4` on a lane, a slot or
 the empty area puts its stems and their muted master in a new group, and that group opens folded,
@@ -805,11 +811,10 @@ so the whole file reads as one lane until its triangle is clicked
 
 Folding is view state, not part of the project: nothing in a saved project keeps it, so a project
 that is saved and opened shows every group open, and no command folds or opens one. A folded
-group's header stays its own — name, colour, volume, pan, mute, solo and output are the group's —
-and only the clips come from the track its row stands in for. A clip on that row is that track's
-clip: clicking it selects it, dragging it moves it, and its menu acts on it, exactly as if the lane
-were drawn. The tracks inside a folded group cannot be reached with the mouse, since none of them
-is drawn.
+group's header stays its own — name, colour, volume, pan, mute, solo and output are the group's.
+The blocks on a folded lane are a view of the clips, not the clips: to select, move or edit one,
+open the group. The tracks inside a folded group cannot be reached with the mouse, since none of
+them is drawn.
 
 ## Open
 

@@ -396,7 +396,8 @@ pub fn drag_value(
         let points = wheel_points(ui);
         if points != 0.0 {
             let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-            let step = -f64::from(points) / WHEEL_TICK * per_tick * fine;
+            // A positive delta moves the content down: the wheel turned up, which raises it.
+            let step = f64::from(points) / WHEEL_TICK * per_tick * fine;
             *preview = None;
             return Drag::Done((value + step).clamp(range.0, range.1));
         }

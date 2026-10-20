@@ -47,6 +47,8 @@ const FIELD: f32 = 16.0;
 const PAN_FIELD: f32 = 46.0;
 /// The gap between a header's send knobs.
 const SEND_GAP: f32 = 3.0;
+/// The least width a header's volume bar keeps: narrower, the header stacks it on its own row.
+const LEAST_VOLUME: f32 = 56.0;
 /// The least room a track's name keeps on a header's lower row before sends are left out.
 const LEAST_NAME: f32 = 48.0;
 const ON_TOGGLE: f32 = 30.0;
@@ -1698,14 +1700,33 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             let edge = Rect::from_min_size(row.time.min, Vec2::new(2.0, row.time.height()));
             lanes_painter.rect_filled(edge, 0.0, theme::accent());
         }
+        // A folded group's lane: every track inside it, a thin row each with its clips in their
+        // colours, so it shows how much is in there and where.
+        if shown.folded {
+            let inside = inside_lanes(&timeline.lanes, shown.lane);
+            let tracks: Vec<&Lane> =
+                timeline.lanes.iter().skip(shown.lane + 1).take(inside).filter(|l| !l.clips.is_empty()).collect();
+            let count = tracks.len().max(1);
+            for (index, inner) in tracks.iter().enumerate() {
+                let band = sub_row(row.time, index, count).shrink2(Vec2::new(0.0, 0.5));
+                for clip in inner.clips.iter().filter(|c| c.start + c.length >= first_beat && c.start <= last_beat) {
+                    let span =
+                        egui::Rangef::new(x_of(clip.start), x_of(clip.start + clip.length).max(x_of(clip.start) + 1.0));
+                    let mark = Rect::from_x_y_ranges(span, band.y_range()).intersect(lanes_area);
+                    if mark.is_positive() {
+                        lanes_painter.rect_filled(mark, 1.0, rgb(clip.color));
+                    }
+                }
+            }
+        }
         // A lane its stacked clips split into rows: a line between the rows along the whole lane,
         // empty stretches too, so each row reads as one.
-        let rows = clips_lane.clips.iter().map(|c| c.rows).max().unwrap_or(1);
+        let rows = if shown.folded { 1 } else { clips_lane.clips.iter().map(|c| c.rows).max().unwrap_or(1) };
         for below in 1..rows {
             let y = sub_row(row.time, below, rows).top() - 0.5;
             lanes_painter.hline(row.time.x_range(), y, theme::hairline(theme::border()));
         }
-        for clip in &clips_lane.clips {
+        for clip in clips_lane.clips.iter().filter(|_| !shown.folded) {
             let span = egui::Rangef::new(x_of(clip.start), x_of(clip.start + clip.length));
             // A stacked clip is hit only in its own row, as it is drawn.
             let space = if clip.rows > 1 { sub_row(row.time, clip.row, clip.rows) } else { row.time };
@@ -1771,6 +1792,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     }
     if state.automation.selected_points().is_some() {
         state.clear_selected_clip();
+    }
+    // The loop region, while looping is on: a line at its start and its end down every lane, so
+    // the region reads in the lanes too, not only in the brace over them.
+    if let Some(brace) = timeline.loop_brace.filter(|b| b.enabled) {
+        let stroke = egui::Stroke::new(1.5, theme::accent());
+        for beat in [brace.start, brace.end] {
+            let x = x_of(beat).round() + 0.5;
+            if lanes_area.x_range().contains(x) {
+                lanes_painter.vline(x, lanes_area.y_range(), stroke);
+            }
+        }
     }
     // The time selection, lit over its tracks' lanes.
     if let Some(selection) = &state.time_selection {
@@ -3020,18 +3052,44 @@ fn clip_box<'a>(
                 }
                 None => (clip_rect(space, start, clip.length, x_of), row.clip),
             };
-            paint_clip(
-                &painter.with_clip_rect(clip_area),
-                rect,
-                lane,
-                clip,
-                shown,
-                start,
-                x_of,
-                state.beat_width,
-                timeline,
-                lit,
-            );
+            // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
+            // as it goes, about the edge that stays, not only once it is let go.
+            let stretching = state
+                .edge_drag
+                .filter(|d| d.key == key && clip.audio && state.stretch_alt && edge_keys(ui).1 && clip.length > 0.0)
+                .zip(extent);
+            match stretching {
+                Some((drag, (from, to))) => {
+                    let factor = (to - from) / clip.length;
+                    let anchor = if drag.grab == EdgeGrab::Left { clip.start + clip.length } else { clip.start };
+                    let stretched = move |beat: f64| x_of(anchor + (beat - anchor) * factor);
+                    paint_clip(
+                        &painter.with_clip_rect(clip_area),
+                        rect,
+                        lane,
+                        clip,
+                        shown,
+                        // The clip's own start: `stretched` already carries it to the new edge.
+                        start,
+                        &stretched,
+                        state.beat_width * factor as f32,
+                        timeline,
+                        lit,
+                    );
+                }
+                None => paint_clip(
+                    &painter.with_clip_rect(clip_area),
+                    rect,
+                    lane,
+                    clip,
+                    shown,
+                    start,
+                    x_of,
+                    state.beat_width,
+                    timeline,
+                    lit,
+                ),
+            }
             None
         }
     };
@@ -3191,25 +3249,8 @@ fn paint_clip(
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, base);
     }
     let ink = ink_on(body);
-    // A looping clip's passes take turns in two shades, so its repeats read as blocks even with
-    // nothing in it; the seams' dashed lines come later, over the notes.
-    if !clip.seams.is_empty() {
-        let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
-        let shade = motion::mix(body, theme::window_background(), 0.18);
-        let mut edges: Vec<f32> = clip.seams.iter().map(|seam| x_of(start + seam)).collect();
-        edges.insert(0, rect.left());
-        edges.push(rect.right());
-        for (pass, pair) in edges.windows(2).enumerate() {
-            let (left, right) = (pair[0].max(view.left()), pair[1].min(view.right()));
-            if pass % 2 == 1 && right > left {
-                painter.rect_filled(
-                    Rect::from_min_max(Pos2::new(left, below), Pos2::new(right, rect.bottom())),
-                    0.0,
-                    shade,
-                );
-            }
-        }
-    }
+    // A looping clip's passes are marked by the notches and lines at their starts (below), not by
+    // shades: the body is one colour all along.
     // The grid shows through the body, faintly, the bars a little stronger.
     let lines = painter.ctx().data(|d| d.get_temp::<std::sync::Arc<Vec<(f32, bool)>>>(Id::new(CLIP_GRID)));
     if let Some(lines) = lines.filter(|l| !l.is_empty()) {
@@ -3298,12 +3339,19 @@ fn paint_clip(
         // Only the notes in view are drawn; a long looped clip has thousands.
         let first = f64::from((view.left() - x_of(start)) / beat_width) - 1.0;
         let last = f64::from((view.right() - x_of(start)) / beat_width) + 1.0;
-        for note in clip.notes.iter().filter(|n| n.start + n.length >= first && n.start <= last) {
+        // A looping clip's marks run past its end (for a drag of its edge): only those within
+        // the span drawn, the clip's or the one its dragged edge gives it.
+        let span_end = f64::from((rect.right() - x_of(start)) / beat_width);
+        // Dark on the clip's colour, as notes read on a vivid body; light ink read as a
+        // highlight and vanished on the light colours.
+        let note_ink = motion::mix(body, Color32::BLACK, 0.7);
+        for note in clip.notes.iter().filter(|n| n.start + n.length >= first && n.start <= last && n.start < span_end) {
             let x = x_of(start + note.start);
-            let width = (note.length as f32 * beat_width - 1.0).max(1.0);
+            let right = x_of(start + span_end);
+            let width = (note.length as f32 * beat_width - 1.0).max(1.0).min(right - x);
             let row = f32::from(note.key - low);
             let y = marks.bottom() - (row + 0.5) / rows * marks.height();
-            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, dim(color));
+            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y - 1.0), Vec2::new(width, 2.0)), 0.0, note_ink);
         }
     }
     if let Some((notes, tempo)) = ara_notes
@@ -3314,9 +3362,16 @@ fn paint_clip(
     // Where a looping clip starts another pass: a notch in its top and bottom edges and a
     // dashed line between them, the repeats drawn as the clip itself (#700).
     if !clip.seams.is_empty() {
-        let mark = motion::mix(body, ink, 0.55);
+        // Dark, as the notches cut into the clip are: a light line read as a note or the playhead.
+        let mark = motion::mix(body, theme::window_background(), 0.6);
         let top = bar.map_or(rect.top(), |bar| bar.bottom());
         let (first, last) = (view.left() - 4.0, view.right() + 4.0);
+        // As wide as the passes allow: zoomed out, a pass a few points wide keeps its body and
+        // still shows a small notch.
+        let pass =
+            clip.seams.windows(2).map(|w| w[1] - w[0]).chain(clip.seams.first().copied()).fold(f64::MAX, f64::min);
+        let pass_width = (pass.max(0.0) as f32) * beat_width;
+        let notch = (pass_width * 0.1).clamp(1.5, 4.0);
         for seam in &clip.seams {
             let x = x_of(start + seam).round() + 0.5;
             if x < first || x > last || x <= rect.left() || x >= rect.right() {
@@ -3328,14 +3383,15 @@ fn paint_clip(
                 3.0,
                 3.0,
             ));
-            let notch = 4.0;
+            // Cut out of the clip, in the lane's colour, so they show on a light name bar too.
+            let cut = theme::window_background();
             painter.add(egui::Shape::convex_polygon(
                 vec![
                     Pos2::new(x - notch, rect.top()),
                     Pos2::new(x + notch, rect.top()),
                     Pos2::new(x, rect.top() + notch),
                 ],
-                mark,
+                cut,
                 egui::Stroke::NONE,
             ));
             painter.add(egui::Shape::convex_polygon(
@@ -3344,7 +3400,7 @@ fn paint_clip(
                     Pos2::new(x, rect.bottom() - notch),
                     Pos2::new(x + notch, rect.bottom()),
                 ],
-                mark,
+                cut,
                 egui::Stroke::NONE,
             ));
         }
@@ -3602,6 +3658,22 @@ fn track_header(
     }
     // The track's colour runs down the header's left edge; a click there opens the palette.
     let band = colour_band(ui, painter, rect, clip, lane, id, actions);
+    // A track inside groups has their colours down its indent, the outermost first, so a group and
+    // its tracks read as one block: the group's colour runs from its header down all of them.
+    let mut ancestors = Vec::new();
+    let mut parent = lane.parent;
+    while let Some(group) = parent.filter(|_| ancestors.len() < lane.depth) {
+        let Some(group_lane) = timeline.lanes.iter().find(|l| l.track == group) else { break };
+        ancestors.push(group_lane.color);
+        parent = group_lane.parent;
+    }
+    for (level, color) in ancestors.iter().rev().enumerate() {
+        let left = band.right() + level as f32 * INDENT;
+        let strip = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + INDENT - 2.0, rect.bottom()));
+        if strip.intersects(clip) {
+            painter.rect_filled(strip.intersect(clip), 0.0, rgb(*color));
+        }
+    }
     // The meter stands at the right edge; the rows keep clear of it.
     let meter_x = rect.right() - PAD - meter::WIDTH;
     let inner = Rect::from_min_max(
@@ -3665,12 +3737,18 @@ fn track_header(
     // below, the button under the track-on toggle; a short lane keeps one row of buttons, name
     // and automation button.
     let tall = rect.height() >= SHOWS_MIXER;
+    // Beside the buttons only where the volume bar keeps its room; a narrow header has the name
+    // on the first row and the volume, the sends and the pan across the second, the bar as wide
+    // as it can be.
+    let beside_room = row.right() - PAN_FIELD - 4.0 - (arm.unwrap_or(cue).right() + PAD);
+    let side = tall && beside_room >= LEAST_VOLUME;
+    let stacked = tall && !side;
     let below = Rect::from_min_max(
         Pos2::new(first_x, row.bottom() + PAD),
         Pos2::new(inner.right(), row.bottom() + PAD + FIELD),
     );
     // The automation button shows and hides the track's lanes.
-    let lanes_button = if tall {
+    let lanes_button = if side {
         Rect::from_min_size(
             Pos2::new(below.left() + (ON_TOGGLE - SOLO) / 2.0, below.top()),
             Vec2::new(SOLO, HEADER_ROW),
@@ -3691,14 +3769,23 @@ fn track_header(
     }
     // Two rows: the sends at the end of the lower row, as many as leave the name its room.
     let step = FIELD + SEND_GAP;
-    let shown_sends = if tall {
+    let stacked_pan =
+        Rect::from_min_max(Pos2::new(below.right() - PAN_FIELD, below.top()), Pos2::new(below.right(), below.bottom()));
+    let shown_sends = if side {
         let room = ((below.right() - lanes_button.right() - PAD - LEAST_NAME) / step).floor().max(0.0) as usize;
+        lane.sends.len().min(room)
+    } else if stacked {
+        let room = ((stacked_pan.left() - 4.0 - below.left() - LEAST_VOLUME) / step).floor().max(0.0) as usize;
         lane.sends.len().min(room)
     } else {
         0
     };
-    let sends_left = below.right() - step * shown_sends as f32 + SEND_GAP;
-    let name = if tall {
+    let sends_left = if stacked {
+        stacked_pan.left() - 4.0 - step * shown_sends as f32 + SEND_GAP
+    } else {
+        below.right() - step * shown_sends as f32 + SEND_GAP
+    };
+    let name = if side {
         Rect::from_min_max(
             Pos2::new(lanes_button.right() + PAD, below.top()),
             Pos2::new(sends_left - SEND_GAP - 4.0, below.top() + HEADER_ROW),
@@ -3757,13 +3844,18 @@ fn track_header(
         widgets::text_in(painter, toggle, Align2::CENTER_CENTER, &number, theme::mono_font(theme::TEXT_SMALL), text);
     }
 
-    // Two rows: volume and pan beside the buttons, the sends after the name below.
+    // Two rows: volume and pan beside the buttons, the sends after the name below; or, narrow,
+    // the volume, the sends and the pan across the second row.
     if tall {
-        let left = arm.unwrap_or(cue).right() + PAD;
-        let pan =
-            Rect::from_min_max(Pos2::new(row.right() - PAN_FIELD, row.top()), Pos2::new(row.right(), row.bottom()));
-        let volume =
-            Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new((pan.left() - 4.0).max(left), row.bottom()));
+        let (volume, pan) = if side {
+            let left = arm.unwrap_or(cue).right() + PAD;
+            let pan =
+                Rect::from_min_max(Pos2::new(row.right() - PAN_FIELD, row.top()), Pos2::new(row.right(), row.bottom()));
+            (Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new((pan.left() - 4.0).max(left), row.bottom())), pan)
+        } else {
+            let right = (sends_left - SEND_GAP).max(below.left());
+            (Rect::from_min_max(below.min, Pos2::new(right, below.bottom())), stacked_pan)
+        };
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
         value_control(ui, painter, pan, clip, lane, Control::Pan, false, id, state, actions);
         for (index, send) in lane.sends.iter().take(shown_sends).enumerate() {

@@ -8,8 +8,9 @@
 //! own, which runs it ahead of the device in blocks of the chosen buffer size (see
 //! [`engine_block`]) into a lock-free ring ([`rtrb`]); the device's callback only copies from
 //! the ring, converts samples and sets atomics: no allocation, locks or I/O on either thread
-//! (AGENTS.md rule 3). The plug-ins of a block get a share of that block's playing time
-//! (ADR 0006), so the deadline follows the buffer the user chose. The ring keeps two blocks
+//! (AGENTS.md rule 3). The plug-ins of a block get the time the frames queued before it play,
+//! less the device's buffer and a margin (ADR 0006), so a return's plug-ins, which run after the
+//! tracks that send to them, are not left a fraction of a block. The ring keeps two blocks
 //! ahead, or a device buffer and a block when the device asks for more at once; while a track
 //! is armed to play a MIDI controller, one block or a device buffer, so a key sounds sooner
 //! (ADR 0017). Launcher
@@ -689,6 +690,8 @@ fn render_ahead(
         let output = progress.latency().as_secs_f64() * f64::from(renderer.sample_rate());
         let input = u32::try_from(progress.input_latency()).unwrap_or(u32::MAX);
         renderer.set_record_latency(output.round().clamp(0.0, f64::from(u32::MAX)) as u32, input);
+        // How long the device can wait for this block: what is queued before it.
+        renderer.set_render_lead(queued, progress.callback_frames());
         renderer.process_with_cue(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,
         // keeps the thread from waiting: it rests rather than outlive its real-time limit.

@@ -581,6 +581,25 @@ static COMMANDS: &[CommandSpec] = &[
         run: set_color,
     },
     CommandSpec {
+        id: "track.colorGroup",
+        label: "Give every track inside a group, at any depth, the group's colour, and with clips their clips too, as one undo step",
+        params: &[
+            TRACK,
+            optional(
+                "color",
+                ParamType::Text,
+                "\"#rrggbb\": the colour the group shows, for a group given none of its own (the default: the group's own)",
+            ),
+            optional(
+                "clips",
+                ParamType::Bool,
+                "true: the clips of the group and of every track inside it show their track's colour again",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: color_group,
+    },
+    CommandSpec {
         id: "track.delete",
         label: "Delete a track with its clips; a deleted group's tracks stay",
         params: &[TRACK],
@@ -613,6 +632,13 @@ static COMMANDS: &[CommandSpec] = &[
         params: &[CLIPS, param("name", ParamType::Text, "the new name (empty clears it)")],
         kind: CommandKind::Edit,
         run: rename_clips,
+    },
+    CommandSpec {
+        id: "clip.setColorMany",
+        label: "Give several arrangement clips a colour of their own, or their tracks' colour again, as one undo step",
+        params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's colour")],
+        kind: CommandKind::Edit,
+        run: set_clips_color,
     },
     CommandSpec {
         id: "clip.setGain",
@@ -3079,6 +3105,63 @@ fn rename_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
     Ok(json!({ "name": name }))
 }
 
+/// `track.colorGroup`: the tracks inside the group `track`, at any depth, take its colour.
+fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let group = track_id(&session.project, params)?;
+    let p = &mut session.project;
+    let own = p.tracks.iter().find(|t| t.id == group).map(|t| t.color).ok_or("the track is missing")?;
+    let colour = match params.get("color") {
+        None | Some(Value::Null) => own,
+        Some(_) => crate::clip_color::parse_color(params, "color")?.or(own),
+    };
+    let parent_of =
+        |id: TrackId, tracks: &[suhina_model::Track]| tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+    let inside: Vec<TrackId> = p
+        .tracks
+        .iter()
+        .filter(|t| {
+            let mut parent = t.parent;
+            let mut hops = 0;
+            while let Some(id) = parent {
+                if id == group {
+                    return true;
+                }
+                hops += 1;
+                if hops > 64 {
+                    return false;
+                }
+                parent = parent_of(id, &p.tracks);
+            }
+            false
+        })
+        .map(|t| t.id)
+        .collect();
+    if inside.is_empty() {
+        return Err("the track holds no tracks".into());
+    }
+    for track in p.tracks.iter_mut().filter(|t| inside.contains(&t.id)) {
+        track.color = colour;
+    }
+    // Their clips follow the tracks' colour again, the group's own too.
+    let mut clips = 0usize;
+    if params.get("clips").and_then(Value::as_bool) == Some(true) {
+        let held = |track: Option<TrackId>| track.is_some_and(|t| t == group || inside.contains(&t));
+        for lane in p.arrangement.lanes.iter_mut().filter(|l| held(l.track)) {
+            for clip in &mut lane.clips {
+                clip.color = None;
+                clips += 1;
+            }
+        }
+        for column in p.launcher.columns.iter_mut().filter(|c| held(Some(c.track))) {
+            for clip in column.slots.iter_mut().filter_map(|s| s.clip.as_mut()) {
+                clip.color = None;
+                clips += 1;
+            }
+        }
+    }
+    Ok(json!({ "tracks": inside.iter().map(|t| t.0).collect::<Vec<_>>(), "clips": clips }))
+}
+
 fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let text = params.get("color").and_then(Value::as_str).ok_or("color must be \"#rrggbb\" or \"none\"")?;
     let color = if text.eq_ignore_ascii_case("none") {
@@ -3606,6 +3689,20 @@ fn rename_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
         content.name.clone_from(&name);
     }
     Ok(json!({ "name": name, "clips": contents.len() }))
+}
+
+/// `clip.setColorMany`: the clips `clips` names take `color` (or their tracks' again), every one
+/// checked before any changes.
+fn set_clips_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let color = crate::clip_color::parse_color(params, "color")?;
+    let p = &mut session.project;
+    let clips = clip_list(p, params)?;
+    for (track, index) in &clips {
+        let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(*track));
+        let clip = lane.and_then(|l| l.clips.get_mut(*index)).ok_or("the clip is missing")?;
+        clip.color = color;
+    }
+    Ok(json!({ "clips": clips.len(), "color": params.get("color") }))
 }
 
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read

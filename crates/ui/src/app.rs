@@ -4408,10 +4408,7 @@ impl App {
                 if self.shown == View::Arrangement && self.arrangement.time_selection().is_some() =>
             {
                 if let Some(s) = self.arrangement.time_selection() {
-                    actions.push(Action::new(
-                        "transport.setLoop",
-                        json!({ "start": s.start, "end": s.end, "enabled": true }),
-                    ));
+                    actions.push(self.loop_or_unloop(s.start, s.end));
                 }
             }
             "transport.setLoopEnabled"
@@ -4436,8 +4433,7 @@ impl App {
                         Some(span.map_or((start, end), |(s, e)| (s.min(start), e.max(end))))
                     });
                 if let Some((start, end)) = span.filter(|(s, e)| e > s) {
-                    actions
-                        .push(Action::new("transport.setLoop", json!({ "start": start, "end": end, "enabled": true })));
+                    actions.push(self.loop_or_unloop(start, end));
                 }
             }
             "file.open" => self.open_project_dialog(true),
@@ -5116,6 +5112,21 @@ impl App {
     }
 
     /// The track selected in the view shown.
+    /// Ctrl+L over a span: loops it, or, when the loop is on over that very span already, turns
+    /// looping off, so the same key takes the loop away again.
+    fn loop_or_unloop(&self, start: f64, end: f64) -> Action {
+        let looping = self.session().is_some_and(|s| {
+            let transport = &s.project().transport;
+            transport.loop_enabled
+                && transport.loop_range.is_some_and(|r| (r.start - start).abs() < 1e-6 && (r.end - end).abs() < 1e-6)
+        });
+        if looping {
+            Action::new("transport.setLoopEnabled", json!({ "enabled": false }))
+        } else {
+            Action::new("transport.setLoop", json!({ "start": start, "end": end, "enabled": true }))
+        }
+    }
+
     /// Where a track added from the keyboard goes: after the lowest selected track that is not a
     /// return track; `None` (after the last regular track) without one.
     fn add_track_after(&self) -> Option<TrackId> {

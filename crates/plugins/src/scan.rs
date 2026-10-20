@@ -487,6 +487,22 @@ impl Catalog {
         self.entries.push(Entry { path, modified: 0, size: 0, scanned: Scanned::Plugins(plugins), tried: 0 });
     }
 
+    /// Marks the plug-in `spec` ([`PluginInfo::spec`]) as one that edits clips over ARA, as its
+    /// host found when it loaded (a scan from before Suhina read ARA, or one that missed it).
+    /// Returns whether anything changed.
+    pub fn mark_ara(&mut self, spec: &str) -> bool {
+        let mut changed = false;
+        for entry in &mut self.entries {
+            if let Scanned::Plugins(plugins) = &mut entry.scanned {
+                for plugin in plugins.iter_mut().filter(|p| !p.ara && p.spec() == spec) {
+                    plugin.ara = true;
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     /// Every plug-in found, in file order.
     pub fn plugins(&self) -> impl Iterator<Item = &PluginInfo> {
         self.entries

@@ -657,6 +657,9 @@ struct Returned {
 struct Instance {
     status: PluginStatus,
     plugin: Option<(String, String, &'static str)>,
+    /// The plug-in it runs ([`PluginInfo::spec`](suhina_plugins::scan::PluginInfo::spec)), empty
+    /// before one is found.
+    spec: String,
     info: PluginSlotInfo,
     /// `None` while it starts, or while a thread of its own talks to it.
     control: Option<Plugin>,
@@ -716,6 +719,7 @@ impl Instance {
         Self {
             status,
             plugin,
+            spec: String::new(),
             info: PluginSlotInfo::default(),
             ranges: None,
             control: None,
@@ -819,6 +823,10 @@ pub struct Rack {
     /// not say so (a scan that missed it): they are loaded again with their track's clips, and
     /// from then on as plug-ins that edit clips.
     ara_found: std::collections::HashSet<u64>,
+    /// The plug-ins (by spec) found that way: the next device of one starts with its clips at
+    /// once, rather than loading twice. Taken by [`Rack::take_ara_learned`] for the catalog.
+    ara_plugins: std::collections::HashSet<String>,
+    ara_learned: Vec<String>,
     /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
     /// plug-in device key; told to it whenever it runs ([`Rack::select_ara`]).
     ara_selection: HashMap<u64, Option<String>>,
@@ -858,6 +866,8 @@ impl Default for Rack {
             ara_notes: HashMap::new(),
             ara_notes_hidden: std::collections::HashSet::new(),
             ara_found: std::collections::HashSet::new(),
+            ara_plugins: std::collections::HashSet::new(),
+            ara_learned: Vec::new(),
             carries: Vec::new(),
             next_carry: 0,
         }
@@ -875,6 +885,12 @@ impl Rack {
         self.env = Some(env);
     }
 
+    /// The plug-ins (by spec) found to edit clips over ARA since the last call, although the
+    /// catalog did not say so: for the catalog to remember.
+    pub fn take_ara_learned(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.ara_learned)
+    }
+
     pub fn env(&self) -> Option<&PluginEnv> {
         self.env.as_deref()
     }
@@ -886,6 +902,12 @@ impl Rack {
     /// gave, and a stopped one the state it left.
     pub(crate) fn current_states(&mut self) -> HashMap<u64, SavedState> {
         self.read_states();
+        self.known_states()
+    }
+
+    /// The plug-ins' states as last read (every [`SAVE_EVERY`] and at each save), without asking
+    /// them now: for a backup, which must not hold the window up while a busy plug-in answers.
+    pub(crate) fn known_states(&self) -> HashMap<u64, SavedState> {
         let mut states = self.kept.clone();
         for (key, instance) in &self.instances {
             if let Some(state) = instance.control.as_ref().and_then(Plugin::last_state) {
@@ -1199,7 +1221,9 @@ impl Rack {
             };
             let state = self.kept.remove(&found.key).or_else(|| saved_state(device));
             // A plug-in that edits clips gets its track's audio clips (ADR 0028).
-            let edits_clips = matched.plugin.ara || self.ara_found.contains(&found.key);
+            let spec = matched.plugin.spec();
+            let edits_clips =
+                matched.plugin.ara || self.ara_found.contains(&found.key) || self.ara_plugins.contains(&spec);
             let layout = found.track.filter(|_| edits_clips).map(|t| crate::ara::Layout::of(project, audio, t));
             let ara = layout.as_ref().and_then(|l| l.document(audio));
             let (ara, ara_sources) = ara.map_or((None, Vec::new()), |(document, sources)| (Some(document), sources));
@@ -1217,6 +1241,7 @@ impl Rack {
             let generation = self.next_generation;
             let plugin = Some((matched.plugin.name.clone(), matched.plugin.vendor.clone(), matched.how.name()));
             let mut instance = Instance::new(PluginStatus::Loading, plugin, generation);
+            instance.spec = spec;
             instance.info = PluginSlotInfo { instrument, latency: 0 };
             instance.ara_layout = layout;
             instance.ara_sources = ara_sources;
@@ -1484,6 +1509,9 @@ impl Rack {
                     // The host found it supports ARA where the catalog did not say so: it is
                     // loaded again with its track's clips ([`Rack::follow_clips`]).
                     if control.edits_clips() && instance.ara_layout.is_none() && self.ara_found.insert(started.key) {
+                        if !instance.spec.is_empty() && self.ara_plugins.insert(instance.spec.clone()) {
+                            self.ara_learned.push(instance.spec.clone());
+                        }
                         notices
                             .push(format!("{name} edits clips (ARA): it is loaded again with its track's audio clips"));
                     }

@@ -715,6 +715,10 @@ pub fn loop_seams(clip: &Clip) -> Vec<f64> {
     seams
 }
 
+/// How far past a looping clip's end its note marks go, in beats: the passes a drag of its right
+/// edge shows before the clip is built again at its new length.
+const LOOP_DRAG_ROOM: f64 = 64.0;
+
 pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     let notes: Vec<_> = content
         .lanes
@@ -736,12 +740,15 @@ pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     };
     let mut segment = (clip.offset, first_end);
     let mut at = 0.0;
-    while at < clip.length && marks.len() < MAX_MARKS {
+    // A looping clip's marks go on past its end, so the passes its right edge is dragged out to
+    // show their notes while it is dragged; the view draws the clip's own span only.
+    let span = if repeat.is_some() { clip.length + LOOP_DRAG_ROOM } else { clip.length };
+    while at < span && marks.len() < MAX_MARKS {
         let (from, to) = segment;
         for note in notes.iter().filter(|n| n.time >= from && n.time < to) {
             let start = at + note.time - from;
-            if start < clip.length && marks.len() < MAX_MARKS {
-                let length = note.duration.min(to - note.time).min(clip.length - start).max(0.0);
+            if start < span && marks.len() < MAX_MARKS {
+                let length = note.duration.min(to - note.time).min(span - start).max(0.0);
                 marks.push(NoteMark { start, length, key: note.key });
             }
         }
@@ -921,10 +928,11 @@ mod tests {
         let clip = &project.arrangement.lanes[0].clips[0];
         let content = project.content(clip.content).unwrap();
         let marks = note_marks(content, clip);
-        // Four notes a bar, sixteen bars.
-        assert_eq!(marks.len(), 64);
+        // Four notes a bar, sixteen bars in the clip; past its end the marks go on, for the passes
+        // a drag of its right edge shows.
+        assert_eq!(marks.iter().filter(|m| m.start < clip.length).count(), 64);
         assert_eq!(marks[4].start, 4.0);
-        assert!(marks.iter().all(|m| m.start < clip.length));
+        assert!(marks.iter().any(|m| m.start >= clip.length));
     }
 
     #[test]

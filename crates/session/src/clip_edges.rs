@@ -83,11 +83,22 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
     if start.is_some() {
         new_start = new_start.min(new_end - MIN_LENGTH).max(0.0);
     }
-    // The left edge: the content moves with it, no earlier than its start.
+    // The left edge: the content moves with it, no earlier than its start; a looping clip's goes
+    // back into earlier passes of its loop, as its right edge goes on into later ones.
     let mut offset = clip.offset + (new_start - clip.start) * rate;
-    if offset < 0.0 {
-        new_start -= offset / rate;
-        offset = 0.0;
+    match clip.loop_range.filter(|r| r.end > r.start) {
+        // Past the content's start, or from inside the loop past the loop's start (an intro before
+        // the loop is drawn out as it is), or past the loop's end into a later pass: kept inside
+        // the loop, where it plays, as the engine starts a clip whose offset is past the loop's
+        // end at the loop's start, which moved what played.
+        Some(range) if offset < 0.0 || (clip.offset >= range.start && offset < range.start) || offset >= range.end => {
+            offset = range.start + (offset - range.start).rem_euclid(range.end - range.start);
+        }
+        _ if offset < 0.0 => {
+            new_start -= offset / rate;
+            offset = 0.0;
+        }
+        _ => {}
     }
     // The right edge: an unlooped audio clip ends where its audio does.
     if audio && !looped {

@@ -124,6 +124,9 @@ const AUDIO_HEADROOM: f32 = 4.0;
 const NO_COLUMN: u32 = u32::MAX;
 /// Project frames rendered per stretch-voice call.
 const STRETCH_BLOCK: usize = 1024;
+/// What a block's plug-ins leave of the time its queued frames play ([`Renderer::set_render_lead`]),
+/// for the engine itself and the scheduling around it, in seconds.
+const LEAD_MARGIN_SECONDS: f64 = 0.003;
 /// The device index of a parameter message that moves a track's volume fader
 /// ([`Controller::set_device_param`]): the value is the channel's new linear volume, and the
 /// playing graph takes it without a new graph where the track's chain can.
@@ -351,6 +354,9 @@ pub struct Renderer {
     block_frame: usize,
     /// Rendering offline: plug-ins are waited for without a real-time deadline (ADR 0006).
     offline: bool,
+    /// What the device has queued ahead of the next block and how much it takes at once, in
+    /// frames ([`Renderer::set_render_lead`]): how long the block's plug-ins may take.
+    render_lead: Option<(usize, usize)>,
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
     /// The browser's preview voice (ADR 0011).
@@ -448,6 +454,7 @@ impl Renderer {
             metronome: metronome::Metronome::new(sample_rate),
             block_frame: 0,
             offline: false,
+            render_lead: None,
             plugin_info: plugins.info,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
@@ -583,6 +590,16 @@ impl Renderer {
     /// blocks and one block more leaves every note a frame in the block after it, so notes keep
     /// the spacing they were played with. Call it before every [`Renderer::process`]; without
     /// it, every note plays at the first frame of the next block. Never allocates.
+    /// How far the output is ahead of the device as the next block starts: `queued` frames are
+    /// waiting to be played before it, and the device takes `device` frames at once. The block's
+    /// plug-ins may take the time those queued frames play, less the device's buffer and a
+    /// margin, instead of a fixed share of the block: a return's plug-ins, which run after every
+    /// track that sends to them, missed the share left to them in a large project and crackled.
+    /// Call it before every [`Renderer::process`] while a device plays. Never allocates.
+    pub fn set_render_lead(&mut self, queued: usize, device: usize) {
+        self.render_lead = Some((queued, device));
+    }
+
     pub fn set_live_clock(&mut self, now: u64, delay: u32) {
         self.live.set_clock(now, delay, self.position);
     }
@@ -730,7 +747,17 @@ impl Renderer {
         if self.offline {
             return None;
         }
-        let seconds = frames as f64 / f64::from(self.sample_rate) * DEADLINE_SHARE;
+        let rate = f64::from(self.sample_rate.max(1));
+        let block = frames as f64 / rate;
+        let seconds = match self.render_lead {
+            // What is queued plays while this block is made; the device's own buffer and a
+            // margin are kept for it. Never less than a quarter of the block, never past it.
+            Some((queued, device)) => {
+                let room = (queued as f64 - device as f64) / rate - LEAD_MARGIN_SECONDS;
+                room.clamp(block * 0.25, block * 0.95)
+            }
+            None => block * DEADLINE_SHARE,
+        };
         Some(Instant::now() + Duration::from_secs_f64(seconds))
     }
 
@@ -1153,6 +1180,7 @@ impl Graph {
         let mut audio_events = Vec::new();
         let mut stretch_events = Vec::new();
         let mut stretch_voices = Vec::new();
+        let mut stretch_heard = Vec::new();
         for (lane_index, lane) in project.arrangement.lanes.iter().enumerate() {
             for (clip_index, clip) in lane.clips.iter().enumerate().filter(|(_, c)| c.enabled) {
                 let Some(content) = project.content(clip.content) else { continue };
@@ -1185,6 +1213,7 @@ impl Graph {
                                 let to_frame = |beats: f64| tempo::frame_of(&tempo, beats);
                                 let (start, end) = (to_frame(clip.start), to_frame(clip.start + clip.length));
                                 stretch_voices.push((voice, start, end.saturating_sub(start)));
+                                stretch_heard.push(track_gains(project, track).is_some());
                                 stretch_events.push(StretchEvent {
                                     start,
                                     end,
@@ -1253,7 +1282,8 @@ impl Graph {
             .collect();
         let rings_began = std::time::Instant::now();
         let voices = stretch_voices.len();
-        let ahead = AheadReader::new(stretch_voices, sample_rate);
+        let mut ahead = AheadReader::new(stretch_voices, sample_rate);
+        ahead.set_heard(&stretch_heard);
         let rings_took = rings_began.elapsed();
         let launcher_began = std::time::Instant::now();
         let launcher = Launcher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));

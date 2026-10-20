@@ -108,6 +108,8 @@ struct Reader {
     rewound: bool,
     /// The jump ahead asked for and not yet drained, if any.
     jumping: Option<u64>,
+    /// Its track is heard (not muted, not left out by a solo): a start waits for it.
+    heard: bool,
 }
 
 /// Renders stretched clips ahead into the rings the [`AheadReader`] reads. A
@@ -304,7 +306,7 @@ impl AheadReader {
         let mut writers = Vec::with_capacity(voices.len());
         for (voice, start, length) in voices {
             let (producer, consumer) = RingBuffer::new(frames * 2);
-            readers.push(Reader { consumer, start, length, next: 0, rewound: false, jumping: None });
+            readers.push(Reader { consumer, start, length, next: 0, rewound: false, jumping: None, heard: true });
             writers.push(Writer { voice, producer, start, produced: 0, length, jumped: 0, seek_to: None });
         }
         let worker = StretchWorker {
@@ -350,7 +352,7 @@ impl AheadReader {
             return false;
         }
         let lead = START_FRAMES;
-        self.readers.iter().all(|reader| {
+        self.readers.iter().filter(|r| r.heard).all(|reader| {
             let end = reader.start.saturating_add(reader.length);
             if reader.start > at + lead || end <= at {
                 return true;
@@ -359,6 +361,14 @@ impl AheadReader {
             let needed = lead.min(reader.length - local);
             (reader.consumer.slots() / 2) as u64 >= needed
         })
+    }
+
+    /// Which voices' tracks are heard, in the voices' order: a start waits only for those, so a
+    /// solo does not hold it up for the clips it silences.
+    pub(crate) fn set_heard(&mut self, heard: &[bool]) {
+        for (reader, heard) in self.readers.iter_mut().zip(heard) {
+            reader.heard = *heard;
+        }
     }
 
     /// Tells the worker the arrangement frame being played, so the voices due from there are

@@ -214,6 +214,14 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         }
         ui.close();
     }
+    // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
+    // every view.
+    if menu.is_group && ui.button("Assign track color to all tracks and clips").clicked() {
+        // The colour the group shows: one it was never given is worked out from its place.
+        let params = json!({ "track": track, "color": colour_picker::hex(menu.colour), "clips": true });
+        actions.push(Action::new("track.colorGroup", params));
+        ui.close();
+    }
     // The track's clips: back to the track's colour, or named after it.
     if ui.button("Assign track color to all clips").clicked() {
         actions.push(Action::new("clip.setColor", json!({ "track": track, "color": "none" })));
@@ -327,16 +335,16 @@ pub fn clip_menu(
     let list: Vec<serde_json::Value> = clips.iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect();
     ui.set_min_width(140.0);
     // The clips' colour: a swatch or any colour, or back to their tracks' colour.
+    // One command for them all: one undo step, and a large selection takes it at once.
     if let Some(colour) = colour_picker::swatch_row(ui, None) {
-        for (_, clip) in clips {
-            actions.push(Action::new("clip.setColor", json!({ "clip": clip.0, "color": colour_picker::hex(colour) })));
-        }
+        actions.push(Action::new(
+            "clip.setColorMany",
+            json!({ "clips": list.clone(), "color": colour_picker::hex(colour) }),
+        ));
         ui.close();
     }
     if ui.button("Track colour").clicked() {
-        for (_, clip) in clips {
-            actions.push(Action::new("clip.setColor", json!({ "clip": clip.0, "color": "none" })));
-        }
+        actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));
         ui.close();
     }
     ui.separator();

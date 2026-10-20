@@ -558,12 +558,13 @@ fn a_stems_file_dropped_on_a_lane_becomes_one_folded_group() {
     assert!(until(&mut harness, grouped), "a group of the master and its four stems");
     // One more frame: the drop runs after the view has drawn, so the lanes follow it next frame.
     harness.run();
-    // The group arrives folded: one lane named after the file, its tracks away, and the clip the
-    // fold stands in for (the master) drawn on that lane.
+    // The group arrives folded: one lane named after the file, its tracks away. The folded lane
+    // draws every stem's clips as a thin row each, marks rather than clips to pick: the stems are
+    // reached by unfolding.
     assert!(harness.query_by_label("Track tones").is_some(), "the group's own lane");
     assert!(harness.query_by_label("Unfold tones").is_some(), "it arrives folded");
     assert!(harness.query_by_label("Track Master").is_none(), "the stems' lanes are folded away");
-    assert!(harness.query_by_label_contains("Clip tones – Master").is_some(), "its row shows the master");
+    assert!(harness.query_by_label_contains("Clip tones – Master").is_none(), "the fold draws marks, not clips");
 
     harness.get_by_label("Unfold tones").click();
     harness.run();

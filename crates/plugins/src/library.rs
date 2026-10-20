@@ -446,6 +446,17 @@ impl Library {
         Ok(report)
     }
 
+    /// Remembers that the plug-in `spec` edits clips over ARA ([`Catalog::mark_ara`]) and saves
+    /// the catalog. Returns whether the catalog changed.
+    pub fn mark_ara(&mut self, spec: &str) -> Result<bool, String> {
+        self.load();
+        if !self.catalog.mark_ara(spec) {
+            return Ok(false);
+        }
+        self.save(CATALOG_FILE, &self.catalog.to_json())?;
+        Ok(true)
+    }
+
     /// What the last scan found.
     pub fn catalog(&mut self) -> &Catalog {
         self.load();

@@ -549,7 +549,16 @@ impl Projects {
         session.set_plugin_env(env);
         session.set_editor_owner(owner);
         session.set_editor_embedding(embed);
-        session.sync_plugins()
+        let notices = session.sync_plugins();
+        // A plug-in that turned out to edit clips is remembered, so it starts with them from
+        // now on (in every project) instead of loading twice.
+        let learned = session.take_ara_learned();
+        for spec in learned {
+            if let Ok(true) = self.library.mark_ara(&spec) {
+                self.plugin_env = None;
+            }
+        }
+        notices
     }
 
     /// Runs command `id`: a `projects.*` or `plugins.*` command on the open projects (and the
