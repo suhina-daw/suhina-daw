@@ -199,8 +199,9 @@ flashed"); the trace and a recording say where.
    Restart only when the tester agrees: a running project may have changes they want.
 2. **Ask what they did and roughly when.** The last `action` lines show what the window ran; a
    tester's "I closed it with Don't save" finds its place among them.
-3. **Read process by process.** For each process id, its first line says what it is (`host up`,
-   or the window's `frames:` lines), its last line where it stopped. Then look for gaps in time
+3. **Read process by process.** Tell each process id apart by a line only it writes: a plug-in
+   host's start with `host up`, the window by its `frames:` lines (its first line can be another
+   one). The last line of each says where it stopped. Then look for gaps in time
    within one process.
 4. **Ask for a recording** when the bug is something seen (a flash, a jump, a late redraw), and
    read it as in part 2: the frames where the picture changes most, as a contact sheet.
@@ -221,8 +222,9 @@ What told the causes apart:
 
 Lines that simply stop do not say whether a process is waiting, busy or gone: a trace records
 events, not a process's end, and a crash or an exit stops it too. While the bug is still on screen,
-look at the processes first: `Get-Process suhina*` in PowerShell (its `Responding` column is false
-for a window Windows sees as hung) or `ps` elsewhere, and how its processor time moves over a few
+look at the processes first: in PowerShell
+`Get-Process suhina* | Select-Object Id, ProcessName, CPU, Responding` (`Responding` is false for
+a window Windows sees as hung) or `ps` elsewhere, and how its processor time moves over a few
 seconds (busy, or waiting or idle). A line on the other side (`host gets Unload` with no
 `host unloaded`, or the window's frames ceasing) then points at who may wait for whom; confirm it
 in the code that sends and waits before calling it the cause. Ask the tester not to end the
