@@ -223,9 +223,10 @@ Lines that simply stop do not say whether a process is waiting, busy or gone: a 
 events, not a process's end, and a crash or an exit stops it too. While the bug is still on screen,
 look at the processes first: `Get-Process suhina*` in PowerShell (its `Responding` column is false
 for a window Windows sees as hung) or `ps` elsewhere, and how its processor time moves over a few
-seconds (busy or waiting). A process still there whose lines stopped is waiting or busy; then a
-line on the other side (`host gets Unload` with no `host unloaded`, or the window's frames
-ceasing) says who waits for whom. Ask the tester not to end it before you have looked.
+seconds (busy, or waiting or idle). A line on the other side (`host gets Unload` with no
+`host unloaded`, or the window's frames ceasing) then points at who may wait for whom; confirm it
+in the code that sends and waits before calling it the cause. Ask the tester not to end the
+process before you have looked.
 
 ## When to take a trace point out
 
