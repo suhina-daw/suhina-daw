@@ -22,3 +22,5 @@ jobs:
           python-version: '3.12'
       - run: python scripts/settings_guide.py --check
       - run: python -m unittest discover -s scripts -p 'test_settings_guide.py'
+      - run: python scripts/shortcuts_guide.py --check
+      - run: python -m unittest discover -s scripts -p 'test_shortcuts_guide.py'
