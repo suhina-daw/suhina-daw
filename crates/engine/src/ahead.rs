@@ -99,6 +99,9 @@ struct Shared {
     /// worker handed over to it, or [`CLOSED`] once the audio side swapped the graph in without
     /// one. Whichever side writes it first decides.
     adopted: Vec<AtomicU64>,
+    /// Each voice's jump generation on the graph before when the worker handed it over: a jump
+    /// that graph asked for after it is one the new writer did not follow.
+    handed_jump: Vec<AtomicU64>,
 }
 
 /// One voice on the worker side.
@@ -218,6 +221,10 @@ impl StretchWorker {
                 || (old.start, old.length) != (writer.start, writer.length)
             {
                 continue;
+            }
+            // The jump the voice is at now, published with the claim below.
+            if let Some(handed_jump) = self.shared.handed_jump.get(index) {
+                handed_jump.store(old.jumped, Ordering::Release);
             }
             // Claimed first, or the audio side has swapped the graph in already: then this
             // voice starts afresh, as its reader keeps its own ring.
@@ -376,7 +383,8 @@ impl AheadReader {
         let frames = ((AHEAD_SECONDS * f64::from(sample_rate)) as usize).max(2 * BLOCK_FRAMES);
         let jumps = voices.iter().map(|_| Jump::default()).collect();
         let adopted = voices.iter().map(|_| AtomicU64::new(0)).collect();
-        let shared = Arc::new(Shared { jumps, adopted, ..Shared::default() });
+        let handed_jump = voices.iter().map(|_| AtomicU64::new(0)).collect();
+        let shared = Arc::new(Shared { jumps, adopted, handed_jump, ..Shared::default() });
         let mut readers = Vec::with_capacity(voices.len());
         let mut writers = Vec::with_capacity(voices.len());
         for (voice, start, length, key) in voices {
@@ -420,17 +428,34 @@ impl AheadReader {
     /// break. A voice not handed over yet is closed to it and starts afresh. On the audio
     /// thread at the swap; never allocates.
     pub(crate) fn adopt_from(&mut self, before: &mut AheadReader) {
-        for (reader, slot) in self.readers.iter_mut().zip(&self.shared.adopted) {
+        for (index, (reader, slot)) in self.readers.iter_mut().zip(&self.shared.adopted).enumerate() {
             let ring = match slot.compare_exchange(0, CLOSED, Ordering::AcqRel, Ordering::Acquire) {
                 Ok(_) => continue,
                 Err(ring) => ring,
             };
-            let Some(old) = before.readers.iter_mut().find(|r| r.ring == ring) else { continue };
+            let Some(old_index) = before.readers.iter().position(|r| r.ring == ring) else { continue };
+            let Some(old) = before.readers.get_mut(old_index) else { continue };
             std::mem::swap(&mut reader.consumer, &mut old.consumer);
             std::mem::swap(&mut reader.ring, &mut old.ring);
             reader.next = old.next;
             reader.rewound = old.rewound;
             reader.jumping = None;
+            // A jump the old graph asked for after the handover went to the old writer, not to
+            // the one rendering this ring now: the ring's frames no longer start at `next`. This
+            // graph jumps the voice again, to where the old one meant to be, which lines the two
+            // ends up.
+            let handed = self.shared.handed_jump.get(index).map(|j| j.load(Ordering::Acquire));
+            let Some(old_jump) = before.shared.jumps.get(old_index) else { continue };
+            if handed == Some(old_jump.requested.load(Ordering::Acquire)) {
+                continue;
+            }
+            let to = if old.jumping.is_some() { old_jump.to.load(Ordering::Acquire) } else { old.next };
+            if let Some(jump) = self.shared.jumps.get(index) {
+                let requested = jump.requested.load(Ordering::Acquire) + 1;
+                jump.to.store(to, Ordering::Release);
+                jump.requested.store(requested, Ordering::Release);
+                reader.jumping = Some(requested);
+            }
         }
     }
 
@@ -605,6 +630,7 @@ impl AheadReader {
 pub(crate) fn voice_key(
     clip: &suhina_model::Clip,
     region: &suhina_model::AudioRegion,
+    data: &Arc<crate::AudioData>,
     (start, length): (u64, u64),
     tempo: u64,
 ) -> u64 {
@@ -612,6 +638,8 @@ pub(crate) fn voice_key(
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     clip.id.0.hash(&mut hasher);
     (start, length, tempo).hash(&mut hasher);
+    // The decoded audio itself: new samples under the same pool key are another voice.
+    (Arc::as_ptr(data) as usize).hash(&mut hasher);
     for value in [clip.start, clip.length, clip.offset] {
         value.to_bits().hash(&mut hasher);
     }
@@ -623,4 +651,78 @@ pub(crate) fn voice_key(
         (marker.time.to_bits(), marker.audio_time.to_bits()).hash(&mut hasher);
     }
     hasher.finish()
+}
+
+#[cfg(test)]
+mod handover_tests {
+    use super::*;
+    use suhina_model::{AudioRegion, Clip, ContentId, StretchMode, WarpMarker};
+
+    const SR: u32 = 48_000;
+    const LENGTH: u64 = 2 * SR as u64;
+
+    /// A reader of one stretched voice: two seconds of a sine, warped to four beats at 100 bpm.
+    fn reader() -> AheadReader {
+        let samples = (0..2 * SR as usize).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let data = Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples });
+        let region = AudioRegion {
+            warped: true,
+            stretch: StretchMode::Smooth,
+            warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }],
+            sample_rate: Some(SR),
+            channels: Some(1),
+            duration_seconds: Some(2.0),
+            ..AudioRegion::new("sine.wav")
+        };
+        let clip = Clip::new(ContentId(1), 0.0, 4.0);
+        let Some(voice) = StretchVoice::new(&clip, &region, data, 100.0, SR) else { panic!("no voice") };
+        AheadReader::new(vec![(voice, 0, LENGTH, 7)], SR)
+    }
+
+    /// The new graph's reader after its worker took the voice over and the swap, with a jump
+    /// asked for on the old graph in between when `jump_between`.
+    fn swapped(jump_between: bool) -> AheadReader {
+        let (mut old, mut new) = (reader(), reader());
+        let (Some(mut old_worker), Some(mut new_worker)) = (old.take_worker_unfilled(), new.take_worker_unfilled())
+        else {
+            panic!("no workers")
+        };
+        new_worker.adopt_from(&mut old_worker);
+        assert_ne!(new.shared.adopted[0].load(Ordering::Acquire), 0, "handed over");
+        if jump_between {
+            // As `read` asks for one when the voice fell too far behind.
+            old.shared.jumps[0].to.store(30_000, Ordering::Release);
+            old.shared.jumps[0].requested.store(1, Ordering::Release);
+            old.readers[0].jumping = Some(1);
+        }
+        new.adopt_from(&mut old);
+        new
+    }
+
+    #[test]
+    fn a_handed_over_voice_plays_on_from_where_it_was() {
+        let new = swapped(false);
+        assert_eq!(new.readers[0].jumping, None);
+    }
+
+    #[test]
+    fn a_jump_the_old_graph_asked_for_after_the_handover_is_asked_for_again() {
+        // The new writer renders the ring now and never saw the old graph's jump: the new
+        // graph jumps the voice to the same frame, so the ring and the reader line up again.
+        let new = swapped(true);
+        assert_eq!(new.readers[0].jumping, Some(1));
+        assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
+        assert_eq!(new.shared.jumps[0].requested.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn new_samples_under_the_same_pool_key_are_another_voice() {
+        let region = AudioRegion::new("sine.wav");
+        let clip = Clip::new(ContentId(1), 0.0, 4.0);
+        let audio = || Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples: vec![0.0; 16] });
+        let (a, b) = (audio(), audio());
+        let key = |data: &Arc<crate::AudioData>| voice_key(&clip, &region, data, (0, LENGTH), 1);
+        assert_eq!(key(&a), key(&a));
+        assert_ne!(key(&a), key(&b), "the voice of the old samples is not taken over");
+    }
 }
