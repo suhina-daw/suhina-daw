@@ -10,8 +10,9 @@ name: Ready to merge
 #   needs one approval, and a maintainer cannot approve their own pull request), then enables
 #   auto-merge with that commit as the expected head, so a commit pushed in between is never what
 #   gets merged. A contributor's pull request also needs `test-build` (a maintainer read the code
-#   and its build); without it the label comes off with a comment saying why. Dependabot's
-#   Cargo updates do not: the queue's build and tests are what check a new crate.
+#   and its build) or a maintainer's approving review of that same head commit (they read it, and
+#   `ci` tested it); without either the label comes off with a comment saying why. Dependabot's
+#   Cargo updates need neither: the queue's build and tests are what check a new crate.
 # - A push by anyone but a maintainer takes the label off, turns auto-merge off and leaves the
 #   pull request out of the queue: the new commits wait for a maintainer to read them, as the
 #   `test-build` label does (test-build-links.yml, job `unlabel`). main's rule dismisses the
@@ -110,11 +111,23 @@ jobs:
             echo "::notice::$SENDER is not a maintainer; the label was taken off."
             exit 0
           fi
-          if ! is_maintainer "$AUTHOR" && ! is_dependabot_cargo && [ "$HAS_TEST_BUILD" != "true" ]; then
+          # A maintainer's approving review of the head commit counts as reading it, as `test-build`
+          # does. The commit id is compared, so an approval of an older commit never lets a newer
+          # one through.
+          approved_by_maintainer() {
+            local login
+            for login in $(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \
+              --jq ".[] | select(.state == \"APPROVED\" and .commit_id == \"$SHA\") | .user.login"); do
+              is_maintainer "$login" && return 0
+            done
+            return 1
+          }
+          if ! is_maintainer "$AUTHOR" && ! is_dependabot_cargo && [ "$HAS_TEST_BUILD" != "true" ] &&
+            ! approved_by_maintainer; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-              "\`$LABEL\` needs \`test-build\` on a contributor's pull request: add \`test-build\`, try the build of the commit you read, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
-            echo "::notice::A contributor's pull request without test-build; the label was taken off."
+              "\`$LABEL\` needs a maintainer's approval of ${SHA:0:7} or \`test-build\` on a contributor's pull request: approve the commit you read (or add \`test-build\` and try its build), then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
+            echo "::notice::A contributor's pull request without an approval of the head or test-build; the label was taken off."
             exit 0
           fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \

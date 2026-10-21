@@ -213,7 +213,7 @@ checking out or running the pull request's code) then:
 | Event | What happens |
 |---|---|
 | a maintainer adds the label | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
-| the label on a contributor's pull request without `test-build` | the label comes off, with a comment: a maintainer tries the build of the commit they read first |
+| the label on a contributor's pull request without `test-build` | queued as usual when a maintainer has approved that same head commit in a review; otherwise the label comes off, with a comment: a maintainer approves the commit they read, or tries its build first |
 | the label on a Dependabot Cargo update (branch `dependabot/cargo/…`) | as for a maintainer's own pull request: no `test-build` needed, the queue's build and tests check the new crate; an update of the Actions still needs `test-build`, since `ci` runs no Rust jobs for a change under `.github/` |
 | anyone else adds the label | it comes off |
 | a push by a maintainer | the label stays; the app approves the new head and turns auto-merge on for it |
