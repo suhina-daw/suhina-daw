@@ -80,6 +80,7 @@ that describe them (*Code and its documents*). Read only the documents that matc
 ```text
 crates/
   model    L0 DAW-neutral project as pure data (tracks, channels, clip contents, clips, launcher)
+  style    L0 native style sheets, scoped selectors, typed values, cascade, Taffy layout and source edits; no GUI or I/O
   stretch  L0 time-stretching and pitch-shifting DSP: a pure-Rust port of Signalsmith Stretch (MIT)
   engine   L1 offline/real-time rendering of notes and audio clips, real-time time-stretching (ADR 0003)
            and the clip launcher; no file I/O
@@ -133,7 +134,8 @@ devices/
   pitch    MIDI effect: transposes notes by semitones or scale degrees, keeps them in a key window (Block, Fold, Limit)
 apps/
   suhina-cli   headless CLI: render, play, mcp, commands, audio, plugins, plugin, fm-synth
-  suhina       the desktop app (eframe): opens a project and shows it in the ui
+  suhina       the desktop app (eframe): opens a project and shows it in the ui;
+               theme file operations and live reload run on one background worker
 docs/
   architecture.md  how the crates, threads and commands fit together
   decisions/  architecture decision records; read 0001 before changing the model, 0004 before a device

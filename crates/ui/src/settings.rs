@@ -9,6 +9,7 @@ pub mod keymap;
 pub mod plugin_manager;
 mod settings_rows;
 pub mod settings_view;
+mod skin_editor;
 pub mod themes;
 pub mod track_sizes;
 pub mod update_settings;

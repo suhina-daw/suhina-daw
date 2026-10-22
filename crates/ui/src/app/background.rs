@@ -15,7 +15,7 @@ use std::sync::{
 
 #[derive(Clone, PartialEq, Eq)]
 struct Request {
-    path: String,
+    path: Arc<str>,
     blur: u8,
     size: [u32; 2],
 }
@@ -28,9 +28,9 @@ struct Completed {
 pub(super) struct Background {
     requested: Option<Request>,
     worker: Option<Receiver<Completed>>,
-    source: Option<(String, Arc<image::RgbaImage>)>,
+    source: Option<(Arc<str>, Arc<image::RgbaImage>)>,
     texture: Option<TextureHandle>,
-    texture_path: String,
+    texture_path: Arc<str>,
     visible: bool,
 }
 
@@ -49,11 +49,20 @@ impl Background {
         mut palette: crate::kit::theme::Palette,
     ) -> Result<(), String> {
         crate::kit::liquid::set_panel_base(ui.ctx(), palette.window_background);
-        let path = if settings.theme == "high-contrast" { "" } else { &settings.background_image };
-        let result = self.paint(ui, path, settings.view.background_blur);
+        let skin = crate::kit::skin::current();
+        let themed = skin.background.as_ref();
+        let path: Arc<str> = if settings.theme == "high-contrast" {
+            Arc::from("")
+        } else {
+            themed.cloned().unwrap_or_else(|| Arc::from(settings.background_image.as_str()))
+        };
+        let blur = if themed.is_some() { skin.background_blur } else { settings.view.background_blur };
+        let result = self.paint(ui, path, blur);
         let visible = result.as_ref().copied().unwrap_or(false);
         if visible {
-            let opacity = f32::from(settings.view.background_tint.min(100)) / 100.0;
+            let opacity = f32::from(
+                if themed.is_some() { skin.background_opacity } else { settings.view.background_tint }.min(100),
+            ) / 100.0;
             palette.window_background = palette.window_background.gamma_multiply(opacity);
             palette.panel_background = palette.panel_background.gamma_multiply(opacity);
             palette.border = palette.border.gamma_multiply(opacity);
@@ -65,13 +74,10 @@ impl Background {
         result.map(|_| ())
     }
 
-    fn paint(&mut self, ui: &Ui, path: &str, blur: u8) -> Result<bool, String> {
+    fn paint(&mut self, ui: &Ui, path: Arc<str>, blur: u8) -> Result<bool, String> {
         let rect = ui.max_rect();
-        let request = Request {
-            path: path.to_string(),
-            blur,
-            size: [rect.width().max(1.0) as u32, rect.height().max(1.0) as u32],
-        };
+        let request =
+            Request { path: path.clone(), blur, size: [rect.width().max(1.0) as u32, rect.height().max(1.0) as u32] };
         if let Some(worker) = &self.worker {
             match worker.try_recv() {
                 Ok(completed) => {
@@ -79,7 +85,7 @@ impl Background {
                     match completed.result {
                         Ok((source, pixels)) => {
                             if completed.request.path == path && !path.is_empty() {
-                                self.source = Some((path.to_string(), source));
+                                self.source = Some((path.clone(), source));
                             }
                             if completed.request == request && !path.is_empty() {
                                 let pixels = Arc::new(pixels);
@@ -90,7 +96,7 @@ impl Background {
                                     Some(crate::kit::liquid::BackgroundImage { id: texture.id(), pixels }),
                                 );
                                 self.texture = Some(texture);
-                                self.texture_path = path.to_string();
+                                self.texture_path = path.clone();
                             }
                         }
                         Err(error) if completed.request == request => return Err(error),
@@ -111,8 +117,11 @@ impl Background {
             return Ok(false);
         }
         if self.worker.is_none() && self.requested.as_ref() != Some(&request) {
-            let cached =
-                self.source.as_ref().filter(|(cached_path, _)| cached_path == path).map(|(_, image)| Arc::clone(image));
+            let cached = self
+                .source
+                .as_ref()
+                .filter(|(cached_path, _)| cached_path == &path)
+                .map(|(_, image)| Arc::clone(image));
             let job = request.clone();
             let ctx = ui.ctx().clone();
             let (send, receive) = mpsc::sync_channel(1);
@@ -177,8 +186,8 @@ mod tests {
         background.worker = Some(receive);
         background.requested = Some(request.clone());
         ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert!(background.paint(ui, "repaired.png", 5).is_err());
-            assert!(!background.paint(ui, "repaired.png", 5).unwrap());
+            assert!(background.paint(ui, "repaired.png".into(), 5).is_err());
+            assert!(!background.paint(ui, "repaired.png".into(), 5).unwrap());
         })
         .textures_delta
         .clear();
@@ -188,7 +197,7 @@ mod tests {
         // Supply cached decoded pixels to exercise retry publication without filesystem timing.
         background.source = Some(("repaired.png".into(), Arc::new(image::RgbaImage::new(1, 1))));
         ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert!(!background.paint(ui, "repaired.png", 5).unwrap());
+            assert!(!background.paint(ui, "repaired.png".into(), 5).unwrap());
         })
         .textures_delta
         .clear();
@@ -208,7 +217,7 @@ mod tests {
         let mut background = Background { worker: Some(receive), ..Default::default() };
         let ctx = egui::Context::default();
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert!(!background.paint(ui, "", 5).unwrap());
+            assert!(!background.paint(ui, "".into(), 5).unwrap());
         });
         output.textures_delta.clear();
         assert!(background.texture.is_none());

@@ -9,6 +9,7 @@
 mod application_bar;
 mod background;
 pub mod closing_dialog;
+mod control_editor;
 pub mod export_dialog;
 pub mod loading_dialog;
 pub mod menus;
@@ -16,6 +17,7 @@ pub mod missing_files;
 pub mod project_dialog;
 pub mod splash;
 pub mod start_panel;
+mod themed_toolbar;
 pub mod updates;
 
 use crate::kit::surface::Backgrounds as _;
@@ -2509,7 +2511,26 @@ impl App {
 
     /// Draws the window into `ui` and runs what the user asked for.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.control_editor_theme_changed(ui.ctx());
+        let capture = crate::kit::control_layout::Capture::begin(ui.ctx());
+        self.ui_content(ui);
+        self.control_editor(ui, &capture.entries());
+    }
+
+    fn ui_content(&mut self, ui: &mut Ui) {
         application_bar::resize_edges(ui);
+        if let Some(theme) = self.themes.get(&self.settings.theme) {
+            crate::kit::skin::configure(&theme.skin);
+        } else {
+            crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        }
+        let _css_frame = crate::kit::native_css::frame_with_motion(
+            ui,
+            self.settings.animations && self.settings.theme != "high-contrast",
+        );
+        let _window_style = crate::kit::style_class::enter("window");
+        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
             self.status = Status::Error(error);
         }
@@ -2575,15 +2596,20 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        keys_for_shortcuts(ui.ctx());
-        self.launch_keys(ui, &mut actions);
+        let placing = crate::kit::control_layout::editing(ui.ctx());
+        if !placing {
+            keys_for_shortcuts(ui.ctx());
+            self.launch_keys(ui, &mut actions);
+        }
         for id in std::mem::take(&mut self.queued) {
             self.do_action(&id, &mut actions);
         }
         for id in std::mem::take(&mut self.queued_menu_items) {
             self.run_menu_item(&id, ui.ctx(), &mut actions);
         }
-        self.shortcuts(ui, &mut actions);
+        if !placing {
+            self.shortcuts(ui, &mut actions);
+        }
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");
         self.sample_map_window(ui.ctx(), &mut actions);
@@ -2687,10 +2713,10 @@ impl App {
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
         if cfg!(target_os = "windows") {
-            egui::Panel::top("application-bar").exact_size(28.0).frame(egui::Frame::NONE).show(ui, |ui| {
-                ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-                application_bar::show(ui, self.settings.view, &project_info, &timing)
-            });
+            egui::Panel::top("application-bar")
+                .exact_size(28.0)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| application_bar::show(ui, self.settings.view, &project_info, &timing));
         }
         // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
         // at the top of the screen has the same menus).
@@ -2699,11 +2725,10 @@ impl App {
                 .exact_size(theme::MENU_BAR)
                 .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
                 .show(ui, |ui| {
-                    ui.painter().fill_background(
-                        ui.max_rect().expand2(Vec2::new(4.0, 0.0)),
-                        0.0,
-                        theme::panel_background(),
-                    );
+                    let _style_class = crate::kit::style_class::enter("menu-bar");
+                    let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
+                    ui.painter().fill_background(bar, 0.0, theme::panel_background());
+                    crate::kit::native_css::background(ui.painter(), bar);
                     self.menu_bar(ui, &mut actions)
                 });
         }
@@ -2715,7 +2740,9 @@ impl App {
             });
         }
         egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
+            let _style_class = crate::kit::style_class::enter("toolbar");
             ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
+            crate::kit::native_css::background(ui.painter(), ui.max_rect());
             self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
         });
         self.frame_trace.mark("control bar");
@@ -2731,7 +2758,15 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(theme::border())).show(ui, |ui| {
+        // A private image is already painted underneath the workspace. Keep its
+        // transparent regions visible instead of covering them with separator ink.
+        let workspace_base = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
+            egui::Color32::TRANSPARENT
+        } else {
+            theme::border()
+        };
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
+            let _workspace_style = crate::kit::style_class::enter_named("workspace", "workspace");
             let area = ui.available_rect_before_wrap();
             // A 1 px gap shows the line colour between the bars and the view.
             let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
@@ -2758,8 +2793,25 @@ impl App {
             // It slides in and out from its side, with animations on (#708).
             self.browser_part = motion::toward(ui.ctx(), Id::new("browser-shown"), browser_wanted, BROWSER_SLIDE);
             let browser_shown = self.browser_part > 0.001;
+            let stacked = self.settings.device_layout == DeviceLayout::Stack;
+            let css_workspace = crate::kit::native_css::workspace(
+                inner.size(),
+                browser_shown.then_some(self.settings.browser_width as f32),
+                (grid.is_some() && self.detail_open)
+                    .then_some((stacked, if stacked { self.detail_width } else { self.detail_height })),
+            )
+            .map(|layout| layout.translated(inner.min.to_vec2()));
             self.frame_trace.mark("bars");
-            let inner = if browser_shown && !full_width { self.browser_panel(ui, inner) } else { inner };
+            let inner = if let Some(layout) = &css_workspace {
+                if let Some(panel) = layout.browser {
+                    self.browser_panel(ui, inner, Some((panel, layout.main)));
+                }
+                inner
+            } else if browser_shown && !full_width {
+                self.browser_panel(ui, inner, None)
+            } else {
+                inner
+            };
             self.frame_trace.mark("browser");
             let mut view_area = inner;
             self.detail_drop = None;
@@ -2786,8 +2838,13 @@ impl App {
             }
             self.last_clip = shown_clip;
             self.expanded_panel = None;
-            let inner = if grid.is_some() && self.detail_open {
-                self.detail_area(ui, inner, &mut actions)
+            let inner = if grid.is_some()
+                && self.detail_open
+                && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
+            {
+                let geometry =
+                    css_workspace.as_ref().and_then(|layout| layout.detail.map(|detail| (layout.main, detail)));
+                self.detail_area(ui, inner, &mut actions, geometry)
             } else {
                 self.place_editors(&[]);
                 // A hidden piano roll does not keep the keyboard, nor the view to one track, and
@@ -2796,15 +2853,17 @@ impl App {
                 actions.extend(self.piano_roll.stop_audition());
                 self.arrangement.focus = None;
                 // In a row under the view, the splitter stays along the bottom, to drag it open.
-                if grid.is_some() && self.settings.device_layout != DeviceLayout::Stack {
+                if let Some(layout) = &css_workspace {
+                    layout.main
+                } else if grid.is_some() && self.settings.device_layout != DeviceLayout::Stack {
                     self.collapsed_splitter(ui, inner)
                 } else {
                     inner
                 }
             };
             self.frame_trace.mark("detail");
-            let inner = if browser_shown && full_width {
-                let rest = self.browser_panel(ui, inner);
+            let inner = if browser_shown && full_width && css_workspace.is_none() {
+                let rest = self.browser_panel(ui, inner, None);
                 view_area = Rect::from_min_max(
                     Pos2::new(rest.left(), view_area.top()),
                     Pos2::new(rest.right(), view_area.bottom()),
@@ -2813,7 +2872,11 @@ impl App {
             } else {
                 inner
             };
+            if css_workspace.is_some() {
+                view_area = inner;
+            }
             self.frame_trace.mark("browser");
+            let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));
@@ -2854,7 +2917,10 @@ impl App {
             self.arrangement.meters = meters;
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
-            if self.sample_map.view.large && dragged.is_none() {
+            let styled_ui = crate::kit::style_class::ui(ui);
+            let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
+            let ui = &mut *styled_ui;
+            if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {
                 let (panel, browser, projects, settings) =
                     (&mut self.sample_map, &mut self.browser, &mut self.projects, &mut self.settings);
                 if panel.show(ui, inner, browser, projects, settings, self.revision) {
@@ -3375,7 +3441,17 @@ impl App {
 
     /// Lays out the detail area beside or under the view in `area`, draws it with its splitter,
     /// and returns what is left for the view.
-    fn detail_area(&mut self, ui: &mut Ui, area: Rect, actions: &mut Vec<Action>) -> Rect {
+    fn detail_area(
+        &mut self,
+        ui: &mut Ui,
+        area: Rect,
+        actions: &mut Vec<Action>,
+        geometry: Option<(Rect, Rect)>,
+    ) -> Rect {
+        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-detail");
+        let styled_ui = crate::kit::style_class::ui(ui);
+        let mut styled_ui = if let Some((_, detail)) = geometry { styled_ui.clipped_to(detail) } else { styled_ui };
+        let ui = &mut *styled_ui;
         let stacked = self.settings.device_layout == DeviceLayout::Stack;
         // What it shows: the selected clip, or the selected track's devices.
         let (track, clip) = match self.shown {
@@ -3499,7 +3575,8 @@ impl App {
         let least = self.least_detail_height();
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
         // top, the edited track's lane above it (Melodyne as a MIDI clip's notes are).
-        let pullable = !stacked && (piano.is_some() || ara.is_some()) && self.shown == View::Arrangement;
+        let pullable =
+            geometry.is_none() && !stacked && (piano.is_some() || ara.is_some()) && self.shown == View::Arrangement;
         let pulled = pullable && self.detail_max;
         // With the switch on Devices the track's devices take the editor's place, and nothing is
         // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
@@ -3527,7 +3604,9 @@ impl App {
                 self.detail_showing,
             ),
         );
-        let (view, splitter, detail) = if stacked {
+        let (view, splitter, detail) = if let Some((view, detail)) = geometry {
+            (view, Rect::NOTHING, detail)
+        } else if stacked {
             self.detail_width = self.detail_width.clamp(180.0, (area.width() - 240.0).max(180.0));
             let x = area.right() - self.detail_width;
             (
@@ -3564,40 +3643,42 @@ impl App {
         // The splitter: dragged to make the detail area bigger or smaller; under the
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
-        let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-        let response =
-            ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
-        // A double-click closes the detail area, as a double-click on a split view's divider does
-        // on macOS; a double-click on the closed splitter opens it at its default size.
-        if response.double_clicked() {
-            self.detail_max = false;
-            self.hide_editor();
-        }
-        if response.dragged_by(egui::PointerButton::Primary) {
-            let delta = response.drag_delta();
-            if stacked {
-                self.detail_width -= delta.x;
-            } else {
-                let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
-                self.detail_drag = Some(height);
-                self.detail_max = pullable && height > area.height() - MIN_VIEW;
-                if height < least / 2.0 {
-                    // Dragged down past half its least height, the detail area closes; the same
-                    // drag going back up opens it again (`collapsed_splitter`).
-                    self.detail_max = false;
-                    self.hide_editor();
-                } else if !self.detail_max {
-                    self.detail_height = height.max(least);
-                }
+        if geometry.is_none() {
+            let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
+            let response =
+                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
+            // A double-click closes the detail area, as a double-click on a split view's divider does
+            // on macOS; a double-click on the closed splitter opens it at its default size.
+            if response.double_clicked() {
+                self.detail_max = false;
+                self.hide_editor();
             }
-        } else {
-            self.detail_drag = None;
+            if response.dragged_by(egui::PointerButton::Primary) {
+                let delta = response.drag_delta();
+                if stacked {
+                    self.detail_width -= delta.x;
+                } else {
+                    let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
+                    self.detail_drag = Some(height);
+                    self.detail_max = pullable && height > area.height() - MIN_VIEW;
+                    if height < least / 2.0 {
+                        // Dragged down past half its least height, the detail area closes; the same
+                        // drag going back up opens it again (`collapsed_splitter`).
+                        self.detail_max = false;
+                        self.hide_editor();
+                    } else if !self.detail_max {
+                        self.detail_height = height.max(least);
+                    }
+                }
+            } else {
+                self.detail_drag = None;
+            }
+            let painter = ui.painter_at(splitter);
+            painter.fill_background(splitter, 0.0, theme::control_background());
+            let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
+            painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, theme::text_hint());
         }
-        let painter = ui.painter_at(splitter);
-        painter.fill_background(splitter, 0.0, theme::control_background());
-        let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-        painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, theme::text_hint());
 
         if let Some(shown_track) = clip.map(ClipRef::track).or(track) {
             self.detail_drop = Some((detail, shown_track));
@@ -3994,7 +4075,11 @@ impl App {
 
     /// The tab row: one tab per open project, the active one lit; a tab's × closes it.
     fn tab_row(&mut self, ui: &mut Ui, actions: &mut Vec<Action>) {
+        let _style_class = crate::kit::style_class::enter("project-tabs");
+        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let ui = &mut *styled_ui;
         let bar = ui.max_rect();
+        crate::kit::native_css::background(ui.painter(), bar);
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
         let active = self.projects.active();
@@ -4020,7 +4105,12 @@ impl App {
             let idle = motion::mix(theme::window_background(), theme::panel_hover(), widgets::hover(ui, &response));
             painter.fill_background(tab, 0.0, motion::mix(idle, theme::panel_background(), lit));
             let text = motion::mix(theme::text_secondary(), theme::text_primary(), lit);
-            painter.galley(Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0), galley, text);
+            widgets::paint_text(
+                &painter,
+                Pos2::new(tab.left() + PAD, tab.center().y - galley.size().y / 2.0),
+                galley,
+                text,
+            );
             let cross = motion::mix(theme::text_hint(), theme::text_primary(), widgets::hover(ui, &close_response));
             let c = close.center();
             for (a, b) in [(Vec2::new(-3.0, -3.0), Vec2::new(3.0, 3.0)), (Vec2::new(-3.0, 3.0), Vec2::new(3.0, -3.0))] {
@@ -4567,6 +4657,8 @@ impl App {
                     crate::settings::settings_view::ThemeRequest::Edit(_)
                         | crate::settings::settings_view::ThemeRequest::EditRgba { .. }
                         | crate::settings::settings_view::ThemeRequest::EditLiquid(_)
+                        | crate::settings::settings_view::ThemeRequest::EditSkin(_)
+                        | crate::settings::settings_view::ThemeRequest::EditCss(_)
                         | crate::settings::settings_view::ThemeRequest::EditGradients(_)
                 )
             })
@@ -4574,6 +4666,8 @@ impl App {
 
     /// The menu bar: the same actions as the shortcuts and the views' controls.
     fn menu_bar(&mut self, ui: &mut Ui, actions: &mut Vec<Action>) {
+        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let ui = &mut *styled_ui;
         // Whether the File menu showed last frame, so its recent list is read once as it opens.
         let file_menu_was_open = std::mem::take(&mut self.file_menu_open);
         let shown = menus::show(ui, &self.menus());
@@ -5692,7 +5786,8 @@ impl App {
 
     /// Lays out the browser at the side of `area`, draws it with its handle, and returns what is
     /// left for the view.
-    fn browser_panel(&mut self, ui: &mut Ui, area: Rect) -> Rect {
+    fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect)>) -> Rect {
+        let _panel_style = crate::kit::style_class::enter_named("workspace-panel", "panel-browser");
         let (low, high) = crate::settings::BROWSER_WIDTHS;
         let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
         let width = (self.settings.browser_width as f32).clamp(low as f32, widest);
@@ -5701,7 +5796,9 @@ impl App {
         // squeezed, and its handle takes hold only once it is all there.
         let part = self.browser_part.clamp(0.0, 1.0);
         let (shown, handle_width) = (width * part, BROWSER_HANDLE * part);
-        let (panel, handle, rest) = if left {
+        let (panel, handle, rest) = if let Some((panel, rest)) = geometry {
+            (panel, Rect::NOTHING, rest)
+        } else if left {
             let panel = Rect::from_min_max(
                 Pos2::new(area.left() + shown - width, area.top()),
                 Pos2::new(area.left() + shown, area.bottom()),
@@ -5723,7 +5820,7 @@ impl App {
             (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
         };
         let default_width = crate::settings::Settings::default().browser_width;
-        let (resized, done) = if part >= 1.0 {
+        let (resized, done) = if part >= 1.0 && geometry.is_none() {
             browser_view::resize_handle(ui, handle, width, left, default_width as f32)
         } else {
             (None, false)
@@ -6144,7 +6241,7 @@ impl App {
             theme::hairline(if label.is_some() { theme::accent() } else { theme::border_strong() }),
             egui::StrokeKind::Inside,
         );
-        painter.galley(rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
+        widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
         ui.ctx().request_repaint();
     }
 
@@ -6595,6 +6692,11 @@ impl App {
         ram: Option<u64>,
         actions: &mut Vec<Action>,
     ) {
+        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let ui = &mut *styled_ui;
+        if self.themed_toolbar(ui, grid, cpu, ram, actions) {
+            return;
+        }
         let bar = ui.max_rect();
         ui.allocate_rect(bar, Sense::hover());
         let painter = ui.painter_at(bar);
@@ -6607,6 +6709,7 @@ impl App {
                 theme::ui_font(theme::TEXT),
                 theme::text_secondary(),
             );
+            self.toolbar_edit_overlay(ui, bar);
             return;
         };
         // The transport has its own comfortable hit height, independent of dense list rows.
@@ -6616,18 +6719,25 @@ impl App {
         };
 
         // Left: the browser's show/hide button, tempo, time signature, launch quantisation.
+        let mut native_styles = themed_toolbar::NativeStyles::default();
         let mut x = bar.left() + PAD;
         let browser_rect = row(x, theme::ROW);
+        x = browser_rect.right() + 4.0;
+        let browser_rect = native_styles.place(ui, "browser", browser_rect);
         let label = if self.settings.browser_open { "Hide browser" } else { "Show browser" };
         let response = widgets::button_area(ui, browser_rect, Id::new("browser-toggle"), label);
         let response = match self.keymap.binding_text("view.browser") {
             Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
             None => response.on_hover_text(label),
         };
-        painter.fill_background(
+        let browser_style = crate::kit::style_class::enter_named_response("button", "browser-toggle", &response);
+        widgets::button_surface(
+            &painter,
             browser_rect,
-            0.0,
+            &response,
+            self.settings.browser_open,
             motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+            0.0,
         );
         // A panel with its left part filled while the browser shows.
         let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
@@ -6642,8 +6752,10 @@ impl App {
         if response.clicked() {
             self.toggle_browser();
         }
-        x = browser_rect.right() + 4.0;
+        drop(browser_style);
         let tempo_rect = row(x, 56.0);
+        x = tempo_rect.right() + PAD;
+        let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("sampler-tempo"), grid.tempo_bpm));
         let tempo_shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
         let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", format!("{tempo_shown:.2}"));
@@ -6667,24 +6779,41 @@ impl App {
             mono.clone(),
             theme::text_primary(),
         );
-        x = tempo_rect.right() + PAD;
         // The time signature playing, like the tempo: a launched scene may have changed it.
         let ts = grid.time_signature();
         let signature =
             if self.session().is_some() { format!("{} / {}", ts.numerator, ts.denominator) } else { String::new() };
         let ts_rect = row(x, 40.0);
-        widgets::text_in(&painter, ts_rect, Align2::CENTER_CENTER, &signature, mono.clone(), theme::text_secondary());
         x = ts_rect.right() + PAD;
-        let small = theme::ui_font(theme::TEXT_SMALL);
+        let ts_rect = native_styles.place(ui, "signature", ts_rect);
+        widgets::text_in(
+            &painter,
+            ts_rect,
+            Align2::CENTER_CENTER,
+            &signature,
+            theme::mono_font(theme::TEXT),
+            theme::text_secondary(),
+        );
         // At narrow widths the captions go, then the count-in and the metronome (the main strip
         // has one too), so nothing runs under the transport in the middle.
         let transport_left = bar.center().x - (28.0 * 3.0 + 2.0 + PAD + 64.0) / 2.0 - PAD;
         let captions = x + 26.0 + 64.0 + PAD + 50.0 + 64.0 + PAD + 28.0 <= transport_left;
         let grid_caption = row(x, if captions { 26.0 } else { 0.0 });
         if captions {
-            widgets::text_in(&painter, grid_caption, Align2::LEFT_CENTER, "Grid", small.clone(), theme::text_hint());
+            let grid_caption = native_styles.place(ui, "grid", grid_caption);
+            widgets::text_in(
+                &painter,
+                grid_caption,
+                Align2::LEFT_CENTER,
+                "Grid",
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_hint(),
+            );
         }
         let quant_rect = row(grid_caption.right(), 64.0);
+        let quant_base = quant_rect;
+        let quant_rect = native_styles.place(ui, "grid", quant_rect);
+        let mono = theme::mono_font(theme::TEXT);
         // One value for both: when launched clips start, and the Arrangement view's grid.
         let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
         let mut chosen = current;
@@ -6712,60 +6841,116 @@ impl App {
         if chosen != current {
             actions.push(Action::new("launcher.setQuantization", json!({ "value": chosen })));
         }
-        let count_caption = row(quant_rect.right() + PAD, if captions { 50.0 } else { 0.0 });
+        let count_caption = row(quant_base.right() + PAD, if captions { 50.0 } else { 0.0 });
         if captions {
-            widgets::text_in(&painter, count_caption, Align2::LEFT_CENTER, "Count-in", small, theme::text_hint());
+            let count_caption = native_styles.place(ui, "count-in", count_caption);
+            widgets::text_in(
+                &painter,
+                count_caption,
+                Align2::LEFT_CENTER,
+                "Count-in",
+                theme::ui_font(theme::TEXT_SMALL),
+                theme::text_hint(),
+            );
         }
         let count_in = row(count_caption.right(), 64.0);
         let metronome = row(count_in.right() + PAD, 28.0);
         if metronome.right() <= transport_left {
+            let count_in = native_styles.place(ui, "count-in", count_in);
             let bars = self.session().map_or(0, |s| s.count_in_bars());
             crate::session::record_controls::count_in_menu(ui, count_in, bars, actions);
+            let metronome = native_styles.place(ui, "metronome", metronome);
             crate::session::record_controls::metronome_button(ui, &painter, metronome, grid.metronome, actions);
         }
 
         // Centre: play, stop, record, position.
         let transport_width = 28.0 * 3.0 + 2.0 + PAD + 64.0;
         let mut x = bar.center().x - transport_width / 2.0;
-        let play = row(x, 28.0);
-        let response = widgets::button_area(ui, play, Id::new("play"), "Play");
-        if response.clicked() {
-            actions.push(self.play_action(false));
+        let transport = native_styles.place(ui, "transport", row(x, 86.0));
+        let transport_offset = transport.left() - x;
+        let position_base = row(x + 86.0 + PAD, 64.0);
+        x += transport_offset;
+        let play_base = row(x, 28.0);
+        let play = crate::kit::control_layout::place("transport-play", play_base, bar);
+        if !crate::kit::control_layout::placement("transport-play").hidden {
+            let response = widgets::button_area(ui, play, Id::new("play"), "Play");
+            let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
+            if response.clicked() {
+                actions.push(self.play_action(false));
+            }
+            let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
+            let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            widgets::button_surface(
+                &painter,
+                play,
+                &response,
+                grid.running,
+                motion::mix(hover, theme::control_active(), running),
+                0.0,
+            );
+            let glyph =
+                crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), running));
+            let c = play.center();
+            if !crate::kit::skin::paint(
+                &painter,
+                play,
+                "play",
+                crate::kit::skin::State::response(&response, grid.running),
+                glyph,
+                0.0,
+            ) {
+                painter.add(egui::Shape::convex_polygon(
+                    vec![c + Vec2::new(-3.5, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.5, 5.0)],
+                    glyph,
+                    egui::Stroke::NONE,
+                ));
+            }
+            drop(play_style);
         }
-        let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
-        let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(play, 0.0, motion::mix(hover, theme::control_active(), running));
-        let glyph = motion::mix(theme::text_primary(), theme::accent(), running);
-        let c = play.center();
-        painter.add(egui::Shape::convex_polygon(
-            vec![c + Vec2::new(-3.5, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.5, 5.0)],
-            glyph,
-            egui::Stroke::NONE,
-        ));
-        x = play.right() + 1.0;
-        let stop = row(x, 28.0);
-        let response = widgets::button_area(ui, stop, Id::new("stop"), "Stop");
-        if response.clicked() {
-            actions.push(self.stop_action());
+        x = play_base.right() + 1.0;
+        let stop_base = row(x, 28.0);
+        let stop = crate::kit::control_layout::place("transport-stop", stop_base, bar);
+        if !crate::kit::control_layout::placement("transport-stop").hidden {
+            let response = widgets::button_area(ui, stop, Id::new("stop"), "Stop");
+            let stop_style = crate::kit::style_class::enter_named_response("button", "stop", &response);
+            if response.clicked() {
+                actions.push(self.stop_action());
+            }
+            widgets::button_surface(
+                &painter,
+                stop,
+                &response,
+                false,
+                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+                0.0,
+            );
+            if !crate::kit::skin::paint(
+                &painter,
+                stop,
+                "stop",
+                crate::kit::skin::State::response(&response, false),
+                theme::text_primary(),
+                0.0,
+            ) {
+                painter.rect_filled(
+                    Rect::from_center_size(stop.center(), Vec2::splat(8.0)),
+                    0.0,
+                    theme::text_primary(),
+                );
+            }
+            drop(stop_style);
         }
-        painter.fill_background(
-            stop,
-            0.0,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-        );
-        painter.rect_filled(Rect::from_center_size(stop.center(), Vec2::splat(8.0)), 0.0, theme::text_primary());
-        let record = row(stop.right() + 1.0, 28.0);
+        let record = row(stop_base.right() + 1.0, 28.0);
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
-        x = record.right() + PAD;
-        let position = row(x, 64.0);
+        let position = native_styles.place(ui, "position", position_base);
         painter.fill_background(position, 0.0, theme::window_background());
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
             Align2::LEFT_CENTER,
             &grid.position(),
-            mono,
+            theme::mono_font(theme::TEXT),
             theme::text_primary(),
         );
 
@@ -6774,7 +6959,7 @@ impl App {
         // (per mille, smoothed): how much of the time the audio engine spends rendering. In a
         // narrow window a block that would reach the position readout is left out, the RAM
         // first, so nothing overlaps and the order stays.
-        let centre_end = position.right() + PAD;
+        let centre_end = position_base.right() + PAD;
         let fits = |right: f32, width: f32| right - width >= centre_end;
         let mut right = bar.right() - PAD;
         let mut underline_at = None;
@@ -6784,10 +6969,13 @@ impl App {
         let pointer = ui.ctx().pointer_latest_pos();
         let mut hovered_switch = None;
         for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Session")] {
+            native_styles.enter("views");
             let color = if self.shown == view { theme::text_primary() } else { theme::text_secondary() };
             let galley = widgets::fitted(&painter, name, theme::ui_font(theme::TEXT), color, 120.0);
             let size = galley.size();
             let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
+            right = rect.left() - 12.0;
+            let rect = native_styles.place(ui, "views", rect);
             let response = widgets::button_area(ui, rect, Id::new(("view", name)), format!("{name} view"));
             if response.clicked() {
                 self.shown = view;
@@ -6798,15 +6986,16 @@ impl App {
             }
             let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
             let pos = Pos2::new(rect.left(), rect.center().y - size.y / 2.0);
-            painter.galley(pos, galley, color);
+            widgets::paint_text(&painter, pos, galley, color);
             if self.shown == view {
-                underline_at = Some((pos.x, pos.y + size.y + 1.0, size.x));
+                underline_at = Some((pos.x, pos.y + size.y + 1.0, size.x, theme::text_primary()));
             }
-            right = rect.left() - 12.0;
         }
         right += 12.0 - PAD;
         if let Some(milli) = cpu.filter(|_| fits(right, 56.0)) {
             let rect = row(right - 56.0, 56.0);
+            right = rect.left() - PAD;
+            let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
             painter.fill_background(rect, 0.0, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
@@ -6839,11 +7028,12 @@ impl App {
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("CPU load {percent:.1}%"))
             });
-            right = rect.left() - PAD;
         }
         // Left of that, the program's own RAM (its resident memory), in megabytes or gigabytes.
         if let Some(bytes) = ram.filter(|_| fits(right, 76.0)) {
             let rect = row(right - 76.0, 76.0);
+            right = rect.left() - PAD;
+            let rect = native_styles.place(ui, "performance", rect);
             painter.fill_background(rect, 0.0, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
@@ -6866,27 +7056,29 @@ impl App {
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("RAM usage {}", ram_text(bytes)))
             });
-            right = rect.left() - PAD;
         }
         // Left of that, the mapping mode's button, lit while the mode is on.
         if !self.projects.is_empty() {
+            native_styles.enter("mapping");
             let on = self.view.launch_keys.mode.on;
             let color = if on { theme::accent() } else { theme::text_secondary() };
             let galley = widgets::fitted(&painter, "Map keys", theme::ui_font(theme::TEXT), color, 80.0);
             let size = galley.size();
             if fits(right, size.x) {
                 let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
+                right = rect.left() - PAD;
+                let rect = native_styles.place(ui, "mapping", rect);
                 let response = widgets::button_area(ui, rect, Id::new("map-keys"), "Map keys to slots and scenes");
                 if response.clicked() {
                     self.toggle_mapping_mode();
                 }
                 let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
-                painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
-                right = rect.left() - PAD;
+                widgets::paint_text(&painter, Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
             }
         }
         // Left of that, each agent the person let in (ADR 0028), lit; a click disconnects it.
         for (connection, client) in self.agents.clone() {
+            native_styles.enter("agents");
             let text = format!("Disconnect {client}");
             let galley = widgets::fitted(&painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
             let size = galley.size();
@@ -6894,31 +7086,33 @@ impl App {
                 break;
             }
             let rect = Rect::from_min_max(Pos2::new(right - size.x, bar.top()), Pos2::new(right, bar.bottom()));
+            right = rect.left() - PAD;
+            let rect = native_styles.place(ui, "agents", rect);
             let response = widgets::button_area(ui, rect, Id::new(("agent", connection)), text.clone());
             if response.clicked() {
                 self.agent_disconnects.push(connection);
                 self.status = Status::Done(format!("Disconnected {client}"));
             }
             let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
-            painter.galley(Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
-            right = rect.left() - PAD;
+            widgets::paint_text(&painter, Pos2::new(rect.left(), rect.center().y - size.y / 2.0), galley, color);
         }
+        drop(native_styles);
         self.hover_switch(ui.ctx(), hovered_switch);
         // The underline slides to the view that was picked.
-        if let Some((x, y, width)) = underline_at {
+        if let Some((x, y, width, color)) = underline_at {
             let ctx = ui.ctx();
             let x = motion::value(ctx, Id::new("view-underline-x"), x, motion::SLIDE);
             let width = motion::value(ctx, Id::new("view-underline-width"), width, motion::SLIDE);
-            painter.rect_filled(
-                Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)),
-                0.0,
-                theme::text_primary(),
-            );
+            painter.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, 1.0)), 0.0, color);
         }
         painter.hline(bar.x_range(), bar.bottom() - 0.5, theme::hairline(theme::border()));
+        self.toolbar_edit_overlay(ui, bar);
     }
 
     fn status_bar(&self, ui: &mut Ui, grid: Option<&Grid>) {
+        let _style_class = crate::kit::style_class::enter("status-bar");
+        let mut styled_ui = crate::kit::style_class::ui(ui);
+        let ui = &mut *styled_ui;
         let bar = ui.max_rect();
         let painter = ui.painter_at(bar);
         let (text, color) = match &self.status {
@@ -7055,7 +7249,7 @@ fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
         theme::hairline(if lands { theme::accent() } else { theme::border_strong() }),
         egui::StrokeKind::Inside,
     );
-    painter.galley(rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
+    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
     ctx.request_repaint();
 }
 
@@ -7129,6 +7323,39 @@ pub(crate) const NAME_RECT_TRACK: &str = "track-name-rect";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn css_workspace_moves_native_controls_and_preserves_project_state() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.settings.browser_open = true;
+        app.detail_open = true;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size((1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        // Let the normal first-frame project/theme initialization finish before
+        // checking that changing presentation does not edit the project.
+        let before = harness.state().session().unwrap().project().clone();
+        harness.state_mut().save_toolbar_skin(crate::kit::skin::Skin {css:Some(std::sync::Arc::from("#workspace {display:grid;grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:minmax(0,1fr) 160px;gap:8px;} #panel-browser {grid-column:2;grid-row:1 / -1;} #panel-main {grid-column:1;grid-row:1;} #panel-detail {grid-column:1;grid-row:2;}")),..Default::default()});
+        harness.run();
+        let slot = harness.get_by_label("Stop Keys (scene 1)").rect();
+        assert!(slot.right() < 1032.0, "native slot uses CSS main rectangle: {slot:?}");
+        assert!(harness.query_by_label("Detail area splitter").is_none());
+        assert_eq!(harness.state().session().unwrap().project(), &before);
+        harness.state_mut().save_toolbar_skin(crate::kit::skin::Skin::default());
+        harness.run();
+        let native_slot = harness.get_by_label("Stop Keys (scene 1)").rect();
+        assert!(
+            native_slot.left() > slot.left() + 100.0,
+            "removing CSS restores the native browser beside the view: {slot:?} -> {native_slot:?}"
+        );
+        assert!(harness.query_by_label("Detail area splitter").is_some());
+        assert_eq!(harness.state().session().unwrap().project(), &before);
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    }
 
     #[test]
     fn a_pending_quit_check_continues_after_the_close_event_is_gone() {

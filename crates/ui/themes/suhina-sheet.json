@@ -1,0 +1,109 @@
+{
+  "name": "Suhina Sheet",
+  "description": "A playful green-and-white Session worksheet with square SVG controls. Audio is calculated in decibels, not cells.",
+  "colors": {
+    "window.background": "#FFFFFF",
+    "panel.background": "#F3F5F3",
+    "panel.hoverBackground": "#C6E0B4",
+    "control.background": "#FFFFFF",
+    "control.hoverBackground": "#D3EBCB",
+    "control.activeBackground": "#A9D18E",
+    "control.playingBackground": "#C6E0B4",
+    "control.selectedBackground": "#217346",
+    "border": "#D4DDD6",
+    "border.strong": "#B3C4B8",
+    "text.primary": "#24372B",
+    "text.secondary": "#4C6253",
+    "text.hint": "#708276",
+    "text.value": "#285B3C",
+    "text.inverse": "#FFFFFF",
+    "text.playing": "#143E25",
+    "accent": "#217346",
+    "recording": "#C33C36",
+    "recording.background": "#F8E0DD",
+    "meter.normal": "#00B050",
+    "meter.hot": "#DC9A21",
+    "slot.empty": "#C5D3C9",
+    "track.mutedBackground": "#E7ECE8",
+    "pan.background": "#FFFFFF",
+    "pan.centre": "#95AB9C",
+    "clip.midiDefault": "#A9D18E",
+    "clip.audioDefault": "#9BC2E6",
+    "track.1": "#C99070",
+    "track.2": "#D8BA64",
+    "track.3": "#83A9B4",
+    "track.4": "#A699B8",
+    "track.5": "#95AA80",
+    "track.6": "#C18F9E",
+    "track.7": "#879BBE",
+    "track.8": "#80ADA1",
+    "kind.kick": "#D06E5E",
+    "kind.snare": "#73AAC0",
+    "kind.clap": "#5EC0B0",
+    "kind.closedHat": "#C6AC5E",
+    "kind.openHat": "#D08F6E",
+    "kind.hat": "#D8C47A",
+    "kind.rim": "#8CA8E0",
+    "kind.tom": "#B074A4",
+    "kind.crash": "#E0A0C8",
+    "kind.ride": "#C8B8E8",
+    "kind.cymbal": "#A497CC",
+    "kind.percussion": "#8FC06E",
+    "kind.bass": "#A84F4F",
+    "kind.tonal": "#6EB0D0",
+    "kind.vocal": "#E8D0A0",
+    "kind.effect": "#9CC49C",
+    "kind.other": "#8A8680",
+    "selection": "#107C41",
+    "track.headerBackground": "#F2F7F3",
+    "track.headerSelectedBackground": "#D6EAD9",
+    "grid.major": "#B9CCBF",
+    "grid.minor": "#DFE8E2",
+    "browser.text.primary": "#123E24",
+    "browser.text.secondary": "#1F5732",
+    "browser.text.hint": "#346C46",
+    "browser.text.value": "#123E24",
+    "text.onColorLight": "#FFFFFF",
+    "text.onColorDark": "#1C3827"
+  },
+  "skin": {
+    "meter": "continuous",
+    "meter-intensity": 90,
+    "segments": 24,
+    "session": {
+      "track-width": 88,
+      "return-width": 80,
+      "scene-width": 84,
+      "header-height": 24,
+      "slot-height": 22
+    },
+    "styles": {
+      ".pan": {
+        "--suhina-appearance": "knob"
+      }
+    },
+    "controls": {
+      "mixer-color": {
+        "hidden": true
+      },
+      "mixer-meter": {
+        "left": -48
+      },
+      "mixer-volume": {
+        "left": 18
+      },
+      "mixer-volume-scale": {
+        "left": -40
+      },
+      "mixer-volume-readout": {
+        "left": -24,
+        "width": 30
+      },
+      "mixer-pan": {
+        "left": 25,
+        "width": 24,
+        "height": 24
+      }
+    }
+  }
+}

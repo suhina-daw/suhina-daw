@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Session view: regions, c
 read_when: Session view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-10-20
+last_verified: 2026-10-22
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -30,6 +30,17 @@ structure and behaviour; colours, sizes and look come from [`docs/design/brief.m
 Items marked **(to observe)** still need checking in Live.
 
 ## Window regions
+
+Session and Arrangement remain separate views. Optional theme-owned Session density
+sets track/return/scene widths and header/slot heights through `skin.session` and
+canonical native CSS; omitted values preserve the default sizes below. Painting,
+scrolling and clip/file drop targets share these dimensions. The existing mixer-height
+divider remains independent. See [theme skins](theme-skins.md#session-density-and-meter-materials).
+The existing knob/field preference applies to the Session pan face as well as compact
+volume: a knob uses the same native pan input area and command. A narrow themed pan
+area shows the dial alone; a wider one keeps the value beside it.
+Canonical `.pan { --suhina-appearance: knob; }` or `field` can override that preference
+as portable theme data in either view. `native` restores the global preference.
 
 From top to bottom:
 
@@ -88,6 +99,12 @@ Suhina keeps one 20 px status bar for messages and counts and has no separate in
 this list and `docs/design/components.md` differ, components.md describes Suhina.
 
 ## Session view
+
+A theme can opt slot columns into colour/state-keyed `track.body` SVG/PNG artwork
+using canonical `.track-column { --suhina-track-artwork: on; }`. The image stays
+behind cells; empty slots retain the texture, with native stop marks and hover
+feedback. Launch, selection, mapping and drop geometry are unchanged. Omission or
+`off` retains native slot fills. See [theme skins](theme-skins.md).
 
 A grid. **Columns are tracks** in project order: regular tracks, then a gap, then return tracks,
 then the main track at the far right. **Rows are scenes.** The main track's column holds the scene

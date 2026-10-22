@@ -198,6 +198,11 @@ and theme-specific liquid strengths. Its built-in id is `suhina-forest-amber`, l
 custom `forest-amber` files intact. Background images remain separately chosen local files.
 
 Themes that come with Suhina (`crates/ui/themes/`, read-only; editing one makes a copy):
+Suhina Sheet is an original playful spreadsheet-inspired light theme: green chrome,
+white cells, compact Session geometry and embedded square SVG controls. Its palette,
+CSS and artwork travel together when duplicated or exported.
+Suhina Meadow pairs classic blue/cream paper surfaces with an original generated
+green-hill background and translucent liquid materials. Its SVG controls and PNG are embedded and export with the theme. Suhina Blocks adds original brown plank surfaces, stone-like controls and colour-keyed pixel textures without landscape wallpaper.
 Suhina Dark (the default), Editor Dark (cool greys and blue, like a code editor), Suhina
 Light, High Contrast, and four popular open palettes mapped onto the tokens: Dracula, Nord,
 Catppuccin Mocha and Latte, Solarized Dark (all MIT, licences in `crates/ui/themes/licenses/`).
@@ -262,3 +267,14 @@ Manrope is the default proportional UI font, matching the website. The original 
 Semi Expanded asset and license remain embedded as a fallback and the named `encode-sans`
 font family. This does not yet add a user-facing font selector (#513). Number fields retain
 IBM Plex Mono. All bundled fonts load offline.
+
+
+### Theme skins and native CSS
+
+Themes also own SVG control artwork, continuous/segmented/needle meter presentation,
+and optional control-bar module order/visibility. These travel in a portable theme ZIP,
+including a theme's background PNG. The theme editor and the initial native CSS subset
+share the same model, with live CSS/JSON file synchronization. See
+[Theme skins](../spec/theme-skins.md) for supported declarations and failure handling.
+The broader modern CSS target and candidate engines are recorded separately in
+[ADR 0030](../decisions/0030-native-theme-css.md); this initial subset is not full CSS.

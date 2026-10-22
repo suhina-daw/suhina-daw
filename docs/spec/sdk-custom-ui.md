@@ -342,6 +342,28 @@ persistence as custom controls. Knobs use Suhina's small circular face, pointer 
 the widget palette follows the active theme. Legacy drawing colours remain literal and legacy
 drawing controls remain readable. A widget and a nonempty custom drawing are mutually exclusive.
 
+### Host theme CSS and SVG controls
+
+The host exposes a named `.device-panel` scope for the track/device address and a named
+`.device-control` scope for each authored control id (`data-object`). Typed widgets have
+their semantic child role: `.knob` (Knob/Dial), `.button`, `.value`, `.dropdown`, `.label`,
+`.device-section`, `.separator`, `.envelope`, `.waveform` or `.xy-control`.
+Interactive drawing roles take hover/active/disabled/focus from the existing native
+response. SDK bounds, parameter normalization, keyboard gestures, accessible names and
+`device.setParam` dispatch are unchanged.
+
+Typed widget colours are resolved against the scoped palette at render time. SVG
+button backgrounds and corner radii compose with authored CSS: body artwork is
+painted once, followed by CSS gradient/shadow layers, then native foreground labels.
+The body uses control/active colours rather than the foreground text colour.
+CSS foreground/font rules reach vector text, and background/radius/effect rules reach
+rectangle surfaces. Without CSS overrides, authored vector colours stay literal.
+The theme's SVG `knob.body` / `knob.pointer` and `button` roles also style typed SDK
+Knob, Dial and Button faces. Native labels/readouts remain visible; pointers keep the
+SDK's parameter-derived angle. Missing artwork keeps the corresponding native drawing.
+Opaque and translucent palette colours are passed as unmultiplied RGBA. This affects
+presentation only and does not add executable code to an SDK device file.
+
 `Panel { label }` provides a passive themed section surface, border and optional
 small heading. An empty label gives a backdrop without a heading. Panel controls
 have no parameter bindings and the host skips input interaction for them, so

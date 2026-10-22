@@ -363,6 +363,9 @@ pub fn paint(painter: &Painter, rect: Rect, base: Color32, surface: Surface) {
     {
         return;
     }
+    if super::native_css::background(painter, rect) {
+        return;
+    }
     let gradient = painter.ctx().data(|data| data.get_temp::<super::gradient::Gradients>(Id::new(GRADIENTS))).and_then(
         |gradients| match surface {
             Surface::Panel => gradients.panels,

@@ -3,11 +3,17 @@
 
 //! Application identity and optional project information in independently positioned groups.
 
-use crate::kit::theme;
+use crate::kit::surface::Backgrounds as _;
+use crate::kit::{theme, widgets};
 use crate::settings::view_settings::ViewSettings;
 use egui::{Align2, Rect, Sense, Ui, Vec2};
 
 pub(super) fn show(ui: &mut Ui, settings: ViewSettings, project: &str, timing: &str) {
+    let _style_class = crate::kit::style_class::enter("application-bar");
+    ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
+    crate::kit::native_css::background(ui.painter(), ui.max_rect());
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let row = ui.available_rect_before_wrap();
     let custom_controls = cfg!(target_os = "windows");
     let controls_width = if custom_controls { 96.0 } else { 0.0 };
@@ -75,7 +81,7 @@ fn group(ui: &Ui, rect: Rect, align: Align2, text: String) {
     job.wrap.overflow_character = Some('…');
     let galley = ui.painter().layout_job(job);
     let position = align.align_size_within_rect(galley.size(), rect).min;
-    ui.painter().with_clip_rect(rect).galley(position, galley, theme::text_primary());
+    widgets::paint_text(&ui.painter().with_clip_rect(rect), position, galley, theme::text_primary());
 }
 
 /// The Windows custom title bar keeps all eight native resize directions.

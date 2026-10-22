@@ -163,11 +163,16 @@ fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut B
 
 /// Draws the browser in `area`.
 pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) -> BrowserOut {
+    let _style = crate::kit::style_class::enter("browser");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
+
     let mut out = BrowserOut::default();
     let Context { projects, settings, selected_track, search_key, other_results } = cx;
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::panel_background());
+    crate::kit::native_css::background(&painter, area);
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
@@ -210,6 +215,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::Map => "Show the samples laid out by how they sound".to_string(),
         };
         let response = widgets::button_area(ui, rect, Id::new(("browser-filter", title.as_str())), label);
+        let _style = crate::kit::style_class::enter_response("button", &response);
         let chosen = match chip {
             Chip::Recent(group) => state.place == Some(Place::Recent(*group)),
             Chip::List => !showing_map,
@@ -229,9 +235,20 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), chosen, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, motion::mix(idle, theme::control_selected(), lit));
-        let text = motion::mix(theme::browser_text_secondary(), theme::text_inverse(), lit);
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            chosen,
+            motion::mix(idle, theme::control_selected(), lit),
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(motion::mix(
+            theme::browser_text_secondary(),
+            theme::text_inverse(),
+            lit,
+        ));
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
     // The map belongs to the samples: anywhere else the list shows.
@@ -812,7 +829,7 @@ fn results_view(
         let galley = widgets::fitted(&painter, &row.item.name, font.clone(), color, (name_space - dots).max(0.0));
         let name_pos = Pos2::new(x, rect.center().y - galley.size().y / 2.0);
         let name_end = name_pos.x + galley.size().x;
-        painter.galley(name_pos, galley, color);
+        widgets::paint_text(&painter, name_pos, galley, color);
         for (i, name) in item_tags.iter().enumerate() {
             if let Some(tag) = tags.iter().find(|t| t.name == *name) {
                 let center = tag_dot_center(name_end, i, rect.center().y);
@@ -1116,10 +1133,22 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
+        let _style = crate::kit::style_class::enter_response("button", &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, if chosen == view { theme::control_selected() } else { idle });
-        let text = if chosen == view { theme::text_inverse() } else { theme::browser_text_secondary() };
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            chosen == view,
+            if chosen == view { theme::control_selected() } else { idle },
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(if chosen == view {
+            theme::text_inverse()
+        } else {
+            theme::browser_text_secondary()
+        });
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
 }
@@ -1243,12 +1272,21 @@ fn preview_strip(
         .interact(auto, Id::new("browser-preview-auto"), Sense::click())
         .on_hover_text("Auto preview: a sample plays when it is selected");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Checkbox, true, "Auto preview"));
+    let auto_style = crate::kit::style_class::enter_response("button", &response);
     if response.clicked() {
         out.toggle_autoplay = true;
     }
     let (fill, text) = widgets::toggle_colors(ui, &response, settings.preview_autoplay);
-    painter.fill_background(auto, 3.0, fill);
-    widgets::text_in(&painter, auto, Align2::CENTER_CENTER, "Auto", theme::ui_font(theme::TEXT_SMALL), text);
+    widgets::button_surface(&painter, auto, &response, settings.preview_autoplay, fill, 3.0);
+    widgets::text_in(
+        &painter,
+        auto,
+        Align2::CENTER_CENTER,
+        "Auto",
+        theme::ui_font(theme::TEXT_SMALL),
+        crate::kit::style_class::foreground(text),
+    );
+    drop(auto_style);
     let area = Rect::from_min_max(area.min, Pos2::new(auto.left() - PAD, area.bottom()));
     let item = match state.selected.as_slice() {
         [one] if matches!(one.kind, ItemKind::Sample | ItemKind::Midi) => one.clone(),
@@ -1282,18 +1320,28 @@ fn preview_strip(
     let top = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::new(area.width() - PAD * 2.0, PLAY));
     let play = Rect::from_min_size(top.min, Vec2::splat(PLAY));
     let response = widgets::button_area(ui, play, Id::new("browser-preview-play"), "Preview");
-    painter.fill_background(
-        play,
-        0.0,
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-    );
-    play_glyph(
+    let play_style = crate::kit::style_class::enter_response("button", &response);
+    widgets::button_surface(
         &painter,
-        play.center(),
+        play,
+        &response,
         playing_this,
-        if playing_this { theme::accent() } else { theme::browser_text_primary() },
-        7.0,
+        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+        0.0,
     );
+    let ink =
+        crate::kit::style_class::foreground(if playing_this { theme::accent() } else { theme::browser_text_primary() });
+    if !crate::kit::skin::paint(
+        &painter,
+        play,
+        if playing_this { "stop" } else { "play" },
+        crate::kit::skin::State::response(&response, playing_this),
+        ink,
+        0.0,
+    ) {
+        play_glyph(&painter, play.center(), playing_this, ink, 7.0);
+    }
+    drop(play_style);
     if response.clicked() {
         if playing_this {
             stop_preview(state, projects);
@@ -1747,9 +1795,9 @@ fn footer_view(
         Vec2::new(edit_width, FILTER),
     );
     {
-        let small = theme::ui_font(theme::TEXT_SMALL);
         let rect = edit_rect;
         let response = widgets::button_area(ui, rect, Id::new("browser-edit-tags"), "Edit tags");
+        let _style = crate::kit::style_class::enter_response("button", &response);
         if response.clicked() {
             state.tag_editor = !state.tag_editor;
             state.tag_counts = None;
@@ -1757,9 +1805,20 @@ fn footer_view(
         }
         let lit = motion::toward(ui.ctx(), response.id.with("on"), state.tag_editor, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, motion::mix(idle, theme::control_selected(), lit));
-        let text = motion::mix(theme::browser_text_secondary(), theme::text_inverse(), lit);
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, "Edit tags", small.clone(), text);
+        widgets::button_surface(
+            &painter,
+            rect,
+            &response,
+            state.tag_editor,
+            motion::mix(idle, theme::control_selected(), lit),
+            0.0,
+        );
+        let text = crate::kit::style_class::foreground(motion::mix(
+            theme::browser_text_secondary(),
+            theme::text_inverse(),
+            lit,
+        ));
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, "Edit tags", theme::ui_font(theme::TEXT_SMALL), text);
     }
     widgets::text_in(
         &painter,

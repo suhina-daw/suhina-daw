@@ -44,6 +44,7 @@ suhina-output = { path = "crates/output" }
 suhina-realtime = { path = "crates/realtime" }
 suhina-midi = { path = "crates/midi" }
 suhina-ui = { path = "crates/ui" }
+suhina-style = { path = "crates/style" }
 suhina-soundmap = { path = "crates/soundmap" }
 suhina-separation = { path = "crates/separation" }
 suhina-update = { path = "crates/update" }

@@ -24,6 +24,7 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// Draws the dialog over `area` for `project`, above everything else, and returns whether the
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
+    let _style_class = crate::kit::style_class::enter("dialog");
     egui::Area::new(Id::new("plugin-loading"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)

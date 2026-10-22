@@ -1,0 +1,32 @@
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original brown planks and pixel controls. No landscape wallpaper.
+ */
+@layer suhina-blocks {
+  .window, .session, .arrangement {
+    background-color: #2b1c12;
+    background-image: repeating-linear-gradient(0deg, #21150d 0 2px, #3e291a 2px 4px, #302014 4px 23px, #49301e 23px 25px);
+  }
+  .application-bar, .menu-bar, .project-tabs, .toolbar, .status-bar {
+    color: #ede3ca;
+    background: linear-gradient(#666254, #444238 48%, #333128);
+    border-color: #85806b;
+  }
+  .browser {
+    background-color: #6a472f;
+    background-image: repeating-linear-gradient(90deg, #00000018 0 3px, transparent 3px 9px),
+                      repeating-linear-gradient(0deg, #f4d09c10 0 2px, transparent 2px 8px);
+    color: #f1dfba;
+  }
+  .detail, .device-panel { background-color: #443322; color: #e6d4a7; }
+  .mixer { box-shadow: inset 1px 0 0 #f6e7ba22, inset -1px 0 0 #140e08; }
+  .button { color: #eee2bf; background-color: #5b584b; border-color: #9a9277; border-radius: 0px; }
+  .button:hover { color: #faffb8; background-color: #7a7857; border-color: #d2cd77; }
+  .value, .dropdown, .text-input { color: #e6d4a7; background-color: #2c2519; border-radius: 0px; }
+  .knob { color: #d5bd80; background-color: #5b584b; }
+  .fader-scale { color: #dbc8a0; }
+  .meter { background-color: #171b0d; }
+  .meter-level { box-shadow: 0 0 2px #83d82b55; }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #32cf13, #92ed25 75%, #e3d62c 91%, #ef6b2c); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #32cf13, #92ed25 75%, #e3d62c 91%, #ef6b2c); }
+}

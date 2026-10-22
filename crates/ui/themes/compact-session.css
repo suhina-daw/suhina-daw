@@ -1,0 +1,12 @@
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Canonical native CSS; use advanced.css separately for materials and effects.
+ */
+session {
+  track-width: 86px;
+  return-width: 80px;
+  scene-width: 84px;
+  header-height: 22px;
+  slot-height: 18px;
+}
+.pan { --suhina-appearance: knob; }

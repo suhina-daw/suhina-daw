@@ -29,6 +29,7 @@ suhina-ui.workspace = true
 suhina-automation.workspace = true
 suhina-update.workspace = true
 zip.workspace = true
+serde_json.workspace = true
 eframe = { version = "0.36", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
 # The system's own file and folder dialogs (Browse… beside a path field); on Linux through the
 # desktop portal, in Rust, with no GTK.

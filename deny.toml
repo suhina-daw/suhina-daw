@@ -45,6 +45,12 @@ exceptions = [
     { crate = "icu_properties", allow = ["Unicode-3.0"] },
     { crate = "icu_properties_data", allow = ["Unicode-3.0"] },
     { crate = "icu_provider", allow = ["Unicode-3.0"] },
+    # Unicode License v3, GPL-compatible as above: text segmentation and locale fallback
+    # data used by Stylo/Parley in the native CSS adapter (no new general licence allowance).
+    { crate = "icu_locale_fallback", allow = ["Unicode-3.0"] },
+    { crate = "icu_locale_fallback_data", allow = ["Unicode-3.0"] },
+    { crate = "icu_segmenter", allow = ["Unicode-3.0"] },
+    { crate = "icu_segmenter_data", allow = ["Unicode-3.0"] },
     { crate = "litemap", allow = ["Unicode-3.0"] },
     { crate = "potential_utf", allow = ["Unicode-3.0"] },
     { crate = "tinystr", allow = ["Unicode-3.0"] },

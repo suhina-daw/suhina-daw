@@ -108,6 +108,7 @@ impl Themes {
         let shown = self.entries.iter().find(|e| same_id(&e.id, current)).map_or(BUILT_IN, |e| e.id.as_str());
         let theme = self.get(shown).cloned().unwrap_or_default();
         ThemesView {
+            skin: theme.skin,
             transparent_rgb: theme.transparent_rgb,
             // The user's own themes first, then those that come with Suhina.
             list: self.entries[self.built_in..]
@@ -134,11 +135,12 @@ impl Themes {
         let editable = self.get(current).is_some() && !theme::is_built_in(current);
         match request {
             ThemeRequest::Use(id) => self.get(&id).is_some().then_some(id),
-            ThemeRequest::ResetEdits { colors, liquid, gradients, transparent_rgb } => {
+            ThemeRequest::ResetEdits { colors, liquid, gradients, transparent_rgb, skin } => {
                 let switched = self.request(current, ThemeRequest::EditRgba { colors, transparent_rgb });
                 let id = switched.as_deref().unwrap_or(current);
                 self.request(id, ThemeRequest::EditLiquid(liquid));
                 self.request(id, ThemeRequest::EditGradients(gradients));
+                self.request(id, ThemeRequest::EditSkin(*skin));
                 switched
             }
             ThemeRequest::EditRgba { colors, transparent_rgb } => {
@@ -171,6 +173,32 @@ impl Themes {
                 };
                 if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
                     entry.theme.liquid = options;
+                }
+                self.actions.push(Pending::Save(id.clone()));
+                copied.then_some(id)
+            }
+            ThemeRequest::EditCss(css) => {
+                let mut theme = self.get(current).cloned().unwrap_or_default();
+                if !crate::kit::theme_css::apply(&mut theme, &css).is_empty() {
+                    return None;
+                }
+                let switched = self.request(
+                    current,
+                    ThemeRequest::EditRgba { colors: theme.colors, transparent_rgb: theme.transparent_rgb },
+                );
+                let id = switched.as_deref().unwrap_or(current);
+                self.request(id, ThemeRequest::EditSkin(theme.skin));
+                switched
+            }
+            ThemeRequest::EditSkin(skin) => {
+                let (id, copied) = if editable {
+                    (self.real_id(current), false)
+                } else {
+                    let name = format!("{} (custom)", self.get(current).map_or("Suhina Dark", |t| &t.name));
+                    (self.copy(current, &name), true)
+                };
+                if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
+                    entry.theme.skin = skin;
                 }
                 self.actions.push(Pending::Save(id.clone()));
                 copied.then_some(id)
@@ -322,6 +350,7 @@ mod tests {
         themes.request(
             &id,
             ThemeRequest::ResetEdits {
+                skin: Default::default(),
                 transparent_rgb: Default::default(),
                 colors: edited.colors,
                 liquid: edited.liquid,
@@ -343,6 +372,7 @@ mod tests {
                 liquid: None,
                 gradients: Default::default(),
                 transparent_rgb: Default::default(),
+                skin: Default::default(),
             },
         }
     }
@@ -458,7 +488,8 @@ mod tests {
                         colors: night().theme.colors,
                         liquid: None,
                         gradients: Default::default(),
-                        transparent_rgb: Default::default()
+                        transparent_rgb: Default::default(),
+                        skin: Default::default(),
                     })
                 },
             ]

@@ -5,6 +5,8 @@ type: system
 status: current
 last_verified: 2026-10-22
 covers:
+  - crates/style/
+  - apps/suhina/src/theme_io.rs
   - crates/session/src/record_writer.rs
   - Cargo.toml
   - crates/*/Cargo.toml
@@ -89,6 +91,7 @@ allocation or locking.
 
 | Crate | Owns | Depends on |
 |---|---|---|
+| `style` | Toolkit-independent native style sheets ([ADR 0031](decisions/0031-style-sheets.md)): bounded selectors and device scopes, typed properties and shadow data, cascade and inherited variables, viewport conditions, Taffy rectangles and source-preserving edits. It takes text and element data, never a window, file or audio callback. The desktop uses the source editor and resolves supported paint-only sheets directly; sheets requiring remaining layout, gradient or animation features use the compatibility adapter during migration. | cssparser, taffy |
 | `model` | The DAW-neutral project: tracks, mixer channels, a pool of clip contents, clips that place them, the launcher grid ([ADR 0001](decisions/0001-daw-neutral-model.md)). Validation, with groups nested at most 16 deep and never inside themselves, and the one conversion from beats to time and bars through the tempo and time-signature changes (`TempoMap`, `Meter`; [spec](spec/tempo-map.md)), and which audio clips overlap on a track (`audio_overlaps`, [ADR 0028](decisions/0028-ara-hosting.md)). No behaviour beyond that. | nothing |
 | `stretch` | Time-stretching and pitch-shifting DSP for interleaved audio: a pure-Rust port of Signalsmith Stretch (MIT), behind every stretch mode except `Repitch` ([ADR 0003](decisions/0003-time-stretching.md)). | nothing (rustfft) |
 | `als` | Reading Live Sets into `model`, with warnings for what it skips ([spec](spec/als-format.md)). One crate per format later. | model |
@@ -237,6 +240,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
 | Decode workers | Scoped threads in `media` while a project loads; in the window, a thread per drop (`suhina-drop`) that decodes its samples before `clip.addFiles` runs (ADR 0011). | yes |
 | Missing files and plug-in scans | In the window, `suhina-find-files` searches the index and folders for a project's missing files, and `suhina-plugin-scan` runs a plug-in scan, so the frame never waits. | yes |
 | Library | One thread in `library` (`suhina-library`): checks the browser's folders against their saved indexes, reads the ones that changed, and takes the file-system watcher's events (`notify`, its own threads) or polls (ADR 0012). Started by the desktop app and the MCP server only. | yes |
+| Theme files | One desktop thread (`suhina-theme-files`, `apps/suhina/src/theme_io.rs`) owns theme persistence, conflict checks, exports/imports and live-reload polling. At most one batch is in flight; the window coalesces later saves without crossing file-operation barriers, previews changes immediately and polls replies without waiting. Normal exit drains pending saves. | yes |
 | Backups | One thread in `session` (`suhina-backup`), started with the first backup: turns each project copy the window's thread made (`Projects::back_up`, which waits at most a second for the plug-ins' state, as a save does) into JSON, writes it through a temporary file, cleans up old ones and keeps the journal ([spec](spec/backups.md)). | yes |
 | Browser files | One thread in the window (`suhina-browser-files`): reads the length, tempo and key of the files the browser shows, and decodes the selected sample for its waveform and preview. | yes |
 | Sample analysis | `soundmap-analysis` threads, half the cores, while a `SoundMap` has files queued; they decode and analyse samples and send the results back. Started by the desktop app and the MCP server only. In the window, a `soundmap-layout` thread per new layout computes it (t-SNE) so the frame never waits. | yes |
@@ -410,3 +414,25 @@ internal boundary, not an extension host or a new dependency of the audio engine
 An active private image keeps background fills in ordinary blend mode, including on hosts
 capable of desktop transparency. Liquid captures release shared texture handles and renderer
 registrations when the next capture no longer uses them, bounding retained image history.
+
+## Native theme styles
+
+The UI kit owns static SVG rasterization, scoped theme values and an experimental
+Stylo/Taffy adapter through Blitz's safe DOM API. The host supplies bounded role trees;
+themes supply CSS, never HTML or scripts. The adapter has no network or shell provider,
+uses sequential style traversal and caches computed class contexts on the UI thread.
+A retained scope tree carries project identities and native interaction states; changed
+snapshots publish computed values on the following repaint. Connected surfaces paint
+bounded cached gradient ramps/spatial textures and inset/outset shadow textures; scoped
+guards apply authored values to ordinary egui controls without changing widget identity.
+The toolbar and optional workspace panel layout consume Taffy's rectangles for both
+native controls and input clipping. CSS-owned browser/detail sizes bypass native
+splitters while preserving saved native sizes. Token-level CSS validation bounds source
+size and nesting and reports known unsupported effects without deleting source.
+The document persists for an unchanged scope structure. State snapshots and egui's
+clock drive Stylo transitions/keyframes for connected paint properties. Active motion
+requests repainting at 16 ms and respects the global animation/high-contrast settings;
+geometry animation is not yet consumed by native panel layout.
+No theme work runs on the audio thread. The desktop theme-file service owns portable
+resources and CSS/JSON synchronization. Details and current adapter limits are in
+[ADR 0030](decisions/0030-native-theme-css.md) and the [skin spec](spec/theme-skins.md).

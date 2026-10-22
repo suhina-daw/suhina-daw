@@ -129,3 +129,67 @@ impl FrameTrace {
         }
     }
 }
+
+/// A UI-only nested measurement, including early returns. Never use on the audio thread.
+/// Reports only work lasting at least five milliseconds; disabled tracing reads no clock.
+pub(crate) struct WorkSpan {
+    name: &'static str,
+    started: Option<Instant>,
+    last: Option<Instant>,
+    parts: [Option<(&'static str, Duration)>; 12],
+    count: usize,
+}
+
+impl WorkSpan {
+    pub(crate) fn new(name: &'static str) -> Self {
+        let started = suhina_plugins::trace::on().then(Instant::now);
+        Self { name, started, last: started, parts: [None; 12], count: 0 }
+    }
+    /// Partition a measured call without allocating or writing one line per checkpoint.
+    pub(crate) fn mark(&mut self, name: &'static str) {
+        let Some(last) = self.last else { return };
+        let now = Instant::now();
+        if let Some(slot) = self.parts.get_mut(self.count) {
+            *slot = Some((name, now - last));
+            self.count += 1;
+            self.last = Some(now);
+        }
+    }
+}
+
+impl Drop for WorkSpan {
+    fn drop(&mut self) {
+        if let Some(started) = self.started {
+            let elapsed = started.elapsed();
+            if elapsed >= suhina_plugins::trace::SLOW_WORK {
+                self.mark("rest");
+                let parts = self
+                    .parts
+                    .iter()
+                    .flatten()
+                    .map(|(name, elapsed)| format!("{name} {:.2}", ms(*elapsed)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                suhina_plugins::trace!("slow {}: {:.1} ms; {}", self.name, ms(elapsed), parts);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod work_span_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_checkpoints_do_not_record_and_active_storage_is_bounded() {
+        let mut span = WorkSpan { name: "test", started: None, last: None, parts: [None; 12], count: 0 };
+        span.mark("disabled");
+        assert_eq!(span.count, 0);
+        span.last = Some(Instant::now());
+        for _ in 0..20 {
+            span.mark("part");
+        }
+        assert_eq!(span.count, 12);
+        assert!(span.parts.iter().all(Option::is_some));
+    }
+}

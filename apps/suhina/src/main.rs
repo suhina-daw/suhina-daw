@@ -14,6 +14,7 @@ mod recent;
 mod save_error;
 mod surface;
 mod theme_files;
+mod theme_io;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -22,7 +23,6 @@ use suhina_session::{OutputChoice, Session};
 use suhina_ui::app::splash::Splash;
 use suhina_ui::settings::keymap::Keymap;
 use suhina_ui::settings::settings_view::About;
-use suhina_ui::settings::themes::FileAction;
 use suhina_ui::settings::{Graphics, Settings};
 use suhina_ui::{App, NewProject, OpenAs, Status};
 
@@ -159,6 +159,13 @@ fn main() -> ExitCode {
     let (theme_list, theme_warnings) = themes.read_all();
     settings_warnings.extend(theme_warnings);
     let recent = recent::Recent::load(eframe::storage_dir(app_id()).map(|d| d.join(RECENT_FILE)));
+    let themes = match theme_io::ThemeIo::new(themes) {
+        Ok(themes) => themes,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let mut window = Window {
         app: App::new(),
         agents,
@@ -236,7 +243,12 @@ fn main() -> ExitCode {
             window.app.set_settings(&cc.egui_ctx, settings);
             // Strengths default to zero. The experimental Appearance controls apply live;
             // unsupported renderers and reduced effects keep solid surfaces.
-            if animations && let Some(gpu) = cc.wgpu_render_state.clone() {
+            // Liquid shares encoded and linear views of its captures. Older GL
+            // adapters may draw egui but cannot create these aliases safely.
+            if animations
+                && let Some(gpu) = cc.wgpu_render_state.clone()
+                && gpu.adapter.get_downlevel_capabilities().flags.contains(eframe::wgpu::DownlevelFlags::VIEW_FORMATS)
+            {
                 suhina_ui::kit::liquid::install(&cc.egui_ctx, std::sync::Arc::new(liquid::Liquid::new(gpu)));
             }
             let folder = window.themes.folder_text();
@@ -321,7 +333,7 @@ struct Window {
     see_through: Option<bool>,
     /// The system blurs what shows through: on while the theme has a see-through background.
     blurred: bool,
-    themes: theme_files::ThemeFiles,
+    themes: theme_io::ThemeIo,
     /// The projects opened and saved lately, for the project dialog.
     recent: recent::Recent,
     /// The macOS menu bar, once installed (#650).
@@ -368,6 +380,7 @@ impl eframe::App for Window {
     /// Quitting: backups that quitting calls for are written, and the journal says nothing is
     /// left to offer next time.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.themes.finish();
         let _finished_in_time = self.app.finish_backups();
         let _let_go_in_time = self.app.let_go_of_projects();
         // Restart now, after an update: the new build starts as this one closes.
@@ -403,7 +416,7 @@ impl Window {
                 self.app.queue_menu_item(&id);
             }
         }
-        self.app.ui(ui);
+        suhina_plugins::trace::timed("desktop UI", || self.app.ui(ui));
         #[cfg(target_os = "macos")]
         if let Some(menu) = &mut self.mac_menu {
             menu.sync(&self.app.menus());
@@ -472,7 +485,7 @@ impl Window {
         {
             self.app.set_status(Status::Error(e));
         }
-        self.sync_themes(ui.ctx());
+        suhina_plugins::trace::timed("theme sync", || self.sync_themes(ui.ctx()));
         if let Some(splash) = self.splash.as_mut()
             && !splash.show(ui)
         {
@@ -642,69 +655,27 @@ impl Window {
     /// the template, bring in a dropped file, show the folder) and reads a theme file saved
     /// elsewhere. While a theme file is in use the folder is looked at every second.
     fn sync_themes(&mut self, ctx: &eframe::egui::Context) {
-        let mut reload = false;
         for action in self.app.take_theme_actions() {
-            let done = match action {
-                FileAction::Save { id, theme } => self.themes.write(&id, &theme).map(|()| None),
-                FileAction::Rename { from, to } => self.themes.rename(&from, &to).map(|()| None),
-                FileAction::Reload => {
-                    reload = true;
-                    Ok(None)
+            self.themes.queue(action);
+        }
+        if let Some(reply) = self.themes.tick(ctx) {
+            if reply.replace {
+                self.app.set_themes(ctx, reply.entries, reply.folder);
+            } else {
+                for entry in reply.entries {
+                    self.app.put_theme(ctx, entry);
                 }
-                FileAction::OpenFolder => self.themes.open_folder().map(|()| None),
-                FileAction::Backup => self.themes.backup().map(|path| Some(saved(&path, "Backed up the themes to"))),
-                FileAction::ExportTemplate => {
-                    self.themes.export_template().map(|path| Some(saved(&path, "Saved the theme template to")))
-                }
-                FileAction::Import(path) => self.import_themes(ctx, &path).map(Some),
-            };
-            match done {
-                Ok(Some(message)) => self.app.set_status(Status::Done(message)),
-                Ok(None) => {}
-                Err(e) => self.app.set_status(Status::Error(e)),
+            }
+            if let Some(id) = reply.select {
+                self.app.use_theme(ctx, &id);
+            }
+            for notice in reply.notices {
+                self.app.set_status(match notice {
+                    Ok(message) => Status::Done(message),
+                    Err(error) => Status::Error(error),
+                });
             }
         }
-        let (entries, warnings) = if reload {
-            let (entries, warnings) = self.themes.read_all();
-            let count = entries.len();
-            self.app.set_themes(ctx, entries, self.themes.folder_text());
-            if warnings.is_empty() {
-                self.app.set_status(Status::Done(format!("Read {count} theme files")));
-            }
-            (Vec::new(), warnings)
-        } else {
-            self.themes.changed()
-        };
-        for entry in entries {
-            self.app.put_theme(ctx, entry);
-        }
-        if let Some(warning) = warnings.first() {
-            self.app.set_status(Status::Error(warning.clone()));
-        }
-        if !suhina_ui::kit::theme::is_built_in(&self.app.settings().theme) {
-            ctx.request_repaint_after(std::time::Duration::from_secs(1));
-        }
-    }
-
-    /// Brings in a dropped theme file or zip and lists the themes again; a single new theme is
-    /// put in use. Returns what to tell the user.
-    fn import_themes(&mut self, ctx: &eframe::egui::Context, path: &Path) -> Result<String, String> {
-        let (ids, warnings) = self.themes.import(path)?;
-        let (entries, _) = self.themes.read_all();
-        self.app.set_themes(ctx, entries, self.themes.folder_text());
-        if let [id] = ids.as_slice() {
-            self.app.use_theme(ctx, id);
-        }
-        let file = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let added = match ids.len() {
-            0 => format!("{file} has no themes that are not here already"),
-            1 => format!("Added the theme from {file}"),
-            n => format!("Added {n} themes from {file}"),
-        };
-        Ok(match warnings.first() {
-            Some(warning) => format!("{added}; {warning}"),
-            None => added,
-        })
     }
 
     /// Tells the Settings page what is in use.

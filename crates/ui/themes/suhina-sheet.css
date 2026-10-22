@@ -1,0 +1,34 @@
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original spreadsheet-inspired Suhina Sheet materials. No external resources.
+ */
+@layer suhina-sheet {
+  .window, .session, .arrangement { background-color: #ffffff; color: #24372b; }
+  .session {
+    background-image: repeating-linear-gradient(0deg, transparent 0 21px, #e5ece7 21px 22px),
+                      repeating-linear-gradient(90deg, transparent 0 87px, #e5ece7 87px 88px);
+  }
+  .application-bar, .menu-bar, .project-tabs {
+    background-color: #217346;
+    color: #ffffff;
+    border-color: #185c37;
+  }
+  .toolbar, .status-bar { background-color: #f3f5f3; color: #355640; }
+  .browser {
+    background-color: #8fcea0;
+    background-image: linear-gradient(90deg, #64b682 0 45%, #8fcea0 45% 100%);
+    color: #123e24;
+  }
+  .detail, .device-panel { background-color: #f3f7f4; color: #24372b; }
+  .track-header { background-image: linear-gradient(#ffffff55, #ffffff22); }
+  .track-name { background-image: linear-gradient(#ffffff77, #ffffff55); }
+  .mixer { background-color: #f8faf8; box-shadow: inset -1px 0 0 #d4ddd6; }
+  .button { color: #285b3c; background-color: #ffffff; border-color: #a7bdae; border-radius: 0px; }
+  .button:hover { color: #185c37; background-color: #e2f0d9; border-color: #217346; }
+  .knob { color: #217346; background-color: #ffffff; }
+  .value, .dropdown, .text-input { color: #285b3c; background-color: #ffffff; border-radius: 0px; }
+  .fader-scale { color: #61766a; }
+  .meter { background-color: #e1e9e3; }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+}

@@ -314,6 +314,7 @@ pub struct Geometry {
 /// envelope from the level closest to the zoom, or the samples when a sample is wider than a
 /// column.
 pub fn geometry(peaks: &Peaks, rect: Rect, columns: &[Column], scale: Scale) -> Geometry {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("waveform geometry");
     let lanes: Vec<Lane> = if peaks.lanes >= 2 && rect.height() >= STEREO_MIN_HEIGHT {
         (0..peaks.lanes).map(Lane::Channel).collect()
     } else {
@@ -413,6 +414,7 @@ impl Colors {
 /// Paints `geometry`: each run of the envelope as a filled shape with anti-aliased edges and the
 /// RMS band inside it, or the samples as a line with dots.
 pub fn paint(painter: &Painter, geometry: &Geometry, colors: Colors) {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("waveform paint");
     for (_, shape) in &geometry.lanes {
         match shape {
             LaneShape::Envelope(runs) => {

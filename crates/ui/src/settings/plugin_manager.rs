@@ -351,7 +351,12 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                         _ => theme::text_hint(),
                     };
                     let galley = widgets::fitted(&row_painter, text, small.clone(), color, cell.width());
-                    row_painter.galley(Pos2::new(cell.left(), rect.center().y - galley.size().y / 2.0), galley, color);
+                    crate::kit::widgets::paint_text(
+                        &row_painter,
+                        Pos2::new(cell.left(), rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        color,
+                    );
                 }
                 let (on_left, on_right) = columns[0];
                 let (action_left, action_right) = columns[8];

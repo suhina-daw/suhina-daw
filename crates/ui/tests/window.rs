@@ -4,7 +4,7 @@
 //! The Session view and the window, driven like a user would: clicks become the commands the
 //! CLI and MCP run, and edits change the project through the session.
 
-use egui::{Key, Modifiers};
+use egui::{Key, Modifiers, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use serde_json::json;
@@ -22,6 +22,122 @@ use suhina_ui::{App, OpenAs, Status, View, kit::theme};
 // The full-workspace fixture leaves five spacious lanes visible for audio gain/fade tests.
 // Short and constrained layouts are exercised separately in short_panes.rs.
 const SIZE: (f32, f32) = (1280.0, 900.0);
+
+#[test]
+fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_panels() {
+    use suhina_ui::settings::themes::ThemeEntry;
+    fn covers_workspace(shape: &egui::Shape, ink: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|shape| covers_workspace(shape, ink)),
+            egui::Shape::Rect(rect) => {
+                rect.fill == ink && rect.rect.width() > SIZE.0 * 0.9 && rect.rect.height() > SIZE.1 * 0.5
+            }
+            _ => false,
+        }
+    }
+    let mut h = window(demo_app());
+    let border = theme::border();
+    assert!(h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
+    let before = h.state().session().unwrap().project().clone();
+    let ctx = h.ctx.clone();
+    let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
+    paper.colors.window_background = egui::Color32::TRANSPARENT;
+    paper.skin.background = Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==".into());
+    paper.skin.background_opacity = 100;
+    h.state_mut().put_theme(&ctx, ThemeEntry { id: "private-paper".into(), theme: paper });
+    h.state_mut().use_theme(&ctx, "private-paper");
+    for _ in 0..100 {
+        h.step();
+        if suhina_ui::kit::liquid::background_image(&ctx).is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let image = suhina_ui::kit::liquid::background_image(&ctx).expect("background worker completed");
+    assert!(h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Mesh(mesh) if mesh.texture_id == image.id && mesh.calc_bounds().width() > SIZE.0 * 0.9
+    )));
+    assert!(
+        !h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)),
+        "separator ink must not conceal the image"
+    );
+    assert!(
+        h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::Shape::Rect(rect) if rect.fill == theme::panel_background() && rect.rect.height() > 10.0
+        )),
+        "native panel surfaces remain opaque"
+    );
+    assert_eq!(h.state().session().unwrap().project(), &before);
+}
+
+#[test]
+fn textured_empty_slots_do_not_clear_their_artwork_on_native_alpha_surfaces() {
+    use std::sync::{Arc, Mutex};
+    struct Replacement(Arc<Mutex<Vec<(egui::Rect, egui::Color32)>>>);
+    impl suhina_ui::kit::surface::Provider for Replacement {
+        fn shape(&self, rect: egui::Rect, radius: egui::CornerRadius, color: egui::Color32) -> egui::Shape {
+            if let Ok(mut fills) = self.0.lock() {
+                fills.push((rect, color));
+            }
+            egui::Shape::rect_filled(rect, radius, color)
+        }
+    }
+    let mut h = window(demo_app());
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "suhina-blocks");
+    let fills = Arc::new(Mutex::new(Vec::new()));
+    suhina_ui::kit::surface::install(&ctx, Arc::new(Replacement(fills.clone())));
+    for _ in 0..4 {
+        fills.lock().unwrap().clear();
+        h.step();
+    }
+    let slot = h.get_by_label("Stop Keys (scene 1)").rect();
+    assert!(
+        !fills.lock().unwrap().iter().any(|(rect, color)| color.a() == 0
+            && rect.min.distance(slot.min) < 1.0
+            && rect.max.distance(slot.max) < 1.0),
+        "transparent replacement fills erase the column artwork on a native GPU surface"
+    );
+}
+
+#[test]
+fn sheet_menu_and_toolbar_paint_their_scoped_backgrounds_without_editing_the_project() {
+    let mut h = window(demo_app());
+    let before = h.state().session().unwrap().project().clone();
+    let ctx = h.ctx.clone();
+    h.state_mut().use_theme(&ctx, "suhina-sheet");
+    for _ in 0..4 {
+        h.step();
+    }
+    let mut previous_bottom: Option<f32> = None;
+    fn find_bar(shape: &egui::Shape, ink: egui::Color32, height: f32) -> Option<egui::Rect> {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| find_bar(shape, ink, height)),
+            egui::Shape::Rect(rect)
+                if rect.fill == ink
+                    && rect.rect.width() >= SIZE.0 * 0.9
+                    && (rect.rect.height() - height).abs() <= 1.0 =>
+            {
+                Some(rect.rect)
+            }
+            _ => None,
+        }
+    }
+    for (color, height) in [(0x217346, theme::MENU_BAR), (0xf3f5f3, theme::CONTROL_BAR)] {
+        let ink = egui::Color32::from_rgb((color >> 16) as u8, (color >> 8) as u8, color as u8);
+        let bar = h
+            .output()
+            .shapes
+            .iter()
+            .find_map(|shape| find_bar(&shape.shape, ink, height))
+            .unwrap_or_else(|| panic!("missing scoped bar background {color:x}"));
+        if let Some(bottom) = previous_bottom {
+            assert!((bar.top() - bottom).abs() <= 1.0);
+        }
+        previous_bottom = Some(bar.bottom());
+    }
+    assert_eq!(h.state().session().unwrap().project(), &before);
+}
 
 /// A file dropped on the window in a test.
 #[derive(Debug)]
@@ -66,6 +182,33 @@ fn clicked(harness: &mut Harness<'static, SessionHarness>, label: &str) -> Vec<A
 }
 
 #[test]
+fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
+    use suhina_ui::kit::skin;
+    let mut h = view();
+    let (_, mut blocks) = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-blocks").unwrap();
+    skin::configure(&blocks.skin);
+    theme::set_palette(&h.ctx, blocks.colors);
+    h.run_steps(3);
+    let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
+    let has_body = |h: &Harness<'static, SessionHarness>| {
+        h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+        egui::Shape::Mesh(mesh) if mesh.calc_bounds().contains(slot.center()) && mesh.calc_bounds().height() > slot.height() * 3.0
+    ))
+    };
+    assert!(has_body(&h), "colour-keyed body artwork spans the slot column");
+    assert_eq!(
+        clicked(&mut h, "Launch Walk on Bass (scene 2)"),
+        [Action::new("clip.launch", json!({"track":2,"scene":2}))]
+    );
+    blocks.skin.styles.get_mut(".track-column").unwrap().insert("--suhina-track-artwork".into(), "off".into());
+    skin::configure(&blocks.skin);
+    h.run_steps(3);
+    assert!(!has_body(&h), "opting out restores native column fills");
+    skin::configure(&skin::Skin::default());
+    theme::set_palette(&h.ctx, theme::Palette::DARK);
+}
+
+#[test]
 fn clicking_a_clip_launches_it() {
     let mut harness = view();
     assert_eq!(
@@ -75,12 +218,120 @@ fn clicking_a_clip_launches_it() {
 }
 
 #[test]
+fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_command() {
+    use suhina_ui::kit::{skin, theme_css};
+    let mut harness = view();
+    let mut theme = theme::Theme::default();
+    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { --suhina-direction: horizontal; }").is_empty());
+    skin::configure(&theme.skin);
+    harness.run_steps(3);
+    let rect = harness.get_by_label("Drums volume").rect();
+    assert!(rect.width() > rect.height());
+    let start = rect.center();
+    harness.hover_at(start);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    harness.hover_at(start - Vec2::new(24.0, 0.0));
+    harness.run_steps(2);
+    harness.drop_at(start - Vec2::new(24.0, 0.0));
+    harness.run_steps(2);
+    let changes: Vec<_> = harness.state().actions.iter().filter(|a| a.id == "track.setVolume").collect();
+    assert!(!changes.is_empty());
+    assert_eq!(changes.last().unwrap().params["tracks"], json!([1]));
+    assert_eq!(changes.last().unwrap().params["db"], json!(-6.0));
+    assert_eq!(changes.last().unwrap().params["continue"], json!(true));
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
 fn clicking_an_empty_slot_with_a_stop_button_stops_the_track() {
     let mut harness = view();
     assert_eq!(
         clicked(&mut harness, "Stop Keys (scene 1)"),
         [Action::new("clip.launch", json!({ "track": 3, "scene": 1 }))]
     );
+}
+
+#[test]
+fn an_individually_placed_send_keeps_its_parameter_target_and_can_be_hidden() {
+    use suhina_ui::kit::{skin, theme_css};
+    let mut harness = view();
+    let before = harness.get_by_label("Bass send to A Reverb").rect();
+    let mut theme = theme::Theme::default();
+    assert!(theme_css::apply(&mut theme, ".control-mixer-send-1 { left: 6px; width: 16px; }").is_empty());
+    skin::configure(&theme.skin);
+    harness.run_steps(3);
+    let moved = harness.get_by_label("Bass send to A Reverb").rect();
+    assert!((moved.left() - before.left() - 6.0).abs() < 0.01);
+    assert!((moved.width() - 16.0).abs() < 0.01);
+    let start = moved.center();
+    harness.hover_at(start);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    harness.hover_at(start - Vec2::new(0.0, 10.0));
+    harness.run_steps(1);
+    harness.drop_at(start - Vec2::new(0.0, 10.0));
+    harness.run_steps(2);
+    assert!(harness.state().actions.iter().any(|a| a.id == "track.setSend" && a.params["track"] == 2));
+    theme.skin.controls.get_mut("mixer-send-1").unwrap().hidden = true;
+    skin::configure(&theme.skin);
+    harness.run_steps(3);
+    assert!(harness.query_by_label("Bass send to A Reverb").is_none());
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn session_density_keeps_slot_launches_and_clip_drop_targets_on_the_drawn_cells() {
+    use suhina_ui::interaction::drop::{DropProbe, DropTarget};
+    use suhina_ui::kit::{skin, theme_css};
+    let mut harness = view();
+    let mut theme = theme::Theme::default();
+    assert!(theme_css::apply(&mut theme, "session { track-width: 80px; return-width: 72px; scene-width: 88px; header-height: 24px; slot-height: 18px; }").is_empty());
+    let (restored, warnings) = theme::Theme::from_json(&theme.to_json());
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(restored, theme);
+    let mut mirrored = theme::Theme::default();
+    assert!(theme_css::apply(&mut mirrored, &theme_css::export(&theme)).is_empty());
+    assert_eq!(mirrored.skin.session, theme.skin.session);
+    skin::configure(&theme.skin);
+    harness.run_steps(3);
+    let first = harness.get_by_label("Launch Root on Bass (scene 1)").rect();
+    let second = harness.get_by_label("Launch Walk on Bass (scene 2)").rect();
+    assert!((second.top() - first.top() - 19.0).abs() < 0.01);
+    assert!((first.height() - 18.0).abs() < 0.01);
+    assert_eq!(
+        clicked(&mut harness, "Launch Walk on Bass (scene 2)"),
+        [Action::new("clip.launch", json!({"track": 2, "scene": 2}))]
+    );
+    harness.state_mut().state.drop = Some(DropProbe::for_clip(second.center()));
+    harness.run_steps(2);
+    let probe = harness.state().state.drop.as_ref().unwrap();
+    assert_eq!(probe.target, Some(DropTarget::Slot { track: TrackId(2), scene: 1 }));
+    assert_eq!(probe.area.unwrap().top(), second.top());
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn session_pan_knob_keeps_the_native_drag_command_and_value() {
+    use suhina_ui::kit::{skin, theme_css};
+    let mut harness = view();
+    assert!(!harness.state().state.knobs);
+    let mut theme = theme::Theme::default();
+    assert!(theme_css::apply(&mut theme, ".pan { --suhina-appearance: knob; }").is_empty());
+    skin::configure(&theme.skin);
+    harness.run_steps(3);
+    let start = harness.get_by_label("Bass pan").rect().center();
+    harness.hover_at(start);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    harness.hover_at(start - Vec2::new(0.0, 20.0));
+    harness.run_steps(1);
+    harness.drop_at(start - Vec2::new(0.0, 20.0));
+    harness.run_steps(2);
+    assert!(harness.state().actions.iter().any(|action| action.id == "track.setPan"
+        && action.params["tracks"] == json!([2])
+        && action.params["pan"] == json!(0.2)));
+    skin::configure(&skin::Skin::default());
 }
 
 #[test]
@@ -966,6 +1217,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
+            skin: Default::default(),
         },
     };
     let ctx = harness.ctx.clone();
@@ -1022,6 +1274,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
+            skin: Default::default(),
         },
     };
     harness.state_mut().put_theme(&ctx, edited);

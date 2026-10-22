@@ -161,7 +161,7 @@ fn knob(
     }
     let circle = (cell.height() - 28.0).clamp(20.0, KNOB);
     let circle_center = egui::pos2(cell.center().x, cell.top() + 12.0 + circle / 2.0);
-    widgets::knob(ui.painter(), circle_center, circle, at as f32, theme::text_primary());
+    widgets::knob(ui.painter(), circle_center, circle, at as f32, theme::text_primary(), Some(&response));
     widgets::text_in(
         ui.painter(),
         Rect::from_min_max(cell.left_top(), egui::pos2(cell.right(), cell.top() + 12.0)),

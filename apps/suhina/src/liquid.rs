@@ -19,6 +19,7 @@ pub struct Liquid {
     surface_state: Mutex<Option<State>>,
     /// The menus' backdrop: targets of its own, so a menu and a dialog never share an image.
     menu_state: Mutex<Option<State>>,
+    resource_report: Mutex<Option<std::time::Instant>>,
 }
 
 struct State {
@@ -155,7 +156,48 @@ fn images(targets: Option<&Targets>) -> Vec<(egui::TextureId, wgpu::TextureView)
 impl Liquid {
     pub fn new(gpu: egui_wgpu::RenderState) -> Self {
         let state = Mutex::new(State::new(&gpu));
-        Self { gpu, state, surface_state: Mutex::new(None), menu_state: Mutex::new(None) }
+        Self {
+            gpu,
+            state,
+            surface_state: Mutex::new(None),
+            menu_state: Mutex::new(None),
+            resource_report: Mutex::new(None),
+        }
+    }
+
+    fn trace_resources(&self) {
+        if !suhina_plugins::trace::on() {
+            return;
+        }
+        let Ok(mut report) = self.resource_report.try_lock() else { return };
+        if report.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(1)) {
+            return;
+        }
+        *report = Some(std::time::Instant::now());
+        let mut captures = 0usize;
+        let mut shared = 0usize;
+        let mut target_bytes = 0u64;
+        let mut count = |state: &State| {
+            shared += state.shared.len();
+            if let Some(targets) = &state.targets {
+                captures += 1;
+                target_bytes += u64::from(targets.size[0]) * u64::from(targets.size[1]) * 4 * 3;
+            }
+        };
+        if let Ok(state) = self.state.try_lock() {
+            count(&state);
+        }
+        for state in [&self.surface_state, &self.menu_state] {
+            if let Ok(state) = state.try_lock()
+                && let Some(state) = state.as_ref()
+            {
+                count(state);
+            }
+        }
+        suhina_plugins::trace::state(
+            "liquid resources",
+            format!("{captures} target sets, {target_bytes} target bytes, {shared} shared registrations"),
+        );
     }
 }
 
@@ -247,10 +289,12 @@ impl Targets {
 
 impl Provider for Liquid {
     fn capture(&self, ctx: &egui::Context) -> Option<Backdrop> {
+        self.trace_resources();
         suhina_plugins::trace::timed("liquid backdrop", || self.capture_frame(ctx))
     }
 
     fn capture_surfaces(&self, ctx: &egui::Context, shapes: Vec<egui::epaint::ClippedShape>) -> Option<Backdrop> {
+        self.trace_resources();
         suhina_plugins::trace::timed("liquid content substrate", || {
             let own = self.images_except(Which::Surfaces);
             let mut state = self.surface_state.lock().ok()?;

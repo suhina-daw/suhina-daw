@@ -192,6 +192,7 @@ impl CloseChoice for ExportChoice {
 
 /// Draws the export dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<ExportChoice> {
+    let _style_class = crate::kit::style_class::enter("dialog");
     egui::Area::new(Id::new("export-dialog"))
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)

@@ -68,6 +68,30 @@ Sizes and tokens are in [components](../design/components.md) › Meter.
   the bar turns `meter.hot`. The clip indicator is a light at the top (or right end) in
   `recording` while lit; a click anywhere on the meter turns it off. Each meter is named for
   screen readers, "Drums level: −12.0 dB" or "Main level: silent, clipped".
+- Empty rails and the unlit clip light remain visible without an audio device or signal.
+  Their native background survives surrounding CSS gradients; `.meter { background-color:
+  #081014; }` overrides it for a theme, while `color` controls the normal level ink.
+- A theme can select continuous, segmented, needle or signal-driven artwork frames.
+  Frame artwork uses the louder side's peak on the same dBFS range, preserves the
+  native clip light and reset action, and falls back to continuous stereo bars when
+  no valid sequence exists. Unlike decorative animation it follows measurements
+  even with animations disabled. Theme placement can resize or move the meter;
+  its width/height chooses vertical or horizontal orientation. See
+  [theme skins](theme-skins.md) for artwork, CSS and placement contracts.
+- CSS level gradients use `.meter-vertical .meter-level` or
+  `.meter-horizontal .meter-level` and remain anchored to the entire dBFS scale.
+  Measured peak/RMS extents clip the gradient with native opacity; segment gaps
+  remain empty and optional outset shadows glow around the lit region. Increasing
+  the level reveals higher colours rather than stretching the gradient.
+- Theme `skin.meter-intensity` (integer 0–100, default 100) dims the measured
+  bars, hold marks, needles, artwork frames and glow together, preserving empty
+  native bar rails, the clip light and all measurement geometry. Frame images dim
+  as a whole, including any background authored inside them. Canonical CSS
+  `meter { intensity: 65%; }` and the theme editor's Meter intensity slider
+  mirror this value into JSON. This is visual opacity, not audio gain or colour
+  saturation. Advanced `.meter-level { opacity: .5; }` additionally dims native
+  bars, hold marks and needles as well as CSS fills/glow. An explicitly transparent
+  fill suppresses native fill fallback.
 - The window draws again whenever the levels change, and looks for new levels every 50 ms for
   0.3 s after they last changed while a meter shows something, so falling meters reach the
   bottom; an engine that stopped rendering leaves the window at rest.

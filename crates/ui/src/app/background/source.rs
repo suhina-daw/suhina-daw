@@ -4,11 +4,22 @@
 //! Bounded image decoding, independent of placement and effects.
 
 pub(super) fn load(path: &str) -> Result<image::RgbaImage, String> {
-    let metadata = std::fs::metadata(path).map_err(|error| format!("Background image: {error}"))?;
-    if metadata.len() > 32 * 1024 * 1024 {
-        return Err("Background PNG must be smaller than 32 MiB".into());
-    }
-    let mut reader = image::ImageReader::open(path).map_err(|error| error.to_string())?;
+    let bytes = if path.starts_with("data:image/png;base64,") {
+        crate::kit::skin::decode_png(path)?
+    } else {
+        use std::io::Read;
+        let file = std::fs::File::open(path).map_err(|e| format!("Background image: {e}"))?;
+        if file.metadata().map_err(|e| e.to_string())?.len() > 32 * 1024 * 1024 {
+            return Err("Background PNG must be smaller than 32 MiB".into());
+        }
+        let mut data = Vec::new();
+        file.take(32 * 1024 * 1024 + 1).read_to_end(&mut data).map_err(|e| e.to_string())?;
+        if data.len() > 32 * 1024 * 1024 {
+            return Err("Background PNG exceeds its size limit".into());
+        }
+        data
+    };
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes));
     reader.set_format(image::ImageFormat::Png);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);

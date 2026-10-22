@@ -20,6 +20,7 @@ const LISTED: usize = 6;
 
 /// Draws the dialog over `area`, above everything else, for the projects still being let go of.
 pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
+    let _style_class = crate::kit::style_class::enter("dialog");
     egui::Area::new(Id::new("closing")).order(egui::Order::Foreground).fixed_pos(area.min).show(ui.ctx(), |ui| {
         ui.set_min_size(area.size());
         draw(ui, area, waiting);

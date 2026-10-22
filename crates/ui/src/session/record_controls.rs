@@ -21,15 +21,37 @@ const COUNT_INS: [(u8, &str); 4] = [(0, "Off"), (1, "1 bar"), (2, "2 bars"), (4,
 /// The control bar's record button in `rect`: lit while the arrangement records; a click
 /// starts or ends recording into the arrangement.
 pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, actions: &mut Vec<Action>) {
+    if crate::kit::control_layout::placement("transport-record").hidden {
+        return;
+    }
+    let rect = crate::kit::control_layout::place("transport-record", rect, ui.max_rect());
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
     let response = widgets::button_area(ui, rect, Id::new("record"), label);
+    let _style = crate::kit::style_class::enter_named_response("button", "record", &response);
     if response.clicked() {
         actions.push(Action::new("transport.record", json!({ "on": !recording })));
     }
     let lit = motion::toward(ui.ctx(), response.id.with("on"), recording, motion::VALUE);
     let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(rect, 0.0, motion::mix(hover, theme::recording_background(), lit));
+    widgets::button_surface(
+        painter,
+        rect,
+        &response,
+        recording,
+        motion::mix(hover, theme::recording_background(), lit),
+        0.0,
+    );
     let ring = motion::mix(theme::text_primary(), theme::recording(), lit);
+    if crate::kit::skin::paint(
+        painter,
+        rect,
+        "record",
+        crate::kit::skin::State::response(&response, recording),
+        crate::kit::style_class::foreground(theme::recording()),
+        0.0,
+    ) {
+        return;
+    }
     painter.circle_stroke(rect.center(), 4.5, Stroke::new(1.2, ring));
     painter.circle_filled(rect.center(), 4.5, theme::recording().gamma_multiply(0.35 + 0.65 * lit));
 }
@@ -49,11 +71,16 @@ pub fn metronome_button(
     (on, db, sound): (bool, f64, suhina_engine::ClickSound),
     actions: &mut Vec<Action>,
 ) {
+    if crate::kit::control_layout::placement("transport-metronome").hidden {
+        return;
+    }
+    let rect = crate::kit::control_layout::place("transport-metronome", rect, ui.max_rect());
     let label = if on { "Metronome off" } else { "Metronome on" };
     let response = ui.interact(rect, Id::new("metronome"), egui::Sense::click_and_drag()).on_hover_text(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let _style = crate::kit::style_class::enter_named_response("button", "metronome-toggle", &response);
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
@@ -73,8 +100,12 @@ pub fn metronome_button(
     });
     let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
     let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.fill_background(rect, 0.0, motion::mix(hover, theme::control_active(), lit));
-    metronome_glyph(painter, rect, motion::mix(theme::text_primary(), theme::accent(), lit));
+    widgets::button_surface(painter, rect, &response, on, motion::mix(hover, theme::control_active(), lit), 0.0);
+    metronome_glyph(
+        painter,
+        rect,
+        crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), lit)),
+    );
 }
 
 /// While the metronome's button (`response`, in `button`) is held: its level's slider beside it,

@@ -76,7 +76,11 @@ pub fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
 pub fn text_in(painter: &Painter, rect: Rect, align: Align2, text: &str, font: FontId, color: Color32) {
     let galley = fitted(painter, text, font, color, rect.width());
     let pos = align.align_size_within_rect(galley.size(), rect).min;
-    painter.galley(pos, galley, color);
+    paint_text(painter, pos, galley, color);
+}
+
+pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, color: Color32) {
+    super::native_css::paint_text(painter, pos, galley, color);
 }
 
 /// Makes `rect` clickable, with a label for screen readers and tests.
@@ -95,12 +99,24 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
 pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Response, fill: Color32) {
-    let radius = (rect.height() * 0.25).min(5.0);
-    painter.fill_background(rect, radius, fill);
+    let _style = crate::kit::style_class::control("button", response);
+    let radius = super::style_class::radius((rect.height() * 0.25).min(5.0));
+    button_surface(painter, rect, response, false, fill, radius);
     if response.has_focus() || response.hovered() {
         let edge = if response.has_focus() { theme::accent() } else { theme::border_strong() };
         painter.rect_stroke(rect, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
+}
+
+/// CSS paint remains above the SVG body, below the control's glyph and label.
+pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
+    let _style = super::style_class::control("button", response);
+    let fill = super::style_class::background(fill);
+    let radius = super::style_class::radius(radius);
+    if !super::skin::button(painter, rect, super::skin::State::response(response, on), fill, radius) {
+        painter.fill_background(rect, radius, fill);
+    }
+    super::native_css::background_rounded(painter, rect, radius);
 }
 
 /// Fill and text of a track-on toggle: light when on, dark when off, a step brighter hovered.
@@ -125,13 +141,20 @@ pub fn solo_button(
     name: &str,
     solo: bool,
 ) -> Option<Action> {
+    if super::control_layout::placement("solo").hidden {
+        return None;
+    }
+    let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
+    let _style = super::style_class::enter_response("button", &response);
     let lit = motion::toward(ui.ctx(), response.id.with("on"), solo, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     track_button_face(ui, painter, rect, &response, motion::mix(off, theme::accent(), lit));
-    let text = motion::mix(theme::text_secondary(), theme::text_inverse(), lit);
-    text_in(painter, rect, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
+    let text = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
+    if !super::skin::paint(painter, rect, "solo", super::skin::State::response(&response, solo), text, 0.0) {
+        text_in(painter, rect, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
+    }
     if !response.clicked() {
         return None;
     }
@@ -154,11 +177,19 @@ pub fn cue_button(
     name: &str,
     cue: bool,
 ) -> Option<Action> {
+    if super::control_layout::placement("cue").hidden {
+        return None;
+    }
+    let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
+    let _style = super::style_class::enter_response("button", &response);
     let (fill, text) = toggle_colors(ui, &response, cue);
+    let text = super::style_class::foreground(text);
     track_button_face(ui, painter, rect, &response, fill);
-    headphones(painter, rect, text);
+    if !super::skin::paint(painter, rect, "cue", super::skin::State::response(&response, cue), text, 0.0) {
+        headphones(painter, rect, text);
+    }
     response.clicked().then(|| Action::new("track.setCue", serde_json::json!({ "track": track, "cue": !cue })))
 }
 
@@ -197,20 +228,27 @@ pub fn arm_button(
     armed: bool,
     notes: bool,
 ) -> Option<Action> {
+    if super::control_layout::placement("arm").hidden {
+        return None;
+    }
+    let rect = super::control_layout::place("arm", rect, painter.clip_rect());
     let label = match (armed, notes) {
         (true, _) => format!("Disarm {name}"),
         (false, true) => format!("Arm {name} to play it from a MIDI controller"),
         (false, false) => format!("Arm {name} to hear its audio input"),
     };
     let response = button_area(ui, rect, id, label);
+    let _style = super::style_class::enter_response("button", &response);
     let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     track_button_face(ui, painter, rect, &response, motion::mix(off, theme::recording_background(), lit));
     let radius = (rect.height().min(rect.width()) * 0.22).clamp(2.5, 4.0);
-    let ring = motion::mix(theme::text_secondary(), theme::recording(), lit);
-    painter.circle_stroke(rect.center(), radius, Stroke::new(1.2, ring));
-    if lit > 0.0 {
-        painter.circle_filled(rect.center(), radius, theme::recording().gamma_multiply(lit));
+    let ring = super::style_class::foreground(motion::mix(theme::text_secondary(), theme::recording(), lit));
+    if !super::skin::paint(painter, rect, "arm", super::skin::State::response(&response, armed), ring, 0.0) {
+        painter.circle_stroke(rect.center(), radius, Stroke::new(1.2, ring));
+        if lit > 0.0 {
+            painter.circle_filled(rect.center(), radius, theme::recording().gamma_multiply(lit));
+        }
     }
     if !response.clicked() {
         return None;
@@ -235,6 +273,9 @@ pub fn input_frame() -> egui::Frame {
 
 /// A text edit with the same transparent surface and focus underline in every view.
 pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
+    let _style_class = crate::kit::style_class::enter("text-input");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let response = ui.add(edit.frame(input_frame()));
     input_line(ui, &response);
     response
@@ -242,6 +283,9 @@ pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
 
 /// The fixed-rectangle counterpart used by browser rows and project dialogs.
 pub fn text_input_at(ui: &mut Ui, rect: Rect, edit: egui::TextEdit<'_>) -> Response {
+    let _style_class = crate::kit::style_class::enter("text-input");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let response = ui.put(rect, edit.frame(input_frame()));
     input_line(ui, &response);
     response
@@ -253,6 +297,9 @@ pub fn combo_box<R>(
     combo: egui::ComboBox,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> egui::InnerResponse<Option<R>> {
+    let _style_class = super::style_class::enter("dropdown");
+    let mut styled_ui = super::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let menu_style = ui.style().clone();
     ui.scope(|ui| {
         transparent_control(ui);
@@ -282,6 +329,9 @@ fn transparent_control(ui: &mut Ui) {
 
 /// Draggable/typed numeric fields share the form underline without changing interaction.
 pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragValue<'_>) -> Response {
+    let _style_class = super::style_class::enter("value");
+    let mut styled_ui = super::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
         let response = if let Some(size) = size { ui.add_sized(size, number) } else { ui.add(number) };
@@ -292,6 +342,9 @@ pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragVal
 }
 
 pub fn number_input_at(ui: &mut Ui, rect: Rect, number: egui::DragValue<'_>) -> Response {
+    let _style_class = super::style_class::enter("value");
+    let mut styled_ui = super::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     ui.scope(|ui| {
         transparent_control(ui);
         let response = ui.put(rect, number);
@@ -314,6 +367,7 @@ pub fn input_line(ui: &Ui, response: &Response) {
 
 /// A form field whose surrounding surface shows through, with only an underline.
 pub fn form_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Response, text: &str) {
+    let _style_class = crate::kit::style_class::enter_response("dropdown", response);
     let hover = hover(ui, response);
     let border = if response.has_focus() {
         theme::accent()
@@ -535,6 +589,23 @@ pub fn drag_value(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
+    drag_value_axis(ui, response, preview, value, per_point, per_tick, range, default, false)
+}
+
+/// The same keyboard, wheel, reset and undo protocol with an explicit drag axis.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_value_axis(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    per_tick: f64,
+    range: (f64, f64),
+    default: f64,
+    horizontal: bool,
+) -> Drag {
+    let _style_class = crate::kit::style_class::enter_response("value", response);
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
     let (steps, fine, typed) = value_keys(ui, response);
     if let Some(typed) = typed
@@ -573,7 +644,8 @@ pub fn drag_value(
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
-        let next = (start - f64::from(response.drag_delta().y) * per_point * fine).clamp(range.0, range.1);
+        let delta = if horizontal { response.drag_delta().x } else { -response.drag_delta().y };
+        let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
     }
@@ -600,13 +672,25 @@ pub fn value_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString, value
 
 /// The knob: a small circle with a pointer from the centre, −135° … +135° of travel for
 /// `position` 0 … 1 (components › Mixer strip).
-pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32) {
+pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: Color32, response: Option<&Response>) {
+    let _style = response
+        .map(|response| crate::kit::style_class::enter_response("knob", response))
+        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let state =
+        response.map(|response| super::skin::State::response(response, false)).unwrap_or(super::skin::State::Normal);
+    let pointer = super::style_class::foreground(pointer);
     let radius = size * 9.0 / 22.0;
-    painter.circle_filled(center, radius, theme::control_background());
-    painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
+    let rect = Rect::from_center_size(center, Vec2::splat(size));
+    if !super::skin::paint(painter, rect, "knob.body", state, pointer, 0.0) {
+        painter.circle_filled(center, radius, theme::control_background());
+        painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
+    }
+    super::native_css::background_rounded(painter, rect, size * 0.5);
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
-    painter.line_segment([center, tip], Stroke::new(1.5, pointer));
+    if !super::skin::paint(painter, rect, "knob.pointer", state, pointer, angle) {
+        painter.line_segment([center, tip], Stroke::new(1.5, pointer));
+    }
 }
 
 /// A volume in dB as the mixer shows it.
@@ -657,9 +741,11 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
 
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
     let response = button_area(ui, rect, Id::new(("dialog-button", label)), label);
+    let _style = super::style_class::enter_response("button", &response);
     let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    painter.fill_background(rect, 0.0, fill);
-    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    let radius = super::style_class::radius(0.0);
+    button_surface(painter, rect, &response, false, fill, radius);
+    painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
     response.clicked()
@@ -668,6 +754,26 @@ pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, l
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
+        let original = theme::palette();
+        let mut palette = original;
+        palette.window_background = Color32::TRANSPARENT;
+        palette.text_value = Color32::from_rgb(220, 230, 220);
+        let ctx = egui::Context::default();
+        theme::set_palette(&ctx, palette);
+        motion::set_enabled(&ctx, false);
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
+            let response = button_area(ui, rect, Id::new("transparent-toggle"), "Track on");
+            let (fill, text) = toggle_colors(ui, &response, true);
+            assert_eq!(text.a(), 255);
+            assert!(theme::contrast(fill, text) >= 4.5);
+        });
+        output.textures_delta.clear();
+        theme::set_palette(&ctx, original);
+    }
 
     #[test]
     fn shared_form_controls_keep_surfaces_transparent_and_do_not_restyle_buttons() {

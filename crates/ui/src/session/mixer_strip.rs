@@ -14,6 +14,7 @@ use suhina_engine::model::{InputChannels, Monitor, TrackId};
 use crate::interaction::colour_picker;
 use crate::interaction::grid::{Column, ColumnKind};
 use crate::interaction::menus;
+use crate::kit::control_layout::{self, Direction};
 use crate::kit::meter;
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD};
@@ -116,6 +117,15 @@ pub fn layout(rect: Rect, has_sends: bool, can_hear_input: bool) -> Layout {
 
 /// [`layout`], with what the mixer's strips share: the input block's room and the divider.
 pub fn layout_shared(rect: Rect, has_sends: bool, can_hear_input: bool, shared: Shared) -> Layout {
+    layout_native(rect, has_sends, can_hear_input, shared, false)
+}
+
+pub fn layout_main(rect: Rect, shared: Shared) -> Layout {
+    layout_native(rect, false, false, shared, true)
+}
+
+fn layout_native(rect: Rect, has_sends: bool, can_hear_input: bool, shared: Shared, main: bool) -> Layout {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("mixer layout");
     let inner = rect.shrink(PAD);
     let height = rect.height();
     // Reserve the footer on all strips so returns and Main keep their controls aligned.
@@ -165,7 +175,7 @@ pub fn layout_shared(rect: Rect, has_sends: bool, can_hear_input: bool, shared: 
     if height < FADER_AT {
         let top = (bottom - COMPACT).max(inner.top());
         parts.compact = Some(row(top, bottom - top)).filter(|r| r.height() > 0.0);
-        return parts;
+        return place_parts(parts, inner, main);
     }
     let mut top = inner.top();
     if height >= NAME_AT {
@@ -220,6 +230,50 @@ pub fn layout_shared(rect: Rect, has_sends: bool, can_hear_input: bool, shared: 
         Vec2::new(METER_WIDTH, fader.height()),
     ));
     parts.fader = Some(fader);
+    place_parts(parts, inner, main)
+}
+
+fn horizontal_volume() -> bool {
+    control_layout::placement("mixer-volume").direction == Direction::Horizontal
+}
+
+fn place_parts(mut parts: Layout, bounds: Rect, main: bool) -> Layout {
+    if horizontal_volume()
+        && let Some(fader) = parts.fader
+    {
+        let horizontal = Rect::from_min_size(
+            egui::pos2(bounds.left(), fader.top()),
+            Vec2::new(bounds.width(), 20.0_f32.min(fader.height())),
+        );
+        parts.fader = Some(horizontal);
+        parts.meter = Some(Rect::from_min_size(
+            egui::pos2(bounds.left(), horizontal.bottom() + 12.0),
+            Vec2::new(bounds.width(), 10.0),
+        ));
+    }
+    for (name, part) in [
+        ("mixer-name", &mut parts.name),
+        ("mixer-output", &mut parts.output),
+        ("mixer-input-caption", &mut parts.audio_caption),
+        ("mixer-input", &mut parts.audio_source),
+        ("mixer-monitor", &mut parts.audio_monitor),
+        ("mixer-devices", &mut parts.devices),
+        ("mixer-sends", &mut parts.sends),
+        ("mixer-pan", &mut parts.pan),
+        ("mixer-volume-readout", &mut parts.readout),
+        ("mixer-volume", &mut parts.fader),
+        ("mixer-meter", &mut parts.meter),
+        ("mixer-compact-volume", &mut parts.compact),
+    ] {
+        *part = part.filter(|_| !control_layout::placement(name).hidden).map(|rect| {
+            if main && !matches!(name, "mixer-devices" | "mixer-volume-readout" | "mixer-volume" | "mixer-meter") {
+                control_layout::resolve(name, rect, bounds)
+            } else {
+                control_layout::place(name, rect, bounds)
+            }
+        });
+    }
+    parts.toggles = control_layout::place("mixer-toggles", parts.toggles, bounds);
     parts
 }
 
@@ -238,16 +292,32 @@ pub fn show(
     id: Id,
     actions: &mut Vec<Action>,
 ) -> egui::Response {
+    let _work_trace = crate::kit::frame_trace::WorkSpan::new("mixer strip");
+    let clipped_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    let painter = &clipped_painter;
+    let _artwork =
+        crate::kit::artwork::track_color(egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2));
+    let _style_class = crate::kit::style_class::enter_named("mixer", &format!("track-{}", column.track.0));
     // The strip in a shade of its track's colour, as the column above it.
-    let tint = motion::mix(
+    let tint = crate::kit::style_class::background(motion::mix(
         theme::panel_background(),
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
         0.16,
-    );
-    painter.fill_background(rect, 0.0, tint);
-    crate::kit::liquid::paint(painter, rect, tint, crate::kit::liquid::Surface::Track);
-    // The strip's own background, under its controls: a double-click shows the track's devices.
+    ));
     let strip = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip"), Sense::click());
+    if !crate::kit::skin::paint_colored(
+        painter,
+        rect,
+        "track.body",
+        crate::kit::skin::State::response(&strip, state.selected == Some(column.track)),
+        tint,
+        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+    ) {
+        painter.fill_background(rect, 0.0, tint);
+    }
+    crate::kit::liquid::paint(painter, rect, tint, crate::kit::liquid::Surface::Track);
+    crate::kit::native_css::background(painter, rect);
+    // The strip's own background, under its controls: a double-click shows the track's devices.
     strip.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} channel strip", column.name))
     });
@@ -262,17 +332,23 @@ pub fn show(
         }
     }
     // The track's colour down the left edge, at every height; a click opens the palette.
-    let band = Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()));
-    painter.fill_background(band, 0.0, colour_picker::fill(column.color, column.mute));
+    let band = control_layout::place(
+        "mixer-color",
+        Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height())),
+        rect,
+    );
+    if !control_layout::placement("mixer-color").hidden {
+        painter.fill_background(band, 0.0, colour_picker::fill(column.color, column.mute));
+    }
     let band_hit = band.intersect(painter.clip_rect());
-    if band_hit.is_positive() {
+    if band_hit.is_positive() && !control_layout::placement("mixer-color").hidden {
         let colour_id = id.with("strip-colour");
         colour_picker::area(ui, band_hit, colour_id, column.track, &column.name, column.color, actions);
     }
     let shared = Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let parts = layout_shared(rect, !column.sends.is_empty(), column.plays_audio, shared);
     if let Some(name) = parts.name {
-        name_row(ui, painter, name, column, id);
+        name_row(ui, painter, name, column, id, state.selected == Some(column.track));
     }
     if let Some(row) = parts.output {
         output_row(ui, painter, row, column, groups, id, actions);
@@ -294,8 +370,8 @@ pub fn show(
     if let Some(row) = parts.pan {
         pan_row(ui, painter, row, column, sending, state, id, actions);
     }
-    if let (Some(readout), Some(fader)) = (parts.readout, parts.fader) {
-        fader_column(ui, painter, readout, fader, column, state, id, actions);
+    if let Some(fader) = parts.fader {
+        fader_column(ui, painter, parts.readout.unwrap_or(Rect::NOTHING), fader, column, state, id, actions);
     }
     if let Some(compact) = parts.compact {
         compact_volume(ui, painter, compact, column, state, id, actions);
@@ -304,7 +380,9 @@ pub fn show(
         let level = state.meters.track(column.track);
         meter::show(ui, painter, at, &column.name, meter::Source::Track(column.track), &level, actions);
     }
-    toggles(ui, painter, parts.toggles, column, track_number, id, actions);
+    if !control_layout::placement("mixer-toggles").hidden {
+        toggles(ui, painter, parts.toggles, column, track_number, id, actions);
+    }
     strip
 }
 
@@ -337,13 +415,33 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, list: Rect, fader: f32
 }
 
 /// The track's name at the top of a tall strip; screen readers and tests find it as a label.
-fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id) {
+fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, selected: bool) {
     let response = ui.interact(rect.intersect(painter.clip_rect()), id.with("strip-name"), Sense::hover());
+    let _name_style =
+        crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
-    let fill = colour_picker::fill(column.color, column.mute);
-    painter.fill_background(rect, 0.0, fill);
+    let native_fill = colour_picker::fill(column.color, column.mute);
+    // An alpha material layers over the track colour. An explicitly authored
+    // transparent solid background can still remove that colour completely.
+    let fill =
+        if crate::kit::style_class::computed().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
+            native_fill
+        } else {
+            crate::kit::style_class::background(native_fill)
+        };
+    if !crate::kit::skin::paint_colored(
+        painter,
+        rect,
+        "track.name",
+        crate::kit::skin::State::response(&response, selected),
+        fill,
+        egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
+    ) {
+        painter.fill_background(rect, 0.0, fill);
+    }
     crate::kit::liquid::paint(painter, rect, fill, crate::kit::liquid::Surface::Track);
+    crate::kit::native_css::background(painter, rect);
     let text = rect.shrink2(Vec2::new(4.0, 0.0));
     widgets::text_in(
         painter,
@@ -592,6 +690,11 @@ fn audio_block(
             Pos2::new(monitor.left() + index as f32 * (width + 2.0), monitor.top()),
             Vec2::new(width, monitor.height()),
         );
+        let name = format!("mixer-monitor-{value}");
+        if control_layout::placement(&name).hidden {
+            continue;
+        }
+        let area = control_layout::place(&name, area, painter.clip_rect());
         let on = column.audio_input.monitor == monitor_state;
         let response = widgets::button_area(
             ui,
@@ -656,7 +759,17 @@ fn volume_drag(
     };
     let continued = preview.is_some();
     let mut committed = None;
-    match widgets::drag_value(ui, response, &mut preview, column.volume_db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
+    match widgets::drag_value_axis(
+        ui,
+        response,
+        &mut preview,
+        column.volume_db,
+        0.25,
+        1.0,
+        VOLUME_RANGE,
+        0.0,
+        horizontal_volume(),
+    ) {
         Drag::Moving(v) => {
             state.drag = Some((track, Control::Volume, v));
             actions.push(set_volume(track.0, v, continued));
@@ -687,18 +800,43 @@ fn fader_column(
     actions: &mut Vec<Action>,
 ) {
     // The fader column takes the pointer, up to the readout's top; the meter beside it stays its own.
-    let area = Rect::from_min_max(Pos2::new(fader.left(), readout.top()), fader.max);
-    state.value_areas.push(area);
+    state.value_areas.extend([readout, fader].into_iter().filter(Rect::is_positive));
     let label = widgets::format_db(shown(state, column, Control::Volume, column.volume_db));
-    let response = widgets::value_area(
-        ui,
-        area.intersect(painter.clip_rect()),
-        id.with("volume"),
-        format!("{} volume", column.name),
-        label,
-    );
+    let response =
+        volume_response(ui, painter, readout, fader, id.with("volume"), &format!("{} volume", column.name), &label);
     let db = volume_drag(ui, &response, column, state, actions);
     paint_fader(ui, painter, readout, fader, db, &response, column.kind == ColumnKind::Return);
+}
+
+/// Separate hit rectangles keep a displaced readout from capturing controls in the gap.
+fn volume_response(
+    ui: &Ui,
+    painter: &egui::Painter,
+    readout: Rect,
+    fader: Rect,
+    id: Id,
+    name: &str,
+    value: &str,
+) -> egui::Response {
+    let slider = widgets::value_area(ui, fader.intersect(painter.clip_rect()), id, name, value);
+    if !readout.is_positive() {
+        return slider;
+    }
+    let field = widgets::value_area(
+        ui,
+        readout.intersect(painter.clip_rect()),
+        id.with("readout"),
+        format!("{name} readout"),
+        value,
+    );
+    if slider.dragged() || slider.drag_stopped() || slider.clicked() || slider.hovered() {
+        return slider;
+    }
+    if field.dragged() || field.drag_stopped() || field.clicked() || field.hovered() || field.has_focus() {
+        field
+    } else {
+        slider
+    }
 }
 
 /// The main output's fader in the main column: as a track's, running `main.setVolume`.
@@ -711,22 +849,30 @@ pub fn main_fader(
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
 ) {
-    let area = Rect::from_min_max(Pos2::new(fader.left(), readout.top()), fader.max);
-    state.value_areas.push(area);
+    state.value_areas.extend([readout, fader].into_iter().filter(Rect::is_positive));
     let mut preview = match state.drag {
         Some((t, Control::Volume, v)) if t == MAIN => Some(v),
         _ => None,
     };
     let label = widgets::format_db(preview.unwrap_or(volume_db));
-    let response =
-        widgets::value_area(ui, area.intersect(painter.clip_rect()), Id::new("main-volume"), "Main volume", label);
+    let response = volume_response(ui, painter, readout, fader, Id::new("main-volume"), "Main volume", &label);
     let continued = preview.is_some();
     let send = |v: f64, continued: bool| {
         let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
         Action::new("main.setVolume", json!({ "db": db, "continue": continued }))
     };
     let mut db = volume_db;
-    match widgets::drag_value(ui, &response, &mut preview, volume_db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
+    match widgets::drag_value_axis(
+        ui,
+        &response,
+        &mut preview,
+        volume_db,
+        0.25,
+        1.0,
+        VOLUME_RANGE,
+        0.0,
+        horizontal_volume(),
+    ) {
         Drag::Moving(v) => {
             state.drag = Some((MAIN, Control::Volume, v));
             actions.push(send(v, continued));
@@ -755,15 +901,22 @@ fn paint_fader(
     response: &egui::Response,
     centred: bool,
 ) {
+    let _style = crate::kit::style_class::enter_response("fader", response);
+    crate::kit::native_css::background(painter, fader);
     let hover = widgets::hover(ui, response);
     let value_color = motion::mix(theme::text_value(), theme::text_primary(), hover);
-    painter.text(
-        Pos2::new(fader.center().x, readout.center().y),
-        Align2::CENTER_CENTER,
-        widgets::format_db(db),
-        theme::mono_font(9.0),
-        value_color,
-    );
+    if readout.is_positive() {
+        let centre = if horizontal_volume() || control_layout::placement("mixer-volume-readout") != Default::default() {
+            readout.center()
+        } else {
+            Pos2::new(readout.left() + FADER_COLUMN / 2.0, readout.center().y)
+        };
+        painter.text(centre, Align2::CENTER_CENTER, widgets::format_db(db), theme::mono_font(9.0), value_color);
+    }
+    if horizontal_volume() {
+        paint_horizontal_fader(painter, fader, db, hover, response);
+        return;
+    }
     if fader.height() < CAP.y {
         return;
     }
@@ -774,14 +927,34 @@ fn paint_fader(
     // An unfilled recessed rail: volume is the cap's position, not a bright background bar.
     let rail = Rect::from_center_size(Pos2::new(x, fader.center().y), Vec2::new(5.0, fader.height()));
     let recess = motion::mix(theme::control_background(), egui::Color32::BLACK, 0.65);
-    painter.fill_background(rail, 2.0, recess);
+    if !crate::kit::skin::paint(
+        painter,
+        rail,
+        "fader.rail",
+        crate::kit::skin::State::response(response, false),
+        theme::text_value(),
+        0.0,
+    ) {
+        painter.fill_background(rail, 2.0, recess);
+    }
+    let _scale_style = crate::kit::style_class::enter("fader-scale");
+    let native_scale = Rect::from_min_size(
+        egui::pos2(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
+        egui::vec2(SCALE_WIDTH, fader.height()),
+    );
+    let scale = control_layout::place("mixer-volume-scale", native_scale, painter.clip_rect());
     let mut last_label_y = f32::NEG_INFINITY;
-    for db in [0.0, -6.0, -12.0, -24.0, -70.0] {
-        let y = at(widgets::volume_position(db)).round() + 0.5;
+    for db in
+        [0.0, -6.0, -12.0, -24.0, -70.0].into_iter().filter(|_| !control_layout::placement("mixer-volume-scale").hidden)
+    {
+        let y = (scale.top()
+            + (at(widgets::volume_position(db)) - native_scale.top()) * scale.height() / native_scale.height())
+        .round()
+            + 0.5;
         if y - last_label_y >= 10.0 {
             let label = if db == -70.0 { "−∞".to_owned() } else { format!("{db:.0}") };
             painter.text(
-                Pos2::new(if centred { fader.left() - 2.0 } else { fader.right() + SCALE_WIDTH - 1.0 }, y),
+                Pos2::new(scale.right() - if centred { 0.0 } else { 1.0 }, y),
                 Align2::RIGHT_CENTER,
                 label,
                 theme::mono_font(8.0),
@@ -791,11 +964,76 @@ fn paint_fader(
         }
         let length = if db == 0.0 { 5.0 } else { 3.0 };
         let ink = theme::text_hint();
-        painter.hline(egui::Rangef::new(rail.right() + 2.0, rail.right() + length + 2.0), y, theme::hairline(ink));
+        let shift = scale.left() - native_scale.left();
+        painter.hline(
+            egui::Rangef::new(rail.right() + 2.0 + shift, rail.right() + length + 2.0 + shift),
+            y,
+            theme::hairline(ink),
+        );
     }
+    drop(_scale_style);
     let level = at(widgets::volume_position(db));
     let cap = Rect::from_center_size(Pos2::new(x, level), CAP);
-    crate::kit::mixer_controls::fader_cap(painter, cap, hover);
+    crate::kit::mixer_controls::fader_cap(painter, cap, hover, crate::kit::skin::State::response(response, false));
+}
+
+fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: f32, response: &egui::Response) {
+    let length = CAP.y.min(fader.width());
+    let thickness = CAP.x.min(fader.height());
+    let at = |position: f32| fader.left() + length / 2.0 + (fader.width() - length) * position;
+    let state = crate::kit::skin::State::response(response, false);
+    // Rasterize the same vertical artwork, then rotate its geometry and texture together.
+    let rail = Rect::from_center_size(fader.center(), Vec2::new(5.0, fader.width()));
+    if !crate::kit::skin::paint(painter, rail, "fader.rail", state, theme::text_value(), std::f32::consts::FRAC_PI_2) {
+        painter.fill_background(
+            Rect::from_center_size(fader.center(), Vec2::new(fader.width(), 5.0)),
+            2.0,
+            theme::control_background(),
+        );
+    }
+    let mut previous = f32::NEG_INFINITY;
+    let native_scale = Rect::from_min_size(egui::pos2(fader.left(), fader.bottom()), egui::vec2(fader.width(), 12.0));
+    let scale = control_layout::place("mixer-volume-scale", native_scale, painter.clip_rect());
+    let _scale_style = crate::kit::style_class::enter("fader-scale");
+    for value in
+        [-70.0, -24.0, -12.0, -6.0, 0.0].into_iter().filter(|_| !control_layout::placement("mixer-volume-scale").hidden)
+    {
+        let x = scale.left()
+            + (at(widgets::volume_position(value)) - native_scale.left()) * scale.width() / native_scale.width();
+        if x - previous < 18.0 {
+            continue;
+        }
+        previous = x;
+        painter.vline(x, scale.top()..=scale.top() + 3.0, theme::hairline(theme::text_hint()));
+        widgets::text_in(
+            painter,
+            Rect::from_center_size(egui::pos2(x, scale.top() + 7.0), Vec2::new(22.0, 8.0)),
+            Align2::CENTER_CENTER,
+            if value == -70.0 {
+                "−∞"
+            } else if value == 0.0 {
+                "0"
+            } else {
+                continue;
+            },
+            theme::mono_font(8.0),
+            theme::text_hint(),
+        );
+    }
+    drop(_scale_style);
+    let centre = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
+    let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
+    let _cap_style = crate::kit::style_class::enter("fader-cap");
+    crate::kit::native_css::background_rounded(
+        painter,
+        Rect::from_center_size(centre, Vec2::new(length, thickness)),
+        2.0,
+    );
+    if !crate::kit::skin::paint(painter, cap, "fader.cap", state, theme::text_value(), std::f32::consts::FRAC_PI_2) {
+        let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
+        painter.fill_background(cap, 2.0, motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
+        painter.vline(centre.x, cap.shrink(2.0).y_range(), theme::hairline(theme::text_value()));
+    }
 }
 
 /// The volume as a value across the strip, for heights too small for the fader: a field, or a
@@ -826,7 +1064,14 @@ fn compact_volume(
     if state.knobs {
         let size = rect.height();
         let center = Pos2::new(rect.left() + size / 2.0, rect.center().y);
-        widgets::knob(painter, center, size, position, motion::mix(theme::text_value(), theme::text_primary(), hover));
+        widgets::knob(
+            painter,
+            center,
+            size,
+            position,
+            motion::mix(theme::text_value(), theme::text_primary(), hover),
+            Some(&response),
+        );
     } else {
         painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
         let x = rect.left() + rect.width() * position;
@@ -851,6 +1096,7 @@ fn pan_row(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
+    let _style = crate::kit::style_class::enter("pan");
     let track = column.track;
     let knob_rect = row;
     state.value_areas.push(knob_rect);
@@ -892,7 +1138,29 @@ fn pan_row(
         Some((t, Control::Pan, v)) if t == track => v,
         _ => committed.unwrap_or(column.pan),
     };
-    crate::kit::mixer_controls::pan_field(painter, row, pan, widgets::hover(ui, &pan_response));
+    if crate::kit::style_class::knob_preference(state.knobs) {
+        let size = row.height().min(row.width());
+        widgets::knob(
+            painter,
+            Pos2::new(row.left() + size / 2.0, row.center().y),
+            size,
+            ((pan.clamp(-1.0, 1.0) + 1.0) / 2.0) as f32,
+            theme::text_value(),
+            Some(&pan_response),
+        );
+        if row.width() >= size + 20.0 {
+            widgets::text_in(
+                painter,
+                Rect::from_min_max(egui::pos2(row.left() + size + 4.0, row.top()), row.max),
+                Align2::CENTER_CENTER,
+                &widgets::format_pan(pan),
+                theme::mono_font(theme::TEXT_SMALL),
+                theme::text_primary(),
+            );
+        }
+    } else {
+        crate::kit::mixer_controls::pan_field(painter, row, pan, widgets::hover(ui, &pan_response));
+    }
 }
 
 /// The labelled send fields, one per return from the left of `row`, as many as fit: dragged up or down for
@@ -937,6 +1205,11 @@ fn send_knobs(
             Pos2::new(row.left() + pitch * index as f32 - scroll, row.top()),
             Vec2::new(width, row.height() - 2.0),
         );
+        let name = format!("mixer-send-{}", index + 1);
+        if control_layout::placement(&name).hidden {
+            continue;
+        }
+        let rect = control_layout::place(&name, rect, clip);
         if !rect.intersects(clip) {
             continue;
         }
@@ -1045,12 +1318,18 @@ fn toggles(
     if let Some(action) = widgets::cue_button(ui, painter, cue, id.with("cue"), track.0, &column.name, column.cue) {
         actions.push(action);
     }
+    if control_layout::placement("mixer-enable").hidden {
+        return;
+    }
+    let toggle = control_layout::place("mixer-enable", toggle, painter.clip_rect());
     let response = widgets::button_area(ui, toggle, id.with("on"), label);
+    let _style = crate::kit::style_class::enter_response("button", &response);
     if response.clicked() {
         actions.push(Action::new("track.setMute", json!({ "tracks": [track.0], "mute": !column.mute })));
     }
     let (fill, text) = widgets::toggle_colors(ui, &response, !column.mute);
-    painter.fill_background(toggle, 0.0, fill);
+    widgets::button_surface(painter, toggle, &response, !column.mute, fill, 0.0);
+    let text = crate::kit::style_class::foreground(text);
     let number = if column.kind == ColumnKind::Return {
         column.name.chars().next().map(String::from).unwrap_or_default()
     } else {
@@ -1062,6 +1341,172 @@ fn toggles(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Color32;
+
+    #[test]
+    fn volume_scale_labels_move_independently_and_can_be_hidden_in_both_directions() {
+        use crate::kit::skin;
+        for horizontal in [false, true] {
+            for hidden in [false, true] {
+                let ctx = egui::Context::default();
+                theme::install(&ctx);
+                let mut skin = skin::Skin::default();
+                skin.controls.insert(
+                    "mixer-volume-scale".into(),
+                    control_layout::Placement { x: 10, y: 5, hidden, ..Default::default() },
+                );
+                if horizontal {
+                    skin.controls.insert(
+                        "mixer-volume".into(),
+                        control_layout::Placement {
+                            direction: control_layout::Direction::Horizontal,
+                            ..Default::default()
+                        },
+                    );
+                }
+                skin::configure(&skin);
+                let draw = || {
+                    ctx.run_ui(egui::RawInput::default(), |ui| {
+                        let fader = Rect::from_min_size(
+                            egui::pos2(40.0, 40.0),
+                            if horizontal { egui::vec2(120.0, 20.0) } else { egui::vec2(18.0, 120.0) },
+                        );
+                        let response = ui.interact(fader, Id::new("scale-test"), egui::Sense::hover());
+                        paint_fader(ui, ui.painter(), Rect::NOTHING, fader, -6.0, &response, false);
+                    })
+                };
+                let mut output = draw();
+                let text: Vec<_> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) => Some(text.pos),
+                        _ => None,
+                    })
+                    .collect();
+                output.textures_delta.clear();
+                assert_eq!(text.is_empty(), hidden);
+                if !hidden {
+                    skin.controls.remove("mixer-volume-scale");
+                    skin::configure(&skin);
+                    let mut baseline = draw();
+                    let native: Vec<_> = baseline
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Text(text) => Some(text.pos),
+                            _ => None,
+                        })
+                        .collect();
+                    baseline.textures_delta.clear();
+                    assert_eq!(text.len(), native.len());
+                    for (moved, native) in text.iter().zip(native) {
+                        assert!(
+                            (*moved - native - egui::vec2(10.0, 5.0)).length() < 0.01,
+                            "{horizontal}: {moved:?} vs {native:?}"
+                        );
+                    }
+                }
+            }
+        }
+        skin::configure(&skin::Skin::default());
+    }
+
+    #[test]
+    fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
+        use crate::interaction::grid::Grid;
+        use crate::kit::{native_css, skin};
+        for (gradient, name_gradient) in [(false, false), (true, false), (false, true), (true, true)] {
+            let ctx = egui::Context::default();
+            theme::install(&ctx);
+            let body = if gradient { "linear-gradient(#102030, #304050)" } else { "#102030" };
+            let name = if name_gradient { "linear-gradient(#ffffff22, #00000044)" } else { "#203040" };
+            skin::configure(&skin::Skin {
+                css: Some(format!(".mixer {{ background: {body}; }} .track-name {{ background: {name}; }}").into()),
+                ..Default::default()
+            });
+            let grid = Grid::build(&crate::demo::demo_project(), None);
+            let name_fill = if name_gradient {
+                colour_picker::fill(grid.columns[0].color, false)
+            } else {
+                Color32::from_rgb(0x20, 0x30, 0x40)
+            };
+            let rect = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::new(116.0, 340.0));
+            let mut state = SessionViewState::default();
+            for frame in 0..3 {
+                let mut output =
+                    ctx.run_ui(egui::RawInput { time: Some(frame as f64 * 0.01), ..Default::default() }, |ui| {
+                        let _frame = native_css::frame(ui);
+                        show(
+                            ui,
+                            ui.painter(),
+                            rect,
+                            &grid.columns[0],
+                            &[],
+                            1,
+                            0,
+                            &mut state,
+                            Id::new("material-strip"),
+                            &mut Vec::new(),
+                        );
+                    });
+                if frame == 2 {
+                    let body_painted = output.shapes.iter().any(|shape| match &shape.shape {
+                        egui::Shape::Mesh(mesh) if gradient => mesh.calc_bounds() == rect,
+                        egui::Shape::Rect(shape) if !gradient => {
+                            shape.rect == rect && shape.fill == Color32::from_rgb(0x10, 0x20, 0x30)
+                        }
+                        _ => false,
+                    });
+                    let name_painted = output
+                        .shapes
+                        .iter()
+                        .any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.fill == name_fill));
+                    output.textures_delta.clear();
+                    assert!(body_painted, "missing mixer material, gradient={gradient}");
+                    assert!(name_painted, "missing name material");
+                }
+                output.textures_delta.clear();
+            }
+        }
+        skin::configure(&skin::Skin::default());
+    }
+
+    #[test]
+    fn main_edit_handles_only_include_sections_the_main_strip_draws() {
+        let ctx = egui::Context::default();
+        let capture = control_layout::Capture::begin(&ctx);
+        control_layout::draft(&ctx, Some(Default::default()));
+        layout_main(Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::SCENE_COLUMN, 340.0)), Shared::default());
+        let entries = capture.entries();
+        assert!(entries.iter().any(|entry| entry.name == "mixer-volume"));
+        assert!(entries.iter().any(|entry| entry.name == "mixer-meter"));
+        assert!(
+            !entries.iter().any(|entry| matches!(entry.name.as_str(), "mixer-name" | "mixer-pan" | "mixer-output"))
+        );
+        control_layout::draft(&ctx, None);
+    }
+
+    #[test]
+    fn theme_repositions_name_pan_and_meter_and_rotates_the_volume_layout() {
+        use crate::kit::{skin, theme_css};
+        let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, 340.0));
+        let original = layout(bounds, true, false);
+        let mut theme = theme::Theme::default();
+        assert!(theme_css::apply(&mut theme, ".control-mixer-volume { --suhina-direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-meter { width: 80px; height: 10px; } .control-mixer-pan { left: 5px; width: 80px; }").is_empty());
+        skin::configure(&theme.skin);
+        let moved = layout(bounds, true, false);
+        let fader = moved.fader.unwrap();
+        assert!(fader.width() > fader.height());
+        assert_eq!(moved.name.unwrap().bottom(), bounds.bottom() - PAD);
+        assert_eq!(moved.meter.unwrap().size(), Vec2::new(80.0, 10.0));
+        assert_eq!(moved.pan.unwrap().left(), original.pan.unwrap().left() + 5.0);
+        for rect in [moved.name, moved.pan, moved.fader, moved.meter].into_iter().flatten() {
+            assert!(bounds.contains_rect(rect));
+        }
+        skin::configure(&skin::Skin::default());
+        assert_eq!(layout(bounds, true, false), original);
+    }
 
     fn strip(height: f32) -> Layout {
         layout(Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, height)), true, false)

@@ -16,6 +16,60 @@ use suhina_ui::{App, kit::theme};
 const SHORT: (f32, f32) = (1000.0, 420.0);
 
 #[test]
+fn meter_intensity_slider_saves_theme_without_changing_the_project() {
+    use suhina_ui::settings::themes::FileAction;
+    let mut harness = short_window();
+    let before = harness.state().session().unwrap().project().clone();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    wheel_to(&mut harness, "Controls, meters and toolbar", 80);
+    harness.get_by_label("Controls, meters and toolbar").click();
+    settle(&mut harness);
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Meter intensity").scroll_to_me();
+    settle(&mut harness);
+    harness.state_mut().take_theme_actions();
+    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Meter intensity").click();
+    settle(&mut harness);
+    let actions = harness.state_mut().take_theme_actions();
+    assert!(
+        actions.iter().any(|action| matches!(action, FileAction::Save {theme, ..} if theme.skin.meter_intensity < 100)),
+        "{actions:?}"
+    );
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+}
+
+#[test]
+fn compact_session_css_applies_to_a_png_skin_without_changing_artwork_or_project() {
+    use suhina_ui::settings::themes::{FileAction, ThemeEntry};
+    let mut harness = short_window();
+    let ctx = harness.ctx.clone();
+    let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==";
+    let mut theme = theme::Theme { name: "PNG controls".into(), ..Default::default() };
+    theme.skin.assets.insert("track.name".into(), png.into());
+    harness.state_mut().put_theme(&ctx, ThemeEntry { id: "png-controls".into(), theme });
+    harness.state_mut().use_theme(&ctx, "png-controls");
+    let before = harness.state().session().unwrap().project().clone();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    harness.get_by_label("Edit current theme…").click();
+    settle(&mut harness);
+    for label in ["Controls, meters and toolbar", "Native CSS", "Load compact Session geometry"] {
+        wheel_to(&mut harness, label, 80);
+        harness.get_by_label(label).click();
+        settle(&mut harness);
+    }
+    harness.state_mut().take_theme_actions();
+    wheel_to(&mut harness, "Apply CSS", 80);
+    harness.get_by_label("Apply CSS").click();
+    settle(&mut harness);
+    let actions = harness.state_mut().take_theme_actions();
+    assert!(actions.iter().any(|action| matches!(action, FileAction::Save {theme, ..} if theme.skin.session.track_width == Some(86) && theme.skin.assets.get("track.name").is_some_and(|source| source == png))), "{actions:?}");
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+}
+
+#[test]
 fn gradient_editor_enables_saves_and_resets_without_editing_the_project() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
