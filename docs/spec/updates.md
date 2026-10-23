@@ -82,6 +82,12 @@ The new files go where the running `suhina` is: the folder the package was unpac
 - **macOS and Linux:** each new file is moved over the old one. The running program keeps the old
   file open until it quits, so nothing breaks while it runs. The executable bit comes from the
   package.
+- **macOS, in `Suhina.app`:** the bundle is replaced whole, since its signature covers every file in
+  it. The download is staged beside the bundle (in Applications, when it was put there), the
+  running bundle is renamed to `Suhina.app.old` and the new one moved in its place; if the move
+  fails the old one is put back. The next start deletes `Suhina.app.old`, and nothing else beside
+  it. A build run from outside a bundle (one unpacked before the packages had one) takes the
+  files from the new package's `Suhina.app/Contents/MacOS` into its own folder.
 
 The packages are not signed (releasing.md › Packages), so the update is as trusted as the
 download page: the checksum catches a broken download, not a replaced release.

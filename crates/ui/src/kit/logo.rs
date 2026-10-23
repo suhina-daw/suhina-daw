@@ -9,7 +9,11 @@
 //! name, drawn in the colour asked for (the theme's text colour); any other fill (the wave) keeps
 //! its own colour.
 
-use egui::{Color32, ColorImage, Context, Id, TextureHandle, TextureOptions};
+use egui::{
+    Align2, Color32, ColorImage, Context, FontId, Id, Painter, Pos2, Rect, Sense, TextureHandle, TextureOptions, Ui,
+};
+
+use crate::kit::{theme, widgets};
 use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Transform};
 
 const SVG: &str = include_str!("../../../../assets/brand/suhina-logo.svg");
@@ -45,6 +49,28 @@ pub fn texture(ctx: &Context, width: u32, height: u32, name: Color32) -> Option<
     let texture = ctx.load_texture("suhina-logo", image, TextureOptions::LINEAR);
     ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
     Some(texture)
+}
+
+/// Paints the logo into `rect`, the name in the theme's text colour, all of it `opacity` opaque; the
+/// name as text in `font` when it cannot be drawn. Screen readers read it as "Suhina".
+pub fn paint(ui: &Ui, painter: &Painter, rect: Rect, font: FontId, opacity: f32) {
+    let pixels = (rect.size() * ui.ctx().pixels_per_point()).round();
+    match texture(ui.ctx(), pixels.x as u32, pixels.y as u32, theme::text_primary()) {
+        Some(logo) => {
+            let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
+            painter.image(logo.id(), rect, uv, Color32::WHITE.gamma_multiply(opacity));
+        }
+        None => widgets::text_in(
+            painter,
+            rect,
+            Align2::CENTER_CENTER,
+            "Suhina",
+            font,
+            theme::text_primary().gamma_multiply(opacity),
+        ),
+    }
+    let response = ui.interact(rect, Id::new(("suhina-logo", rect.min.x as i32, rect.min.y as i32)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Suhina"));
 }
 
 fn render(svg: &str, width: u32, height: u32, name: Color32) -> Option<ColorImage> {

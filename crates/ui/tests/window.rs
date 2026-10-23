@@ -4147,12 +4147,22 @@ fn help_about_shows_the_version_and_copies_it() {
     let version = suhina_ui::app::project_dialog::VERSION;
     let build = suhina_ui::app::project_dialog::BUILD;
     assert!(!build.is_empty(), "the build script sets the build string");
+    // The night and the commit, as a nightly's version ends: 20261016+a15ad35.
+    if build != "unknown" && std::env::var_os("SUHINA_BUILD").is_none() {
+        let (date, hash) = build.split_once('+').unwrap_or_default();
+        assert!(date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()), "{build}");
+        assert!(hash.len() == 7 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "{build}");
+    }
     assert!(harness.query_by_label_contains(version).is_none());
     harness.get_by_label("Help").click();
     harness.run();
     harness.get_by_label_contains("About Suhina").click();
     harness.run();
+    // The logo heads the dialog, above the version it names.
+    let logo = harness.get_by_label("Suhina").rect();
+    assert!(logo.height() > 0.0 && logo.width() > logo.height(), "{logo:?}");
     let line = suhina_ui::app::project_dialog::version_line();
+    assert!(harness.get_by_label(&format!("Copy version: {line}")).rect().top() > logo.bottom());
     assert!(line.starts_with(&format!("Suhina {version} build ")), "{line}");
     assert!(line.contains(build), "the copied line carries the build string: {line}");
     harness.get_by_label(&format!("Copy version: {line}")).click();

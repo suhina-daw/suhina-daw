@@ -38,9 +38,11 @@ pub fn build_key(folder: &Path) -> String {
     format!("{hash:016x}")
 }
 
-/// The folder of the running executable: the build's folder.
+/// The folder of the running executable: the build's folder. A link is followed, so the macOS
+/// package's `suhina-cli`, a link into `Suhina.app`, finds the app's endpoints.
 pub fn build_folder() -> io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
+    let exe = exe.canonicalize().unwrap_or(exe);
     exe.parent().map(Path::to_path_buf).ok_or_else(|| io::Error::other("the executable has no folder"))
 }
 
