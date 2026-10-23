@@ -300,7 +300,8 @@ points at the default preset the device was loaded from. The importer keeps them
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
 with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, the Delay and
 Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
-[`reverb.md`](reverb.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
+[`reverb.md`](reverb.md) › Import, the Saturator, in [`saturator.md`](saturator.md) › Import,
+and the MIDI effect Pitch, `MidiPitcher`, whose element
 table is in [`pitch.md`](pitch.md) › Import). A MIDI track's MIDI effects come first in its
 `Devices`, before the instrument.
 

@@ -4721,6 +4721,7 @@ dependencies = [
  "suhina-device-pitch",
  "suhina-device-reverb",
  "suhina-device-sampler",
+ "suhina-device-saturator",
  "suhina-device-sdk",
  "suhina-device-utility",
  "suhina-device-vinyl-distortion",
@@ -4741,6 +4742,14 @@ version = "0.0.1"
 dependencies = [
  "suhina-device-api",
  "suhina-device-sdk",
+]
+
+[[package]]
+name = "suhina-device-saturator"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-dsp",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 14] = [
+pub const DEVICES: [&DeviceInfo; 15] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
@@ -20,6 +20,7 @@ pub const DEVICES: [&DeviceInfo; 14] = [
     &suhina_device_dj_eq::INFO,
     &suhina_device_vinyl_distortion::INFO,
     &suhina_device_overdrive::INFO,
+    &suhina_device_saturator::INFO,
     &suhina_device_compressor::INFO,
     &suhina_device_limiter::INFO,
     &suhina_device_nam_amp_modeler::INFO,
@@ -80,6 +81,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "dj-eq" => Box::new(suhina_device_dj_eq::DjEq::new()),
         "vinyl-distortion" => Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
         "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
+        "saturator" => Box::new(suhina_device_saturator::Saturator::new()),
         "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
         "limiter" => Box::new(suhina_device_limiter::Limiter::new()),
         "nam-amp-modeler" => Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),

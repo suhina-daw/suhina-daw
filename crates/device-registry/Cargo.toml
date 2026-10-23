@@ -13,6 +13,7 @@ suhina-device-auto-pan.workspace = true
 suhina-device-dj-eq.workspace = true
 suhina-device-vinyl-distortion.workspace = true
 suhina-device-overdrive.workspace = true
+suhina-device-saturator.workspace = true
 suhina-device-fm-synth.workspace = true
 suhina-device-compressor.workspace = true
 suhina-device-limiter.workspace = true

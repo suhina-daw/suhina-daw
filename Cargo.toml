@@ -30,6 +30,7 @@ suhina-device-auto-pan = { path = "devices/auto-pan" }
 suhina-device-dj-eq = { path = "devices/dj-eq" }
 suhina-device-vinyl-distortion = { path = "devices/vinyl-distortion" }
 suhina-device-overdrive = { path = "devices/overdrive" }
+suhina-device-saturator = { path = "devices/saturator" }
 suhina-device-fm-synth = { path = "devices/fm-synth" }
 suhina-device-compressor = { path = "devices/compressor" }
 suhina-device-limiter = { path = "devices/limiter" }

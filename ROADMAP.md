@@ -95,6 +95,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
+| saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
 | EQ, filter | own (`dsp` filters) | planned |
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
@@ -200,6 +201,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
   [import](docs/spec/device-import.md))
 - the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
+- a saturator; a Live Set's Saturator comes in as it with its panel settings, Hi-Quality aside
+  (Suhina always oversamples) ([saturator](docs/spec/saturator.md))
 - a MIDI clip's scale (root and mode), which Pitch follows; a scale Suhina has no mode for comes
   in as none, with a warning
 - anything not understood yet is skipped with a warning; the project still opens
