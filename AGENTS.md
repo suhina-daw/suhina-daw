@@ -154,7 +154,8 @@ third_party/  vendored source: the ASIO SDK's host part (GPL-3.0, built with `as
               encoder (LGPL, always built for MP3 export; Suhina's own fft.c, ADR 0029)
 scripts/   research helpers (e.g. extracting and diffing .als files), the parity measurement
            (parity/, reading a manual the user owns; its output is never committed), docs.py
-           (the docs index), release_notes.py and discord_post.py (release notes, Discord posts)
+           (the docs index), release_notes.py and discord_post.py (release notes, Discord posts),
+           agent_post.py (an agent's issue or PR comment, as the bot or as the person, § 3)
 ```
 
 A crate may depend only on crates in its own or a lower layer, never in a cycle. Nothing below
@@ -221,6 +222,21 @@ Several agents often run at once, so an agent never starts work that exists alre
 
 - **Before opening an issue**, search the open issues for the same problem; when one exists,
   comment there instead.
+- **Check access before posting as the bot.** The two bot workflows below can be started only by
+  an account with write access. Before either, check the person's account once:
+  `gh api repos/suhina-daw/suhina-daw --jq .permissions.push` (or the GitHub MCP's repository
+  permissions). `true`: use the workflow. `false`: post from the person's own account, as the next
+  bullets say, and tell the user it went out under their account and why. A dispatch answered
+  `HTTP 403: Must have admin rights to Repository` means the same as `false` (GitHub's message
+  names the wrong right): fall back, never retry it or try another token.
+  [`scripts/agent_post.py`](scripts/agent_post.py) makes the check and takes either path, from the
+  same `request.json` the workflows take, and prints `OPENED_ISSUE=#N <url>` or
+  `COMMENTED_PR=#N <url>` both ways:
+
+  ```sh
+  python scripts/agent_post.py issue request.json     # or: comment request.json
+  ```
+
 - **Open an issue as the bot.** An agent with write access to this repository opens issues
   through the [Open issue](.github/workflows/open-issue.yml) workflow, not as the person it runs
   for, so the issue's author is `suhina-bot[bot]`. Start it with the GitHub MCP's
@@ -245,6 +261,12 @@ Several agents often run at once, so an agent never starts work that exists alre
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
   board's Priority and Phase afterwards. A pull request itself — its branch, its description and
   its merge — stays under the person's account.
+
+  Without write access, open it with `gh issue create --body-file` under the person's account.
+  With `triage` access (`.permissions.triage`) give it the type label and the area labels, set its
+  issue type and add it under the parent epic, as the workflow would. Without triage, leave the
+  labels out: the body ends with the labels a maintainer should add, and `Part of #N` names the
+  parent, since the account cannot link a sub-issue.
 - **Use the caller's existing access; do not request elevated access to post.** The two bot
   workflows require repository write access, not admin access. Their posting rules apply only
   when the caller already has the required access and the configured connector permits the action.
@@ -263,7 +285,9 @@ Several agents often run at once, so an agent never starts work that exists alre
   comment, not a GitHub review: it neither approves nor requests changes, and no merge rule sees
   it; approving stays the maintainer's `ready to merge` label. Start it the same way,
   with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
-  start returns. Re-running a failed run does not comment twice.
+  start returns. Re-running a failed run does not comment twice. Without write access, post it
+  with `gh pr comment <N> --body-file …` under the person's account, ending with a line that
+  says an agent wrote it.
 
   ```sh
   python -c "import json; print(json.dumps({'pr': '600', \

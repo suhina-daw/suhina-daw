@@ -196,9 +196,13 @@ blocks nothing (`AGENTS.md` › Tasks has the commands). The rules in
 [AI-assisted contributions](#ai-assisted-contributions) apply to what the agent wrote.
 
 **No elevated access just to post.** These bot workflows require existing repository write
-access, not admin access. Without it, an agent uses the user's authenticated account to post
-ordinary issues and PR comments, within the user's authorization, and identifies agent-written
-feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
+access, not admin access. An agent checks that access first
+(`gh api repos/suhina-daw/suhina-daw --jq .permissions.push`, or
+[`scripts/agent_post.py`](scripts/agent_post.py), which checks and posts either way); without it,
+or when a dispatch is answered with a 403 (whose message wrongly asks for admin rights), it uses
+the user's authenticated account to post ordinary issues and PR comments, within the user's
+authorization, names in an issue's body the labels and parent it could not set, and identifies
+agent-written feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
 not request admin/write access, broader token scopes or App secrets to follow the bot posting
 convention. Connector restrictions still apply: if no authorized posting route is available,
 explain the limit and give the user the prepared text.
