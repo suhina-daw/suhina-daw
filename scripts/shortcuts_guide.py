@@ -54,8 +54,10 @@ def catalog(root=ROOT):
     # Commands with default keys are in the native session/project registries.
     for action_id in sorted(set(bindings) - set(actions)):
         found = []
-        for path in ('crates/session/src/commands.rs', 'crates/session/src/projects.rs'):
-            text = (root / path).read_text(encoding='utf-8')
+        # A namespace's commands are in crates/session/src/commands/<namespace>.rs (#764 › 14).
+        paths = sorted((root / 'crates/session/src/commands').glob('*.rs'))
+        for path in paths + [root / 'crates/session/src/projects.rs']:
+            text = path.read_text(encoding='utf-8')
             pattern = r'id:\s*"' + re.escape(action_id) + r'",\s*label:\s*"([^"\n]+)"'
             found.extend(re.findall(pattern, text))
         if len(found) != 1:

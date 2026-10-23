@@ -53,7 +53,7 @@ impl Action {
             .map(|c| c.id)
             .chain(suhina_session::project_commands().iter().map(|c| c.id))
             .find(|known| *known == id)
-            .unwrap_or("commands.list");
+            .unwrap_or("command.list");
         Self { id: known, params }
     }
 }

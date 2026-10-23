@@ -6,13 +6,11 @@
 //! moving several clips at once.
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+use crate::support::run;
 
 /// The blank project with a 4-beat notes clip at beat 0 on tracks 1 and 2.
 fn project() -> Project {
@@ -149,7 +147,7 @@ fn several_clips_move_together_without_replacing_each_other() {
     assert_eq!(spans(&session, 2), [(2.0, 4.0)]);
     // Clips of one track go to another together; across tracks they keep theirs.
     let one = json!([{ "track": 1, "index": 0 }, { "track": 1, "index": 1 }]);
-    run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 0.0, "to_track": 2 })).unwrap();
+    run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 0.0, "toTrack": 2 })).unwrap();
     assert!(spans(&session, 1).is_empty());
     assert_eq!(spans(&session, 2), [(2.0, 2.0), (4.0, 2.0)], "the moved clips replaced what they covered");
     assert!(
@@ -250,18 +248,18 @@ fn clips_move_by_tracks_or_to_a_new_track() {
     let added = run(&mut session, "track.add", json!({ "kind": "midi", "after": 2 })).unwrap();
     let third = added["track"].as_u64().unwrap() as u32;
     let clips = json!([{ "track": 1, "index": 0 }, { "track": 2, "index": 0 }]);
-    run(&mut session, "clip.moveMany", json!({ "clips": clips, "beats": 0.0, "tracks_by": 1 })).unwrap();
+    run(&mut session, "clip.moveMany", json!({ "clips": clips, "beats": 0.0, "tracksBy": 1 })).unwrap();
     assert!(spans(&session, 1).is_empty());
     assert_eq!(spans(&session, 2), [(0.0, 4.0)]);
     assert_eq!(spans(&session, third), [(0.0, 4.0)]);
     // Onto a track that cannot hold them (an audio track under the MIDI ones): refused.
     let down = json!([{ "track": 2, "index": 0 }, { "track": third, "index": 0 }]);
-    assert!(run(&mut session, "clip.moveMany", json!({ "clips": down, "beats": 0.0, "tracks_by": 1 })).is_err());
+    assert!(run(&mut session, "clip.moveMany", json!({ "clips": down, "beats": 0.0, "tracksBy": 1 })).is_err());
     // Under the tracks: a new MIDI track holds the copy.
     let tracks = session.project().tracks.len();
     let one = json!([{ "track": third, "index": 0 }]);
     let moved =
-        run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 4.0, "copy": true, "to_new_track": true }))
+        run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 4.0, "copy": true, "toNewTrack": true }))
             .unwrap();
     assert_eq!(session.project().tracks.len(), tracks + 1);
     let new_id = moved["clips"][0]["track"].as_u64().unwrap() as u32;
@@ -281,14 +279,14 @@ fn keeping_ara_edits_moves_plain_clips_as_ever() {
     let mut session = Session::new(project());
     let one = json!([{ "track": 1, "index": 0 }]);
     let moved =
-        run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 0.0, "to_track": 2, "ara_edits": "keep" }))
+        run(&mut session, "clip.moveMany", json!({ "clips": one, "beats": 0.0, "toTrack": 2, "araEdits": "keep" }))
             .unwrap();
     assert_eq!(moved["edits_carried"], 0, "no plug-in edits these clips");
     assert!(spans(&session, 1).is_empty());
     assert!(!session.carrying_ara_edits());
     let back = json!([{ "track": 2, "index": 0 }]);
     assert!(
-        run(&mut session, "clip.moveMany", json!({ "clips": back, "beats": 0.0, "to_track": 1, "ara_edits": "maybe" }))
+        run(&mut session, "clip.moveMany", json!({ "clips": back, "beats": 0.0, "toTrack": 1, "araEdits": "maybe" }))
             .is_err()
     );
 }

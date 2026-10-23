@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::Session;
 
+use crate::support::run;
+
 fn content(id: u32, name: &str, key: u8) -> ClipContent {
     ClipContent {
         id: ContentId(id),
@@ -53,10 +55,6 @@ fn project() -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 /// The ids of Bass's arrangement clips, in lane order.
@@ -146,7 +144,7 @@ fn the_seven_clip_commands_take_an_id() {
 
     run(&mut session, "clip.delete", json!({ "clips": [{ "clip": first.0 }, { "clip": third.0 }] })).unwrap();
     assert_eq!(bass(&session), [second]);
-    run(&mut session, "clip.move", json!({ "clip": second.0, "start": 2, "to_track": "Lead" })).unwrap();
+    run(&mut session, "clip.move", json!({ "clip": second.0, "start": 2, "toTrack": "Lead" })).unwrap();
     assert_eq!(
         session.project().clip_place(second),
         Some(ClipPlace::Lane { lane: 1, index: 1 }),

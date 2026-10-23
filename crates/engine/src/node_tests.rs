@@ -1,20 +1,27 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Rendering one node of the track tree (`render_offline_node`): the sum at a node — a track
+//! Rendering one node of the track tree (`render_offline_from` with a source): the sum at a node — a track
 //! or a group — is everything that plays into it and the node's own devices, and nothing after
 //! it. The graph is the one playback builds, so a node render lines up with the whole mix and
 //! the stems sum back to it (`docs/spec/export.md` › Sources).
 
+use crate::{RenderInputs, render_offline_from};
 use suhina_model::*;
 
 use crate::buses_tests::grouped;
 use crate::chain_tests::{SR, device, max_diff, note, peak};
-use crate::{AudioPool, DeviceAssets, Plugins, Project, TrackId, render_offline, render_offline_node};
+use crate::{AudioPool, DeviceAssets, Plugins, Project, TrackId, render_offline};
 
 fn render(project: &Project, source: u32) -> Vec<f32> {
-    render_offline_node(project, &AudioPool::new(), &DeviceAssets::new(), SR, 512, Plugins::new(), TrackId(source))
-        .unwrap_or_else(|e| panic!("{e}"))
+    render_offline_from(
+        project,
+        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
+        SR,
+        512,
+        Some(TrackId(source)),
+    )
+    .unwrap_or_else(|e| panic!("{e}"))
 }
 
 /// The node tests' project: tracks 1 and 2 play the same one-beat note into group track 3
@@ -247,14 +254,12 @@ fn a_send_to_a_return_is_not_in_a_node_render() {
 #[test]
 fn an_unknown_source_is_refused() {
     let project = tree(vec![], vec![], vec![]);
-    let error = crate::render_offline_node(
+    let error = crate::render_offline_from(
         &project,
-        &AudioPool::new(),
-        &DeviceAssets::new(),
+        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
         SR,
         512,
-        Plugins::new(),
-        TrackId(99),
+        Some(TrackId(99)),
     )
     .unwrap_err();
     assert!(matches!(error, crate::RenderError::UnknownSource(TrackId(99))), "{error}");
@@ -264,24 +269,20 @@ fn an_unknown_source_is_refused() {
 fn a_node_render_is_the_same_in_any_block_size() {
     let project =
         tree(vec![device("utility", &[("gain", 6.0206)])], vec![device("utility", &[("gain", -6.0206)])], vec![]);
-    let small = crate::render_offline_node(
+    let small = crate::render_offline_from(
         &project,
-        &AudioPool::new(),
-        &DeviceAssets::new(),
+        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
         SR,
         64,
-        Plugins::new(),
-        TrackId(3),
+        Some(TrackId(3)),
     )
     .unwrap();
-    let large = crate::render_offline_node(
+    let large = crate::render_offline_from(
         &project,
-        &AudioPool::new(),
-        &DeviceAssets::new(),
+        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
         SR,
         2048,
-        Plugins::new(),
-        TrackId(3),
+        Some(TrackId(3)),
     )
     .unwrap();
     assert_eq!(small.len(), large.len());

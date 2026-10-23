@@ -7,6 +7,7 @@
 use std::io::BufRead;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
@@ -36,8 +37,13 @@ fn note_priority(stream: &Stream) {
 /// Plays the project's arrangement once on the output `choice` names and returns when it ends.
 pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice: &OutputChoice) -> Result<(), String> {
     let output = chosen_output(choice)?;
-    let mut renderer =
-        Renderer::with_assets(project, audio, assets, output.sample_rate()).map_err(|e| e.to_string())?;
+    let mut renderer = Renderer::build(
+        project,
+        RenderInputs::from_audio(audio).with_assets(assets),
+        output.sample_rate(),
+        RenderOptions::PLAYING,
+    )
+    .map_err(|e| e.to_string())?;
     let length = renderer.length();
     if length == 0 {
         println!("{}", nothing_to_play(project));
@@ -112,8 +118,13 @@ pub fn launcher(
         println!("note: the project has no clips in its clip launcher; only `play` (the arrangement) will sound");
     }
     let output = chosen_output(choice)?;
-    let mut renderer = Renderer::stopped_with_assets(&project, audio, assets, output.sample_rate(), Plugins::new())
-        .map_err(|e| e.to_string())?;
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(audio).with_assets(assets).with_plugins(Plugins::new()),
+        output.sample_rate(),
+        RenderOptions::STOPPED,
+    )
+    .map_err(|e| e.to_string())?;
     let mut controller = renderer.controller();
     let progress = Arc::new(Progress::default());
     let stream = output.start(renderer, &mut controller, &progress)?;

@@ -5,20 +5,19 @@
 //! playback through an offline renderer (`docs/spec/clip-launching.md` › Follow actions).
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::*;
 use suhina_session::{Player, Session};
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 const BEAT: usize = SR as usize / 2;
 
 /// One track, "Drums", with a one-beat looping clip in scenes 1 and 2 and an empty scene 3.
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
@@ -56,10 +55,6 @@ fn project_built() -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 fn follow_of(session: &Session, scene: usize) -> FollowAction {
@@ -123,7 +118,7 @@ fn malformed_parameters_change_nothing() {
         (json!({ "track": "Drums", "scene": 1, "time": 1e9 }), "at most 100000 beats"),
         (json!({ "track": "Drums", "scene": 1, "time": "4 bars" }), "time must be a number"),
         (json!({ "track": "Drums", "scene": 1, "actionA": "sideways" }), "actionA must be nothing, stop"),
-        (json!({ "track": "Drums", "scene": 1, "actionB": 3 }), "actionB must be an action name"),
+        (json!({ "track": "Drums", "scene": 1, "actionB": 3 }), "actionB must be a text"),
         (json!({ "track": "Drums", "scene": 1, "actionA": "jump 4" }), "scene 4 does not exist"),
         (json!({ "track": "Drums", "scene": 1, "actionA": "jump 0" }), "actionA must be"),
         (json!({ "track": "Drums", "scene": 1, "actionA": "jump x" }), "actionA must be"),

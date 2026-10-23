@@ -33,7 +33,7 @@ MCP) and drawn and edited in the Arrangement view (#420, [below](#in-the-arrange
 | A track's volume | `volume` (on the track's mixer) | a linear gain in the model, 0 to +6 dB; commands take and show decibels, as `track.setVolume` |
 | A track's pan | `pan` | -1 (left) to 1 (right) |
 | A track's mute | `mute` | 0 (sounding) or 1 (muted), a step |
-| A built-in effect or instrument's parameter | its stable id (`devices.list`) | in the parameter's unit, kept in its range as `device.setParam` keeps it |
+| A built-in effect or instrument's parameter | its stable id (`device.list`) | in the parameter's unit, kept in its range as `device.setParam` keeps it |
 | A data-only `.sd` device's parameter | its stable id in the `.sd` graph | in its unit and range; discrete controls step |
 | A plug-in's parameter | its id, a number (`device.pluginParams`) | in the plug-in's own range (#109) |
 

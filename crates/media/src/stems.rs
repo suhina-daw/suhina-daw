@@ -89,7 +89,7 @@ pub struct StemsInfo {
     /// Audio tracks in the file, the master first.
     pub tracks: usize,
     /// One per stem (`tracks - 1`), in track order. Names and colours come from the metadata;
-    /// stems it does not name are called "Stem <n>".
+    /// stems it does not name are called `"Stem <n>"`.
     pub stems: Vec<Stem>,
     /// Whether the file has stem metadata at all.
     pub has_metadata: bool,

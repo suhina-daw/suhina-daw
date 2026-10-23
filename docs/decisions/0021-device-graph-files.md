@@ -32,7 +32,7 @@ Version 3 added optional [visual connection layouts](../spec/sd-device-format.md
 node rectangles, wire bends and port anchors. Version 4 separates the file schema version from
 the device revision and adds data-only parameter-id migrations. Versions 1 through 3 remain
 readable. Version 5 adds an optional expanded panel ([amendment](#amendment-device-panels-for-built-in-devices-2026-10-19), 7);
-a file is written as version 5 only when it has one, and as version 4 otherwise, so old readers
+a file is always written as version 5 ([Versions](../spec/sd-device-format.md#versions)), so old readers
 reject a document they would misread instead of silently dropping metadata. Interactive graph editing remains deferred. Only supported, strictly validated
 authoring fields are accepted.
 
@@ -87,7 +87,7 @@ authoring fields are accepted.
 
 - SDK authors compose effects, MIDI effects and monophonic instruments from supported primitives and distribute one self-contained
   `.sd` file, with generated parameter UI and a read-only node list.
-- Node contracts are available in the SDK's JSON catalog and the read command `devices.sdNodes`
+- Node contracts are available in the SDK's JSON catalog and the read command `device.sdNodes`
   through MCP command dispatch. The same catalog generates the node reference table;
   tests reject stale documentation. [The authoring guide](../device-sdk.md) includes AI workflows.
 - The graph runs in offline and real-time chains without loading community Rust code.
@@ -163,8 +163,8 @@ generated `.sd` wrappers that the combined build (#726, from #600) had added are
    `device.setParam`, so automation, presets and undo do not depend on which is open.
 7. **Format version 5.** The expanded panel is the optional field `device.expanded` in `.sd`
    file version 5, and `device.ui` is the compact panel. Older readers reject version 5, as they
-   reject version 4 now, rather than drop the field on saving; a file without an expanded panel is
-   still written as version 4. Built-in layouts never meet an older Suhina, since they are loaded
+   reject version 4 now, rather than drop the field on saving; every file is written as version 5,
+   with or without an expanded panel ([Versions](../spec/sd-device-format.md#versions)). Built-in layouts never meet an older Suhina, since they are loaded
    by id from the Suhina that ships them.
 8. **The browser stays by role.** Instruments and Effects list built-in devices,
    `.sd` files and plug-ins together by role, as [browser.md](../spec/browser.md) describes; a

@@ -41,7 +41,7 @@ class ShortcutsGuideTests(unittest.TestCase):
 
     def test_registry_actions_keep_the_native_commands_category(self):
         rows = {row['id']: row for row in guide.catalog()}
-        for action_id in ('edit.undo', 'edit.redo', 'projects.next', 'projects.previous', 'transport.setLoopEnabled'):
+        for action_id in ('edit.undo', 'edit.redo', 'project.next', 'project.previous', 'transport.setLoopEnabled'):
             with self.subTest(action=action_id):
                 self.assertEqual(rows[action_id]['category'], 'Commands')
         self.assertEqual(rows['transport.toggle']['category'], 'Transport')

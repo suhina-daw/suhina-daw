@@ -5,7 +5,7 @@
 //! here before it runs, so a file whose path an agent can name may only be one the
 //! [`Workspace`] lets that agent at ([`docs/spec/browser.md`](../docs/spec/browser.md) ›
 //! Commands): files read are inside a read root and made real, files written inside the write
-//! root. Every caller of [`Session::execute`] under this crate's servers runs [`confine`] on
+//! root. Every caller of [`Session::execute`](suhina_session::Session::execute) under this crate's servers runs [`confine`] on
 //! the params first: the MCP tools alone once, and a launch script's steps when its caller has
 //! a workspace to confine with.
 
@@ -13,12 +13,15 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
+use suhina_session::{ParamType, PathKind};
+
 use crate::workspace::{Workspace, display_path};
 
 /// `params` with every path a command reads checked against the read root and made real
-/// (`docs/spec/browser.md` › Commands): files for `clip.addFiles`, `preview.play` and presets,
-/// folders for `library.list` and a folder place, and file items for `library.*`. The file
-/// `project.save` writes is checked against the write root ([`confine_save`]); `source` is
+/// (`docs/spec/browser.md` › Commands), found by the type of each parameter
+/// ([`ParamType::Path`]): files, folders, library items and places. The files and folders a
+/// command writes are checked against the write root by that command's own rule
+/// ([`confine_save`], [`confine_export`], [`confine_autosave`], [`confine_collect`]); `source` is
 /// the file the project was opened from or last saved to.
 pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Option<&Path>) -> Result<Value, String> {
     match id {
@@ -26,74 +29,50 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
         "project.export" => confine_export(workspace, &mut params)?,
         "project.autosave" => confine_autosave(workspace, &params, source)?,
         "project.collect" => confine_collect(workspace, &mut params, source)?,
-        "device.setNamFile" => confine_one_file(workspace, &mut params, "path")?,
-        "clip.addFiles" => {
-            if let Some(paths) = params.get_mut("paths").and_then(Value::as_array_mut) {
-                for path in paths.iter_mut() {
-                    let given = path.as_str().ok_or("paths must be a list of file paths")?;
-                    *path = json!(display_path(&workspace.readable(given)?));
-                }
-            }
-        }
-        "preview.play" => confine_one_file(workspace, &mut params, "path")?,
-        "project.relinkFiles" => {
-            if let Some(paths) = params.get_mut("to").and_then(Value::as_array_mut) {
-                for path in paths.iter_mut() {
-                    let given = path.as_str().ok_or("to must be a list of file paths")?;
-                    *path = json!(display_path(&workspace.readable(given)?));
-                }
-            }
-        }
-        "library.findFiles" => {
-            if let Some(folder) = params.get("folder").and_then(Value::as_str) {
-                params["folder"] = json!(display_path(&workspace.readable_folder(folder)?));
-            }
-        }
-        "device.add" => confine_one_file(workspace, &mut params, "preset")?,
-        "track.add" => {
-            confine_one_file(workspace, &mut params, "preset")?;
-            confine_one_file(workspace, &mut params, "sd")?;
-        }
-        "device.addSd" | "device.updateSd" | "device.loadSample" => confine_one_file(workspace, &mut params, "path")?,
-        "library.list" => {
-            let folder = params.get("folder").and_then(Value::as_str).ok_or("folder must be a text")?;
-            params["folder"] = json!(display_path(&workspace.readable_folder(folder)?));
-        }
-        "soundmap.analyse" => {
-            if let Some(folder) = params.get("folder").and_then(Value::as_str) {
-                params["folder"] = json!(display_path(&workspace.readable_folder(folder)?));
-            }
-        }
-        "soundmap.similar" | "soundmap.info" => {
-            confine_one_file(workspace, &mut params, "item")?;
-            confine_place(workspace, &mut params)?;
-        }
-        "soundmap.layout" => confine_place(workspace, &mut params)?,
-        "soundmap.setKind" => confine_one_file(workspace, &mut params, "item")?,
-        "library.search" => {
-            if let Some(place) = params.get("place").and_then(Value::as_str)
-                && place != "pinned"
-                && !place.starts_with("recent:")
-            {
-                params["place"] = json!(display_path(&workspace.readable_folder(place)?));
-            }
-        }
-        "library.info" | "library.pin" | "library.unpin" | "library.tag" => {
-            if let Some(item) = params.get("item").and_then(Value::as_str)
-                && !item.starts_with("device:")
-                && !item.starts_with("plugin:")
-            {
-                let (file, voice) = match item.rsplit_once('#') {
-                    Some((file, voice)) if voice.parse::<usize>().is_ok() => (file, Some(voice.to_string())),
-                    _ => (item, None),
-                };
-                let file = display_path(&workspace.readable(file)?);
-                params["item"] = json!(voice.map_or(file.clone(), |v| format!("{file}#{v}")));
-            }
-        }
         _ => {}
     }
+    for param in suhina_session::params_of(id).unwrap_or_default() {
+        let ParamType::Path(kind) = param.ty else { continue };
+        let name = param.name;
+        match kind {
+            PathKind::File => confine_one_file(workspace, &mut params, name)?,
+            PathKind::Files => {
+                if let Some(paths) = params.get_mut(name).and_then(Value::as_array_mut) {
+                    for path in paths.iter_mut() {
+                        let given = path.as_str().ok_or_else(|| format!("{name} must be a list of file paths"))?;
+                        *path = json!(display_path(&workspace.readable(given)?));
+                    }
+                }
+            }
+            PathKind::Folder => {
+                if let Some(folder) = params.get(name).and_then(Value::as_str) {
+                    params[name] = json!(display_path(&workspace.readable_folder(folder)?));
+                }
+            }
+            PathKind::Place => confine_place(workspace, &mut params, name)?,
+            PathKind::LibraryItem => confine_item(workspace, &mut params, name)?,
+            // Checked by the command's own rule above.
+            PathKind::WriteFile | PathKind::WriteFolder => {}
+        }
+    }
     Ok(params)
+}
+
+/// A library item is a file, maybe a voice in a bank (`bank.syx#4`), unless it names a device or
+/// a plug-in, which are not on disk.
+fn confine_item(workspace: &Workspace, params: &mut Value, name: &str) -> Result<(), String> {
+    if let Some(item) = params.get(name).and_then(Value::as_str)
+        && !item.starts_with("device:")
+        && !item.starts_with("plugin:")
+    {
+        let (file, voice) = match item.rsplit_once('#') {
+            Some((file, voice)) if voice.parse::<usize>().is_ok() => (file, Some(voice.to_string())),
+            _ => (item, None),
+        };
+        let file = display_path(&workspace.readable(file)?);
+        params[name] = json!(voice.map_or(file.clone(), |v| format!("{file}#{v}")));
+    }
+    Ok(())
 }
 
 /// `project.export` writes the audio file `path` (or `output`, the same thing) names, below
@@ -102,7 +81,7 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
 /// in both aliases, so the command sees the one that was checked.
 ///
 /// The alias is resolved as `project.export` itself resolves it in
-/// [`suhina_session::export::export_from`]: the first of `path` and `output` that is a non-null
+/// [`suhina_session::export_from`]: the first of `path` and `output` that is a non-null
 /// string decides, and nothing is trimmed — the checks see exactly what the command will use,
 /// so no shape of input can have confinement resolve a different file than the command writes.
 /// A value the command refuses on its own (a non-null non-text `path`, or nothing at all) is
@@ -215,12 +194,12 @@ fn confine_collect(workspace: &Workspace, params: &mut Value, source: Option<&Pa
 }
 
 /// A folder `place` must be below the read root; `pinned` and `recent:…` are the library's own.
-fn confine_place(workspace: &Workspace, params: &mut Value) -> Result<(), String> {
-    if let Some(place) = params.get("place").and_then(Value::as_str)
+fn confine_place(workspace: &Workspace, params: &mut Value, name: &str) -> Result<(), String> {
+    if let Some(place) = params.get(name).and_then(Value::as_str)
         && place != "pinned"
         && !place.starts_with("recent:")
     {
-        params["place"] = json!(display_path(&workspace.readable_folder(place)?));
+        params[name] = json!(display_path(&workspace.readable_folder(place)?));
     }
     Ok(())
 }
@@ -414,7 +393,7 @@ mod from_the_tool_lists {
         let out = dir.join("out").join("song.suhina");
         // Reporting is always fine.
         assert!(autosave(&read_only, json!({}), Some(&inside)).is_ok());
-        assert!(autosave(&workspace, json!({ "interval": "5m", "clean_up": false }), None).is_ok());
+        assert!(autosave(&workspace, json!({ "interval": "5m", "cleanUp": false }), None).is_ok());
         // Backups before critical operations would write beside the project unasked.
         assert!(autosave(&workspace, json!({ "interval": "critical" }), Some(&out)).is_err());
         // Now writes beside the project's file, which must be below the write root.

@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_session::{Projects, Session, blank_project};
 
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
+
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-libcmd-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -19,16 +22,7 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: 8000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for _ in 0..4000 {
-        writer.write_sample(8000i16).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(path, 8000, 1, WavFormat::Int16, &[8000.0 / 32767.0; 4000]);
 }
 
 /// Projects with a library kept in `settings` (and its own empty plug-in library) and one open
@@ -39,10 +33,6 @@ fn projects(settings: &Path) -> Projects {
     projects.set_file_library(Library::new(Some(settings.to_path_buf())));
     projects.add(Session::new(blank_project()), None).unwrap();
     projects
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn names(result: &Value) -> Vec<String> {
@@ -220,7 +210,7 @@ fn library_commands_are_listed_and_need_no_project() {
     let mut p = Projects::default();
     p.set_file_library(Library::new(Some(settings.clone())));
     assert!(run(&mut p, "library.folders", json!({})).is_ok(), "no project is open");
-    let all = run(&mut p, "commands.list", json!({})).unwrap();
+    let all = run(&mut p, "command.list", json!({})).unwrap();
     let ids: Vec<&str> = all.as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
     for id in ["library.search", "library.addFolder", "track.add", "clip.addFiles", "preview.play"] {
         assert!(ids.contains(&id), "{id}");

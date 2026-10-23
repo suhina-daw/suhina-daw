@@ -1,0 +1,826 @@
+{
+  "format": "suhina",
+  "project": {
+    "arrangement": {
+      "lanes": [
+        {
+          "clips": [
+            {
+              "content": 1,
+              "enabled": true,
+              "fade_in": 0.25,
+              "fade_in_curve": -0.5,
+              "fade_in_shape": "s_curve",
+              "fade_out": 1.0,
+              "fade_out_curve": 0.75,
+              "fade_out_shape": "equal_power",
+              "id": 2,
+              "launch": {
+                "legato": true,
+                "mode": "gate",
+                "quantization": "1/8T"
+              },
+              "length": 4.0,
+              "loop": [
+                0.0,
+                2.0
+              ],
+              "offset": 0.5,
+              "start": 0.0
+            },
+            {
+              "content": 1,
+              "enabled": true,
+              "fade_in": 0.25,
+              "fade_in_curve": -0.5,
+              "fade_in_shape": "s_curve",
+              "fade_out": 1.0,
+              "fade_out_curve": 0.75,
+              "fade_out_shape": "equal_power",
+              "id": 3,
+              "launch": {
+                "legato": true,
+                "mode": "gate",
+                "quantization": "1/8T"
+              },
+              "length": 4.0,
+              "loop": [
+                0.0,
+                2.0
+              ],
+              "offset": 0.5,
+              "start": 8.0
+            }
+          ],
+          "id": 1,
+          "name": "Keys",
+          "track": 2
+        },
+        {
+          "clips": [
+            {
+              "content": 2,
+              "enabled": false,
+              "fade_in": 0.25,
+              "fade_in_curve": -0.5,
+              "fade_in_shape": "s_curve",
+              "fade_out": 1.0,
+              "fade_out_curve": 0.75,
+              "fade_out_shape": "equal_power",
+              "id": 5,
+              "launch": {
+                "legato": true,
+                "mode": "gate",
+                "quantization": "1/8T"
+              },
+              "length": 4.0,
+              "loop": null,
+              "offset": 0.5,
+              "start": 4.0
+            }
+          ],
+          "id": 4,
+          "name": "Free",
+          "track": null
+        }
+      ],
+      "markers": [
+        {
+          "beat": 0.0,
+          "name": "Intro"
+        },
+        {
+          "beat": 16.0,
+          "name": "Verse"
+        },
+        {
+          "beat": 16.0,
+          "name": ""
+        }
+      ]
+    },
+    "channels": [
+      {
+        "devices": [
+          {
+            "enabled": true,
+            "kind": {
+              "id": "dj-eq",
+              "type": "builtin"
+            },
+            "name": "EQ",
+            "params": [],
+            "state": null
+          },
+          {
+            "enabled": true,
+            "extensions": [
+              {
+                "data": "CQg=",
+                "format": "als",
+                "key": "Rack"
+              }
+            ],
+            "kind": {
+              "branches": [
+                {
+                  "devices": [],
+                  "mute": false,
+                  "name": "Dry",
+                  "pan": 0.0,
+                  "solo": false,
+                  "volume": 1.0
+                },
+                {
+                  "devices": [
+                    {
+                      "enabled": true,
+                      "kind": {
+                        "id": "compressor",
+                        "type": "builtin"
+                      },
+                      "name": "Compressor",
+                      "params": [],
+                      "state": null
+                    },
+                    {
+                      "enabled": true,
+                      "kind": {
+                        "branches": [
+                          {
+                            "devices": [
+                              {
+                                "enabled": true,
+                                "kind": {
+                                  "id": "com.example.synth",
+                                  "type": "clap"
+                                },
+                                "name": "Synth",
+                                "params": [],
+                                "state": "AQID"
+                              }
+                            ],
+                            "mute": false,
+                            "name": "Branch 1",
+                            "pan": 0.0,
+                            "solo": false,
+                            "volume": 1.0
+                          }
+                        ],
+                        "macros": [
+                          {
+                            "mappings": [],
+                            "name": "Macro 1"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 2"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 3"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 4"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 5"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 6"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 7"
+                          },
+                          {
+                            "mappings": [],
+                            "name": "Macro 8"
+                          }
+                        ],
+                        "type": "group"
+                      },
+                      "name": "Inner",
+                      "params": [],
+                      "state": null
+                    }
+                  ],
+                  "extensions": [
+                    {
+                      "data": "CQg=",
+                      "format": "als",
+                      "key": "Rack"
+                    }
+                  ],
+                  "mute": true,
+                  "name": "Crushed",
+                  "pan": -0.25,
+                  "solo": true,
+                  "volume": 0.5
+                }
+              ],
+              "macros": [
+                {
+                  "mappings": [
+                    {
+                      "device": [
+                        1,
+                        0
+                      ],
+                      "max": 0.2,
+                      "min": 0.8,
+                      "param": "threshold"
+                    }
+                  ],
+                  "name": "Crush"
+                },
+                {
+                  "mappings": [
+                    {
+                      "device": [
+                        1,
+                        1
+                      ],
+                      "max": 1.0,
+                      "min": 0.0,
+                      "param": "macro.1"
+                    }
+                  ],
+                  "name": "Macro 2"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 3"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 4"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 5"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 6"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 7"
+                },
+                {
+                  "mappings": [],
+                  "name": "Macro 8"
+                }
+              ],
+              "type": "group"
+            },
+            "name": "Parallel crush",
+            "params": [
+              {
+                "id": "mix",
+                "value": 0.75
+              },
+              {
+                "id": "macro.1",
+                "value": 0.4
+              }
+            ],
+            "state": null
+          }
+        ],
+        "id": 1,
+        "mute": false,
+        "name": "Channel 1",
+        "output": null,
+        "pan": -0.25,
+        "role": "master",
+        "sends": [],
+        "solo": false,
+        "volume": 0.5
+      },
+      {
+        "automation": [
+          {
+            "param": "volume",
+            "points": [
+              {
+                "beat": 0.0,
+                "curve": 0.5,
+                "value": 0.0
+              },
+              {
+                "beat": 8.0,
+                "value": 1.25
+              }
+            ]
+          },
+          {
+            "enabled": false,
+            "param": "mute",
+            "points": [
+              {
+                "beat": 2.0,
+                "value": 1.0
+              }
+            ]
+          }
+        ],
+        "cue": true,
+        "devices": [
+          {
+            "automation": [
+              {
+                "enabled": false,
+                "param": "volume",
+                "points": [
+                  {
+                    "beat": 1.0,
+                    "curve": -0.75,
+                    "value": -12.0
+                  },
+                  {
+                    "beat": 3.5,
+                    "value": 0.0
+                  }
+                ]
+              }
+            ],
+            "enabled": true,
+            "kind": {
+              "id": "fm-synth",
+              "type": "builtin"
+            },
+            "name": "FM",
+            "params": [
+              {
+                "id": "volume",
+                "value": -6.0
+              }
+            ],
+            "state": null
+          },
+          {
+            "enabled": false,
+            "extensions": [
+              {
+                "data": "AAEC/w==",
+                "format": "als",
+                "key": "Vst3ControllerState"
+              }
+            ],
+            "kind": {
+              "id": "0123456789ABCDEF0123456789ABCDEF",
+              "type": "vst3"
+            },
+            "name": "Verb",
+            "params": [],
+            "state": "CQgHAP8="
+          },
+          {
+            "automation": [
+              {
+                "param": "gain",
+                "points": [
+                  {
+                    "beat": 0.0,
+                    "value": 0.5
+                  },
+                  {
+                    "beat": 4.0,
+                    "value": 1.0
+                  }
+                ]
+              }
+            ],
+            "enabled": true,
+            "kind": {
+              "type": "sd"
+            },
+            "name": "Community Gain",
+            "params": [
+              {
+                "id": "gain",
+                "value": 0.5
+              }
+            ],
+            "state": "eyJmb3JtYXQiOiJzdWhpbmEtZGV2aWNlIiwidmVyc2lvbiI6MX0="
+          },
+          {
+            "enabled": true,
+            "kind": {
+              "id": 1234567,
+              "type": "vst2"
+            },
+            "name": "Old",
+            "params": [],
+            "state": ""
+          },
+          {
+            "enabled": true,
+            "kind": {
+              "id": "nam-amp-modeler",
+              "type": "builtin"
+            },
+            "name": "Amp",
+            "params": [
+              {
+                "id": "inputGain",
+                "value": -3.5
+              },
+              {
+                "id": "eqMidFreq",
+                "value": 800.0
+              }
+            ],
+            "state": "L2hvbWUvbWUvU3VoaW5hL05BTSBtb2RlbHMvZWRnZS5uYW0="
+          },
+          {
+            "enabled": true,
+            "kind": {
+              "id": "nam-cab-loader",
+              "type": "builtin"
+            },
+            "name": "Cab",
+            "params": [
+              {
+                "id": "volume",
+                "value": -1.9
+              }
+            ],
+            "state": "L2hvbWUvbWUvU3VoaW5hL0lScy9tYXJzaGFsbC53YXY="
+          },
+          {
+            "automation": [
+              {
+                "param": "3",
+                "points": [
+                  {
+                    "beat": 0.0,
+                    "value": 0.0
+                  },
+                  {
+                    "beat": 4.0,
+                    "value": 1.0
+                  },
+                  {
+                    "beat": 4.0,
+                    "value": 0.5
+                  }
+                ]
+              }
+            ],
+            "enabled": true,
+            "kind": {
+              "id": "com.example.clap",
+              "type": "clap"
+            },
+            "name": "Clap",
+            "params": [
+              {
+                "id": "3",
+                "value": 0.25
+              }
+            ],
+            "state": null
+          },
+          {
+            "enabled": true,
+            "extensions": [
+              {
+                "data": "AAEC/w==",
+                "format": "als",
+                "key": "GlueCompressor"
+              }
+            ],
+            "kind": {
+              "format": "als",
+              "id": "GlueCompressor",
+              "type": "foreign"
+            },
+            "name": "Glue",
+            "params": [],
+            "state": null
+          }
+        ],
+        "id": 2,
+        "mute": true,
+        "name": "Channel 2",
+        "output": 4,
+        "pan": -0.25,
+        "role": "regular",
+        "sends": [
+          {
+            "level": 0.7,
+            "pre_fader": true,
+            "target": 3
+          }
+        ],
+        "solo": false,
+        "volume": 0.5
+      },
+      {
+        "devices": [],
+        "id": 3,
+        "mute": false,
+        "name": "Channel 3",
+        "output": null,
+        "pan": -0.25,
+        "role": "effect",
+        "sends": [],
+        "solo": false,
+        "volume": 0.5
+      },
+      {
+        "devices": [],
+        "id": 4,
+        "mute": false,
+        "name": "Channel 4",
+        "output": null,
+        "pan": -0.25,
+        "role": "submix",
+        "sends": [],
+        "solo": false,
+        "volume": 0.5
+      },
+      {
+        "devices": [],
+        "id": 5,
+        "mute": false,
+        "name": "Channel 5",
+        "output": 4,
+        "pan": -0.25,
+        "role": "regular",
+        "sends": [],
+        "solo": false,
+        "volume": 0.5
+      }
+    ],
+    "contents": [
+      {
+        "extensions": [
+          {
+            "data": "AAEC/w==",
+            "format": "als",
+            "key": "MidiClip"
+          }
+        ],
+        "id": 1,
+        "lanes": [
+          {
+            "notes": [
+              {
+                "channel": 0,
+                "duration": 1.0,
+                "key": 60,
+                "release_velocity": 0.5,
+                "time": 0.0,
+                "velocity": 0.75
+              },
+              {
+                "channel": 15,
+                "duration": 0.25,
+                "key": 127,
+                "release_velocity": 0.0,
+                "time": 1.5,
+                "velocity": 1.0
+              }
+            ],
+            "target": null
+          }
+        ],
+        "length": 8.0,
+        "name": "Chords"
+      },
+      {
+        "id": 2,
+        "lanes": [
+          {
+            "audio": {
+              "absolute_file": "C:/Music/Samples/loop.wav",
+              "channels": 2,
+              "duration_seconds": 7.5,
+              "file": "Samples/loop.wav",
+              "gain": 0.8,
+              "sample_rate": 44100,
+              "stream": 3,
+              "stretch": "high_quality",
+              "transpose": -1.5,
+              "warp_markers": [
+                {
+                  "audio_time": 0.0,
+                  "time": 0.0
+                },
+                {
+                  "audio_time": 7.5,
+                  "time": 16.0
+                }
+              ],
+              "warped": true
+            },
+            "target": 3
+          }
+        ],
+        "length": 16.0,
+        "name": "Loop"
+      }
+    ],
+    "extensions": [
+      {
+        "data": "AAEC/w==",
+        "format": "als",
+        "key": "LiveSet"
+      }
+    ],
+    "launcher": {
+      "columns": [
+        {
+          "slots": [
+            {
+              "clip": {
+                "content": 1,
+                "enabled": true,
+                "fade_in": 0.25,
+                "fade_in_curve": -0.5,
+                "fade_in_shape": "s_curve",
+                "fade_out": 1.0,
+                "fade_out_curve": 0.75,
+                "fade_out_shape": "equal_power",
+                "follow": {
+                  "a": "jump 2",
+                  "b": "other",
+                  "chance_a": 30,
+                  "chance_b": 70,
+                  "enabled": true,
+                  "linked": false,
+                  "time": 6.0
+                },
+                "id": 8,
+                "launch": {
+                  "legato": true,
+                  "mode": "gate",
+                  "quantization": "1/8T"
+                },
+                "length": 4.0,
+                "loop": [
+                  0.0,
+                  2.0
+                ],
+                "offset": 0.5,
+                "start": 0.0
+              },
+              "has_stop": true
+            },
+            {
+              "clip": null,
+              "has_stop": false
+            }
+          ],
+          "track": 2
+        }
+      ],
+      "mappings": [
+        {
+          "scene": 2,
+          "source": "key:Q",
+          "target": "slot",
+          "track": 2
+        },
+        {
+          "scene": 1,
+          "source": "note:10:36",
+          "target": "scene"
+        },
+        {
+          "source": "key:Space",
+          "target": "stop",
+          "track": 99
+        }
+      ],
+      "scenes": [
+        {
+          "id": 6,
+          "name": "Intro",
+          "tempo_bpm": 100.0,
+          "time_signature": [
+            7,
+            8
+          ]
+        },
+        {
+          "id": 7,
+          "name": "",
+          "tempo_bpm": null
+        }
+      ]
+    },
+    "next_id": 9,
+    "tracks": [
+      {
+        "audio": true,
+        "audio_input": {
+          "channels": [
+            3
+          ],
+          "monitor": "off"
+        },
+        "channel": 4,
+        "color": null,
+        "id": 1,
+        "name": "Track 1",
+        "notes": false,
+        "parent": null
+      },
+      {
+        "audio": false,
+        "channel": 2,
+        "color": "#D08F6E",
+        "id": 2,
+        "midi_input": {
+          "channel": 16,
+          "monitor": "auto",
+          "port": {
+            "name": "Keys: Port 1, \"A\""
+          }
+        },
+        "name": "Track 2",
+        "notes": true,
+        "parent": 1
+      },
+      {
+        "audio": true,
+        "audio_input": {
+          "channels": [
+            255,
+            256
+          ],
+          "monitor": "in"
+        },
+        "channel": 5,
+        "color": "#D08F6E",
+        "id": 3,
+        "midi_input": {
+          "channel": null,
+          "monitor": "auto",
+          "port": "none"
+        },
+        "name": "Track 3",
+        "notes": false,
+        "parent": 1
+      },
+      {
+        "audio": true,
+        "channel": 3,
+        "color": "#D08F6E",
+        "extensions": [
+          {
+            "data": "AAEC/w==",
+            "format": "als",
+            "key": "ReturnTrack"
+          }
+        ],
+        "id": 4,
+        "name": "Track 4",
+        "notes": false,
+        "parent": null
+      }
+    ],
+    "transport": {
+      "loop": {
+        "enabled": true,
+        "end": 12.5,
+        "start": 4.0
+      },
+      "tempo_bpm": 128.5,
+      "tempo_changes": [
+        {
+          "beat": 14.0,
+          "bpm": 90.0,
+          "ramp": false
+        },
+        {
+          "beat": 30.5,
+          "bpm": 140.25,
+          "ramp": true
+        }
+      ],
+      "time_signature": [
+        7,
+        8
+      ],
+      "time_signature_changes": [
+        {
+          "bar": 4,
+          "time_signature": [
+            3,
+            4
+          ]
+        }
+      ]
+    }
+  },
+  "version": 3
+}

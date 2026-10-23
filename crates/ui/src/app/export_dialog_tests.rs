@@ -73,7 +73,7 @@ fn the_jobs_params_carry_what_the_command_takes() {
     // the bools that are false by default are left out.
     assert_eq!(
         job.params(),
-        json!({ "path": "/mixes/Song.wav", "sample_rate": 48_000, "bit_depth": "32f", "dither": false })
+        json!({ "path": "/mixes/Song.wav", "sampleRate": 48_000, "bitDepth": "32f", "dither": false })
     );
     let off = ExportJob {
         path: "/mixes/Song.wav".into(),
@@ -87,7 +87,7 @@ fn the_jobs_params_carry_what_the_command_takes() {
     };
     assert_eq!(
         off.params(),
-        json!({ "path": "/mixes/Song.wav", "format": "ogg", "sample_rate": 44_100, "normalize": true, "overwrite": true })
+        json!({ "path": "/mixes/Song.wav", "format": "ogg", "sampleRate": 44_100, "normalize": true, "overwrite": true })
     );
     let mp3 = ExportJob {
         path: "/mixes/Song.mp3".into(),
@@ -101,7 +101,7 @@ fn the_jobs_params_carry_what_the_command_takes() {
     };
     assert_eq!(
         mp3.params(),
-        json!({ "path": "/mixes/Song.mp3", "format": "mp3", "sample_rate": 44_100, "mp3_rate": "320" })
+        json!({ "path": "/mixes/Song.mp3", "format": "mp3", "sampleRate": 44_100, "mp3Rate": "320" })
     );
 }
 

@@ -99,6 +99,7 @@ allocation or locking.
 | `mp3` | MP3 encoding through LAME 3.100's encoder, vendored as C source in `third_party/lame/` and compiled into a static library by the build ([ADR 0029](decisions/0029-mp3-encoder.md)): the settings, the encoder behind a safe API that owns and frees the C handle, the stream's blocks and flush, the LAME tag frame, and putting the finished file's bytes together. Never touches files; encoding runs on an export's path only, never in the audio callback. One of the three crates allowed `unsafe`. | nothing (cc) |
 | `library` | The browser's library ([ADR 0012](decisions/0012-file-library.md)): the folders the user added, an index of their samples, MIDI files, presets and projects kept on disk and up to date (checked at start, then watched with `notify` or polled), search, pins, recent items and colour tags in `browser.json`; finding files by name in the index or by walking a folder (`find`, for missing files). | media |
 | `soundmap` | The sample map ([spec](spec/sample-map.md), [ADR 0013](decisions/0013-sample-map-analysis.md)): features of samples (MFCC, spectral shape, envelope, pitch), analysed on background threads and cached per library folder; layouts of a scope by PCA and t-SNE, kept; grids; kinds from names or guessed from neighbours; similar items. The session holds one (`Projects::sound_map_mut`) and runs the `soundmap.*` commands on it; the window shows its maps. | media |
+| `test-support` | What tests across the workspace build again and again, written once ([#764](https://github.com/suhina-daw/suhina-daw/issues/764) › 8): `ProjectBuilder`, `write_wav`, `sine`, `peak` and `rms`, and the comparison with golden files (`SUHINA_BLESS=1` rewrites them). A dev-dependency only. | model |
 | `separation` | Stem separation ([spec](spec/stem-separation.md), planned in steps): a source brought to a model's sample rate and channels (`resample`, a windowed-sinc resampler), cut into the model's windows with the last one padded, each handed to a `Backend`, and the windows' outputs added back with their weighting divided out (`chunk`); limits on every shape and source (`shape`); progress per window and cancel between windows. `BandSplitter` is a backend with no weights that runs the pipeline in tests. No model, runtime, command or session wiring yet. | nothing |
 | `update` | Updates ([spec](spec/updates.md)): asks GitHub for the nightly release or the test builds (`github`) through the system's `curl` (`net`, which also finds the GitHub CLI and asks it for its token only when the user connects it), compares versions (`version`), downloads a build on a thread of its own, checks its SHA-256 against GitHub's digest, unpacks it and moves each file in place of the running one, the old ones renamed aside on Windows and deleted on the next start (`install`). | nothing |
 | `session` | An open project with its undo history (`Session`) and its decoded audio (ADR 0011), the open projects with one active, like tabs (`Projects`, [ADR 0007](decisions/0007-several-open-projects.md)), the command registry ([ADR 0002](decisions/0002-commands.md)), the `Player` that connects a session to a running engine, the audio output chosen and the `audio.*` commands (`audio`: the `AudioSystem` the output layer implements, reopening the active project's output with the transport where it was), the MIDI inputs and the `midi.*` commands (`midi`: the `MidiSystem` the MIDI layer implements, the ports turned off, and the `LiveInput` that hands their notes to the engine that plays; ADR 0017), the armed tracks (`track.setArm`, kept beside the project), the project's running plug-ins (`rack`: each plug-in device found in the catalog, started with its saved state off the audio thread, handed to the engine, watched and restarted; `start_offline` for renders; the states it reads compared with the ones last saved, `plugin_edits`, so a change in a plug-in's editor is an unsaved change), adding tracks and placing files (`files`: `track.add`, `clip.addFiles`), splitting and consolidating clips (`editing`: `clip.split`, `clip.consolidate`, which renders audio with the engine's `render_track` and writes it as a WAV file with hound), previews (`preview.*`) and the browser's commands (`library.*`, on the `Library` `Projects` holds) and the sample map's (`soundmap.*`, on its `SoundMap`), missing files (`relink`: `project.missingFiles`, `project.relinkFiles`), the device commands (`devices`), sends and return tracks (`sends`: `track.setSend`, `track.setSendMode`, `return.*`) the blank project (`blank`) and backups (`backup`: when each project is copied, the backup thread that writes the copies and cleans up, the journal the offer after a crash reads, `project.autosave`; [spec](spec/backups.md)). | model, engine, media, library, soundmap, als, project-file, plugins, device-api, device-registry, device-sdk, devices/fm-synth |
@@ -139,13 +140,18 @@ change to one view touches the files of that view and parallel pull requests sel
 ```text
 crates/ui/src/
   lib.rs         the modules, and the types the app takes (App, Status, View)
-  app.rs, app/   the window: its state, menus, keys, layout and dialogs (project, loading,
+  app.rs, app/   the window: its state and frame in app.rs; in app/ its jobs, one file each
+                 (actions, keys, menu_bar, control_bar, tabs, detail_area, browser_panel, drops,
+                 plugin_host, audio_settings, exports) and its dialogs (project, loading,
                  missing files), the start panel and the splash
-  arrangement/   the Arrangement view: arrangement_view, timeline, automation_lanes
+  arrangement/   the Arrangement view: arrangement_view (with its parts in arrangement_view/),
+                 timeline, automation_lanes
   session/       the Session view: session_view, mixer_strip, slot_launch, launch_keys,
                  record_controls
-  detail/        the detail area: detail_view (device chain and clip properties), device_canvas,
-                 follow_view, the piano roll (piano_roll and its parts) and midi_tools
+  detail/        the detail area: detail_view (device chain; its model, parameters, expanded panel,
+                 clip properties and group panel in detail_view/), device_canvas,
+                 follow_view, the piano roll (piano_roll, its parts in piano_roll/, and the piano_roll_*
+                 files) and midi_tools
   browser.rs, browser/   the browser's state (browser.rs) and its views: browser_view,
                  sample_map, sample_map_panel
   settings.rs, settings/ the stored settings (settings.rs, view_settings, keymap, workflow) and
@@ -185,7 +191,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
 ```text
 .als ──als::read_file──> Project ──media::load_project_audio──> AudioPool
                             │                                       │
-                            └──────────> Renderer::with_audio <─────┘
+                            └──────────> Renderer::build      <─────┘
                                               │ (all allocation happens here)
                                               ▼
                       render thread: Renderer::process(block), forever, ahead of the device
@@ -197,7 +203,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    `AudioPool`, holds the samples in memory, so playback never reads the disk. The session
    keeps it; a file added later (`clip.addFiles`) is decoded off the audio thread, joins the
    pool and reaches the engine with the next graph (`Controller::set_audio`, ADR 0011).
-3. **Build the renderer.** `Renderer::with_audio` turns the project into flat, sorted lists the
+3. **Build the renderer.** `Renderer::build` (the project and its `RenderInputs`) turns the project into flat, sorted lists the
    audio thread can walk without searching: note events, audio events, one stretch voice per
    warped clip placement (two stretchers each, so a fresh one takes over before every strong
    onset and transients stay on the grid; ADR 0003), the prepared launcher clips, the
@@ -284,7 +290,7 @@ automation layer applies its existing canonical-path validation to every allowed
 Every user-visible action is a command in `session` with an id, typed parameters and a kind
 ([ADR 0002](decisions/0002-commands.md)). The CLI, the MCP server and the UI all call
 `Session::execute(id, params)`, or `Projects::execute` when several projects are open (it runs
-`projects.*`, `plugins.*`, `library.*`, `soundmap.*`, `audio.*` and `midi.*` itself, on what belongs to
+the `project.*` ones that list, switch and close projects, `plugin.*`, `library.*`, `soundmap.*`, `audio.*` and `midi.*` itself, on what belongs to
 Suhina rather than one project, and passes everything else to the active project); none of them changes a
 project directly.
 
@@ -296,7 +302,7 @@ project directly.
 | Transport | Sends a `LaunchCommand` (or a preview, `preview.*`) to the attached `Player`; fails if no engine is playing, except `track.setArm`, which the session keeps and tells every new player. | none |
 | Projects | Lists, switches and closes open projects (`Projects`); only the active one keeps its `Player`. | none |
 | Library | The browser's folders, search, pins, recent items and colour tags (`library.*`, on the `Library` that `Projects` holds; ADR 0012), and the sample map (`soundmap.*`). A successful `clip.addFiles`, `track.add` or `device.add*` puts what it added among the recent items. | none |
-| Plugins | Scans for installed plug-ins, lists them, chooses the folders scans look in and how a plug-in shares host processes, and finds the installed plug-in for each of a project's devices (`plugins.*`, on the `Library` that `Projects` holds; ADR 0006). | none |
+| Plugins | Scans for installed plug-ins, lists them, chooses the folders scans look in and how a plug-in shares host processes, and finds the installed plug-in for each of a project's devices (`plugin.*`, on the `Library` that `Projects` holds; ADR 0006). | none |
 | Plugin | Acts on one of the project's running plug-ins: opens or closes its editor, restarts it (`device.openEditor`, `device.closeEditor`, `device.restart`). | none |
 | Audio | Lists or chooses the audio output (host, device, sample rate, buffer size) and reports on it (`audio.*`, on `Projects`); reopens the active project's output. Lists the MIDI inputs and turns them on or off (`midi.*`). | none |
 
@@ -357,7 +363,7 @@ while a control worker is busy.
 | A way for the user or an agent to change something | a command in `session` | Typed params, undo, a test in `session/tests` |
 | A new kind of file to decode or analyse | `media` | Input sizes are hostile; cap them |
 | Something agents need | `automation`, on top of commands | File roots; `isError` for failed commands |
-| A view or control in the UI | `ui`, in the folder of its view, drawn from `Grid`-like data built from the project and monitors ([Inside the `ui` crate](#inside-the-ui-crate)) | Dispatches commands; never edits the model directly; sizes and colours from `theme` and `docs/design/` |
+| A view or control in the UI | `ui`, in the folder of its view, drawn from `TrackGrid`-like data built from the project and monitors ([Inside the `ui` crate](#inside-the-ui-crate)) | Dispatches commands; never edits the model directly; sizes and colours from `theme` and `docs/design/` |
 | A built-in instrument or effect | a crate under `devices/`, blocks in `dsp` | ADR 0004; `conformance::check` in a test; import mapping in the format crate |
 
 ## Planned parts

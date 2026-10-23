@@ -29,7 +29,7 @@ fn texts(params: &Value, name: &str) -> Result<Vec<String>, CommandError> {
 impl Session {
     /// The audio files the project's clips name that cannot be found.
     pub fn missing_files(&self) -> Vec<suhina_media::MissingAudio> {
-        missing_of(self.project(), self.audio_folder(), &self.audio, self.trusted())
+        missing_of(self.project(), self.audio_folder(), &self.audio.pool, self.trusted())
     }
 }
 
@@ -175,8 +175,8 @@ pub(crate) fn collect(session: &mut Session, params: &Value) -> Result<Value, Co
             std::fs::copy(&real, &copy).map_err(|e| format!("{}: {e}", copy.display()))?;
         }
         // The copy plays what the original did, decoded once.
-        if let Some(data) = session.audio.files.get(&key).cloned() {
-            session.audio.files.insert(copy.display().to_string(), data);
+        if let Some(data) = session.audio.pool.files.get(&key).cloned() {
+            session.audio.pool.files.insert(copy.display().to_string(), data);
         }
         files.push(key);
         to.push(copy.display().to_string());

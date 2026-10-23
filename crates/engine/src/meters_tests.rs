@@ -31,7 +31,7 @@ fn held(group_devices: Vec<Device>) -> Project {
 }
 
 fn channel(project: &mut Project, id: u32) -> &mut Channel {
-    project.channels.iter_mut().find(|c| c.id == ChannelId(id)).expect("channel")
+    project.channel_mut(ChannelId(id)).expect("channel")
 }
 
 /// Plays `seconds` of `project` in blocks of 256 frames; returns the renderer and the output.

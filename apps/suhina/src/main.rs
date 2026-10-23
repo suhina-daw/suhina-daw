@@ -338,7 +338,7 @@ impl eframe::App for Window {
         if let Some(offer) = self.app.take_recovery_request() {
             match Session::recover(&offer.backup, offer.file.as_deref()) {
                 Ok((session, warnings)) => self.show_session(session, warnings, OpenAs::NewTab),
-                Err(e) => self.app.set_status(Status::Error(e.0)),
+                Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
             }
         }
         if let Some(backup) = self.app.take_reveal_request()
@@ -496,7 +496,7 @@ impl Window {
                 self.show_session(session, warnings, how);
                 self.remember(path);
             }
-            Err(e) => self.app.set_status(Status::Error(e.0)),
+            Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
         }
     }
 
@@ -508,7 +508,7 @@ impl Window {
         };
         match made {
             Ok((session, warnings)) => self.show_session(session, warnings, OpenAs::NewTab),
-            Err(e) => self.app.set_status(Status::Error(e.0)),
+            Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
         }
     }
 
@@ -623,7 +623,7 @@ impl Window {
     }
 }
 
-/// "<what> <file>", and the file shown in the file manager.
+/// `"<what> <file>"`, and the file shown in the file manager.
 /// Shows the system's file or folder dialog `request` asks for; `None` when it was cancelled.
 /// It waits on the main thread, as macOS requires, while the window stays behind it.
 fn pick(request: &suhina_ui::interaction::pick::PickRequest) -> Option<PathBuf> {

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use suhina_engine::{LiveEvent, LiveSender, LiveSource};
 
 use crate::commands::{CommandKind, CommandSpec, ParamType, param};
-use crate::{CommandError, Projects};
+use crate::{Agents, CommandError, Policy, Projects};
 
 /// The MIDI input ports of the system, and opening one of them; made by the MIDI layer, which
 /// is the only code that opens a MIDI device.
@@ -174,6 +174,7 @@ static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Audio,
         run: inputs,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "midi.setInput",
@@ -184,6 +185,7 @@ static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Audio,
         run: set_input,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
 ];
 

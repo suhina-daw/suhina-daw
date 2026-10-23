@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use suhina_engine::{AudioPool, PluginSlotInfo, Plugins, Renderer, plugin_devices};
 use suhina_model::*;
@@ -142,7 +143,13 @@ fn start_chains(chains: &[Vec<&str>], sample_rate: u32) -> (Renderer, Vec<Plugin
         plugins.insert(found.key, PluginSlotInfo::default(), Box::new(hosted));
         controls.push(control);
     }
-    let renderer = Renderer::with_plugins(&p, &AudioPool::new(), sample_rate, plugins).unwrap();
+    let renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        sample_rate,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     (renderer, controls, counts)
 }
 

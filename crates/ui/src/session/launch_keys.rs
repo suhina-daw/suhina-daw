@@ -5,7 +5,7 @@
 //! them (`docs/spec/ui-session-view.md` › Launch keys). A key down is the press and a key up the
 //! release, and both run the command the mouse would ([`suhina_session::mapped_command`]). A
 //! mapped key wins over a shortcut while the Session view is shown and no text field has the
-//! keyboard; the window decides that and calls [`handle`] only then.
+//! keyboard; the window decides that and calls [`LaunchKeys::handle`] only then.
 
 use egui::{Align2, Event, Key, Painter, Rect, StrokeKind};
 use serde_json::json;
@@ -29,7 +29,7 @@ pub struct LaunchKeys {
     held: Vec<MappingSource>,
 }
 
-/// One key event, as [`handle`] needs it.
+/// One key event, as [`LaunchKeys::handle`] needs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyEvent {
     pub key: Key,
@@ -39,7 +39,7 @@ pub struct KeyEvent {
     pub modifiers: bool,
 }
 
-/// What [`handle`] did with an event.
+/// What [`LaunchKeys::handle`] did with an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     /// Not a launch key: the shortcuts see it.

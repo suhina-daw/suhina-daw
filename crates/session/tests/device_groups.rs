@@ -4,9 +4,11 @@
 //! Device groups through the commands (docs/spec/device-groups.md › Commands): device paths,
 //! grouping, ungrouping, moving, duplicating, branches, the instrument rules and undo.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
+
+use crate::support::run;
 
 fn project(notes: bool) -> Project {
     Project {
@@ -18,10 +20,6 @@ fn project(notes: bool) -> Project {
         channels: vec![Channel::new(ChannelId(1), "C1")],
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 fn add(session: &mut Session, id: &str) {

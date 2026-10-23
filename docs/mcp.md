@@ -65,8 +65,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   points the clips at them, one undo step ([spec](spec/missing-files.md)).
 - **Several projects.** The server keeps every opened project with its own undo history, like
   tabs ([ADR 0007](decisions/0007-several-open-projects.md)). `project_open` adds one and makes
-  it active; `projects.list`, `projects.switch`, `projects.next`, `projects.previous` and
-  `projects.close` (through `command_run`) manage them. Tools work on the active project, or on
+  it active; `project.list`, `project.switch`, `project.next`, `project.previous` and
+  `project.close` (through `command_run`) manage them. Tools work on the active project, or on
   the one their `project` argument names, without switching. At most 32 are open.
 - **Audio output.** With `--audio`, each opened project also plays on the chosen output device
   (the default one until `audio.setOutput` chooses another) with the transport stopped, and transport commands (`scene.launch`, `clip.launch`, `clip.release`, `track.stop`,
@@ -84,7 +84,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   so transport commands aimed at another project fail.
 - **Plug-ins between commands.** The server takes in the plug-ins that started every 50 ms, as
   the window does every frame, so a project plays with them while the agent sends nothing or only
-  `projects.*` commands.
+  `project.*` commands that list, switch and close projects.
 - **Choosing the output.** `audio.devices` lists the audio hosts (WASAPI, and ASIO in a build
   with the `asio` feature; ALSA, JACK or CoreAudio elsewhere) and each one's output devices with
   `sample_rates`, `buffer_sizes` (what the driver allows), `buffer_range` and whether WASAPI
@@ -98,10 +98,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   default output and the result's `notice` says so. The choice is kept: while the default plays
   in its place, Suhina looks every few seconds whether the chosen device is back and moves the
   output there, the same way. The engine renders in blocks of
-  `buffer_frames` (64 to 4096), which sets the plug-ins' deadline. A size is fitted to what the
+  `bufferFrames` (64 to 4096), which sets the plug-ins' deadline. A size is fitted to what the
   device's driver declared, and a driver is never asked for one outside that range: a range
   holding no size the engine renders in leaves the driver its own size, and `notice` says which
-  size plays. On WASAPI shared mode Windows sets the device's buffer, so there `buffer_frames` is
+  size plays. On WASAPI shared mode Windows sets the device's buffer, so there `bufferFrames` is
   the engine's block alone and `buffer_sizes` the engine's own sizes. `audio.info` says what plays
   now: `host`, `device`, `sample_rate`, `buffer_frames` (the device's, measured),
   `engine_block`, `exclusive`, `latency_ms` (engine to speaker, measured), `live` (a track is
@@ -342,7 +342,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   `guess` or `none`) and its features; `soundmap.setKind {item, kind}` sets a sample's kind by
   hand (`auto` gives it back to its name and sound); `soundmap.analyse {folder?}` analyses again.
 
-- **Devices.** `devices.list` lists the built-in effects and instruments with every parameter (id, range,
+- **Devices.** `device.list` lists the built-in effects and instruments with every parameter (id, range,
   default, unit, options); `track.devices` lists a track's devices with their values;
   `device.add`, `device.addSd {track, path, position?}`, `device.remove`, `device.setEnabled` and `device.setParam` (through
   `command_run`) edit a track's chain, one undo step each ([ADR 0004](decisions/0004-built-in-devices.md)).
@@ -388,7 +388,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   instrument (`fm-synth`), which goes right after them and plays the notes; audio effects
   follow. `track.devices` gives each built-in and `.sd` device's `role` (`effect`,
   `instrument`, `midi_effect`). `device.add {preset, voice?}` adds the FM synth playing a DX7 voice from a `.syx` file.
-  `devices.sdNodes` returns every SDK node contract, ports, units, defaults, configuration examples
+  `device.sdNodes` returns every SDK node contract, ports, units, defaults, configuration examples
   limits and custom canvas capabilities (including equality expressions and literal-value selector buttons, conditional controls, choice menus and text alignment) for effect authoring by agents ([guide](device-sdk.md)).
   `device.setParam` applies declared conditional peer links as one undo gesture and sends all affected values to the player.
   `device.addSd` validates and embeds a composable effect graph in the project; its supported nodes
@@ -398,24 +398,24 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   intermediate updates across both axes, then `continuous: false` for the last axis on release.
   This gives an XY edit one undo step. A final unchanged value also ends the gesture.
 
-- **Plug-ins.** `plugins.scan`, `plugins.list` and `plugins.folders` (through `command_run`)
+- **Plug-ins.** `plugin.scan`, `plugin.list` and `plugin.folders` (through `command_run`)
   find and list installed plug-ins; a scan loads each new or changed plug-in file in a process
   of its own and tries files that failed again ([ADR 0006](decisions/0006-plug-in-hosting.md)).
-  `plugins.list` with `ignored: true` also lists the files that hold no plug-ins; it always lists
+  `plugin.list` with `ignored: true` also lists the files that hold no plug-ins; it always lists
   the files built for another processor (`incompatible`), and each plug-in's type and whether it
-  is switched on. `plugins.setEnabled` switches a plug-in off (not offered, not loaded) or on,
-  `plugins.scanFile` reads one listed file again, and `plugins.setFolderEnabled` switches a
-  plug-in folder off or on for scans. `plugins.check` lists an open
+  is switched on. `plugin.setEnabled` switches a plug-in off (not offered, not loaded) or on,
+  `plugin.scanFile` reads one listed file again, and `plugin.setFolderEnabled` switches a
+  plug-in folder off or on for scans. `plugin.check` lists an open
   project's plug-in devices with the installed plug-in found for each (also a VST3 version
-  standing in for a VST2 one), how it was found and whether its settings carry over. `plugins.addFolder` and
-  `plugins.removeFolder` are refused for agents, since a folder decides whose code a scan runs;
+  standing in for a VST2 one), how it was found and whether its settings carry over. `plugin.addFolder` and
+  `plugin.removeFolder` are refused for agents, since a folder decides whose code a scan runs;
   the user adds folders with `suhina-cli plugins add-folder` or in the desktop app's Settings ›
-  Plug-ins. `plugins.setHosting` chooses
+  Plug-ins. `plugin.setHosting` chooses
   how a plug-in's instances share host processes (`binary`, the default, `vendor` or
   `instance`), from their next start.
 
 - **Plug-in devices.** `device.addPlugin` adds an installed plug-in (by name, id or file, from
-  `plugins.list`) to a track, an instrument first; one undo step. With an audio engine
+  `plugin.list`) to a track, an instrument first; one undo step. With an audio engine
   (`--audio`) the active project's plug-ins run: each is found in the catalog and started with
   its saved settings in the background, between commands; `device.plugin` (and `plugin` in
   `track.devices`) says where one stands (`loading`, `running`, `missing`, `crashed`, `failed`,
@@ -465,9 +465,9 @@ suhina-cli mcp --attach
   work on open projects** is on. Each connection then waits: the window asks whether to allow the
   client (by the name it gives at `initialize`), and tool calls wait for the answer; Deny ends the
   connection. The control bar shows each agent let in with a **Disconnect** button.
-- **Tabs.** The agent works on the window's tabs: `projects.list`, `projects.switch` and the
+- **Tabs.** The agent works on the window's tabs: `project.list`, `project.switch` and the
   `project` argument act on them. `project_open` is refused (the person opens projects), and so is
-  `projects.close`: closing loses a tab's unsaved changes and its undo history.
+  `project.close`: closing loses a tab's unsaved changes and its undo history.
 - **Files.** Settings › Export controls where attached agents may write (`project.save`,
   `project.export`, `project_render`, `project.autosave` with `now`). The project's folder is
   allowed by default; the person can turn that grant off and add or remove other folders.
@@ -478,11 +478,11 @@ suhina-cli mcp --attach
   operations and exports still gathering state; it does not cancel a render already started.
 - **Settings.** Commands that change the app's settings or the person's library rather than a
   project are refused: `audio.setOutput`, `output.setCuePair`, `output.setCueVolume`,
-  `midi.setInput`, `plugins.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
+  `midi.setInput`, `plugin.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
   `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
-  `project.autosave` with `interval` or `clean_up`. Transport commands play on the window's output.
-- **Plug-ins.** `plugins.setEnabled` and `plugins.setFolderEnabled` change the person's plug-in
-  library and are refused. So are `plugins.scan` and `plugins.scanFile`: a scan would run on the
+  `project.autosave` with `interval` or `cleanUp`. Transport commands play on the window's output.
+- **Plug-ins.** `plugin.setEnabled` and `plugin.setFolderEnabled` change the person's plug-in
+  library and are refused. So are `plugin.scan` and `plugin.scanFile`: a scan would run on the
   window's thread while plug-ins load; the person scans from the plug-in manager. `project_render`
   takes its snapshot with the window's projects and renders on a thread of its own, so the window
   keeps drawing.
@@ -528,7 +528,11 @@ empty list clears the map. Optional `continue` groups consecutive drag edits.
 read-root confinement. `project.collect` writes below the write root: its `folder` (made if it
 is new, inside an existing folder of the root) or, without one, the folder of the project's own
 file; a blank `folder` is refused, and so is a `Samples` or `Samples/Collected` in it that leads
-outside. A test lists
-every command parameter named like a file or a folder (`path`, `paths`, `folder`, `file`, `to`,
-`item`, `preset`, `sd`, `output`, `place`) and fails for one that neither `confine()` handles nor the agents are
-refused, so a new command cannot take a path unchecked.
+outside. Which parameters are places on disk is their type (`ParamType::Path`, with what the command
+does with it: reads a file, files or a folder, writes one, a library item or place), and
+`confine()` checks every one by that type; the files commands write have each their own rule. A
+test gives every `Path` parameter a path outside the roots and fails when `confine()` lets it
+through, and fails for a text parameter named like a file or a folder (`path`, `paths`, `folder`,
+`file`, `to`, `item`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
+cannot take a path unchecked. Which commands an agent may not run is on each command's spec
+(`Policy::agents`: denied, or not to an agent attached to the app).

@@ -1,6 +1,6 @@
 ---
 description: The layout of Suhina's own project file (.suhina), field by field, with what a reader accepts
-read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode
+read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode
 type: spec
 status: current
 last_verified: 2026-10-19
@@ -11,15 +11,14 @@ covers:
 
 # The .suhina project file
 
-Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 1, or 2 when
-the project holds a device group. It is
+Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 3. It is
 UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ([ADR 0001](../decisions/0001-daw-neutral-model.md)); this lists them and what a reader accepts.
 
 ```json
 {
   "format": "suhina",
-  "version": 1,
+  "version": 3,
   "project": {
     "transport": { "tempo_bpm": 120.0, "time_signature": [4, 4] },
     "tracks": [ … ], "channels": [ … ], "contents": [ … ],
@@ -32,11 +31,10 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 
 ## Rules
 
-- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (2);
-  anything else is refused, and the message names the format the file gave. A writer writes 2
-  only when a channel holds a device group and 1 otherwise, so a project without groups still
-  opens in a Suhina from before them ([device groups](device-groups.md) › Project file). Files
-  saved before 2026-10-13 named another format and are not read
+- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (3);
+  anything else is refused, and the message names the format the file gave or the newest version
+  the reader knows. A writer always writes the newest version (*Versions* below). Files saved
+  before 2026-10-13 named another format and are not read
   ([ADR 0010](../decisions/0010-project-files.md) decision 12).
 - Ids are whole numbers that fit 32 bits. Numbers are finite (a writer writes 0 for one that is
   not). A list or an optional field may be left out or `null`.
@@ -53,14 +51,36 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
   then its clips, lane by lane; then the scenes; then the slots' clips, column by column. The same
   file therefore always reads with the same ids. A `next_id` that is missing or not above every
   `id` in the file is moved past them; one beyond 32 bits is refused, and so is a file whose
-  counter runs out before every object has an id. The version stays 1: a file with ids is read by
-  a reader that does not know them as one without, and the format version is
-  [ADR 0026](../decisions/0026-project-folder-and-package.md)'s to change.
+  counter runs out before every object has an id. Writing ids always, so a reader never derives
+  them, is the version after 3 ([ADR 0026](../decisions/0026-project-folder-and-package.md) › 10).
 - `extensions` (on the project, a track, channel, device, content or clip) is a list of
   `{ "format", "key", "data" }`: what an importer kept from its format; it is left out when empty.
 - The project must hold together as an imported one must: ids unique, every reference resolves,
   fades fit their clip. A file that does not is refused, naming the first problems.
 - A reader refuses a file over 512 MiB.
+
+## Versions
+
+The version rises with every change to what a file holds, additions included, and every file is
+written as the newest ([ADR 0010](../decisions/0010-project-files.md) › Amendment: format
+versions). A reader refuses a newer file, so an older Suhina never opens one and drops what it
+does not know when it saves. Every older version is still read.
+
+A change to what is written:
+
+1. raises `VERSION` in `crates/project-file/src/lib.rs`;
+2. adds `crates/project-file/tests/versions/v<N>.suhina` (`SUHINA_BLESS=1 cargo test -p
+   suhina-project-file` writes it; the file of a version that shipped is never rewritten) and
+   gives the new field a value in the test's `every_feature` project;
+3. reads the earlier versions as before, and adds a row here.
+
+Before 1.0 the number may rise often. A file saved by a pull request's test build is disposable.
+
+| Version | What it added | Pull request |
+|---|---|---|
+| 1 | The project as JSON ([ADR 0010](../decisions/0010-project-files.md)); ids, markers, automation, follow actions, launch settings, cue and launch mappings came later without a rise | #212 and earlier |
+| 2 | Device groups, written only when a project held one ([device groups](device-groups.md) › Project file) | #147 |
+| 3 | Written by every file: the first version that rises with every change | this change |
 
 ## Parts
 

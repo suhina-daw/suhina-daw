@@ -6,9 +6,10 @@ machine names stay lowercase (`suhina-*` crates, binaries, file names). Read thi
 then [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/architecture.md`](docs/architecture.md)
 (layers, data flow, threads, and where new code goes).
 
-**Find documentation through [`docs/INDEX.md`](docs/INDEX.md)** before reading code: it lists
-every document with the words it is read for (*Read when*), and maps code paths to the documents
-that describe them (*Code and its documents*). Read only the documents that match your task.
+**Find documentation by asking, before reading code:** `python scripts/docs.py find WORDS` lists
+the documents about something, best first, and `python scripts/docs.py covers PATH` the documents
+that describe a file. [`docs/INDEX.md`](docs/INDEX.md) lists every document in a line. Read only
+the documents that match your task.
 
 ## 1. Golden rules
 
@@ -119,6 +120,7 @@ crates/
   ipc      L0 audio blocks to a plug-in host process: shared memory, block sync with a deadline (ADR 0006; may use unsafe)
   realtime L0 real-time priority for audio threads: MMCSS Pro Audio on Windows, SCHED_FIFO or rtkit on Linux
   plugins  L1 the engine's side of plug-in hosting: start a host process, control protocol, health, state, restart; scanning; offline runs
+  test-support  dev-dependency only: ProjectBuilder, write_wav, test signals, golden files (SUHINA_BLESS)
   plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins
 devices/
   sampler  single-source sample and granular instrument; SDK runtime and theme-aware panel
@@ -146,7 +148,7 @@ docs/
   research/   status analysis of our own project: parity against another DAW's public manual
               (ADR 0016; an ordinary document whose marked parts scripts/parity/ keeps current)
               and its two figures
-  INDEX.md    generated list of documents and the code each covers (scripts/docs.py)
+  INDEX.md    generated list of documents, one line each (scripts/docs.py find and covers query it)
   commands.md generated list of every command (suhina-cli commands --markdown)
 assets/brand/ the logo as SVG: `suhina-logo.svg` (the name with the wave, drawn on the splash by
               `crates/ui/src/kit/logo.rs`) and `suhina-mark.svg` (the wave mark alone, for icons)
@@ -396,6 +398,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | A crate's role, a dependency between crates, threads, how commands or data flow | [`docs/architecture.md`](docs/architecture.md), and the crate map above |
 | A decision recorded in an ADR | that ADR (status, consequences), or a new ADR that supersedes it |
 | What is read from a format, or behaviour described in a spec | the spec in `docs/spec/` |
+| What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](docs/decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
 | What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and [`README.md`](README.md) if it shows it |
 | What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |

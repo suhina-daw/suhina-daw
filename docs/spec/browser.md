@@ -42,7 +42,7 @@ project.
 - **Item:** anything the browser lists. A *file* (sample, MIDI file, preset, project, .sd AudioEffect), a *built-in
   device* (an instrument or an effect) or an installed *plug-in*. An item is named by a key: a
   file by its absolute path, a voice in a preset bank by `<path>#<n>` (1–32), a built-in effect or instrument
-  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugins.list` gives).
+  by `device:<id>`, a plug-in by `plugin:<spec>` (the spec `plugin.list` gives).
 - **Folder:** a folder the user added to the browser. Only added folders are listed; there are
   none at first.
 - **Place:** what the sidebar offers: Pinned, the Recent groups and the folders.
@@ -379,7 +379,7 @@ are in `settings.txt`.
 The browser's state and everything a drop does are commands (AGENTS.md rule 6), so agents and
 the CLI can do the same.
 
-**Library** (on the open projects, like `plugins.*`; none touches a project):
+**Library** (on the open projects, like `plugin.*`; none touches a project):
 
 | Command | Params | Does |
 |---|---|---|
@@ -404,7 +404,7 @@ the CLI can do the same.
 
 | Command | Params | Does |
 |---|---|---|
-| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugins.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
+| `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugin.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
 | `clip.addFiles` | `paths`, `track?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group), from beat `start` in the Arrangement or from `scene` (1-based) in the Session (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
 | `device.add` | adds `preset?` and `voice?` (1–32) | the built-in effect or instrument with a preset's values |
 

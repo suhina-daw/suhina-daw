@@ -4,31 +4,19 @@
 //! Automation commands (#395): points on mixer and device lanes, undo, turning a lane off by a
 //! manual change and on again, and malformed parameters.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
 
+use crate::support::run;
+use suhina_test_support::ProjectBuilder;
+
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
-    Project {
-        tracks: vec![Track {
-            content: ContentKinds { notes: true, audio: false },
-            channel: Some(ChannelId(1)),
-            ..Track::new(TrackId(1), "Keys")
-        }],
-        channels: vec![Channel::new(ChannelId(1), "C1")],
-        ..Project::default()
-    }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
+    ProjectBuilder::new().midi_track(1, "Keys").build_without_ids()
 }
 
 fn lanes(session: &Session) -> &[AutomationLane] {

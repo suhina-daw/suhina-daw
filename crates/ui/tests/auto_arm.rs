@@ -193,7 +193,7 @@ fn selecting_a_clip_slot_empty_or_not_arms_its_track() {
 fn an_audio_track_is_armed_too() {
     // The demo's Vox, made an audio track: it plays audio, not notes.
     let mut project = demo_project();
-    let vox = project.tracks.iter_mut().find(|t| t.id == VOX).unwrap();
+    let vox = project.track_mut(VOX).unwrap();
     vox.content = ContentKinds { notes: false, audio: true };
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000).unwrap();
     let mut harness = app_on(project, &mut renderer, true);

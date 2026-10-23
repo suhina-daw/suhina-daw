@@ -5,6 +5,7 @@
 //! strip, for `clip.consolidate` (`docs/spec/arrangement-editing.md` › Consolidating). The same
 //! renderer as playback and offline renders.
 
+use crate::{RenderInputs, RenderOptions};
 use suhina_model::{
     Arrangement, Channel, ChannelId, ChannelRole, ClipContent, Extensions, Project, Track, TrackId, Transport,
 };
@@ -31,7 +32,7 @@ pub fn render_track(
     }
     let alone = alone(project, track);
     let (left, right) = track_gains(&alone, track).unwrap_or((0.0, 0.0));
-    let mut renderer = Renderer::with_audio(&alone, audio, sample_rate)?;
+    let mut renderer = Renderer::build(&alone, RenderInputs::from_audio(audio), sample_rate, RenderOptions::PLAYING)?;
     renderer.set_offline(true);
     let mut out = vec![0.0f32; frames.saturating_mul(2)];
     for block in out.chunks_mut(BLOCK_FRAMES * 2) {
@@ -109,7 +110,8 @@ mod tests {
     use suhina_model::{AudioRegion, ContentId, ContentLane, LaneData};
 
     use super::*;
-    use crate::{AudioData, render_offline_with_audio};
+    use crate::AudioData;
+    use crate::render_offline_from;
 
     fn region(file: &str) -> AudioRegion {
         AudioRegion {
@@ -166,7 +168,8 @@ mod tests {
         let alone = render_track(&project, &audio, TrackId(3), 48_000, frames).unwrap_or_default();
         assert_eq!(alone.len(), frames * 2);
         // The mix renders the same clip through its channel: scaled by its gains and headroom.
-        let mixed = render_offline_with_audio(&project, &audio, 48_000, 512).unwrap_or_default();
+        let mixed =
+            render_offline_from(&project, RenderInputs::from_audio(&audio), 48_000, 512, None).unwrap_or_default();
         let (l, r) = track_gains(&project, TrackId(3)).unwrap_or((0.0, 0.0));
         let peak = alone.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.3, "the clip is heard at its own level, peak {peak}");

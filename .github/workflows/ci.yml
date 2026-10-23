@@ -178,6 +178,13 @@ jobs:
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The documentation, warnings as errors: a rustdoc link to code that was renamed (the map
+      # from the window to its code in crates/ui/src/lib.rs, #768 › 4) fails here. Private items
+      # are documented, so links to them resolve.
+      - run: cargo doc --workspace --no-deps --document-private-items
+        if: runner.os == 'Linux'
+        env:
+          RUSTDOCFLAGS: -D warnings -A rustdoc::private_intra_doc_links
       # On Linux under a virtual X server, so the plug-in editor tests open real windows.
       - run: cargo test --workspace
         if: runner.os != 'Linux'

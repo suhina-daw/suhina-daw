@@ -59,7 +59,7 @@ A setting, **Backups** in Settings › General, says when:
 
 With *Before critical operations*, a backup of the project is written just before:
 
-1. **Closing the project** (its tab's close button, `projects.close`), or **opening another
+1. **Closing the project** (its tab's close button, `project.close`), or **opening another
    project in its place**; with unsaved changes this is before the Save, Don't save or Cancel
    question, so *Don't save* still leaves a backup.
 2. **Quitting Suhina** with unsaved changes (each such project).
@@ -70,8 +70,9 @@ With *Before critical operations*, a backup of the project is written just befor
    loads is the case backups are most for.
 6. **Deleting a track** (`track.delete`).
 
-The command list is `suhina_session::backup::CRITICAL_COMMANDS`; a new command that is hard to
-undo or risky is added there and to this list.
+A command is critical when its spec says so (`policy: Policy::CRITICAL`, or `critical: true`;
+`suhina_session::policy`); a new command that is hard to undo or risky sets it and is added to
+this list.
 
 ## Where backups go
 
@@ -173,7 +174,7 @@ An entry whose backup is gone or older than its project file is taken out withou
 |---|---|---|
 | `now` | bool | `true` writes a backup of the active project now, if it has unsaved changes, and waits up to ten seconds for it |
 | `interval` | text | sets when backups are written for this run: `critical`, `1m`, `5m`, `10m`, `15m`, `30m`, `60m`, `4h`, `never` |
-| `clean_up` | bool | sets clean-up for this run |
+| `cleanUp` | bool | sets clean-up for this run |
 
 It returns `interval`, `clean_up`, the active project's `folder` (where its backups go, `null`
 when there is none: an untitled project where no settings folder is known), `last_backup`

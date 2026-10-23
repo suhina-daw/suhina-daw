@@ -5,12 +5,13 @@
 //! wraps from the loop end to the loop start on the exact frame, whatever the block size, and a
 //! render of the whole arrangement does not repeat it.
 
+use crate::{RenderInputs, render_offline_from};
 use std::sync::Arc;
 
 use suhina_model::*;
 
 use crate::fade_tests::{assert_golden, left, max_diff, project, region};
-use crate::{AudioData, AudioPool, LaunchCommand, Renderer, render_launches, render_offline_with_audio};
+use crate::{AudioData, AudioPool, LaunchCommand, Renderer, render_launches};
 
 const SR: u32 = 8_000;
 /// Frames per beat at 120 bpm.
@@ -53,7 +54,7 @@ fn a_looped_span_renders_like_its_golden_file() {
 
     // Up to the loop end it is the clip as it plays without a loop; after it, each pass is the
     // clip from beat 1 to beat 2 again, from its first frame.
-    let once = left(&render_offline_with_audio(&project, &pool, SR, 256).unwrap());
+    let once = left(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
     assert_eq!(max_diff(&render[..2 * BEAT], &once[..2 * BEAT]), 0.0);
     for pass in 0..4 {
         let at = 2 * BEAT + pass * BEAT;
@@ -76,16 +77,19 @@ fn the_wrap_does_not_depend_on_the_block_size() {
 fn looping_off_or_a_whole_render_plays_on_past_the_loop_end() {
     let (on, pool) = looped(1.0, 2.0, true);
     let (off, _) = looped(1.0, 2.0, false);
-    let once = left(&render_offline_with_audio(&on, &pool, SR, 256).unwrap());
+    let once = left(&render_offline_from(&on, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
     assert_eq!(once.len(), 4 * BEAT, "the whole arrangement, once");
     assert_eq!(max_diff(&play(&off, &pool, 4 * BEAT, 333), &once), 0.0);
-    assert_eq!(max_diff(&left(&render_offline_with_audio(&off, &pool, SR, 256).unwrap()), &once), 0.0);
+    assert_eq!(
+        max_diff(&left(&render_offline_from(&off, RenderInputs::from_audio(&pool), SR, 256, None).unwrap()), &once),
+        0.0
+    );
 }
 
 #[test]
 fn a_playhead_moved_past_the_loop_end_plays_on() {
     let (project, pool) = looped(1.0, 2.0, true);
-    let once = left(&render_offline_with_audio(&project, &pool, SR, 256).unwrap());
+    let once = left(&render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 256, None).unwrap());
     let mut renderer = Renderer::stopped(&project, &pool, SR).unwrap();
     renderer.set_offline(true);
     renderer.handle(LaunchCommand::SetPosition { beat: 2.5 });

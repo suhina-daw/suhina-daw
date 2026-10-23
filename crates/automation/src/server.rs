@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use suhina_engine::model::{LaneData, Project};
 use suhina_session::{
-    AudioSystem, CommandKind, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
+    Agents, AudioSystem, CommandKind, MidiSystem, Player, ProjectId, Projects, Session, all_commands, project_commands,
 };
 
 use crate::attach::AppHost;
@@ -31,7 +31,7 @@ const INSTRUCTIONS: &str = "Suhina, an open-source clip-launching DAW. Open a Su
 (paths are relative to the read root granted at launch), look at it with project_inspect, discover command ids \
 and parameters with command_list, and change it with command_run or command_batch (each editing command is one \
 undo step; edit.undo reverts it). Several projects can be open, like tabs: each project_open adds one and makes it \
-active; projects.list, projects.switch, projects.next and projects.close manage them, and the `project` argument \
+active; project.list, project.switch, project.next and project.close manage them, and the `project` argument \
 of a tool targets another open project without switching. project_render writes a WAV file below the write root; with `launches` it \
 renders clip launches offline. project.save writes a .suhina file only below the write root, and replaces an existing \
 file (the project's own included) only with overwrite: true in its params. Transport commands (clip.launch, scene.launch, track.stop, transport.play, \
@@ -69,8 +69,8 @@ enum Host {
 const INSTRUCTIONS_ATTACHED: &str = "Suhina, an open-source clip-launching DAW. You are attached to the Suhina app the person is using: \
 you work on the projects open in its window, they see every change as you make it, and each editing command is one step \
 in the undo history of its tab (edit.undo reverts the last step, theirs or yours). Look with project_inspect, discover \
-command ids and parameters with command_list, and change projects with command_run or command_batch; projects.list, \
-projects.switch and the `project` argument act on the window's tabs. Tool calls wait until the person allows the \
+command ids and parameters with command_list, and change projects with command_run or command_batch; project.list, \
+project.switch and the `project` argument act on the window's tabs. Tool calls wait until the person allows the \
 connection. You cannot open projects from disk or close tabs, and you cannot change the app's settings. You may write \
 inside folders allowed by the person in Settings > Export (by default the project's folder), and read the project's folder and the \
 browser's library folders. Transport commands play on the window's audio output.";
@@ -85,7 +85,7 @@ pub struct OpenParams {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InspectParams {
-    /// Open project id from projects.list; the active project when left out.
+    /// Open project id from project.list; the active project when left out.
     #[serde(default)]
     pub project: Option<u32>,
 }
@@ -106,7 +106,7 @@ pub struct RunParams {
     /// Command parameters as a JSON object, e.g. `{"track": "Bass", "pan": -1}`.
     #[serde(default)]
     pub params: Option<Value>,
-    /// Open project id from projects.list to run on; the active project when left out.
+    /// Open project id from project.list to run on; the active project when left out.
     #[serde(default)]
     pub project: Option<u32>,
 }
@@ -130,7 +130,7 @@ pub struct BatchParams {
     /// Stop at the first failing step (default true).
     #[serde(default)]
     pub stop_on_error: Option<bool>,
-    /// Open project id from projects.list to run on; the active project when left out.
+    /// Open project id from project.list to run on; the active project when left out.
     #[serde(default)]
     pub project: Option<u32>,
 }
@@ -156,7 +156,7 @@ pub struct RenderParams {
     /// Replace the file if it exists (default false).
     #[serde(default)]
     pub overwrite: Option<bool>,
-    /// Open project id from projects.list to render; the active project when left out.
+    /// Open project id from project.list to render; the active project when left out.
     #[serde(default)]
     pub project: Option<u32>,
 }
@@ -271,7 +271,7 @@ impl SuhinaMcp {
     }
 
     /// Takes in the plug-ins that started since the last look, every [`PLUGIN_TICK`], as the
-    /// desktop app does every frame: between an agent's commands (or with only `projects.*`
+    /// desktop app does every frame: between an agent's commands (or with only `project.*` (on the open projects)
     /// ones, which do not look) they stayed loading, and the project played without them.
     /// Skips a tick while a command holds the projects. `None` when attached to the app, whose
     /// window does it.
@@ -320,7 +320,7 @@ impl SuhinaMcp {
         project: Option<u32>,
         f: impl FnOnce(&mut Session) -> Result<T, String> + Send + 'static,
     ) -> Result<T, String> {
-        self.with_projects(move |projects| f(projects.session_mut(project.map(ProjectId)).map_err(|e| e.0)?)).await
+        self.with_projects(move |projects| f(projects.session_mut(project.map(ProjectId)).map_err(String::from)?)).await
     }
 }
 
@@ -332,7 +332,7 @@ impl SuhinaMcp {
     async fn project_open(&self, Parameters(p): Parameters<OpenParams>) -> Result<CallToolResult, McpError> {
         if self.is_attached() {
             return Ok(fail(
-                "attached to the app, agents work on the projects open in its window; the person opens projects (projects.list shows them)",
+                "attached to the app, agents work on the projects open in its window; the person opens projects (project.list shows them)",
             ));
         }
         let path = match self.workspace.readable(&p.path) {
@@ -342,10 +342,10 @@ impl SuhinaMcp {
         let output = self.audio_output;
         let result = self
             .with_projects(move |projects| {
-                let (opened, mut warnings) = Session::open(&path).map_err(|e| e.0)?;
-                let id = projects.add(opened, None).map_err(|e| e.0)?;
-                let session = projects.session_mut(Some(id)).map_err(|e| e.0)?;
-                let mut info = session.execute("project.info", &json!({})).map_err(|e| e.0)?;
+                let (opened, mut warnings) = Session::open(&path).map_err(String::from)?;
+                let id = projects.add(opened, None).map_err(String::from)?;
+                let session = projects.session_mut(Some(id)).map_err(String::from)?;
+                let mut info = session.execute("project.info", &json!({})).map_err(String::from)?;
                 info["source"] = json!(display_path(&path));
                 let audio_output = if output { start_audio(projects, id, &mut warnings) } else { Value::Null };
                 Ok(json!({ "project": id.0, "info": info, "warnings": warnings, "audio_output": audio_output }))
@@ -360,7 +360,7 @@ impl SuhinaMcp {
     async fn project_inspect(&self, Parameters(p): Parameters<InspectParams>) -> Result<CallToolResult, McpError> {
         let result = self
             .with_session(p.project, |session| {
-                let mut read = |id: &str| session.execute(id, &json!({})).map_err(|e| e.0);
+                let mut read = |id: &str| session.execute(id, &json!({})).map_err(String::from);
                 Ok(json!({ "info": read("project.info")?, "tracks": read("project.tracks")?, "clips": read("project.clips")? }))
             })
             .await;
@@ -414,26 +414,16 @@ impl SuhinaMcp {
                 pending: None,
             };
             let (data, params) = app.poll(move |projects, cancelled| request.poll(projects, cancelled)).await?;
-            return tokio::task::spawn_blocking(move || suhina_session::export_from(&data, &params).map_err(|e| e.0))
-                .await
-                .map_err(|e| format!("export worker failed: {e}"))?;
+            return tokio::task::spawn_blocking(move || {
+                suhina_session::export_from(&data, &params).map_err(String::from)
+            })
+            .await
+            .map_err(|e| format!("export worker failed: {e}"))?;
         }
         let output = self.audio_output;
         let files = self.files();
         let target = p.project.map(ProjectId);
-        self.with_projects(move |projects| {
-            let workspace = files.workspace(projects, target);
-            let source = save_source(projects, target, &p.id);
-            let params = confine(&workspace, &p.id, p.params.unwrap_or_else(|| json!({})), source.as_deref())?;
-            let mut value = projects.execute_in(target, &p.id, &params).map_err(|e| e.0)?;
-            if let Some(audio_output) = play_active(projects, &p.id, output)
-                && let Some(object) = value.as_object_mut()
-            {
-                object.insert("audio_output".into(), audio_output);
-            }
-            Ok(value)
-        })
-        .await
+        self.with_projects(move |projects| run_step(projects, &files, target, output, &p.id, p.params)).await
     }
 
     #[tool(
@@ -475,24 +465,15 @@ impl SuhinaMcp {
                 let mut results = Vec::new();
                 let mut failed = false;
                 for step in p.steps {
-                    let workspace = files.workspace(projects, target);
-                    let source = save_source(projects, target, &step.id);
-                    let why = refused(&step.id, step.params.as_ref(), attached);
-                    let params =
-                        confine(&workspace, &step.id, step.params.unwrap_or_else(|| json!({})), source.as_deref());
-                    let outcome = match (why, params) {
-                        (Some(why), _) => Err(why.into()),
-                        (None, Err(e)) => Err(suhina_session::CommandError(e)),
-                        (None, Ok(params)) => projects.execute_in(target, &step.id, &params),
+                    let outcome = match refused(&step.id, step.params.as_ref(), attached) {
+                        Some(why) => Err(why),
+                        None => run_step(projects, &files, target, output, &step.id, step.params),
                     };
-                    if outcome.is_ok() {
-                        play_active(projects, &step.id, output);
-                    }
                     match outcome {
                         Ok(value) => results.push(json!({ "id": step.id, "ok": true, "result": value })),
                         Err(e) => {
                             failed = true;
-                            results.push(json!({ "id": step.id, "ok": false, "error": e.0 }));
+                            results.push(json!({ "id": step.id, "ok": false, "error": e }));
                             if stop_on_error {
                                 break;
                             }
@@ -537,7 +518,7 @@ impl SuhinaMcp {
                 let workspace = files.workspace(projects, project_id.map(ProjectId));
                 let path = workspace.writable(&output, overwrite)?;
                 let env = projects.plugin_env();
-                let session = projects.session_mut(project_id.map(ProjectId)).map_err(|e| e.0)?;
+                let session = projects.session_mut(project_id.map(ProjectId)).map_err(String::from)?;
                 if launches.is_some() && scene.is_some() {
                     return Err("give either scene or launches, not both".into());
                 }
@@ -678,61 +659,21 @@ fn save_source(projects: &mut Projects, target: Option<ProjectId>, id: &str) -> 
     projects.session_mut(target).ok()?.source().map(Path::to_path_buf)
 }
 
-/// Commands agents may not run. They choose the folders whose plug-ins a scan loads and runs,
-/// so an agent could otherwise add its write root and run code it wrote there. The user chooses
-/// plug-in folders (`suhina-cli plugins add-folder`, later the UI); agents may still scan them.
-const NOT_FOR_AGENTS: [&str; 4] =
-    ["plugins.addFolder", "plugins.removeFolder", "library.addFolder", "library.removeFolder"];
-
-/// Commands an agent attached to the app may not run (ADR 0028): closing a tab loses its unsaved
-/// changes and its undo history, and the rest change the app's settings or the person's library
-/// rather than a project. A scan would also run on the window's thread for as long as plug-ins
-/// take to load; the person scans from the plug-in manager.
-const NOT_FOR_ATTACHED: [&str; 17] = [
-    "projects.close",
-    "audio.setOutput",
-    "output.setCuePair",
-    "output.setCueVolume",
-    "midi.setInput",
-    "plugins.setHosting",
-    "plugins.setEnabled",
-    "plugins.setFolderEnabled",
-    "plugins.scan",
-    "plugins.scanFile",
-    "library.setPluginsView",
-    "library.pin",
-    "library.unpin",
-    "library.tag",
-    "library.setTag",
-    "library.removeTag",
-    "soundmap.setKind",
-];
-
 /// Why an agent may not run command `id` with `params`, if it may not; `attached` when it works
 /// on the app's open tabs.
 fn refused(id: &str, params: Option<&Value>, attached: bool) -> Option<String> {
-    if NOT_FOR_AGENTS.contains(&id) {
-        return Some(if id.starts_with("library.") {
-            format!("{id} is not available to agents: the user chooses the browser's folders")
-        } else {
-            format!("{id} is not available to agents: the user chooses plug-in folders (suhina-cli plugins add-folder)")
-        });
+    match suhina_session::policy(id).map(|p| p.agents) {
+        Some(Agents::Denied(why)) => return Some(format!("{id} is not available to agents: {why}")),
+        Some(Agents::NotWhenAttached(why)) if attached => {
+            // A reason that is a whole sentence of its own is given as it is.
+            return Some(if why == Agents::SETTINGS { format!("{id} {why}") } else { why.to_string() });
+        }
+        _ => {}
     }
     if !attached {
         return None;
     }
-    if id == "projects.close" {
-        return Some(
-            "agents never close a tab: closing loses its unsaved changes and its undo history; the person closes tabs"
-                .into(),
-        );
-    }
-    if NOT_FOR_ATTACHED.contains(&id) {
-        return Some(format!(
-            "{id} changes the app's settings or the person's library; agents attached to the app work on projects"
-        ));
-    }
-    let sets_backups = params.is_some_and(|p| p.get("interval").is_some() || p.get("clean_up").is_some());
+    let sets_backups = params.is_some_and(|p| p.get("interval").is_some() || p.get("cleanUp").is_some());
     if id == "project.autosave" && sets_backups {
         return Some(
             "the backup settings are the person's; agents attached to the app may only back up now (now: true)".into(),
@@ -783,7 +724,7 @@ impl ExportRequest {
             session.gather_export_data(deadline)
         } else {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-            let gathered = session.begin_export_gather(deadline).map_err(|e| e.0)?;
+            let gathered = session.begin_export_gather(deadline).map_err(String::from)?;
             self.pending = Some((id, deadline));
             gathered
         };
@@ -830,6 +771,29 @@ impl Files {
             }
         }
     }
+}
+
+/// One step of `command_run` or `command_batch`, on the projects, once the agent may run it:
+/// its paths confined to the agent's roots, the command run, and a project it switched to started
+/// playing, which the result names as `audio_output`.
+fn run_step(
+    projects: &mut Projects,
+    files: &Files,
+    target: Option<ProjectId>,
+    output: bool,
+    id: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let workspace = files.workspace(projects, target);
+    let source = save_source(projects, target, id);
+    let params = confine(&workspace, id, params.unwrap_or_else(|| json!({})), source.as_deref())?;
+    let mut value = projects.execute_in(target, id, &params).map_err(String::from)?;
+    if let Some(audio_output) = play_active(projects, id, output)
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert("audio_output".into(), audio_output);
+    }
+    Ok(value)
 }
 
 /// After a project command, starts the newly active project playing when the server has audio
@@ -907,13 +871,13 @@ mod refused_tests {
     #[test]
     fn agents_may_scan_but_not_choose_plugin_folders() {
         for attached in [false, true] {
-            assert!(refused("plugins.addFolder", None, attached).is_some());
-            assert!(refused("plugins.removeFolder", None, attached).is_some());
-            for id in ["plugins.list", "plugins.folders", "plugins.check", "track.setPan"] {
+            assert!(refused("plugin.addFolder", None, attached).is_some());
+            assert!(refused("plugin.removeFolder", None, attached).is_some());
+            for id in ["plugin.list", "plugin.folders", "plugin.check", "track.setPan"] {
                 assert!(refused(id, None, attached).is_none(), "{id}");
             }
         }
-        for id in ["plugins.scan", "plugins.scanFile"] {
+        for id in ["plugin.scan", "plugin.scanFile"] {
             assert!(refused(id, None, false).is_none(), "{id}");
         }
     }
@@ -921,26 +885,25 @@ mod refused_tests {
     #[test]
     fn attached_agents_never_close_a_tab_nor_change_the_apps_settings() {
         for id in [
-            "projects.close",
+            "project.close",
             "audio.setOutput",
             "midi.setInput",
-            "plugins.setHosting",
-            "plugins.setEnabled",
-            "plugins.setFolderEnabled",
-            "plugins.scan",
-            "plugins.scanFile",
+            "plugin.setHosting",
+            "plugin.setEnabled",
+            "plugin.setFolderEnabled",
+            "plugin.scan",
+            "plugin.scanFile",
             "library.pin",
         ] {
             assert!(refused(id, None, true).is_some(), "{id}");
             assert!(refused(id, None, false).is_none(), "{id} stays open to suhina-cli mcp");
         }
-        for id in ["projects.list", "projects.switch", "transport.play", "transport.stop", "edit.undo", "project.save"]
-        {
+        for id in ["project.list", "project.switch", "transport.play", "transport.stop", "edit.undo", "project.save"] {
             assert!(refused(id, None, true).is_none(), "{id}");
         }
         assert!(refused("project.autosave", Some(&json!({ "now": true })), true).is_none());
         assert!(refused("project.autosave", Some(&json!({ "interval": "5m" })), true).is_some());
-        assert!(refused("project.autosave", Some(&json!({ "clean_up": true })), true).is_some());
+        assert!(refused("project.autosave", Some(&json!({ "cleanUp": true })), true).is_some());
     }
 
     #[test]
@@ -954,19 +917,21 @@ mod refused_tests {
         }
     }
 
-    /// Which parameters are file paths is a hand-kept list in [`confine`]. Every command with a
-    /// parameter that is named like a file or a folder is therefore either handled there or
-    /// refused to agents, or is listed here with why it needs neither.
+    /// Which parameters are places on disk is their type, [`ParamType::Path`], and [`confine`]
+    /// checks every one: given a path outside the agent's roots, each must be refused, unless the
+    /// whole command is refused to agents. A text parameter named like a file or a folder must be
+    /// a `Path` too, or be listed here with why it is not one.
     #[test]
-    fn every_command_with_a_file_or_folder_parameter_is_confined_or_refused() {
+    fn every_path_parameter_is_confined_and_every_file_or_folder_parameter_is_a_path() {
         use crate::confine::confine;
         use crate::workspace::Workspace;
         use serde_json::Value;
+        use suhina_session::{ParamType, PathKind};
 
         // Parameters of these commands name something other than a place on disk to read or write.
         const NOT_A_PLACE: [(&str, &str); 3] = [
-            ("plugins.setFolderEnabled", "toggles a folder the user added; touches no files"),
-            ("plugins.scanFile", "reads again a file in the plug-in catalog; any other is refused"),
+            ("plugin.setFolderEnabled", "toggles a folder the user added; touches no files"),
+            ("plugin.scanFile", "reads again a file in the plug-in catalog; any other is refused"),
             ("library.refresh", "reads again a folder the user added; any other is refused"),
         ];
         let dir = std::env::temp_dir().join(format!("suhina-confine-sweep-{}", std::process::id()));
@@ -975,34 +940,57 @@ mod refused_tests {
         std::fs::create_dir_all(dir.join("outside")).unwrap();
         let workspace = Workspace::new(Some(&dir.join("inside")), None).unwrap();
         let outside = dir.join("outside").join("secret.wav").display().to_string();
-        let mut unconfined = Vec::new();
+        let (mut unconfined, mut untyped) = (Vec::new(), Vec::new());
         for command in suhina_session::all_commands().as_array().unwrap() {
             let id = command["id"].as_str().unwrap();
-            let properties = command["params"]["properties"].as_object().unwrap();
-            for (name, schema) in properties {
-                let is_text = |t: &str| t == "string";
-                let kind = &schema["type"];
-                let is_path = ["path", "paths", "folder", "file", "to", "item", "preset", "sd", "output", "place"]
-                    .contains(&name.as_str())
-                    && (kind.as_str().is_some_and(is_text)
-                        || (kind == "array" && schema["items"]["type"].as_str().is_some_and(is_text)));
-                if !is_path || NOT_A_PLACE.iter().any(|(c, _)| *c == id) || refused(id, None, false).is_some() {
+            if refused(id, None, false).is_some() {
+                continue;
+            }
+            for param in suhina_session::params_of(id).unwrap() {
+                let named_like_a_path =
+                    ["path", "paths", "folder", "file", "to", "item", "preset", "sd", "output", "place"]
+                        .contains(&param.name);
+                let ParamType::Path(kind) = param.ty else {
+                    let text = matches!(param.ty, ParamType::Text | ParamType::Texts);
+                    if named_like_a_path && text && !NOT_A_PLACE.iter().any(|(c, _)| *c == id) {
+                        untyped.push(format!("{id} {}", param.name));
+                    }
                     continue;
-                }
-                let value = if kind == "array" { json!([outside]) } else { json!(outside) };
+                };
+                let value = if kind == PathKind::Files { json!([outside]) } else { json!(outside) };
                 let mut params = serde_json::Map::new();
-                params.insert(name.clone(), value);
+                params.insert(param.name.to_string(), value);
                 // Other required parameters are not looked at by confine, only this one.
                 if confine(&workspace, id, Value::Object(params), None).is_ok() {
-                    unconfined.push(format!("{id} {name}"));
+                    unconfined.push(format!("{id} {}", param.name));
                 }
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
+        assert!(unconfined.is_empty(), "these path parameters pass `confine` an outside path: {unconfined:?}");
         assert!(
-            unconfined.is_empty(),
-            "these file or folder parameters pass `confine` an outside path; handle them there or refuse the command: {unconfined:?}"
+            untyped.is_empty(),
+            "these parameters are named like a file or a folder but are text: make them ParamType::Path, or say \
+             here why they are not a place: {untyped:?}"
         );
+    }
+
+    /// Every command a policy names exists: a policy is on the command's spec, so this holds by
+    /// construction, and the refusals an agent gets come from it.
+    #[test]
+    fn denied_and_attached_refusals_come_from_the_commands_policy() {
+        for command in suhina_session::all_commands().as_array().unwrap() {
+            let id = command["id"].as_str().unwrap();
+            let policy = suhina_session::policy(id).unwrap();
+            assert_eq!(
+                refused(id, None, false).is_some(),
+                matches!(policy.agents, suhina_session::Agents::Denied(_)),
+                "{id}"
+            );
+            if matches!(policy.agents, suhina_session::Agents::NotWhenAttached(_)) {
+                assert!(refused(id, None, true).is_some(), "{id}");
+            }
+        }
     }
 }
 

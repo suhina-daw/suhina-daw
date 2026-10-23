@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_session::{Projects, Session, blank_project};
 
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
+
 fn temp(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let dir = std::env::temp_dir().join(format!("suhina-relink-{name}-{}-{nanos}", std::process::id()));
@@ -19,18 +22,8 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: 8000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for i in 0..4000 {
-        writer.write_sample(((i % 100) * 100) as i16).unwrap();
-    }
-    writer.finalize().unwrap();
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
+    let ramp: Vec<f32> = (0..4000).map(|i| ((i % 100) * 100) as f32 / 32767.0).collect();
+    write_wav(path, 8000, 1, WavFormat::Int16, &ramp);
 }
 
 #[test]

@@ -5,13 +5,11 @@
 //! audio, made longer when it loops or plays notes, and stretched.
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+use crate::support::run;
 
 /// The blank project with an 8-beat audio clip (4 s at 120 BPM) at beat 4 on track 3, and a
 /// 4-beat MIDI clip at beat 0 on track 1.

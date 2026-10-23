@@ -10,13 +10,13 @@ use egui_kittest::kittest::Queryable;
 use serde_json::json;
 use suhina_engine::model::LaunchMode;
 use suhina_ui::demo::demo_project;
-use suhina_ui::interaction::grid::Grid;
+use suhina_ui::interaction::grid::TrackGrid;
 use suhina_ui::kit::theme;
 use suhina_ui::kit::widgets::Action;
 use suhina_ui::session::session_view::{self, SessionViewState};
 
 struct View {
-    grid: Grid,
+    grid: TrackGrid,
     state: SessionViewState,
     actions: Vec<Action>,
 }
@@ -37,7 +37,7 @@ fn view(mode: LaunchMode) -> Harness<'static, View> {
     {
         clip.launch.mode = mode;
     }
-    let view = View { grid: Grid::build(&project, None), state: SessionViewState::default(), actions: Vec::new() };
+    let view = View { grid: TrackGrid::build(&project, None), state: SessionViewState::default(), actions: Vec::new() };
     let mut harness = Harness::builder()
         .with_size((1280.0, 800.0))
         .build_ui_state(|ui, v: &mut View| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions), view);

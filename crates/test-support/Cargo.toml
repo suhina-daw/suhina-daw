@@ -1,0 +1,15 @@
+[package]
+name = "suhina-test-support"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Used only as a dev-dependency: what tests across the workspace build again and again (#764 › 8).
+[dependencies]
+suhina-model.workspace = true
+hound.workspace = true
+
+[lints]
+workspace = true

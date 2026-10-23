@@ -6,16 +6,15 @@
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
 use std::path::{Path, PathBuf};
+use suhina_engine::RenderInputs;
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
 
-const SR: u32 = 48_000;
+use crate::support::run;
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+const SR: u32 = 48_000;
 
 /// A copy of a test Stems file in a folder of its own.
 fn stems_file(test: &str, name: &str) -> PathBuf {
@@ -37,12 +36,11 @@ fn channel<'a>(p: &'a Project, t: &Track) -> &'a Channel {
 }
 
 fn render(session: &Session) -> Vec<f32> {
-    suhina_engine::render_offline_with_audio(session.project(), session.audio(), SR, 512).unwrap()
+    suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
+        .unwrap()
 }
 
-fn peak(out: &[f32]) -> f32 {
-    out.iter().fold(0.0, |m, s| m.max(s.abs()))
-}
+use suhina_test_support::peak;
 
 #[test]
 fn a_stems_file_becomes_a_group_of_a_muted_master_and_its_stems() {

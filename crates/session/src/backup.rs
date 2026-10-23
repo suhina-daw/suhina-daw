@@ -14,12 +14,13 @@ use serde_json::{Value, json};
 use suhina_model::Project;
 
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional};
-use crate::{CommandError, ProjectId, Projects};
+use crate::{CommandError, Policy, ProjectId, Projects};
 
 /// When backups are written (Settings › General › Backups, `project.autosave`'s `interval`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interval {
-    /// Just before each critical operation ([`CRITICAL_COMMANDS`], closing a project, quitting).
+    /// Just before each critical operation (a command whose [`crate::Policy::critical`] is set,
+    /// closing a project, quitting).
     Critical,
     /// Every so many minutes.
     Minutes(u32),
@@ -80,12 +81,6 @@ impl Interval {
         }
     }
 }
-
-/// Commands after which the edits before them are hard to get back: with
-/// [`Interval::Critical`] a backup is written just before each. Closing a project and quitting
-/// are critical too ([`Projects::close`], [`Projects::finish_backups`]).
-pub const CRITICAL_COMMANDS: &[&str] =
-    &["projects.close", "project.relinkFiles", "clip.addFiles", "device.addPlugin", "track.delete"];
 
 /// Backups of one project that clean-up keeps.
 pub const KEEP: usize = 20;
@@ -541,7 +536,7 @@ impl Projects {
     pub fn backup_due(&self, id: ProjectId) -> bool {
         self.get(id).is_some_and(|s| {
             s.has_unsaved_changes()
-                && (s.changes != s.backup.backed_at || s.plugins.edits.revision() != s.backup.plugin_revision)
+                && (s.history.changes != s.backup.backed_at || s.plugins.edits.revision() != s.backup.plugin_revision)
         })
     }
 
@@ -559,7 +554,7 @@ impl Projects {
         let session = self.get_mut(id).ok_or("no such project")?;
         let file = session.source().map(Path::to_path_buf);
         let snapshot = session.snapshot(&folder);
-        session.backup.backed_at = session.changes;
+        session.backup.backed_at = session.history.changes;
         session.backup.plugin_revision = session.plugins.edits.revision();
         session.backup.since = Instant::now();
         self.backups.send(Message::Write(Box::new(Job { run, project: id.0, file, name, folder, snapshot, clean_up })));
@@ -567,11 +562,11 @@ impl Projects {
     }
 
     /// Before command `id`: with [`Interval::Critical`], backs up the active project when `id`
-    /// is one of the [`CRITICAL_COMMANDS`]. The window calls it before the commands it runs
+    /// is critical ([`crate::Policy::critical`]). The window calls it before the commands it runs
     /// on the session directly; [`Projects::execute_in`] calls it for the rest.
     pub fn back_up_before(&mut self, id: &str) {
         if self.backups.interval == Interval::Critical
-            && CRITICAL_COMMANDS.contains(&id)
+            && crate::policy(id).is_some_and(|p| p.critical)
             && let Some(active) = self.active()
         {
             self.back_up_noting(active);
@@ -699,10 +694,11 @@ static BACKUP_COMMANDS: &[CommandSpec<Projects>] = &[CommandSpec {
             ParamType::Text,
             "when backups are written: critical, 1m, 5m, 10m, 15m, 30m, 60m, 4h or never",
         ),
-        optional("clean_up", ParamType::Bool, "true keeps only the newest 20 backups of each project"),
+        optional("cleanUp", ParamType::Bool, "true keeps only the newest 20 backups of each project"),
     ],
     kind: CommandKind::Projects,
     run: autosave,
+    policy: Policy::DEFAULT,
 }];
 
 fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
@@ -719,7 +715,7 @@ fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandErr
         })?),
         Some(_) => return Err("interval must be text".into()),
     };
-    let (now, clean_up) = (flag("now")?, flag("clean_up")?);
+    let (now, clean_up) = (flag("now")?, flag("cleanUp")?);
     if let Some(interval) = interval {
         projects.backups.interval = interval;
     }

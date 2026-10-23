@@ -16,7 +16,7 @@ covers:
 
 - **Status:** accepted
 - **Date:** 2026-10-12; extension changed 2026-10-13 (decision 10); backups 2026-10-15 (decision 11);
-  the old extension no longer read 2026-10-17 (decision 12)
+  the old extension no longer read 2026-10-17 (decision 12); format versions 2026-10-24 (decision 3)
 
 ## Context
 
@@ -32,7 +32,7 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
 
 ## Decision
 
-1. **The file is JSON**, extension `.suhina`: `{ "format": "suhina", "version": 1, "project": … }`.
+1. **The file is JSON**, extension `.suhina`: `{ "format": "suhina", "version": 3, "project": … }`.
    JSON over XML or a binary format because people and agents can read and diff it, the
    workspace already uses `serde_json` (keymap, themes, MCP), and the model is plain data.
    The layout is in [the spec](../spec/suhina-format.md).
@@ -40,8 +40,9 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    by hand, as the importers do; the model keeps no serialisation code or dependency
    ([ADR 0001](0001-daw-neutral-model.md)). Everything in the model is written, extensions
    included, so a project saved and opened again is equal to the one saved (round-trip tests).
-3. **Versioned.** `version` is 1. A reader refuses a newer version instead of guessing; a later
-   version that changes the layout keeps reading the older ones.
+3. **Versioned.** `version` is one whole number, written in every file, that rises with every
+   change to what a file holds, additions included. A reader refuses a newer version instead of
+   guessing, and reads every older one. *Amended 2026-10-24, see Amendment: format versions.*
 4. **Hostile input is an error, never a crash** (AGENTS.md rule 2): every value is checked
    (types, ranges, ids that fit), the file is at most 512 MiB, and the project must validate as
    an imported one must.
@@ -128,16 +129,31 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
     A file of that kind is opened by renaming it to `.suhina` and changing its `format` to
     `"suhina"`; nothing else in it differs.
 
+## Amendment: format versions (2026-10-24)
+
+Until now the version rose only when a file used a feature an older reader could not skip: 2 for
+a device group, 1 otherwise, and ids, markers, automation, follow actions and launch mappings came
+with no rise. A reader skips a key it does not know, so an older Suhina opened such a file and
+dropped that data on its next save, without a word. Decided ([#763](https://github.com/suhina-daw/suhina-daw/issues/763) › 2):
+
+- **One number, always written, rising with every change** to what a file holds. Version 3 is the
+  first written this way; files of versions 1 and 2 are still read.
+- **A newer file is refused**, with a message that names both versions, so nothing is lost.
+- **A file of every version is kept** (`crates/project-file/tests/versions/`) and read in a test,
+  and what the writer writes is compared with the current version's file, so a change to it fails
+  until the version rises. A shipped version's file is never rewritten.
+- **Before 1.0 the format changes freely**: the number may rise often. Files saved by a pull
+  request's test build are disposable; main may refuse or misread them.
+- `.sd` device files follow the same rule ([spec](../spec/sd-device-format.md) › Versions).
+
 ## Consequences
 
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
 - Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,
   tested, decision 12).
-- Every new field in the model needs its line in `suhina-project-file` and in the round-trip test; a
-  field that changes meaning needs a new version. A new field that older files lack is read as
-  empty and written only when it holds something, so the version stays (the transport's
-  `tempo_changes` and `time_signature_changes`, [tempo map](../spec/tempo-map.md)).
+- Every new field in the model needs its line in `suhina-project-file`, in the round-trip test and
+  in the project the version test writes, and a new version (Amendment: format versions).
 - Large note-heavy projects are bigger than a binary format would make them.
 - A crash loses at most the work since the last backup (decision 11). A project's `.backup`
   folder grows by one file per backup; with clean-up on it holds at most 20 per project.

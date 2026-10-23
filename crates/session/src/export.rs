@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use serde_json::{Value, json};
 use suhina_engine::Renderer;
@@ -59,7 +60,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     // Worker callers bypass Session::execute, but keep the command's parameter contract.
     let spec =
         crate::commands().iter().find(|spec| spec.id == "project.export").ok_or("export command is unavailable")?;
-    crate::projects::check_params(spec.id, spec.params, params)?;
+    crate::commands::check_params(spec.id, spec.params, params)?;
     // The file: `path` or `output`, the same thing.
     let path_text = params
         .get("path")
@@ -90,14 +91,14 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         }
     };
 
-    let sample_rate = match params.get("sample_rate") {
+    let sample_rate = match params.get("sampleRate") {
         None | Some(Value::Null) => 48_000u64,
         Some(n) => {
-            n.as_u64().filter(|rate| (8_000..=384_000).contains(rate)).ok_or("sample_rate must be 8000 to 384000")?
+            n.as_u64().filter(|rate| (8_000..=384_000).contains(rate)).ok_or("sampleRate must be 8000 to 384000")?
         }
     } as u32;
 
-    let depth = match params.get("bit_depth").filter(|value| !value.is_null()).and_then(Value::as_str) {
+    let depth = match params.get("bitDepth").filter(|value| !value.is_null()).and_then(Value::as_str) {
         Some(name) => BitDepth::from_name(name).ok_or_else(|| format!("{name} is not a bit depth; 32f, 24 or 16"))?,
         None => match format {
             AudioFormat::Wav => BitDepth::Float32,
@@ -105,18 +106,18 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
             AudioFormat::Ogg | AudioFormat::Mp3 => BitDepth::Float32,
         },
     };
-    if !format.has_depth() && params.get("bit_depth").filter(|value| !value.is_null()).is_some() {
-        return Err(format!("bit_depth does not apply to {}", format.name()).into());
+    if !format.has_depth() && params.get("bitDepth").filter(|value| !value.is_null()).is_some() {
+        return Err(format!("bitDepth does not apply to {}", format.name()).into());
     }
     if format == AudioFormat::Flac && depth == BitDepth::Float32 {
         return Err("flac is written at 24 or 16 bits, not 32f".into());
     }
 
     // The MP3 rate, the constant kbps or the variable quality; asked for only with mp3.
-    let mp3_rate = match params.get("mp3_rate").filter(|value| !value.is_null()).and_then(Value::as_str) {
+    let mp3_rate = match params.get("mp3Rate").filter(|value| !value.is_null()).and_then(Value::as_str) {
         Some(name) => {
             if format != AudioFormat::Mp3 {
-                return Err("mp3_rate goes with mp3".into());
+                return Err("mp3Rate goes with mp3".into());
             }
             Mp3Rate::from_name(name)
                 .ok_or_else(|| format!("{name} is not an mp3 rate; 128, 192, 256, 320, v0 or v2"))?
@@ -196,12 +197,12 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         None => crate::rack::OfflinePlugins::none(),
     };
     let notices = started.notices.clone();
-    let mut renderer = match source {
-        Some(source) => {
-            Renderer::with_node_source(&data.project, &data.audio, &data.assets, sample_rate, started.plugins, source)
-        }
-        None => Renderer::with_assets_plugins(&data.project, &data.audio, &data.assets, sample_rate, started.plugins),
-    }
+    let mut renderer = Renderer::build(
+        &data.project,
+        RenderInputs::from_audio(&data.audio).with_assets(&data.assets).with_plugins(started.plugins),
+        sample_rate,
+        RenderOptions { source, ..RenderOptions::PLAYING },
+    )
     .map_err(|e| e.to_string())?;
     renderer.set_offline(true);
     // The whole arrangement, once: a render does not repeat the loop region.
@@ -408,11 +409,11 @@ impl Session {
         ExportData {
             project: self.project_as_heard(),
             warnings: self.plugins.take_export_notices(),
-            audio: self.audio.clone(),
+            audio: self.audio.pool.clone(),
             assets: self.device_assets().clone(),
             plugins: self.plugins.env_handle(),
             folder: self.audio_folder().map(Path::to_path_buf),
-            trusted: self.trusted.clone(),
+            trusted: self.audio.trusted.clone(),
             title: self.export_title(),
         }
     }
@@ -446,11 +447,11 @@ impl Session {
         ExportData {
             project: self.with_states(&states),
             warnings: self.plugins.take_export_notices(),
-            audio: self.audio.clone(),
+            audio: self.audio.pool.clone(),
             assets: self.device_assets().clone(),
             plugins: self.plugins.env_handle(),
             folder: self.audio_folder().map(Path::to_path_buf),
-            trusted: self.trusted.clone(),
+            trusted: self.audio.trusted.clone(),
             title: self.export_title(),
         }
     }

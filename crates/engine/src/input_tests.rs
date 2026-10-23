@@ -118,7 +118,7 @@ fn a_band_is_heard_on_separate_tracks_each_from_its_own_input() {
         // Every track armed; only this input plays. Then the same with this track muted.
         for muted in [false, true] {
             let mut project = tracks_with_inputs(&layout);
-            if let Some(channel) = project.channels.iter_mut().find(|c| c.id == ChannelId(track)) {
+            if let Some(channel) = project.channel_mut(ChannelId(track)) {
                 channel.mute = muted;
             }
             let (mut renderer, mut ring, _) = with_input(&project, CHANNELS);

@@ -3,7 +3,7 @@
 
 //! Commands for the plug-in library: scanning for installed plug-ins, listing them, switching
 //! them on and off, and the folders a scan looks in (ADR 0006). They belong to Suhina, not to
-//! one project, so they run on [`Projects`] like the `projects.*` commands.
+//! one project, so they run on [`Projects`] like the `project.*` (on the open projects) commands.
 
 use std::path::Path;
 
@@ -15,15 +15,15 @@ use suhina_plugins::scan::{Catalog, FolderFormat, NO_PLUGINS, Report};
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::projects::project_param;
-use crate::{CommandError, Projects};
+use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
-const FOLDER: Param = param("folder", ParamType::Text, "a folder that holds plug-ins");
-const PLUGIN: Param = param("plugin", ParamType::Text, "plug-in name, id or spec, from plugins.list");
+const FOLDER: Param = param("folder", ParamType::Path(PathKind::Folder), "a folder that holds plug-ins");
+const PLUGIN: Param = param("plugin", ParamType::Text, "plug-in name, id or spec, from plugin.list");
 const ENABLED: Param = param("enabled", ParamType::Bool, "true for on, false for off");
 
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
-        id: "plugins.list",
+        id: "plugin.list",
         label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, whether it supports ARA, file, whether it is switched on), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
         params: &[optional(
             "ignored",
@@ -32,72 +32,88 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
         )],
         kind: CommandKind::Plugins,
         run: list,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
-        id: "plugins.scan",
+        id: "plugin.scan",
         label: "Look for installed plug-ins in the standard folders and the added ones; reads new and changed files and tries failed ones again (a hung one once a day), every file if all is true",
         params: &[optional("all", ParamType::Bool, "read every file again, failed ones too (default false)")],
         kind: CommandKind::Plugins,
         run: scan,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
-        id: "plugins.folders",
+        id: "plugin.folders",
         label: "List the folders a scan looks in: the system's standard ones and the ones added, each with its format and whether it is switched on",
         params: &[],
         kind: CommandKind::Plugins,
         run: folders,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
-        id: "plugins.addFolder",
+        id: "plugin.addFolder",
         label: "Add a folder for scans to look in, besides the standard ones, for one plug-in format or every one Suhina hosts",
         params: &[FOLDER, optional("format", ParamType::Text, "any (default: CLAP and VST3), vst3 or clap")],
         kind: CommandKind::Plugins,
         run: add_folder,
+        policy: Policy {
+            agents: Agents::Denied("the user chooses plug-in folders (suhina-cli plugins add-folder)"),
+            ..Policy::DEFAULT
+        },
     },
     CommandSpec {
-        id: "plugins.setFolderEnabled",
+        id: "plugin.setFolderEnabled",
         label: "Switch a plug-in folder (standard or added) on or off for scans; the plug-ins of a folder switched off leave the list with the next scan",
-        params: &[FOLDER, ENABLED],
+        params: &[param("folder", ParamType::Text, "a folder the user added, as plugin.folders lists them"), ENABLED],
         kind: CommandKind::Plugins,
         run: set_folder_enabled,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
-        id: "plugins.setEnabled",
+        id: "plugin.setEnabled",
         label: "Switch an installed plug-in on or off: one switched off is not offered in the browser and does not load, and a project that uses it finds it missing",
         params: &[PLUGIN, ENABLED],
         kind: CommandKind::Plugins,
         run: set_enabled,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
-        id: "plugins.scanFile",
+        id: "plugin.scanFile",
         label: "Read one plug-in file of the list again now, a failed one too",
-        params: &[param("file", ParamType::Text, "the plug-in file, as plugins.list gives it")],
+        params: &[param("file", ParamType::Text, "the plug-in file, as plugin.list gives it")],
         kind: CommandKind::Plugins,
         run: scan_file,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
-        id: "plugins.removeFolder",
+        id: "plugin.removeFolder",
         label: "Stop looking in a folder that was added",
         params: &[FOLDER],
         kind: CommandKind::Plugins,
         run: remove_folder,
+        policy: Policy {
+            agents: Agents::Denied("the user chooses plug-in folders (suhina-cli plugins add-folder)"),
+            ..Policy::DEFAULT
+        },
     },
     CommandSpec {
-        id: "plugins.setHosting",
+        id: "plugin.setHosting",
         label: "Choose how a plug-in's instances share host processes from their next start: binary (one process per plug-in file, the default), vendor (one per vendor) or instance (a process of its own for each; not for a plug-in that edits clips over ARA)",
         params: &[
-            param("plugin", ParamType::Text, "plug-in name, id or file, from plugins.list"),
+            param("plugin", ParamType::Text, "plug-in name, id or file, from plugin.list"),
             param("hosting", ParamType::Text, "binary, vendor or instance"),
         ],
         kind: CommandKind::Plugins,
         run: set_hosting,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
-        id: "plugins.check",
+        id: "plugin.check",
         label: "List a project's plug-in devices and the installed plug-in found for each: how it was found (same, declared, vst2-id, same-name, newer-version) and whether its saved settings are promised to carry over",
-        params: &[optional("project", ParamType::Integer, "project id, from projects.list (default the active one)")],
+        params: &[optional("project", ParamType::Integer, "project id, from project.list (default the active one)")],
         kind: CommandKind::Plugins,
         run: check,
+        policy: Policy::DEFAULT,
     },
 ];
 
@@ -175,7 +191,7 @@ fn report(report: &Report, found: usize) -> Value {
     })
 }
 
-/// Files with why each gave no plug-ins, as `plugins.list` lists them.
+/// Files with why each gave no plug-ins, as `plugin.list` lists them.
 fn file_reasons<'a>(list: impl Iterator<Item = (&'a Path, &'a str)>) -> Vec<Value> {
     list.map(|(file, why)| json!({ "file": file.display().to_string(), "reason": why })).collect()
 }
@@ -238,7 +254,7 @@ fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, Command
         .plugins()
         .find(|p| p.spec() == name)
         .or_else(|| catalog.find(name))
-        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugins.list lists them"))?;
+        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
     let (spec, shown) = (plugin.spec(), plugin.name.clone());
     library.set_enabled(&spec, enabled)?;
     Ok(json!({ "plugin": shown, "spec": spec, "enabled": enabled }))
@@ -265,7 +281,7 @@ fn set_hosting(projects: &mut Projects, params: &Value) -> Result<Value, Command
     let plugin = catalog
         .find(name)
         .or_else(|| catalog.plugins().find(|p| p.spec() == name))
-        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugins.list lists them"))?;
+        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
     if hosting == Hosting::Instance && plugin.ara {
         return Err(format!(
             "{} edits clips over ARA, so its instances share one process with the document they edit; \

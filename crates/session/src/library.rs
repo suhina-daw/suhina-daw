@@ -4,7 +4,7 @@
 //! Commands for the browser's library (`docs/spec/browser.md` › Commands, ADR 0012): the
 //! folders, searching them with the built-in effects and instruments, and installed plug-ins, what a file is,
 //! pins, recent items and colour tags. They belong to Suhina, not to one project, so they run
-//! on [`Projects`] like the `plugins.*` commands, and never change a project.
+//! on [`Projects`] like the `plugin.*` commands, and never change a project.
 
 use std::path::{Path, PathBuf};
 
@@ -14,12 +14,12 @@ use suhina_library::{FileKind, Group, Item, Library, Query};
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::devices::role_name;
-use crate::{CommandError, Projects};
+use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
-const FOLDER: Param = param("folder", ParamType::Text, "a folder, as library.folders lists them");
+const FOLDER: Param = param("folder", ParamType::Path(PathKind::Folder), "a folder, as library.folders lists them");
 const ITEM: Param = param(
     "item",
-    ParamType::Text,
+    ParamType::Path(PathKind::LibraryItem),
     "an item: a file's path, <bank>.syx#<voice>, device:<id> or plugin:<spec>, as library.search gives them",
 );
 
@@ -30,6 +30,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Library,
         run: folders,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.addFolder",
@@ -37,6 +38,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[FOLDER],
         kind: CommandKind::Library,
         run: add_folder,
+        policy: Policy { agents: Agents::Denied("the user chooses the browser's folders"), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.removeFolder",
@@ -44,6 +46,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[FOLDER],
         kind: CommandKind::Library,
         run: remove_folder,
+        policy: Policy { agents: Agents::Denied("the user chooses the browser's folders"), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.refresh",
@@ -51,13 +54,15 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[optional("folder", ParamType::Text, "a folder (default: every folder)")],
         kind: CommandKind::Library,
         run: refresh,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.list",
         label: "List what is directly in a folder: sub-folders first, then samples, MIDI files, presets and projects",
-        params: &[param("folder", ParamType::Text, "any folder")],
+        params: &[param("folder", ParamType::Path(PathKind::Folder), "any folder")],
         kind: CommandKind::Library,
         run: list,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.search",
@@ -71,7 +76,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
             ),
             optional(
                 "place",
-                ParamType::Text,
+                ParamType::Path(PathKind::Place),
                 "pinned, recent:all, recent:<group> (projects, samples, midi, instruments, effects, plugins, presets), or a folder",
             ),
             optional("tags", ParamType::Texts, "only items carrying any of these tags"),
@@ -79,6 +84,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Library,
         run: search,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.info",
@@ -86,6 +92,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[ITEM],
         kind: CommandKind::Library,
         run: info,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.pinned",
@@ -93,6 +100,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Library,
         run: pinned,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.pin",
@@ -100,6 +108,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[ITEM],
         kind: CommandKind::Library,
         run: pin,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.unpin",
@@ -107,6 +116,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[ITEM],
         kind: CommandKind::Library,
         run: unpin,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.recent",
@@ -114,6 +124,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[optional("group", ParamType::Text, "one group (default: every group)")],
         kind: CommandKind::Library,
         run: recent,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.tags",
@@ -121,6 +132,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Library,
         run: tags,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.setTag",
@@ -133,6 +145,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Library,
         run: set_tag,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.removeTag",
@@ -140,6 +153,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[param("name", ParamType::Text, "the tag")],
         kind: CommandKind::Library,
         run: remove_tag,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.tag",
@@ -151,16 +165,22 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Library,
         run: tag,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "library.findFiles",
         label: "Find files by name (without regard to case), best first: in the browser's folders and the active project's folder, or by walking a folder; for missing files",
         params: &[
             param("names", ParamType::Texts, "file names, such as kick.wav; at most 4096"),
-            optional("folder", ParamType::Text, "walk this folder instead (depth 32, at most 1 000 000 entries)"),
+            optional(
+                "folder",
+                ParamType::Path(PathKind::Folder),
+                "walk this folder instead (depth 32, at most 1 000 000 entries)",
+            ),
         ],
         kind: CommandKind::Library,
         run: crate::relink::find_files,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "library.setPluginsView",
@@ -168,10 +188,11 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[param("view", ParamType::Text, "instruments (default) or effects")],
         kind: CommandKind::Library,
         run: set_plugins_view,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
 ];
 
-/// The library commands, as `commands.list` shows them.
+/// The library commands, as `command.list` shows them.
 pub fn library_commands() -> &'static [CommandSpec<Projects>] {
     LIBRARY_COMMANDS
 }

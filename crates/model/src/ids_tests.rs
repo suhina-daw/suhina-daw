@@ -162,3 +162,28 @@ fn finds_tracks_and_channels_by_id() {
     project.channel_mut(ChannelId(7)).unwrap().pan = 0.5;
     assert_eq!(project.channels[0].pan, 0.5);
 }
+
+#[test]
+fn an_output_chain_follows_outputs_and_ends_at_a_cycle_or_a_missing_channel() {
+    let channel =
+        |id: u32, output: Option<u32>| Channel { output: output.map(ChannelId), ..Channel::new(ChannelId(id), "") };
+    let project = Project {
+        channels: vec![
+            channel(1, Some(2)),
+            channel(2, Some(3)),
+            channel(3, None),
+            channel(4, Some(5)),
+            channel(5, Some(4)),
+            channel(6, Some(9)),
+        ],
+        ..Project::default()
+    };
+    let chain = |from: u32| project.output_chain(ChannelId(from)).map(|c| c.0).collect::<Vec<_>>();
+    assert_eq!(chain(1), [2, 3]);
+    assert_eq!(chain(3), Vec::<u32>::new());
+    // A cycle ends where it comes back, without giving its start again.
+    assert_eq!(chain(4), [5]);
+    // An output that names no channel is given, and the walk ends there.
+    assert_eq!(chain(6), [9]);
+    assert_eq!(chain(42), Vec::<u32>::new());
+}

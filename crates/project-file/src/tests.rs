@@ -359,7 +359,7 @@ fn a_file_names_the_suhina_format() {
     let text = to_json(&Project::default());
     let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
     assert_eq!(root.get("format").and_then(Value::as_str), Some("suhina"));
-    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION_WITHOUT_GROUPS));
+    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION));
 }
 
 #[test]
@@ -394,7 +394,12 @@ fn what_is_not_a_project_is_refused() {
     assert!(refused(r#"{ "version": 1, "project": {} }"#), "no format");
     assert!(refused(r#"{ "format": "als", "version": 1, "project": {} }"#));
     assert!(refused(r#"{ "format": "suhina", "project": {} }"#), "no version");
-    assert!(refused(r#"{ "format": "suhina", "version": 3, "project": {} }"#), "a newer version");
+    let newer = format!(r#"{{ "format": "suhina", "version": {}, "project": {{}} }}"#, VERSION + 1);
+    assert!(refused(&newer), "a newer version");
+    assert!(
+        from_json(&newer).unwrap_err().to_string().contains(&format!("reads up to version {VERSION}")),
+        "the message names the newest version this Suhina reads"
+    );
     assert!(refused(r#"{ "format": "suhina", "version": 1 }"#), "no project");
     assert_eq!(from_json(r#"{ "format": "suhina", "version": 1, "project": {} }"#), Ok(Project::default()));
     assert!(refused(r#"{ "format": "locr", "version": 1, "project": {} }"#), "the format from before the rename");
@@ -1014,20 +1019,60 @@ fn with_a_group() -> Project {
 }
 
 #[test]
-fn a_device_group_survives_a_round_trip_as_version_2() {
+fn a_device_group_survives_a_round_trip() {
     let project = with_a_group();
-    let text = to_json(&project);
-    let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
-    assert_eq!(root.get("version").and_then(Value::as_u64), Some(2));
-    assert_eq!(from_json(&text), Ok(project));
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
+/// Every feature at once: [`everything`] with [`with_a_group`]'s device group on its first
+/// channel. A field added to the model is added here too, so the shape test below sees it.
+fn every_feature() -> Project {
+    let mut project = everything();
+    project.channels[0].devices.extend(with_a_group().channels[0].devices.clone());
+    project
+}
+
+fn version_file(version: u64) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/versions/v{version}.suhina"))
+}
+
+/// One file per version, as that version wrote it, and every one of them still reads: version 1
+/// without the device group it could not hold.
 #[test]
-fn a_project_without_groups_is_written_as_version_1() {
-    let mut project = with_a_group();
-    project.channels[0].devices.truncate(1);
-    assert_eq!(version_of(&project), VERSION_WITHOUT_GROUPS);
-    assert_eq!(version_of(&with_a_group()), VERSION);
+fn a_file_of_every_version_reads() {
+    for version in 1..=VERSION {
+        let path = version_file(version);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let mut expected = every_feature();
+        if version == 1 {
+            expected.channels[0].devices.retain(|d| d.as_group().is_none());
+        }
+        assert_eq!(from_json(&text), Ok(expected), "version {version}");
+    }
+    assert!(!version_file(VERSION + 1).exists(), "a file for a version this Suhina does not write");
+}
+
+/// What a file holds is pinned to its version: a change to what is written fails here until
+/// [`VERSION`] is raised and the new version's file added (`SUHINA_BLESS=1` writes it, never
+/// over the file of a version that shipped), with a migration for the files before it.
+#[test]
+fn what_is_written_is_the_current_versions_file() {
+    let path = version_file(VERSION);
+    let written = to_json(&every_feature());
+    if suhina_test_support::blessing() && !path.exists() {
+        std::fs::write(&path, &written).unwrap();
+        return;
+    }
+    let pinned = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}; write it with SUHINA_BLESS=1", path.display()))
+        .replace("\r\n", "\n");
+    assert!(
+        written == pinned,
+        "what a .suhina file holds changed, and version {VERSION}'s file is what that version shipped: \
+         raise VERSION, add tests/versions/v{}.suhina (SUHINA_BLESS=1 writes it) and say what changed \
+         in docs/spec/suhina-format.md › Versions",
+        VERSION + 1
+    );
 }
 
 #[test]

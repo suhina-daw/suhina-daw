@@ -5,19 +5,18 @@
 //! offline here instead of on an audio device.
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::*;
 use suhina_session::{Player, Session};
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 
 /// Two tracks, "Lead" and "Quiet" (at -inf, so never heard), each playing an A4 for 16 beats.
 fn project(volume: f64) -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built(volume);
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built(volume))
 }
 
 fn project_built(volume: f64) -> Project {
@@ -54,10 +53,6 @@ fn project_built(volume: f64) -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 /// A session at `volume` on "Lead", playing for two seconds in an offline renderer.

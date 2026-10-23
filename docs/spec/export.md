@@ -50,7 +50,7 @@ controls here are Suhina's own.
 One command carries the whole feature, per ADR 0002, so the app, `suhina-cli` and the MCP server
 all export the same way:
 
-> `project.export {path|output, format?, sample_rate?, bit_depth?, mp3_rate?, overwrite?, range?, tail?, normalize?, dither?}`
+> `project.export {path|output, format?, sampleRate?, bitDepth?, mp3Rate?, overwrite?, range?, tail?, normalize?, dither?}`
 
 It renders the active project's arrangement with the same offline render the playback engine and
 `suhina-cli render` use (AGENTS.md rule 4), with the project's plug-ins started as
@@ -67,9 +67,9 @@ line, which is also how the golden renders of the tests run.
 |---|---|
 | `path` | The file to write, required when `output` is not given; aliases, same value. Absolute path from the desktop app; below the write root from the MCP server, like `project.render`'s `output` today |
 | `format` | `wav` (default), `flac`, `ogg` or `mp3`, in any case; left out, the file name's extension decides it. Another name is refused, `"aiff is not a format; wav, flac, ogg or mp3"` |
-| `sample_rate` | Hertz; default 48 000, the render default today. The dialog prefills the project's rate; with `mp3` the dialog offers 32 000, 44 100 and 48 000, the rates the encoder writes — an export at another rate is refused, `"sample rate 96000 is not one the encoder writes; 32, 44.1 and 48 kHz and their MPEG 2 halves are"` |
-| `bit_depth` | `32f` (default for WAV), `24` or `16`; applies to PCM only, an error with `ogg` or `mp3` |
-| `mp3_rate` | The MP3's rate: `320` (default), `256`, `192` or `128` kbps, or the variable qualities `v0` and `v2`; asked for only with `mp3` |
+| `sampleRate` | Hertz; default 48 000, the render default today. The dialog prefills the project's rate; with `mp3` the dialog offers 32 000, 44 100 and 48 000, the rates the encoder writes — an export at another rate is refused, `"sample rate 96000 is not one the encoder writes; 32, 44.1 and 48 kHz and their MPEG 2 halves are"` |
+| `bitDepth` | `32f` (default for WAV), `24` or `16`; applies to PCM only, an error with `ogg` or `mp3` |
+| `mp3Rate` | The MP3's rate: `320` (default), `256`, `192` or `128` kbps, or the variable qualities `v0` and `v2`; asked for only with `mp3` |
 | `overwrite` | `false` by default: an existing file is never replaced (the text below) |
 | `source` | A track id, or a track or group name; left out, the whole mix. Renders one node of the track tree — [Sources](#sources-rendering-one-node-of-the-track-tree) |
 | `range` | `{start, end}` in beats from the arrangement's start; default the whole arrangement |
@@ -129,7 +129,7 @@ group is in, its parent premaster and the master chain are out. The node's own v
 mute are in, exactly as the mixer would play it.
 
 The engine builds the same graph as playback and the whole-mix render, and the offline render
-(`render_offline_node`) reads the source node's chain output where the master's sum would be
+(`render_offline_from` with a source) reads the source node's chain output where the master's sum would be
 (AGENTS.md rule 4); there is no second export path. The source node always has a chain in the
 graph, a passthrough when it would not have one (a track without devices, a group without
 them), and everything that plays into it targets it, so the sum at the node is whole. Latency

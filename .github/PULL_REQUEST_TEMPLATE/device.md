@@ -25,7 +25,7 @@
 
 **Built like the others** ([ADR 0004](https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0004-built-in-devices.md))
 - [ ] A crate `devices/<name>` named `suhina-device-<name>`, implementing the `Device` trait,
-      added to `device-registry` (so `devices.list`, `device.add` and `device.setParam` reach it
+      added to `device-registry` (so `device.list`, `device.add` and `device.setParam` reach it
       from the UI, CLI and MCP) and to the workspace.
 - [ ] Every parameter has a stable id, a range, a default and a unit; ids never change once merged.
 - [ ] The audio path never allocates, locks, blocks, logs or does I/O, and nothing can panic; it

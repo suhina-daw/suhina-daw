@@ -13,23 +13,31 @@ mod blank;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
+mod clipboards;
 mod commands;
+mod device_files;
 mod device_groups;
 mod devices;
 mod editing;
+mod execute;
 mod export;
 mod files;
 mod follow;
+mod history;
 mod launch;
 mod library;
+mod live_input;
 mod mapping;
 mod meters;
 mod midi;
 mod note_tools;
 mod notes;
+mod player;
+mod player_sync;
 mod plugin_edits;
 mod plugins;
 mod preview;
+mod project_audio;
 mod projects;
 mod rack;
 mod range;
@@ -45,22 +53,26 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
-use suhina_engine::{Controller, LauncherMonitor, Quantization};
+use suhina_engine::Quantization;
 use suhina_model::Project;
 
 pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
 pub use blank::blank_project;
-pub use commands::{CommandKind, CommandSpec, Param, ParamType, Run, commands, parse_quantization};
+pub use commands::{
+    Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Run, commands, parse_quantization,
+};
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::{MAX_FILES, file_tempo};
 pub use library::{Category, Found, file_info, library_commands, search_items};
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
+pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};
-pub use projects::{MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, project_commands};
+pub use projects::{
+    MAX_OPEN_PROJECTS, ProjectId, Projects, all_commands, commands_markdown, params_of, policy, project_commands,
+};
 pub use rack::{
     BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup,
     is_instrument, plugin_group, start_offline,
@@ -75,9 +87,23 @@ pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 /// Undo steps kept per session; the oldest are dropped first.
 const MAX_UNDO: usize = 256;
 
-/// Why a command did not run. The session is unchanged when this is returned.
+/// Why a command did not run. The session is unchanged when this is returned. Its text is read
+/// with [`CommandError::message`] or taken with `String::from` (#764 › 12).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandError(pub String);
+pub struct CommandError(String);
+
+impl CommandError {
+    /// What went wrong, as a person reads it.
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<CommandError> for String {
+    fn from(error: CommandError) -> Self {
+        error.0
+    }
+}
 
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -105,172 +131,6 @@ impl From<suhina_model::IdsExhausted> for CommandError {
     }
 }
 
-/// A running audio engine that plays the session's project: transport and launcher commands
-/// go to it. Whatever keeps the audio output open (a stream, a thread) is held in `keep_alive`
-/// and closed when the player is dropped.
-pub struct Player {
-    controller: Controller,
-    keep_alive: Option<Box<dyn std::any::Any + Send>>,
-    output: Option<std::sync::Arc<dyn LiveOutput>>,
-    /// The launch quantisation last sent, which a new output is given again.
-    quantization: Option<suhina_engine::Quantization>,
-}
-
-/// `controller`, with the follow actions' random numbers seeded from the clock, so each
-/// playback picks its own (offline renders keep the engine's fixed seed).
-fn seeded(mut controller: Controller) -> Controller {
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-    // A full queue means the engine is not running yet; it then keeps its fixed seed.
-    let _ = controller.send(suhina_engine::LaunchCommand::SeedRandom(nanos as u64));
-    controller
-}
-
-impl Player {
-    pub fn new(controller: Controller, keep_alive: Option<Box<dyn std::any::Any + Send>>) -> Self {
-        Self { controller: seeded(controller), keep_alive, output: None, quantization: None }
-    }
-
-    /// A player whose output reports what it runs with (`audio.info`).
-    pub fn with_output(
-        controller: Controller,
-        keep_alive: Option<Box<dyn std::any::Any + Send>>,
-        output: std::sync::Arc<dyn LiveOutput>,
-    ) -> Self {
-        Self { controller: seeded(controller), keep_alive, output: Some(output), quantization: None }
-    }
-
-    /// What the output runs with now, when it says.
-    pub fn output_info(&self) -> Option<OutputInfo> {
-        self.output.as_ref().map(|o| o.info())
-    }
-
-    /// The controller and whatever keeps the output open, for the output layer to close it in
-    /// its own way (taking its plug-ins back) before opening another.
-    pub fn into_parts(self) -> (Controller, Option<Box<dyn std::any::Any + Send>>) {
-        (self.controller, self.keep_alive)
-    }
-
-    pub fn send(&mut self, command: suhina_engine::LaunchCommand) -> Result<(), CommandError> {
-        self.controller.send(command).map_err(CommandError)?;
-        if let suhina_engine::LaunchCommand::SetQuantization(q) = command {
-            self.quantization = Some(q);
-        }
-        Ok(())
-    }
-
-    /// The launch quantisation last sent to this player, if any.
-    pub fn quantization(&self) -> Option<suhina_engine::Quantization> {
-        self.quantization
-    }
-
-    pub fn monitor(&self) -> &LauncherMonitor {
-        self.controller.monitor()
-    }
-
-    /// Makes the engine play `project` from now on, keeping what is playing (ADR 0005).
-    pub fn update(&mut self, project: &Project) -> Result<(), CommandError> {
-        let began = std::time::Instant::now();
-        let updated = self.controller.update(project).map_err(CommandError);
-        trace_update(began);
-        updated
-    }
-
-    /// Like [`Player::update`], for a project with one scene inserted or removed since the last
-    /// update: what plays and what is queued move with their slots.
-    pub fn update_with_scenes(
-        &mut self,
-        project: &Project,
-        scenes: Option<suhina_engine::SceneShift>,
-    ) -> Result<(), CommandError> {
-        let began = std::time::Instant::now();
-        let updated = self.controller.update_with_scenes(project, scenes).map_err(CommandError);
-        trace_update(began);
-        updated
-    }
-
-    /// Sets one parameter of a device on a track from the next audio block, without building a
-    /// new graph (ADR 0005, amendment).
-    pub fn set_device_param(&mut self, change: ParamEdit) -> Result<(), CommandError> {
-        self.controller.set_device_param(change.track, change.device, change.param, change.value).map_err(CommandError)
-    }
-
-    /// Builds the engine's graphs from now on with the project's file-backed devices' parsed
-    /// models and IRs ([docs/spec/nam-amp-and-cab.md]).
-    pub fn set_device_assets(&mut self, assets: std::sync::Arc<suhina_engine::DeviceAssets>) {
-        self.controller.set_assets(assets);
-    }
-
-    /// The engine's sample rate.
-    pub fn sample_rate(&self) -> u32 {
-        self.controller.sample_rate()
-    }
-
-    /// What graphs built from now on know about the project's plug-in devices (ADR 0006).
-    pub fn set_plugin_info(&mut self, info: std::collections::HashMap<u64, suhina_engine::PluginSlotInfo>) {
-        self.controller.set_plugin_info(info);
-    }
-
-    /// Builds the engine's graphs from now on with `audio` (ADR 0011).
-    pub fn set_audio(&mut self, audio: std::sync::Arc<suhina_engine::AudioPool>) {
-        self.controller.set_audio(audio);
-    }
-
-    /// Whether a preview plays, and where (ADR 0011).
-    pub fn preview_monitor(&self) -> &suhina_engine::PreviewMonitor {
-        self.controller.preview_monitor()
-    }
-
-    /// The audio thread's CPU load: the smoothed share of wall time it spends rendering,
-    /// in per mille (1000 is busy all of the time).
-    pub fn cpu_monitor(&self) -> &suhina_engine::CpuMonitor {
-        self.controller.cpu_monitor()
-    }
-
-    /// Frames of stretched (warped) clips that were not ready in time and played as silence,
-    /// so far.
-    pub fn stretch_underruns(&self) -> u64 {
-        self.controller.stretch_underruns()
-    }
-
-    /// Edits while playing whose new graph had to restart the stretched clips, so far.
-    pub fn stretch_moves(&self) -> u64 {
-        self.controller.stretch_moves()
-    }
-
-    /// Plug-in blocks not answered in time, and the plug-in (its key) that missed most.
-    pub fn plugin_misses(&self) -> (u64, u64, u64) {
-        self.controller.plugin_misses()
-    }
-
-    /// The level meters of the main output and every track.
-    pub fn meter_monitor(&self) -> &suhina_engine::MeterMonitor {
-        self.controller.meter_monitor()
-    }
-
-    pub(crate) fn controller_mut(&mut self) -> &mut Controller {
-        &mut self.controller
-    }
-
-    /// The sending end of the engine's live-note queue (ADR 0017); `None` once taken.
-    pub fn take_live_input(&mut self) -> Option<suhina_engine::LiveSender> {
-        self.controller.take_live_input()
-    }
-
-    /// The reading end of what the engine records (`docs/spec/recording.md`); `None` once taken.
-    pub fn take_recorder(&mut self) -> Option<suhina_engine::RecordReceiver> {
-        self.controller.take_recorder()
-    }
-
-    /// Hands a running plug-in's audio half to the engine for the plug-in device `key`.
-    pub fn send_plugin(
-        &mut self,
-        key: u64,
-        processor: Box<dyn suhina_engine::PluginProcessor>,
-    ) -> Result<(), CommandError> {
-        self.controller.send_plugin(key, processor).map_err(CommandError)
-    }
-}
-
 /// An edit that is only a device parameter's new value, which a playing engine can take
 /// without a new graph.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -283,100 +143,22 @@ pub struct ParamEdit {
     pub value: f64,
 }
 
-/// The edits that change nothing the engine plays, so a playing engine keeps its graph: colours,
-/// names and markers.
-const UNHEARD_EDITS: &[&str] = &[
-    "clip.setColor",
-    "clip.setColorMany",
-    "clip.rename",
-    "clip.renameMany",
-    "track.setColor",
-    "track.colorGroup",
-    "track.rename",
-    "scene.rename",
-    "marker.add",
-    "marker.move",
-    "marker.rename",
-    "marker.delete",
-];
-
 pub struct Session {
     project: Project,
     source: Option<PathBuf>,
-    /// The folder the project's relative audio paths start from: the folder of the file it was
-    /// opened from (a template's, for a project made from one). It stays when the project is
-    /// saved elsewhere, because the decoded audio is kept under those paths; saving writes them
-    /// relative to the new file.
-    audio_folder: Option<PathBuf>,
-    /// The audio outside the project's folder it may read: the person's own saved files and
-    /// library folders (`docs/spec/missing-files.md` › Project file boundaries).
-    trusted: suhina_media::Trusted,
-    /// Counts changes to the project (edits, undo, redo), and the count when it was last saved.
-    changes: u64,
-    saved_at: u64,
-    undo: Vec<Project>,
-    redo: Vec<Project>,
-    player: Option<Player>,
-    /// The grid launches wait for, which the Arrangement view's grid follows too. Kept here,
-    /// not in the project: it reaches a player when one is attached (`launcher.setQuantization`).
-    quantization: Quantization,
-    /// The arrangement clips copied for `clip.paste`, with the content each plays.
-    clipboard: Vec<(suhina_model::Clip, suhina_model::ClipContent)>,
-    /// The track each copied clip came from, when the copy knows it (arrangement clips and time
-    /// selections); a paste with no track puts each clip back on its own.
-    clipboard_tracks: Vec<suhina_model::TrackId>,
-    /// Devices copied for `device.paste`, with their state as it was then.
-    device_clipboard: Vec<suhina_model::Device>,
-    /// Notes copied from a MIDI clip, for `note.paste`.
-    note_clipboard: Option<notes::NoteClipboard>,
-    /// Set by an edit command whose changes are device parameters.
-    pub(crate) param_edits: Vec<ParamEdit>,
-    /// The fader moves of an edit that is only track volumes: sent to a playing engine as
-    /// messages ([`suhina_engine::MIXER_VOLUME`]) instead of a new graph when it can take them.
-    /// Unlike `param_edits`, they leave undo as the command's own steps make it.
-    pub(crate) mixer_edits: Vec<ParamEdit>,
-    /// Set by a command whose edit changes nothing the engine plays (a send of a muted track):
-    /// the playing graph is kept, as for [`UNHEARD_EDITS`].
-    pub(crate) unheard_edit: bool,
-    /// Parameter whose live drag has already recorded its single undo snapshot.
-    param_gesture: Option<(suhina_model::TrackId, usize, String)>,
+    history: history::History,
+    clipboards: clipboards::Clipboards,
     /// The colours a track without one of its own shows, by its place among the tracks (the
     /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
     track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
     /// The project's plug-ins, running while it plays (ADR 0006).
     pub(crate) plugins: rack::Rack,
-    /// The project's decoded audio, by the key its regions name (ADR 0011).
-    audio: suhina_engine::AudioPool,
-    /// Files added to `audio` since the player last got it.
-    audio_changed: bool,
-    /// The parsed models and IRs the project's NAM devices run
-    /// ([docs/spec/nam-amp-and-cab.md]), by the path each device's state holds.
-    device_assets: suhina_engine::DeviceAssets,
-    /// Assets added to `device_assets` since the player last got them.
-    device_assets_changed: bool,
-    /// Why a device's file is not in `device_assets`, by the path: what a read gave.
-    device_asset_notes: HashMap<String, String>,
-    /// When each loaded file was last written, so a rewritten file is reloaded.
-    device_asset_files: HashMap<String, Option<std::time::SystemTime>>,
-    /// Files decoded ahead of a command that uses them (`provide_audio`), newest last.
-    decoded: Vec<(String, std::sync::Arc<suhina_engine::AudioData>)>,
-    /// The command and track of the undo step on top that a call with `continue` may join: one
-    /// drag of a value is one step. Any other edit, undo or redo ends it.
-    open_step: Option<(&'static str, suhina_model::TrackId)>,
-    /// Set when a continued edit could not reach the playing engine; [`Session::catch_up_player`]
-    /// sends the project again.
-    player_behind: bool,
+    audio: project_audio::ProjectAudio,
+    device_files: device_files::DeviceFiles,
+    pub(crate) sync: player_sync::PlayerSync,
     /// When the project was last backed up and where (`backup.rs`).
     pub(crate) backup: backup::SessionBackups,
-    /// The armed tracks, whose instruments play the MIDI inputs (ADR 0017). Not part of the
-    /// project: arming is not undone and not saved.
-    armed: Vec<suhina_model::TrackId>,
-    live_targets: Vec<suhina_model::TrackId>,
-    /// Takes being recorded and the count-in (`docs/spec/recording.md`).
-    pub(crate) recording: recording::Recording,
-    /// The metronome: on, its level in dB, its sound. Not part of the project; a new output gets
-    /// it again.
-    pub(crate) metronome: (bool, f64, suhina_engine::ClickSound),
+    pub(crate) live: live_input::LiveInput,
 }
 
 /// Files kept decoded ahead of the commands that use them.
@@ -391,38 +173,15 @@ impl Session {
         Self {
             project,
             source: None,
-            audio_folder: None,
-            trusted: suhina_media::Trusted::default(),
-            changes: 0,
-            saved_at: 0,
-            undo: Vec::new(),
-            redo: Vec::new(),
-            player: None,
-            quantization: Quantization::Bars(1),
-            clipboard: Vec::new(),
-            clipboard_tracks: Vec::new(),
-            device_clipboard: Vec::new(),
-            note_clipboard: None,
-            param_edits: Vec::new(),
-            mixer_edits: Vec::new(),
-            unheard_edit: false,
-            param_gesture: None,
+            history: history::History::default(),
+            clipboards: clipboards::Clipboards::default(),
             track_colours: (Vec::new(), None),
             plugins: rack::Rack::default(),
-            audio: suhina_engine::AudioPool::new(),
-            audio_changed: false,
-            device_assets: suhina_engine::DeviceAssets::new(),
-            device_assets_changed: false,
-            device_asset_notes: HashMap::new(),
-            device_asset_files: HashMap::new(),
-            decoded: Vec::new(),
-            open_step: None,
-            player_behind: false,
+            audio: project_audio::ProjectAudio::default(),
+            device_files: device_files::DeviceFiles::default(),
+            sync: player_sync::PlayerSync::default(),
             backup: backup::SessionBackups::default(),
-            armed: Vec::new(),
-            live_targets: Vec::new(),
-            recording: recording::Recording::default(),
-            metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
+            live: live_input::LiveInput::default(),
         }
     }
 
@@ -430,46 +189,46 @@ impl Session {
     /// for notes, `None` when nothing has been copied. The window uses it to pick the stacking
     /// setting a paste follows.
     pub fn copied_clip_is_audio(&self) -> Option<bool> {
-        let (_, content) = self.clipboard.first()?;
+        let (_, content) = self.clipboards.clips.first()?;
         Some(content.lanes.iter().any(|l| matches!(l.data, suhina_model::LaneData::Audio(_))))
     }
 
     /// How many notes `note.paste` would add; `None` when no notes have been copied. The piano
     /// roll uses it to select the pasted notes.
     pub fn copied_notes(&self) -> Option<usize> {
-        self.note_clipboard.as_ref().map(notes::NoteClipboard::len)
+        self.clipboards.notes.as_ref().map(notes::NoteClipboard::len)
     }
 
     /// How many arrangement clips are copied for `clip.paste`.
     pub fn copied_clips(&self) -> usize {
-        self.clipboard.len()
+        self.clipboards.clips.len()
     }
 
     /// Whether the copied clips came from more than one track, so a paste puts each back on its
     /// own track rather than all on one.
     /// How many devices `device.paste` would add.
     pub fn copied_devices(&self) -> usize {
-        self.device_clipboard.len()
+        self.clipboards.devices.len()
     }
 
     pub fn copied_from_tracks(&self) -> bool {
-        self.clipboard_tracks.len() == self.clipboard.len()
-            && self.clipboard_tracks.iter().any(|t| Some(t) != self.clipboard_tracks.first())
+        self.clipboards.tracks.len() == self.clipboards.clips.len()
+            && self.clipboards.tracks.iter().any(|t| Some(t) != self.clipboards.tracks.first())
     }
 
     /// The project's decoded audio, which players are started with (ADR 0011).
     pub fn audio(&self) -> &suhina_engine::AudioPool {
-        &self.audio
+        &self.audio.pool
     }
 
     /// The audio outside the project's folder that it may read (› Project file boundaries in
     /// `docs/spec/missing-files.md`); the app gives it before the audio is decoded.
     pub fn set_trusted(&mut self, trusted: suhina_media::Trusted) {
-        self.trusted = trusted;
+        self.audio.trusted = trusted;
     }
 
     pub fn trusted(&self) -> &suhina_media::Trusted {
-        &self.trusted
+        &self.audio.trusted
     }
 
     /// The absolute paths of the audio files the project names that are decoded now: what the
@@ -489,7 +248,8 @@ impl Session {
     /// of its decoded audio), each name once.
     pub(crate) fn loaded_audio(&self) -> Vec<(String, PathBuf)> {
         let loaded = |file: &str| {
-            self.audio.files.contains_key(file) || self.audio.files.contains_key(&suhina_model::stream_key(file, 0))
+            self.audio.pool.files.contains_key(file)
+                || self.audio.pool.files.contains_key(&suhina_model::stream_key(file, 0))
         };
         let from = self.audio_from();
         let path = |file: &str, absolute: Option<&str>| {
@@ -519,28 +279,28 @@ impl Session {
     /// Gives the session its project's decoded audio (`media::load_project_audio`), before a
     /// player is started with [`Session::audio`].
     pub fn set_audio(&mut self, audio: suhina_engine::AudioPool) {
-        self.audio = audio;
-        self.audio_changed = true;
+        self.audio.pool = audio;
+        self.audio.changed = true;
     }
 
     /// The parsed model or decoded IR for a file-backed device's file, from the assets already
     /// held, or `None` while a load failed or is still to run
     /// ([docs/spec/nam-amp-and-cab.md]).
     pub fn device_asset(&self, path: &str) -> Option<&suhina_device_registry::DeviceAsset> {
-        self.device_assets.get(path)
+        self.device_files.assets.get(path)
     }
 
     /// What the session's NAM devices run, by path, for a renderer's construction (a `render`
-    /// through `render_offline_with_assets`) and the app's output open.
+    /// through `render_offline_from`) and the app's output open.
     pub fn device_assets(&self) -> &suhina_engine::DeviceAssets {
-        &self.device_assets
+        &self.device_files.assets
     }
 
     /// What a device's file is called, for a device panel: the model's own name (its metadata)
     /// for a NAM Amp Modeler, the IR's parent folder's name for a NAM Cab Loader. `None` while
     /// the file is not in the assets.
     pub fn device_asset_name(&self, path: &str) -> Option<String> {
-        match self.device_assets.get(path)? {
+        match self.device_files.assets.get(path)? {
             suhina_device_registry::DeviceAsset::Nam(model) => {
                 suhina_device_nam_amp_modeler::model::display_name(model)
             }
@@ -554,14 +314,14 @@ impl Session {
     /// Why a device's file is not in the assets, by the path: what a read gave, for a device
     /// panel's note.
     pub fn device_asset_note(&self, path: &str) -> Option<&str> {
-        self.device_asset_notes.get(path).map(String::as_str)
+        self.device_files.notes.get(path).map(String::as_str)
     }
 
     /// Puts audio made by a command (a consolidated range) into the pool under `key`, for the
     /// player to hear with the next edit.
     pub(crate) fn add_audio(&mut self, key: String, data: suhina_engine::AudioData) {
-        self.audio.files.insert(key, std::sync::Arc::new(data));
-        self.audio_changed = true;
+        self.audio.pool.files.insert(key, std::sync::Arc::new(data));
+        self.audio.changed = true;
     }
 
     /// Hands over a file decoded ahead (on another thread), so a command that uses `path` next
@@ -577,26 +337,26 @@ impl Session {
     }
 
     fn provide_key(&mut self, key: String, data: std::sync::Arc<suhina_engine::AudioData>) {
-        self.decoded.retain(|(k, _)| *k != key);
-        if self.decoded.len() >= MAX_DECODED {
-            self.decoded.remove(0);
+        self.audio.decoded.retain(|(k, _)| *k != key);
+        if self.audio.decoded.len() >= MAX_DECODED {
+            self.audio.decoded.remove(0);
         }
-        self.decoded.push((key, data));
+        self.audio.decoded.push((key, data));
     }
 
     /// The decoded audio of the file at `path` (absolute): from the pool, from what was
     /// provided, or decoded now.
     pub(crate) fn decoded_audio(&mut self, path: &Path) -> Result<std::sync::Arc<suhina_engine::AudioData>, String> {
         let key = path.display().to_string();
-        let data = if let Some(data) = self.audio.files.get(&key) {
+        let data = if let Some(data) = self.audio.pool.files.get(&key) {
             return Ok(std::sync::Arc::clone(data));
-        } else if let Some((_, data)) = self.decoded.iter().find(|(k, _)| *k == key) {
+        } else if let Some((_, data)) = self.audio.decoded.iter().find(|(k, _)| *k == key) {
             std::sync::Arc::clone(data)
         } else {
             std::sync::Arc::new(suhina_media::decode_file(path)?)
         };
-        self.audio.files.insert(key, std::sync::Arc::clone(&data));
-        self.audio_changed = true;
+        self.audio.pool.files.insert(key, std::sync::Arc::clone(&data));
+        self.audio.changed = true;
         Ok(data)
     }
 
@@ -615,9 +375,10 @@ impl Session {
             .iter()
             .map(|key| {
                 self.audio
+                    .pool
                     .files
                     .get(key)
-                    .or_else(|| self.decoded.iter().find(|(k, _)| k == key).map(|(_, d)| d))
+                    .or_else(|| self.audio.decoded.iter().find(|(k, _)| k == key).map(|(_, d)| d))
                     .map(std::sync::Arc::clone)
             })
             .collect();
@@ -630,9 +391,9 @@ impl Session {
             return Err(format!("{} audio tracks where {tracks} were expected", all.len()));
         }
         for (key, data) in keys.into_iter().zip(&all) {
-            if let std::collections::hash_map::Entry::Vacant(slot) = self.audio.files.entry(key) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.audio.pool.files.entry(key) {
                 slot.insert(std::sync::Arc::clone(data));
-                self.audio_changed = true;
+                self.audio.changed = true;
             }
         }
         Ok(all)
@@ -641,10 +402,10 @@ impl Session {
     /// Decoded audio for a preview, which does not join the project's pool.
     pub(crate) fn preview_audio(&mut self, path: &Path) -> Result<std::sync::Arc<suhina_engine::AudioData>, String> {
         let key = path.display().to_string();
-        if let Some(data) = self.audio.files.get(&key) {
+        if let Some(data) = self.audio.pool.files.get(&key) {
             return Ok(std::sync::Arc::clone(data));
         }
-        if let Some((_, data)) = self.decoded.iter().find(|(k, _)| *k == key) {
+        if let Some((_, data)) = self.audio.decoded.iter().find(|(k, _)| *k == key) {
             return Ok(std::sync::Arc::clone(data));
         }
         let data = std::sync::Arc::new(suhina_media::decode_file(path)?);
@@ -659,18 +420,18 @@ impl Session {
         // A new engine starts on its own default grid; it takes this session's instead. Its
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
-        let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.quantization));
+        let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.live.quantization));
         // Its metronome too: on or off, level and sound, as this session has them.
-        let (on, db, sound) = self.metronome;
+        let (on, db, sound) = self.live.metronome;
         let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();
-        self.recording.attach(player.take_recorder(), sample_rate);
-        self.player = Some(player);
-        self.audio_changed = false;
+        self.live.recording.attach(player.take_recorder(), sample_rate);
+        self.sync.player = Some(player);
+        self.audio.changed = false;
         // A new engine hears the tracks armed before it.
         self.send_armed();
     }
@@ -686,16 +447,16 @@ impl Session {
             .filter(|t| armed.contains(&t.id) || (t.content.notes && t.midi_input.monitor == suhina_model::Monitor::In))
             .map(|t| t.id)
             .collect();
-        let mut targets = std::mem::replace(&mut self.live_targets, active.clone());
+        let mut targets = std::mem::replace(&mut self.live.targets, active.clone());
         for track in &active {
             if !targets.contains(track) {
                 targets.push(*track);
             }
         }
-        if let Some(player) = self.player.as_mut() {
+        if let Some(player) = self.sync.player.as_mut() {
             for track in targets {
                 let is_armed = armed.contains(&track);
-                let monitoring = self.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| {
+                let monitoring = self.project.track(track).is_some_and(|t| {
                     if !t.content.notes {
                         return is_armed;
                     }
@@ -719,11 +480,11 @@ impl Session {
 
     /// The armed tracks that are in the project, in the order they were armed.
     pub fn armed(&self) -> Vec<suhina_model::TrackId> {
-        self.armed.iter().copied().filter(|id| self.project.tracks.iter().any(|t| t.id == *id)).collect()
+        self.live.armed.iter().copied().filter(|id| self.project.tracks.iter().any(|t| t.id == *id)).collect()
     }
 
     pub fn is_armed(&self, track: suhina_model::TrackId) -> bool {
-        self.armed.contains(&track) && self.project.tracks.iter().any(|t| t.id == track)
+        self.live.armed.contains(&track) && self.project.tracks.iter().any(|t| t.id == track)
     }
 
     /// Arms `track` or disarms it; `exclusive` also disarms every other track. The playing
@@ -731,29 +492,29 @@ impl Session {
     pub(crate) fn set_armed(&mut self, track: suhina_model::TrackId, armed: bool, exclusive: bool) {
         // Tracks removed since they were armed are forgotten.
         let tracks = &self.project.tracks;
-        self.armed.retain(|id| *id != track && !exclusive && tracks.iter().any(|t| t.id == *id));
+        self.live.armed.retain(|id| *id != track && !exclusive && tracks.iter().any(|t| t.id == *id));
         if armed {
-            self.armed.push(track);
+            self.live.armed.push(track);
         }
         self.send_armed();
     }
 
     /// The sending end of the playing engine's live-note queue, the first time it is asked for.
     pub(crate) fn take_live_input(&mut self) -> Option<suhina_engine::LiveSender> {
-        self.player.as_mut().and_then(Player::take_live_input)
+        self.sync.player.as_mut().and_then(Player::take_live_input)
     }
 
     /// The launch quantisation `launcher.setQuantization` set last (1 bar until then); the
     /// Arrangement view's grid follows it too.
     pub fn quantization(&self) -> Quantization {
-        self.quantization
+        self.live.quantization
     }
 
     pub(crate) fn set_quantization(&mut self, quantization: Quantization) -> Result<(), CommandError> {
-        if let Some(player) = self.player.as_mut() {
+        if let Some(player) = self.sync.player.as_mut() {
             player.send(suhina_engine::LaunchCommand::SetQuantization(quantization))?;
         }
-        self.quantization = quantization;
+        self.live.quantization = quantization;
         Ok(())
     }
 
@@ -773,8 +534,8 @@ impl Session {
         // A take ends where the engine it records from was (a lost device keeps what it had).
         self.end_takes_now();
         self.sync_device_files();
-        let old = self.player.take();
-        match open(&self.project, &self.audio, &self.device_assets, old) {
+        let old = self.sync.player.take();
+        match open(&self.project, &self.audio.pool, &self.device_files.assets, old) {
             Ok(player) => {
                 self.attach_player(player);
                 Ok(())
@@ -797,7 +558,7 @@ impl Session {
     pub fn detach_player(&mut self) -> Option<Player> {
         self.plugins.stop_all();
         self.end_takes_now();
-        self.player.take()
+        self.sync.player.take()
     }
 
     /// Lets the session start the project's plug-ins: the catalog to find them in and how to
@@ -811,7 +572,7 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
-        self.plugins.sync(&self.project, &self.audio, self.player.as_mut())
+        self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut())
     }
 
     /// How often the state of each running plug-in is read for backups and the unsaved-changes
@@ -950,8 +711,8 @@ impl Session {
 
     /// Waits up to `timeout` until none of the project's plug-ins is still starting.
     pub fn wait_for_plugins(&mut self, timeout: std::time::Duration) -> Vec<String> {
-        match self.player.as_mut() {
-            Some(player) => self.plugins.wait_started(&self.project, &self.audio, player, timeout),
+        match self.sync.player.as_mut() {
+            Some(player) => self.plugins.wait_started(&self.project, &self.audio.pool, player, timeout),
             None => Vec::new(),
         }
     }
@@ -979,11 +740,11 @@ impl Session {
     }
 
     pub fn player(&self) -> Option<&Player> {
-        self.player.as_ref()
+        self.sync.player.as_ref()
     }
 
     pub(crate) fn player_mut(&mut self) -> Result<&mut Player, CommandError> {
-        self.player.as_mut().ok_or_else(|| {
+        self.sync.player.as_mut().ok_or_else(|| {
             CommandError(
                 "no audio engine is playing this project: start one with `suhina-cli play --launcher`, or the MCP                  server with --audio"
                     .into(),
@@ -1012,7 +773,7 @@ impl Session {
         };
         let mut session = Self::new(project);
         session.source = Some(path.to_path_buf());
-        session.audio_folder = path.parent().map(Path::to_path_buf);
+        session.audio.folder = path.parent().map(Path::to_path_buf);
         session.sync_device_files();
         Ok((session, warnings))
     }
@@ -1035,7 +796,7 @@ impl Session {
         let (mut session, warnings) = Self::open(backup)?;
         session.source = file.map(Path::to_path_buf);
         // The changes since the project file was saved are in the backup only.
-        session.changes = 1;
+        session.history.changes = 1;
         // ...and the backup holds them, so it is not written again until something changes.
         session.backup.backed_at = 1;
         Ok((session, warnings))
@@ -1048,14 +809,14 @@ impl Session {
 
     /// The folder the project's relative audio paths start from, as the audio is loaded.
     pub fn audio_folder(&self) -> Option<&Path> {
-        self.audio_folder.as_deref()
+        self.audio.folder.as_deref()
     }
 
     /// Whether the project changed since it was opened or last saved, by a command or in a
     /// plug-in's editor (noticed as its state is read now and then; see
     /// [`Session::check_plugin_edits`]).
     pub fn has_unsaved_changes(&self) -> bool {
-        self.changes != self.saved_at || self.plugins.edited()
+        self.history.changes != self.history.saved_at || self.plugins.edited()
     }
 
     /// Reads the running plug-ins' states now, so a change made in a plug-in's editor since
@@ -1093,7 +854,7 @@ impl Session {
         suhina_project_file::write_file(&path, &project).map_err(|e| CommandError(e.0))?;
         if !copy {
             self.source = Some(path.clone());
-            self.saved_at = self.changes;
+            self.history.saved_at = self.history.changes;
             self.plugins.saved(&states);
         }
         Ok(path)
@@ -1113,7 +874,7 @@ impl Session {
     /// The folder the project's relative audio paths start from: its audio folder, or the
     /// current one.
     fn audio_from(&self) -> PathBuf {
-        match &self.audio_folder {
+        match &self.audio.folder {
             Some(folder) => folder.clone(),
             None => std::env::current_dir().unwrap_or_default(),
         }
@@ -1170,16 +931,13 @@ impl Session {
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+        !self.history.undo.is_empty()
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+        !self.history.redo.is_empty()
     }
 
-    /// Runs the command `id` with JSON `params` and returns its JSON result. An editing command
-    /// records one undo step when it changes the project; if it fails, or leaves a project that
-    /// does not validate, the project is restored and an error is returned.
     /// The colours a track without one of its own shows, by its place among the tracks (the
     /// window's palette, which follows the theme), and `fixed`, the colour a new track gets
     /// instead of the palette's, when set. Without a palette, tracks keep no colour of their own.
@@ -1216,172 +974,11 @@ impl Session {
         }
     }
 
-    pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
-        let spec = commands().iter().find(|c| c.id == id).ok_or_else(|| unknown_command(id))?;
-        let explicit_gesture = if id == "device.setParam" {
-            match params.get("gesture") {
-                None => None,
-                Some(Value::String(s)) if !s.is_empty() && s.len() <= 128 => Some(s.as_str()),
-                Some(_) => return Err("gesture must be 1..128 bytes of text".into()),
-            }
-        } else {
-            None
-        };
-        let continuous_param_edit =
-            id == "device.setParam" && params.get("continuous").and_then(Value::as_bool) == Some(true);
-        if (spec.kind == CommandKind::Edit && !continuous_param_edit && explicit_gesture.is_none())
-            || spec.kind == CommandKind::History
-        {
-            self.param_gesture = None;
-        }
-        if !(params.is_object() || params.is_null()) {
-            return Err(format!("{id}: parameters must be a JSON object").into());
-        }
-        if let Some(object) = params.as_object()
-            && let Some(unknown) = object.keys().find(|key| !spec.params.iter().any(|p| p.name == key.as_str()))
-        {
-            let known: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
-            return Err(format!("{id}: unknown parameter {unknown:?}; expected {known:?}").into());
-        }
-        // A clip named by its id is found where it is now and handed to the command by position.
-        let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let params = resolved.as_ref().unwrap_or(params);
-        match spec.kind {
-            CommandKind::Read
-            | CommandKind::Transport
-            | CommandKind::Projects
-            | CommandKind::Plugins
-            | CommandKind::Library
-            | CommandKind::Audio
-            | CommandKind::Plugin => (spec.run)(self, params),
-            CommandKind::History => {
-                self.open_step = None;
-                let scenes = self.project.launcher.clone();
-                let value = (spec.run)(self, params)?;
-                let shift = suhina_engine::SceneShift::between(&scenes, &self.project.launcher);
-                self.update_player(shift)?;
-                // Undo may have changed what an armed track hears.
-                self.send_armed();
-                Ok(value)
-            }
-            CommandKind::Edit => {
-                self.param_edits.clear();
-                self.mixer_edits.clear();
-                self.unheard_edit = false;
-                // A command with a `continue` parameter can add to the step it made last time.
-                let step = spec
-                    .params
-                    .iter()
-                    .any(|p| p.name == "continue")
-                    .then(|| {
-                        // A command over several tracks continues on its first one.
-                        commands::track_id(&self.project, params)
-                            .ok()
-                            .or_else(|| {
-                                commands::track_list(&self.project, params).ok().and_then(|l| l.first().copied())
-                            })
-                            // A command with no track (the main output's) continues on itself.
-                            .or_else(|| {
-                                (!params
-                                    .as_object()
-                                    .is_some_and(|o| o.contains_key("track") || o.contains_key("tracks")))
-                                .then_some(suhina_model::TrackId(u32::MAX))
-                            })
-                    })
-                    .flatten()
-                    .map(|track| (spec.id, track));
-                let continued = params.get("continue").and_then(Value::as_bool) == Some(true);
-                if !continued || step != self.open_step {
-                    self.open_step = None;
-                }
-                let before = self.project.clone();
-                let result = (spec.run)(self, params).and_then(|value| {
-                    // A lane, clip or scene the command added without an id gets one now.
-                    self.project.assign_ids()?;
-                    self.keep_track_colours(&before);
-                    Ok(value)
-                });
-                let result = result.and_then(|value| match self.project.validate() {
-                    Ok(()) => Ok(value),
-                    Err(errors) => Err(CommandError(format!("{id} would leave an invalid project: {errors:?}"))),
-                });
-                match result {
-                    Ok(value) => {
-                        if self.project != before {
-                            let shift = suhina_engine::SceneShift::between(&before.launcher, &self.project.launcher);
-                            self.changes = self.changes.wrapping_add(1);
-                            let changes = std::mem::take(&mut self.param_edits);
-                            let gesture = changes.first().map(|change| {
-                                (
-                                    change.track,
-                                    change.device,
-                                    explicit_gesture.map_or_else(
-                                        || format!("parameter:{}", change.param),
-                                        |key| format!("custom:{key}"),
-                                    ),
-                                )
-                            });
-                            if !changes.is_empty() {
-                                if (!continuous_param_edit && explicit_gesture.is_none())
-                                    || self.param_gesture != gesture
-                                {
-                                    self.push_undo(before);
-                                }
-                                self.param_gesture = continuous_param_edit.then_some(gesture).flatten();
-                            } else if self.open_step.is_some() {
-                                self.redo.clear();
-                            } else {
-                                self.push_undo(before);
-                                self.open_step = step;
-                            }
-                            // A parameter change goes to the engine as a message; anything else,
-                            // or a message that cannot be sent, as a new graph.
-                            let mixer = std::mem::take(&mut self.mixer_edits);
-                            // An edit that changes nothing the engine plays (a colour, a name, a
-                            // marker) keeps the playing graph: colouring every clip of a large
-                            // project built a graph for each of them, six seconds in all.
-                            let unheard = UNHEARD_EDITS.contains(&id) || std::mem::take(&mut self.unheard_edit);
-                            let sent = unheard
-                                || match (changes.is_empty(), mixer.is_empty(), self.player.as_mut()) {
-                                    (false, _, Some(player)) => {
-                                        changes.into_iter().all(|change| player.set_device_param(change).is_ok())
-                                    }
-                                    (true, false, Some(player)) => {
-                                        mixer.into_iter().all(|change| player.set_device_param(change).is_ok())
-                                    }
-                                    _ => false,
-                                };
-                            if !sent {
-                                match self.update_player(shift) {
-                                    Ok(()) => self.player_behind = false,
-                                    // A drag sends a value every frame and may outrun the engine
-                                    // taking new graphs: the engine catches up on a later frame.
-                                    Err(_) if continued => self.player_behind = true,
-                                    Err(e) => return Err(e),
-                                }
-                                // The edit may have changed what an armed track hears.
-                                self.send_armed();
-                            }
-                        }
-                        if !continuous_param_edit {
-                            self.param_gesture = None;
-                        }
-                        Ok(value)
-                    }
-                    Err(e) => {
-                        self.project = before;
-                        Err(e)
-                    }
-                }
-            }
-        }
-    }
-
     /// Sends the project to the playing engine again if a continued edit could not reach it
     /// (its queue was full). The window calls it every frame, through `Projects::poll_plugins`.
     pub fn catch_up_player(&mut self) {
-        if self.player_behind && self.update_player(None).is_ok() {
-            self.player_behind = false;
+        if self.sync.behind && self.update_player(None).is_ok() {
+            self.sync.behind = false;
         }
     }
 
@@ -1417,28 +1014,28 @@ impl Session {
         let mut changed = false;
         for (path, kind) in need.iter() {
             let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-            if (self.device_assets.entries.contains_key(path.as_str())
-                || self.device_asset_notes.contains_key(path.as_str()))
-                && self.device_asset_files.get(path).and_then(|seen| *seen) == mtime
+            if (self.device_files.assets.entries.contains_key(path.as_str())
+                || self.device_files.notes.contains_key(path.as_str()))
+                && self.device_files.modified.get(path).and_then(|seen| *seen) == mtime
             {
                 continue;
             }
             let result = self.load_device_file(kind, path);
-            self.device_asset_files.insert(path.clone(), mtime);
+            self.device_files.modified.insert(path.clone(), mtime);
             match result {
                 Ok(asset) => {
-                    self.device_assets.set(path.clone(), asset);
-                    self.device_asset_notes.remove(path.as_str());
+                    self.device_files.assets.set(path.clone(), asset);
+                    self.device_files.notes.remove(path.as_str());
                 }
                 Err(e) => {
-                    self.device_assets.entries.remove(path.as_str());
-                    self.device_asset_notes.insert(path.clone(), e);
+                    self.device_files.assets.entries.remove(path.as_str());
+                    self.device_files.notes.insert(path.clone(), e);
                 }
             }
             changed = true;
         }
         if changed {
-            self.device_assets_changed = true;
+            self.device_files.changed = true;
         }
     }
 
@@ -1463,7 +1060,7 @@ impl Session {
         }
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
-        let rate = self.player.as_ref().map_or(48_000, Player::sample_rate);
+        let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
         match kind {
             "nam-amp-modeler" => {
                 let model = suhina_device_nam_amp_modeler::model::read(std::path::Path::new(path))?;
@@ -1485,14 +1082,14 @@ impl Session {
     /// `scenes` is the scene inserted or removed since the last update, if that is what changed.
     fn update_player(&mut self, scenes: Option<suhina_engine::SceneShift>) -> Result<(), CommandError> {
         self.sync_device_files();
-        let Some(player) = self.player.as_mut() else { return Ok(()) };
-        if self.audio_changed {
-            player.set_audio(std::sync::Arc::new(self.audio.clone()));
-            self.audio_changed = false;
+        let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
+        if self.audio.changed {
+            player.set_audio(std::sync::Arc::new(self.audio.pool.clone()));
+            self.audio.changed = false;
         }
-        if self.device_assets_changed {
-            player.set_device_assets(std::sync::Arc::new(self.device_assets.clone()));
-            self.device_assets_changed = false;
+        if self.device_files.changed {
+            player.set_device_assets(std::sync::Arc::new(self.device_files.assets.clone()));
+            self.device_files.changed = false;
         }
         player.update_with_scenes(&self.project, scenes).map_err(|e| {
             CommandError(format!("the edit was made, but the playing engine could not follow it: {}", e.0))
@@ -1500,29 +1097,29 @@ impl Session {
     }
 
     fn push_undo(&mut self, before: Project) {
-        self.open_step = None;
-        if self.undo.len() >= MAX_UNDO {
-            self.undo.remove(0);
+        self.history.open_step = None;
+        if self.history.undo.len() >= MAX_UNDO {
+            self.history.undo.remove(0);
         }
-        self.undo.push(before);
-        self.redo.clear();
+        self.history.undo.push(before);
+        self.history.redo.clear();
     }
 
     fn undo(&mut self) -> bool {
-        let Some(previous) = self.undo.pop() else { return false };
+        let Some(previous) = self.history.undo.pop() else { return false };
         let undone = std::mem::replace(&mut self.project, previous);
         self.keep_counter(&undone);
-        self.redo.push(undone);
-        self.changes = self.changes.wrapping_add(1);
+        self.history.redo.push(undone);
+        self.history.changes = self.history.changes.wrapping_add(1);
         true
     }
 
     fn redo(&mut self) -> bool {
-        let Some(next) = self.redo.pop() else { return false };
+        let Some(next) = self.history.redo.pop() else { return false };
         let undone = std::mem::replace(&mut self.project, next);
         self.keep_counter(&undone);
-        self.undo.push(undone);
-        self.changes = self.changes.wrapping_add(1);
+        self.history.undo.push(undone);
+        self.history.changes = self.history.changes.wrapping_add(1);
         true
     }
 
@@ -1560,7 +1157,7 @@ fn unknown_command(id: &str) -> CommandError {
     let area = id.split('.').next().unwrap_or_default();
     let similar: Vec<&str> = commands().iter().map(|c| c.id).filter(|c| c.starts_with(area)).collect();
     if similar.is_empty() {
-        CommandError(format!("unknown command {id}; commands.list shows them all"))
+        CommandError(format!("unknown command {id}; command.list shows them all"))
     } else {
         CommandError(format!("unknown command {id}; did you mean one of: {}", similar.join(", ")))
     }
@@ -1579,19 +1176,6 @@ fn live_filter(project: &Project, track: suhina_model::TrackId) -> suhina_engine
         MidiPort::Nothing => LivePorts::Nothing,
     };
     LiveFilter { ports, channel: input.channel.and_then(|c| c.checked_sub(1)) }
-}
-
-/// Traces an engine update that took the caller's thread [`suhina_plugins::trace::SLOW_WORK`] or
-/// more, with what its graph's build took part by part.
-fn trace_update(began: std::time::Instant) {
-    let took = began.elapsed();
-    if took >= suhina_plugins::trace::SLOW_WORK {
-        suhina_plugins::trace!(
-            "slow engine update: {:.1} ms ({})",
-            took.as_secs_f64() * 1000.0,
-            suhina_engine::build_report::last()
-        );
-    }
 }
 
 #[cfg(test)]

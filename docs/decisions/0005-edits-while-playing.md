@@ -101,7 +101,7 @@ which play notes, their latency) is set before the graph is built
 A renderer that ends because another audio output was chosen (`audio.setOutput`) gives its
 plug-ins back once it no longer runs (`Renderer::into_plugins`): from its graph, the graph not
 yet taken back, the ones parked or still queued, the newest for each device. The next renderer
-is built with them (`Renderer::with_plugins`) when the sample rate stays the same, so the
+is built with them (`Renderer::build` with `RenderInputs::with_plugins`) when the sample rate stays the same, so the
 plug-ins keep running and their state across the reopen.
 
 ## Amendment: edits in the next block (2026-10-12)

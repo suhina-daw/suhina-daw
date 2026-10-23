@@ -632,7 +632,7 @@ fn with_automation() -> Harness<'static, App> {
 fn with_automation_of(fm: &[&str]) -> Harness<'static, App> {
     let mut project = demo_project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
-    let channel = project.channels.iter_mut().find(|c| c.id == channel.expect("Drums has a channel"));
+    let channel = project.channel_mut(channel.expect("Drums has a channel"));
     let channel = channel.expect("the Drums channel");
     let points = |id: &str, values: [f64; 2]| {
         let mut lane = suhina_engine::model::AutomationLane::new(id);

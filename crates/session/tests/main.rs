@@ -45,6 +45,7 @@ mod scenes;
 mod sends;
 mod soundmap;
 mod stems;
+mod support;
 mod tempo;
 mod trusted_audio;
 

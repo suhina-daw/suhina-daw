@@ -556,7 +556,7 @@ impl Panel {
                             self.flags_key = None;
                             self.stale = true;
                         }
-                        Err(e) => self.status = Some(e.0),
+                        Err(e) => self.status = Some(e.message().to_owned()),
                     }
                 }
             }

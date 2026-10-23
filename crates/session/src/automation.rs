@@ -72,7 +72,7 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
                     let spec = info
                         .param_index(param)
                         .and_then(|i| info.params.get(i))
-                        .ok_or_else(|| format!("{} has no parameter {param:?}; devices.list lists them", info.name))?;
+                        .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
                     Kind::Builtin(spec)
                 }
                 DeviceKind::Sd => {

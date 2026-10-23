@@ -4,6 +4,7 @@
 //! Device chains in the renderer: effects on a track, instruments playing its notes, launched
 //! clips, the transport, graph swaps.
 
+use crate::{RenderInputs, RenderOptions};
 use suhina_model::*;
 
 use crate::{LaunchCommand, Renderer, render_launches, render_offline};
@@ -304,7 +305,8 @@ fn launched_clips_play_on_the_instrument_and_stop() {
 #[test]
 fn stopping_the_transport_releases_an_instruments_notes() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("fm-synth", &[])]);
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let before = blocks(&mut renderer, 20, 480);
     assert!(peak(&before[9_600..]) > 0.05);
     renderer.handle(LaunchCommand::Stop);
@@ -317,12 +319,14 @@ fn an_edit_keeps_a_chain_playing_and_takes_its_new_values() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[]), device("utility", &[])]);
     let mut edited = p.clone();
     edited.channels[0].devices[1].params = vec![DeviceParam::new("gain", -6.0206)];
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap();
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut untouched =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let reference = blocks(&mut untouched, 150, 480);
     // The note carries on through the swap (no new attack): after the utility's 20 ms ramp the
     // output is the untouched render at half the level.
@@ -382,12 +386,16 @@ fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
         let p = project(vec![note(0.0, 0.4, 69)], 2.0, vec![device("fm-synth", &[]), sdk_device(name)]);
         let mut edited = p.clone();
         edited.tracks[0].name = "Renamed".into();
-        let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+        let mut renderer =
+            Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+                .unwrap();
         let mut controller = renderer.controller();
         let mut out = blocks(&mut renderer, 40, 480);
         controller.update(&edited).unwrap();
         out.extend(blocks(&mut renderer, 80, 480));
-        let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap();
+        let mut untouched =
+            Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+                .unwrap();
         let reference = blocks(&mut untouched, 120, 480);
         assert!(max_diff(&out, &reference) < 1e-5, "{name}: {}", max_diff(&out, &reference));
     }

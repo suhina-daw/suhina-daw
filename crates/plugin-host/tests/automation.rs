@@ -10,9 +10,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, render_offline_from};
 
 use serde_json::json;
-use suhina_engine::{AudioPool, Renderer, render_offline, render_offline_with_plugins};
+use suhina_engine::{AudioPool, Renderer, render_offline};
 use suhina_model::*;
 use suhina_plugins::scan::{Catalog, PluginInfo};
 use suhina_session::{Player, PluginEnv, Session};
@@ -109,7 +110,14 @@ fn an_offline_render_plays_a_plug_ins_automation() {
         let p = project(8.0, vec![gain(id, &points)]);
         let started = suhina_session::start_offline(&p, &AudioPool::new(), &env(), SR);
         assert_eq!(started.running(), 1, "{id}: {:?}", started.notices);
-        let wet = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, started.plugins).unwrap();
+        let wet = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+            SR,
+            512,
+            None,
+        )
+        .unwrap();
         // A tenth of a beat at a time, away from the jump: the level follows the lane.
         let window = BEAT / 10;
         for start in (0..8 * BEAT - window).step_by(window) {
@@ -171,9 +179,9 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     let set = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "0", "value": 7.0 }));
     assert_eq!(set.unwrap()["value"], 1.0);
     let error = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "9", "value": 0.5 }));
-    assert!(error.unwrap_err().0.contains("no parameter 9"));
+    assert!(error.unwrap_err().message().to_owned().contains("no parameter 9"));
     let error = session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "gain", "value": 0.5 }));
-    assert!(error.unwrap_err().0.contains("not a plug-in parameter id"));
+    assert!(error.unwrap_err().message().to_owned().contains("not a plug-in parameter id"));
 
     // A lane: the gain at 0 from here on, heard once the new graph plays.
     let automate = json!({ "track": 1, "device": 0, "param": "0", "points": [0, 0.0, 1000, 0.0] });

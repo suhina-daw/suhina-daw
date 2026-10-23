@@ -219,7 +219,7 @@ fn version_one_gain_example_remains_readable_and_new_nodes_require_version_two()
     let mut out = [1.0, -1.0];
     g.compile().unwrap().process(&mut out);
     assert_eq!(out, [1.0, -1.0]);
-    let text = graph(K::Tanh).to_sd().unwrap().replace("\"version\": 4", "\"version\": 1");
+    let text = graph(K::Tanh).to_sd().unwrap().replace("\"version\": 5", "\"version\": 1");
     assert!(DeviceGraph::from_sd(&text).is_err());
     assert!(g.compile_at(f64::NAN).is_err());
     assert!(g.compile_at(1e9).is_err());

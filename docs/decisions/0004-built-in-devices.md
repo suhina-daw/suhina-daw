@@ -239,7 +239,7 @@ decision 9.
   engine without changes once it had chains.
 - The first device, `utility`, proves the shape: thirteen parameters, all smoothed, bit-exact
   passthrough at the defaults.
-- Devices are edited through commands: `devices.list`, `track.devices`, `device.add` (an
+- Devices are edited through commands: `device.list`, `track.devices`, `device.add` (an
   instrument always first, one per track, and only on a track that plays notes),
   `device.remove`, `device.setEnabled` and `device.setParam` (values stored limited to the
   parameter's range). `device.add {preset, voice?}` adds a device with a preset's values:

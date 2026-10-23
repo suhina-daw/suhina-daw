@@ -18,7 +18,7 @@ use std::fmt;
 
 use crate::{Channel, ChannelId, Clip, Project, Track, TrackId};
 
-/// Identifies a [`Clip`](crate::Clip), on the arrangement or in a launcher slot. Stays the same
+/// Identifies a [`Clip`], on the arrangement or in a launcher slot. Stays the same
 /// when the clip is moved, trimmed or edited; a copy gets a new one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct ClipId(pub u32);
@@ -209,6 +209,10 @@ impl Project {
 }
 
 /// Finding a track or a channel by its id.
+/// The most channels [`Project::output_chain`] gives, so a malformed project cannot make it
+/// walk forever.
+pub const MAX_OUTPUT_HOPS: usize = 64;
+
 impl Project {
     /// The track with id `id`.
     pub fn track(&self, id: TrackId) -> Option<&Track> {
@@ -228,6 +232,25 @@ impl Project {
     /// The channel with id `id`, to change.
     pub fn channel_mut(&mut self, id: ChannelId) -> Option<&mut Channel> {
         self.channels.iter_mut().find(|c| c.id == id)
+    }
+
+    /// The channels the sound of channel `from` passes through after it, nearest first: its
+    /// output, that channel's output, and so on (#764 › 7). A channel with no output ends the
+    /// walk (it plays into the main output), and so does an output that names no channel, after
+    /// it is given. A routing cycle, which a valid project does not have, ends it where the chain
+    /// comes back on itself, and it never gives more than [`MAX_OUTPUT_HOPS`] channels.
+    pub fn output_chain(&self, from: ChannelId) -> impl Iterator<Item = ChannelId> + '_ {
+        let mut seen = vec![from];
+        let mut next = self.channel(from).and_then(|c| c.output);
+        std::iter::from_fn(move || {
+            let id = next.take()?;
+            if seen.len() > MAX_OUTPUT_HOPS || seen.contains(&id) {
+                return None;
+            }
+            seen.push(id);
+            next = self.channel(id).and_then(|c| c.output);
+            Some(id)
+        })
     }
 }
 

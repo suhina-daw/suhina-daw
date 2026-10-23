@@ -29,11 +29,11 @@ pub use suhina_device_api::ProcessContext;
 
 pub const EXTENSION: &str = "sd";
 pub const FORMAT: &str = "suhina-device";
-/// The newest file version this crate reads. A file is written as version 4 unless it needs
-/// version 5 (an expanded panel), so an older Suhina still opens it.
+/// The version every file is written as, and the newest this crate reads. It rises with every
+/// change to what a file holds, so an older Suhina refuses a newer file rather than dropping
+/// what it does not know (ADR 0010 › Amendment: format versions, `docs/spec/sd-device-format.md`
+/// › Versions). Files of every earlier version are still read.
 pub const VERSION: u32 = 5;
-/// The version a file without an expanded panel is written as.
-const COMPACT_VERSION: u32 = 4;
 pub const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_NODES: usize = 128;
 pub const MAX_CONNECTIONS: usize = MAX_NODES * 5;
@@ -649,7 +649,7 @@ impl From<&DeviceGraph> for FileV1 {
             .collect();
         Self {
             format: FORMAT.into(),
-            version: if graph.expanded.is_some() { VERSION } else { COMPACT_VERSION },
+            version: VERSION,
             device: DeviceV1 {
                 ui: graph.ui.clone(),
                 expanded: graph.expanded.clone(),
@@ -846,7 +846,7 @@ mod tests {
         assert_eq!(old.device_version, 1);
         let encoded = old.to_sd().expect("legacy graph upgrades to current format");
         let json: serde_json::Value = serde_json::from_str(&encoded).expect("valid JSON");
-        assert_eq!(json["version"], 4, "a file without an expanded panel stays version 4");
+        assert_eq!(json["version"], VERSION, "every file is written as the current version");
         assert_eq!(json["device"]["version"], 1);
         assert_eq!(DeviceGraph::from_sd(&encoded), Ok(old));
     }

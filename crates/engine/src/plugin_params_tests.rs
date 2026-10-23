@@ -5,6 +5,7 @@
 //! while playing, and automation lanes, heard at their frames in offline renders and in real
 //! time.
 
+use crate::{RenderInputs, RenderOptions, render_offline_from};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,10 +14,7 @@ use suhina_model::*;
 
 use crate::chain_tests::{BEAT, SR, blocks, device, note, project};
 use crate::plugin_params::value_at;
-use crate::{
-    AudioPool, ParamEvent, PluginProcessor, PluginSlotInfo, Plugins, RAMP_STEP, Renderer, plugin_devices,
-    render_offline_with_plugins,
-};
+use crate::{AudioPool, ParamEvent, PluginProcessor, PluginSlotInfo, Plugins, RAMP_STEP, Renderer, plugin_devices};
 
 /// The parameter values a stand-in got: frame in the output, id, value.
 type Seen = Arc<Mutex<Vec<(usize, u32, f64)>>>;
@@ -100,7 +98,14 @@ fn an_offline_render_plays_the_automation() {
     let step = RAMP_STEP as f64 / (2.0 * BEAT as f64);
     for block in [512, 333, 1024] {
         let (plugins, seen) = with_level(&project);
-        let out = render_offline_with_plugins(&project, &AudioPool::new(), SR, block, plugins).unwrap();
+        let out = render_offline_from(
+            &project,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+            SR,
+            block,
+            None,
+        )
+        .unwrap();
         // The track's gains scale what the plug-in plays; a frame that played 0.5 tells by how
         // much.
         let unit = f64::from(out[(3 * BEAT + 100) * 2]) / 0.5;
@@ -123,7 +128,9 @@ fn set_values_go_at_the_start_and_a_lane_wins_while_it_plays() {
     // Parameter 0 set to 0.25, parameter 4 to 0.75: both at the first frame.
     let project = automated(1.0, &[("0", 0.25), ("4", 0.75)], &[]);
     let (plugins, seen) = with_level(&project);
-    let out = render_offline_with_plugins(&project, &AudioPool::new(), SR, 512, plugins).unwrap();
+    let out =
+        render_offline_from(&project, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
+            .unwrap();
     assert!(out.iter().step_by(2).take(BEAT).all(|&s| (s - out[0]).abs() < 1e-7 && s > 0.0));
     let seen = seen.lock().unwrap().clone();
     assert_eq!(&seen[..2], [(0, 0, 0.25), (0, 4, 0.75)]);
@@ -131,7 +138,9 @@ fn set_values_go_at_the_start_and_a_lane_wins_while_it_plays() {
     // With a lane on parameter 0, the lane's value follows the set one at the first frame.
     let project = automated(1.0, &[("0", 0.25)], &[(0.0, 0.5)]);
     let (plugins, seen) = with_level(&project);
-    let _ = render_offline_with_plugins(&project, &AudioPool::new(), SR, 512, plugins).unwrap();
+    let _ =
+        render_offline_from(&project, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
+            .unwrap();
     let seen = seen.lock().unwrap().clone();
     assert_eq!(&seen[..2], [(0, 0, 0.25), (0, 0, 0.5)]);
 }
@@ -140,7 +149,13 @@ fn set_values_go_at_the_start_and_a_lane_wins_while_it_plays() {
 fn a_value_set_while_playing_is_heard_from_the_next_block() {
     let project = automated(4.0, &[], &[]);
     let (plugins, seen) = with_level(&project);
-    let mut renderer = Renderer::with_plugins(&project, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 10, 480);
     // Device 0, parameter id 0.
@@ -156,7 +171,13 @@ fn a_value_set_while_playing_is_heard_from_the_next_block() {
 fn an_edit_resends_only_the_values_that_changed() {
     let project = automated(4.0, &[("0", 0.5), ("1", 0.5)], &[]);
     let (plugins, seen) = with_level(&project);
-    let mut renderer = Renderer::with_plugins(&project, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let _ = blocks(&mut renderer, 10, 480);
     let mut edited = project.clone();

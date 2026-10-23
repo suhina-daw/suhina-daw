@@ -313,9 +313,9 @@ with:
 ```
 
 A reader of version 1 does not know `"type": "group"` and would refuse the file with a confusing
-message. Chosen: the file version becomes **2**, and the writer writes 2 only when the project
-holds a group, so a project without one still opens in a Suhina from before groups. The reader
-accepts 1 and 2. A device-kind `type` the reader does not know is refused with "this project uses
+message, so groups came with version **2**, written then only when the project held a group. Since
+version 3 every file is written as the newest version
+([suhina-format](suhina-format.md) › Versions); the reader accepts 1 to 3. A device-kind `type` the reader does not know is refused with "this project uses
 a device a newer Suhina knows", never ignored, as dropping a group would drop the devices in it.
 
 ### Presets
@@ -413,8 +413,8 @@ For the maintainer; each has the choice this spec made, so work can start withou
 6. **Choosing a branch by a parameter** (a selector that plays one branch at a time and crossfades
    between them) is left out; it would be one more group parameter and a per-branch range.
 7. **Project file version 2 only when a group is present**, so older Suhina opens projects without
-   groups. Alternatively always write 2 once groups land, which is simpler and drops that
-   compatibility.
+   groups. Answered 2026-10-24: every file is written as the newest version
+   ([ADR 0010](../decisions/0010-project-files.md) › Amendment: format versions).
 8. **Group presets up to 16 MiB** with plug-in state inside. Alternatively group presets hold
    built-in devices and plug-in references only, with the plug-in state left out.
 9. **Return and master channels** (ADR 0004, *Not decided yet*): groups follow wherever chains
@@ -440,7 +440,7 @@ it.
 
 1. **Model and project file.** `DeviceKind::Group`, `DeviceGroup`, `Branch`, `Macro`,
    `MacroMapping`; `Project::validate` with every check above and a malformed-input test for
-   each; `.suhina` version 2 written only with a group, round-trip tests; the depth-first plug-in
+   each; `.suhina` version 2 (written then only with a group), round-trip tests; the depth-first plug-in
    key in `plugin_devices`. ADR 0001 gets an amendment. *Nothing audible yet: the engine passes a
    group through.*
 2. **Engine: groups in the chain.** `Slot::Group` with branches, volume, pan, mute, solo, mix and

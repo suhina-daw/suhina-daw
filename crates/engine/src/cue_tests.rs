@@ -4,6 +4,7 @@
 //! The cue bus: cued tracks and the preview heard apart from the main mix, which does not
 //! change.
 
+use crate::{RenderInputs, RenderOptions};
 use std::sync::Arc;
 
 use suhina_model::*;
@@ -14,8 +15,15 @@ use crate::{
 };
 
 fn render_both(project: &Project, gain: f32, separate: bool) -> (Vec<f32>, Vec<f32>) {
-    render_offline_with_cue(project, &AudioPool::new(), &DeviceAssets::new(), SR, 512, Plugins::new(), gain, separate)
-        .unwrap()
+    render_offline_with_cue(
+        project,
+        RenderInputs::from_audio(&AudioPool::new()).with_assets(&DeviceAssets::new()).with_plugins(Plugins::new()),
+        SR,
+        512,
+        gain,
+        separate,
+    )
+    .unwrap()
 }
 
 fn cued(mut project: Project) -> Project {
@@ -113,8 +121,10 @@ fn the_preview_plays_on_the_cue_and_on_the_main_output_only_while_the_cue_plays_
 #[test]
 fn process_with_cue_matches_process_and_fills_a_short_cue_buffer_only_where_it_has_room() {
     let song = cued(project(vec![note(0.0, 1.0, 69)], 1.0, vec![]));
-    let mut a = Renderer::with_audio(&song, &AudioPool::new(), SR).unwrap();
-    let mut b = Renderer::with_audio(&song, &AudioPool::new(), SR).unwrap();
+    let mut a =
+        Renderer::build(&song, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let mut b =
+        Renderer::build(&song, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let mut plain = vec![0.0f32; 4096];
     a.process(&mut plain);
     let (mut main, mut cue) = (vec![0.0f32; 4096], vec![9.0f32; 1000]);

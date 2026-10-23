@@ -10,6 +10,7 @@
 //! cargo test --release -p suhina-engine fade_cost -- --ignored --nocapture --test-threads=1
 //! ```
 
+use crate::{RenderInputs, RenderOptions};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -108,7 +109,8 @@ struct Timings {
 fn time_blocks(project: &Project, pool: &AudioPool) -> Timings {
     let mut best: Option<Timings> = None;
     for _ in 0..ROUNDS {
-        let Ok(mut renderer) = Renderer::with_audio(project, pool, SR) else {
+        let Ok(mut renderer) = Renderer::build(project, RenderInputs::from_audio(pool), SR, RenderOptions::PLAYING)
+        else {
             panic!("the project renders");
         };
         let blocks = renderer.length().div_ceil(BLOCK as u64) as usize;

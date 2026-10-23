@@ -6,7 +6,7 @@
 //! (ADR 0010, `docs/spec/suhina-format.md`).
 //!
 //! ```json
-//! { "format": "suhina", "version": 1, "project": { "transport": { … }, "tracks": [ … ], … } }
+//! { "format": "suhina", "version": 3, "project": { "transport": { … }, "tracks": [ … ], … } }
 //! ```
 //!
 //! Binary data (plug-in state, extensions) is base64. Audio files are referred to by path,
@@ -28,19 +28,18 @@ use suhina_model::{
     MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
     MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
     SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
-    WarpMarker, automation, has_groups, valid_bpm,
+    WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = "suhina";
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
-/// The newest version this crate reads, and the one it writes for a project that holds a device
-/// group. A project without one is written as [`VERSION_WITHOUT_GROUPS`], so a Suhina from before
-/// device groups still opens it (`docs/spec/device-groups.md` › Project file).
-pub const VERSION: u64 = 2;
-/// The version a project without device groups is written as.
-pub const VERSION_WITHOUT_GROUPS: u64 = 1;
+/// The version every file is written as, and the newest this crate reads. It rises with every
+/// change to what a file holds, so a Suhina that reads up to an older version refuses the file
+/// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
+/// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
+pub const VERSION: u64 = 3;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -103,14 +102,8 @@ pub fn write_file(path: &Path, project: &Project) -> Result<(), ProjectFileError
 
 /// The project as the text of a `.suhina` file.
 pub fn to_json(project: &Project) -> String {
-    let file = json!({ "format": FORMAT, "version": version_of(project), "project": project_value(project) });
+    let file = json!({ "format": FORMAT, "version": VERSION, "project": project_value(project) });
     serde_json::to_string_pretty(&file).unwrap_or_default()
-}
-
-/// The version `project` is written as: [`VERSION`] when a channel holds a device group, else
-/// [`VERSION_WITHOUT_GROUPS`].
-pub fn version_of(project: &Project) -> u64 {
-    if project.channels.iter().any(|c| has_groups(&c.devices)) { VERSION } else { VERSION_WITHOUT_GROUPS }
 }
 
 /// Reads the text of a `.suhina` file. The project must validate (ids unique, references
