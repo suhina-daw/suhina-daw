@@ -149,7 +149,8 @@ docs/
   INDEX.md    generated list of documents and the code each covers (scripts/docs.py)
   commands.md generated list of every command (suhina-cli commands --markdown)
 assets/brand/ the logo as SVG: `suhina-logo.svg` (the name with the wave, drawn on the splash by
-              `crates/ui/src/kit/logo.rs`) and `suhina-mark.svg` (the wave mark alone, for icons)
+              `crates/ui/src/kit/logo.rs`) and `suhina-mark.svg` (the wave mark alone, for icons);
+              `suhina-icon.png`, the app's icon (`Suhina.app` on macOS, by `scripts/macos_app.sh`)
 third_party/  vendored source: the ASIO SDK's host part (GPL-3.0, built with `asio`) and LAME 3.100's
               encoder (LGPL, always built for MP3 export; Suhina's own fft.c, ADR 0029)
 scripts/   research helpers (e.g. extracting and diffing .als files), the parity measurement

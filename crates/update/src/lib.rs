@@ -116,7 +116,7 @@ impl Updater {
         let (updater, failed) = (self.clone(), build.clone());
         let spawned = std::thread::Builder::new().name("update install".into()).spawn(move || {
             let result = updater.download_and_replace(&build, &dir, token.as_deref(), &repaint);
-            let _removed = std::fs::remove_dir_all(dir.join(install::STAGING));
+            let _removed = std::fs::remove_dir_all(install::staging_folder(&dir));
             updater.set(match result {
                 Ok(()) => Phase::Installed(build),
                 Err(reason) => Phase::InstallFailed { build, reason },
@@ -138,11 +138,13 @@ impl Updater {
         if build.needs_sign_in && token.is_none() {
             return Err("downloading a test build needs Suhina connected to your gh".to_string());
         }
-        // Staged beside the program, so moving the files in place is a rename on one disk.
-        let staging = dir.join(install::STAGING);
+        // Staged beside the program, or beside its app bundle, so moving it in place is a rename on
+        // one disk.
+        let staging = install::staging_folder(dir);
         let _removed = std::fs::remove_dir_all(&staging);
-        std::fs::create_dir_all(&staging)
-            .map_err(|e| format!("Suhina's folder {} cannot be written to: {e}", dir.display()))?;
+        std::fs::create_dir_all(&staging).map_err(|e| {
+            format!("Suhina's folder {} cannot be written to: {e}", staging.parent().unwrap_or(dir).display())
+        })?;
         let archive = staging.join("download");
         let unpacked = staging.join("unpacked");
         let token = if build.needs_sign_in { token } else { None };
@@ -160,7 +162,12 @@ impl Updater {
         }
         std::fs::create_dir(&unpacked).map_err(|e| format!("could not unpack: {e}"))?;
         let program = install::unpack(&archive, &unpacked)?;
-        install::replace(&program, dir).map(|_| ())
+        // A bundle replaces a bundle whole; a package without one (or a program outside one) has
+        // its files put in place one by one.
+        match (install::bundle_of(&program), install::bundle_of(dir)) {
+            (Some(new), Some(old)) => install::replace_bundle(&new, &old),
+            _ => install::replace(&program, dir).map(|_| ()),
+        }
     }
 }
 

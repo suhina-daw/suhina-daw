@@ -181,11 +181,13 @@ fn copy_folder(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The `suhina-plugin-host` executable next to the running one.
+/// The `suhina-plugin-host` executable next to the running one, past a link to it (on macOS the
+/// package's `suhina-cli` links to the one inside `Suhina.app`).
 pub fn host_next_to_this_program() -> PathBuf {
     let name = format!("suhina-plugin-host{}", std::env::consts::EXE_SUFFIX);
     std::env::current_exe()
         .ok()
+        .map(|exe| exe.canonicalize().unwrap_or(exe))
         .and_then(|exe| exe.parent().map(|dir| dir.join(&name)))
         .unwrap_or_else(|| PathBuf::from(name))
 }

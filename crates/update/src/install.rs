@@ -31,8 +31,9 @@ pub fn sha256(path: &Path) -> Result<String, String> {
 }
 
 /// Unpacks the package at `archive` into the empty folder `into`, and returns the folder in it
-/// that holds the program (the package's own top folder). A test build's artifact is a zip
-/// around the package: on Linux and macOS around its `.tar.gz`, which is unpacked too.
+/// that holds the program (the package's own top folder, or `Suhina.app/Contents/MacOS` in it on
+/// macOS). A test build's artifact is a zip around the package: on Linux and macOS around its
+/// `.tar.gz`, which is unpacked too.
 pub fn unpack(archive: &Path, into: &Path) -> Result<PathBuf, String> {
     let mut magic = [0; 2];
     File::open(archive)
@@ -58,22 +59,61 @@ pub fn unpack(archive: &Path, into: &Path) -> Result<PathBuf, String> {
 
 fn list(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let read = std::fs::read_dir(dir).map_err(|e| format!("could not read {}: {e}", dir.display()))?;
-    Ok(read.filter_map(Result::ok).map(|e| e.path()).collect())
+    let mut entries: Vec<PathBuf> = read.filter_map(Result::ok).map(|e| e.path()).collect();
+    entries.sort();
+    Ok(entries)
 }
 
 fn program_name() -> &'static str {
     if cfg!(windows) { "suhina.exe" } else { "suhina" }
 }
 
-/// The folder under `dir` (itself or one folder down) that holds the program.
+/// The folder under `dir` (itself or one folder down) that holds the program, or the
+/// `Contents/MacOS` folder of an app bundle there.
 fn program_folder(dir: &Path) -> Result<PathBuf, String> {
-    if dir.join(program_name()).is_file() {
-        return Ok(dir.to_path_buf());
+    let mut folders = vec![dir.to_path_buf()];
+    folders.extend(app_folders(dir));
+    for child in list(dir)?.into_iter().filter(|p| p.is_dir()) {
+        folders.extend(app_folders(&child));
+        folders.push(child);
     }
-    list(dir)?
+    folders
         .into_iter()
         .find(|p| p.join(program_name()).is_file())
         .ok_or_else(|| format!("the download has no {}", program_name()))
+}
+
+/// The `Contents/MacOS` folders of the app bundles (`*.app`) in `dir`.
+fn app_folders(dir: &Path) -> Vec<PathBuf> {
+    let bundles = list(dir).unwrap_or_default().into_iter().filter(|p| p.extension().is_some_and(|e| e == "app"));
+    bundles.map(|p| p.join("Contents").join("MacOS")).collect()
+}
+
+/// The app bundle (`Suhina.app`) whose `Contents/MacOS` folder `dir` is, when it is one.
+pub fn bundle_of(dir: &Path) -> Option<PathBuf> {
+    let contents = dir.parent().filter(|_| dir.file_name().is_some_and(|n| n == "MacOS"))?;
+    let bundle = contents.parent().filter(|_| contents.file_name().is_some_and(|n| n == "Contents"))?;
+    bundle.extension().is_some_and(|e| e == "app").then(|| bundle.to_path_buf())
+}
+
+/// Where a download for the program in `dir` is staged: beside its app bundle when it runs from
+/// one, so that the bundle can be swapped as a whole, and otherwise beside the program.
+pub fn staging_folder(dir: &Path) -> PathBuf {
+    let base = bundle_of(dir).and_then(|b| b.parent().map(Path::to_path_buf));
+    base.unwrap_or_else(|| dir.to_path_buf()).join(STAGING)
+}
+
+/// Puts the app bundle `new` in place of the running one, `old`: the old one is renamed to
+/// `Suhina.app.old` (deleted on the next start) and the new one moved in. Swapping the bundle
+/// as a whole keeps its signature, which covers every file in it, whole. If the move fails the
+/// old bundle is put back.
+pub fn replace_bundle(new: &Path, old: &Path) -> Result<(), String> {
+    let aside = aside_name(old);
+    std::fs::rename(old, &aside).map_err(|e| format!("could not move {} aside: {e}", old.display()))?;
+    std::fs::rename(new, old).map_err(|e| {
+        let _back = std::fs::rename(&aside, old);
+        format!("could not put {} in place: {e}", old.display())
+    })
 }
 
 fn unzip(archive: &Path, into: &Path) -> Result<(), String> {
@@ -148,8 +188,8 @@ pub fn replace(from: &Path, dir: &Path) -> Result<usize, String> {
     result
 }
 
-/// `suhina.exe.old`, or `suhina.exe.old2` and on while an older one is still there (still
-/// running, so it could not be deleted).
+/// `suhina.exe.old` (or `Suhina.app.old`), or `suhina.exe.old2` and on while an older one is
+/// still there (still running, so it could not be deleted).
 fn aside_name(target: &Path) -> PathBuf {
     let base = target.as_os_str().to_owned();
     let mut n = 1;
@@ -157,27 +197,45 @@ fn aside_name(target: &Path) -> PathBuf {
         let mut name = base.clone();
         name.push(if n == 1 { format!(".{OLD}") } else { format!(".{OLD}{n}") });
         let path = PathBuf::from(name);
-        if !path.exists() || std::fs::remove_file(&path).is_ok() {
+        let removed = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        if !path.exists() || removed.is_ok() {
             return path;
         }
         n += 1;
     }
 }
 
-/// Deletes what an earlier update left in `dir`: files moved aside, and an unfinished download.
+/// Deletes what an earlier update left in `dir`, the program's folder: files moved aside, the
+/// app bundle moved aside (beside the running one), and an unfinished download.
 pub fn clean_up(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
-        let old = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.strip_prefix(OLD).is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit())));
-        if old && path.is_file() {
+        if is_aside(&path) && path.is_file() {
             let _removed = std::fs::remove_file(&path);
         }
     }
+    // Only `<the running bundle's name>.old…`, never another app beside it.
+    if let Some(bundle) = bundle_of(dir)
+        && let (Some(parent), Some(name)) = (bundle.parent(), bundle.file_name())
+        && let Ok(entries) = std::fs::read_dir(parent)
+    {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.file_stem() == Some(name) && is_aside(&path) && path.is_dir() {
+                let _removed = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
+    let _removed = std::fs::remove_dir_all(staging_folder(dir));
     let _removed = std::fs::remove_dir_all(dir.join(STAGING));
+}
+
+/// Whether `path` was moved aside by an update: its extension is `old`, `old2` and on.
+fn is_aside(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.strip_prefix(OLD).is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit())))
 }
 
 #[cfg(test)]
@@ -253,6 +311,64 @@ mod tests {
 
         std::fs::write(dir.join("page.html"), b"<html>").unwrap();
         assert!(unpack(&dir.join("page.html"), &dir).is_err());
+    }
+
+    #[test]
+    fn a_macos_package_unpacks_to_the_program_in_its_app_bundle() {
+        let dir = folder("unpack-bundle");
+        let archive = dir.join("package.tar.gz");
+        let top = "suhina-nightly-macos-universal";
+        package_tar(&archive, &format!("{top}/Suhina.app/Contents/MacOS"), b"bundled");
+        let into = dir.join("tar");
+        std::fs::create_dir(&into).unwrap();
+        let found = unpack(&archive, &into).unwrap();
+        assert_eq!(found, into.join(top).join("Suhina.app/Contents/MacOS"));
+        assert_eq!(std::fs::read(found.join(program_name())).unwrap(), b"bundled");
+        assert_eq!(bundle_of(&found), Some(into.join(top).join("Suhina.app")));
+        assert_eq!(bundle_of(&into.join(top)), None);
+        assert_eq!(bundle_of(&into.join("Other/Contents/MacOS")), None);
+    }
+
+    #[test]
+    fn a_bundle_is_replaced_whole_and_the_old_one_deleted_on_the_next_start() {
+        let dir = folder("replace-bundle");
+        let make = |at: &Path, program: &[u8]| {
+            let macos = at.join("Contents/MacOS");
+            std::fs::create_dir_all(&macos).unwrap();
+            std::fs::write(macos.join(program_name()), program).unwrap();
+            std::fs::write(at.join("Contents/Info.plist"), program).unwrap();
+            macos
+        };
+        let running = make(&dir.join("Suhina.app"), b"old");
+        std::fs::write(running.join("left-from-the-old-one"), b"").unwrap();
+        // Another app beside it, and its own `.old`, which the clean-up leaves alone.
+        std::fs::create_dir_all(dir.join("Other.app.old")).unwrap();
+        let staging = staging_folder(&running);
+        assert_eq!(staging, dir.join(STAGING));
+        let new = make(&staging.join("unpacked/Suhina.app"), b"new");
+
+        replace_bundle(&bundle_of(&new).unwrap(), &bundle_of(&running).unwrap()).unwrap();
+        assert_eq!(std::fs::read(running.join(program_name())).unwrap(), b"new");
+        assert_eq!(std::fs::read(dir.join("Suhina.app/Contents/Info.plist")).unwrap(), b"new");
+        assert!(!running.join("left-from-the-old-one").exists());
+        assert!(dir.join("Suhina.app.old").is_dir());
+
+        clean_up(&running);
+        assert!(!dir.join("Suhina.app.old").exists());
+        assert!(!staging.exists());
+        assert!(dir.join("Other.app.old").is_dir());
+        assert_eq!(std::fs::read(running.join(program_name())).unwrap(), b"new");
+    }
+
+    #[test]
+    fn a_bundle_that_cannot_be_moved_in_leaves_the_running_one_in_place() {
+        let dir = folder("replace-bundle-fails");
+        let running = dir.join("Suhina.app/Contents/MacOS");
+        std::fs::create_dir_all(&running).unwrap();
+        std::fs::write(running.join(program_name()), b"old").unwrap();
+        assert!(replace_bundle(&dir.join("missing/Suhina.app"), &dir.join("Suhina.app")).is_err());
+        assert_eq!(std::fs::read(running.join(program_name())).unwrap(), b"old");
+        assert!(!dir.join("Suhina.app.old").exists());
     }
 
     #[test]

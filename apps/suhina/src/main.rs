@@ -189,16 +189,15 @@ fn main() -> ExitCode {
     let backups = eframe::storage_dir(app_id()).map(|d| d.join(suhina_session::backup::SETTINGS_SUBFOLDER));
     window.app.projects_mut().set_backup_folder(backups);
 
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Suhina")
-            .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([640.0, 400.0])
-            .with_drag_and_drop(true),
-        renderer,
-        event_loop_builder: x11_first(),
-        ..Default::default()
-    };
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_title("Suhina")
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([640.0, 400.0])
+        .with_drag_and_drop(true);
+    if let Some(icon) = app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+    let options = eframe::NativeOptions { viewport, renderer, event_loop_builder: x11_first(), ..Default::default() };
     let animations = args.animations;
     let result = eframe::run_native(
         app_id(),
@@ -644,6 +643,16 @@ fn pick(request: &suhina_ui::interaction::pick::PickRequest) -> Option<PathBuf> 
 fn saved(path: &Path, what: &str) -> String {
     let _shown = theme_files::reveal(path, true);
     format!("{what} {}", path.display())
+}
+
+/// Suhina's icon for the window: without one eframe shows its own. On macOS the empty icon tells
+/// eframe to leave the Dock alone, so it keeps the icon of `Suhina.app`, which macOS draws with
+/// rounded corners; an image set at run time is drawn square as it is (#799).
+fn app_icon() -> Option<eframe::egui::IconData> {
+    if cfg!(target_os = "macos") {
+        return Some(eframe::egui::IconData::default());
+    }
+    eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/suhina-icon.png")).ok()
 }
 
 /// The app id whose folder holds the settings: the old one while only its folder exists

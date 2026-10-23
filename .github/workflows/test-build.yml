@@ -314,6 +314,8 @@ jobs:
               *) cp "target/x86_64-unknown-linux-gnu/release/$bin" "dist/$PACKAGE/" ;;
             esac
           done
+          # Suhina.app on macOS, as release.yml makes it.
+          if [ "$RUNNER_OS" = "macOS" ]; then scripts/macos_app.sh "dist/$PACKAGE" "$VERSION"; fi
           cp LICENSE NOTICE README.md ATTRIBUTION.md "dist/$PACKAGE/"
           cp devices/fm-synth/LICENSE-APACHE crates/stretch/LICENSE-signalsmith.txt "dist/$PACKAGE/"
           exe="dist/$PACKAGE/suhina-cli"
