@@ -22,7 +22,7 @@ fn return_at(p: &Project, params: &Value, key: &str) -> Result<(TrackId, Channel
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|id| p.channels.iter().find(|c| c.id == id))
+        .and_then(|id| p.channel(id))
         .filter(|c| c.role == ChannelRole::Effect)
         .ok_or_else(|| format!("{key} must be a return track; project.tracks lists them"))?;
     Ok((track, channel.id))
@@ -36,7 +36,7 @@ fn plays_into(p: &Project, from: ChannelId, to: ChannelId) -> bool {
         if id == to {
             return true;
         }
-        if let Some(c) = p.channels.iter().find(|c| c.id == id) {
+        if let Some(c) = p.channel(id) {
             for next in c.output.into_iter().chain(c.sends.iter().map(|s| s.target)) {
                 if !seen.contains(&next) {
                     seen.push(next);
@@ -55,11 +55,11 @@ fn send_param<'a>(session: &'a mut Session, params: &Value) -> Result<(&'a mut S
     let (ret, target) = return_at(p, params, "return")?;
     let from = channel_param(session, params)?.id;
     let p = &session.project;
-    let name = p.tracks.iter().find(|t| t.id == ret).map(|t| t.name.clone()).unwrap_or_default();
+    let name = p.track(ret).map(|t| t.name.clone()).unwrap_or_default();
     if from == target {
         return Err("a return cannot send to itself".into());
     }
-    let exists = p.channels.iter().find(|c| c.id == from).is_some_and(|c| c.sends.iter().any(|s| s.target == target));
+    let exists = p.channel(from).is_some_and(|c| c.sends.iter().any(|s| s.target == target));
     if !exists && plays_into(p, target, from) {
         return Err(format!("a send to {name:?} would make a loop: it plays back into this track").into());
     }
@@ -183,10 +183,10 @@ pub(crate) fn rename_return(session: &mut Session, params: &Value) -> Result<Val
     let name = name.ok_or("name must be a text, not empty")?.to_string();
     let (track, channel) = return_at(&session.project, params, "return")?;
     let p = &mut session.project;
-    if let Some(t) = p.tracks.iter_mut().find(|t| t.id == track) {
+    if let Some(t) = p.track_mut(track) {
         t.name.clone_from(&name);
     }
-    if let Some(c) = p.channels.iter_mut().find(|c| c.id == channel) {
+    if let Some(c) = p.channel_mut(channel) {
         c.name.clone_from(&name);
     }
     Ok(json!({ "name": name }))

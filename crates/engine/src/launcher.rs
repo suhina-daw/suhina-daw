@@ -21,7 +21,9 @@ use crate::stretch::StretchVoice;
 use crate::{AUDIO_HEADROOM, NoteStart, Renderer, bus_chain, note_velocity, route, start_note};
 
 mod modes;
+mod prepare;
 use modes::SlotLaunch;
+pub(crate) use prepare::Preparer;
 
 /// Commands that can wait in the queue between two audio blocks.
 const QUEUE_CAPACITY: usize = 256;
@@ -157,6 +159,13 @@ pub enum LaunchCommand {
     SetArmed {
         track: suhina_model::TrackId,
         armed: bool,
+        input: crate::live::LiveFilter,
+    },
+    /// Atomically sets independent recording arm and live MIDI monitoring (ADR 0017).
+    SetMidiInput {
+        track: suhina_model::TrackId,
+        armed: bool,
+        monitoring: bool,
         input: crate::live::LiveFilter,
     },
     /// Turns recording on or off: while on and the transport runs, what the armed tracks play
@@ -517,13 +526,15 @@ struct PlanAudio {
     /// Warped audio follows the launcher's tempo; unwarped audio plays at file speed.
     follows_tempo: bool,
     /// The time-stretched voice of a warped clip, used while the tempo is the project tempo it
-    /// was prepared for (ADR 0003).
+    /// was prepared for (ADR 0003). Built off the audio thread ([`prepare`]); silent until then.
     stretch: Option<StretchVoice>,
+    /// The voice's number among the launcher's voices ([`prepare::Voices`]).
+    voice: Option<usize>,
     /// Beats the stretch voice covers; after that the clip is re-pitched.
     stretch_beats: f64,
     stretch_gains: (f32, f32),
-    /// Identifies what the stretch voice plays (region, placement, tempo, sample rate), so a
-    /// graph swap can keep a playing voice whose audio has not changed (ADR 0005).
+    /// Identifies what the stretch voice plays (region, placement, tempo, sample rate, the
+    /// decoded audio), so a graph swap can keep a voice whose audio has not changed (ADR 0005).
     fingerprint: u64,
     /// 0 for the output, or 1 + the index of the track's chain.
     bus: u32,
@@ -640,6 +651,8 @@ pub(crate) struct Launcher {
     pub(crate) monitor: Arc<LauncherMonitor>,
     control: Option<rtrb::Consumer<LaunchCommand>>,
     random: Random,
+    /// The stretch voices of the slots' clips and their preparation off the audio thread.
+    voices: prepare::Voices,
 }
 
 impl Launcher {
@@ -653,7 +666,7 @@ impl Launcher {
         let tempo = project.transport.tempo_bpm;
         let frames_per_beat = 60.0 / tempo * f64::from(sample_rate);
         let meter = project.transport.meter();
-        let columns: Vec<Column> = project
+        let mut columns: Vec<Column> = project
             .launcher
             .columns
             .iter()
@@ -677,6 +690,18 @@ impl Launcher {
                 overrides_since: None,
             })
             .collect();
+        // Every stretch voice gets its number; they are built later, off the audio thread.
+        let mut voices = Vec::new();
+        for (c, column) in columns.iter_mut().enumerate() {
+            for (s, slot) in column.slots.iter_mut().enumerate() {
+                for (i, a) in slot.clip.iter_mut().flat_map(|plan| plan.audio.iter_mut()).enumerate() {
+                    if let Some(voice) = a.stretch.as_ref() {
+                        a.voice = Some(voices.len());
+                        voices.push((prepare::Place { column: c, slot: s, audio: i }, voice.spec(), a.fingerprint));
+                    }
+                }
+            }
+        }
         Self {
             monitor: Arc::new(LauncherMonitor::new(columns.len(), tempo, project.transport.time_signature)),
             columns,
@@ -710,15 +735,17 @@ impl Launcher {
             stop_fade_frames: (STOP_FADE_SECONDS * f64::from(sample_rate)).max(1.0),
             control: None,
             random: Random::default(),
+            voices: prepare::Voices::new(voices),
         }
     }
 
     /// Takes over `old`'s runtime state at a graph swap (ADR 0005): what each column plays, fades
     /// and has queued, the beat, tempo and quantisation, and the control queue and monitor (the
-    /// new graph's own go back with the old graph). A playing clip whose stretched audio has not
-    /// changed keeps its stretch voice; any other playing stretch voice is moved to where its clip
-    /// is. Slots carry over by index, or along `shift` when a scene was inserted or removed. A
-    /// column or slot that no longer exists is dropped. Never allocates.
+    /// new graph's own go back with the old graph). A slot whose stretched audio has not changed
+    /// keeps its prepared stretch voice ([`Launcher::take_voices`]); any other playing stretch
+    /// voice is moved to where its clip is. Slots carry over by index, or along `shift` when a
+    /// scene was inserted or removed. A column or slot that no longer exists is dropped. Never
+    /// allocates.
     pub(crate) fn adopt(&mut self, old: &mut Launcher, shift: Option<SceneShift>) {
         std::mem::swap(&mut self.monitor, &mut old.monitor);
         std::mem::swap(&mut self.control, &mut old.control);
@@ -742,6 +769,8 @@ impl Launcher {
         }
         let frames_per_beat = self.frames_per_beat_at_build;
         let map = |slot: usize| shift.map_or(Some(slot), |s| s.map(slot));
+        self.take_voices(old, map);
+        let voices = &self.voices;
         for (new, old) in self.columns.iter_mut().zip(old.columns.iter_mut()) {
             new.overrides_since = old.overrides_since;
             new.held = old.held;
@@ -751,8 +780,8 @@ impl Launcher {
                     .map(|slot| Pending { action: Queued::Launch(slot), ..p }),
                 Queued::Stop => Some(p),
             });
-            new.playing = carry(&mut new.slots, &mut old.slots, old.playing, map, frames_per_beat);
-            new.fading = carry(&mut new.slots, &mut old.slots, old.fading, map, frames_per_beat);
+            new.playing = carry(&mut new.slots, &old.slots, old.playing, map, frames_per_beat, voices);
+            new.fading = carry(&mut new.slots, &old.slots, old.fading, map, frames_per_beat, voices);
         }
         // The monitor is the old graph's: report this graph's columns, added ones included.
         self.publish();
@@ -976,43 +1005,33 @@ impl Launcher {
 }
 
 /// A playing or fading clip carried from its slot in `old_slots` to the slot `map` gives in
-/// `new_slots`, or `None` if that slot is gone or has no clip now.
+/// `new_slots`, or `None` if that slot is gone or has no clip now. Its stretch voices taken over
+/// from the old graph play on; the others go to where the clip is.
 fn carry(
     new_slots: &mut [SlotPlan],
-    old_slots: &mut [SlotPlan],
+    old_slots: &[SlotPlan],
     state: Option<Playing>,
     map: impl Fn(usize) -> Option<usize>,
     frames_per_beat: f64,
+    voices: &prepare::Voices,
 ) -> Option<Playing> {
     let mut playing = state?;
     let old_slot = playing.slot;
     playing.slot = map(old_slot)?;
     let new_plan = new_slots.get_mut(playing.slot)?.clip.as_mut()?;
-    let old_plan = old_slots.get_mut(old_slot).and_then(|s| s.clip.as_mut());
+    let old_plan = old_slots.get(old_slot).and_then(|s| s.clip.as_ref());
     // Notes: the same place in the new list. Notes at exactly the last beat may have played.
     let last = playing.last_clip_beat;
-    let played_at_last =
-        old_plan.as_ref().map_or(0, |plan| playing.next_note.saturating_sub(plan.first_note_from(last)));
+    let played_at_last = old_plan.map_or(0, |plan| playing.next_note.saturating_sub(plan.first_note_from(last)));
     let at_last = new_plan.notes.partition_point(|n| n.time <= last) - new_plan.first_note_from(last);
     playing.next_note = new_plan.first_note_from(last) + played_at_last.min(at_last);
-    // Stretch voices: unchanged audio keeps its voice; changed audio starts where the clip is.
-    let unchanged = old_plan.as_ref().is_some_and(|plan| {
-        plan.audio.len() == new_plan.audio.len()
-            && plan.audio.iter().zip(&new_plan.audio).all(|(a, b)| a.fingerprint == b.fingerprint)
-    });
-    match old_plan {
-        Some(old_plan) if unchanged => {
-            for (new, old) in new_plan.audio.iter_mut().zip(old_plan.audio.iter_mut()) {
-                std::mem::swap(&mut new.stretch, &mut old.stretch);
+    for a in new_plan.audio.iter_mut().filter(|a| a.voice.is_none_or(|i| voices.claim(i) != prepare::TAKEN)) {
+        if let Some(voice) = a.stretch.as_mut() {
+            if voices.inline() && playing.stretched {
+                voice.prepare();
             }
+            prepare::to_playing(voice, &playing, frames_per_beat);
         }
-        _ if playing.stretched => {
-            let frames = (playing.elapsed_beats * frames_per_beat).round().max(0.0) as u64;
-            for voice in new_plan.audio.iter_mut().filter_map(|a| a.stretch.as_mut()) {
-                voice.seek(frames);
-            }
-        }
-        _ => {}
     }
     Some(playing)
 }
@@ -1100,25 +1119,24 @@ fn plan_clip(
                 let stretch = (region.warped && region.stretch != suhina_model::StretchMode::Repitch)
                     .then(|| {
                         let stretched = suhina_model::Clip { length: stretch_beats, ..placed.clone() };
-                        StretchVoice::new(&stretched, region, data.clone(), tempo, sample_rate).map(|mut voice| {
-                            // A launched clip's voice is seeked and rendered on the audio thread:
-                            // its stretcher is built here, with the plan, off that thread.
-                            voice.prepare();
-                            voice
-                        })
+                        StretchVoice::new(&stretched, region, data.clone(), tempo, sample_rate)
                     })
+                    // Prepared later, off the audio thread (`prepare`).
                     .flatten();
                 let region_gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
                 let fingerprint = {
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::hash::DefaultHasher::new();
                     format!("{region:?}|{placed:?}|{stretch_beats}|{tempo}|{sample_rate}").hash(&mut hasher);
+                    // The decoded audio itself: new samples under the same file are another voice.
+                    (Arc::as_ptr(data) as usize).hash(&mut hasher);
                     hasher.finish()
                 };
                 audio_plans.push(PlanAudio {
                     event,
                     follows_tempo: region.warped,
                     stretch,
+                    voice: None,
                     stretch_beats,
                     stretch_gains: (gains.0 * region_gain, gains.1 * region_gain),
                     fingerprint,
@@ -1210,6 +1228,10 @@ impl Renderer {
             LaunchCommand::SetArmed { track, armed, input } => {
                 let frame = self.block_frame;
                 self.live.set_armed(&mut self.graph.chains, track, armed, input, frame);
+            }
+            LaunchCommand::SetMidiInput { track, armed, monitoring, input } => {
+                let frame = self.block_frame;
+                self.live.set_input(&mut self.graph.chains, track, armed, monitoring, input, frame);
             }
             LaunchCommand::SetMetronome { on, gain } => {
                 self.metronome.set(on, gain);
@@ -1463,6 +1485,8 @@ impl Renderer {
             return;
         }
         self.jump_to(self.start_beat);
+        // A click on the ruler is a jump like `Locate`: the notes sounding there play.
+        self.chase = true;
     }
 
     /// The loop region as arrangement frames, while playback repeats it: the region is on and
@@ -1557,6 +1581,9 @@ impl Renderer {
             return;
         }
         let elapsed = if elapsed_beats.is_finite() { elapsed_beats.clamp(0.0, ENDLESS_BEATS) } else { 0.0 };
+        if let Some(slot) = slot {
+            self.graph.launcher.prepare_inline(column, slot);
+        }
         let launcher = &mut self.graph.launcher;
         let (tempo, project_tempo) = (launcher.tempo_bpm, launcher.project_tempo_bpm);
         let frames_per_beat = launcher.frames_per_beat_at_build;
@@ -1603,6 +1630,8 @@ impl Renderer {
             self.handle(command);
             handled += 1;
         }
+        // After the commands, so a launch they queued asks for its voices at once.
+        self.graph.launcher.service_voices();
         let launcher = &self.graph.launcher;
         let monitor = &launcher.monitor;
         monitor.beat.store(launcher.beat.to_bits(), Ordering::Relaxed);
@@ -1745,6 +1774,12 @@ impl Renderer {
                 old.fade_left = self.graph.launcher.stop_fade_frames;
                 column.fading = Some(old);
             }
+            if let Queued::Launch(slot) = pending.action {
+                // Offline the clip's voices are built here; otherwise they have arrived, or join
+                // in where the clip is once they do.
+                self.graph.launcher.prepare_inline(index, slot);
+            }
+            let Some(column) = self.graph.launcher.columns.get_mut(index) else { continue };
             if let Queued::Launch(slot) = pending.action
                 && let Some(target) = column.slots.get_mut(slot)
                 && let Some(plan) = target.clip.as_mut()
@@ -2538,9 +2573,10 @@ mod tests {
     }
 
     #[test]
-    fn a_launched_clip_s_stretcher_is_built_with_the_plan_not_on_the_audio_thread() {
-        // Stretched to 1.5 times its length, so it needs a stretcher. The audio thread seeks and
-        // renders a launched voice itself: it must not build the stretcher there.
+    fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
+        // Stretched to 1.5 times its length, so it needs a stretcher. A graph build makes the
+        // plan without one: the preparer builds it on the stretch thread (`prepare`), never the
+        // audio thread, and not at every graph build.
         let samples = (0..SR).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
         let mut audio = AudioPool::new();
         audio.files.insert("sine.wav".into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples }));
@@ -2569,7 +2605,7 @@ mod tests {
         let p = project(vec![content], vec![vec![with(c.clone())]]);
         let Some(plan) = plan_clip(&p, &audio, &[], &c, p.tracks[0].id, BEAT as f64, SR) else { panic!("no plan") };
         let Some(voice) = plan.audio.first().and_then(|a| a.stretch.as_ref()) else { panic!("no stretch voice") };
-        assert!(voice.is_prepared());
+        assert!(!voice.is_prepared());
     }
 
     #[test]

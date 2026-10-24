@@ -828,7 +828,7 @@ fn devices_are_copied_pasted_and_removed_together_in_one_step_each() {
     let names = |s: &Session| {
         let p = s.project();
         let channel = p.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).unwrap();
-        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+        p.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
     };
     let before = names(&session);
     assert_eq!(before.len(), 3);
@@ -861,7 +861,7 @@ fn picked_devices_are_duplicated_after_the_last_in_one_step_and_the_clipboard_st
     let names = |s: &Session| {
         let p = s.project();
         let channel = p.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).unwrap();
-        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+        p.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
     };
     let before = names(&session);
     run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [2] })).unwrap();
@@ -874,6 +874,116 @@ fn picked_devices_are_duplicated_after_the_last_in_one_step_and_the_clipboard_st
     assert_eq!(names(&session), before, "one undo step");
 }
 
+/// A track playing notes with a MIDI effect, an instrument and an effect, in the chain's order.
+fn keys_with_the_whole_chain() -> Session {
+    let mut session = Session::new(project());
+    for id in ["utility", "fm-synth", "pitch"] {
+        let added = run(&mut session, "device.add", json!({ "track": "Keys", "id": id }));
+        assert!(added.is_ok(), "{added:?}");
+    }
+    session
+}
+
+fn chain_names(session: &Session) -> Vec<String> {
+    session.project().channels[0].devices.iter().map(|d| d.name.clone()).collect()
+}
+
+#[test]
+fn duplicating_devices_keeps_the_chains_rules() {
+    let mut session = keys_with_the_whole_chain();
+    let before = session.project().clone();
+    // The MIDI effect with the instrument: a second instrument, and a MIDI effect after one.
+    let error = run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [0, 1] })).unwrap_err();
+    assert!(error.contains("MIDI effects go first"), "{error}");
+    assert_eq!(session.project(), &before, "a refused duplicate changes nothing");
+    // The instrument alone.
+    assert!(run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [1] })).is_err());
+    assert_eq!(session.project(), &before);
+    // The MIDI effect and the effect: the copy of the MIDI effect would come after the effect.
+    assert!(run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [0, 2] })).is_err());
+    assert_eq!(session.project(), &before);
+    // What keeps the rules still works: a MIDI effect that leads the chain, an effect at the end.
+    run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [0] })).unwrap();
+    assert_eq!(chain_names(&session).len(), 4);
+    run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [3] })).unwrap();
+    assert_eq!(chain_names(&session).len(), 5);
+}
+
+#[test]
+fn pasting_devices_keeps_the_chains_rules() {
+    let mut session = keys_with_the_whole_chain();
+    let before = session.project().clone();
+    let copy = |session: &mut Session, device: usize| {
+        run(session, "device.copy", json!({ "track": "Keys", "devices": [device] })).unwrap();
+    };
+    // A second instrument.
+    copy(&mut session, 1);
+    assert!(run(&mut session, "device.paste", json!({ "track": "Keys" })).is_err());
+    // A MIDI effect after the instrument.
+    copy(&mut session, 0);
+    assert!(run(&mut session, "device.paste", json!({ "track": "Keys" })).is_err());
+    assert_eq!(session.project(), &before, "a refused paste changes nothing");
+    // A MIDI effect where the MIDI effects are, and an effect at the end, are fine.
+    run(&mut session, "device.paste", json!({ "track": "Keys", "position": 0 })).unwrap();
+    copy(&mut session, 3);
+    run(&mut session, "device.paste", json!({ "track": "Keys" })).unwrap();
+    assert_eq!(chain_names(&session).len(), 5);
+    // An instrument and a MIDI effect go on a track that plays notes only.
+    run(&mut session, "track.add", json!({ "kind": "audio", "name": "Bus" })).unwrap();
+    for device in [0, 2] {
+        copy(&mut session, device);
+        assert!(run(&mut session, "device.paste", json!({ "track": "Bus" })).is_err(), "{device}");
+    }
+    // A MIDI effect does not go into a group.
+    run(&mut session, "device.group", json!({ "track": "Keys", "device": 4 })).unwrap();
+    copy(&mut session, 0);
+    assert!(run(&mut session, "device.paste", json!({ "track": "Keys", "position": "4/0/0" })).is_err());
+}
+
+/// Fills the Keys track's chain with effects up to the most devices a track holds.
+fn keys_with_a_full_chain() -> Session {
+    let mut session = keys_with_the_whole_chain();
+    while chain_names(&session).len() < suhina_model::MAX_DEVICES {
+        let added = run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" }));
+        assert!(added.is_ok(), "{added:?}");
+    }
+    session
+}
+
+#[test]
+fn duplicating_and_pasting_devices_stay_within_the_device_limit() {
+    let mut session = keys_with_a_full_chain();
+    let before = session.project().clone();
+    let error = run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": [3] })).unwrap_err();
+    assert!(error.contains("at most"), "{error}");
+    assert_eq!(session.project(), &before, "a refused duplicate changes nothing");
+    run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [3] })).unwrap();
+    let error = run(&mut session, "device.paste", json!({ "track": "Keys" })).unwrap_err();
+    assert!(error.contains("at most"), "{error}");
+    assert_eq!(session.project(), &before, "a refused paste changes nothing");
+    // One place free: the same copy goes in.
+    run(&mut session, "device.remove", json!({ "track": "Keys", "device": 3 })).unwrap();
+    run(&mut session, "device.paste", json!({ "track": "Keys" })).unwrap();
+    assert_eq!(chain_names(&session).len(), suhina_model::MAX_DEVICES);
+}
+
+#[test]
+fn pasting_devices_stays_within_the_group_depth_limit() {
+    let mut session = keys_with_the_whole_chain();
+    // Group the utility four times over: a group nested to the deepest level.
+    for _ in 0..suhina_model::MAX_DEVICE_GROUP_DEPTH {
+        run(&mut session, "device.group", json!({ "track": "Keys", "device": 2 })).unwrap();
+    }
+    let before = session.project().clone();
+    // A copy of the outer group, put in its innermost branch, would nest one level deeper.
+    run(&mut session, "device.copy", json!({ "track": "Keys", "devices": [2] })).unwrap();
+    let error = run(&mut session, "device.paste", json!({ "track": "Keys", "position": "2/0/0/0/0/0/0/0/0" }));
+    assert!(error.as_ref().is_err_and(|e| e.contains("nest")), "{error:?}");
+    assert_eq!(session.project(), &before, "a refused paste changes nothing");
+    // Duplicating copies a device beside itself, which never nests deeper than it already is.
+    run(&mut session, "device.duplicateMany", json!({ "track": "Keys", "devices": ["2/0/0/0/0/0/0/0/0"] })).unwrap();
+}
+
 #[test]
 fn a_device_moves_or_copies_to_another_track_in_one_step() {
     let mut session = Session::new(project());
@@ -881,7 +991,7 @@ fn a_device_moves_or_copies_to_another_track_in_one_step() {
     let chain = |s: &Session, name: &str| {
         let p = s.project();
         let channel = p.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel).unwrap();
-        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+        p.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
     };
     run(&mut session, "track.add", json!({ "kind": "audio", "name": "Bus" })).unwrap();
     let other = "Bus".to_string();
@@ -913,7 +1023,7 @@ fn an_instrument_group_moved_to_another_track_takes_its_instrument_s_place() {
     let chain = |s: &Session, name: &str| {
         let p = s.project();
         let channel = p.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel).unwrap();
-        p.channels.iter().find(|c| c.id == channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
+        p.channel(channel).unwrap().devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>()
     };
     let lead = chain(&session, "Lead");
     // A group whose branches start with an instrument is an instrument: it goes where Lead's

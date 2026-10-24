@@ -341,7 +341,15 @@ fn track_value(t: &Track) -> Value {
                 MidiPort::Nothing => Value::String("none".into()),
                 MidiPort::Named(name) => json!({ "name": name }),
             };
-            map.insert("midi_input".into(), json!({ "port": port, "channel": t.midi_input.channel }));
+            let monitor = match t.midi_input.monitor {
+                Monitor::Auto => "auto",
+                Monitor::In => "in",
+                Monitor::Off => "off",
+            };
+            map.insert(
+                "midi_input".into(),
+                json!({ "port": port, "channel": t.midi_input.channel, "monitor": monitor }),
+            );
         }
         // Left out while it is the default: no input, monitored automatically.
         if t.audio_input != AudioInput::default() {
@@ -1064,7 +1072,17 @@ fn read_midi_input(value: Option<&Value>, at: &str) -> Result<MidiInput, Project
             _ => return Err(format!("{at}.channel: expected 1 to 16 or null").into()),
         },
     };
-    Ok(MidiInput { port, channel })
+    let monitor = match m.get("monitor") {
+        None | Some(Value::Null) => Monitor::Auto,
+        Some(Value::String(s)) => match s.as_str() {
+            "auto" => Monitor::Auto,
+            "in" => Monitor::In,
+            "off" => Monitor::Off,
+            _ => return Err(format!("{at}.monitor: expected auto, in or off").into()),
+        },
+        Some(_) => return Err(format!("{at}.monitor: expected auto, in or off").into()),
+    };
+    Ok(MidiInput { port, channel, monitor })
 }
 
 fn read_channel(value: &Value, at: &str) -> Result<Channel, ProjectFileError> {

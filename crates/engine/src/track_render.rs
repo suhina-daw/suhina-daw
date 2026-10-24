@@ -51,7 +51,7 @@ pub fn render_track(
 /// through a unity channel.
 fn alone(project: &Project, track: TrackId) -> Project {
     let channel = ChannelId(0);
-    let source = project.tracks.iter().find(|t| t.id == track);
+    let source = project.track(track);
     Project {
         // The clips keep their ids, so the counter stays past them.
         next_id: project.next_id,

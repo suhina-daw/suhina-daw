@@ -135,16 +135,72 @@ pub fn midi_input_text(input: &MidiInput) -> String {
         MidiPort::Named(name) => name.as_str(),
         MidiPort::Nothing => "No input",
     };
-    match input.channel {
+    let source = match input.channel {
         Some(channel) if input.port != MidiPort::Nothing => format!("{port} · Ch {channel}"),
         _ => port.to_string(),
+    };
+    format!("{source} · {}", monitor_name(input.monitor))
+}
+
+pub fn monitor_name(monitor: Monitor) -> &'static str {
+    match monitor {
+        Monitor::Auto => "Auto",
+        Monitor::In => "On",
+        Monitor::Off => "Off",
     }
+}
+
+pub fn midi_monitor_explanation(monitor: Monitor) -> &'static str {
+    match monitor {
+        Monitor::Auto => "Hear MIDI when this track is ready to record.",
+        Monitor::In => "Hear MIDI even when recording is not enabled.",
+        Monitor::Off => "Live MIDI is silent. You can still record it.",
+    }
+}
+
+/// Input monitoring is independent of record arm and headphone cue.
+pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actions: &mut Vec<Action>) {
+    // `.popup` styles the menu, `button:checked` its chosen row.
+    let _style = crate::kit::style_class::enter("popup");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
+    ui.set_min_width(280.0);
+    ui.set_max_width(280.0);
+    ui.label(egui::RichText::new("Hear your MIDI keyboard").strong());
+    ui.separator();
+    let mut explained = monitor;
+    for (mode, value, text) in
+        [(Monitor::Auto, "auto", "Automatic"), (Monitor::In, "in", "Always on"), (Monitor::Off, "off", "Off")]
+    {
+        let response = ui.selectable_label(monitor == mode, text);
+        if response.hovered() || response.has_focus() {
+            explained = mode;
+        }
+        if response.clicked() {
+            if monitor != mode {
+                actions.push(Action::new("track.setMidiInput", json!({"track": track.0, "monitor": value})));
+            }
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.allocate_ui(egui::vec2(280.0, 30.0), |ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(midi_monitor_explanation(explained)).small().color(theme::text_secondary()),
+            )
+            .wrap(),
+        );
+    });
 }
 
 /// The choices of a track's MIDI input (ADR 0017): every port, each port there is (and the one
 /// chosen, if it is not there now), none; then every channel or one. A pick runs
 /// `track.setMidiInput`.
 pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports: &[String], actions: &mut Vec<Action>) {
+    let _style = crate::kit::style_class::enter("popup");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
     let mut pick = |ui: &mut Ui, label: &str, on: bool, params: serde_json::Value| {
         if ui.selectable_label(on, text(label)).clicked() && !on {
@@ -174,6 +230,8 @@ pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports:
             }
         }
     });
+    ui.separator();
+    midi_monitor_choices(ui, track, input.monitor, actions);
 }
 
 /// The menu of a track header or column: name, colour, group, ungroup, move into or out of a

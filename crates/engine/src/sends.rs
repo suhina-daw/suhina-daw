@@ -86,7 +86,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
             if send.target == channel.id || !send.level.is_finite() || send.level <= 0.0 {
                 continue;
             }
-            let Some(target_channel) = project.channels.iter().find(|c| c.id == send.target) else { continue };
+            let Some(target_channel) = project.channel(send.target) else { continue };
             if target_channel.role != ChannelRole::Effect {
                 continue;
             }

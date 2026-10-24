@@ -28,6 +28,8 @@ suhina-ui.workspace = true
 # The build's endpoints: one instance per build, and agents working on the open projects (ADR 0028).
 suhina-automation.workspace = true
 suhina-update.workspace = true
+suhina-theme-package.workspace = true
+chrono.workspace = true
 zip.workspace = true
 serde_json.workspace = true
 eframe = { version = "0.36", features = ["glow", "persistence"] }  # MIT OR Apache-2.0

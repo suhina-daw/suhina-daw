@@ -291,6 +291,10 @@ fn the_commands_are_listed() {
 #[test]
 fn several_clips_fades_move_by_as_much_each_from_its_own_in_one_step() {
     let mut project = project();
+    // Only audio clips have fades.
+    for content in &mut project.contents[..2] {
+        content.lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }];
+    }
     project.arrangement.lanes[0].clips[1].fade_in = 1.0;
     project.arrangement.lanes[0].clips[1].fade_out = 2.5;
     let mut session = Session::new(project);
@@ -307,4 +311,16 @@ fn several_clips_fades_move_by_as_much_each_from_its_own_in_one_step() {
     undo(&mut session);
     assert_eq!((arranged(&session, 0).fade_in, arranged(&session, 1).fade_in), (0.0, 1.0), "one step each");
     assert!(run(&mut session, "clip.shiftFades", json!({ "clips": ids, "edge": "up", "beats": 1.0 })).is_err());
+}
+
+#[test]
+fn shifting_fades_leaves_the_midi_clips_of_a_mixed_selection_alone() {
+    let mut project = project();
+    project.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("a.wav")) }];
+    let mut session = Session::new(project);
+    let ids: Vec<Value> =
+        session.project().arrangement.lanes[0].clips.iter().map(|c| json!({ "clip": c.id.0 })).collect();
+    let answer = run(&mut session, "clip.shiftFades", json!({ "clips": ids, "edge": "out", "beats": 1.0 })).unwrap();
+    assert_eq!(answer["clips"], 1, "only the audio clip is counted");
+    assert_eq!((arranged(&session, 0).fade_out, arranged(&session, 1).fade_out), (1.0, 0.0));
 }

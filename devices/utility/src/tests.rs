@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -39,11 +39,7 @@ fn peaks(signal: &[f32]) -> (f32, f32) {
     (amplitude(l), amplitude(r))
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(Utility::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Utility::new());
 
 #[test]
 fn defaults_pass_the_signal_through_exactly() {

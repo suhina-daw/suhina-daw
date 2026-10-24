@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-20
+last_verified: 2026-10-23
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -58,7 +58,7 @@ Both play a sample as soon as the pointer is over it.
 - **Map:** the plane with one **point** per item. An item is a sample file from the library or
   an NKS preset with a preview (see *NKS presets*).
 - **Scope:** the items a map holds: those of the place selected in the browser (a folder, Pinned,
-  a Recent group), or of every folder when no place is selected.
+  a Recent group or every recent item), or of every folder when no place is selected.
 - **Features:** numbers computed from an item's audio that describe its sound
   ([ADR 0013](../decisions/0013-sample-map-analysis.md) lists them). Two items are **similar**
   when their features are close.
@@ -83,7 +83,8 @@ Both play a sample as soon as the pointer is over it.
   Show similar, tags, pins, double-click adds to the selected track, and a drag from the map to
   a track, a slot or a device chain in the main window drops there (the map's window has the
   pointer while the button is down; the main window shows the drop label and takes the drop).
-  The keymap's keys work in that window too. **Dock**, Ctrl+Alt+M, closing the window, the
+  The keymap's keys work in that window too, except while a dialog in the main window asks
+  something (as they do nothing in the main window then). **Dock**, Ctrl+Alt+M, closing the window, the
   browser's **Sample map** button or the large view put the map back. Whether the window is open, and where
   it is and how big (`map_window`, `map_window_rect` in `settings.txt`: left, top, width and
   height in points on the whole desktop, so a second screen counts), are kept for the next

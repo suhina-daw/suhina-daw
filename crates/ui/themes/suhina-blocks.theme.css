@@ -1,0 +1,108 @@
+/* Original brown plank surfaces, colour-keyed pixel textures and stone controls. No landscape wallpaper. */
+/* Suhina theme. Settings are custom properties; see README.md. */
+:root {
+  --accent: #A6D34F;
+  --border: #261B12;
+  --border-strong: #7A6A4C;
+  --browser-text-hint: #968367;
+  --browser-text-primary: #E8DABD;
+  --browser-text-secondary: #C5B693;
+  --browser-text-value: #DFCF9F;
+  --clip-audioDefault: #C99070;
+  --clip-midiDefault: #83A9B4;
+  --control-activeBackground: #786842;
+  --control-background: #55452E;
+  --control-hoverBackground: #6B583B;
+  --control-playingBackground: #4C6C31;
+  --control-selectedBackground: #A8B55A;
+  --grid-major: #665238;
+  --grid-minor: #3B2C1D;
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --meter-hot: #D9D52E;
+  --meter-normal: #66DF19;
+  --meter-segments: 32;
+  --meter-style: segmented;
+  --pan-background: #302719;
+  --pan-centre: #887755;
+  --panel-background: #3D3022;
+  --panel-hoverBackground: #54432C;
+  --recording: #D65139;
+  --recording-background: #5A2E22;
+  --selection: #D6B159;
+  --session-header-height: 24px;
+  --session-return-width: 80px;
+  --session-scene-width: 84px;
+  --session-slot-height: 24px;
+  --session-track-width: 92px;
+  --slot-empty: #998365;
+  --text-hint: #968367;
+  --text-inverse: #241C11;
+  --text-onColorDark: #211B12;
+  --text-onColorLight: #F6EBC8;
+  --text-playing: #FFF6C9;
+  --text-primary: #F0E5C9;
+  --text-secondary: #C5B693;
+  --text-value: #E6D4A7;
+  --track-1: #FF9A3C;
+  --track-2: #7FDB5A;
+  --track-3: #4FC3F7;
+  --track-4: #B38BFF;
+  --track-5: #F2D541;
+  --track-6: #E5484D;
+  --track-7: #80ADA1;
+  --track-8: #A84F4F;
+  --track-headerBackground: #403220;
+  --track-headerSelectedBackground: #675436;
+  --track-mutedBackground: #30291E;
+  --window-background: #2B1C12;
+}
+theme { name: "Suhina Blocks"; }
+
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original brown planks and pixel controls. No landscape wallpaper.
+ */
+@layer suhina-blocks {
+  .window, .session, .arrangement {
+    background-color: #2b1c12;
+    background-image: repeating-linear-gradient(0deg, #21150d 0 2px, #3e291a 2px 4px, #302014 4px 23px, #49301e 23px 25px);
+  }
+  .application-bar, .menu-bar, .project-tabs, .toolbar, .status-bar {
+    color: #ede3ca;
+    background: linear-gradient(#666254, #444238 48%, #333128);
+    border-color: #85806b;
+  }
+  .browser {
+    background-color: #6a472f;
+    background-image: repeating-linear-gradient(90deg, #00000018 0 3px, transparent 3px 9px),
+                      repeating-linear-gradient(0deg, #f4d09c10 0 2px, transparent 2px 8px);
+    color: #f1dfba;
+  }
+  .detail, .device-panel { background-color: #443322; color: #e6d4a7; }
+  .mixer { box-shadow: inset 1px 0 0 #f6e7ba22, inset -1px 0 0 #140e08; }
+  .button { color: #eee2bf; background-color: #5b584b; border-color: #9a9277; border-radius: 0px; }
+  .button:hover { color: #faffb8; background-color: #7a7857; border-color: #d2cd77; }
+  .value, .dropdown, .text-input { color: #e6d4a7; background-color: #2c2519; border-radius: 0px; }
+  .knob { color: #d5bd80; background-color: #5b584b; }
+  .fader-scale { color: #dbc8a0; }
+  .meter { background-color: #171b0d; }
+  .meter-level { box-shadow: 0 0 2px #83d82b55; }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #32cf13, #92ed25 75%, #e3d62c 91%, #ef6b2c); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #32cf13, #92ed25 75%, #e3d62c 91%, #ef6b2c); }
+}

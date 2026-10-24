@@ -7,7 +7,12 @@
 //! sound, hostile events and every sample rate. MIDI effects go through event checks: the same
 //! events in spans of every size, at every parameter's ends, `reset`, hostile events,
 //! all-notes-off and too little room to write, and every note they start is ended, also with
-//! room for no more events than they get.
+//! room for no more events than they get. Effects and instruments are prepared again at other
+//! rates and must then sound as a fresh device does, and an effect's impulse must arrive when
+//! its [`Device::latency`] says.
+//!
+//! The registry runs these checks on every built-in device; a device crate runs them on its own
+//! with [`conformance_test!`](crate::conformance_test).
 
 use crate::{Device, MusicalScale, NoteEvent, ParamKind, ProcessContext, Role, controller};
 
@@ -26,11 +31,34 @@ pub fn check(make: &dyn Fn() -> Box<dyn Device>) -> Vec<String> {
     check_reset(make, &mut failures);
     check_sample_rates(make, &mut failures);
     match make().info().role {
-        Role::Instrument => check_notes(make, &mut failures),
+        Role::Instrument => {
+            check_notes(make, &mut failures);
+            check_prepare_again(make, &mut failures);
+        }
         Role::MidiEffect => check_events(make, &mut failures),
-        Role::Effect => {}
+        Role::Effect => {
+            check_prepare_again(make, &mut failures);
+            check_latency(make, &mut failures);
+        }
     }
     failures
+}
+
+/// A `#[test]` that runs [`check`] on the devices an expression makes and fails with the list of
+/// what failed. For a device crate's tests:
+///
+/// ```ignore
+/// suhina_device_api::conformance_test!(Utility::new());
+/// ```
+#[macro_export]
+macro_rules! conformance_test {
+    ($make:expr) => {
+        #[test]
+        fn passes_the_device_conformance_checks() {
+            let failures = $crate::conformance::check(&|| ::std::boxed::Box::new($make));
+            assert!(failures.is_empty(), "{failures:#?}");
+        }
+    };
 }
 
 /// Interleaved stereo test signal: noise plus a low sine, different on each side, with a DC
@@ -212,6 +240,74 @@ fn check_sample_rates(make: &dyn Fn() -> Box<dyn Device>, failures: &mut Vec<Str
     device.process(&ProcessContext::default(), &mut signal);
     if signal.iter().any(|s| !s.is_finite()) {
         failures.push("a rejected sample rate left the device broken".into());
+    }
+}
+
+/// What a device sends out for `frames` frames: an effect the test signal processed, an
+/// instrument the test notes played, in blocks of 512.
+fn output(device: &mut dyn Device, frames: usize) -> Vec<f32> {
+    if device.info().role == Role::Instrument {
+        return play(device, &test_notes(), &[512], frames);
+    }
+    let mut signal = test_signal(frames);
+    for block in signal.chunks_mut(1_024) {
+        device.process(&ProcessContext::default(), block);
+    }
+    signal
+}
+
+/// Preparing again, at another rate and then at the first, leaves a device as it was made: the
+/// same output as a fresh one, whatever it ran before.
+fn check_prepare_again(make: &dyn Fn() -> Box<dyn Device>, failures: &mut Vec<String>) {
+    let fresh = output(make().as_mut(), FRAMES);
+    let mut device = make();
+    for sr in [96_000.0, 44_100.0, 48_000.0] {
+        output(device.as_mut(), 2_048);
+        if let Err(e) = device.prepare(sr) {
+            failures.push(format!("prepare({sr}) after another rate failed: {e}"));
+            return;
+        }
+    }
+    let diff = largest_difference(&fresh, &output(device.as_mut(), FRAMES));
+    if diff > TOLERANCE {
+        failures.push(format!(
+            "prepared at 96 kHz, 44.1 kHz and again at 48 kHz, the output differs from a fresh device's by {diff}"
+        ));
+    }
+}
+
+/// How far from [`Device::latency`] an effect's first sound of an impulse may fall, in frames:
+/// oversampling filters ring a frame or two early.
+const LATENCY_SLACK: u32 = 4;
+/// A frame is the impulse's first sound when it is louder than this (-40 dB under the impulse).
+const IMPULSE_HEARD: f32 = 0.005;
+
+/// At its defaults an effect reports the delay it adds: an impulse is first heard within
+/// [`LATENCY_SLACK`] frames of [`Device::latency`], at 44.1, 48 and 96 kHz. A device reporting
+/// too little puts its tracks late; one reporting too much puts them early.
+fn check_latency(make: &dyn Fn() -> Box<dyn Device>, failures: &mut Vec<String>) {
+    for sr in [44_100.0, 48_000.0, 96_000.0] {
+        let mut device = make();
+        if device.prepare(sr).is_err() {
+            continue;
+        }
+        let latency = device.latency();
+        let frames = (latency as usize).saturating_add(FRAMES);
+        let mut signal = vec![0.0f32; frames * 2];
+        if let Some(first) = signal.get_mut(..2) {
+            first.copy_from_slice(&[0.5, 0.5]);
+        }
+        for block in signal.chunks_mut(1_024) {
+            device.process(&ProcessContext::default(), block);
+        }
+        let heard = signal.iter().position(|s| s.abs() > IMPULSE_HEARD).map(|n| (n / 2) as u32);
+        match heard {
+            Some(at) if at.abs_diff(latency) <= LATENCY_SLACK => {}
+            Some(at) => {
+                failures.push(format!("at {sr} Hz an impulse is first heard at frame {at}, but latency() is {latency}"))
+            }
+            None => failures.push(format!("at {sr} Hz an impulse is never heard at the defaults")),
+        }
     }
 }
 
@@ -556,224 +652,5 @@ fn check_events(make: &dyn Fn() -> Box<dyn Device>, failures: &mut Vec<String>) 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{DeviceError, DeviceInfo, ParamInfo, Role, Scale, Unit};
-
-    const PARAMS: [ParamInfo; 1] = [ParamInfo::continuous("gain", "Gain", (0.0, 2.0), 1.0, Unit::None, Scale::Linear)];
-    const INFO: DeviceInfo = DeviceInfo { id: "broken", name: "Broken", role: Role::Effect, params: &PARAMS };
-
-    /// Breaks the contract in two ways: it applies a gain change once per block (so the output
-    /// depends on the block size) and keeps state across `reset`.
-    struct Broken {
-        gain: f64,
-        applied: f32,
-        counter: f32,
-    }
-
-    impl Device for Broken {
-        fn info(&self) -> &'static DeviceInfo {
-            &INFO
-        }
-        fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
-            crate::check_sample_rate(sample_rate).map(|_| ())
-        }
-        fn reset(&mut self) {}
-        fn set_param(&mut self, index: usize, value: f64) {
-            if index == 0 {
-                self.gain = PARAMS[0].clamp(value);
-            }
-        }
-        fn param(&self, index: usize) -> Option<f64> {
-            (index == 0).then_some(self.gain)
-        }
-        fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
-            self.applied += (self.gain as f32 - self.applied) * 0.5;
-            for s in buffer.as_chunks_mut::<2>().0.iter_mut().flatten() {
-                self.counter += 1e-3;
-                *s *= self.applied + self.counter.sin() * 0.01;
-            }
-        }
-    }
-
-    #[test]
-    fn catches_a_device_that_breaks_the_contract() {
-        let failures = check(&|| Box::new(Broken { gain: 1.0, applied: 1.0, counter: 0.0 }));
-        assert!(failures.iter().any(|f| f.contains("blocks of")), "{failures:#?}");
-        assert!(failures.iter().any(|f| f.contains("after reset")), "{failures:#?}");
-    }
-
-    const MIDI: DeviceInfo = DeviceInfo { id: "sticky", name: "Sticky", role: Role::MidiEffect, params: &PARAMS };
-
-    /// A MIDI effect that transposes by its gain in octaves and ends a note at the key the
-    /// current gain gives, so a change while a note is held leaves it hanging.
-    struct Sticky {
-        gain: f64,
-    }
-
-    impl Device for Sticky {
-        /// The broken MIDI effect's description.
-        fn info(&self) -> &'static DeviceInfo {
-            &MIDI
-        }
-        /// Accepts any sample rate the checks accept.
-        fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
-            crate::check_sample_rate(sample_rate).map(|_| ())
-        }
-        /// Holds nothing to reset: the fault is in how it ends notes.
-        fn reset(&mut self) {}
-        /// Sets the transposition, in octaves.
-        fn set_param(&mut self, index: usize, value: f64) {
-            if index == 0 {
-                self.gain = PARAMS[0].clamp(value);
-            }
-        }
-        /// The transposition, in octaves.
-        fn param(&self, index: usize) -> Option<f64> {
-            (index == 0).then_some(self.gain)
-        }
-        /// Leaves the sound as it is.
-        fn process(&mut self, _: &ProcessContext, _: &mut [f32]) {}
-        /// Transposes note-ons and note-offs alike by the current setting, so a note-off after a change
-        /// misses the key its note-on sent.
-        fn process_events(
-            &mut self,
-            _: &ProcessContext,
-            _: usize,
-            input: &[(usize, NoteEvent)],
-            output: &mut [(usize, NoteEvent)],
-        ) -> usize {
-            let shift = (self.gain * 12.0) as u8;
-            let mut written = 0;
-            for (&(at, event), slot) in input.iter().zip(output.iter_mut()) {
-                *slot = match event {
-                    NoteEvent::On { key, velocity } => {
-                        (at, NoteEvent::On { key: key.saturating_add(shift).min(127), velocity })
-                    }
-                    NoteEvent::Off { key, velocity } => {
-                        (at, NoteEvent::Off { key: key.saturating_add(shift).min(127), velocity })
-                    }
-                    other => (at, other),
-                };
-                written += 1;
-            }
-            written
-        }
-    }
-
-    /// The checks catch a MIDI effect whose note-off goes to a different key than its note-on after a
-    /// parameter change.
-    #[test]
-    fn catches_a_midi_effect_that_leaves_notes_hanging() {
-        let failures = check(&|| Box::new(Sticky { gain: 1.0 }));
-        assert!(failures.iter().any(|f| f.contains("still sounds")), "{failures:#?}");
-    }
-
-    /// The default `process_events` passes every event on, which the checks accept.
-    struct Through;
-
-    impl Device for Through {
-        /// The pass-through MIDI effect's description.
-        fn info(&self) -> &'static DeviceInfo {
-            &MIDI
-        }
-        /// Accepts any sample rate the checks accept.
-        fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
-            crate::check_sample_rate(sample_rate).map(|_| ())
-        }
-        /// Holds nothing to reset.
-        fn reset(&mut self) {}
-        /// Ignores its one parameter.
-        fn set_param(&mut self, _: usize, _: f64) {}
-        /// Its one parameter, always 1.
-        fn param(&self, index: usize) -> Option<f64> {
-            (index == 0).then_some(1.0)
-        }
-        /// Leaves the sound as it is.
-        fn process(&mut self, _: &ProcessContext, _: &mut [f32]) {}
-    }
-
-    /// A MIDI effect that keeps the default `process_events` fails none of the event checks.
-    #[test]
-    fn a_midi_effect_that_passes_events_through_passes() {
-        let failures = check(&|| Box::new(Through));
-        let events: Vec<&String> = failures.iter().filter(|f| !f.contains("parameter")).collect();
-        assert!(events.is_empty(), "{events:#?}");
-    }
-
-    /// A MIDI effect that doubles every note an octave up and writes until its output is full,
-    /// so with too little room the note-offs at the end are the ones left out; or, `swallow`,
-    /// one that drops all-notes-off and forgets nothing.
-    struct Doubler {
-        swallow: bool,
-    }
-
-    impl Device for Doubler {
-        /// The doubling MIDI effect's description.
-        fn info(&self) -> &'static DeviceInfo {
-            &MIDI
-        }
-        /// Accepts any sample rate the checks accept.
-        fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
-            crate::check_sample_rate(sample_rate).map(|_| ())
-        }
-        /// Holds nothing to reset.
-        fn reset(&mut self) {}
-        /// Ignores its one parameter.
-        fn set_param(&mut self, _: usize, _: f64) {}
-        /// Its one parameter, always 1.
-        fn param(&self, index: usize) -> Option<f64> {
-            (index == 0).then_some(1.0)
-        }
-        /// Leaves the sound as it is.
-        fn process(&mut self, _: &ProcessContext, _: &mut [f32]) {}
-        /// Doubles each note an octave up until the output is full, or with `swallow` drops
-        /// all-notes-off and passes the rest.
-        fn process_events(
-            &mut self,
-            _: &ProcessContext,
-            _: usize,
-            input: &[(usize, NoteEvent)],
-            output: &mut [(usize, NoteEvent)],
-        ) -> usize {
-            let mut written = 0;
-            let mut send = |event| {
-                if let Some(slot) = output.get_mut(written) {
-                    *slot = event;
-                    written += 1;
-                }
-            };
-            for &(at, event) in input {
-                match event {
-                    NoteEvent::AllNotesOff if self.swallow => {}
-                    NoteEvent::On { key, velocity } if !self.swallow && key < 116 => {
-                        send((at, event));
-                        send((at, NoteEvent::On { key: key + 12, velocity }));
-                    }
-                    NoteEvent::Off { key, velocity } if !self.swallow && key < 116 => {
-                        send((at, event));
-                        send((at, NoteEvent::Off { key: key + 12, velocity }));
-                    }
-                    other => send((at, other)),
-                }
-            }
-            written
-        }
-    }
-
-    /// The checks catch a MIDI effect that fills its output with note-ons and leaves no room for the
-    /// note-offs, without blaming it for the hostile events.
-    #[test]
-    fn catches_a_midi_effect_that_spends_the_room_note_offs_need() {
-        let failures = check(&|| Box::new(Doubler { swallow: false }));
-        assert!(failures.iter().any(|f| f.contains("room for as many") && f.contains("still sounds")), "{failures:#?}");
-        assert!(!failures.iter().any(|f| f.starts_with("hostile events: ")), "{failures:#?}");
-    }
-
-    /// The checks catch a MIDI effect that swallows all-notes-off.
-    #[test]
-    fn catches_a_midi_effect_that_drops_all_notes_off() {
-        let failures = check(&|| Box::new(Doubler { swallow: true }));
-        assert!(failures.iter().any(|f| f.starts_with("all-notes-off:")), "{failures:#?}");
-    }
-}
+#[path = "conformance_tests.rs"]
+mod tests;

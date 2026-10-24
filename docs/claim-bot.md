@@ -3,11 +3,15 @@ description: How the claim bot moves an issue's card on the project board, holds
 read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-10-17
+last_verified: 2026-10-22
 covers:
+  - .github/workflows/trusted-requests.yml
+  - scripts/test_trusted_requests.py
   - .github/workflows/claim.yml
   - scripts/claim_bot_test.py
   - .github/workflows/depends-on.yml
+  - .github/workflows/overlap.yml
+  - scripts/test_pr_workflows.py
   - scripts/depends_on_test.py
   - .github/workflows/project-sync.yml
   - scripts/project_sync.py
@@ -71,13 +75,82 @@ to the repository, triage included, a `COLLABORATOR`. It reads two lists of logi
 
 | Role | Listed in | May |
 |---|---|---|
-| Maintainer | `MAINTAINERS` in [`claim.yml`](../.github/workflows/claim.yml) (also in `ready-to-merge.yml`, `test-build.yml` and `test-build-links.yml`); changed by a pull request | everything in the table above: `/hold`, `/ready`, `/claim @login`, `/unclaim` for anyone, claim a feature in `Backlog`, any number of claims |
+| Maintainer | the repository variable `MAINTAINERS` (Settings → Secrets and variables → Actions → Variables), logins separated by commas or whitespace | everything in the table above: `/hold`, `/ready`, `/claim @login`, `/unclaim` for anyone, claim a feature in `Backlog`, any number of claims |
 | Trusted contributor | the repository variable `TRUSTED_CONTRIBUTORS` (Settings → Secrets and variables → Actions → Variables), logins separated by commas or spaces | claim a feature in `Backlog` without `/ready`, and `/ready` a card in `Backlog` so anyone may claim it; not `/hold`, not release a held card, not claim for others |
 | Anyone else | | claim free work for themselves, `/unclaim` their own claim |
 
-Being trusted is about the board only: no access to the code comes with it. Merging stays a maintainer's: only a maintainer's
+Both lists accept an optional `@` and match whole logins without case. `MAINTAINERS` is shared
+by Claim, Overlap, Ready to merge, Test build, Test build links and Trusted requests. Changing
+maintainers requires editing that variable only; there is no hardcoded fallback. An unset or
+empty list grants nobody the maintainer role. Keep these as repository variables, not environment
+overrides, so all workflows see the same policy. Only people allowed to administer repository
+variables should manage these lists: `MAINTAINERS` controls merge authorization as well as bot
+commands. Membership does not grant GitHub's own write/admin permissions.
+
+Trusted contributors may also request the bot actions below; no repository write access comes with the list. Merging stays a maintainer's: only a maintainer's
 `ready to merge` label queues a pull request ([`CONTRIBUTING.md`](../CONTRIBUTING.md) › Merging many
 pull requests), and a `/hold` reason is quoted only when a maintainer wrote it.
+
+## Trusted bot requests
+
+Maintainers and the GitHub logins in `TRUSTED_CONTRIBUTORS` may comment these commands.
+[Trusted requests](../.github/workflows/trusted-requests.yml) runs from the default branch,
+checks the actual comment author, and writes as `suhina-bot[bot]` with **On behalf of @login**.
+Bot authors and unlisted people are refused. Names are case-insensitive, separated by commas
+or whitespace; an optional `@` is accepted.
+
+| Comment | Where | Action |
+|---|---|---|
+| `/close` | An issue | Close it |
+| `/reopen` | An issue | Reopen it |
+| `/test-build` | An open pull request | Request a build of its current commit; a new commit needs a new comment |
+| `/open-issue` followed by JSON | An existing issue or pull request | Create a new issue as the bot and reply with its number |
+
+Post a **new comment**, with the command on its own first line. Editing a comment does not
+run it. The source comment is fetched again immediately before carrying out the request;
+changed authors, bodies, update timestamps and deleted comments are rejected before any write.
+This is a second check, not an atomic transaction with GitHub: an edit after the final read
+cannot cancel a write already starting. Close/reopen and test-build take no arguments;
+close/reopen never act on pull requests.
+A completed request is not repeated when its Actions run is rerun. Issue creation recovers an
+issue created before a failed reply. A partially failed test-build request may repeat a label
+event for the same commit, but cannot authorize another commit. Runs for the same comment are
+serialized; separate comments are independent requests.
+
+For example, comment on the issue that prompted the new work:
+
+```text
+/open-issue
+{"title":"Browser: preserve the search","body":"Describe the problem and acceptance criteria here.","type":"bug","labels":["browser"]}
+```
+
+The JSON accepts only `title`, `body`, `type` and optional `labels`. Types are `enhancement`,
+`bug`, `documentation`, `chore`, `epic`; labels are existing area/platform labels listed in
+CONTRIBUTING. Search for existing work first. Set Priority and Phase on the board afterwards
+as for other issues. GitHub's ordinary **New issue** remains available.
+
+This uses the existing `suhina-bot` environment and App secrets described in
+[open-issue.yml](../.github/workflows/open-issue.yml), with Issues and Pull requests write
+permissions scoped to this repository. No Actions write permission is needed: the App's label
+event starts the build. The privileged workflow never checks out request or PR code.
+A rejected request fails in **Actions → Trusted requests** without changing the issue;
+the log explains the refusal. Workflow dispatch still requires GitHub write access; trusted
+contributors use the comment commands instead.
+
+Agents post those commands using the user's existing GitHub connection. They need no admin
+access, App key or broader token scopes. The workflow-dispatch posting convention applies to
+callers who already have write access; other contributors may post ordinary issues and PR
+comments as themselves. See CONTRIBUTING's *No elevated access just to post* rule. A connector's
+own restrictions still apply and must not be bypassed to reach the bot.
+
+Merge, hold and claim-for-others policies are unchanged. The ordinary **Open issue** workflow
+also attributes new issues to its authenticated actor.
+
+Check the gateway and build authorization without network writes:
+
+```sh
+python -m unittest discover -s scripts -p 'test_trusted_requests.py'
+```
 
 ## Blocked work
 
@@ -113,6 +186,16 @@ It lists at most ten, each with the paths that overlap, and points at `AGENTS.md
 do about them. It never refuses a claim for an overlap: two pieces of work on the same crate are
 often fine, and only the people doing them can tell. A claim without the line is answered with a
 sentence saying what the line does. A lookup that fails leaves its part out of the answer.
+
+A bug fix or a small change needs no issue and no claim, so the same lookup runs on pull requests
+too: the [Overlap](../.github/workflows/overlap.yml) workflow comments on a pull request when
+another open pull request or a claim's `Touches:` line covers its files, and keeps that one comment
+current with each push. It reads every page of open pull requests before checking overlaps and
+stack relationships. If a later page fails, known overlaps are still compared; an existing notice
+is preserved, and any new notice says the scan is incomplete. Renamed files count under both their old and new names in either pull
+request. If one pull request's full file lookup fails, the notice compares its already known files
+and continues with the other pull requests; the run log warns about the incomplete lookup.
+It skips pull requests in the same stack and `Cargo.lock` and the generated documents, and it never fails.
 
 ## The Depends on check
 
@@ -210,6 +293,7 @@ maintainer who finds such a pull request abandoned closes it, or moves the card 
 python scripts/claim_bot_test.py
 python scripts/depends_on_test.py
 python -m unittest discover -s scripts -p 'test_project_sync.py'
+python -m unittest discover -s scripts -p 'test_pr_workflows.py'
 ```
 
 The first runs the workflow's script against mocked API clients, because a wrong branch would write
@@ -231,3 +315,9 @@ The third, which the CI `docs` job runs with the other script tests, runs the pr
 recorded GraphQL answers, with no network: every row of the table above, refused commands, paging,
 a dry run that writes nothing, and a missing Status option that stops the run before its first
 write.
+
+The PR workflow tests run the Overlap script against mocked API clients, including renamed files
+on either side and a failed file lookup followed by another overlapping pull request. They also
+run the CI DCO shell step in a temporary Git repository with upstream branches and a synthetic PR
+merge ref: upstream commits are exempt, but unsigned fork commits fail even when stacked on an
+upstream branch. These tests need Git, Bash and Node.js and run in the CI `docs` job.

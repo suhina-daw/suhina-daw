@@ -18,3 +18,5 @@ __pycache__/
 # so nothing read from such a manual can be committed by accident.
 /.parity/
 /parity/
+# macOS Finder
+.DS_Store

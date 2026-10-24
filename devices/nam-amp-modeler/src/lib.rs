@@ -21,7 +21,8 @@ use std::sync::Arc;
 use nam_rs::Model;
 pub use nam_rs::NamModel;
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::db_to_gain;
@@ -76,8 +77,6 @@ pub const INFO: DeviceInfo =
 /// Reading `.nam` files.
 pub mod model;
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 /// One side's stages: the EQ's filters, the DC blocker and the two resampler legs. All cleared
 /// by `rebuild`.
 #[derive(Clone)]
@@ -107,7 +106,7 @@ impl Side {
 /// the session's cache); without one the trims, EQ and delay still run, the model silent.
 pub struct NamAmp {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// The parsed model, for `prepare` and `reset` rebuilds.
     model: Option<Arc<NamModel>>,
     /// What the parse records as the model's rate.
@@ -162,7 +161,7 @@ impl NamAmp {
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
         let mut amp = Self {
             sample_rate,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             model,
             model_rate: DEFAULT_SAMPLE_RATE,
             running: [None, None],
@@ -204,7 +203,7 @@ impl NamAmp {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     /// The model's expected rate; a model absent keeps the project's.
@@ -436,9 +435,9 @@ impl Device for NamAmp {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         match index {
             param::INPUT_GAIN => self.input_gain.set_target(self.input_target()),
             param::OUTPUT_VOLUME => self.output_volume.set_target(self.output_target()),
@@ -454,7 +453,7 @@ impl Device for NamAmp {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {

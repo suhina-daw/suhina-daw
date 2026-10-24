@@ -86,6 +86,23 @@ pub struct Row {
     pub context: Option<String>,
     /// The columns the plug-ins' flat list shows, for a plug-in row there.
     pub columns: Option<PluginColumns>,
+    /// Where it is in the tree, when that is not its key alone: what opens and closes it and
+    /// tells it from another row of the same item. A library folder inside another library
+    /// folder is listed twice, at the top and inside the other one, and each opens on its own
+    /// (#869). `None` for a row listed once (a heading, a top-level folder, a search's row).
+    pub node: Option<String>,
+}
+
+impl Row {
+    /// What opens and closes this row ([`BrowserState::toggle`]) and identifies it on screen.
+    pub fn node(&self) -> &str {
+        self.node.as_deref().unwrap_or(&self.item.key)
+    }
+}
+
+/// The node of `key` listed inside the folder whose node is `parent` (see [`Row::node`]).
+fn child_node(parent: &str, key: &str) -> String {
+    format!("{parent}\u{1}{key}")
 }
 
 /// The columns of one row of the Plug-ins category's list besides the name
@@ -442,7 +459,7 @@ impl BrowserState {
                 let context = context.or_else(|| f.detail.clone());
                 let item =
                     BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
-                Row { item, depth: 0, opens: false, open: false, context, columns: None }
+                Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
             })
             .collect())
     }
@@ -451,7 +468,10 @@ impl BrowserState {
         let mut rows = Vec::new();
         let category = self.category;
         match self.place.clone() {
-            Some(Place::Folder(folder)) => self.folder_rows(projects, &folder, 0, &mut rows),
+            Some(Place::Folder(folder)) => {
+                let node = folder.display().to_string();
+                self.folder_rows(projects, &folder, &node, 0, &mut rows);
+            }
             _ => {
                 let devices = matches!(category, Category::All | Category::Instruments | Category::Effects);
                 if devices && category != Category::Effects {
@@ -478,9 +498,9 @@ impl BrowserState {
                         let key = folder.display().to_string();
                         let open = self.open.contains(&key);
                         let item = BrowserItem { key: key.clone(), name, kind: ItemKind::Folder, plugin: false };
-                        rows.push(Row { item, depth: 0, opens: true, open, context: None, columns: None });
+                        rows.push(Row { item, depth: 0, opens: true, open, context: None, columns: None, node: None });
                         if open {
-                            self.folder_rows(projects, &folder, 1, &mut rows);
+                            self.folder_rows(projects, &folder, &key, 1, &mut rows);
                         }
                     }
                 }
@@ -493,7 +513,15 @@ impl BrowserState {
     /// device under it.
     fn device_rows(&self, node: &str, name: &str, role: Role, rows: &mut Vec<Row>) {
         let open = self.open.contains(node);
-        rows.push(Row { item: heading(node, name), depth: 0, opens: true, open, context: None, columns: None });
+        rows.push(Row {
+            item: heading(node, name),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
         if !open {
             return;
         }
@@ -504,7 +532,7 @@ impl BrowserState {
         };
         for info in suhina_device_registry::DEVICES.iter().filter(|info| info.role == role) {
             let item = BrowserItem { key: format!("device:{}", info.id), name: info.name.into(), kind, plugin: false };
-            rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None });
+            rows.push(Row { item, depth: 1, opens: false, open: false, context: None, columns: None, node: None });
         }
     }
 
@@ -527,7 +555,7 @@ impl BrowserState {
     }
 
     fn plugin_row(item: BrowserItem, depth: usize, columns: Option<PluginColumns>) -> Row {
-        Row { item, depth, opens: false, open: false, context: None, columns }
+        Row { item, depth, opens: false, open: false, context: None, columns, node: None }
     }
 
     fn plugin_rows_grouped(&self, projects: &mut Projects, rows: &mut Vec<Row>) {
@@ -551,7 +579,15 @@ impl BrowserState {
         });
         let node = "group:plugins";
         let open = self.open.contains(node);
-        rows.push(Row { item: heading(node, "Plug-ins"), depth: 0, opens: true, open, context: None, columns: None });
+        rows.push(Row {
+            item: heading(node, "Plug-ins"),
+            depth: 0,
+            opens: true,
+            open,
+            context: None,
+            columns: None,
+            node: None,
+        });
         if !open {
             return;
         }
@@ -565,6 +601,7 @@ impl BrowserState {
                 open: vendor_open,
                 context: None,
                 columns: None,
+                node: None,
             });
             if vendor_open {
                 list.sort_by(|a, b| suhina_library::natural_cmp(&a.name, &b.name));
@@ -608,7 +645,9 @@ impl BrowserState {
         }
     }
 
-    fn folder_rows(&mut self, projects: &mut Projects, folder: &Path, depth: usize, rows: &mut Vec<Row>) {
+    /// Lists `folder`, whose node in the tree is `parent` ([`Row::node`]), and the folders open
+    /// in it.
+    fn folder_rows(&mut self, projects: &mut Projects, folder: &Path, parent: &str, depth: usize, rows: &mut Vec<Row>) {
         if depth > suhina_library::index::MAX_DEPTH {
             return;
         }
@@ -626,6 +665,7 @@ impl BrowserState {
         let kinds = self.category.file_kinds();
         for entry in listing.iter() {
             let key = entry.path.display().to_string();
+            let node = child_node(parent, &key);
             match entry.kind {
                 None => {
                     // A folder the index shows holds nothing of the category is left out.
@@ -634,28 +674,44 @@ impl BrowserState {
                     {
                         continue;
                     }
-                    let open = self.open.contains(&key);
+                    let open = self.open.contains(&node);
                     let item = BrowserItem {
                         key: key.clone(),
                         name: entry.name.clone(),
                         kind: ItemKind::Folder,
                         plugin: false,
                     };
-                    rows.push(Row { item, depth, opens: true, open, context: None, columns: None });
+                    rows.push(Row {
+                        item,
+                        depth,
+                        opens: true,
+                        open,
+                        context: None,
+                        columns: None,
+                        node: Some(node.clone()),
+                    });
                     if open {
-                        self.folder_rows(projects, &entry.path, depth + 1, rows);
+                        self.folder_rows(projects, &entry.path, &node, depth + 1, rows);
                     }
                 }
                 Some(kind) if kinds.contains(&kind) => {
                     let bank = kind == FileKind::Preset && self.preset_voices(&entry.path).len() > 1;
-                    let open = bank && self.open.contains(&key);
+                    let open = bank && self.open.contains(&node);
                     let item = BrowserItem {
                         key: key.clone(),
                         name: entry.name.clone(),
                         kind: file_kind_item(kind),
                         plugin: false,
                     };
-                    rows.push(Row { item, depth, opens: bank, open, context: None, columns: None });
+                    rows.push(Row {
+                        item,
+                        depth,
+                        opens: bank,
+                        open,
+                        context: None,
+                        columns: None,
+                        node: Some(node.clone()),
+                    });
                     if open {
                         for (voice, name) in self.preset_voices(&entry.path).iter() {
                             let item = BrowserItem {
@@ -664,6 +720,7 @@ impl BrowserState {
                                 kind: ItemKind::Preset,
                                 plugin: false,
                             };
+                            let node = child_node(&node, &item.key);
                             rows.push(Row {
                                 item,
                                 depth: depth + 1,
@@ -671,6 +728,7 @@ impl BrowserState {
                                 open: false,
                                 context: None,
                                 columns: None,
+                                node: Some(node),
                             });
                         }
                     }

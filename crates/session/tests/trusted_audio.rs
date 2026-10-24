@@ -191,3 +191,36 @@ fn collect_copies_the_audio_from_outside_into_the_project() {
     let back = projects.get(active).unwrap().project().channels[0].devices[0].sample_file().unwrap().to_string();
     assert_ne!(back, copy.display().to_string());
 }
+
+/// Two kits' `kick.wav`, of one size and other sounds, collected in one run: each gets a copy of
+/// its own, so after the collect each sampler still plays its own kick.
+#[test]
+fn collect_gives_two_files_of_one_name_and_size_a_copy_each() {
+    let root = temp("collect-two");
+    let settings = root.join("settings");
+    let (a, b) = (root.join("KitA").join("kick.wav"), root.join("KitB").join("kick.wav"));
+    wav(&a);
+    wav(&b);
+    // The same size, other samples.
+    let mut bytes = std::fs::read(&b).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    std::fs::write(&b, bytes).unwrap();
+    let song = root.join("project").join("song.suhina");
+    let mut projects = saved_with_sample(&settings, &a, &song);
+    run(&mut projects, "track.add", json!({ "kind": "midi", "device": "sampler" }));
+    run(&mut projects, "device.loadSample", json!({ "track": 2, "device": 0, "path": b }));
+
+    let collected = run(&mut projects, "project.collect", json!({}));
+    assert_eq!(collected["collected"].as_array().unwrap().len(), 2, "{collected}");
+    let active = projects.active().unwrap();
+    let files: Vec<String> = projects.get(active).unwrap().project().channels[..2]
+        .iter()
+        .map(|c| c.devices[0].sample_file().unwrap().to_string())
+        .collect();
+    let into = song.parent().unwrap().join("Samples").join("Collected");
+    assert_eq!(files, [into.join("kick.wav").display().to_string(), into.join("kick (2).wav").display().to_string()]);
+    for (file, original) in files.iter().zip([&a, &b]) {
+        assert_eq!(std::fs::read(file).unwrap(), std::fs::read(original).unwrap(), "{file}");
+    }
+}

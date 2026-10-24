@@ -23,6 +23,8 @@ pub enum EventKind {
     Controller { channel: u8, number: u8, value: f32 },
     /// The pitch bend moves to `value`, -1 to 1.
     PitchBend { channel: u8, value: f32 },
+    /// Channel pressure (aftertouch) moves to `value`, 0 to 1 (#812).
+    Pressure { channel: u8, value: f32 },
     /// Plug-in parameter `id` moves to `value`, in its own range (as `get_params` gives it),
     /// from this frame on: automation.
     Param { id: u32, value: f32 },
@@ -113,6 +115,7 @@ impl Event {
             EventKind::NoteOff { channel, key, velocity } => (2, channel, key, velocity),
             EventKind::Controller { channel, number, value } => (3, channel, number, value),
             EventKind::PitchBend { channel, value } => (4, channel, 0, value),
+            EventKind::Pressure { channel, value } => (12, channel, 0, value),
             EventKind::Param { id, value } => {
                 note = i32::from_le_bytes(id.to_le_bytes());
                 (5, 0, 0, value)
@@ -174,6 +177,7 @@ impl Event {
             2 => EventKind::NoteOff { channel, key: number, velocity: unit },
             3 => EventKind::Controller { channel, number, value: unit },
             4 => EventKind::PitchBend { channel, value: value.clamp(-1.0, 1.0) },
+            12 => EventKind::Pressure { channel, value: unit },
             6 => {
                 let position = u64::from_le_bytes([v0, v1, v2, v3, n0, n1, n2, n3]);
                 let kind = EventKind::Transport { playing: channel != 0, position };
@@ -233,6 +237,7 @@ mod tests {
             Event { frame: 511, note: 42, kind: EventKind::NoteOff { channel: 15, key: 127, velocity: 0.0 } },
             Event { frame: 3, note: -1, kind: EventKind::Controller { channel: 2, number: 64, value: 1.0 } },
             Event { frame: 4, note: -1, kind: EventKind::PitchBend { channel: 1, value: -0.5 } },
+            Event { frame: 5, note: -1, kind: EventKind::Pressure { channel: 3, value: 0.75 } },
             Event::param(7, 0, 0.25),
             Event::param(8, u32::MAX, -440.0),
             Event::transport(true, 0),
@@ -256,7 +261,7 @@ mod tests {
         assert_eq!(Event::decode(&wild), Some(Event::note_on(1, 15, 127, 0.0)));
         wild[8..12].copy_from_slice(&9.0f32.to_le_bytes());
         assert_eq!(Event::decode(&wild), Some(Event::note_on(1, 15, 127, 1.0)));
-        wild[4] = 12;
+        wild[4] = 13;
         assert_eq!(Event::decode(&wild), None);
         assert_eq!(Event::decode(&Event::cycle(true, 8.0, 4.0).encode()), Some(Event::cycle(false, 0.0, 0.0)));
         assert_eq!(Event::decode(&Event::cycle_seconds(6.0, 2.0).encode()), Some(Event::cycle_seconds(0.0, 0.0)));

@@ -51,12 +51,17 @@ fn choose(
         State::Hover => ".hover",
         State::Active => ".active",
         State::Disabled => ".disabled",
+        State::On => ".on",
     };
+    // A toggle that is on falls back to the pressed artwork, as it looked before `.on` existed.
+    let fallback = matches!(state, State::On).then_some(".active");
     let colored = color.map(|color| format!("{role}.color-{:02x}{:02x}{:02x}", color.r(), color.g(), color.b()));
     let candidates = [
         colored.as_ref().map(|key| format!("{key}{suffix}")),
+        colored.as_ref().zip(fallback).map(|(key, fallback)| format!("{key}{fallback}")),
         colored,
         Some(format!("{role}{suffix}")),
+        fallback.map(|fallback| format!("{role}{fallback}")),
         Some(role.to_owned()),
     ];
     for key in candidates.into_iter().flatten() {

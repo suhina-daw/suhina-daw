@@ -5,7 +5,8 @@ name: Test build
 # links it from the pull request. See docs/releasing.md › Test builds.
 #
 # Who gets one: a pull request opened and pushed by a maintainer is built on every push. Any other
-# pull request is built only when a maintainer adds the `test-build` label after reading the diff,
+# pull request is built when a maintainer adds `test-build`, or the bot adds it for an authorized
+# trusted contributor's /test-build request after reading the diff,
 # and the build is of the commit the label was added on; a later push takes the label off
 # (test-build-links.yml), so new code is never built unreviewed. Running the workflow by hand with
 # a list of pull request numbers merges them onto main and builds the result.
@@ -55,34 +56,79 @@ jobs:
   # test-build-links.yml does not count it as one.
   decide:
     name: what to build
-    # A maintainer's own pull request on every push, any pull request when a maintainer labels it,
+    # A maintainer's own pull request on every push; labelled requests are authorized below,
     # and a run by hand (only people who can write to the repository can start one). The
-    # maintainers are listed here and in test-build-links.yml.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (contains(fromJSON('["juhamikael"]'), github.triggering_actor) &&
-        ((github.event.action != 'labeled' &&
-          contains(fromJSON('["juhamikael"]'), github.event.pull_request.user.login)) ||
-         (github.event.action == 'labeled' && github.event.label.name == 'test-build')))
+    # maintainers come from the repository variable MAINTAINERS.
     runs-on: ubuntu-latest
     permissions:
       contents: read
       # To find the previous head's run of this workflow.
       actions: read
+      issues: read
+      pull-requests: read
     outputs:
       build: ${{ steps.decide.outputs.build }}
       matrix: ${{ steps.decide.outputs.matrix }}
     steps:
+      - name: Authorize the labelled commit
+        id: authorize
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
+              .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
+              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
+              if (actor !== 'suhina-bot[bot]') return false;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo, issue_number: number, per_page: 100,
+              });
+              for (const c of comments) {
+                if (c.user?.login !== 'suhina-bot[bot]' || c.user?.type !== 'Bot') continue;
+                const proof = String(c.body || '').match(/<!-- trusted-build ([a-f0-9]{40}) ([a-zA-Z0-9-]+) ([0-9]+) -->$/);
+                if (!proof || proof[1] !== sha || (checkMembership && !trusted.includes(proof[2].toLowerCase())) ||
+                    Date.parse(c.created_at) > Date.parse(at)) continue;
+                try {
+                  const { data: source } = await github.rest.issues.getComment({ ...context.repo, comment_id: Number(proof[3]) });
+                  if (source.user?.type === 'User' && source.user.login.toLowerCase() === proof[2].toLowerCase() &&
+                      source.body.trim() === '/test-build' &&
+                      source.issue_url === 'https://api.github.com/repos/' + context.repo.owner + '/' + context.repo.repo + '/issues/' + number &&
+                      Date.parse(source.updated_at) <= Date.parse(c.created_at)) return true;
+                } catch (error) { if (error.status !== 404) throw error; }
+              }
+              return false;
+            };
+            const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+            const member = login => maintainers.includes(String(login || '').toLowerCase());
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('allowed', member(context.actor));
+              return;
+            }
+            if (context.payload.action !== 'labeled') {
+              core.setOutput('allowed', member(context.actor) && member(context.payload.pull_request.user.login));
+              return;
+            }
+            if (context.payload.label?.name !== 'test-build') return;
+            const pr = context.payload.pull_request;
+            // Fork pull_request runs may not receive repository variables. Trust the App's
+            // commit-bound proof here; the default-branch gateway and linker check membership.
+            if (!(await authorizedBuild(context.actor, pr.number, pr.head.sha, new Date().toISOString(), false))) {
+              throw new Error('No authorized test-build request for this commit. Use /test-build on fork PRs.');
+            }
+            core.setOutput('allowed', true);
       # Every branch and the pull request's merge commit, whose second parent is its head; no
       # code is built or run but scripts/branch_update.py.
       - uses: actions/checkout@v7
-        if: github.event.action == 'synchronize'
+        if: steps.authorize.outputs.allowed == 'true' && github.event.action == 'synchronize'
         with:
           fetch-depth: 0
           persist-credentials: false
       # Skipped only when the push merged main and nothing else into a head whose run succeeded
       # (built, or skipped the same way): a failed or cancelled build is never left as the last one.
       - id: decide
+        if: steps.authorize.outputs.allowed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ACTION: ${{ github.event.action }}

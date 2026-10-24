@@ -268,6 +268,12 @@ impl SoundMap {
         })
     }
 
+    /// Whether an update from [`SoundMap::update_in_background`] is still being worked out, so
+    /// another would be refused: a caller can skip gathering its files meanwhile.
+    pub fn updating(&self) -> bool {
+        self.diffing.is_some()
+    }
+
     /// Works out an update like [`SoundMap::update`] on a thread of its own, from the files
     /// `files` lists there, and takes it in at a later [`SoundMap::poll`]: the library's files
     /// listed, the caches read and compared off the caller's thread. Returns `false` while the
@@ -323,19 +329,18 @@ impl SoundMap {
     /// came in.
     fn take_diff(&mut self, wait: bool) -> bool {
         let Some(from) = &self.diffing else { return false };
-        // The channel is read once: a second read could take the diff that came in between and
-        // drop it, leaving the map's update undone until the library changes again.
+        // One read: a second `try_recv` could take (and drop) an update sent just after the first.
         let diff = if wait {
             from.recv().ok()
         } else {
             match from.try_recv() {
                 Ok(diff) => Some(diff),
                 Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+                // The thread ended without sending (it failed).
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
             }
         };
         let Some(diff) = diff else {
-            // The thread is gone without a diff (or `recv` found it gone).
             self.diffing = None;
             return false;
         };

@@ -36,11 +36,14 @@ impl Shadow {
         }
         // A fixed separable 1/4, 1/2, 1/4 kernel approximates a soft shadow. Keep
         // draw work bounded independently of authored blur radius and label size.
+        // The taps stay within a quarter of the text's height: spread wider, small text showed
+        // as separate copies of itself rather than a shadow.
+        let reach = (self.blur * 0.5).min(galley.size().y.max(1.0) * 0.12).max(0.5);
         for y in -1..=1 {
             for x in -1..=1 {
                 let weight = (if x == 0 { 2.0 } else { 1.0 }) * (if y == 0 { 2.0 } else { 1.0 }) / 16.0;
                 painter.galley_with_override_text_color(
-                    pos + Vec2::new(x as f32, y as f32) * self.blur * 0.5,
+                    pos + Vec2::new(x as f32, y as f32) * reach,
                     Arc::clone(galley),
                     self.color.gamma_multiply(weight),
                 );
@@ -120,6 +123,15 @@ mod tests {
         assert_eq!(text[2].pos, Pos2::new(40.0, 40.0));
         assert!(text[2].override_text_color.is_none());
         assert!(text.iter().all(|shape| Arc::ptr_eq(&shape.galley, &text[2].galley)));
+    }
+
+    #[test]
+    fn a_blurred_shadow_stays_close_to_small_text() {
+        let text = draw(".button {text-shadow:0 0 8px #000000;}");
+        assert_eq!(text.len(), 10);
+        for shadow in &text[..9] {
+            assert!((shadow.pos - Pos2::new(40.0, 40.0)).length() < 3.0, "{:?}", shadow.pos);
+        }
     }
 
     #[test]

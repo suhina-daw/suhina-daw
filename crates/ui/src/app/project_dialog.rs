@@ -61,6 +61,9 @@ pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw(ui, area, state, lists)
         })
@@ -193,6 +196,9 @@ pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveCho
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_save(ui, area, prompt)
         })
@@ -272,6 +278,9 @@ pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<Unsa
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_unsaved(ui, area, name, doing)
         })
@@ -311,6 +320,9 @@ pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_about(ui, area)
         })
@@ -395,6 +407,9 @@ pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoic
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_ara_edits(ui, area, plugin)
         })
@@ -461,6 +476,9 @@ pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_recovery(ui, area, name, written, saved)
         })
@@ -518,6 +536,9 @@ pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_agent(ui, area, client)
         })

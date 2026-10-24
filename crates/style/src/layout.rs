@@ -95,6 +95,151 @@ pub(crate) fn tracks(source: &str) -> Result<Vec<Length>, String> {
     Ok(result)
 }
 
+/// One grid track of `grid-template-columns` or `grid-template-rows`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Track {
+    Size(Length),
+    MinMax(Length, Length),
+}
+
+/// Most tracks in one grid template, after `repeat()`.
+pub const MAX_TRACKS: usize = 32;
+
+fn track_size(source: &str) -> Result<Length, String> {
+    let length = Length::parse(source.trim())?;
+    if matches!(length, Length::Px(n) | Length::Em(n) | Length::Percent(n) if n < 0.0) {
+        return Err("Grid tracks are nonnegative".into());
+    }
+    Ok(length)
+}
+
+/// Splits `source` at top-level whitespace, keeping functions whole.
+fn words(source: &str) -> Result<Vec<String>, String> {
+    let mut result = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    for c in source.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1).ok_or("Unbalanced parenthesis")?,
+            _ => {}
+        }
+        if c.is_whitespace() && depth == 0 {
+            if !current.is_empty() {
+                result.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(c);
+        }
+        if result.len() > MAX_TRACKS * 2 || current.len() > 512 {
+            return Err("Grid template is too long".into());
+        }
+    }
+    if depth != 0 {
+        return Err("Unbalanced parenthesis".into());
+    }
+    if !current.is_empty() {
+        result.push(current);
+    }
+    Ok(result)
+}
+
+/// `grid-template-columns`/`-rows`: lengths, `fr`, `auto`, `minmax(a, b)` and
+/// `repeat(n, ...)` with a whole count, at most [`MAX_TRACKS`] tracks.
+pub(crate) fn track_list(source: &str) -> Result<Vec<Track>, String> {
+    crate::syntax::validate(source)?;
+    if source.trim() == "none" {
+        return Ok(Vec::new());
+    }
+    let mut result = Vec::new();
+    fn one(word: &str, result: &mut Vec<Track>, nested: bool) -> Result<(), String> {
+        if let Some(inner) = word.strip_prefix("minmax(").and_then(|w| w.strip_suffix(')')) {
+            let (min, max) = inner.split_once(',').ok_or("minmax() takes two sizes")?;
+            let (min, max) = (track_size(min)?, track_size(max)?);
+            if matches!(min, Length::Fr(_)) {
+                return Err("minmax() cannot start at fr".into());
+            }
+            result.push(Track::MinMax(min, max));
+        } else if let Some(inner) = word.strip_prefix("repeat(").and_then(|w| w.strip_suffix(')')) {
+            if nested {
+                return Err("repeat() cannot nest".into());
+            }
+            let (count, tracks) = inner.split_once(',').ok_or("repeat() takes a count and tracks")?;
+            let count = count
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .filter(|n| (1..=MAX_TRACKS).contains(n))
+                .ok_or("Invalid repeat count")?;
+            let mut inner = Vec::new();
+            for word in words(tracks)? {
+                one(&word, &mut inner, true)?;
+            }
+            for _ in 0..count {
+                if result.len() + inner.len() > MAX_TRACKS {
+                    return Err("Grid template exceeds 32 tracks".into());
+                }
+                result.extend(inner.iter().copied());
+            }
+        } else {
+            result.push(Track::Size(track_size(word)?));
+        }
+        if result.len() > MAX_TRACKS {
+            return Err("Grid template exceeds 32 tracks".into());
+        }
+        Ok(())
+    }
+    for word in words(source)? {
+        one(&word, &mut result, false)?;
+    }
+    if result.is_empty() {
+        return Err("Empty grid template".into());
+    }
+    Ok(result)
+}
+
+/// One end of a grid placement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridLine {
+    Auto,
+    /// A line number, negative from the end; never zero.
+    Line(i16),
+    Span(u16),
+}
+
+fn grid_line(source: &str) -> Result<GridLine, String> {
+    let source = source.trim();
+    if source == "auto" {
+        return Ok(GridLine::Auto);
+    }
+    if let Some(count) = source.strip_prefix("span") {
+        return count
+            .trim()
+            .parse::<u16>()
+            .ok()
+            .filter(|n| (1..=64).contains(n))
+            .map(GridLine::Span)
+            .ok_or_else(|| "span takes a count from 1 to 64".into());
+    }
+    source
+        .parse::<i16>()
+        .ok()
+        .filter(|n| *n != 0 && (-64..=64).contains(n))
+        .map(GridLine::Line)
+        .ok_or_else(|| "A grid line is auto, a nonzero number from -64 to 64, or span n".into())
+}
+
+/// `grid-column`/`grid-row`: `<line> [/ <line>]`.
+pub(crate) fn placement(source: &str) -> Result<[GridLine; 2], String> {
+    let mut parts = source.split('/');
+    let start = grid_line(parts.next().ok_or("Missing grid line")?)?;
+    let end = parts.next().map_or(Ok(GridLine::Auto), grid_line)?;
+    if parts.next().is_some() {
+        return Err("A grid placement takes at most two lines".into());
+    }
+    Ok([start, end])
+}
+
 fn font(style: &ComputedStyle) -> f32 {
     match style.get(Property::FontSize) {
         Value::Length(Length::Px(size)) => size.clamp(1.0, 256.0),
@@ -116,6 +261,104 @@ fn spacing(style: &ComputedStyle, property: Property) -> LengthPercentage {
         Value::Length(Length::Percent(n)) => percent(n),
         _ => length(0.0),
     }
+}
+fn keyword(style: &ComputedStyle, property: Property) -> &'static str {
+    match style.get(property) {
+        Value::Keyword(word) => word,
+        _ => "",
+    }
+}
+fn bound(style: &ComputedStyle, property: Property) -> LengthPercentageAuto {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) => length(n),
+        Value::Length(Length::Em(n)) => length((n * font(style)).min(16384.0)),
+        Value::Length(Length::Percent(n)) => percent(n),
+        _ => auto(),
+    }
+}
+fn min_size(style: &ComputedStyle, property: Property) -> LengthPercentageAuto {
+    // Native elements may shrink to nothing unless a minimum is written.
+    if style.get(property) == Value::Length(Length::Auto) { length(0.0) } else { bound(style, property) }
+}
+fn margin(style: &ComputedStyle, property: Property) -> LengthPercentageAuto {
+    match style.get(property) {
+        Value::Length(Length::Px(n)) => length(n),
+        Value::Length(Length::Em(n)) => length((n * font(style)).clamp(-16384.0, 16384.0)),
+        Value::Length(Length::Percent(n)) => percent(n),
+        Value::Length(Length::Auto) => auto(),
+        _ => length(0.0),
+    }
+}
+fn content(word: &str) -> Option<AlignContent> {
+    Some(match word {
+        "start" => AlignContent::START,
+        "end" => AlignContent::END,
+        "flex-start" => AlignContent::FLEX_START,
+        "flex-end" => AlignContent::FLEX_END,
+        "center" => AlignContent::CENTER,
+        "stretch" => AlignContent::STRETCH,
+        "space-between" => AlignContent::SPACE_BETWEEN,
+        "space-around" => AlignContent::SPACE_AROUND,
+        "space-evenly" => AlignContent::SPACE_EVENLY,
+        _ => return None,
+    })
+}
+fn items(word: &str) -> Option<AlignItems> {
+    Some(match word {
+        "start" => AlignItems::START,
+        "end" => AlignItems::END,
+        "flex-start" => AlignItems::FLEX_START,
+        "flex-end" => AlignItems::FLEX_END,
+        "center" => AlignItems::CENTER,
+        "stretch" => AlignItems::STRETCH,
+        "baseline" => AlignItems::BASELINE,
+        _ => return None,
+    })
+}
+fn track(style: &ComputedStyle, value: Length) -> MinTrackSizingFunction {
+    match value {
+        Length::Px(n) => length(n),
+        Length::Em(n) => length((n * font(style)).min(16384.0)),
+        Length::Percent(n) => percent(n),
+        Length::Fr(_) | Length::Auto => auto(),
+    }
+}
+fn max_track(style: &ComputedStyle, value: Length) -> MaxTrackSizingFunction {
+    match value {
+        Length::Px(n) => length(n),
+        Length::Em(n) => length((n * font(style)).min(16384.0)),
+        Length::Percent(n) => percent(n),
+        Length::Fr(n) => fr(n),
+        Length::Auto => auto(),
+    }
+}
+fn template(style: &ComputedStyle, property: Property) -> Option<Vec<GridTemplateComponent<String>>> {
+    let Value::TrackList(tracks) = style.get(property) else { return None };
+    if tracks.is_empty() {
+        return None;
+    }
+    Some(
+        tracks
+            .into_iter()
+            .map(|t| match t {
+                Track::Size(Length::Fr(n)) => fr(n),
+                Track::Size(value) => {
+                    GridTemplateComponent::Single(minmax(track(style, value), max_track(style, value)))
+                }
+                Track::MinMax(min, max) => {
+                    GridTemplateComponent::Single(minmax(track(style, min), max_track(style, max)))
+                }
+            })
+            .collect(),
+    )
+}
+fn grid_placement([start, end]: [GridLine; 2]) -> Line<GridPlacement<String>> {
+    let one = |line: GridLine| match line {
+        GridLine::Auto => GridPlacement::Auto,
+        GridLine::Line(n) => taffy::style_helpers::line(n),
+        GridLine::Span(n) => taffy::style_helpers::span(n),
+    };
+    Line { start: one(start), end: one(end) }
 }
 fn grid_tracks(style: &ComputedStyle, property: Property) -> Vec<GridTemplateComponent<String>> {
     let Value::Tracks(tracks) = style.get(property) else {
@@ -152,35 +395,79 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
     let mut visible = Vec::with_capacity(styles.len());
     for (index, (element, computed)) in tree.elements().iter().zip(styles).enumerate() {
         let shown = computed.get(Property::Visible) != Value::Bool(false)
+            && computed.get(Property::Display) != Value::Keyword("none")
             && element.parent.is_none_or(|parent| visible.get(parent).copied().unwrap_or(false));
         visible.push(shown);
         let layout = computed.get(Property::Layout);
+        let display = keyword(computed, Property::Display);
         let mut style = Style {
-            display: if !shown {
+            display: if !shown || display == "none" {
                 Display::None
-            } else if matches!(layout, Value::Layout(Layout::Grid | Layout::Stack)) {
-                Display::Grid
             } else {
-                Display::Flex
+                match display {
+                    "flex" | "inline-flex" => Display::Flex,
+                    "grid" | "inline-grid" => Display::Grid,
+                    "block" | "inline-block" => Display::Block,
+                    _ if matches!(layout, Value::Layout(Layout::Grid | Layout::Stack)) => Display::Grid,
+                    _ => Display::Flex,
+                }
             },
-            flex_direction: if layout == Value::Layout(Layout::Row) {
-                FlexDirection::Row
-            } else {
-                FlexDirection::Column
+            flex_direction: match keyword(computed, Property::FlexDirection) {
+                "row" => FlexDirection::Row,
+                "column" => FlexDirection::Column,
+                "row-reverse" => FlexDirection::RowReverse,
+                "column-reverse" => FlexDirection::ColumnReverse,
+                // Written `display: flex` lays out a row, as in CSS; the native `layout` a column.
+                _ if matches!(display, "flex" | "inline-flex") => FlexDirection::Row,
+                _ if layout == Value::Layout(Layout::Row) => FlexDirection::Row,
+                _ => FlexDirection::Column,
+            },
+            flex_wrap: match keyword(computed, Property::FlexWrap) {
+                "wrap" => FlexWrap::Wrap,
+                "wrap-reverse" => FlexWrap::WrapReverse,
+                _ => FlexWrap::NoWrap,
             },
             size: Size { width: size(computed, Property::Width), height: size(computed, Property::Height) },
-            min_size: Size { width: length(0.0), height: length(0.0) },
-            gap: Size { width: spacing(computed, Property::Gap), height: spacing(computed, Property::Gap) },
-            padding: taffy::Rect {
-                left: spacing(computed, Property::Padding),
-                right: spacing(computed, Property::Padding),
-                top: spacing(computed, Property::Padding),
-                bottom: spacing(computed, Property::Padding),
+            min_size: Size {
+                width: min_size(computed, Property::MinWidth),
+                height: min_size(computed, Property::MinHeight),
             },
-            grid_template_columns: grid_tracks(computed, Property::Columns),
-            grid_template_rows: grid_tracks(computed, Property::Rows),
+            max_size: Size { width: bound(computed, Property::MaxWidth), height: bound(computed, Property::MaxHeight) },
+            gap: Size { width: spacing(computed, Property::ColumnGap), height: spacing(computed, Property::RowGap) },
+            padding: taffy::Rect {
+                left: spacing(computed, Property::PaddingLeft),
+                right: spacing(computed, Property::PaddingRight),
+                top: spacing(computed, Property::PaddingTop),
+                bottom: spacing(computed, Property::PaddingBottom),
+            },
+            margin: taffy::Rect {
+                left: margin(computed, Property::MarginLeft),
+                right: margin(computed, Property::MarginRight),
+                top: margin(computed, Property::MarginTop),
+                bottom: margin(computed, Property::MarginBottom),
+            },
+            justify_content: content(keyword(computed, Property::JustifyContent)),
+            align_content: content(keyword(computed, Property::AlignContent)),
+            align_items: items(keyword(computed, Property::AlignItems)),
+            align_self: items(keyword(computed, Property::AlignSelf)),
+            grid_template_columns: template(computed, Property::GridTemplateColumns)
+                .unwrap_or_else(|| grid_tracks(computed, Property::Columns)),
+            grid_template_rows: template(computed, Property::GridTemplateRows)
+                .unwrap_or_else(|| grid_tracks(computed, Property::Rows)),
             ..Style::default()
         };
+        if computed.authored(Property::FlexGrow)
+            || computed.authored(Property::FlexShrink)
+            || computed.authored(Property::FlexBasis)
+        {
+            if let Value::Number(grow) = computed.get(Property::FlexGrow) {
+                style.flex_grow = grow;
+            }
+            if let Value::Number(shrink) = computed.get(Property::FlexShrink) {
+                style.flex_shrink = shrink;
+            }
+            style.flex_basis = size(computed, Property::FlexBasis);
+        }
         if let Some(parent) = element.parent {
             let parent_style = styles.get(parent).ok_or("Missing parent style")?;
             let axis = if parent_style.get(Property::Layout) == Value::Layout(Layout::Row) {
@@ -204,6 +491,16 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
             if parent_style.get(Property::Layout) == Value::Layout(Layout::Stack) {
                 style.grid_column = line(1);
                 style.grid_row = line(1);
+            }
+            if let Value::Placement(lines) = computed.get(Property::GridColumn)
+                && lines != [GridLine::Auto; 2]
+            {
+                style.grid_column = grid_placement(lines);
+            }
+            if let Value::Placement(lines) = computed.get(Property::GridRow)
+                && lines != [GridLine::Auto; 2]
+            {
+                style.grid_row = grid_placement(lines);
             }
             children.get_mut(parent).ok_or("Missing layout parent")?.push(index);
         } else {
@@ -308,6 +605,64 @@ mod tests {
         assert_eq!(rects[2].unwrap().width, 400.0);
         assert_eq!(rects[2].unwrap().x, 0.0);
     }
+    #[test]
+    fn standard_grid_places_panels_by_lines_and_collapses_auto_tracks() {
+        let css = "#workspace { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:minmax(0, 1fr) auto; gap:8px; } #panel-browser { grid-column:2; grid-row:1 / -1; width:240px; } #panel-main { grid-column:1; grid-row:1; } #panel-detail { grid-column:1; grid-row:2; height:180px; }";
+        let mut elements = vec![
+            Element::new("div", None).with_id("workspace"),
+            Element::new("div", Some(0)).with_id("panel-main"),
+            Element::new("div", Some(0)).with_id("panel-browser"),
+            Element::new("div", Some(0)).with_id("panel-detail"),
+        ];
+        let rects = layout(css, elements.clone(), 800.0);
+        let (main, browser, detail) = (rects[1].unwrap(), rects[2].unwrap(), rects[3].unwrap());
+        assert_eq!(browser.width, 240.0);
+        assert_eq!(browser.x, 800.0 - 240.0);
+        assert_eq!(browser.height, 600.0);
+        assert_eq!(main.width, 800.0 - 240.0 - 8.0);
+        assert_eq!(detail.height, 180.0);
+        assert_eq!(detail.y, 600.0 - 180.0);
+        assert_eq!(main.height, 600.0 - 180.0 - 8.0);
+        // Closed panels leave no track behind.
+        elements.truncate(2);
+        let main = layout(css, elements, 800.0)[1].unwrap();
+        assert!(main.width >= 790.0 && main.height >= 590.0, "{main:?}");
+    }
+
+    #[test]
+    fn standard_flex_row_with_auto_margin_padding_and_display_none() {
+        let css = ".toolbar { display:flex; align-items:center; gap:6px; padding:0 6px; } #transport { margin-left:auto; } .module { width:100px; height:20px; flex-shrink:0; } @media (max-width:500px) { #mapping { display:none; } }";
+        let module = |id: &str| {
+            let mut element = Element::new("div", Some(0)).with_id(id);
+            element.classes.push("module".into());
+            element
+        };
+        let mut toolbar = Element::new("div", None);
+        toolbar.classes.push("toolbar".into());
+        let elements = vec![toolbar, module("position"), module("transport"), module("mapping")];
+        let rects = layout(css, elements.clone(), 800.0);
+        assert_eq!(rects[1].unwrap().x, 6.0);
+        // The auto margin takes the free space: transport and mapping sit at the right edge.
+        assert_eq!(rects[3].unwrap().x + 100.0, 800.0 - 6.0);
+        assert_eq!(rects[2].unwrap().x + 100.0 + 6.0, rects[3].unwrap().x);
+        assert_eq!(rects[2].unwrap().y, 290.0, "centred across the row");
+        let narrow = layout(css, elements, 400.0);
+        assert!(narrow[3].is_none(), "display:none in a media query hides it");
+    }
+
+    #[test]
+    fn track_lists_and_placements_are_bounded() {
+        assert_eq!(track_list("repeat(3, 10px) minmax(0, 1fr)").unwrap().len(), 4);
+        for bad in ["repeat(40, 1px)", "minmax(1fr, 2fr)", "repeat(2, repeat(2, 1px))", "-1px", "(", ""] {
+            assert!(track_list(bad).is_err(), "{bad}");
+        }
+        assert_eq!(placement("1 / -1").unwrap(), [GridLine::Line(1), GridLine::Line(-1)]);
+        assert_eq!(placement("span 2").unwrap(), [GridLine::Span(2), GridLine::Auto]);
+        for bad in ["0", "1 / 2 / 3", "span 0", "999"] {
+            assert!(placement(bad).is_err(), "{bad}");
+        }
+    }
+
     #[test]
     fn disjoint_named_area_is_refused() {
         assert!(Areas::parse("'a b' 'b a'").is_err());

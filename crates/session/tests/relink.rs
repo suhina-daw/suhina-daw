@@ -178,3 +178,50 @@ fn external_project_sources_require_explicit_relink_after_reopening() {
     let _ = std::fs::remove_dir_all(folder);
     let _ = std::fs::remove_dir_all(outside);
 }
+
+/// A file relinked from outside the project's folder and saved is trusted: the project opens
+/// with it again, not missing (`docs/spec/missing-files.md` › Relinking).
+#[test]
+fn a_file_relinked_from_outside_and_saved_opens_with_the_project_again() {
+    let settings = temp("relink-save-settings");
+    let folder = temp("relink-save-project");
+    let outside = temp("relink-save-source");
+    let moved = temp("relink-save-moved");
+    let audio = outside.join("tone.wav");
+    wav(&audio);
+    let song = folder.join("song.suhina");
+    let mut session = Session::new(blank_project());
+    session.execute("clip.addFiles", &json!({ "paths": [audio], "start": 0.0 })).unwrap();
+    session.save(&song, false).unwrap();
+    // The file moves, to a folder neither the project nor the library knows.
+    let relinked = moved.join("tone.wav");
+    std::fs::rename(&audio, &relinked).unwrap();
+
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut p = Projects::with_library(plugins);
+    p.set_file_library(Library::new(Some(settings.clone())));
+    let (reopened, _) = Session::open(&song).unwrap();
+    let id = p.add(reopened, None).unwrap();
+    let missing = p.get(id).unwrap().missing_files();
+    assert_eq!(missing.len(), 1);
+    run(&mut p, "project.relinkFiles", json!({ "files": [missing[0].file], "to": [relinked] })).unwrap();
+    assert!(!p.file_library_mut().trusted_audio().contains(&relinked), "trusted by the save, not the relink");
+    run(&mut p, "project.save", json!({})).unwrap();
+    assert!(p.file_library_mut().trusted_audio().contains(&relinked));
+
+    // Opened again, in a new run with the same settings: found as trusted and decoded.
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut again = Projects::with_library(plugins);
+    again.set_file_library(Library::new(Some(settings.clone())));
+    let (reopened, _) = Session::open(&song).unwrap();
+    let id = again.add(reopened, None).unwrap();
+    let session = again.get(id).unwrap();
+    assert!(session.missing_files().is_empty());
+    let folder_of = session.audio_folder().unwrap().to_path_buf();
+    let (pool, warnings) = suhina_media::load_project_audio_trusted(session.project(), &folder_of, session.trusted());
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(pool.files.len(), 1);
+    for dir in [settings, folder, outside, moved] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

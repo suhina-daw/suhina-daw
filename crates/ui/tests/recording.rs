@@ -38,7 +38,7 @@ fn an_armed_tracks_empty_slot_records_and_a_second_click_ends_the_take() {
     let mut harness = app_with_engine(&mut renderer);
     let keys = suhina_engine::model::TrackId(3);
     assert!(harness.query_by_label("Record on Keys (scene 1)").is_none(), "only on armed tracks");
-    harness.get_by_label("Arm Keys to play it from a MIDI controller").click();
+    harness.get_by_label("Arm Keys for recording").click();
     harness.run_steps(3);
     // A slot with a clip has no record button.
     assert!(harness.query_by_label("Record on Keys (scene 2)").is_none());
@@ -65,7 +65,7 @@ fn the_control_bar_records_into_the_arrangement_and_sets_the_count_in() {
         suhina_ui::Status::Error(message) => assert!(message.contains("arm"), "{message}"),
         other => panic!("expected an error, got {other:?}"),
     }
-    harness.get_by_label("Arm Keys to play it from a MIDI controller").click();
+    harness.get_by_label("Arm Keys for recording").click();
     harness.run_steps(3);
     harness.get_by_label("Record into the arrangement").click();
     harness.run_steps(3);

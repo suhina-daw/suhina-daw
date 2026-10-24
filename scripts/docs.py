@@ -7,7 +7,8 @@ and checks on the front matter.
 
   python scripts/docs.py index            print the index docs/INDEX.md would have
   python scripts/docs.py index --write    rewrite docs/INDEX.md (the workflow on main does this)
-  python scripts/docs.py check            front matter, covered paths, and links between documents
+  python scripts/docs.py check            front matter, covered paths, links between documents, and
+                                          the structure rules of docs/README.md
   python scripts/docs.py impact [BASE]    documents that describe code changed since BASE
                                           (default origin/main) but were not changed themselves
   python scripts/docs.py stamp            move each document's last_verified up to the day of its
@@ -19,7 +20,8 @@ Front matter, at the top of each document:
   description: one sentence on what the document says
   read_when: the words someone would look for it with
   type: system | decision | spec | howto | plan
-  status: current | draft | planned | superseded
+  status: current | draft | planned | superseded   (a decision: proposed | accepted | superseded | rejected)
+  built: no | partly | yes   (a decision only: how far it is built)
   last_verified: yyyy-mm-dd (the day the text was last checked against the code or sources;
                  stamped on main, see below)
   covers:
@@ -62,11 +64,30 @@ GENERATED = (
 REQUIRED = ("description", "read_when", "type", "status", "last_verified")
 TYPES = ("system", "decision", "spec", "howto", "plan")
 STATUSES = ("current", "draft", "planned", "superseded")
+# A decision (an ADR) has its own: whether it is in force, and in `built` how far it is built.
+DECISION_STATUSES = ("proposed", "accepted", "superseded", "rejected")
+BUILT = ("no", "partly", "yes")
+# What the structure checks (docs/README.md) report as: a warning while the tree is cleaned up
+# (#759, phase 1), an error once it is.
+STRUCTURE_LEVEL = "warning"
 STALE_AFTER_DAYS = 90
 # `stamp` reads history from this day on: before it, pull requests set last_verified by hand.
 STAMP_FROM = "2026-10-17"
 # Commits that change documents without checking them: the docs bot's, and those that say so.
 STAMP_SKIP = ("^Docs: regenerate", "^Last-verified: keep")
+ADR_FILE = re.compile(r"^docs/decisions/(\d{4})-.*\.md$")
+BOLD_ITEM = re.compile(r"^(\d+)\. \*\*")
+NUMBERED_ITEM = re.compile(r"^(\d+)\. (\*\*)?")
+LIST_ITEM = re.compile(r"^(?:[-*+]|\d+\.) ")
+LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:")
+STATUS_LINE = re.compile(r"^\s*[-*] \*\*Status:\*\*")
+# `ADR 0004 › 11`, `ADR 0010 decision 6`, `[ADR 0006](0006-plug-in-hosting.md) decisions 3 and 7`, `ADR 0013 §8`
+ADR_REF = re.compile(r"ADR (\d{4})(?:\]\(([^)\s]*)\))?\s*(?:›|decisions?\b|§)\s*(\d+(?:\s*(?:,|and)\s*\d{1,2}(?!\d))*)")
+# `lib.rs:285`, `lib.rs:285-290`, and `lib.rs`:285 or `:285` after a path
+LINE_REF = re.compile(
+    r"`[^`\n]*\.(?:rs|py|md|toml|json|sd|sh|ps1|ya?ml|js|ts|css|h|cpp):\d+(?:[-–]\d+)?`"
+    r"|`[^`\n]*\.\w+`:\d+|`:\d+(?:[-–]\d+)?`"
+)
 LAST_VERIFIED = re.compile(r"^last_verified:[ \t]*(\S*)[ \t]*$")
 # A file covered by this many documents or more is a hub (the session's or the window's main file):
 # a change to it alone does not make `impact` warn about each of them, only list them.
@@ -231,10 +252,13 @@ def check_links(files: list[str]) -> int:
     #anchor at a heading in it."""
     tracked = set(files)
     folders = {parent.as_posix() for f in files for parent in Path(f).parents}
+    # The generated files are rewritten on main after the merge, so a link they still hold to a
+    # document a pull request deletes is mended there; the pull request may not edit them.
+    generated = {path.relative_to(ROOT).as_posix() for path, _ in GENERATED}
     cache: dict[Path, set[str]] = {}
     errors = 0
     for rel in files:
-        if not rel.endswith(".md") or rel.startswith("third_party/"):
+        if not rel.endswith(".md") or rel.startswith("third_party/") or rel in generated:
             continue
         source = ROOT / rel
         if not source.exists():
@@ -261,6 +285,188 @@ def check_links(files: list[str]) -> int:
     return errors
 
 
+@dataclass
+class Finding:
+    rel: str
+    line: int | None
+    code: str
+    message: str
+
+
+def prose_lines(text: str):
+    """(line number, line) of the lines outside the front matter and code blocks."""
+    lines = text.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        try:
+            start = lines.index("---", 1) + 1
+        except ValueError:
+            pass
+    fenced = False
+    for number, line in enumerate(lines[start:], start + 1):
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if not fenced:
+            yield number, line
+
+
+def check_adr_numbers(files: list[str]) -> list[Finding]:
+    """No two files in docs/decisions/ share a four-digit prefix."""
+    by_number: dict[str, list[str]] = {}
+    for rel in files:
+        match = ADR_FILE.match(rel)
+        if match:
+            by_number.setdefault(match.group(1), []).append(rel)
+    return [
+        Finding(rel, None, "ADR_NUMBER", f"ADR {number} is also {', '.join(o for o in rels if o != rel)}: numbers are unique")
+        for number, rels in sorted(by_number.items()) if len(rels) > 1
+        for rel in rels
+    ]
+
+
+def check_numbering(rel: str, text: str) -> list[Finding]:
+    """A numbered list whose first item starts with bold text runs 1, 2, 3 ... with no repeat or gap.
+
+    A list ends at a heading or a paragraph, and not at a blank or indented line, which belong to
+    the item above."""
+    found: list[Finding] = []
+    expected: int | None = None
+    checked = False
+    for number, line in prose_lines(text):
+        if not line.strip() or line[0] in " \t":
+            continue
+        item = NUMBERED_ITEM.match(line)
+        if not item:
+            expected = None
+            continue
+        n = int(item.group(1))
+        if expected is None:
+            checked = item.group(2) is not None
+        elif checked and n != expected:
+            found.append(Finding(rel, number, "NUMBERING", f"item {n} where {expected} should be: a list runs 1, 2, 3 without a repeat or a gap"))
+        if expected is None and checked and n != 1:
+            found.append(Finding(rel, number, "NUMBERING", f"item {n} where 1 should be: a list runs 1, 2, 3 without a repeat or a gap"))
+        expected = n + 1
+    return found
+
+
+def decision_numbers(text: str) -> set[int]:
+    """The numbers of the decisions an ADR makes: the top-level bold items under its `## Decision`."""
+    numbers: set[int] = set()
+    inside = False
+    for _, line in prose_lines(text):
+        if line.startswith("## "):
+            inside = line.startswith("## Decision")
+        elif inside and (item := BOLD_ITEM.match(line)):
+            numbers.add(int(item.group(1)))
+    return numbers
+
+
+def check_decision_refs(rel: str, text: str, adrs: dict[str, list[tuple[str, set[int], str]]]) -> list[Finding]:
+    """`ADR NNNN › N`, `ADR NNNN decision N` and `§N` name an ADR that exists and a decision it has,
+    and not one that is superseded."""
+    found: list[Finding] = []
+    for number, line in prose_lines(text):
+        for match in ADR_REF.finditer(line):
+            adr, target = match.group(1), match.group(2)
+            candidates = adrs.get(adr, [])
+            if target:
+                name = Path(target.split("#")[0]).name
+                candidates = [c for c in candidates if Path(c[0]).name == name] or candidates
+            if not candidates:
+                found.append(Finding(rel, number, "DECISION_REF", f"ADR {adr} does not exist"))
+                continue
+            for n in (int(x) for x in re.findall(r"\d+", match.group(3))):
+                if not any(n in c[1] for c in candidates):
+                    found.append(Finding(rel, number, "DECISION_REF", f"ADR {adr} has no decision {n}"))
+            if all(c[2] == "superseded" for c in candidates):
+                found.append(Finding(rel, number, "SUPERSEDED_REF", f"ADR {adr} is superseded: name the decision that replaces it"))
+    return found
+
+
+def adr_number(doc: Doc) -> str | None:
+    match = ADR_FILE.match(doc.rel)
+    return match.group(1) if match else None
+
+
+def check_status(docs: list[Doc]) -> list[Finding]:
+    """A decision's status is proposed, accepted, superseded or rejected, and `built` says how far
+    it is built; `superseded_by` and `supersedes` name each other."""
+    found: list[Finding] = []
+    by_number = {n: d for d in docs if (n := adr_number(d))}
+    for d in docs:
+        status, number = d.fields.get("status", ""), adr_number(d)
+        if d.fields.get("type") == "decision":
+            if status in STATUSES and status not in DECISION_STATUSES:
+                found.append(Finding(d.rel, None, "DECISION_STATUS", f"status {status!r}: a decision is {', '.join(DECISION_STATUSES)}"))
+            if d.fields.get("built") not in BUILT:
+                found.append(Finding(d.rel, None, "BUILT", f"built is {d.fields.get('built')!r}: it is one of {', '.join(BUILT)}"))
+        if status == "superseded":
+            by = d.fields.get("superseded_by", "")
+            if not by:
+                found.append(Finding(d.rel, None, "SUPERSEDED_BY", "status superseded needs superseded_by: NNNN"))
+            elif number and (newer := by_number.get(by)) is None:
+                found.append(Finding(d.rel, None, "SUPERSEDED_BY", f"superseded_by {by} is no ADR"))
+            elif number and number not in re.findall(r"\d{4}", newer.fields.get("supersedes", "")):
+                found.append(Finding(d.rel, None, "SUPERSEDED_BY", f"ADR {by} must list {number} in supersedes"))
+        for old in re.findall(r"\d{4}", d.fields.get("supersedes", "")):
+            if (previous := by_number.get(old)) is None:
+                found.append(Finding(d.rel, None, "SUPERSEDES", f"supersedes {old}, which is no ADR"))
+            elif previous.fields.get("status") != "superseded" or previous.fields.get("superseded_by") != number:
+                found.append(Finding(d.rel, None, "SUPERSEDES", f"ADR {old} must be superseded with superseded_by: {number}"))
+    return found
+
+
+def check_status_lines(rel: str, text: str) -> list[Finding]:
+    """The front matter is the only status: an ADR has no `- **Status:**` line."""
+    return [
+        Finding(rel, number, "STATUS_LINE", "the status is the front matter's, not a line of text")
+        for number, line in prose_lines(text) if STATUS_LINE.match(line)
+    ]
+
+
+def check_line_refs(rel: str, text: str) -> list[Finding]:
+    """A file is named by its symbol or path, not by `lib.rs:123`: the line moves."""
+    return [
+        Finding(rel, number, "LINE_REF", f"{match.group(0)} names a line, which moves: name the symbol")
+        for number, line in prose_lines(text) for match in LINE_REF.finditer(line)
+    ]
+
+
+def check_sources_last(rel: str, text: str) -> list[Finding]:
+    """After `## Sources` come further sources: no heading, and no paragraph after the list."""
+    listed, inside = False, False
+    for number, line in prose_lines(text):
+        if line.startswith("## ") and line[3:].strip() == "Sources":
+            inside, listed = True, False
+        elif not inside or not line.strip() or line[0] in " \t" or line.startswith("<!--") or LINK_DEFINITION.match(line):
+            continue
+        elif line.startswith("#") or listed and not LIST_ITEM.match(line):
+            return [Finding(rel, number, "SOURCES_LAST", "text after the sources: put it where it belongs, above them")]
+        elif LIST_ITEM.match(line):
+            listed = True
+    return []
+
+
+def check_structure(docs: list[Doc], files: list[str]) -> list[Finding]:
+    """The rules of docs/README.md that a script can see."""
+    markdown = [f for f in files if f.endswith(".md") and not f.startswith("third_party/") and (ROOT / f).exists()]
+    texts = {rel: (ROOT / rel).read_text(encoding="utf-8") for rel in markdown}
+    adrs: dict[str, list[tuple[str, set[int], str]]] = {}
+    for d in docs:
+        if number := adr_number(d):
+            adrs.setdefault(number, []).append((d.rel, decision_numbers(texts.get(d.rel, d.path.read_text(encoding="utf-8"))), d.fields.get("status", "")))
+    found = check_adr_numbers([d.rel for d in docs]) + check_status(docs)
+    for rel, text in texts.items():
+        found += check_decision_refs(rel, text, adrs)
+        if rel.startswith("docs/"):
+            found += check_numbering(rel, text) + check_line_refs(rel, text) + check_sources_last(rel, text)
+        if ADR_FILE.match(rel):
+            found += check_status_lines(rel, text)
+    return found
+
+
 def check() -> int:
     docs = documents()
     files = tracked_files()
@@ -277,7 +483,7 @@ def check() -> int:
         if d.fields.get("type") and d.fields["type"] not in TYPES:
             annotate("error", d, "BAD_TYPE", f"type {d.fields['type']!r} is not one of {', '.join(TYPES)}")
             errors += 1
-        if d.fields.get("status") and d.fields["status"] not in STATUSES:
+        if d.fields.get("status") and d.fields["status"] not in STATUSES + DECISION_STATUSES:
             annotate("error", d, "BAD_STATUS", f"status {d.fields['status']!r} is not one of {', '.join(STATUSES)}")
             errors += 1
         if verified := d.fields.get("last_verified"):
@@ -297,6 +503,14 @@ def check() -> int:
                 annotate("error", d, "BROKEN_COVERS", f"covers {pattern!r}, which matches no file in the repository")
                 errors += 1
     errors += check_links(files)
+    findings = check_structure(docs, files)
+    for f in findings:
+        where = f"file={f.rel}" + (f",line={f.line}" if f.line else "")
+        print(f"::{STRUCTURE_LEVEL} {where}::{f.code}: {f.message}")
+    if STRUCTURE_LEVEL == "error":
+        errors += len(findings)
+    elif findings:
+        print(f"{len(findings)} structure finding(s), reported as warnings until the cleanup of #759 is done.")
     if errors:
         print(f"{errors} problem(s) in the documentation.")
     else:

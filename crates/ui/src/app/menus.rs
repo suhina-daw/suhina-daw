@@ -119,7 +119,22 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
 
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let shown = ui.menu_button(title, content);
+    let shown = ui.menu_button(title, |ui| {
+        // `.menu` styles the open menu: its background, text colour, corner radius and font size.
+        let _menu = crate::kit::style_class::enter("menu");
+        // The background covers the menu as it was laid out last frame: its own rect, never the
+        // layer's clip, which is the whole window.
+        let id = ui.id().with("menu-rect");
+        if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
+            crate::kit::native_css::surface(ui.painter(), rect, 0.0, egui::Color32::TRANSPARENT);
+        }
+        let mut styled = crate::kit::style_class::ui(ui);
+        let inner = content(&mut styled);
+        drop(styled);
+        let rect = ui.min_rect() + ui.style().spacing.menu_margin;
+        ui.ctx().data_mut(|d| d.insert_temp(id, rect));
+        inner
+    });
     let id = egui::Popup::default_response_id(&shown.response);
     if shown.response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
         egui::Popup::open_id(ui.ctx(), id);
@@ -137,6 +152,49 @@ mod tests {
             Entry::Submenu { entries, .. } => find(entries, id),
             _ => None,
         })
+    }
+
+    #[test]
+    fn an_open_menu_s_background_covers_the_menu_not_the_window() {
+        let ctx = egui::Context::default();
+        let skin = crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(".menu { background-color: #FF0000; }")),
+            ..Default::default()
+        };
+        crate::kit::skin::configure(&skin);
+        let mut biggest = 0.0f32;
+        for frame in 0..5 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::kit::native_css::begin_frame(ui);
+                    let _frame = crate::kit::native_css::frame(ui);
+                    let shown = bar_menu(ui, "Options", |ui| {
+                        let _ = ui.button("Settings…");
+                    });
+                    if frame == 0 {
+                        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&shown.response));
+                    }
+                },
+            );
+            output.textures_delta.clear();
+            for shape in &output.shapes {
+                // Red, faded while the menu opens.
+                if let egui::Shape::Rect(rect) = &shape.shape
+                    && rect.fill.r() > 0
+                    && rect.fill.g() == 0
+                    && rect.fill.b() == 0
+                {
+                    biggest = biggest.max(rect.rect.area());
+                }
+            }
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        assert!(biggest > 0.0, "the menu has its background");
+        assert!(biggest < 1280.0 * 800.0 / 4.0, "only the menu's area: {biggest}");
     }
 
     #[test]

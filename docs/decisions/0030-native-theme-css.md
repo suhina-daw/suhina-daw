@@ -19,6 +19,10 @@ covers:
 
 # 0030: Native theme CSS
 
+> **Superseded in part by [ADR 0031](0031-style-sheets.md):** the Stylo/Blitz engine this
+> record chose has been replaced by Suhina's own style engine (`suhina-style`). The goals,
+> research and the authoring contracts below stay as the history of that choice.
+
 ## Goal
 
 A theme may control every UI section through stable classes, including advanced visual

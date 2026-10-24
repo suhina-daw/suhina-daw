@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{AudioFileSpec, AudioFormat, BitDepth, Dither, WriteMode, write_audio_file};
+use super::{AudioFileSpec, AudioFormat, BitDepth, Dither, Mp3Rate, WriteMode, write_audio_file};
 use crate::decode_file;
 
 const SR: u32 = 48_000;
@@ -53,8 +53,15 @@ fn expected_pcm(samples: &[f32], depth: BitDepth, seed: u64) -> Vec<i32> {
 #[test]
 fn a_16_bit_wav_is_bit_true_dither_of_the_float_source_and_the_same_bytes_every_run() {
     let samples = sine();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Wav, depth: BitDepth::Pcm16, sample_rate: SR, dither: true, seed: 7 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Wav,
+        depth: BitDepth::Pcm16,
+        sample_rate: SR,
+        dither: true,
+        seed: 7,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let (first, second) = (temp_file("w16a"), temp_file("w16b"));
     write_audio_file(&first, &samples, &spec, WriteMode::Replace).unwrap();
     write_audio_file(&second, &samples, &spec, WriteMode::Replace).unwrap();
@@ -73,8 +80,15 @@ fn a_16_bit_wav_is_bit_true_dither_of_the_float_source_and_the_same_bytes_every_
 #[test]
 fn a_24_bit_wav_is_bit_true_dither_of_the_float_source() {
     let samples = sine();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Wav, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 11 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Wav,
+        depth: BitDepth::Pcm24,
+        sample_rate: SR,
+        dither: true,
+        seed: 11,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let path = temp_file("w24");
     write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
     let mut reader = hound::WavReader::open(&path).unwrap();
@@ -87,8 +101,15 @@ fn a_24_bit_wav_is_bit_true_dither_of_the_float_source() {
 #[test]
 fn an_undithered_24_bit_wav_quantizes_round_to_nearest() {
     let samples = sine();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Wav, depth: BitDepth::Pcm24, sample_rate: SR, dither: false, seed: 3 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Wav,
+        depth: BitDepth::Pcm24,
+        sample_rate: SR,
+        dither: false,
+        seed: 3,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let path = temp_file("w24q");
     write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
     let mut reader = hound::WavReader::open(&path).unwrap();
@@ -120,8 +141,15 @@ fn a_32_bit_float_wav_round_trips_exactly() {
 #[test]
 fn a_flac_export_decodes_to_the_same_length_rate_and_samples() {
     let samples = sine();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 5 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Flac,
+        depth: BitDepth::Pcm24,
+        sample_rate: SR,
+        dither: true,
+        seed: 5,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let path = temp_file("flac");
     write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
     let decoded = decode_file(&path).unwrap();
@@ -190,6 +218,8 @@ fn a_flac_written_to_the_file_decodes_like_the_whole_stream_encode() {
             sample_rate: SR,
             dither: true,
             seed: 5,
+            mp3_rate: Mp3Rate::default(),
+            title: String::new(),
         };
         write_audio_file(&path, samples, &spec, WriteMode::Replace).unwrap();
         let decoded = decode_file(&path).unwrap();
@@ -239,8 +269,15 @@ fn a_flac_whole_in_encoder_blocks_is_deterministic_and_true_in_length() {
             [sample as f32, sample as f32]
         })
         .collect();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 3 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Flac,
+        depth: BitDepth::Pcm24,
+        sample_rate: SR,
+        dither: true,
+        seed: 3,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let (first, second) = (temp_file("flac-whole1"), temp_file("flac-whole2"));
     write_audio_file(&first, &samples, &spec, WriteMode::Replace).unwrap();
     write_audio_file(&second, &samples, &spec, WriteMode::Replace).unwrap();
@@ -370,8 +407,15 @@ fn the_sink_prims_agree_with_the_buffer_variant() {
 #[test]
 fn an_ogg_export_decodes_to_the_same_length_rate_and_is_deterministic() {
     let samples = sine();
-    let spec =
-        AudioFileSpec { format: AudioFormat::Ogg, depth: BitDepth::Float32, sample_rate: SR, dither: false, seed: 9 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Ogg,
+        depth: BitDepth::Float32,
+        sample_rate: SR,
+        dither: false,
+        seed: 9,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let (first, second) = (temp_file("ogg1"), temp_file("ogg2"));
     write_audio_file(&first, &samples, &spec, WriteMode::Replace).unwrap();
     write_audio_file(&second, &samples, &spec, WriteMode::Replace).unwrap();
@@ -390,12 +434,89 @@ fn an_ogg_export_decodes_to_the_same_length_rate_and_is_deterministic() {
 }
 
 #[test]
+fn an_mp3_export_decodes_to_the_same_length_rate_is_deterministic_and_carries_the_title() {
+    let samples = sine();
+    let spec = AudioFileSpec {
+        format: AudioFormat::Mp3,
+        depth: BitDepth::Float32,
+        sample_rate: SR,
+        dither: false,
+        seed: 9,
+        mp3_rate: Mp3Rate::Cbr(320),
+        title: "a project".into(),
+    };
+    let (first, second) = (temp_file("mp3a"), temp_file("mp3b"));
+    write_audio_file(&first, &samples, &spec, WriteMode::Replace).unwrap();
+    write_audio_file(&second, &samples, &spec, WriteMode::Replace).unwrap();
+    assert_eq!(std::fs::read(&first).unwrap(), std::fs::read(&second).unwrap());
+    // The header and the tag frame sit before the audio; the decoder skips them.
+    let bytes = std::fs::read(&first).unwrap();
+    assert!(bytes.starts_with(b"ID3"), "the ID3v2 header is not at the start");
+    assert!(bytes.windows(4).any(|w| w == b"Info" || w == b"Xing"), "no LAME tag in the file");
+    let decoded = decode_file(&first).unwrap();
+    assert_eq!(decoded.sample_rate, SR);
+    assert_eq!(decoded.channels, 2);
+    // Lossy: the length is the source's (within one encoder block) and the level is close.
+    let rms = |values: &[f32]| {
+        (values.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / values.len().max(1) as f64).sqrt()
+    };
+    let source_rms = rms(&samples);
+    let decoded_rms = rms(&decoded.samples);
+    assert!((source_rms - decoded_rms).abs() < 0.05 * source_rms, "{source_rms} against {decoded_rms}");
+    cleanup(&[&first, &second]);
+}
+
+#[test]
+fn hostile_values_reach_an_mp3_as_full_scale_and_silence() {
+    // The encoder refuses what is not finite or past full scale; the writer brings it there
+    // first, so a hostile mix still writes a whole file.
+    let mut samples = sine();
+    for (i, hostile) in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 2.0, -2.0].into_iter().enumerate() {
+        samples[i * 100] = hostile;
+    }
+    let spec = AudioFileSpec {
+        format: AudioFormat::Mp3,
+        depth: BitDepth::Float32,
+        sample_rate: SR,
+        dither: false,
+        seed: 0,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
+    let path = temp_file("mp3hostile");
+    write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
+    let decoded = decode_file(&path).unwrap();
+    assert!(decoded.samples.iter().all(|s| s.is_finite()), "a hostile value reached the file");
+    cleanup(&[&path]);
+}
+
+#[test]
+fn an_mp3_export_refuses_a_rate_its_encoder_does_not_write() {
+    let samples = sine();
+    let spec = AudioFileSpec {
+        format: AudioFormat::Mp3,
+        depth: BitDepth::Float32,
+        sample_rate: 96_000,
+        dither: false,
+        seed: 0,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
+    let error = write_audio_file(&temp_file("mp3rate"), &samples, &spec, WriteMode::Replace).unwrap_err();
+    assert!(error.contains("96 000") || error.contains("96000"), "{error}");
+}
+
+#[test]
 fn the_names_and_the_extensions_agree() {
     assert_eq!(AudioFormat::from_extension("wav"), Some(AudioFormat::Wav));
     assert_eq!(AudioFormat::from_extension("FLAC"), Some(AudioFormat::Flac));
     assert_eq!(AudioFormat::from_extension("ogg"), Some(AudioFormat::Ogg));
-    assert_eq!(AudioFormat::from_extension("mp3"), None);
+    assert_eq!(AudioFormat::from_extension("mp3"), Some(AudioFormat::Mp3));
     assert_eq!(AudioFormat::from_extension(AudioFormat::Ogg.name()), Some(AudioFormat::Ogg));
+    assert_eq!(AudioFormat::from_extension(AudioFormat::Mp3.name()), Some(AudioFormat::Mp3));
+    assert_eq!(Mp3Rate::from_name("320"), Some(Mp3Rate::Cbr(320)));
+    assert_eq!(Mp3Rate::from_name("v2"), Some(Mp3Rate::Vbr(2)));
+    assert_eq!(Mp3Rate::from_name("9"), None);
     assert_eq!(BitDepth::from_name("32f"), Some(BitDepth::Float32));
     assert_eq!(BitDepth::from_name("24"), Some(BitDepth::Pcm24));
     assert_eq!(BitDepth::from_name("16"), Some(BitDepth::Pcm16));
@@ -406,8 +527,15 @@ fn the_names_and_the_extensions_agree() {
 #[test]
 fn hostile_values_cannot_reach_the_file() {
     let samples = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 2.0, -2.0, 0.0];
-    let spec =
-        AudioFileSpec { format: AudioFormat::Wav, depth: BitDepth::Pcm16, sample_rate: SR, dither: false, seed: 1 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Wav,
+        depth: BitDepth::Pcm16,
+        sample_rate: SR,
+        dither: false,
+        seed: 1,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let path = temp_file("hostile");
     write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
     let mut reader = hound::WavReader::open(&path).unwrap();
@@ -422,8 +550,15 @@ fn hostile_values_cannot_reach_the_file() {
 fn refusals_are_said_as_they_are() {
     let samples = sine();
     // A rate the engine does not take.
-    let spec =
-        AudioFileSpec { format: AudioFormat::Wav, depth: BitDepth::Float32, sample_rate: 400, dither: false, seed: 0 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Wav,
+        depth: BitDepth::Float32,
+        sample_rate: 400,
+        dither: false,
+        seed: 0,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let error = write_audio_file(&temp_file("rate"), &samples, &spec, WriteMode::Replace).unwrap_err();
     assert!(error.contains("sample rate 400 is not supported"), "{error}");
     // A torn frame.
@@ -431,8 +566,15 @@ fn refusals_are_said_as_they_are() {
     let error = write_audio_file(&temp_file("torn"), &[0.0, 0.1, 0.2], &spec, WriteMode::Replace).unwrap_err();
     assert!(error.contains("stereo frames"), "{error}");
     // FLAC takes no float depth.
-    let spec =
-        AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Float32, sample_rate: SR, dither: false, seed: 0 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Flac,
+        depth: BitDepth::Float32,
+        sample_rate: SR,
+        dither: false,
+        seed: 0,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let error = write_audio_file(&temp_file("deep"), &samples, &spec, WriteMode::Replace).unwrap_err();
     assert!(error.contains("not 32f"), "{error}");
     // A folder that is not there.
@@ -490,8 +632,15 @@ fn an_export_holds_its_rules_when_the_destination_changes_after_the_check() {
 
     // A failed write leaves the destination it would have replaced intact: an illegal depth
     // for flac is refused inside the writer, after the stage was begun (the name is taken).
-    let flac_32f =
-        AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Float32, sample_rate: SR, dither: false, seed: 0 };
+    let flac_32f = AudioFileSpec {
+        format: AudioFormat::Flac,
+        depth: BitDepth::Float32,
+        sample_rate: SR,
+        dither: false,
+        seed: 0,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     let flac = dir.join("flac.wav");
     std::fs::write(&flac, b"the earlier flac\n").unwrap();
     let error = write_audio_file(&flac, &samples, &flac_32f, WriteMode::Export { overwrite: true }).unwrap_err();
@@ -542,8 +691,15 @@ fn a_half_hour_flac_write_keeps_bounded_memory() {
     }
     println!("the mix alone: {:.0} MB ({} frames)", rss(), frames);
     let path = temp_file("memory-flac");
-    let spec =
-        AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 7 };
+    let spec = AudioFileSpec {
+        format: AudioFormat::Flac,
+        depth: BitDepth::Pcm24,
+        sample_rate: SR,
+        dither: true,
+        seed: 7,
+        mp3_rate: Mp3Rate::default(),
+        title: String::new(),
+    };
     write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
     println!("after the encode: {:.0} MB", rss());
     let decoded = decode_file(&path).unwrap();
@@ -570,8 +726,15 @@ fn the_real_writer_grows_linearly_over_correlated_noise() {
             pair[1] = (left * 0.25).clamp(-0.9, 0.9);
         }
         let path = temp_file("correlated-size-hunt");
-        let spec =
-            AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 7 };
+        let spec = AudioFileSpec {
+            format: AudioFormat::Flac,
+            depth: BitDepth::Pcm24,
+            sample_rate: SR,
+            dither: true,
+            seed: 7,
+            mp3_rate: Mp3Rate::default(),
+            title: String::new(),
+        };
         write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
         let size = std::fs::metadata(&path).unwrap().len();
         let blocks = frames / 4096;
@@ -598,8 +761,15 @@ fn the_real_writer_grows_linearly_over_noise() {
         .take(frames * 2)
         .collect();
         let path = temp_file("size-hunt");
-        let spec =
-            AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm24, sample_rate: SR, dither: true, seed: 7 };
+        let spec = AudioFileSpec {
+            format: AudioFormat::Flac,
+            depth: BitDepth::Pcm24,
+            sample_rate: SR,
+            dither: true,
+            seed: 7,
+            mp3_rate: Mp3Rate::default(),
+            title: String::new(),
+        };
         write_audio_file(&path, &samples, &spec, WriteMode::Replace).unwrap();
         let size = std::fs::metadata(&path).unwrap().len();
         let blocks = frames / 4096;

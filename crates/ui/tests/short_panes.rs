@@ -486,7 +486,7 @@ fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
     let mut project = demo_project();
     let keys = project.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).expect("Keys has a channel");
     // Only a plug-in on the track, its editor not embedded: a short panel.
-    project.channels.iter_mut().find(|c| c.id == keys).expect("its channel").devices =
+    project.channel_mut(keys).expect("its channel").devices =
         vec![Device::new("Verb", DeviceKind::Vst3 { id: "ABC".into() })];
     let mut app = App::new();
     app.set_browser_open(false);

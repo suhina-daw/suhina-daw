@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use suhina_library::{FileKind, Group, Item};
+use suhina_library::{FileKind, Item};
 use suhina_soundmap::cache::Analysis;
 use suhina_soundmap::kinds::Kind;
 use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, SoundMap, SourceFile};
@@ -17,7 +17,7 @@ use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, 
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
 use crate::{CommandError, Projects};
 
-const PLACE: &str = "pinned, recent:samples, or a folder (default: every folder)";
+const PLACE: &str = "pinned, recent:all, recent:samples, or a folder (default: every folder)";
 
 static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
@@ -120,7 +120,9 @@ impl Projects {
             let library = self.file_library_mut();
             library.poll();
             let revision = library.revision();
-            if self.sound_map_revision != Some(revision) {
+            // While the update before is worked out, the index is not copied for the next: that
+            // would be refused, and copied again every frame until it was not.
+            if self.sound_map_revision != Some(revision) && !self.sound_map_mut().updating() {
                 if self.sound_map_mut().reads_in_background() {
                     // Listed and compared on a thread of its own: a large library held the
                     // window up for a second here.
@@ -130,7 +132,6 @@ impl Projects {
                             .map(|f| SourceFile { folder: f.folder, path: f.path, size: f.size, modified: f.modified })
                             .collect()
                     });
-                    // Still working out the one before: asked again at a later poll.
                     if started {
                         self.sound_map_revision = Some(revision);
                     }
@@ -157,18 +158,14 @@ fn sample_files(projects: &mut Projects) -> Vec<SourceFile> {
         .collect()
 }
 
-/// The samples of a place: `None` for every folder, `pinned`, `recent:samples`, or a folder.
+/// The samples of a place: `None` for every folder, `pinned`, `recent:all`, `recent:samples`,
+/// or a folder.
 pub fn scope_files(projects: &mut Projects, place: Option<&str>) -> Result<Vec<SourceFile>, CommandError> {
     let files = sample_files(projects);
-    let keys: Option<Vec<String>> = match place {
-        None => return Ok(files),
-        Some("pinned") => Some(projects.file_library_mut().pinned()),
-        Some(p) if p.starts_with("recent:") => {
-            let group = Group::parse(&p["recent:".len()..]).ok_or_else(|| format!("unknown recent group in {p:?}"))?;
-            Some(projects.file_library_mut().recent(group))
-        }
-        Some(_) => None,
-    };
+    if place.is_none() {
+        return Ok(files);
+    }
+    let keys = crate::library::listed_keys(projects, place)?;
     Ok(match (keys, place) {
         (Some(keys), _) => {
             let wanted: HashSet<PathBuf> = keys

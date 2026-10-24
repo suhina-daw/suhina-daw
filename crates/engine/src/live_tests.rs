@@ -4,6 +4,7 @@
 //! Live input (ADR 0017): notes from a MIDI controller played by the armed tracks' instruments,
 //! with the transport stopped or running, across graph swaps.
 
+use suhina_device_api::controller;
 use suhina_model::*;
 
 use crate::chain_tests::{SR, blocks, device, project};
@@ -32,6 +33,50 @@ fn stopped(project: &Project) -> Renderer {
 
 fn peak(out: &[f32]) -> f32 {
     out.iter().fold(0.0, |m, s| m.max(s.abs()))
+}
+
+#[test]
+fn midi_monitoring_and_record_arm_are_independent() {
+    for (armed, monitoring) in [(false, true), (true, false), (true, true), (false, false)] {
+        let mut renderer = stopped(&synth());
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        let mut recorder = controller.take_recorder().unwrap();
+        controller
+            .send(LaunchCommand::SetMidiInput { track: TrackId(1), armed, monitoring, input: Default::default() })
+            .unwrap();
+        controller.send(LaunchCommand::Play).unwrap();
+        controller.send(LaunchCommand::SetRecording { on: true }).unwrap();
+        blocks(&mut renderer, 2, 256);
+        live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+        let heard = peak(&blocks(&mut renderer, 4, 256));
+        assert_eq!(heard > 0.0, monitoring, "armed={armed}, monitoring={monitoring}");
+        assert_eq!(recorder.next_note().is_some(), armed, "only arm permits recording");
+        assert_eq!(renderer.live_armed(), armed || monitoring, "monitoring keeps live latency low");
+    }
+}
+
+#[test]
+fn changing_midi_monitoring_releases_notes_without_retriggering_held_keys() {
+    let mut renderer = stopped(&synth());
+    let mut controller = renderer.controller();
+    let mut live = controller.take_live_input().unwrap();
+    let input = |monitoring| LaunchCommand::SetMidiInput {
+        track: TrackId(1),
+        armed: false,
+        monitoring,
+        input: Default::default(),
+    };
+    controller.send(input(true)).unwrap();
+    live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+    assert!(peak(&blocks(&mut renderer, 20, 256)) > 0.0);
+    controller.send(input(false)).unwrap();
+    blocks(&mut renderer, 400, 256);
+    assert!(peak(&blocks(&mut renderer, 2, 256)) < 1e-5);
+    controller.send(input(true)).unwrap();
+    assert!(peak(&blocks(&mut renderer, 2, 256)) < 1e-5, "held notes do not restart");
+    live.send(LiveEvent::NoteOn { key: 64, velocity: 1.0 });
+    assert!(peak(&blocks(&mut renderer, 4, 256)) > 0.0);
 }
 
 #[test]
@@ -178,9 +223,51 @@ fn hostile_live_values_are_made_safe() {
     live.send(LiveEvent::NoteOn { key: 60, velocity: f32::NAN });
     live.send(LiveEvent::NoteOn { key: 61, velocity: f32::INFINITY });
     live.send(LiveEvent::NoteOn { key: 62, velocity: -3.0 });
+    // Controllers, pitch bend and channel pressure (#812) take the same hostile values.
+    live.send(LiveEvent::Controller { number: 1, value: f32::NAN });
+    live.send(LiveEvent::Controller { number: 255, value: 2.0 });
+    live.send(LiveEvent::PitchBend(f32::INFINITY));
+    live.send(LiveEvent::PitchBend(f32::NEG_INFINITY));
+    live.send(LiveEvent::Pressure(f32::NAN));
+    live.send(LiveEvent::Pressure(-5.0));
     let out = blocks(&mut renderer, 8, 256);
     assert!(out.iter().all(|s| s.is_finite()));
     assert!(peak(&out) > 0.0);
+}
+
+/// Pitch bend and the mod wheel reach the instrument's own pitch with its default routing
+/// (#812); channel pressure reaches it once its route is turned on.
+#[test]
+fn pitch_bend_the_mod_wheel_and_pressure_reach_the_instrument() {
+    let play = |devices: Vec<Device>, before: &[LiveEvent]| {
+        let mut renderer = stopped(&project(Vec::new(), 1.0, devices));
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+        for event in before {
+            live.send(*event);
+        }
+        live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+        blocks(&mut renderer, 10, 256)
+    };
+    let diff = |a: &[f32], b: &[f32]| a.iter().zip(b).fold(0.0f32, |m, (x, y)| m.max((x - y).abs()));
+    let synth = || vec![device("fm-synth", &[])];
+
+    // The pitch bend wheel bends the pitch, whatever the patch.
+    let plain = play(synth(), &[]);
+    let bent = play(synth(), &[LiveEvent::PitchBend(1.0)]);
+    assert!(diff(&plain, &bent) > 1e-3, "pitch bend changes the pitch heard");
+
+    // The default patch already routes the mod wheel to pitch (ADR 0004's fm-synth default).
+    let wheeled = play(synth(), &[LiveEvent::Controller { number: controller::MODULATION, value: 1.0 }]);
+    assert!(diff(&plain, &wheeled) > 1e-3, "the mod wheel changes the pitch heard with the default patch");
+
+    // Channel pressure reaches the instrument too, once the patch routes it (it does not by
+    // default): routed to pitch here, as the wheel is by default.
+    let routed = || vec![device("fm-synth", &[("pressureRange", 99.0), ("pressurePitch", 1.0)])];
+    let unrouted_plain = play(routed(), &[]);
+    let pressed = play(routed(), &[LiveEvent::Pressure(1.0)]);
+    assert!(diff(&unrouted_plain, &pressed) > 1e-3, "channel pressure changes the pitch heard once routed");
 }
 
 #[test]
@@ -467,6 +554,72 @@ fn a_stamped_note_waits_for_a_later_block_and_keeps_its_order() {
     });
     assert_eq!(renderer.live_played(), [(frames * 5) as u64; 2], "the note-off waits for its note-on");
     assert!(peak(&out[390 * frames * 2..]) < 1e-3, "released");
+}
+
+/// A stream of pressure between a stamped key-down and key-up, more than the waiting notes have
+/// room for, does not let the key-up overtake its key-down and leave the note hanging (#812):
+/// past the places controls may take, the latest value takes the place of the one before it.
+#[test]
+fn a_stream_of_controls_never_lets_a_release_overtake_its_key() {
+    let (mut renderer, mut live) = armed_synth();
+    let frames = 64;
+    let block_us = |n: usize| micros(frames * n);
+    let delay = (frames * 4) as u32;
+    let out = clocked(&mut renderer, 400, frames, delay, block_us, |index| {
+        if index == 1 {
+            let at = block_us(1);
+            live.send_at(Default::default(), LiveEvent::NoteOn { key: 69, velocity: 1.0 }, at);
+            for step in 0..600u16 {
+                let value = f32::from(step % 128) / 127.0;
+                live.send_at(Default::default(), LiveEvent::Pressure(value), at);
+            }
+            live.send_at(Default::default(), LiveEvent::NoteOff { key: 69 }, at);
+        }
+    });
+    let order: Vec<&LiveEvent> = renderer
+        .live
+        .played
+        .iter()
+        .map(|(_, e)| e)
+        .filter(|e| matches!(e, LiveEvent::NoteOn { .. } | LiveEvent::NoteOff { .. }))
+        .collect();
+    assert_eq!(
+        order,
+        [&LiveEvent::NoteOn { key: 69, velocity: 1.0 }, &LiveEvent::NoteOff { key: 69 }],
+        "the key-up after its key-down"
+    );
+    // The last pressure sent is the one the instrument ends with.
+    let last = renderer.live.played.iter().rev().find_map(|(_, e)| match e {
+        LiveEvent::Pressure(v) => Some(*v),
+        _ => None,
+    });
+    assert_eq!(last, Some(f32::from(599u16 % 128) / 127.0));
+    assert!(peak(&out[390 * frames * 2..]) < 1e-3, "released");
+}
+
+/// A wheel moved while notes wait: every value it sends plays, each at its own frame, in order,
+/// so the instrument (and a plug-in's on-screen wheel) follows it smoothly rather than in jumps.
+#[test]
+fn a_wheels_stamped_stream_plays_every_value_at_its_own_frame() {
+    let (mut renderer, mut live) = armed_synth();
+    let frames = 64;
+    let block_us = |n: usize| micros(frames * n);
+    let delay = (frames * 4) as u32;
+    // One value every 16 frames, over 10 blocks: always some waiting while more come.
+    let steps: Vec<(usize, u64)> = (0..40).map(|i| (i, block_us(1) + micros(16 * i))).collect();
+    clocked(&mut renderer, 30, frames, delay, block_us, |index| {
+        for &(i, time) in steps.iter().filter(|(i, _)| 1 + i / 4 == index) {
+            live.send_at(Default::default(), LiveEvent::PitchBend(i as f32 / 40.0), time);
+        }
+    });
+    let bends: Vec<(u64, f32)> = renderer
+        .live
+        .played
+        .iter()
+        .filter_map(|(at, e)| if let LiveEvent::PitchBend(v) = e { Some((*at, *v)) } else { None })
+        .collect();
+    assert_eq!(bends.len(), steps.len(), "every value plays");
+    assert!(bends.windows(2).all(|w| w[0].0 < w[1].0 && w[0].1 < w[1].1), "each at its own, later frame: {bends:?}");
 }
 
 #[test]

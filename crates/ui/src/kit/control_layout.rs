@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use suhina_style::anchor::{Anchor, Anchors, Edge, Name};
 
 pub type Placements = BTreeMap<String, Placement>;
 pub const MAX_CONTROLS: usize = 256;
@@ -42,6 +43,60 @@ struct Runtime {
 }
 thread_local! { static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) }; }
 
+/// Most anchor sources and targets remembered per frame.
+const MAX_PLACED: usize = 4096;
+
+/// Where an element that takes part in an anchor was placed, and in which container.
+#[derive(Clone, Copy)]
+struct Placed {
+    name: Name,
+    bounds: Rect,
+    at: Rect,
+}
+
+/// An anchored edge resolved from the previous frame's target: checked when the frame ends.
+#[derive(Clone, Copy)]
+struct Borrowed {
+    target: Name,
+    bounds: Rect,
+    used: Rect,
+}
+
+/// This frame's and the previous frame's anchor sources and targets. Elements are drawn in
+/// immediate mode, so a target drawn after its source is taken from the previous frame, moved
+/// as far as the source's container moved (scrolling), and the frame repaints once if the
+/// target has since changed. Only active between [`Capture::begin`] and its drop.
+#[derive(Default)]
+struct Frames {
+    active: bool,
+    current: Vec<Placed>,
+    previous: Vec<Placed>,
+    borrowed: Vec<Borrowed>,
+    /// Names of anchor targets and anchored elements, for the placements kept alive beside them
+    /// (so their address cannot be reused by other placements).
+    names: Option<(Source, Arc<std::collections::BTreeSet<Name>>)>,
+}
+thread_local! { static FRAMES: RefCell<Frames> = RefCell::new(Frames::default()); }
+
+fn overlap(a: Rect, b: Rect) -> f32 {
+    let both = a.intersect(b);
+    if both.is_positive() { both.area() } else { 0.0 }
+}
+
+/// The record named `name` whose container overlaps `bounds` the most.
+fn best(records: &[Placed], name: Name, bounds: Rect) -> Option<Placed> {
+    records
+        .iter()
+        .filter(|p| p.name == name)
+        .map(|p| (overlap(p.bounds, bounds), p))
+        .filter(|(area, _)| *area > 0.0)
+        .fold(None, |best: Option<(f32, &Placed)>, next| match best {
+            Some(b) if b.0 >= next.0 => Some(b),
+            _ => Some(next),
+        })
+        .map(|(_, p)| *p)
+}
+
 fn draft_id() -> egui::Id {
     egui::Id::new("native-control-layout-draft")
 }
@@ -62,6 +117,12 @@ pub fn draft(ctx: &egui::Context, placements: Option<Placements>) {
 pub struct Capture(Option<Runtime>);
 impl Capture {
     pub fn begin(ctx: &egui::Context) -> Self {
+        FRAMES.with(|frames| {
+            let mut frames = frames.borrow_mut();
+            frames.previous = std::mem::take(&mut frames.current);
+            frames.borrowed.clear();
+            frames.active = true;
+        });
         Self(RUNTIME.with(|runtime| runtime.replace(Some(Runtime { ctx: ctx.clone(), entries: Vec::new() }))))
     }
     pub fn entries(&self) -> Vec<Entry> {
@@ -70,7 +131,22 @@ impl Capture {
 }
 impl Drop for Capture {
     fn drop(&mut self) {
-        RUNTIME.with(|runtime| runtime.replace(self.0.take()));
+        let changed = FRAMES.with(|frames| {
+            let mut frames = frames.borrow_mut();
+            frames.active = false;
+            // A target taken from the last frame that has moved since: one more frame settles it.
+            frames.borrowed.iter().any(|b| {
+                best(&frames.current, b.target, b.bounds).is_some_and(|now| {
+                    (now.at.min - b.used.min).length() > 0.01 || (now.at.max - b.used.max).length() > 0.01
+                })
+            })
+        });
+        RUNTIME.with(|runtime| {
+            if changed && let Some(runtime) = runtime.borrow().as_ref() {
+                runtime.ctx.request_repaint();
+            }
+            runtime.replace(self.0.take())
+        });
     }
 }
 
@@ -96,12 +172,34 @@ pub struct Placement {
     pub full_height: bool,
     pub full_width: bool,
     pub direction: Direction,
+    /// Edges that follow an edge of another element in the same container.
+    pub anchors: Anchors,
 }
 
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    suhina_style::anchor::valid_name(name)
+}
+
+/// The CSS property that anchors `edge`.
+pub fn anchor_property(edge: Edge) -> &'static str {
+    match edge {
+        Edge::Left => "--suhina-anchor-left",
+        Edge::Top => "--suhina-anchor-top",
+        Edge::Right => "--suhina-anchor-right",
+        Edge::Bottom => "--suhina-anchor-bottom",
+    }
+}
+
+/// Drops the anchors that would form a cycle or a chain longer than eight links, with a warning
+/// for each element. Every theme and editor draft passes through this before it is used.
+pub fn validate_anchors(controls: &mut Placements, warnings: &mut Vec<String>) {
+    let rejected = suhina_style::anchor::rejected(controls.iter().map(|(name, p)| (name.as_str(), p.anchors)));
+    for (name, reason) in rejected {
+        if let Some(placement) = controls.get_mut(&name) {
+            placement.anchors = Anchors::default();
+            warnings.push(format!("control {name}: anchors ignored, {reason}"));
+        }
+    }
 }
 
 impl Placement {
@@ -152,6 +250,11 @@ impl Placement {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), &'static str> {
+        if let Some(edge) = key.strip_prefix("--suhina-anchor-").and_then(Edge::parse) {
+            let anchor = if value == "none" { None } else { Some(Anchor::parse(edge, value)?) };
+            self.anchors.set(edge, anchor);
+            return Ok(());
+        }
         match key {
             "left" | "top" | "bottom" | "right" => {
                 if matches!(key, "bottom" | "right") && value == "auto" {
@@ -239,17 +342,42 @@ impl Placement {
     }
 
     pub fn to_json(self) -> Value {
+        let mut value = self.to_json_without_anchors();
+        if !self.anchors.is_empty()
+            && let Some(object) = value.as_object_mut()
+        {
+            let anchors: serde_json::Map<String, Value> =
+                self.anchors.iter().map(|(edge, anchor)| (edge.name().to_owned(), json!(anchor.to_string()))).collect();
+            object.insert("anchors".into(), Value::Object(anchors));
+        }
+        value
+    }
+
+    fn to_json_without_anchors(self) -> Value {
         json!({"left": self.offset().x, "top": self.offset().y, "bottom": self.bottom, "right": self.right, "hidden": self.hidden, "width": if self.full_width { json!("100%") } else { json!(self.width) }, "height": if self.full_height { json!("100%") } else { json!(self.height) },
             "direction": if self.direction == Direction::Horizontal { "horizontal" } else { "vertical" }})
     }
 
     pub fn from_json(value: &Value, warnings: &mut Vec<String>) -> Self {
         let mut result = Self::default();
-        let Some(properties) = value.as_object().filter(|p| p.len() <= 8) else {
-            warnings.push("control placement must be an object of at most eight properties".into());
+        let Some(properties) = value.as_object().filter(|p| p.len() <= 9) else {
+            warnings.push("control placement must be an object of at most nine properties".into());
             return result;
         };
         for (key, value) in properties {
+            if key == "anchors" {
+                let Some(anchors) = value.as_object().filter(|a| a.len() <= 4) else {
+                    warnings.push("control anchors must be an object of at most four edges".into());
+                    continue;
+                };
+                for (edge, anchor) in anchors {
+                    let property = format!("--suhina-anchor-{edge}");
+                    if let Err(error) = result.set(&property, anchor.as_str().unwrap_or("")) {
+                        warnings.push(format!("control anchors.{edge}: {error}"));
+                    }
+                }
+                continue;
+            }
             if matches!(key.as_str(), "width" | "height" | "bottom" | "right") && value.is_null() {
                 continue;
             }
@@ -299,7 +427,145 @@ pub fn place(name: &str, native: Rect, bounds: Rect) -> Rect {
 /// Resolve geometry without registering an edit handle for a part a renderer does not draw.
 pub fn resolve(name: &str, native: Rect, bounds: Rect) -> Rect {
     let layout = placement(name);
-    if layout == Placement::default() { native } else { layout.apply(native, bounds) }
+    let mut at = if layout == Placement::default() { native } else { layout.apply(native, bounds) };
+    if !layout.anchors.is_empty() && !layout.hidden {
+        at = anchored(name, layout, at, bounds);
+    }
+    remember(name, bounds, at);
+    at
+}
+
+/// The placements in effect: the editor's draft while editing, else the theme's.
+#[derive(Clone)]
+enum Source {
+    Draft(Arc<Placements>),
+    Skin(Arc<super::skin::Skin>),
+}
+
+impl Source {
+    fn current() -> Self {
+        let draft = RUNTIME.with(|runtime| {
+            runtime
+                .borrow()
+                .as_ref()
+                .and_then(|runtime| runtime.ctx.data(|data| data.get_temp::<Arc<Placements>>(draft_id())))
+        });
+        draft.map_or_else(|| Self::Skin(super::skin::current()), Self::Draft)
+    }
+    fn placements(&self) -> &Placements {
+        match self {
+            Self::Draft(draft) => draft,
+            Self::Skin(skin) => &skin.controls,
+        }
+    }
+    fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Draft(a), Self::Draft(b)) => Arc::ptr_eq(a, b),
+            (Self::Skin(a), Self::Skin(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+}
+
+/// Names of every anchored element and anchor target, computed once per placement map.
+fn anchor_names() -> Arc<std::collections::BTreeSet<Name>> {
+    let source = Source::current();
+    if let Some(names) = FRAMES.with(|frames| {
+        frames.borrow().names.as_ref().filter(|(cached, _)| cached.same(&source)).map(|(_, names)| Arc::clone(names))
+    }) {
+        return names;
+    }
+    let names: std::collections::BTreeSet<Name> = source
+        .placements()
+        .iter()
+        .filter(|(_, p)| !p.anchors.is_empty())
+        .flat_map(|(name, p)| Name::new(name).into_iter().chain(p.anchors.iter().map(|(_, a)| a.target)))
+        .collect();
+    let names = Arc::new(names);
+    FRAMES.with(|frames| frames.borrow_mut().names = Some((source, Arc::clone(&names))));
+    names
+}
+
+fn remember(name: &str, bounds: Rect, at: Rect) {
+    let Some(name) = Name::new(name) else { return };
+    if !bounds.is_finite() || !at.is_finite() || !anchor_names().contains(&name) {
+        return;
+    }
+    FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        if frames.active && frames.current.len() < MAX_PLACED {
+            frames.current.push(Placed { name, bounds, at });
+        }
+    });
+}
+
+/// Where `target` is in the container `bounds` of an element named `source`: drawn earlier this
+/// frame, or last frame moved as far as the source's container moved. `None` when the target is
+/// hidden, missing or in another container: the anchored edge then keeps its own placement.
+fn target_rect(source: Name, target: Name, bounds: Rect) -> Option<Rect> {
+    if placement(target.as_str()).hidden {
+        return None;
+    }
+    FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        if !frames.active {
+            return None;
+        }
+        if let Some(now) = best(&frames.current, target, bounds) {
+            return Some(now.at);
+        }
+        // The same source last frame: the record of the same size nearest to its container now.
+        let before = frames
+            .previous
+            .iter()
+            .filter(|p| p.name == source && (p.bounds.size() - bounds.size()).length() < 0.5)
+            .min_by(|a, b| {
+                let da = (a.bounds.min - bounds.min).length();
+                let db = (b.bounds.min - bounds.min).length();
+                da.total_cmp(&db)
+            })
+            .copied()?;
+        let then = best(&frames.previous, target, before.bounds)?;
+        let used = then.at.translate(bounds.min - before.bounds.min);
+        if frames.borrowed.len() < MAX_PLACED {
+            frames.borrowed.push(Borrowed { target, bounds, used });
+        }
+        Some(used)
+    })
+}
+
+/// `at` with its anchored edges moved to their targets, inside `bounds`.
+fn anchored(name: &str, layout: Placement, at: Rect, bounds: Rect) -> Rect {
+    let Some(source) = Name::new(name) else { return at };
+    if !bounds.is_finite() || !bounds.is_positive() {
+        return at;
+    }
+    let edge_of = |edge: Edge| -> Option<f32> {
+        let anchor = layout.anchors.get(edge)?;
+        let target = target_rect(source, anchor.target, bounds)?;
+        let value = match anchor.edge {
+            Edge::Left => target.left(),
+            Edge::Top => target.top(),
+            Edge::Right => target.right(),
+            Edge::Bottom => target.bottom(),
+        };
+        Some(anchor.place(edge, value))
+    };
+    let (x0, x1) = suhina_style::anchor::resolve_axis(
+        (at.left(), at.right()),
+        edge_of(Edge::Left),
+        edge_of(Edge::Right),
+        layout.full_width,
+        (bounds.left(), bounds.right()),
+    );
+    let (y0, y1) = suhina_style::anchor::resolve_axis(
+        (at.top(), at.bottom()),
+        edge_of(Edge::Top),
+        edge_of(Edge::Bottom),
+        layout.full_height,
+        (bounds.top(), bounds.bottom()),
+    );
+    Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1))
 }
 
 fn register(name: &str, native: Rect, at: Rect, bounds: Rect) {
@@ -317,90 +583,5 @@ fn register(name: &str, native: Rect, at: Rect, bounds: Rect) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn full_width_uses_left_and_right_insets_and_round_trips() {
-        let mut p = Placement::default();
-        p.set("width", "100%").unwrap();
-        p.set("left", "4.5px").unwrap();
-        p.set("right", "6px").unwrap();
-        let bounds = Rect::from_min_size(egui::pos2(10.0, 20.0), Vec2::new(100.0, 80.0));
-        let native = Rect::from_min_size(bounds.min + Vec2::splat(12.0), Vec2::splat(20.0));
-        let at = p.apply(native, bounds);
-        assert_eq!(at.left(), 14.5);
-        assert_eq!(at.right(), 104.0);
-        assert_eq!(at.height(), 20.0);
-        let mut warnings = Vec::new();
-        assert_eq!(Placement::from_json(&p.to_json(), &mut warnings), p);
-        assert!(warnings.is_empty());
-        p.set("width", "20px").unwrap();
-        assert!(!p.full_width);
-    }
-
-    #[test]
-    fn fractional_offsets_survive_storage_and_reject_nonfinite_input() {
-        let mut p = Placement::default();
-        p.set("left", "1.25px").unwrap();
-        p.set("top", "-2.125px").unwrap();
-        assert_eq!(p.offset(), Vec2::new(1.25, -2.125));
-        let mut warnings = Vec::new();
-        assert_eq!(Placement::from_json(&p.to_json(), &mut warnings), p);
-        assert!(warnings.is_empty());
-        assert!(p.set("left", "NaNpx").is_err());
-        assert!(p.set("top", "infpx").is_err());
-    }
-
-    #[test]
-    fn full_height_tracks_panel_edges_and_round_trips() {
-        let mut p = Placement::default();
-        p.set("height", "100%").unwrap();
-        p.set("top", "4px").unwrap();
-        p.set("bottom", "6px").unwrap();
-        for height in [30.0, 200.0] {
-            let bounds = Rect::from_min_size(egui::pos2(10.0, -40.0), Vec2::new(100.0, height));
-            let native = Rect::from_min_size(bounds.min + Vec2::new(80.0, 8.0), Vec2::new(10.0, 12.0));
-            let at = p.apply(native, bounds);
-            assert_eq!(at.top(), bounds.top() + 4.0);
-            assert_eq!(at.bottom(), bounds.bottom() - 6.0);
-            assert_eq!(at.width(), 10.0);
-        }
-        let mut warnings = Vec::new();
-        assert_eq!(Placement::from_json(&p.to_json(), &mut warnings), p);
-        assert!(warnings.is_empty());
-        p.set("height", "auto").unwrap();
-        assert!(!p.full_height);
-        assert!(p.set("height", "200%").is_err());
-    }
-
-    #[test]
-    fn semantic_names_are_stable_bounded_and_keep_distinct_non_ascii_ids() {
-        assert_eq!(semantic_name("device", "enabled"), "device-enabled");
-        for id in ["Ääni 🌲", "volume.1", &"large".repeat(100)] {
-            let name = semantic_name("device", id);
-            assert!(valid_name(&name));
-            assert_eq!(name, semantic_name("device", id));
-        }
-        assert_ne!(semantic_name("device", "volume.1"), semantic_name("device", "volume-1"));
-    }
-
-    #[test]
-    fn placement_is_bounded_and_round_trips_without_changing_the_native_default() {
-        let native = Rect::from_min_size(egui::pos2(30.0, 40.0), Vec2::new(20.0, 60.0));
-        let bounds = Rect::from_min_size(egui::Pos2::ZERO, Vec2::splat(100.0));
-        let mut p = Placement::default();
-        assert_eq!(p.apply(native, bounds), native);
-        assert!(p.set("width", "NaNpx").is_err());
-        assert!(p.set("left", "2147483648px").is_err());
-        assert!(p.set("--suhina-direction", "diagonal").is_err());
-        assert!(p.set("width", "4096px").is_ok());
-        assert!(p.set("left", "-16384px").is_ok());
-        let placed = p.apply(native, bounds);
-        assert!(bounds.contains_rect(placed));
-        assert_eq!(placed.width(), 100.0);
-        let mut warnings = Vec::new();
-        assert_eq!(Placement::from_json(&p.to_json(), &mut warnings), p);
-        assert!(warnings.is_empty());
-    }
-}
+#[path = "control_layout_tests.rs"]
+mod tests;

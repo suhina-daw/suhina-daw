@@ -343,12 +343,13 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Clips",
         "Waveform and note colour",
-        "Auto follows each clip's brightness; Light, Dark and Custom use one colour for waveforms, MIDI notes and ARA notes",
+        "Theme uses the theme's colour (dark when it gives none); Auto follows each clip's brightness; Light, Dark and Custom use one colour for waveforms, MIDI notes and ARA notes",
         &["waveform_colour"],
         |cx, r| {
             cx.choose(
                 r,
                 &[
+                    ("Theme", WaveformColour::Theme),
                     ("Auto", WaveformColour::Auto),
                     ("Light", WaveformColour::Light),
                     ("Dark", WaveformColour::Dark),
@@ -379,7 +380,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Clips",
         "Ctrl+Alt-drag on an edge stretches audio",
-        "An audio clip's edge dragged with Alt held time-stretches its audio to the new length, its pitch kept; off, Alt does nothing there",
+        "An audio clip's edge dragged with Ctrl and Alt held time-stretches its audio to the new length, its pitch kept; off, it moves the edge as a plain drag does",
         &["stretch_alt_drag"],
         |cx, r| cx.on_off(r, |s| &mut s.view.stretch_alt),
     ),
@@ -410,6 +411,16 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Tracks",
+        "New clip colour",
+        "Track colour: a new clip takes the colour its track has now. Theme default: MIDI and audio clips use the theme's clip defaults. Existing clips keep their colours",
+        &["new_clip_colour"],
+        |cx, r| {
+            cx.choose(r, &[("Track colour", true), ("Theme default", false)], |s| &mut s.view.new_clip_track_colour)
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Tracks",
         "Track header colour strength",
         "How strongly track headers show their original colour; applies immediately",
         &["track_header_colour_strength"],
@@ -421,7 +432,11 @@ pub(crate) static ROWS: &[Entry] = &[
         "Track headers",
         "Which side of the timeline they are on",
         &["track_headers"],
-        |cx, r| cx.choose(r, &[("Left", Side::Left), ("Right", Side::Right)], |s| &mut s.track_headers),
+        |cx, r| {
+            cx.choose(r, &[("Theme", None), ("Left", Some(Side::Left)), ("Right", Some(Side::Right))], |s| {
+                &mut s.track_headers
+            })
+        },
     ),
     row(
         Page::Arrangement,
@@ -814,7 +829,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Theme,
         "Theme",
         "Theme",
-        "The themes to pick from, the theme in use and its colours",
+        "The themes to pick from, their variants, the theme in use and its settings",
         &["theme"],
         crate::settings::settings_view::theme_block,
     ),

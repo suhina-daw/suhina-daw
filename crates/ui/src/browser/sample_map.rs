@@ -1324,6 +1324,41 @@ mod tests {
         assert_eq!(colours.len(), Kind::ALL.len());
     }
 
+    /// The Similar list's scroll bar is dragged like a device panel's, beside the map that takes
+    /// drags of its own (#867).
+    #[test]
+    fn the_similar_lists_scroll_bar_can_be_dragged() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+        let points: Vec<MapPoint> = (0..60).map(|i| point(i as f32 / 60.0, 0.5, Kind::Kick)).collect();
+        let mut view = MapView::default();
+        view.show_similar(0, (0..60).collect());
+        let mut harness = Harness::builder().with_size(egui::vec2(600.0, 340.0)).build_ui_state(
+            |ui, (view, events): &mut (MapView, Vec<MapEvent>)| {
+                show(ui, view, &points, None, "60 samples", &[], None, &[], events)
+            },
+            (view, Vec::new()),
+        );
+        harness.run();
+        let first = points.first().map(|p| p.name.clone()).unwrap_or_default();
+        let top = harness.get_by_label(&first).rect().top();
+        let bar = harness.get_by_role(egui::accesskit::Role::ScrollBar).rect();
+        let from = Pos2::new(bar.center().x, bar.top() + 4.0);
+        harness.hover_at(from);
+        harness.step();
+        harness.drag_at(from);
+        harness.step();
+        for y in [10.0, 30.0, 60.0] {
+            harness.hover_at(from + Vec2::new(0.0, y));
+            harness.step();
+        }
+        harness.drop_at(from + Vec2::new(0.0, 60.0));
+        harness.run();
+        let moved = harness.query_by_label(&first).map(|node| node.rect().top());
+        assert!(moved.is_none_or(|moved| moved < top - 20.0), "the list follows the bar: {top} to {moved:?}");
+        assert!(harness.state().1.is_empty(), "the map under the bar took nothing: {:?}", harness.state().1);
+    }
+
     #[test]
     fn hovering_previews_and_clicking_selects() {
         use egui_kittest::Harness;

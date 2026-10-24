@@ -31,7 +31,8 @@ mod voice;
 mod tests;
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, NoteEvent, ProcessContext, Role, check_sample_rate, controller,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ProcessContext, Role,
+    check_sample_rate, controller,
 };
 
 use crate::core::Buses;
@@ -46,7 +47,6 @@ pub const INFO: DeviceInfo = DeviceInfo { id: "fm-synth", name: "FM Synth", role
 /// Notes that can sound at once.
 pub const VOICES: usize = 16;
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
 /// One voice at full scale in the engine's output.
 const FULL_SCALE: f32 = (1u32 << 28) as f32;
 
@@ -83,7 +83,7 @@ impl Default for Slot {
 }
 
 pub struct FmSynth {
-    values: [f64; COUNT],
+    params: ParamBank<COUNT>,
     patch: Patch,
     controllers: Controllers,
     tables: Box<Tables>,
@@ -110,7 +110,7 @@ impl Default for FmSynth {
 impl FmSynth {
     pub fn new() -> Self {
         let mut synth = Self {
-            values: std::array::from_fn(|i| PARAMS.get(i).map_or(0.0, |p| p.default)),
+            params: ParamBank::new(&PARAMS),
             patch: Patch::default(),
             controllers: Controllers::default(),
             tables: Box::new(Tables::new(DEFAULT_SAMPLE_RATE)),
@@ -126,7 +126,7 @@ impl FmSynth {
             target_gain: 1.0,
             changed: false,
         };
-        for (i, value) in synth.values.into_iter().enumerate() {
+        for (i, value) in (*synth.params.values()).into_iter().enumerate() {
             synth.apply(i, value);
         }
         synth.reset();
@@ -389,16 +389,12 @@ impl Device for FmSynth {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let value = info.clamp(value);
-        if let Some(slot) = self.values.get_mut(index) {
-            *slot = value;
-        }
+        let Some(value) = self.params.set(index, value) else { return };
         self.apply(index, value);
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {

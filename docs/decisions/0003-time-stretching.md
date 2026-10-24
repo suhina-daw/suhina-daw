@@ -3,12 +3,13 @@ description: Real-time time-stretching of warped audio, stretch modes and backen
 read_when: warp, time-stretch, stretch mode, Signalsmith, keylock, timestretch, Rubber Band, audio crackles, CPU load, stretch quality
 type: decision
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-10-23
 covers:
   - crates/engine/src/stretch.rs
   - crates/stretch/src/lib.rs
   - crates/media/src/lib.rs
   - crates/engine/src/ahead.rs
+  - crates/engine/src/launcher/prepare.rs
   - crates/engine/src/audio.rs
   - crates/session/src/files.rs
 ---
@@ -20,7 +21,8 @@ covers:
 - **Task:** LOOP-3
 - **Amended:** 2026-10-11 (LOOP-31: transients on the grid; LOOP-27: arrangement clips stretched
   ahead on a worker thread, decision 6; the backend changed from timestretch to our port of
-  Signalsmith Stretch, decisions 2-5)
+  Signalsmith Stretch, decisions 2-5); 2026-10-21 (#793: launched clips' stretchers built on the
+  worker thread, decision 7)
 
 ## Context
 
@@ -57,8 +59,8 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
    `Rhythmic` by default); without a tempo it is not
    warped ([browser spec](../spec/browser.md) › Warping).
 2. **Stretching happens in real time, in the engine.** Every warped clip placement gets a
-   stretch voice when the renderer is built: a `suhina_stretch::Stretch` plus a playlist that
-   says which part of the file plays when and how fast (warp marker segments and loop jumps,
+   stretch voice when the renderer is built: a `suhina_stretch::Stretch` (built off the audio
+   thread before the voice first plays, decisions 6 and 7) plus a playlist that says which part of the file plays when and how fast (warp marker segments and loop jumps,
    through the project's tempo map: an arrangement clip's pieces are also cut at every tempo
    change, and into sixteenths during a ramp, each starting at its exact time;
    [tempo map](../spec/tempo-map.md)). Launched clips are prepared at the start tempo. The stretcher reads the playlist as one continuous input stream; each call
@@ -118,7 +120,34 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
    same way, silent until the worker has caught up; that silence is the jump's and is not
    counted as underruns. Without a worker thread (offline rendering) the renderer fills the
    rings itself just before reading them, through the same voices and rings (rule 4); tests
-   check that both give the same samples. Launched clips' voices still run on the audio thread.
+   check that both give the same samples. Launched clips' voices still run on the audio thread;
+   their stretchers are built on the worker (decision 7). An arrangement voice's stretcher is
+   built when the worker first renders it.
+7. **Launched clips' stretchers are built on the worker thread.** Building one takes 1 to 4 ms
+   (a mono clip at 48 kHz, release build: 1.3 ms on an Apple silicon laptop, about 4 ms
+   measured elsewhere; 40 warped slots added 52 ms to every graph build), too long for the audio thread and, for every warped
+   slot at every graph build, too long for an edit. So a graph's launcher plans hold their voices
+   without stretchers, and a preparer per graph (`Preparer`, `crates/engine/src/launcher/prepare.rs`)
+   builds them on the same thread as decision 6's workers, one per round so the rings keep
+   filling: first the voices the audio side asks for (a launch queued, a clip playing), then the
+   rest in slot order. The built stretcher and buffers reach the audio side through a ring
+   (`rtrb`) per graph, and the launcher moves them into their voices at the start of a block,
+   allocating and freeing nothing (parts it cannot use go back on a second ring).
+   - **Across graph swaps** (ADR 0005), the new graph takes over the old one's built voices for
+     the slots whose audio did not change, on the audio thread at the swap. One atomic claim
+     per voice says who provides it, whichever comes first: the worker as it starts building it,
+     or the swap as it takes the old one over. The worker leaves alone, until the new graph is
+     swapped in, the voices the graph before has with the same audio, and stops building for a
+     graph once it has been swapped out. An edit to one slot builds that slot's stretcher only.
+   - **A launch whose voice has not arrived** starts on time all the same: its stretched audio
+     is silent until the voice arrives, then plays from where the clip has got to. A voice asked
+     for is built within one or two builds (under 10 ms), so with a bar's quantisation it is
+     there long before the launch; an unquantised launch right after an edit that changed many
+     warped slots (a new project tempo) can lose its first milliseconds.
+   - Without a worker thread (offline rendering) the launcher builds a clip's stretchers as it
+     launches it, so offline renders stay the oracle; a golden render
+     (`tests/golden/launched-stretched.f32`) and a test that the worker gives the same samples
+     check it.
 
 ## Measurements (2026-10-11, the warped-vocal project: 80 s, 58 warped clips, 25 files)
 
@@ -170,6 +199,11 @@ is what gives the real margin:
   not it is near the playhead.
 - Every clip placement owns a stretcher and a ring, so memory grows with the number of warped
   placements; pooling voices and rings across clips that do not overlap is a later
+  optimisation.
+- Building a graph builds no launcher stretcher (decision 7): an edit costs the stretchers of the
+  slots it changed, on the worker thread, and nothing on the caller's. Every enabled warped slot's
+  stretcher is still built once in the background, so memory grows with the number of warped
+  slots as with arrangement placements; building only the slots likely to launch is a later
   optimisation.
 - Our own algorithm choice, not Live's: modes with the same name in another DAW will not sound
   identical. The modes describe intent, not a copy.

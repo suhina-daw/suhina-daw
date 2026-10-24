@@ -21,47 +21,62 @@ impl Workspace {
 
 /// `detail` is (stacked beside the view, native preferred size). Native visibility
 /// remains authoritative; CSS may further hide a panel but cannot open closed panels.
+/// `None` when the theme writes no workspace layout: the native splitters stay in charge.
 pub fn workspace(size: Vec2, browser: Option<f32>, detail: Option<(bool, f32)>) -> Option<Workspace> {
     if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
         return None;
     }
     super::ENGINE.with(|engine| {
-        let mut engine=engine.borrow_mut();
+        let mut engine = engine.borrow_mut();
         engine.source.as_ref()?;
-        if engine.source!=super::skin::current().css {return None;}
-        let key=format!("{size:?}:{browser:?}:{detail:?}");
-        if let Some((previous,layout))=&engine.workspace && previous==&key {return layout.clone();}
-        let mut body=String::from("<!doctype html><html><body class=\"window\"><div class=\"workspace\" id=\"workspace\">");
-        let mut ids=Vec::new();
-        if browser.is_some() {ids.push("panel-browser");}
-        if detail.is_some() {ids.push("panel-detail");}
+        if !super::same_source(engine.source.as_ref()) {
+            return None;
+        }
+        let key = format!("{size:?}:{browser:?}:{detail:?}");
+        if let Some((previous, layout)) = &engine.workspace
+            && previous == &key
+        {
+            return layout.clone();
+        }
+        let mut ids = Vec::new();
+        if browser.is_some() {
+            ids.push("panel-browser");
+        }
+        if detail.is_some() {
+            ids.push("panel-detail");
+        }
         ids.push("panel-main");
-        for id in &ids { body.push_str(&format!("<div class=\"workspace-panel\" id=\"{id}\"></div>")); }
-        body.push_str("</div></body></html>");
-        let width=browser.unwrap_or(0.0).clamp(0.0,4096.0);
-        let stacked=detail.is_some_and(|(stacked,_)| stacked);
-        let detail_size=detail.map_or(0.0,|(_,size)| size).clamp(0.0,4096.0);
-        let (columns,rows,detail_position)=if stacked {
-            (format!("{width}px minmax(0,1fr) {detail_size}px"),"minmax(0,1fr)".into(),"grid-column:3;grid-row:1;")
+        let width = browser.unwrap_or(0.0).clamp(0.0, 4096.0);
+        let stacked = detail.is_some_and(|(stacked, _)| stacked);
+        let detail_size = detail.map_or(0.0, |(_, size)| size).clamp(0.0, 4096.0);
+        let (columns, rows, detail_position) = if stacked {
+            (format!("{width}px minmax(0,1fr) {detail_size}px"), "minmax(0,1fr)".to_owned(), "grid-column:3;grid-row:1;")
         } else {
-            (format!("{width}px minmax(0,1fr)"),format!("minmax(0,1fr) {detail_size}px"),"grid-column:2;grid-row:2;")
+            (format!("{width}px minmax(0,1fr)"), format!("minmax(0,1fr) {detail_size}px"), "grid-column:2;grid-row:2;")
         };
-        let defaults=format!("html,body {{margin:0;}} .workspace {{display:grid;width:{}px;height:{}px;grid-template-columns:{columns};grid-template-rows:{rows};}} .workspace-panel {{min-width:0;min-height:0;}} #panel-browser {{grid-column:1;grid-row:1 / -1;}} #panel-main {{grid-column:2;grid-row:1;}} #panel-detail {{{detail_position}}}",size.x,size.y);
-        let mut doc=super::document(&engine,&body,&defaults)?;
-        doc.resolve(0.0);
-        let requested=std::iter::once("workspace").chain(ids.iter().copied()).any(|name|doc.get_element_by_id(name).is_some_and(|id|super::requests_layout(&doc,id)));
-        let layout=if requested {
-            let rectangle=|name:&str| -> Option<Rect> {
-                let node=doc.get_node(doc.get_element_by_id(name)?)?;
-                if !node.has_boxes() || !super::computed(&doc,node.id)?.visible {return None;}
-                let at=node.absolute_position(0.0,0.0);
-                let size=node.final_layout().size;
-                let rect=Rect::from_min_size(egui::pos2(at.x,at.y),Vec2::new(size.width,size.height));
-                (rect.is_finite() && rect.is_positive() && [rect.min.x,rect.min.y,rect.max.x,rect.max.y].iter().all(|v| v.abs()<=16384.0)).then_some(rect)
+        let defaults = format!(
+            ".workspace {{display:grid;width:{}px;height:{}px;grid-template-columns:{columns};grid-template-rows:{rows};}} #panel-browser {{grid-column:1;grid-row:1 / -1;}} #panel-main {{grid-column:2;grid-row:1;}} #panel-detail {{{detail_position}}}",
+            size.x.min(16384.0),
+            size.y.min(16384.0)
+        );
+        let mut elements = vec![super::native::element("workspace", Some("workspace"), None, Some(1))];
+        for id in &ids {
+            elements.push(super::native::element("workspace-panel", Some(id), None, Some(2)));
+        }
+        let laid = super::native::layout(&engine, elements, &defaults, [size.x, size.y])?;
+        let layout = laid.requested.then(|| {
+            let rectangle = |name: &str| -> Option<Rect> {
+                let index = ids.iter().position(|id| *id == name)? + 1;
+                let (rect, style) = laid.items.get(index)?;
+                rect.filter(|rect| style.visible && rect.is_positive())
             };
-            Some(Workspace {browser:rectangle("panel-browser"),main:rectangle("panel-main").unwrap_or(Rect::from_min_size(egui::Pos2::ZERO,Vec2::ZERO)),detail:rectangle("panel-detail")})
-        } else {None};
-        engine.workspace=Some((key,layout.clone()));
+            Workspace {
+                browser: rectangle("panel-browser"),
+                main: rectangle("panel-main").unwrap_or(Rect::from_min_size(egui::Pos2::ZERO, Vec2::ZERO)),
+                detail: rectangle("panel-detail"),
+            }
+        });
+        engine.workspace = Some((key, layout.clone()));
         layout
     })
 }

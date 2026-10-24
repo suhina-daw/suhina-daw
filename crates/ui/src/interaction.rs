@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the views share: dragging and dropping, picking a value from a list, the context menus,
-//! groups inside groups, the grid of tracks and slots, and the track colour picker.
+//! groups inside groups, the grid of tracks and slots, the track colour picker and the timelines'
+//! grid.
 
 pub mod colour_picker;
 pub mod drop;
@@ -12,3 +13,4 @@ pub mod menus;
 pub mod nesting;
 pub mod pick;
 pub mod status;
+pub mod timeline_grid;

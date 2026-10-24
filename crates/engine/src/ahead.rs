@@ -45,6 +45,7 @@ use std::time::Duration;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::launcher::Preparer;
 use crate::stretch::StretchVoice;
 
 /// Seconds of stretched audio each voice keeps ready.
@@ -303,6 +304,9 @@ fn render_block(writer: &mut Writer, scratch: &mut [f32]) -> bool {
         return false;
     }
     let Some(block) = scratch.get_mut(..frames * 2) else { return false };
+    // Built when it first renders, on the worker's thread (or offline): the far voices of a
+    // project are never built until they are due.
+    writer.voice.prepare();
     if let Some(at) = writer.seek_to.take() {
         writer.voice.seek(at);
     }
@@ -321,13 +325,15 @@ fn render_block(writer: &mut Writer, scratch: &mut [f32]) -> bool {
 /// Workers that can wait to join the thread.
 const INBOX: usize = 8;
 
-/// A thread running [`StretchWorker`]s, one per graph (ADR 0005): a worker joins through
-/// [`StretchThread::add`] and leaves once its graph has been dropped. Dropping the handle stops
-/// the thread.
+/// A thread running [`StretchWorker`]s and the launcher's [`Preparer`]s, one of each per graph
+/// (ADR 0005): they join through [`StretchThread::add`] and [`StretchThread::add_preparer`] and
+/// leave once their graph has been dropped (or, for a preparer, swapped out). Dropping the handle
+/// stops the thread.
 pub(crate) struct StretchThread {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
     inbox: Producer<StretchWorker>,
+    preparers: Producer<Preparer>,
 }
 
 impl StretchThread {
@@ -335,8 +341,10 @@ impl StretchThread {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_flag = Arc::clone(&stop);
         let (inbox, mut incoming) = RingBuffer::<StretchWorker>::new(INBOX);
+        let (preparers, mut incoming_preparers) = RingBuffer::<Preparer>::new(INBOX);
         let handle = std::thread::Builder::new().name("suhina-stretch".into()).spawn(move || {
             let mut workers: Vec<StretchWorker> = Vec::new();
+            let mut preparing: Vec<Preparer> = Vec::new();
             while !stop_flag.load(Ordering::Relaxed) {
                 while let Ok(mut worker) = incoming.pop() {
                     // The graph it replaces is the newest one here: its voices carry over.
@@ -345,23 +353,40 @@ impl StretchThread {
                     }
                     workers.push(worker);
                 }
+                while let Ok(mut preparer) = incoming_preparers.pop() {
+                    // The same: the voices the newest graph has may be taken over at the swap.
+                    if let Some(before) = preparing.last() {
+                        preparer.follow(before);
+                    }
+                    preparing.push(preparer);
+                }
                 // A worker whose reader (its graph) is gone has nobody to render for.
                 workers.retain(|w| Arc::strong_count(&w.shared) > 1);
+                preparing.retain(|p| !p.finished());
                 let mut did = false;
                 for worker in &mut workers {
                     did |= worker.work();
                 }
+                // One launcher voice a round (a few milliseconds), so the rings above keep
+                // filling: one the audio side asked for, else the newest graph's next.
+                let asked = preparing.iter_mut().rev().any(|p| p.work(true));
+                did |= asked || preparing.iter_mut().rev().any(|p| p.work(false));
                 if !did {
                     std::thread::sleep(IDLE);
                 }
             }
         })?;
-        Ok(Self { stop, handle: Some(handle), inbox })
+        Ok(Self { stop, handle: Some(handle), inbox, preparers })
     }
 
     /// Hands a graph's worker to the thread.
     pub(crate) fn add(&mut self, worker: StretchWorker) -> Result<(), String> {
         self.inbox.push(worker).map_err(|_| "the stretch worker thread is not taking new work".to_string())
+    }
+
+    /// Hands a graph's launcher preparer to the thread.
+    pub(crate) fn add_preparer(&mut self, preparer: Preparer) -> Result<(), String> {
+        self.preparers.push(preparer).map_err(|_| "the stretch worker thread is not taking new work".to_string())
     }
 }
 

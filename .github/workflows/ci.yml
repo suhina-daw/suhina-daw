@@ -129,11 +129,15 @@ jobs:
         run: python3 scripts/rename_suhina.py --check
       - name: Licence header in every source file (AGENTS.md › Licence header)
         run: python3 scripts/license_header.py --check
+      - name: No long test modules inside source files (scripts/inline_tests.py)
+        run: python3 scripts/inline_tests.py --check
       # third_party/ is vendored unchanged; its README links artwork that was left out on purpose.
+      # The generated files are rewritten on main after the merge, so a link they still hold to a
+      # document a pull request deletes is mended there; the pull request may not edit them.
       - name: Links between repository files resolve
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress --exclude-path third_party "**/*.md"
+          args: --offline --no-progress --exclude-path third_party --exclude-path docs/INDEX.md --exclude-path docs/commands.md "**/*.md"
           fail: true
 
   fmt:
@@ -164,7 +168,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # Only main saves; pull requests and the merge queue restore main's cache. The repository's
+      # caches share 10 GB, and a save from every pull request push (about 0.8 GB per system)
+      # evicted main's, so about half the runs compiled every dependency again (7 to 8 minutes
+      # more on Linux).
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -185,14 +195,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # Only main saves, as in the job above.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
   # Pull requests from forks: every commit must carry a Signed-off-by line (Developer
-  # Certificate of Origin, CONTRIBUTING.md). Branches of this repository are the maintainers'.
+  # Certificate of Origin, CONTRIBUTING.md). Branches of this repository are the maintainers', and
+  # so are their commits: a fork's pull request stacked on a branch here carries that branch's
+  # commits too, and those are skipped (the full checkout has every branch of this repository).
   # Skipped in the merge queue: its pull requests were checked here before they were queued.
   dco:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -207,6 +222,11 @@ jobs:
         run: |
           missing=0
           for commit in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            # The checkout's pull/<number>/merge ref contains every PR commit; it is not
+            # an upstream branch and must never exempt a fork's own commits.
+            if [ -n "$(git branch -r --contains "$commit" --list 'origin/*')" ]; then
+              continue
+            fi
             author=$(git log -1 --format='%an <%ae>' "$commit")
             if ! git log -1 --format='%B' "$commit" | grep -qiF "Signed-off-by: $author"; then
               echo "::error::Commit $commit has no 'Signed-off-by: $author' line (git commit -s)."

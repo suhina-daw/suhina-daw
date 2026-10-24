@@ -1,7 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Build the auto-pan effect as a self-contained .sd file.
+//! An SDK example, not the built-in Auto Pan (`devices/auto-pan`): a sine LFO on a pan node,
+//! built as a self-contained .sd file.
 use suhina_device_sdk::{
     DeviceGraph, DeviceRole, NodeKind as K, Parameter, ParameterControl, Waveform, author::GraphBuilder,
 };

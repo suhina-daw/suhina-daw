@@ -1,8 +1,6 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance;
-
 use super::*;
 use crate::patch::{Patch, SysexError, read, write_bank, write_voice};
 
@@ -62,11 +60,7 @@ fn frequency(signal: &[f32], sample_rate: f64) -> f64 {
     (crossings.len() - 1) as f64 * sample_rate / (last - first) as f64
 }
 
-#[test]
-fn passes_the_device_contract() {
-    let failures = conformance::check(&|| Box::new(FmSynth::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(FmSynth::new());
 
 #[test]
 fn the_initial_voice_is_a_sine_at_the_key_pitch() {

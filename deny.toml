@@ -45,12 +45,6 @@ exceptions = [
     { crate = "icu_properties", allow = ["Unicode-3.0"] },
     { crate = "icu_properties_data", allow = ["Unicode-3.0"] },
     { crate = "icu_provider", allow = ["Unicode-3.0"] },
-    # Unicode License v3, GPL-compatible as above: text segmentation and locale fallback
-    # data used by Stylo/Parley in the native CSS adapter (no new general licence allowance).
-    { crate = "icu_locale_fallback", allow = ["Unicode-3.0"] },
-    { crate = "icu_locale_fallback_data", allow = ["Unicode-3.0"] },
-    { crate = "icu_segmenter", allow = ["Unicode-3.0"] },
-    { crate = "icu_segmenter_data", allow = ["Unicode-3.0"] },
     { crate = "litemap", allow = ["Unicode-3.0"] },
     { crate = "potential_utf", allow = ["Unicode-3.0"] },
     { crate = "tinystr", allow = ["Unicode-3.0"] },
@@ -98,8 +92,13 @@ ignore = [
     # ttf-parser is unmaintained and has no maintained release to move to. It is not a
     # vulnerability: it reaches Suhina only through winit's Wayland window decorations
     # (winit > sctk-adwaita > ab_glyph > owned_ttf_parser), which draw the title bar text.
-    # Remove this when winit moves off it.
-    { id = "RUSTSEC-2026-0192", reason = "unmaintained, no replacement upstream; only winit's Wayland title bar uses it" },
+    # It also comes with resvg's text support (usvg > fontdb), which draws `<text>` in theme
+    # artwork with the bundled fonts. Remove this when winit and resvg move off it.
+    { id = "RUSTSEC-2026-0192", reason = "unmaintained, no replacement upstream; winit's Wayland title bar and resvg's SVG text use it" },
+    # rustybuzz is unmaintained in favour of harfrust. It is not a vulnerability: resvg's text
+    # support (usvg) shapes `<text>` in theme artwork with it, on the bundled fonts only, never on
+    # fonts from the system or a package. Remove this when resvg moves to harfrust.
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, shapes SVG text in theme artwork with the bundled fonts; waits for resvg on harfrust" },
     # zbus 5 and its zvariant, zvariant_derive and zbus_names are unmaintained since development
     # moved to zbus 6. It is not a vulnerability, and it is Linux only. Two things pull in zbus 5:
     # the realtime crate, which asks rtkit for real-time priority over D-Bus (ADR 0006), and

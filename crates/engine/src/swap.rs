@@ -525,6 +525,11 @@ impl Controller {
         if let Some(thread) = updater.stretch.as_mut() {
             let began = std::time::Instant::now();
             // The thread takes the unchanged clips' voices over and renders the rest (#743).
+            // The launcher's stretch voices are built there too, not here (#793). First: should
+            // the worker below not get in, this one costs nothing to lose.
+            if let Some(preparer) = graph.launcher.take_preparer() {
+                thread.add_preparer(preparer)?;
+            }
             if let Some(worker) = graph.ahead.take_worker_unfilled() {
                 thread.add(worker)?;
             }
@@ -681,12 +686,16 @@ impl Controller {
     }
 
     /// Runs the renderer's stretch worker on a thread of its own (ADR 0003), for this graph and
-    /// every graph [`Controller::update`] sends later. Call it before the renderer goes to the
-    /// audio thread; the thread stops when the controller is dropped.
+    /// every graph [`Controller::update`] sends later, and builds the launcher's stretch voices
+    /// there. Call it before the renderer goes to the audio thread; the thread stops when the
+    /// controller is dropped.
     pub fn run_stretch_worker(&mut self, renderer: &mut Renderer) -> std::io::Result<()> {
         let mut thread = StretchThread::spawn()?;
         if let Some(worker) = renderer.take_stretch_worker() {
             thread.add(worker).map_err(std::io::Error::other)?;
+        }
+        if let Some(preparer) = renderer.graph.launcher.take_preparer() {
+            thread.add_preparer(preparer).map_err(std::io::Error::other)?;
         }
         self.updater.stretch = Some(thread);
         Ok(())

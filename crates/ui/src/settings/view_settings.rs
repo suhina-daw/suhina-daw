@@ -12,9 +12,11 @@ pub const MIXER_HEIGHTS: (u32, u32, u32) = (46, 166, 2000);
 /// How Arrangement waveforms and note previews choose their ink, independently of clip names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WaveformColour {
+    /// The theme's colour (`.clip-waveform`, `.clip-notes`), or Dark where it gives none.
+    #[default]
+    Theme,
     Auto,
     Light,
-    #[default]
     Dark,
     Custom,
 }
@@ -22,6 +24,7 @@ pub enum WaveformColour {
 impl WaveformColour {
     fn name(self) -> &'static str {
         match self {
+            Self::Theme => "theme",
             Self::Auto => "auto",
             Self::Light => "light",
             Self::Dark => "dark",
@@ -38,7 +41,7 @@ pub struct WaveformAppearance {
 
 impl Default for WaveformAppearance {
     fn default() -> Self {
-        Self { mode: WaveformColour::Dark, custom: egui::Color32::from_rgb(232, 228, 221) }
+        Self { mode: WaveformColour::Theme, custom: egui::Color32::from_rgb(232, 228, 221) }
     }
 }
 
@@ -47,7 +50,7 @@ impl WaveformAppearance {
         match self.mode {
             WaveformColour::Auto => automatic,
             WaveformColour::Light => egui::Color32::from_rgb(240, 237, 232),
-            WaveformColour::Dark => egui::Color32::from_rgb(32, 31, 29),
+            WaveformColour::Dark | WaveformColour::Theme => egui::Color32::from_rgb(32, 31, 29),
             WaveformColour::Custom => self.custom,
         }
     }
@@ -133,6 +136,9 @@ pub struct ViewSettings {
     /// New tracks all get the palette's first colour, instead of the next one in turn (off by
     /// default, #709).
     pub fixed_track_colour: bool,
+    /// A new clip takes its track's colour, instead of the theme's MIDI or audio clip default
+    /// (on by default).
+    pub new_clip_track_colour: bool,
     /// The browser shows Recent's kinds as chips over its list rather than as items indented
     /// under it in the sidebar (#711).
     pub recent_chips: bool,
@@ -170,6 +176,7 @@ impl Default for ViewSettings {
             rename_selected: true,
             play_from_clip: true,
             fixed_track_colour: false,
+            new_clip_track_colour: true,
             recent_chips: false,
             returns_hidden: false,
         }
@@ -180,7 +187,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -192,6 +199,7 @@ impl ViewSettings {
             if self.rename_selected { "on" } else { "off" },
             if self.play_from_clip { "on" } else { "off" },
             if self.fixed_track_colour { "fixed" } else { "alternating" },
+            if self.new_clip_track_colour { "track" } else { "theme" },
             if self.recent_chips { "chips" } else { "indented" },
             if self.returns_hidden { "hidden" } else { "shown" },
             if self.clip_halves { "halves" } else { "name_bar" },
@@ -267,6 +275,7 @@ impl ViewSettings {
             }
             ("waveform_colour", mode) => {
                 self.waveform.mode = match mode {
+                    "theme" => WaveformColour::Theme,
                     "auto" => WaveformColour::Auto,
                     "light" => WaveformColour::Light,
                     "dark" => WaveformColour::Dark,
@@ -296,6 +305,7 @@ impl ViewSettings {
             ("rename_selected_clips", "on" | "off") => self.rename_selected = value == "on",
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
+            ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             ("clip_drag", "halves" | "name_bar") => self.clip_halves = value == "halves",
@@ -347,6 +357,7 @@ mod tests {
             rename_selected: false,
             play_from_clip: false,
             fixed_track_colour: true,
+            new_clip_track_colour: false,
             recent_chips: true,
             returns_hidden: true,
             replace_clip: true,
@@ -381,8 +392,14 @@ mod tests {
 
     #[test]
     fn waveform_choices_round_trip_and_invalid_colours_preserve_defaults() {
-        assert_eq!(Settings::from_text("").0.view.waveform.mode, WaveformColour::Dark);
-        for mode in [WaveformColour::Auto, WaveformColour::Light, WaveformColour::Dark, WaveformColour::Custom] {
+        assert_eq!(Settings::from_text("").0.view.waveform.mode, WaveformColour::Theme);
+        for mode in [
+            WaveformColour::Theme,
+            WaveformColour::Auto,
+            WaveformColour::Light,
+            WaveformColour::Dark,
+            WaveformColour::Custom,
+        ] {
             let mut settings = Settings::default();
             settings.view.waveform = WaveformAppearance { mode, custom: egui::Color32::from_rgb(23, 140, 212) };
             let (read, warnings) = Settings::from_text(&settings.to_text());

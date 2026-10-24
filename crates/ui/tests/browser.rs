@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Key, Modifiers, Pos2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 use suhina_engine::model::{ChannelId, LaneData};
 use suhina_library::Library;
@@ -282,20 +282,110 @@ fn a_click_on_a_headings_title_opens_it_once_and_a_second_closes_it() {
 }
 
 #[test]
-fn a_click_on_a_folders_chevron_opens_it_and_on_its_title_only_selects_it() {
+fn a_click_on_a_folders_chevron_or_its_title_opens_it_and_a_second_closes_it() {
     let (settings, folder) = (temp("folder-chevron-settings"), temp("folder-chevron"));
     pack(&folder);
     let mut harness = window(&settings, &folder);
     let name = row(&folder.file_name().unwrap().to_string_lossy());
     let title = title_of(&harness, &name);
     click_at(&mut harness, title);
-    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a click on the title does not open it");
-    assert_eq!(harness.state().browser.selected().len(), 1, "it selects it");
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "a click on the title opens it (#869)");
+    assert_eq!(harness.state().browser.selected().len(), 1, "and selects it");
+    click_at(&mut harness, title);
+    assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a second click on the title closes it");
     let at = chevron_of(&harness, &name);
     click_at(&mut harness, at);
     assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "the folder stays open");
     click_at(&mut harness, at);
     assert!(harness.query_by_label(&row("Groove.mid")).is_none(), "a second click closes it");
+    // A double-click on the title leaves it open: its first click opened it.
+    double_click(&mut harness, &name);
+    assert!(harness.query_by_label(&row("Groove.mid")).is_some(), "a double-click leaves it open");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A library folder inside another library folder is listed twice, at the top and inside the
+/// other one, and each opens and closes on its own (#869).
+#[test]
+fn a_library_folder_inside_another_opens_on_its_own_in_both_places() {
+    let (settings, outer) = (temp("nested-settings"), temp("nested"));
+    let inner = outer.join("Inner");
+    wav(&outer.join("Outer Hit.wav"), 0.01);
+    wav(&inner.join("Inner Hit.wav"), 0.01);
+    let mut harness = window(&settings, &outer);
+    harness.state_mut().projects_mut().file_library_mut().add_folder(&inner).unwrap();
+    harness.state_mut().browser.relist();
+    harness.run();
+    let outer_name = row(&outer.file_name().unwrap().to_string_lossy());
+    let inner_name = row("Inner");
+    assert_eq!(harness.get_all_by_label(&inner_name).count(), 1, "the inner folder at the top only");
+    // The inner folder at the top opens without opening the outer one.
+    let at = title_of(&harness, &inner_name);
+    click_at(&mut harness, at);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the inner folder opens");
+    assert!(harness.query_by_label(&row("Outer Hit.wav")).is_none(), "the outer one stays closed");
+    // The outer one opens: the inner folder in it is listed closed, its own row.
+    let at = title_of(&harness, &outer_name);
+    click_at(&mut harness, at);
+    assert!(harness.query_by_label(&row("Outer Hit.wav")).is_some(), "the outer folder opens");
+    let copies: Vec<_> = harness.get_all_by_label(&inner_name).map(|n| n.rect()).collect();
+    assert_eq!(copies.len(), 2, "the inner folder at the top and inside the outer one");
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the copy inside is closed");
+    // The copy inside the outer folder opens on its own, and closes on its own. It is the copy
+    // right under the outer folder: the one at the top is above the outer folder or after all
+    // that is in it.
+    let outer_top = harness.get_by_label(&outer_name).rect().top();
+    let nested = copies
+        .iter()
+        .copied()
+        .filter(|rect| rect.top() > outer_top)
+        .min_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap();
+    let nested_title = egui::pos2(nested.left() + 60.0, nested.center().y);
+    click_at(&mut harness, nested_title);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 2, "both copies are open now");
+    click_at(&mut harness, nested_title);
+    assert_eq!(harness.get_all_by_label(&row("Inner Hit.wav")).count(), 1, "the copy inside closes alone");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&outer);
+}
+
+/// The list's scroll bar is a scroll area's, so it is dragged like a device panel's (#867).
+#[test]
+fn the_lists_scroll_bar_can_be_dragged() {
+    let (settings, folder) = (temp("scroll-bar-settings"), temp("scroll-bar"));
+    for i in 0..80 {
+        wav(&folder.join(format!("Hit {i:02}.wav")), 0.01);
+    }
+    let mut harness = window(&settings, &folder);
+    let name = row(&folder.file_name().unwrap().to_string_lossy());
+    let at = chevron_of(&harness, &name);
+    click_at(&mut harness, at);
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_some(), "the folder is open");
+    let list = harness.get_by_label(&row("Hit 00.wav")).rect();
+    let bar = harness
+        .get_all_by_role(egui::accesskit::Role::ScrollBar)
+        .map(|node| node.rect())
+        .find(|rect| rect.right() <= list.right() + 1.0 && rect.left() >= list.right() - 20.0)
+        .expect("the list has a scroll bar on its right edge");
+    assert_eq!(harness.state().browser.scroll, 0.0);
+    let picked: Vec<String> = harness.state().browser.selected().iter().map(|s| s.key.clone()).collect();
+    let from = Pos2::new(bar.center().x, bar.top() + 4.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    for y in [10.0, 30.0, 60.0, 100.0] {
+        harness.hover_at(from + egui::vec2(0.0, y));
+        harness.step();
+    }
+    harness.drop_at(from + egui::vec2(0.0, 100.0));
+    harness.run();
+    assert!(harness.state().browser.scroll > 50.0, "the list follows the bar: {}", harness.state().browser.scroll);
+    assert!(harness.query_by_label(&row("Hit 00.wav")).is_none(), "the first row has scrolled out of view");
+    let after: Vec<String> = harness.state().browser.selected().iter().map(|s| s.key.clone()).collect();
+    assert_eq!(after, picked, "the rows under the bar took nothing");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -718,7 +808,7 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
         app.session().map_or(0, |s| {
             let p = s.project();
             let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
-            p.channels.iter().find(|c| c.id == channel).map_or(0, |c| c.devices.len())
+            p.channel(channel).map_or(0, |c| c.devices.len())
         })
     };
     assert!(until(&mut harness, |app| bass_devices(app) == 1));
@@ -1054,7 +1144,7 @@ fn a_plugin_drags_to_a_track_from_every_view() {
         app.session().map_or(0, |s| {
             let p = s.project();
             let channel = p.tracks.iter().find(|t| t.name == "Bass").and_then(|t| t.channel).unwrap_or(ChannelId(0));
-            p.channels.iter().find(|c| c.id == channel).map_or(0, |c| c.devices.len())
+            p.channel(channel).map_or(0, |c| c.devices.len())
         })
     };
     let to = harness.get_by_label("Track Bass").rect().center();
@@ -1229,6 +1319,49 @@ fn hovering_an_items_tag_dot_says_the_tag_in_the_status_bar() {
         "{:?}",
         harness.state().status()
     );
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
+    let (settings, folder) = (temp("tag-menu-settings"), temp("tag-menu"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    let item = folder.join("Loop 120bpm.wav").display().to_string();
+    harness
+        .state_mut()
+        .projects_mut()
+        .execute("library.tag", &json!({ "item": item, "tag": "Red", "on": true }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag ⏵").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    // Each entry is a checkbox named by the tag alone: no check mark or padding in its text,
+    // which a font without the glyph draws as an empty box (#853).
+    assert_eq!(harness.get_by_label("Red").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+    assert_eq!(harness.get_by_label("Orange").accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+    assert!(harness.query_by_label_contains("✓").is_none());
+    harness.get_by_label("Orange").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
+    assert!(tags.contains(&"Orange".to_string()) && tags.contains(&"Red".to_string()), "{tags:?}");
+    // A click on a ticked entry takes its tag off.
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let at = harness.get_by_label("Tag ⏵").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Red").click();
+    harness.run();
+    let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
+    assert!(!tags.contains(&"Red".to_string()) && tags.contains(&"Orange".to_string()), "{tags:?}");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

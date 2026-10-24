@@ -3,7 +3,7 @@ description: How the sample map analyses samples (features), lays them out (PCA 
 read_when: sample map, soundmap crate, audio features, MFCC, spectral centroid, band energy, onset, pitch glide, t-SNE, bhtsne, PCA, UMAP, grid layout, RasterFairy, nearest neighbours, feature cache, kinds, classifier, kind set by hand
 type: decision
 status: current
-last_verified: 2026-10-20
+last_verified: 2026-10-21
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -139,7 +139,8 @@ t-SNE or UMAP. What remains is choosing the features, the methods and the crates
    (`features-<hash>.log`) and the file is written whole only when the journal passes a quarter
    of its entries; every write runs on a thread of its own, never the window's (a 63 MiB cache
    written and synced there froze the window for 700 ms). Loading reads the file, then the
-   journal up to a torn last record.
+   journal up to a torn last record, and cuts the journal there, so the records appended after
+   a crash follow a whole one and are read at the next start.
 9. **Threads:** analysis runs on a pool of half the cores (at least one), started by
    `Library::start`'s caller as indexing is, so tests and the CLI never analyse a user's
    folders unasked. A file larger than 256 MiB is not decoded. Caches are written after every

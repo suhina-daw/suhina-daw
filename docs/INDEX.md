@@ -50,6 +50,7 @@ after every merge; do not edit by hand. Find a document by what you are about to
 | [0027: Merge and versions](decisions/0027-merge-and-versions.md) | decision | draft | merge, three-way merge, conflict, common ancestor, version, version browser, musical diff, compare versions, merge driver, gitattributes, git merge, branch, undo, set_audio, version switch, CRDT | Merging two project folders without git and the version browser over both storages; assets merge as a union of content hashes, the document merges three-way against a common ancestor and refuses rather than guesses, and one merge driver makes git merge work |
 | [0028: ARA hosting](decisions/0028-ara-hosting.md) | decision | draft | ARA, ARA2, Melodyne, pitch editor, audio random access, playback region, audio source, audio modification, region sequence, document controller, overlapping audio clips, audio overlap, arrangement.audioOverlaps, stacked clips and ARA | How ARA plug-ins (audio editors such as pitch editors) are hosted out of process, how Suhina's clips map onto an ARA document, how audio reaches the plug-in, and the first version's overlap policy, which never loses edits |
 | [0028: MCP in the running app](decisions/0028-mcp-in-the-running-app.md) | decision | current | MCP in the app, attach, suhina-cli mcp --attach, live agent edits, agent and window share a project, shared undo, agent connection, allow agent, consent, named pipe, unix socket, control channel, single instance, one instance per build, --new-instance, open file in running app, agent roots | Why the desktop app serves MCP for the projects it has open, how an agent reaches it (a local pipe or socket per build, bridged by suhina-cli mcp --attach), who may connect, what an attached agent may read, write and run, and why each build runs once |
+| [0029: MP3 encoder — LAME 3.100, vendored, own fft.c](decisions/0029-mp3-encoder.md) | decision | current | MP3, mp3 export, LAME, libmp3lame, encoder crate, why C, vendored encoder, fft.c, Hartley, joint stereo, unsafe crate, lossy export | Why the MP3 export encodes with LAME 3.100 vendored as C source in third_party/lame and behind the safe suhina-mp3 crate, which files are vendored, how the licence was read, why fft.c is replaced with Suhina's own Hartley transform, and why crates/mp3 is allowed unsafe like the plug-in-host crates |
 | [Design brief](design/brief.md) | spec | draft | UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups | Suhina's visual language: principles, what stays familiar and what is our own, layout decisions and design tokens |
 | [Components](design/components.md) | spec | draft | widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows | Measurements, states and tokens of every UI component, from the minimal v3 mockups |
 | [Specs](spec/README.md) | spec | current | writing a spec, clean-room observation, where specs go | What the specs are and how they are written (clean-room, observed version, test files) |
@@ -90,7 +91,6 @@ after every merge; do not edit by hand. Find a document by what you are about to
 | [Key inputs and plug-in buses](spec/sidechain.md) | spec | planned | sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input | Planned key inputs - a device whose detector reads another channel's signal (sidechain), the tap points it can read from, and the plug-in bus model (aux audio in and out) that carries the same idea across the sandbox boundary |
 | [Stem separation](spec/stem-separation.md) | spec | planned | stem separation, separate stems, vocals drums bass other, separation crate, separation model, model manifest, inference backend, tract, ort, ONNX, overlap-add, chunking, window weighting, band splitter, test backend | How stem separation behaves: an audio clip split offline into stems by a model the user supplies, the chunking, resampling and channels around the model, the test backend, limits, and what lands in the project |
 | [Stems files](spec/stems-format.md) | spec | draft | stems, stem file, .stem.mp4, .stem.m4a, Traktor stems, NI stems, master track, mastering_dsp, MP4 boxes, edit list, AAC priming, multitrack audio file, DJ, remix, folded group | Stems files (.stem.mp4, .stem.m4a): an MP4 with the master and its stems as audio tracks, stem names, colours and mastering settings in moov/udta/stem; what Suhina reads and how it maps the mastering to its compressor and limiter |
-| [Stock device bundle](spec/stock-device-bundle.md) | spec | superseded | stock device bundle, build devices, native_device node, bundled sd | Build-time .sd definitions of the native devices shipped with Suhina |
 | [The .suhina project file](spec/suhina-format.md) | spec | current | .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode | The layout of Suhina's own project file (.suhina), field by field, with what a reader accepts |
 | [Tempo map](spec/tempo-map.md) | spec | current | tempo map, tempo change, tempo ramp, time-signature change, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, bar ruler | Tempo and time-signature changes over the song (the tempo map): steps and ramps, bars through signature changes, how the engine converts beats to time, the commands |
 | [UI: clip editor (MIDI piano roll)](spec/ui-clip-editor.md) | spec | draft | piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows | Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the MIDI tools column, grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands |
@@ -99,6 +99,7 @@ after every merge; do not edit by hand. Find a document by what you are about to
 | [Updates](spec/updates.md) | spec | draft | update, updates, new version available, check for updates, download update, nightly update, auto update, test build, gh, github cli, developer mode | Checking for a newer build of Suhina and installing it from inside the app, the nightly channel and, in developer mode, test builds of pull requests through the GitHub CLI |
 | [Waveforms](spec/waveforms.md) | spec | current | waveform, peaks, RMS, waveform drawing, zoom, samples, stereo lanes, dB scale, clip waveform, preview waveform, sample map tooltip, frame budget | How waveforms are computed and drawn in clips, the browser's preview and the sample map's tooltips: peak levels with RMS, lanes per channel, the shape, samples close up, the dB scale, the frame budget |
 | [Window zoom](spec/window-zoom.md) | spec | current | zoom, UI zoom, window zoom, interface size, scale, Ctrl+Plus, Ctrl+Minus, Cmd+Plus, bigger text, high-DPI, zoom display | Zooming the whole window (every panel, text and control larger or smaller), its keys, limits and how it is remembered |
+| [How documents are written](README.md) | howto | current | writing or editing a document, ADR, amendment, spec, decision status, built field, superseding an ADR, where text goes, docs check, Built so far, version history | What each kind of document under docs/ holds and does not hold, the rules for amending an ADR, the status fields, and the checks that enforce them |
 | [The claim bot](claim-bot.md) | howto | current | claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims | How the claim bot moves an issue's card on the project board, holds work, refuses blocked work, lists overlapping work, and how the Depends on check orders pull requests |
 | [Reviewing a pull request](code-review.md) | howto | current | code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review | How to review pull requests for requirements, correctness, performance, security, and regression risks |
 | [Debugging the running app](debugging.md) | howto | current | debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through | How to find out what the running app does around a bug: the trace log (suhina --trace), adding trace points, reading the log, reading a screen recording frame by frame, and working a bug through with a tester |
@@ -127,6 +128,7 @@ Change this code, and check these documents.
 | `.github/workflows/claim.yml` | [The claim bot](claim-bot.md) |
 | `.github/workflows/depends-on.yml` | [The claim bot](claim-bot.md) |
 | `.github/workflows/discord.yml` | [Releasing](releasing.md) |
+| `.github/workflows/overlap.yml` | [The claim bot](claim-bot.md) |
 | `.github/workflows/parity-notice.yml` | [parity-live-12](research/parity-live-12.md) |
 | `.github/workflows/project-sync.yml` | [The claim bot](claim-bot.md) |
 | `.github/workflows/ready-to-merge.yml` | [Releasing](releasing.md) |
@@ -134,6 +136,7 @@ Change this code, and check these documents.
 | `.github/workflows/settings-guide.yml` | [Settings guide export](spec/settings-guide-export.md), [Website shortcut export](spec/shortcuts-guide-export.md) |
 | `.github/workflows/test-build-links.yml` | [Releasing](releasing.md) |
 | `.github/workflows/test-build.yml` | [Releasing](releasing.md) |
+| `.github/workflows/trusted-requests.yml` | [The claim bot](claim-bot.md) |
 | `AGENTS.md` | [Reviewing a pull request](code-review.md) |
 | `CONTRIBUTING.md` | [Reviewing a pull request](code-review.md) |
 | `Cargo.toml` | [Architecture](architecture.md) |
@@ -141,7 +144,7 @@ Change this code, and check these documents.
 | `apps/suhina-cli/src/main.rs` | [0028: MCP in the running app](decisions/0028-mcp-in-the-running-app.md), [MCP server](mcp.md), [Export](spec/export.md) |
 | `apps/suhina-cli/src/play.rs` | [Architecture](architecture.md), [Arrangement editing](spec/arrangement-editing.md) |
 | `apps/suhina/Cargo.toml` | [0009: egui for the UI; familiar workflow, Suhina's own look](decisions/0009-ui-toolkit-and-look.md) |
-| `apps/suhina/build.rs` | [Releasing](releasing.md), [Stock device bundle](spec/stock-device-bundle.md) |
+| `apps/suhina/build.rs` | [Releasing](releasing.md) |
 | `apps/suhina/src/main.rs` | [Architecture](architecture.md), [0028: MCP in the running app](decisions/0028-mcp-in-the-running-app.md), [Keyboard shortcuts](shortcuts.md) |
 | `apps/suhina/src/recent.rs` | [0010: Suhina's own project files (.suhina)](decisions/0010-project-files.md) |
 | `apps/suhina/src/theme_files.rs` | [Design brief](design/brief.md) |
@@ -220,6 +223,7 @@ Change this code, and check these documents.
 | `crates/engine/src/input_tests.rs` | [0017: Inputs, arming and live latency](decisions/0017-inputs-and-latency.md) |
 | `crates/engine/src/launcher.rs` | [Architecture](architecture.md), [0005: Edits while playing](decisions/0005-edits-while-playing.md), [Arrangement editing](spec/arrangement-editing.md), [Clip launching](spec/clip-launching.md) |
 | `crates/engine/src/launcher/modes.rs` | [Clip launching](spec/clip-launching.md) |
+| `crates/engine/src/launcher/prepare.rs` | [0003: Time-stretching and stretch modes](decisions/0003-time-stretching.md) |
 | `crates/engine/src/lib.rs` | [0005: Edits while playing](decisions/0005-edits-while-playing.md), [0024: Musical time and tempo over the song](decisions/0024-musical-time-and-tempo.md), [Export](spec/export.md) |
 | `crates/engine/src/live.rs` | [0017: Inputs, arming and live latency](decisions/0017-inputs-and-latency.md) |
 | `crates/engine/src/live_tests.rs` | [0017: Inputs, arming and live latency](decisions/0017-inputs-and-latency.md) |
@@ -257,7 +261,7 @@ Change this code, and check these documents.
 | `crates/media/src/stems.rs` | [Stems files](spec/stems-format.md) |
 | `crates/media/src/stems_tests.rs` | [Stems files](spec/stems-format.md) |
 | `crates/media/src/tempo.rs` | [Browser](spec/browser.md) |
-| `crates/media/src/write.rs` | [Export](spec/export.md) |
+| `crates/media/src/write.rs` | [0029: MP3 encoder — LAME 3.100, vendored, own fft.c](decisions/0029-mp3-encoder.md), [Export](spec/export.md) |
 | `crates/media/tests/data/**` | [Stems files](spec/stems-format.md) |
 | `crates/midi/src/lib.rs` | [0017: Inputs, arming and live latency](decisions/0017-inputs-and-latency.md) |
 | `crates/model/src/automation.rs` | [Automation](spec/automation.md) |
@@ -269,6 +273,7 @@ Change this code, and check these documents.
 | `crates/model/src/overlap.rs` | [0028: ARA hosting](decisions/0028-ara-hosting.md), [Arrangement editing](spec/arrangement-editing.md) |
 | `crates/model/src/scale.rs` | [0001: A DAW-neutral project model](decisions/0001-daw-neutral-model.md) |
 | `crates/model/src/tempo.rs` | [0024: Musical time and tempo over the song](decisions/0024-musical-time-and-tempo.md), [Tempo map](spec/tempo-map.md) |
+| `crates/mp3` | [0029: MP3 encoder — LAME 3.100, vendored, own fft.c](decisions/0029-mp3-encoder.md) |
 | `crates/output/src/devices.rs` | [Architecture](architecture.md), [0018: A Windows audio driver of Suhina's own](decisions/0018-own-windows-audio-driver.md), [0020: Latency: what the number is, and where it is shown](decisions/0020-latency-and-its-readout.md) |
 | `crates/output/src/exclusive.rs` | [Architecture](architecture.md), [0018: A Windows audio driver of Suhina's own](decisions/0018-own-windows-audio-driver.md), [Cue output](spec/cue-output.md) |
 | `crates/output/src/input.rs` | [0017: Inputs, arming and live latency](decisions/0017-inputs-and-latency.md) |
@@ -348,7 +353,7 @@ Change this code, and check these documents.
 | `crates/ui/src/app/updates.rs` | [Updates](spec/updates.md) |
 | `crates/ui/src/arrangement.rs` | [Architecture](architecture.md) |
 | `crates/ui/src/arrangement/arrangement_view.rs` | [Components](design/components.md), [Arrangement editing](spec/arrangement-editing.md) |
-| `crates/ui/src/arrangement/automation_lanes.rs` | [Components](design/components.md), [Automation](spec/automation.md) |
+| `crates/ui/src/arrangement/automation_lanes.rs` | [Components](design/components.md), [Arrangement editing](spec/arrangement-editing.md), [Automation](spec/automation.md) |
 | `crates/ui/src/arrangement/timeline.rs` | [Components](design/components.md), [Arrangement editing](spec/arrangement-editing.md) |
 | `crates/ui/src/browser.rs` | [Architecture](architecture.md), [Browser](spec/browser.md), [Plug-ins in the browser](spec/plugin-browsing.md) |
 | `crates/ui/src/browser/browser_view.rs` | [Components](design/components.md), [Keyboard shortcuts](shortcuts.md), [Browser](spec/browser.md), [Plug-ins in the browser](spec/plugin-browsing.md) |
@@ -373,11 +378,13 @@ Change this code, and check these documents.
 | `crates/ui/src/interaction/grid.rs` | [Design brief](design/brief.md), [UI: main window and Session view](spec/ui-session-view.md) |
 | `crates/ui/src/interaction/menus.rs` | [Arrangement editing](spec/arrangement-editing.md), [Clip launching](spec/clip-launching.md) |
 | `crates/ui/src/interaction/pick.rs` | [Components](design/components.md), [Export](spec/export.md) |
+| `crates/ui/src/interaction/timeline_grid.rs` | [Arrangement editing](spec/arrangement-editing.md), [UI: clip editor (MIDI piano roll)](spec/ui-clip-editor.md) |
 | `crates/ui/src/kit.rs` | [Architecture](architecture.md) |
 | `crates/ui/src/kit/frame_trace.rs` | [Debugging the running app](debugging.md) |
 | `crates/ui/src/kit/logo.rs` | [Components](design/components.md) |
 | `crates/ui/src/kit/meter.rs` | [Components](design/components.md), [Level meters](spec/level-meters.md) |
 | `crates/ui/src/kit/motion.rs` | [Components](design/components.md) |
+| `crates/ui/src/kit/scroll.rs` | [Components](design/components.md) |
 | `crates/ui/src/kit/theme.rs` | [0009: egui for the UI; familiar workflow, Suhina's own look](decisions/0009-ui-toolkit-and-look.md), [Design brief](design/brief.md), [Components](design/components.md) |
 | `crates/ui/src/kit/waveform.rs` | [Components](design/components.md), [Waveforms](spec/waveforms.md) |
 | `crates/ui/src/kit/waveform/tests.rs` | [Waveforms](spec/waveforms.md) |
@@ -436,6 +443,7 @@ Change this code, and check these documents.
 | `scripts/discord_post.py` | [Releasing](releasing.md) |
 | `scripts/discord_test_build.py` | [Releasing](releasing.md) |
 | `scripts/discord_test_build_backfill.py` | [Releasing](releasing.md) |
+| `scripts/docs.py` | [How documents are written](README.md) |
 | `scripts/parity/**` | [parity-live-12](research/parity-live-12.md) |
 | `scripts/project_sync.py` | [The claim bot](claim-bot.md) |
 | `scripts/release_notes.py` | [Releasing](releasing.md) |
@@ -443,9 +451,13 @@ Change this code, and check these documents.
 | `scripts/shortcuts_guide.py` | [Website shortcut export](spec/shortcuts-guide-export.md) |
 | `scripts/stems-fixture.py` | [Stems files](spec/stems-format.md) |
 | `scripts/test-signal.py` | [Making the `.als` test corpus](spec/als-corpus.md) |
+| `scripts/test_docs_structure.py` | [How documents are written](README.md) |
+| `scripts/test_pr_workflows.py` | [The claim bot](claim-bot.md) |
 | `scripts/test_project_sync.py` | [The claim bot](claim-bot.md) |
 | `scripts/test_settings_guide.py` | [Settings guide export](spec/settings-guide-export.md) |
 | `scripts/test_shortcuts_guide.py` | [Website shortcut export](spec/shortcuts-guide-export.md) |
+| `scripts/test_trusted_requests.py` | [The claim bot](claim-bot.md) |
 | `scripts/trace-summary.py` | [Debugging the running app](debugging.md) |
 | `scripts/video_frames.py` | [Debugging the running app](debugging.md) |
 | `third_party/ara-api` | [0028: ARA hosting](decisions/0028-ara-hosting.md) |
+| `third_party/lame` | [0029: MP3 encoder — LAME 3.100, vendored, own fft.c](decisions/0029-mp3-encoder.md) |

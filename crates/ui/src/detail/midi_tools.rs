@@ -5,7 +5,6 @@
 //! note tools, each one `note.*` command over the selection or the whole clip
 //! (`docs/spec/ui-clip-editor.md` › Other note tools).
 
-use crate::kit::surface::Backgrounds as _;
 use std::collections::BTreeSet;
 
 use egui::{Align2, Pos2, Rect, Ui, Vec2};
@@ -18,6 +17,12 @@ use crate::kit::widgets::{self, Action};
 
 /// The column's width, taken from the left of the detail area before the note grid.
 pub const TOOLS_WIDTH: f32 = 112.0;
+
+/// The column's width: `.midi-tools { width }` in the theme (80 to 400 points), else [`TOOLS_WIDTH`].
+pub fn tools_width() -> f32 {
+    let _style = crate::kit::style_class::enter("midi-tools");
+    crate::kit::style_class::computed().and_then(|c| c.width).map_or(TOOLS_WIDTH, |w| w.clamp(80.0, 400.0))
+}
 const PAD: f32 = 6.0;
 const ROW: f32 = 20.0;
 const PARAM_ROW: f32 = 18.0;
@@ -144,13 +149,16 @@ pub fn quantise_height() -> f32 {
 /// goes. Nothing is drawn when `area` is too small to hold the column, so a short or narrow detail
 /// area gets the whole space for the grid.
 pub fn show(ui: &mut Ui, area: Rect, tools: &Tools<'_>, state: &mut PianoRollState, actions: &mut Vec<Action>) -> Rect {
-    if area.width() < TOOLS_WIDTH + 80.0 || area.height() < ROW + PARAM_ROW {
+    let width = tools_width();
+    if area.width() < width + 80.0 || area.height() < ROW + PARAM_ROW {
         return area;
     }
-    let column = Rect::from_min_max(area.min, Pos2::new(area.left() + TOOLS_WIDTH, area.bottom()));
+    let column = Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()));
     ui.allocate_rect(column, egui::Sense::hover());
     let painter = ui.painter_at(column);
-    painter.fill_background(column, 0.0, theme::panel_background());
+    // `.midi-tools` styles the column: its background and, through the scope, its controls' text.
+    let _style = crate::kit::style_class::enter("midi-tools");
+    crate::kit::native_css::surface(&painter, column, 0.0, theme::panel_background());
     painter.line_segment(
         [Pos2::new(column.right() - 0.5, column.top()), Pos2::new(column.right() - 0.5, column.bottom())],
         egui::Stroke::new(1.0, theme::border()),
@@ -372,6 +380,15 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
     }
     ui.horizontal(|ui| {
         let small = small.clone();
+        // Two halves of the column's width, so the second is never pushed off its edge.
+        let half = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).max(8.0);
+        let button = |ui: &mut Ui, name: &str, font: &egui::FontId| {
+            ui.add(
+                egui::Button::new(egui::RichText::new(name).font(font.clone()))
+                    .min_size(Vec2::new(half, BUTTON_HEIGHT)),
+            )
+            .clicked()
+        };
         if button(ui, "×2", &small) {
             let mut params = tools.params();
             params["factor"] = json!(2.0);
@@ -433,7 +450,7 @@ fn note_tools(ui: &mut Ui, tools: &Tools<'_>, state: &mut PianoRollState, action
 fn button(ui: &mut Ui, name: &str, font: &egui::FontId) -> bool {
     ui.add(
         egui::Button::new(egui::RichText::new(name).font(font.clone()))
-            .min_size(Vec2::new(ui.available_width().min(TOOLS_WIDTH - PAD * 2.0), BUTTON_HEIGHT)),
+            .min_size(Vec2::new(ui.available_width().min(tools_width() - PAD * 2.0), BUTTON_HEIGHT)),
     )
     .clicked()
 }

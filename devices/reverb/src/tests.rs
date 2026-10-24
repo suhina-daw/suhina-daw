@@ -5,11 +5,7 @@ use suhina_device_api::conformance;
 
 use super::*;
 
-#[test]
-fn passes_the_device_contract() {
-    let failures = conformance::check(&|| Box::new(Reverb::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Reverb::new());
 
 #[test]
 fn the_mixing_matrix_is_orthogonal_for_every_density() {

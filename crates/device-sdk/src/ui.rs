@@ -38,7 +38,15 @@ pub struct DeviceUi {
     pub layers: Vec<Draw>,
     pub controls: Vec<CustomControl>,
     pub hidden_parameters: Vec<String>,
+    /// The panel's own style sheet (version 6): presentation only, applied above the
+    /// application theme and below the user's overrides, and only inside this panel. `#id`
+    /// selects a control by its id. Parts it leaves out keep the application's theme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
 }
+
+/// Longest panel style sheet, in bytes.
+pub const MAX_STYLE_BYTES: usize = 64 * 1024;
 
 /// Host theme colours used to resolve the SDK's built-in widget drawings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +80,7 @@ impl Default for DeviceUi {
             layers: Vec::new(),
             controls: Vec::new(),
             hidden_parameters: Vec::new(),
+            style: None,
         }
     }
 }
@@ -432,6 +441,9 @@ impl DeviceUi {
             || self.hidden_parameters.len() > 128
         {
             return Err(fail("canvas dimensions or item count exceed limits"));
+        }
+        if self.style.as_ref().is_some_and(|style| style.len() > MAX_STYLE_BYTES || style.contains('\0')) {
+            return Err(fail("panel style exceeds 64 KiB or contains NUL"));
         }
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();

@@ -331,7 +331,7 @@ fn bar_beats(p: &Project) -> f64 {
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
-    p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default()
+    p.track(track).map(|t| t.name.clone()).unwrap_or_default()
 }
 
 /// A track name made safe as part of a file name on every system.

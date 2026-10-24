@@ -3,7 +3,7 @@ description: The plug-in manager and the plug-in folders: every plug-in and ever
 read_when: plug-in manager, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugins.setEnabled, plugins.setFolderEnabled, plugins.scanFile
 type: spec
 status: current
-last_verified: 2026-10-18
+last_verified: 2026-10-21
 covers:
   - crates/ui/src/settings/plugin_manager.rs
   - crates/ui/src/settings/settings_view.rs
@@ -50,6 +50,15 @@ and is kept off across starts (`plugin-disabled.json` in the settings folder). S
 catalog without it: the browser does not offer it, `device.addPlugin` and `track.add` do not find
 it, and a project that uses it opens with the device missing, so it never loads. Switched on
 again, it is offered at once and a project opened after finds it.
+
+Several at once: a click on a row picks it (**Ctrl** or **Cmd** adds a row, **Shift** takes the
+run from the last one picked), and the right-click menu has **Turn off** and **Turn on**. When
+the right-clicked row is one of the picked ones, the menu acts on every picked plug-in the table
+shows (the menu says how many, "Turn off 3 plug-ins"), in the order they were picked; a picked
+plug-in the search hides, or a rescan removed, is left alone. When the row is not picked, the
+right-click picks it and the menu acts on that plug-in alone. Each plug-in goes through
+`plugins.setEnabled`; the first one that fails stops the rest and shows its error. The menu
+entries wait while a scan runs, as the checkbox does.
 
 ## Files that gave no plug-ins
 

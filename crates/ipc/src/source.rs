@@ -7,14 +7,16 @@
 //!
 //! Layout: a 64-byte header (magic, version, channel count, frame count, sample rate), then
 //! each channel's samples in turn as 32-bit floats (planar, as ARA reads them).
+//!
+//! The memory is freed by the operating system when both sides have let go of it
+//! ([`crate::shm`]). The host may open a source again while the engine side holds it (a
+//! restarted host does), so on macOS its file keeps its name until then.
 
-use std::fs::{File, OpenOptions};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-
-use memmap2::{Mmap, MmapMut};
-
+use crate::shm::{Access, Shared};
 use crate::{IpcError, MAX_CHANNELS};
+
+/// What the shared memory of a source is called ([`Shared`]).
+const KIND: &str = "ara";
 
 const MAGIC: u32 = 0x5341_5241; // "ARAS"
 const VERSION: u32 = 1;
@@ -27,29 +29,12 @@ fn size(channels: u32, frames: u64) -> Option<usize> {
     usize::try_from(samples.checked_mul(4)?).ok()?.checked_add(HEADER_BYTES)
 }
 
-enum Map {
-    Write(MmapMut),
-    Read(Mmap),
-}
-
-impl Map {
-    fn bytes(&self) -> &[u8] {
-        match self {
-            Self::Write(map) => map,
-            Self::Read(map) => map,
-        }
-    }
-}
-
 /// One audio source's samples in shared memory.
 pub struct AudioSource {
-    map: Map,
-    path: PathBuf,
+    map: Shared,
     channels: u32,
     frames: u64,
     sample_rate: f64,
-    /// Whether this side made the file and removes it.
-    owner: bool,
 }
 
 impl AudioSource {
@@ -63,12 +48,10 @@ impl AudioSource {
             return Err(IpcError::BadLink("audio source too long"));
         }
         let len = size(channels, frames).ok_or(IpcError::BadLink("audio source too long"))?;
-        let path = crate::region::directory().join(unique_name());
-        let file = OpenOptions::new().read(true).write(true).create_new(true).open(&path)?;
-        file.set_len(len as u64)?;
-        // SAFETY: a file this process just made; nobody else maps it until its address is
-        // handed on, after it is written.
-        let mut map = unsafe { MmapMut::map_mut(&file) }?;
+        let shared = Shared::create(KIND, len)?;
+        // SAFETY: memory this process just made, at least `len` bytes long; nobody else maps it
+        // until its address is handed on, after it is written, and this slice ends before that.
+        let map = unsafe { std::slice::from_raw_parts_mut(shared.as_ptr(), len) };
         map[0..4].copy_from_slice(&MAGIC.to_le_bytes());
         map[4..8].copy_from_slice(&VERSION.to_le_bytes());
         map[8..12].copy_from_slice(&channels.to_le_bytes());
@@ -84,22 +67,14 @@ impl AudioSource {
                 }
             }
         }
-        map.flush()?;
-        Ok(Self { map: Map::Write(map), path, channels, frames, sample_rate, owner: true })
+        Ok(Self { map: shared, channels, frames, sample_rate })
     }
 
     /// Opens a region [`AudioSource::from_interleaved`] made, read only. Everything in its
     /// header is checked against the file's length.
     pub fn open(address: &str) -> Result<Self, IpcError> {
-        let path = Path::new(address);
-        let named = path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("suhina-ara-"));
-        if !named {
-            return Err(IpcError::BadLink("not a Suhina audio source"));
-        }
-        let file = File::open(path)?;
-        // SAFETY: the engine side wrote the file before handing on its address and does not
-        // write it again; this side only reads it.
-        let map = unsafe { Mmap::map(&file) }?;
+        let shared = Shared::open(KIND, address, Access::Read)?;
+        let map = bytes(&shared);
         let word = |at: usize| map.get(at..at + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
         let long = |at: usize| map.get(at..at + 8).and_then(|b| b.try_into().ok()).map(u64::from_le_bytes);
         if word(0) != Some(MAGIC) {
@@ -118,12 +93,12 @@ impl AudioSource {
         if !(sample_rate.is_finite() && sample_rate > 0.0) {
             return Err(IpcError::BadLink("audio source has no sample rate"));
         }
-        Ok(Self { map: Map::Read(map), path: path.to_path_buf(), channels, frames, sample_rate, owner: false })
+        Ok(Self { map: shared, channels, frames, sample_rate })
     }
 
     /// What the host process needs to open it.
     pub fn address(&self) -> String {
-        self.path.display().to_string()
+        self.map.address().to_string()
     }
 
     pub fn channels(&self) -> u32 {
@@ -145,7 +120,7 @@ impl AudioSource {
         if channel >= self.channels {
             return;
         }
-        let bytes = self.map.bytes();
+        let bytes = bytes(&self.map);
         let base = HEADER_BYTES + channel as usize * self.frames as usize * 4;
         for (index, value) in out.iter_mut().enumerate() {
             let Some(frame) = position.checked_add(index as i64) else { break };
@@ -163,21 +138,12 @@ impl AudioSource {
     }
 }
 
-impl Drop for AudioSource {
-    fn drop(&mut self) {
-        if self.owner {
-            // A host that still has it mapped keeps its view; on Windows the file stays until it
-            // lets go of it.
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
-
-fn unique_name() -> String {
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-    format!("suhina-ara-{}-{count}-{nanos}", std::process::id())
+/// The source's bytes, header and samples.
+fn bytes(map: &Shared) -> &[u8] {
+    // SAFETY: the mapping is `len()` bytes long and lives as long as `map`. The engine side wrote
+    // it before handing on its address and does not write it again, so nothing changes it while
+    // it is read; the host side mapped it read only.
+    unsafe { std::slice::from_raw_parts(map.as_ptr().cast_const(), map.len()) }
 }
 
 #[cfg(test)]
@@ -199,29 +165,44 @@ mod tests {
         assert_eq!(out, [0.0; 5]);
         opened.read(0, i64::MAX, &mut out);
         assert_eq!(out, [0.0; 5]);
-        // The file goes with the side that made it.
+        // It opens again while the engine side holds it, as for a restarted host.
+        let again = AudioSource::open(&source.address()).unwrap();
+        assert_eq!(again.frames(), 3);
+        // The memory goes with the side that made it. (On Linux the address is a descriptor
+        // number, which another test may take next, so it is not tried again there.)
         let address = source.address();
-        drop(opened);
-        drop(source);
-        assert!(!Path::new(&address).exists());
+        drop((opened, again, source));
+        #[cfg(not(target_os = "linux"))]
+        assert!(AudioSource::open(&address).is_err());
+        let _ = address;
     }
 
     #[test]
     fn bad_regions_are_refused() {
         assert!(AudioSource::from_interleaved(&[0.0; 4], 0, 48_000.0).is_err());
         assert!(AudioSource::from_interleaved(&[0.0; 4], 2, f64::NAN).is_err());
-        assert!(AudioSource::open("/tmp/not-a-source").is_err());
+        // Names and paths that are not a source's.
+        let own = std::process::id();
+        for address in [
+            "/tmp/not-a-source".to_string(),
+            format!("/proc/{own}/fd/0"),
+            format!("/proc/{own}/fd/x"),
+            "Local\\suhina-ara-1-2-3".to_string(),
+            String::new(),
+        ] {
+            assert!(AudioSource::open(&address).is_err(), "{address}");
+        }
         let source = AudioSource::from_interleaved(&[0.5; 8], 2, 44_100.0).unwrap();
-        // A header that claims more frames than the file holds.
-        let path = source.address();
-        let mut bytes = std::fs::read(&path).unwrap();
-        bytes[16..24].copy_from_slice(&1_000_000u64.to_le_bytes());
-        let copy = crate::region::directory().join(unique_name());
-        std::fs::write(&copy, &bytes).unwrap();
-        assert!(AudioSource::open(&copy.display().to_string()).is_err());
+        let mut bytes = bytes(&source.map)[..HEADER_BYTES + 32].to_vec();
+        // A link's region is not a source, whatever it holds.
+        let region = crate::shm::with_bytes("ipc", &bytes);
+        assert!(AudioSource::open(region.address()).is_err());
+        // A header that claims more frames than the memory holds.
+        bytes[16..24].copy_from_slice(&1_000_000_000u64.to_le_bytes());
+        let long = crate::shm::with_bytes(KIND, &bytes);
+        assert!(AudioSource::open(long.address()).is_err());
         bytes[0] = 0;
-        std::fs::write(&copy, &bytes).unwrap();
-        assert!(AudioSource::open(&copy.display().to_string()).is_err());
-        let _ = std::fs::remove_file(copy);
+        let wrong = crate::shm::with_bytes(KIND, &bytes);
+        assert!(AudioSource::open(wrong.address()).is_err());
     }
 }

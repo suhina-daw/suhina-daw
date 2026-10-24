@@ -44,8 +44,12 @@ impl Shadow {
     }
 }
 
-/// A bounded subset shared by native app and SDK panels. A declaration that exceeds
-/// the layer limit is rejected, rather than silently dropping its remaining layers.
+/// Most shadow layers a declaration may list, and most that are drawn.
+pub const MAX_SHADOW_LAYERS: usize = 32;
+pub const DRAWN_SHADOW_LAYERS: usize = 4;
+
+/// A bounded subset shared by native app and SDK panels. Up to 32 layers parse; the first
+/// four are drawn, so hostile lists cost fixed paint work.
 pub fn shadows(source: &str, text: bool) -> Result<Vec<Shadow>, String> {
     crate::syntax::validate(source)?;
     if source.trim().eq_ignore_ascii_case("none") {
@@ -55,8 +59,8 @@ pub fn shadows(source: &str, text: bool) -> Result<Vec<Shadow>, String> {
     let mut parser = Parser::new(&mut input);
     let mut result = Vec::new();
     loop {
-        if result.len() >= 4 {
-            return Err("At most four shadow layers are supported".into());
+        if result.len() >= MAX_SHADOW_LAYERS {
+            return Err("At most 32 shadow layers".into());
         }
         let mut lengths = Vec::new();
         let mut color = None;
@@ -125,6 +129,7 @@ pub fn shadows(source: &str, text: bool) -> Result<Vec<Shadow>, String> {
             return Err("Missing shadow after comma".into());
         }
     }
+    result.truncate(DRAWN_SHADOW_LAYERS);
     Ok(result)
 }
 
@@ -141,23 +146,16 @@ mod tests {
         assert_eq!(parsed[1].resolve(12.0, [0; 4]).color, [1, 2, 3, 128]);
         assert!(shadows("none", false).unwrap().is_empty());
         assert_eq!(shadows("0 1px", true).unwrap()[0].color, Color::Current);
+        assert_eq!(shadows(&["1px 1px red"; 8].join(","), true).unwrap().len(), 4, "drawn layers are bounded");
     }
     #[test]
     fn malformed_or_excessive_shadows_are_rejected() {
-        for source in [
-            "",
-            "0",
-            "0 0 -1px",
-            "0 0,",
-            "0 0 red blue",
-            "0 red 0",
-            "0 0 5%",
-            "0 0 1e99px",
-            "inset inset 0 0",
-            "0 0,0 0,0 0,0 0,0 0",
-        ] {
+        for source in
+            ["", "0", "0 0 -1px", "0 0,", "0 0 red blue", "0 red 0", "0 0 5%", "0 0 1e99px", "inset inset 0 0"]
+        {
             assert!(shadows(source, false).is_err(), "{source}");
         }
+        assert!(shadows(&["0 0"; 33].join(","), false).is_err());
         for source in ["inset 0 0", "0 0 1px 2px"] {
             assert!(shadows(source, true).is_err(), "{source}");
         }

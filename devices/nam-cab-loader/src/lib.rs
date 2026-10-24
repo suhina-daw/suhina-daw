@@ -15,7 +15,8 @@
 //! sizes never change the sound. An IR at another rate than the project's is not run.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::db_to_gain;
@@ -65,8 +66,6 @@ pub const INFO: DeviceInfo =
 /// Reading `.wav` files.
 pub mod ir;
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 /// One side's filters.
 #[derive(Clone, Copy)]
 struct Side {
@@ -91,7 +90,7 @@ impl Side {
 /// the signal passes through the trims, whatever the cuts say.
 pub struct CabLoader {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// The IR the loader was made with, for `prepare` and `reset` rebuilds.
     ir: Option<Ir>,
     sides: [Side; 2],
@@ -137,7 +136,7 @@ impl CabLoader {
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
         let mut loader = Self {
             sample_rate,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             ir,
             sides: [Side::new(sample_rate), Side::new(sample_rate)],
             convs: [None, None],
@@ -192,7 +191,7 @@ impl CabLoader {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     /// Filters, smoothers, delays, convolution memory and the schedule, everything cleared.
@@ -310,9 +309,9 @@ impl Device for CabLoader {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         match index {
             param::VOLUME => self.volume.set_target(db_to_gain(self.value(param::VOLUME) as f32)),
             param::DELAY => {
@@ -326,7 +325,7 @@ impl Device for CabLoader {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {

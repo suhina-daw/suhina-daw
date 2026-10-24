@@ -28,5 +28,9 @@ Third-party material
   (third_party/asiosdk/LICENSE.txt, VENDORED.md). It is built only with the `asio` feature; such
   a build is distributed under the GPL-3.0. ASIO is a trademark of Steinberg Media Technologies
   GmbH.
+- third_party/lame holds the encoder sources of LAME 3.100, Copyright (c) The LAME Project and
+  the authors named in its README, used under the GNU Library General Public License, version 2
+  or any later version (third_party/lame/COPYING, VENDORED.md). Its fft.c is not redistributed
+  and is replaced by Suhina's own implementation. MP3's patents expired in 2017.
 
 Other bundled material is listed per file (author, source, license) in ATTRIBUTION.md.

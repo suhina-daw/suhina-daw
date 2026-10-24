@@ -12,7 +12,8 @@ use crate::kit::surface::Backgrounds as _;
 use egui::{Color32, CursorIcon, Id, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 
-use crate::detail::piano_roll::{NoteGrid, PianoClip, PianoRollState, note_grid};
+use crate::detail::piano_roll::{PianoClip, PianoRollState, note_grid};
+use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
 use crate::kit::widgets::Action;
 
@@ -155,31 +156,38 @@ pub fn part_at(shape: &ClipShape, axis: &Axis, ruler: Rect, pos: Pos2) -> Option
     }
 }
 
-/// The shortest step a dragged loop or clip keeps: a grid step while it snaps, else a hundredth.
-fn least(grid: NoteGrid, free: bool) -> f64 {
-    if grid.snaps && !free { grid.step } else { MIN_LENGTH }
+/// How far a dragged loop or clip edge may come to the other edge `at`: to the drawn line before
+/// it (`after`: after it) while it snaps, else a hundredth of a beat.
+fn limit(grid: TimelineGrid, free: bool, at: f64, after: bool) -> f64 {
+    match (grid.snaps && !free, after) {
+        (true, false) => grid.previous_line(at),
+        (true, true) => grid.next_line(at),
+        (false, false) => at - MIN_LENGTH,
+        (false, true) => at + MIN_LENGTH,
+    }
 }
 
 /// The clip as a drag of `part` from content beat `from` to `now` leaves it: on the grid unless
 /// `free`, never before beat 0 or past the last beat, a loop or a clip never shorter than
-/// [`least`], and an arrangement clip never longer than its room. The commands take every shape
+/// [`limit`] (a drawn line), and an arrangement clip never longer than its room. The commands take every shape
 /// this gives, so a drag never fails.
-pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGrid, free: bool) -> ClipShape {
+pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: TimelineGrid, free: bool) -> ClipShape {
     let place = |beat: f64| grid.place(beat, free, false).clamp(0.0, BEAT_LIMIT);
-    let least = least(grid, free);
+    let before = |at: f64| limit(grid, free, at, false);
+    let after = |at: f64| limit(grid, free, at, true);
     let (start, end) = shape.bar();
     let mut out = *shape;
     match part {
         Part::LoopStart => {
             let at = place(now);
-            let at = if at > end - least + EPSILON { end - least } else { at };
+            let at = if at > before(end) + EPSILON { before(end) } else { at };
             if at >= 0.0 && at < end {
                 out.loop_range = Some((at, end));
             }
         }
         Part::LoopEnd => {
             let at = place(now);
-            let at = if at < start + least - EPSILON { start + least } else { at };
+            let at = if at < after(start) - EPSILON { after(start) } else { at };
             if at <= BEAT_LIMIT && at > start {
                 out.loop_range = Some((start, at));
             }
@@ -193,12 +201,12 @@ pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGri
             let at = place(now);
             match shape.loop_range {
                 Some((_, end)) => {
-                    let at = if at > end - least + EPSILON { end - least } else { at };
+                    let at = if at > before(end) + EPSILON { before(end) } else { at };
                     out.offset = at.max(0.0);
                 }
                 None => {
                     let end = shape.offset + shape.length;
-                    let at = if at > end - least + EPSILON { end - least } else { at };
+                    let at = if at > before(end) + EPSILON { before(end) } else { at };
                     // Earlier makes the clip longer: never past its room.
                     let at = at.max(end - shape.max_length()).max(0.0);
                     if at < end {
@@ -211,7 +219,7 @@ pub fn dragged(shape: &ClipShape, part: Part, from: f64, now: f64, grid: NoteGri
         Part::EndMarker => {
             if shape.loop_range.is_none() {
                 let at = place(now);
-                let at = if at < shape.offset + least - EPSILON { shape.offset + least } else { at };
+                let at = if at < after(shape.offset) - EPSILON { after(shape.offset) } else { at };
                 out.length = (at - shape.offset).min(shape.max_length());
             }
         }
@@ -416,8 +424,8 @@ fn marker(painter: &egui::Painter, numbers: Rect, x: f32, side: f32, color: Colo
 mod tests {
     use super::*;
 
-    fn grid(step: f64) -> NoteGrid {
-        NoteGrid { step, snaps: true }
+    fn grid(step: f64) -> TimelineGrid {
+        TimelineGrid { step, bar_beats: 4.0, snaps: true }
     }
 
     const AXIS: Axis = Axis { origin: 100.0, beat_width: 20.0 };
@@ -445,6 +453,23 @@ mod tests {
         let tiny = ClipShape { loop_range: Some((1.0, 1.25)), ..looping };
         assert_eq!(part_at(&tiny, &AXIS, ruler(), Pos2::new(119.5, 3.0)), Some(Part::LoopStart));
         assert_eq!(part_at(&tiny, &AXIS, ruler(), Pos2::new(125.5, 3.0)), Some(Part::LoopEnd));
+    }
+
+    #[test]
+    fn loop_handles_stop_on_a_drawn_line_when_they_meet() {
+        // 3/4 with a two-beat grid: lines at 0, 2, 3, 5, 6. A loop from 3 to 6 keeps its start on
+        // the line at 5, and a loop from 0 to 3 keeps its end on the line at 2.
+        let grid = TimelineGrid { step: 2.0, bar_beats: 3.0, snaps: true };
+        let late = ClipShape { offset: 0.0, length: 8.0, loop_range: Some((3.0, 6.0)), room: None };
+        assert_eq!(dragged(&late, Part::LoopStart, 3.0, 7.0, grid, false).loop_range, Some((5.0, 6.0)));
+        let early = ClipShape { offset: 0.0, length: 8.0, loop_range: Some((0.0, 3.0)), room: None };
+        assert_eq!(dragged(&early, Part::LoopEnd, 3.0, -1.0, grid, false).loop_range, Some((0.0, 2.0)));
+        let ends = ClipShape { offset: 3.0, length: 3.0, loop_range: None, room: None };
+        assert_eq!(dragged(&ends, Part::EndMarker, 6.0, 0.0, grid, false).length, 2.0);
+        assert_eq!(dragged(&ends, Part::StartMarker, 3.0, 9.0, grid, false).offset, 5.0);
+        // Free, a hundredth of a beat.
+        let free = dragged(&late, Part::LoopStart, 3.0, 7.0, grid, true).loop_range;
+        assert!(free.is_some_and(|(start, _)| (start - (6.0 - MIN_LENGTH)).abs() < 1e-9));
     }
 
     #[test]

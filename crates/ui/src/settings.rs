@@ -263,7 +263,9 @@ pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
     pub background_image: String,
     pub animations: bool,
-    pub track_headers: Side,
+    /// The Arrangement view's track headers: on a side of the user's choosing, or `None` where
+    /// the theme puts them (on the right when it says nothing).
+    pub track_headers: Option<Side>,
     pub graphics: Graphics,
     /// Audio clips moved over others stack (all play) instead of replacing them.
     pub sample_stacking: bool,
@@ -373,7 +375,7 @@ impl Default for Settings {
         Self {
             animations: true,
             background_image: String::new(),
-            track_headers: Side::Right,
+            track_headers: None,
             graphics: Graphics::Gpu,
             sample_stacking: false,
             midi_stacking: false,
@@ -491,8 +493,9 @@ impl Settings {
     /// The settings as the lines of a settings file.
     pub fn to_text(&self) -> String {
         let headers = match self.track_headers {
-            Side::Left => "left",
-            Side::Right => "right",
+            None => "theme",
+            Some(Side::Left) => "left",
+            Some(Side::Right) => "right",
         };
         let graphics = match self.graphics {
             Graphics::Gpu => "wgpu",
@@ -610,8 +613,9 @@ impl Settings {
                     }
                 },
                 ("midi_stacking", "on" | "off") => settings.midi_stacking = value == "on",
-                ("track_headers", "left") => settings.track_headers = Side::Left,
-                ("track_headers", "right") => settings.track_headers = Side::Right,
+                ("track_headers", "theme") => settings.track_headers = None,
+                ("track_headers", "left") => settings.track_headers = Some(Side::Left),
+                ("track_headers", "right") => settings.track_headers = Some(Side::Right),
                 ("device_chain", "row") => settings.device_layout = DeviceLayout::Row,
                 ("device_chain", "stack") => settings.device_layout = DeviceLayout::Stack,
                 ("select_on_launch", "on" | "off") => settings.select_on_launch = value == "on",
@@ -811,7 +815,7 @@ midi_input_off = Keys
         #[allow(clippy::needless_update)]
         let expected = Settings {
             animations: false,
-            track_headers: Side::Left,
+            track_headers: Some(Side::Left),
             graphics: Graphics::OpenGl,
             sample_stacking: true,
             midi_stacking: true,
@@ -869,7 +873,7 @@ midi_input_off = Keys
     fn settings_survive_a_round_trip() {
         let settings = Settings {
             animations: false,
-            track_headers: Side::Left,
+            track_headers: Some(Side::Left),
             graphics: Graphics::OpenGl,
             sample_stacking: true,
             midi_stacking: false,

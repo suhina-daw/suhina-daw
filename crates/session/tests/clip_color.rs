@@ -241,3 +241,18 @@ fn with_a_fixed_colour_new_tracks_take_it_and_the_others_keep_theirs() {
         assert!(track.color.is_some(), "{place}: stored as it showed");
     }
 }
+
+#[test]
+fn a_new_clip_can_take_its_track_s_colour() {
+    let mut session = Session::new(project());
+    session.set_track_colours(vec![Rgb(240, 140, 30), Rgb(230, 200, 50)], None);
+    session.set_track_type_colours(Rgb(90, 100, 110), Rgb(120, 130, 140));
+    session.set_new_clips_take_track_colour(true);
+    let track = session.project().tracks.iter().find(|t| t.id == TrackId(1)).unwrap().color;
+    assert!(track.is_some());
+    run(&mut session, "clip.create", json!({"track":1,"start":16.0,"length":4.0})).unwrap();
+    assert_eq!(clips(&session, 1).last().unwrap().color, track);
+    session.set_new_clips_take_track_colour(false);
+    run(&mut session, "clip.create", json!({"track":1,"start":24.0,"length":4.0})).unwrap();
+    assert_eq!(clips(&session, 1).last().unwrap().color, Some(Rgb(90, 100, 110)));
+}

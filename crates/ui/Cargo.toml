@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+# The tests are one binary, tests/main.rs (it says why).
+autotests = false
 
 [dependencies]
 suhina-engine.workspace = true
@@ -27,21 +29,23 @@ egui = "0.36"  # MIT OR Apache-2.0
 # Draws the logo from its SVG paths; already in the tree through winit on Linux.
 tiny-skia = { version = "0.11", default-features = false, features = ["std"] }  # BSD-3-Clause
 image = { version = "0.25.10", default-features = false, features = ["png"] } # MIT OR Apache-2.0; bounded user background decoding
-resvg = { version = "0.45", default-features = false } # MPL-2.0; static SVG skins, no system fonts or external resources
+resvg = { version = "0.45", default-features = false, features = ["text"] } # MPL-2.0; static SVG skins with the bundled fonts, no system fonts or external resources
 
-# Safe DOM adapter for Stylo's cascade and Taffy's Flex/Grid layout; no browser shell/network/JS.
-blitz-dom = { version = "=0.3.0-beta.2", default-features = false } # MIT OR Apache-2.0
-blitz-html = { version = "=0.3.0-beta.2", default-features = false } # MIT OR Apache-2.0
-blitz-traits = { version = "=0.3.0-beta.2", default-features = false } # MIT OR Apache-2.0
-cssparser = "0.37" # MPL-2.0; token-level input budgets and native support notices
-style = { package = "stylo", version = "0.20.0" } # MPL-2.0; computed values at the adapter boundary
-style_dom = { package = "stylo_dom", version = "0.20.0" } # MPL-2.0; native widget states on retained scopes
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }  # MIT OR Apache-2.0
 hound.workspace = true
 suhina-output.workspace = true  # tests that preview through a real audio device
 suhina-library.workspace = true
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+# The trace file is one per process.
+[[test]]
+name = "trace_actions"
+path = "tests/trace_actions.rs"
 
 [lints]
 workspace = true

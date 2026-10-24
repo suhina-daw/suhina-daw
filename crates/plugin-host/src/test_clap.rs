@@ -7,6 +7,9 @@
 //! not need a plug-in installed. For the event path it also answers notes and MIDI: a note-on
 //! adds its velocity to the first channel at its frame, and controller 7 sets the gain. The
 //! gain is also its one parameter (id 0, 0 to 1), set through parameter events.
+//!
+//! `test:clap-mix` is the same plug-in, except that its first output channel is the mean of the
+//! port's first two, so it shows whether its second input was filled.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -25,12 +28,17 @@ use clack_plugin::utils::Cookie;
 /// Latency the test plug-in reports, in frames.
 pub(crate) const LATENCY: u32 = 16;
 
-pub(crate) type Entry = SinglePluginEntry<TestGain>;
+pub(crate) type Entry = SinglePluginEntry<TestGain<false>>;
 
-pub(crate) struct TestGain;
+/// The entry of `test:clap-mix`.
+pub(crate) type MixEntry = SinglePluginEntry<TestGain<true>>;
+
+/// The gain plug-in; with `MIX`, its first output channel is the mean of the first two.
+pub(crate) struct TestGain<const MIX: bool>;
 
 pub(crate) struct GainShared {
     gain: AtomicU32,
+    mix: bool,
 }
 
 impl PluginShared<'_> for GainShared {}
@@ -41,7 +49,7 @@ pub(crate) struct GainMainThread<'a> {
 
 impl<'a> PluginMainThread<'a, GainShared> for GainMainThread<'a> {}
 
-impl Plugin for TestGain {
+impl<const MIX: bool> Plugin for TestGain<MIX> {
     type AudioProcessor<'a> = GainProcessor<'a>;
     type Shared<'a> = GainShared;
     type MainThread<'a> = GainMainThread<'a>;
@@ -51,13 +59,17 @@ impl Plugin for TestGain {
     }
 }
 
-impl DefaultPluginFactory for TestGain {
+impl<const MIX: bool> DefaultPluginFactory for TestGain<MIX> {
     fn get_descriptor() -> PluginDescriptor {
-        PluginDescriptor::new("org.suhina.test.gain", "Suhina Test Gain")
+        if MIX {
+            PluginDescriptor::new("org.suhina.test.gain-mix", "Suhina Test Gain Mix")
+        } else {
+            PluginDescriptor::new("org.suhina.test.gain", "Suhina Test Gain")
+        }
     }
 
     fn new_shared(_host: HostSharedHandle<'_>) -> Result<GainShared, PluginError> {
-        Ok(GainShared { gain: AtomicU32::new(0.5f32.to_bits()) })
+        Ok(GainShared { gain: AtomicU32::new(0.5f32.to_bits()), mix: MIX })
     }
 
     fn new_main_thread<'a>(
@@ -166,6 +178,13 @@ impl<'a> PluginAudioProcessor<'a, GainShared, GainMainThread<'a>> for GainProces
                     {
                         self.shared.gain.store((f32::from(value) / 127.0).to_bits(), Ordering::Relaxed);
                     }
+                    // Channel pressure (aftertouch, #812) sets the gain too: a two-byte message
+                    // in the MIDI event's three-byte data, the third byte unused.
+                    if let [status, value, _] = midi.data()
+                        && status & 0xF0 == 0xD0
+                    {
+                        self.shared.gain.store((f32::from(value) / 127.0).to_bits(), Ordering::Relaxed);
+                    }
                 }
                 Some(CoreEventSpace::ParamValue(param)) => {
                     if param.param_id() == Some(GAIN_PARAM) && param.value().is_finite() {
@@ -196,6 +215,15 @@ impl<'a> PluginAudioProcessor<'a, GainShared, GainMainThread<'a>> for GainProces
                     ChannelPair::InPlace(buffer) => buffer.iter_mut().for_each(|s| *s *= gain),
                 }
             }
+            if self.shared.mix
+                && let Some(mut pairs) = port.channels()?.into_f32()
+                && let (Some(first), Some(second)) = (pairs.channel_pair(0), pairs.channel_pair(1))
+                && let (Some(first), Some(second)) = (written(first), written(second))
+            {
+                for (a, b) in first.iter_mut().zip(second.iter()) {
+                    *a = (*a + *b) / 2.0;
+                }
+            }
             // Notes on the port's first channel.
             if let Some(Some(first)) = port.channels()?.into_f32().map(|mut c| c.channel_pair(0)) {
                 let mut out = match first {
@@ -211,5 +239,13 @@ impl<'a> PluginAudioProcessor<'a, GainShared, GainMainThread<'a>> for GainProces
             }
         }
         Ok(ProcessStatus::Continue)
+    }
+}
+
+/// The output a channel pair was processed into, if it has one.
+fn written(pair: ChannelPair<'_, f32>) -> Option<&mut [f32]> {
+    match pair {
+        ChannelPair::OutputOnly(out) | ChannelPair::InputOutput(_, out) | ChannelPair::InPlace(out) => Some(out),
+        ChannelPair::InputOnly(_) => None,
     }
 }

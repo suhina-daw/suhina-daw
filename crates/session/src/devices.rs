@@ -444,7 +444,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     let midi_effect = info.role == Role::MidiEffect;
     if instrument || midi_effect {
         let track = track_id(&session.project, params)?;
-        if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
+        if session.project.track(track).is_some_and(|t| !t.content.notes) {
             let what = if instrument { "an instrument" } else { "a MIDI effect" };
             return Err(format!("{what} goes on a MIDI track").into());
         }
@@ -502,7 +502,7 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
     }
     if graph.role != suhina_device_sdk::DeviceRole::Effect {
         let track = track_id(&session.project, params)?;
-        if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
+        if session.project.track(track).is_some_and(|t| !t.content.notes) {
             return Err("a MIDI effect goes on a MIDI track".into());
         }
     }
@@ -645,7 +645,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|c| heard.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| heard.channel(c))
         .ok_or("the track has no mixer channel")?;
     let mut paths = device_list(&channel.devices, params)?;
     paths.reverse();
@@ -657,7 +657,9 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
 
 /// `device.duplicateMany {track, devices}`: copies of several devices, in their order, right
 /// after the last of them, as one undo step; a running plug-in's copy starts with its state as it
-/// is now. The device clipboard stays as it was (#685).
+/// is now. The device clipboard stays as it was (#685). The devices must share a chain or branch.
+/// The chain's rules hold for the result (one instrument, MIDI effects first); a copy that would
+/// break them is refused (#803).
 pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
     let (heard, _) = session.heard();
@@ -666,10 +668,10 @@ pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Va
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|c| heard.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| heard.channel(c))
         .map(|c| c.devices.clone());
-    let channel = channel_param(session, params)?;
-    let mut paths = device_list(&channel.devices, params)?;
+    let own = channel_read(session, params)?.devices.clone();
+    let mut paths = device_list(&own, params)?;
     paths.reverse();
     let copies: Vec<Device> = paths
         .iter()
@@ -677,29 +679,33 @@ pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Va
             heard_devices
                 .as_deref()
                 .and_then(|h| device_at(h, p))
-                .or_else(|| device_at(&channel.devices, p))
+                .or_else(|| device_at(&own, p))
                 .cloned()
                 .ok_or_else(|| CommandError::from("a device is missing"))
         })
         .collect::<Result<_, _>>()?;
-    if suhina_model::count_devices(&channel.devices) + suhina_model::count_devices(&copies) > MAX_DEVICES {
-        return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
-    }
     let last = paths.last().ok_or("devices must name at least one device")?;
     let (&index, parent) = last.split_last().ok_or("a device path is empty")?;
-    let list = crate::device_groups::container_mut(&mut channel.devices, parent).ok_or("the device is missing")?;
-    let count = copies.len();
-    for (offset, copy) in copies.into_iter().enumerate() {
-        list.insert(index + 1 + offset, copy);
+    // The copies go in one place, so the picks must share it: a copy of a top-level device does
+    // not belong inside a group's branch.
+    if paths.iter().any(|p| p.split_last().is_none_or(|(_, other)| other != parent)) {
+        return Err("the devices must be in the same chain or branch".into());
     }
-    let made: Vec<Value> = (index + 1..index + 1 + count)
-        .map(|i| {
-            let mut path = parent.to_vec();
-            path.push(i);
-            path_value(&path)
-        })
-        .collect();
-    Ok(json!({ "devices": made }))
+    let count = copies.len();
+    crate::device_groups::edit_chain(session, params, |devices| {
+        let list = crate::device_groups::container_mut(devices, parent).ok_or("the device is missing")?;
+        for (offset, copy) in copies.into_iter().enumerate() {
+            list.insert(index + 1 + offset, copy);
+        }
+        let made: Vec<Value> = (index + 1..index + 1 + count)
+            .map(|i| {
+                let mut path = parent.to_vec();
+                path.push(i);
+                path_value(&path)
+            })
+            .collect();
+        Ok(json!({ "devices": made }))
+    })
 }
 
 /// `device.moveToTrack {track, device, to_track, copy?}`: a device (a group with everything in
@@ -718,13 +724,12 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
         Some(v) => v.as_bool().ok_or("copy must be true or false")?,
     };
     let channel_of = |p: &suhina_model::Project, track| {
-        p.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel).ok_or("the track has no mixer channel")
+        p.track(track).and_then(|t| t.channel).ok_or("the track has no mixer channel")
     };
     let (source, target) = (channel_of(&session.project, from)?, channel_of(&session.project, to)?);
     let (heard, _) = session.heard();
-    let heard_devices = heard.channels.iter().find(|c| c.id == source).map(|c| c.devices.clone());
-    let devices =
-        &session.project.channels.iter().find(|c| c.id == source).ok_or("the track's channel is missing")?.devices;
+    let heard_devices = heard.channel(source).map(|c| c.devices.clone());
+    let devices = &session.project.channel(source).ok_or("the track's channel is missing")?.devices;
     let path = device_path(devices, params, "device")?;
     let device = heard_devices
         .as_deref()
@@ -746,14 +751,13 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
         };
     let midi_effect = !instrument
         && (grouped == crate::device_groups::Kind::MidiEffect || chain_role(&device) == Some(Role::MidiEffect));
-    let plays_notes = session.project.tracks.iter().find(|t| t.id == to).is_some_and(|t| t.content.notes);
+    let plays_notes = session.project.track(to).is_some_and(|t| t.content.notes);
     if (instrument || midi_effect) && !plays_notes {
         let what = if instrument { "an instrument" } else { "a MIDI effect" };
         return Err(format!("{what} goes on a MIDI track").into());
     }
     let replaced = if instrument { instrument_in(session, &json!({ "track": to.0 }))? } else { None };
-    let chain =
-        &session.project.channels.iter().find(|c| c.id == target).ok_or("the track's channel is missing")?.devices;
+    let chain = &session.project.channel(target).ok_or("the track's channel is missing")?.devices;
     let leaving = replaced
         .as_ref()
         .and_then(|(at, _)| chain.get(*at))
@@ -793,25 +797,23 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
         return Err("no devices have been copied".into());
     }
     let copied = session.device_clipboard.clone();
-    let channel = channel_param(session, params)?;
-    if suhina_model::count_devices(&channel.devices) + suhina_model::count_devices(&copied) > MAX_DEVICES {
-        return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
-    }
-    let (parent, position) = crate::device_groups::position_path(&channel.devices, params, "position")?
-        .unwrap_or_else(|| (Vec::new(), channel.devices.len()));
-    let list = crate::device_groups::container_mut(&mut channel.devices, &parent).ok_or("the position is missing")?;
     let count = copied.len();
-    for (offset, device) in copied.into_iter().enumerate() {
-        list.insert(position + offset, device);
-    }
-    let pasted: Vec<Value> = (position..position + count)
-        .map(|i| {
-            let mut path = parent.clone();
-            path.push(i);
-            path_value(&path)
-        })
-        .collect();
-    Ok(json!({ "devices": pasted }))
+    crate::device_groups::edit_chain(session, params, |devices| {
+        let (parent, position) = crate::device_groups::position_path(devices, params, "position")?
+            .unwrap_or_else(|| (Vec::new(), devices.len()));
+        let list = crate::device_groups::container_mut(devices, &parent).ok_or("the position is missing")?;
+        for (offset, device) in copied.into_iter().enumerate() {
+            list.insert(position + offset, device);
+        }
+        let pasted: Vec<Value> = (position..position + count)
+            .map(|i| {
+                let mut path = parent.clone();
+                path.push(i);
+                path_value(&path)
+            })
+            .collect();
+        Ok(json!({ "devices": pasted }))
+    })
 }
 
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -843,8 +845,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
             .find(|t| t.id == track)
             .and_then(|t| t.channel)
             .ok_or("the track has no mixer channel")?;
-        let channel =
-            session.project.channels.iter().find(|c| c.id == channel).ok_or("the track's channel is missing")?;
+        let channel = session.project.channel(channel).ok_or("the track's channel is missing")?;
         let path = device_path(&channel.devices, params, "device")?;
         match device_at(&channel.devices, &path) {
             Some(device) => match &device.kind {
@@ -1161,7 +1162,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     }
     if instrument {
         let track = track_id(&session.project, params)?;
-        if session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| !t.content.notes) {
+        if session.project.track(track).is_some_and(|t| !t.content.notes) {
             return Err("an instrument goes on a MIDI track".into());
         }
     }

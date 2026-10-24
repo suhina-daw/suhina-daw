@@ -1,0 +1,18 @@
+[package]
+name = "suhina-theme-package"
+description = "Theme packages (.theme.suhina): a theme's files with a manifest of their SHA-256 sums, packed, read and validated (docs/spec/theme-skins.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+suhina-style.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+flate2.workspace = true  # the zip crate's deflate backend
+roxmltree.workspace = true
+sha2 = "0.10"  # MIT OR Apache-2.0; the files' checksums in the manifest
+
+[lints]
+workspace = true

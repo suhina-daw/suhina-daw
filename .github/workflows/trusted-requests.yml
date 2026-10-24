@@ -1,0 +1,148 @@
+name: Trusted requests
+
+# issue_comment uses the default branch. Never check out or execute request/PR code here.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: trusted-request-${{ github.event.comment.id }}
+  cancel-in-progress: false
+
+jobs:
+  request:
+    if: github.event.comment.user.type == 'User' && startsWith(github.event.comment.body, '/')
+    runs-on: ubuntu-latest
+    environment: suhina-bot
+    steps:
+      - name: Check request
+        id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
+        with:
+          script: |
+            const { comment, issue } = context.payload;
+            const text = String(comment.body || '').replace(/\r\n/g, '\n');
+            const [first, ...rest] = text.split('\n');
+            if (!['/open-issue', '/close', '/reopen', '/test-build'].includes(first.trim())) return;
+            const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
+              .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
+            if (comment.user.type !== 'User' || !trusted.includes(comment.user.login.toLowerCase())) {
+              throw new Error('Only a maintainer or trusted contributor may use this command.');
+            }
+            // Re-read: edited/deleted requests and mismatched event identities cannot borrow approval.
+            const { data: current } = await github.rest.issues.getComment({
+              ...context.repo, comment_id: comment.id,
+            });
+            if (current.body !== comment.body || current.user.id !== comment.user.id ||
+                current.updated_at !== comment.updated_at) throw new Error('The request changed; post a new comment.');
+            const command = first.trim().slice(1);
+            const request = { command, actor: comment.user.login, comment: comment.id, number: issue.number };
+            if (command === 'open-issue') {
+              const input = JSON.parse(rest.join('\n'));
+              const types = { enhancement: 'Feature', bug: 'Bug', documentation: 'Task', chore: 'Task', epic: null };
+              if (!input || typeof input !== 'object' || Array.isArray(input) ||
+                  Object.keys(input).some(k => !['title', 'body', 'type', 'labels'].includes(k))) {
+                throw new Error('Expected JSON with title, body, type and optional labels only.');
+              }
+              if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 256 ||
+                  typeof input.body !== 'string' || !input.body.trim() || input.body.length > 60000 ||
+                  !Object.hasOwn(types, input.type)) throw new Error('Invalid title, body or issue type.');
+              const labels = input.labels || [];
+              const areas = ['engine', 'ui', 'formats', 'browser', 'audio-io', 'plug-ins', 'devices', 'presets', 'tests', 'windows', 'macos', 'linux'];
+              if (!Array.isArray(labels) || labels.length > areas.length || labels.some(l => !areas.includes(l))) {
+                throw new Error('labels must be an array of area/platform labels.');
+              }
+              for (const name of labels) await github.rest.issues.getLabel({ ...context.repo, name });
+              request.issue = { title: input.title.trim(), body: input.body, labels: [...new Set([input.type, ...labels])], type: types[input.type] };
+            } else {
+              if (rest.join('\n').trim()) throw new Error('This command takes no arguments.');
+              if (command === 'test-build') {
+                if (!issue.pull_request) throw new Error('/test-build belongs on a pull request.');
+                const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: issue.number });
+                if (pr.state !== 'open') throw new Error('The pull request is closed.');
+                request.sha = pr.head.sha;
+              } else if (issue.pull_request) throw new Error('Close/reopen commands only act on issues.');
+            }
+            core.setOutput('request', JSON.stringify(request));
+
+      - name: Token of the suhina-bot App
+        if: steps.check.outputs.request != ''
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SUHINA_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.SUHINA_BOT_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Carry out request
+        if: steps.check.outputs.request != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REQUEST: ${{ steps.check.outputs.request }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const request = JSON.parse(process.env.REQUEST);
+            const { command, actor, comment, number } = request;
+            const original = context.payload.comment;
+            const { data: current } = await github.rest.issues.getComment({
+              ...context.repo, comment_id: comment,
+            });
+            if (current.body !== original.body || current.user.id !== original.user.id ||
+                current.updated_at !== original.updated_at) {
+              throw new Error('The request changed; post a new comment.');
+            }
+            const scope = { ...context.repo, issue_number: number };
+            const marker = `<!-- trusted-request ${comment} -->`;
+            const bot = c => c.user?.login === 'suhina-bot[bot]' && c.user?.type === 'Bot';
+            const comments = await github.paginate(github.rest.issues.listComments, { ...scope, per_page: 100 });
+            if (comments.some(c => bot(c) && c.body?.endsWith(marker))) return;
+            const attribution = `On behalf of @${actor}`;
+            let result;
+            if (command === 'open-issue') {
+              // A retry after creation but before replying recovers the original issue.
+              const issues = await github.paginate(github.rest.issues.listForRepo, {
+                ...context.repo, creator: 'suhina-bot[bot]', state: 'all', per_page: 100,
+              });
+              let opened = issues.find(i => !i.pull_request && bot(i) && i.body?.endsWith(marker));
+              if (!opened) {
+                const payload = { ...context.repo, ...request.issue,
+                  body: `${request.issue.body}\n\n${attribution}\n\n${marker}` };
+                if (!payload.type) delete payload.type;
+                ({ data: opened } = await github.rest.issues.create(payload));
+              }
+              result = `Opened #${opened.number}.`;
+            } else if (command === 'test-build') {
+              const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+              if (pr.state !== 'open' || pr.head.sha !== request.sha) {
+                throw new Error('The pull request changed; post a new /test-build request.');
+              }
+              // The proof precedes the label. Both build and link jobs require this exact head.
+              const proof = `<!-- trusted-build ${request.sha} ${actor} ${comment} -->`;
+              if (comments.some(c => bot(c) && c.body?.endsWith(` ${actor} ${comment} -->`) &&
+                  c.body.includes('<!-- trusted-build ') && !c.body.endsWith(proof))) {
+                throw new Error('This request already authorized another commit; post a new comment.');
+              }
+              if (!comments.some(c => bot(c) && c.body?.endsWith(proof))) {
+                await github.rest.issues.createComment({ ...scope,
+                  body: `Test build requested for ${request.sha}.\n\n${attribution}\n\n${proof}` });
+              }
+              // Remove/re-add also lets a new request retry a failed build of the same commit.
+              try { await github.rest.issues.removeLabel({ ...scope, name: 'test-build' }); }
+              catch (error) { if (error.status !== 404) throw error; }
+              await github.rest.issues.addLabels({ ...scope, labels: ['test-build'] });
+              result = `Requested a test build of ${request.sha}.`;
+            } else {
+              await github.rest.issues.update({ ...scope, state: command === 'close' ? 'closed' : 'open' });
+              result = command === 'close' ? 'Closed this issue.' : 'Reopened this issue.';
+            }
+            await github.rest.issues.createComment({ ...scope, body: `${result}\n\n${attribution}\n\n${marker}` });

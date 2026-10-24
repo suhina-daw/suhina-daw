@@ -23,6 +23,7 @@
 //!
 //! A plug-in is named `clap:<file>` (the first plug-in in the file) or `clap:<file>#<id>`, or
 //! `test:clap` for the gain plug-in built into the host for tests ([`crate::test_clap`]), or
+//! `test:clap-mix` for the same gain mixing its first two channels into the first, or
 //! `test:clap-delay` for the delay whose latency is a parameter ([`crate::test_clap_delay`]), or
 //! `test:clap-ports` for the one with a rack's port layout ([`crate::test_clap_ports`]).
 
@@ -331,6 +332,11 @@ pub(crate) struct ClapPlugin {
 fn entry(spec: &str) -> Result<(PluginEntry, Option<String>), String> {
     if spec == "test:clap" {
         let entry = PluginEntry::load_from_clack::<crate::test_clap::Entry>(c"suhina-test-clap")
+            .map_err(|e| format!("test plug-in: {e}"))?;
+        return Ok((entry, None));
+    }
+    if spec == "test:clap-mix" {
+        let entry = PluginEntry::load_from_clack::<crate::test_clap::MixEntry>(c"suhina-test-clap-mix")
             .map_err(|e| format!("test plug-in: {e}"))?;
         return Ok((entry, None));
     }
@@ -888,15 +894,15 @@ impl crate::audio::Block for ClapBlock {
         } = self;
         let channels = *channels;
         let frames = input.len() / channels.max(1);
-        // The link's channels into the main input port's first ones; silence elsewhere (a
-        // plug-in may have written to an input).
+        // The link's channels into the main input port, by the rule every format follows
+        // ([`crate::audio::feed_main`]); silence elsewhere (a plug-in may have written to an input).
         for (port, buffers) in inputs.iter_mut().enumerate() {
-            let main = input_ports.main == Some(port);
-            for (channel, buffer) in buffers.iter_mut().enumerate() {
-                let fed = main && channel < channels;
-                for (frame, sample) in buffer.iter_mut().take(frames).enumerate() {
-                    *sample = if fed { input.get(frame * channels + channel).copied().unwrap_or(0.0) } else { 0.0 };
-                }
+            if input_ports.main == Some(port) {
+                crate::audio::feed_main(input, channels, frames, buffers);
+                continue;
+            }
+            for buffer in buffers.iter_mut() {
+                buffer.iter_mut().take(frames).for_each(|sample| *sample = 0.0);
             }
         }
         let audio_in = input_audio.with_input_buffers(inputs.iter_mut().map(|port| AudioPortBuffer {
@@ -936,19 +942,10 @@ impl crate::audio::Block for ClapBlock {
         );
         *steady_time = steady_time.wrapping_add(frames as u64);
         // A failed block stays silent (the output starts zeroed). The link's channels come from
-        // the main output port's first ones; a mono port feeds them all.
+        // the main output port, by the shared rule.
         let main = output_ports.main.and_then(|port| outputs.get(port)).filter(|_| processed.is_ok());
         if let Some(main) = main {
-            for channel in 0..channels {
-                let Some(buffer) = main.get(channel).or_else(|| main.last().filter(|_| main.len() == 1)) else {
-                    continue;
-                };
-                for (frame, sample) in buffer.iter().take(frames).enumerate() {
-                    if let Some(out) = output.get_mut(frame * channels + channel) {
-                        *out = *sample;
-                    }
-                }
-            }
+            crate::audio::collect_main(main, channels, frames, output);
         }
     }
 }
@@ -1030,6 +1027,11 @@ fn push_event(buffer: &mut EventBuffer, event: &Event) {
             let bend = ((value + 1.0) / 2.0 * 16_383.0).round().clamp(0.0, 16_383.0) as u16;
             let (low, high) = ((bend & 0x7F) as u8, (bend >> 7) as u8);
             buffer.push(&MidiEvent::new(event.frame, 0, [0xE0 | (channel & 0x0F), low, high]));
+        }
+        // Channel pressure (aftertouch, #812): a two-byte MIDI message, the third byte unused.
+        EventKind::Pressure { channel, value } => {
+            let value = (value * 127.0).round().clamp(0.0, 127.0) as u8;
+            buffer.push(&MidiEvent::new(event.frame, 0, [0xD0 | (channel & 0x0F), value, 0]));
         }
         // The song's place goes to the plug-in as the block's transport ([`follow_song`]).
         EventKind::Transport { .. }

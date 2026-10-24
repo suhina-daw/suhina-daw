@@ -14,8 +14,8 @@ name: Test build links
 # as one run instead of one per platform: the runners are a shared, limited resource
 # (docs/releasing.md › Test builds).
 #
-# test-build.yml from a fork runs as the fork has it, so a build is linked only when a maintainer
-# started its run: their own push, or the label they added. See docs/releasing.md › Test builds.
+# test-build.yml from a fork runs as the fork has it, so a build is linked only for a maintainer
+# or an App run backed by a verified trusted request for its exact head. See docs/releasing.md.
 #
 # Each linked build is also posted to the Discord testing forum (scripts/discord_test_build.py):
 # the bot (secret DISCORD_BOT_TOKEN, variables DISCORD_GUILD_ID and DISCORD_TESTING_FORUM_ID) finds
@@ -45,6 +45,24 @@ on:
 permissions: {}
 
 jobs:
+  roles:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      sender: ${{ steps.roles.outputs.sender }}
+      actor: ${{ steps.roles.outputs.actor }}
+    steps:
+      - id: roles
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+            const member = login => maintainers.includes(String(login || '').toLowerCase());
+            core.setOutput('sender', member(context.payload.sender?.login));
+            core.setOutput('actor', member(context.actor));
+
   link:
     name: link the build
     # Only a run that built and has platforms to report is answered, so that a run with nothing to
@@ -71,16 +89,20 @@ jobs:
     steps:
       - uses: actions/github-script@v9
         id: link
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
         with:
           script: |
-            // The maintainers are listed here, in the backfill job and in test-build.yml.
-            const MAINTAINERS = ['juhamikael'];
+            // The repository variable MAINTAINERS is shared by all role checks.
+            const MAINTAINERS = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
             const MARKER = '<!-- suhina-test-build -->';
             const { owner, repo } = context.repo;
             const run = context.payload.workflow_run;
 
-            const actor = run.triggering_actor && run.triggering_actor.login;
-            if (!MAINTAINERS.includes(actor)) {
+            // A rerun must retain the original actor's authorization, not borrow the rerunner's.
+            const actor = run.actor && run.actor.login;
+            if (!MAINTAINERS.includes(String(actor).toLowerCase()) && actor !== 'suhina-bot[bot]') {
               core.info(`Run ${run.id} was started by ${actor}, not a maintainer: nothing to link.`);
               return;
             }
@@ -108,6 +130,33 @@ jobs:
               number = data[0].number;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const trusted = [...String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean), ...String(process.env.TRUSTED_CONTRIBUTORS || '')
+              .split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase())];
+            const authorizedBuild = async (actor, number, sha, at, checkMembership = true) => {
+              if (String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean).includes(String(actor).toLowerCase())) return true;
+              if (actor !== 'suhina-bot[bot]') return false;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo, issue_number: number, per_page: 100,
+              });
+              for (const c of comments) {
+                if (c.user?.login !== 'suhina-bot[bot]' || c.user?.type !== 'Bot') continue;
+                const proof = String(c.body || '').match(/<!-- trusted-build ([a-f0-9]{40}) ([a-zA-Z0-9-]+) ([0-9]+) -->$/);
+                if (!proof || proof[1] !== sha || (checkMembership && !trusted.includes(proof[2].toLowerCase())) ||
+                    Date.parse(c.created_at) > Date.parse(at)) continue;
+                try {
+                  const { data: source } = await github.rest.issues.getComment({ ...context.repo, comment_id: Number(proof[3]) });
+                  if (source.user?.type === 'User' && source.user.login.toLowerCase() === proof[2].toLowerCase() &&
+                      source.body.trim() === '/test-build' &&
+                      source.issue_url === 'https://api.github.com/repos/' + context.repo.owner + '/' + context.repo.repo + '/issues/' + number &&
+                      Date.parse(source.updated_at) <= Date.parse(c.created_at)) return true;
+                } catch (error) { if (error.status !== 404) throw error; }
+              }
+              return false;
+            };
+            if (!(await authorizedBuild(actor, number, run.head_sha, run.created_at))) {
+              core.info('No authorized request for this run and commit; nothing to link.');
+              return;
+            }
             const commit = run.head_sha.slice(0, 7);
 
             const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
@@ -150,10 +199,10 @@ jobs:
               '',
               'Downloading needs a GitHub sign-in. The builds are unsigned: SmartScreen (More info › Run anyway) and Gatekeeper (right-click › Open) warn about them.',
             ];
-            if (!MAINTAINERS.includes(pr.user.login)) {
+            if (!MAINTAINERS.includes(pr.user.login.toLowerCase())) {
               body.push(
                 '',
-                `> **A contributor's build.** A maintainer added \`test-build\` after reading \`${commit}\`; later pushes are not built until the label is added again. Read the diff before you run it.`,
+                `> **A contributor's build.** A maintainer or trusted contributor requested \`test-build\` after reading \`${commit}\`; later pushes are not built until the label is added again. Read the diff before you run it.`,
               );
             }
 
@@ -179,7 +228,7 @@ jobs:
             const file = `${process.env.RUNNER_TEMP}/test-build.json`;
             require('fs').writeFileSync(file, JSON.stringify({
               number, title: pr.title, pr_url: pr.html_url, comment_url: comment.html_url,
-              run_url: run.html_url, commit, contributor: !MAINTAINERS.includes(pr.user.login),
+              run_url: run.html_url, commit, contributor: !MAINTAINERS.includes(pr.user.login.toLowerCase()),
               rows: posted,
             }));
             core.setOutput('build', file);
@@ -200,9 +249,10 @@ jobs:
         run: python3 scripts/discord_test_build.py "$BUILD"
 
   backfill:
+    needs: roles
     name: post linked builds to Discord
-    # The maintainers are listed here, in the link job and in test-build.yml.
-    if: github.event_name == 'workflow_dispatch' && contains(fromJSON('["juhamikael"]'), github.triggering_actor)
+    # Authorization comes from the repository variable MAINTAINERS.
+    if: github.event_name == 'workflow_dispatch' && needs.roles.outputs.actor == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -223,11 +273,12 @@ jobs:
         run: python3 scripts/discord_test_build_backfill.py
 
   unlabel:
+    needs: roles
     name: take the label off new commits
     if: >-
       github.event_name == 'pull_request_target' &&
       contains(github.event.pull_request.labels.*.name, 'test-build') &&
-      !contains(fromJSON('["juhamikael"]'), github.event.sender.login)
+      needs.roles.outputs.sender != 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write

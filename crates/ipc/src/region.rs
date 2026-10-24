@@ -5,17 +5,13 @@
 //! the block's events, then the instances that run the block after this link's own (its
 //! followers).
 //!
-//! The region is a file mapped by both processes (in `/dev/shm` on Linux, so it stays in
-//! memory; in the temporary directory elsewhere). The engine creates it and removes it when the
-//! link is dropped.
+//! The region is shared memory mapped by both processes ([`crate::shm`]): the operating system
+//! frees it when both have let go of it, however they end.
 
-use std::fs::{File, OpenOptions};
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use memmap2::MmapMut;
-
 use crate::events::{EVENT_BYTES, Event, MAX_EVENTS};
+use crate::shm::{Access, Shared};
 use crate::{IpcError, MAX_CHANNELS, MAX_FOLLOWERS, MAX_FRAMES};
 
 const MAGIC: u32 = 0x4C57_4950;
@@ -48,31 +44,20 @@ fn size(channels: u32, max_frames: u32) -> Option<usize> {
         .checked_add(FOLLOWERS_BYTES)
 }
 
-/// Where new regions go.
-pub(crate) fn directory() -> PathBuf {
-    let shm = Path::new("/dev/shm");
-    if cfg!(target_os = "linux") && shm.is_dir() { shm.to_path_buf() } else { std::env::temp_dir() }
-}
+/// What the shared memory of a region is called ([`Shared`]).
+const KIND: &str = "ipc";
 
 pub(crate) struct Region {
-    map: MmapMut,
-    path: PathBuf,
-    name: String,
+    map: Shared,
     channels: u32,
     max_frames: u32,
-    /// Whether this side created the region and removes it.
-    owner: bool,
 }
 
 impl Region {
     pub(crate) fn create(channels: u32, max_frames: u32) -> Result<Self, IpcError> {
         let len = size(channels, max_frames).ok_or(IpcError::BadSize { channels, max_frames })?;
-        let name = unique_name();
-        let path = directory().join(&name);
-        let file = OpenOptions::new().read(true).write(true).create_new(true).open(&path)?;
-        file.set_len(len as u64)?;
-        let mut region = Self { map: map(&file)?, path, name, channels, max_frames, owner: true };
-        region.map.fill(0);
+        // New shared memory is zeroed.
+        let region = Self { map: Shared::create(KIND, len)?, channels, max_frames };
         region.word(AT_MAGIC).store(MAGIC, Ordering::Relaxed);
         region.word(AT_VERSION).store(VERSION, Ordering::Relaxed);
         region.word(AT_CHANNELS).store(channels, Ordering::Relaxed);
@@ -80,19 +65,12 @@ impl Region {
         Ok(region)
     }
 
-    pub(crate) fn open(path: &Path) -> Result<Self, IpcError> {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|n| n.starts_with("suhina-ipc-"))
-            .ok_or(IpcError::BadLink("not a Suhina link name"))?
-            .to_string();
-        let file = OpenOptions::new().read(true).write(true).open(path)?;
-        if (file.metadata()?.len() as usize) < HEADER_BYTES {
+    pub(crate) fn open(address: &str) -> Result<Self, IpcError> {
+        let map = Shared::open(KIND, address, Access::ReadWrite)?;
+        if map.len() < HEADER_BYTES {
             return Err(IpcError::BadLink("too short"));
         }
-        let map = map(&file)?;
-        let mut region = Self { map, path: path.to_path_buf(), name, channels: 0, max_frames: 0, owner: false };
+        let mut region = Self { map, channels: 0, max_frames: 0 };
         if region.word(AT_MAGIC).load(Ordering::Acquire) != MAGIC {
             return Err(IpcError::BadLink("wrong magic number"));
         }
@@ -112,12 +90,17 @@ impl Region {
         Ok(region)
     }
 
-    pub(crate) fn path(&self) -> &Path {
-        &self.path
+    pub(crate) fn address(&self) -> &str {
+        self.map.address()
     }
 
     pub(crate) fn name(&self) -> &str {
-        &self.name
+        self.map.name()
+    }
+
+    /// The host has opened the region: its name can go ([`Shared::unlink`]).
+    pub(crate) fn unlink(&mut self) {
+        self.map.unlink();
     }
 
     pub(crate) fn channels(&self) -> u32 {
@@ -135,7 +118,7 @@ impl Region {
 
     /// The atomic word at byte `offset` of the header.
     fn word(&self, offset: usize) -> &AtomicU32 {
-        let ptr = self.map.as_ptr().wrapping_add(offset).cast::<AtomicU32>();
+        let ptr = self.map.as_ptr().wrapping_add(offset).cast::<AtomicU32>().cast_const();
         // SAFETY: `offset` is one of the header constants, inside the mapping (which is at
         // least `HEADER_BYTES` long, checked on create and open) and 4-byte aligned (the
         // mapping is page-aligned). The other process only ever touches these bytes through
@@ -179,7 +162,7 @@ impl Region {
     /// Start of buffer `index` (0 input, 1 output).
     fn buffer(&mut self, index: usize) -> *mut f32 {
         let offset = HEADER_BYTES + index * self.samples() * size_of::<f32>();
-        self.map.as_mut_ptr().wrapping_add(offset).cast::<f32>()
+        self.map.as_ptr().wrapping_add(offset).cast::<f32>()
     }
 
     /// Copies `samples` (at most `samples()` long) into the input buffer.
@@ -207,7 +190,7 @@ impl Region {
     /// Start of the events area, after both buffers.
     fn events_area(&mut self) -> *mut u8 {
         let offset = HEADER_BYTES + 2 * self.samples() * size_of::<f32>();
-        self.map.as_mut_ptr().wrapping_add(offset)
+        self.map.as_ptr().wrapping_add(offset)
     }
 
     /// Stores the block's `events` (the first [`MAX_EVENTS`]) and their count.
@@ -247,7 +230,7 @@ impl Region {
     /// Start of the followers area, after the events.
     fn followers_area(&mut self) -> *mut u8 {
         let offset = HEADER_BYTES + 2 * self.samples() * size_of::<f32>() + EVENTS_BYTES;
-        self.map.as_mut_ptr().wrapping_add(offset)
+        self.map.as_ptr().wrapping_add(offset)
     }
 
     /// Stores the instances that run the block after this link's own (the first
@@ -301,29 +284,4 @@ impl Region {
         output.fill(0.0);
         process(input, output);
     }
-}
-
-impl Drop for Region {
-    fn drop(&mut self) {
-        if self.owner {
-            // A host that still has it mapped keeps its view; on Windows the file stays until it
-            // closes. Nothing to do about a failure here.
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
-
-fn map(file: &File) -> Result<MmapMut, IpcError> {
-    // SAFETY: mapping a file is unsafe because another process may change it underneath. That
-    // is the point here: the only other writer is the peer of this link, and every access
-    // goes through atomics or through the buffers the protocol hands to one side at a time.
-    Ok(unsafe { MmapMut::map_mut(file) }?)
-}
-
-/// A file name no other link uses: the process id, a counter and the time.
-fn unique_name() -> String {
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-    format!("suhina-ipc-{}-{count}-{nanos}", std::process::id())
 }

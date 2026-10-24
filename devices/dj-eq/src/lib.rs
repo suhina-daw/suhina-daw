@@ -11,7 +11,8 @@
 //! turned and automated while playing. The high frequency never goes below the low one.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::gain::{SILENCE_DB, db_to_gain_or_silence};
 use suhina_dsp::{LinkwitzRiley, Slope, Smoother};
@@ -60,8 +61,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "dj-eq", name: "DJ EQ", role: Role::Effect, params: &PARAMS };
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 /// The three filters of one side.
 #[derive(Clone, Copy)]
 struct Side {
@@ -101,7 +100,7 @@ impl Side {
 
 pub struct DjEq {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     gains: [Smoother; 3],
     /// Crossover frequencies, smoothed as log2 of hertz so a sweep sounds even.
     frequencies: [Smoother; 2],
@@ -120,7 +119,7 @@ impl DjEq {
     pub fn new() -> Self {
         let mut eq = Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             gains: [Smoother::new(1.0, 1); 3],
             frequencies: [Smoother::new(0.0, 1); 2],
             sides: [Side::new(DEFAULT_SAMPLE_RATE, 250.0, 2_500.0, Slope::Db24); 2],
@@ -131,7 +130,7 @@ impl DjEq {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn slope(&self) -> Slope {
@@ -194,9 +193,9 @@ impl Device for DjEq {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         match index {
             param::LOW_FREQUENCY | param::HIGH_FREQUENCY => {
                 let targets = self.frequency_targets();
@@ -220,7 +219,7 @@ impl Device for DjEq {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {

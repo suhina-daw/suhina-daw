@@ -61,14 +61,15 @@ CHAPTERS = [
     (5, "Managing Files and Sets", 43, 0.40, "partial",
      ".suhina save/open, File > Open recent, .als import, templates, several projects in tabs, missing-file locate and "
      "relink, backups on an interval or before critical operations with the offer after a crash. "
-     "Export renders the mix to wav (32f, 24 or 16 with dither), flac or ogg, at a sample rate, with normalise and overwrite "
-     "refused until asked: File > Export… (format, rate, depth, normalise, dither, overwrite) and the shared project.export "
+     "Export renders the mix to wav (32f, 24 or 16 with dither), flac, ogg or mp3 (through the vendored LAME 3.100 "
+     "encoder, at 128/192/256/320 kbps or VBR V0/V2, at 32/44.1/48 kHz), at a sample rate, with normalise and overwrite "
+     "refused until asked: File > Export… (format, rate, depth, mp3 rate, normalise, dither, overwrite) and the shared project.export "
      "(a range and tail, a source, or the whole mix), one export at a time, the state the running plug-ins have now "
      "(what their editors changed), and the write rules held again where the bytes land. "
      "Settings > Export grants and revokes MCP write folders, including the project-folder default; "
      "attached MCP exports prepare over frames and render off the window thread. "
      "Missing project folders/collect, unused files, packing, .asd, decoding cache, set "
-     "merging, file-reference view, the export dialog's source and range rows, mp3."),
+     "merging, file-reference view, the export dialog's source and range rows."),
     (6, "Arrangement View", 22, 0.60, "partial",
      "Layout, zoom, transport, track headers with a band of the track colour that opens the colour palette, ruler/play start, play from the selected clip, clip drag+move, "
      "overlap replace/stack, fades and fade shapes, the control bar's grid value (bars to "
@@ -159,11 +160,13 @@ CHAPTERS = [
      "launch modes (trigger, gate, toggle, repeat) with press and release, legato, per-clip launch "
      "quantisation, slots and scenes launched from computer keys. Missing velocity amount, clip "
      "offset/nudge, launching from live MIDI notes, follow-action multiplier and scene follow actions."),
-    (17, "Routing and I/O", 22, 0.35, "partial",
+    (17, "Routing and I/O", 22, 0.38, "partial",
      "Track output to main or a group (track.setOutput); MIDI controllers play the armed tracks, "
-     "each track choosing its MIDI port and channel (track.setMidiInput); an audio input device "
-     "with a channel or pair per track and monitoring Auto / In / Off (track.setAudioInput). No "
-     "MIDI out, external instrument, resampling, sidechain, multi-timbral."),
+     "each track choosing its MIDI port and channel (track.setMidiInput), with the mod wheel, "
+     "pitch bend and aftertouch reaching the instrument alongside notes (#812); an audio input "
+     "device with a channel or pair per track and monitoring Auto / In / Off "
+     "(track.setAudioInput). No MIDI out, external instrument, resampling, sidechain, "
+     "multi-timbral."),
     (18, "Mixing", 18, 0.59, "partial",
      "Faders (vertical in the Session view's channel strips), pan, mute, solo (exclusive/Ctrl), groups as buses nested up to 16 deep (solo and mute "
      "through the levels), master, latency compensation, "
@@ -173,7 +176,7 @@ CHAPTERS = [
      "on a second pair of the device (previews, per-track cue, cue volume); return tracks "
      "imported and drawn. Missing crossfader, track delay, send fields in the Arrangement headers."),
     (19, "Recording New Clips", 13, 0.45, "partial",
-     "Arming and input monitoring (MIDI controllers, audio inputs); MIDI and audio recording into "
+     "Independent record arm and Auto / In / Off input monitoring (MIDI controllers, audio inputs); MIDI and audio recording into "
      "an empty slot from the next launch boundary (ended on the next one, then played looped) or "
      "into the arrangement, several armed tracks at once, a count-in of 1, 2 or 4 bars, takes lined "
      "up with what was heard, audio written to WAV files off the audio thread, one undo step per "
@@ -200,7 +203,7 @@ CHAPTERS = [
     (24, "Using Plug-Ins", 12, 0.74, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
      "editors (Windows/X11), scans that try failures again and settle files built for another "
-     "processor, a plug-in manager (plug-ins switched off, folders per format and switched off), latency "
+     "processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency "
      "compensation (followed when a plug-in changes its latency while it plays), saved state "
      "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
      "and automated from the engine and shown as a generated list in the device panel, the song's tempo, "

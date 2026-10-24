@@ -170,7 +170,7 @@ jobs:
             );
             let issue = found;
             if (!issue) {
-              const payload = { owner, repo, title, body: `${process.env.BODY}\n\n${marker}`, labels };
+              const payload = { owner, repo, title, body: `${process.env.BODY}\n\nOn behalf of @${context.actor}\n\n${marker}`, labels };
               if (issueType) payload.type = issueType;
               ({ data: issue } = await github.request("POST /repos/{owner}/{repo}/issues", payload));
             }

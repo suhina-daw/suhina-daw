@@ -14,7 +14,8 @@
 //! jumps in phase do not click.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::lfo::{Shape, wave};
 use suhina_dsp::{OnePole, Smoother};
@@ -86,15 +87,12 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "auto-pan", name: "Auto Pan", role: Role::Effect, params: &PARAMS };
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-/// Tempo used when the host gives none that makes sense.
-const FALLBACK_TEMPO: f64 = 120.0;
 /// How much shaping at 1.0 steepens the waveform before it is clipped.
 const MAX_SHAPING_GAIN: f64 = 8.0;
 
 pub struct AutoPan {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     amount: Smoother,
     edges: [OnePole; 2],
     /// Whether the edge filters still have to start at the first gain after a reset.
@@ -113,11 +111,12 @@ impl Default for AutoPan {
 impl AutoPan {
     pub fn new() -> Self {
         let sr = DEFAULT_SAMPLE_RATE;
-        let values = PARAMS.map(|p| p.default);
+        let params = ParamBank::new(&PARAMS);
+        let amount = Smoother::new(params.get(param::AMOUNT) as f32, Smoother::ramp_frames(RAMP_SECONDS, sr));
         let mut pan = Self {
             sample_rate: sr,
-            values,
-            amount: Smoother::new(values[param::AMOUNT] as f32, Smoother::ramp_frames(RAMP_SECONDS, sr)),
+            params,
+            amount,
             edges: [OnePole::new(EDGE_SECONDS, sr); 2],
             fresh: true,
             free_cycles: 0,
@@ -128,7 +127,7 @@ impl AutoPan {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn shape(&self) -> Shape {
@@ -173,24 +172,18 @@ impl Device for AutoPan {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        let Some(value) = self.params.set(index, value) else { return };
         if index == param::AMOUNT {
-            self.amount.set_target(*slot as f32);
+            self.amount.set_target(value as f32);
         }
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        let tempo = if context.tempo.is_finite() && context.tempo > 0.0 {
-            context.tempo.clamp(1.0, 1_000.0)
-        } else {
-            FALLBACK_TEMPO
-        };
+        let tempo = context.tempo_or_default();
         let beats_per_frame = tempo / 60.0 / self.sample_rate;
         let synced = self.value(param::SYNC) >= 0.5;
         let follows_song = synced && context.playing && context.beat.is_finite();

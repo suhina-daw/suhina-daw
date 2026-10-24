@@ -111,12 +111,20 @@ pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Res
 /// CSS paint remains above the SVG body, below the control's glyph and label.
 pub fn button_surface(painter: &Painter, rect: Rect, response: &Response, on: bool, fill: Color32, radius: f32) {
     let _style = super::style_class::control("button", response);
-    let fill = super::style_class::background(fill);
-    let radius = super::style_class::radius(radius);
-    if !super::skin::button(painter, rect, super::skin::State::response(response, on), fill, radius) {
-        painter.fill_background(rect, radius, fill);
+    super::native_css::mark(super::native_css::HostState::Checked, on);
+    // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
+    let shaped = super::style_class::computed()
+        .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
+    let role = super::skin::button_role();
+    if !shaped || role != "button" || super::skin::has_own("button") {
+        let fill = super::style_class::background(fill);
+        let radius = super::style_class::radius(radius);
+        if super::skin::button(painter, rect, super::skin::State::response(response, on), fill, radius) {
+            super::native_css::background_rounded(painter, rect, radius);
+            return;
+        }
     }
-    super::native_css::background_rounded(painter, rect, radius);
+    super::native_css::surface(painter, rect, radius, fill);
 }
 
 /// Fill and text of a track-on toggle: light when on, dark when off, a step brighter hovered.
@@ -126,7 +134,13 @@ pub fn toggle_colors(ui: &Ui, response: &Response, on: bool) -> (Color32, Color3
     let off_fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
     let off_text = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
     let on_fill = motion::mix(theme::control_selected(), Color32::WHITE, 0.2 * hover);
-    (motion::mix(off_fill, on_fill, lit), motion::mix(off_text, theme::text_inverse(), lit))
+    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill).
+    let on_text = if theme::contrast(on_fill, theme::text_inverse()) < 3.0 {
+        theme::text_on(on_fill)
+    } else {
+        theme::text_inverse()
+    };
+    (motion::mix(off_fill, on_fill, lit), motion::mix(off_text, on_text, lit))
 }
 
 /// A track's solo button: draws it in `rect` and returns the command a click asks for. A click
@@ -147,7 +161,8 @@ pub fn solo_button(
     let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_response("button", &response);
+    let _style = super::style_class::enter_named_response("button", "solo", &response);
+    super::native_css::mark(super::native_css::HostState::Checked, solo);
     let lit = motion::toward(ui.ctx(), response.id.with("on"), solo, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     track_button_face(ui, painter, rect, &response, motion::mix(off, theme::accent(), lit));
@@ -183,7 +198,8 @@ pub fn cue_button(
     let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_response("button", &response);
+    let _style = super::style_class::enter_named_response("button", "cue", &response);
+    super::native_css::mark(super::native_css::HostState::Checked, cue);
     let (fill, text) = toggle_colors(ui, &response, cue);
     let text = super::style_class::foreground(text);
     track_button_face(ui, painter, rect, &response, fill);
@@ -216,7 +232,7 @@ pub fn headphones(painter: &Painter, rect: Rect, color: Color32) {
 /// A track's arm button (components › Arm): a ring off, a filled red dot on its dark red
 /// background when armed. Returns the command a click asks for: a click arms the track alone;
 /// with Ctrl (Cmd) held it is added to the tracks armed already. Arming a track that plays
-/// notes lets a MIDI controller play it; one that plays audio hears its audio input.
+/// notes enables recording and, in Auto monitoring, hears its MIDI input.
 #[allow(clippy::too_many_arguments)]
 pub fn arm_button(
     ui: &Ui,
@@ -232,13 +248,15 @@ pub fn arm_button(
         return None;
     }
     let rect = super::control_layout::place("arm", rect, painter.clip_rect());
-    let label = match (armed, notes) {
-        (true, _) => format!("Disarm {name}"),
-        (false, true) => format!("Arm {name} to play it from a MIDI controller"),
-        (false, false) => format!("Arm {name} to hear its audio input"),
-    };
-    let response = button_area(ui, rect, id, label);
-    let _style = super::style_class::enter_response("button", &response);
+    let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
+    let response = button_area(ui, rect, id, label).on_hover_text(if notes {
+        "Play this track. Recording starts separately."
+    } else {
+        "Make this track ready to record. Recording starts separately. With Automatic input monitoring, you hear the audio input while this button is on."
+    });
+    let _style = super::style_class::enter_named_response("button", "arm", &response);
+    super::native_css::mark(super::native_css::HostState::Checked, armed);
+    super::native_css::mark(super::native_css::HostState::Armed, armed);
     let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     track_button_face(ui, painter, rect, &response, motion::mix(off, theme::recording_background(), lit));
@@ -482,7 +500,8 @@ pub fn value_active(ctx: &egui::Context) -> bool {
 }
 
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
-/// the number typed into it.
+/// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
+/// [`value_active`] says.
 fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
     let ctx = ui.ctx();
     let key = egui::Id::new(ACTIVE_VALUE);
@@ -511,25 +530,25 @@ fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
     let (mut steps, mut fine, mut enter, mut escape) = (0i32, false, false, false);
     ctx.input_mut(|i| {
         i.events.retain(|event| match event {
-            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } => {
+            egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, modifiers, .. } if !modifiers.command => {
                 steps += 1;
                 fine |= modifiers.shift;
                 false
             }
-            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } => {
+            egui::Event::Key { key: egui::Key::ArrowDown, pressed: true, modifiers, .. } if !modifiers.command => {
                 steps -= 1;
                 fine |= modifiers.shift;
                 false
             }
-            egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => {
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } if !modifiers.command => {
                 enter = true;
                 false
             }
-            egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, modifiers, .. } if !modifiers.command => {
                 escape = true;
                 false
             }
-            egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+            egui::Event::Key { key: egui::Key::Backspace, pressed: true, modifiers, .. } if !modifiers.command => {
                 typed.pop();
                 false
             }

@@ -9,6 +9,49 @@ pub use suhina_style::edit as source;
 
 pub const MAX_CSS: usize = 128 * 1024;
 
+/// The file an `@import "name.css"` statement names, when it is a relative `.css` path
+/// inside the theme's folder; no URLs, absolute paths or `..`.
+pub fn import(statement: &str) -> Option<String> {
+    let rest = statement.trim().strip_prefix("@import")?.trim().trim_end_matches(';').trim();
+    let rest = rest.strip_prefix("url(").and_then(|r| r.strip_suffix(')')).unwrap_or(rest).trim();
+    let path = rest
+        .strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .or_else(|| rest.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')))?;
+    (path.ends_with(".css")
+        && path.len() <= 128
+        && !path.contains(['\\', ':', '\0'])
+        && path.split('/').all(|p| !p.is_empty() && p != "." && p != ".."))
+    .then(|| path.to_owned())
+}
+
+/// The relative stylesheets `css` imports before its first rule, in order.
+pub fn imports(css: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut rest = css;
+    loop {
+        let trimmed = rest.trim_start();
+        if let Some(comment) = trimmed.strip_prefix("/*") {
+            let Some(end) = comment.find("*/") else { break };
+            rest = &comment[end + 2..];
+            continue;
+        }
+        let Some(statement) = trimmed.strip_prefix('@') else { break };
+        let (Some(end), brace) = (statement.find(';'), statement.find('{')) else { break };
+        if brace.is_some_and(|brace| brace < end) {
+            break;
+        }
+        if let Some(path) = import(&format!("@{}", &statement[..end])) {
+            result.push(path);
+        }
+        rest = &statement[end + 1..];
+        if result.len() > 8 {
+            break;
+        }
+    }
+    result
+}
+
 /// Apply declarations in source order. Unsupported selectors/properties are visible warnings.
 pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
     let mut warnings = Vec::new();
@@ -25,12 +68,23 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
         rest = &rest[start + 2 + end + 2..];
     }
     source.push_str(rest);
+    // `@import "advanced.css";` and other statements are read by the theme loader, not here.
     let mut rest = source.as_str();
+    while let Some(statement) = rest.trim_start().strip_prefix('@') {
+        let (Some(end), brace) = (statement.find(';'), statement.find('{')) else { break };
+        if brace.is_some_and(|brace| brace < end) {
+            break;
+        }
+        if import(&format!("@{}", &statement[..end])).is_none() {
+            warnings.push(format!("@{}: only @import of a .css file in the theme's folder is read", &statement[..end]));
+        }
+        rest = &statement[end + 1..];
+    }
     let mut rules = 0;
     while !rest.trim().is_empty() {
         rules += 1;
-        if rules > 128 {
-            warnings.push("stylesheet exceeds 128 rules".into());
+        if rules > 4096 {
+            warnings.push("stylesheet exceeds 4096 rules".into());
             break;
         }
         let Some((selector, after)) = rest.split_once('{') else {
@@ -54,6 +108,78 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
             let result = match selector {
                 "session" | ".session" if super::session_geometry::SessionGeometry::limits(property).is_some() => {
                     theme.skin.session.set(property, value)
+                }
+                "theme" if property == "name" => {
+                    let name = value.trim_matches(['"', '\'']);
+                    if name.is_empty() || name.chars().count() > 64 || name.chars().any(char::is_control) {
+                        Err("theme name must be 1..64 characters")
+                    } else {
+                        theme.name = name.into();
+                        Ok(())
+                    }
+                }
+                "liquid" if matches!(property, "panels" | "tracks" | "clips") => {
+                    match value.trim_end_matches('%').parse::<u8>().ok().filter(|n| *n <= 100) {
+                        Some(n) => {
+                            let options =
+                                theme.liquid.get_or_insert(super::liquid::Options { panels: 0, tracks: 0, clips: 0 });
+                            match property {
+                                "panels" => options.panels = n,
+                                "tracks" => options.tracks = n,
+                                _ => options.clips = n,
+                            }
+                            Ok(())
+                        }
+                        None => Err("liquid strength must be 0..100"),
+                    }
+                }
+                "gradient-panels" | "gradient-tracks" | "gradient-clips" if matches!(property, "angle" | "stops") => {
+                    let slot = match selector {
+                        "gradient-panels" => &mut theme.gradients.panels,
+                        "gradient-tracks" => &mut theme.gradients.tracks,
+                        _ => &mut theme.gradients.clips,
+                    };
+                    let mut gradient = slot.clone().unwrap_or_default();
+                    let result = if property == "angle" {
+                        match value.trim_end_matches("deg").parse::<u16>().ok().filter(|a| *a <= 360) {
+                            Some(angle) => {
+                                gradient.angle = angle;
+                                Ok(())
+                            }
+                            None => Err("gradient angle must be 0..360"),
+                        }
+                    } else {
+                        let mut stops = Vec::new();
+                        let mut valid = true;
+                        for item in value.split(',') {
+                            let mut words = item.split_whitespace();
+                            let (Some(color), Some(position), None) = (words.next(), words.next(), words.next()) else {
+                                valid = false;
+                                break;
+                            };
+                            let rgba = super::theme::parse_rgba(color);
+                            let position = position.trim_end_matches('%').parse::<u8>().ok().filter(|p| *p <= 100);
+                            let (Some(rgba), Some(position)) = (rgba, position) else {
+                                valid = false;
+                                break;
+                            };
+                            stops.push(super::gradient::Stop {
+                                position,
+                                color: egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]),
+                                transparent_rgb: (rgba[3] == 0).then_some([rgba[0], rgba[1], rgba[2]]),
+                            });
+                        }
+                        if valid && (2..=8).contains(&stops.len()) {
+                            gradient.stops = stops;
+                            Ok(())
+                        } else {
+                            Err("gradient stops are 2..8 of `#colour position%`")
+                        }
+                    };
+                    if result.is_ok() {
+                        *slot = Some(gradient);
+                    }
+                    result
                 }
                 "artwork" if property == "fps" => match value.parse::<u8>().ok().filter(|fps| (1..=30).contains(fps)) {
                     Some(fps) => {
@@ -227,6 +353,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
             }
         }
     }
+    super::control_layout::validate_anchors(&mut theme.skin.controls, &mut warnings);
     warnings
 }
 
@@ -243,6 +370,25 @@ pub fn export(theme: &Theme) -> String {
         theme.skin.meter_intensity
     ));
     css.push_str(&format!("artwork {{ fps: {}; }}\n", theme.skin.artwork_fps));
+    css.push_str(&format!("theme {{ name: \"{}\"; }}\n", theme.name.replace(['"', '\\'], "")));
+    if let Some(liquid) = theme.liquid {
+        css.push_str(&format!(
+            "liquid {{ panels: {}; tracks: {}; clips: {}; }}\n",
+            liquid.panels, liquid.tracks, liquid.clips
+        ));
+    }
+    for (name, gradient) in
+        [("panels", &theme.gradients.panels), ("tracks", &theme.gradients.tracks), ("clips", &theme.gradients.clips)]
+    {
+        if let Some(gradient) = gradient {
+            let stops: Vec<String> = gradient
+                .stops
+                .iter()
+                .map(|stop| format!("{} {}%", super::theme::hex_rgba(stop.rgba()), stop.position))
+                .collect();
+            css.push_str(&format!("gradient-{name} {{ angle: {}; stops: {}; }}\n", gradient.angle, stops.join(", ")));
+        }
+    }
     for (name, value) in theme.skin.session.entries() {
         if let Some(value) = value {
             css.push_str(&format!("session {{ {name}: {value}px; }}\n"));
@@ -268,9 +414,13 @@ pub fn export(theme: &Theme) -> String {
             css.push_str(&format!(" {key}: {};", value.map_or("auto".into(), |v| format!("{v}px"))));
         }
         css.push_str(&format!(
-            " --suhina-direction: {}; }}\n",
+            " --suhina-direction: {};",
             if placement.direction == super::control_layout::Direction::Horizontal { "horizontal" } else { "vertical" }
         ));
+        for (edge, anchor) in placement.anchors.iter() {
+            css.push_str(&format!(" {}: {anchor};", super::control_layout::anchor_property(edge)));
+        }
+        css.push_str(" }\n");
     }
     if let Some(toolbar) = &theme.skin.toolbar {
         css.push_str(&format!(
@@ -304,115 +454,171 @@ pub fn export(theme: &Theme) -> String {
         };
         css.push_str(&format!(
             "{} {{ image: url(\"{path}\"); }}\n",
-            role.replace(".hover", ":hover").replace(".active", ":active").replace(".disabled", ":disabled"),
+            role.replace(".hover", ":hover")
+                .replace(".active", ":active")
+                .replace(".disabled", ":disabled")
+                .replace(".on", ":on"),
         ));
     }
     css
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded() {
-        let mut theme = Theme::default();
-        let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; --suhina-direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
-        assert!(apply(&mut theme, css).is_empty());
-        assert_eq!(theme.skin.controls["mixer-volume"].direction, super::super::control_layout::Direction::Horizontal);
-        assert_eq!(theme.skin.controls["mixer-name"].bottom, Some(0));
-        assert!(theme.skin.controls["mixer-color"].hidden);
-        let mut restored = Theme::default();
-        assert!(apply(&mut restored, &export(&theme)).is_empty());
-        assert_eq!(restored, theme);
-        let mut warnings = Vec::new();
-        assert_eq!(skin::Skin::from_json(&theme.skin.to_json(), &mut warnings), theme.skin);
-        assert!(warnings.is_empty());
-        let before = theme.skin.controls.clone();
-        assert_eq!(
-            apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; --suhina-direction: sideways; }")
-                .len(),
-            3
-        );
-        assert_eq!(theme.skin.controls, before);
-    }
-    #[test]
-    fn toolbar_offsets_mirror_without_replacing_the_native_layout() {
-        let mut theme = Theme::default();
-        assert!(apply(&mut theme, "toolbar { offset-transport: 80px; offset-views: -16px; }").is_empty());
-        assert!(theme.skin.toolbar.is_none());
-        assert_eq!(theme.skin.toolbar_offsets.get("transport"), Some(&80));
-        let mut restored = Theme::default();
-        assert!(apply(&mut restored, &export(&theme)).is_empty());
-        assert_eq!(restored.skin.toolbar_offsets, theme.skin.toolbar_offsets);
-        assert!(
-            !apply(&mut restored, "toolbar { offset-transport: NaN; offset-views: 999999px; offset-bogus: 1px; }")
-                .is_empty()
-        );
-    }
-    #[test]
-    fn meter_intensity_is_portable_bounded_and_defaults_to_full_strength() {
-        for intensity in [0, 35, 100] {
-            let mut theme = Theme::default();
-            assert!(apply(&mut theme, &format!("meter {{ intensity: {intensity}%; }}")).is_empty());
-            assert_eq!(theme.skin.meter_intensity, intensity);
-            let (restored, warnings) = Theme::from_json(&theme.to_json());
-            assert!(warnings.is_empty());
-            assert_eq!(restored, theme);
-            let mut css = Theme::default();
-            assert!(apply(&mut css, &export(&theme)).is_empty());
-            assert_eq!(css, theme);
-        }
-        for bad in ["-1", "101%", "NaN", "infinity", "0.5", "1%%"] {
-            let mut theme = Theme::default();
-            assert!(!apply(&mut theme, &format!("meter {{ intensity: {bad}; }}")).is_empty(), "{bad}");
-            assert_eq!(theme.skin.meter_intensity, 100);
-        }
-        for bad in [json!(-1), json!(101), json!(0.5), json!("NaN"), json!(null)] {
-            let mut warnings = Vec::new();
-            let skin = skin::Skin::from_json(&json!({"meter-intensity": bad}), &mut warnings);
-            assert_eq!(skin.meter_intensity, 100);
-            assert_eq!(warnings.len(), 1);
+/// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
+/// yet (one migrated from an earlier version, or a copy of Suhina Dark): its core property values
+/// in a `:root` rule, its name, its artwork, then `advanced`, the free-form CSS it carried.
+pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
+    let mut css = String::from("/* Suhina theme. Settings are custom properties; see README.md. */\n:root {\n");
+    let defaults = super::theme_vars::core_values(&Theme::default());
+    for (name, value) in super::theme_vars::core_values(theme) {
+        // Palette tokens are always written, so a theme shows every colour it uses.
+        let palette = theme.colors.tokens().iter().any(|(key, _, _)| super::theme_vars::token_property(key) == name);
+        if palette || defaults.get(&name) != Some(&value) {
+            css.push_str(&format!("  {name}: {value};\n"));
         }
     }
-    #[test]
-    fn measured_meter_frames_mirror_css_and_json_without_changing_artwork_paths() {
-        let mut theme = Theme::default();
-        assert!(apply(&mut theme, "meter { style: frames; } meter.frame-0 { image: url('assets/silent.png'); } meter.frame-1 { image: url('assets/loud.svg'); }").is_empty());
-        assert_eq!(theme.skin.meter, skin::MeterStyle::Frames);
-        let (json, warnings) = Theme::from_json(&theme.to_json());
-        assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(json, theme);
-        let mut restored = Theme::default();
-        assert!(apply(&mut restored, &export(&theme)).is_empty());
-        assert_eq!(restored, theme);
+    css.push_str(&format!("}}\ntheme {{ name: \"{}\"; }}\n", theme.name.replace(['"', '\\'], "")));
+    for (role, asset) in &theme.skin.assets {
+        css.push_str(&artwork_rule(role, asset));
     }
-    #[test]
-    fn css_changes_native_model_and_reports_unsupported_rules() {
-        let mut theme = Theme::default();
-        let warnings = apply(
-            &mut theme,
-            "/* own style */ :root { --accent: #123456; } meter {style: segmented; segments: 16;} toolbar {order: transport, tempo; hidden: performance;} fader.cap:hover {image: url('assets/cap.svg');} body {display: grid;}",
-        );
-        assert_eq!(theme.colors.accent, egui::Color32::from_rgb(0x12, 0x34, 0x56));
-        assert_eq!(theme.skin.meter, skin::MeterStyle::Segmented);
-        assert_eq!(theme.skin.toolbar.as_ref().unwrap().order[0], "transport");
-        assert_eq!(theme.skin.assets["fader.cap.hover"], "assets/cap.svg");
-        assert_eq!(warnings.len(), 1);
-        let mut restored = Theme::default();
-        assert!(apply(&mut restored, &export(&theme)).is_empty());
-        assert_eq!(restored, theme);
+    if let Some(advanced) = advanced.map(str::trim).filter(|a| !a.is_empty()) {
+        css.push('\n');
+        css.push_str(advanced);
+        css.push('\n');
     }
-    #[test]
-    fn malformed_css_does_not_panic_or_load_resources() {
-        for css in [
-            "/*",
-            "meter {",
-            "@import 'https://example.test/style';",
-            "play {image:url(../../x.svg);}",
-            "meter {segments: 999999;}",
-        ] {
-            assert!(!apply(&mut Theme::default(), css).is_empty(), "{css}");
-        }
-    }
+    css
 }
+
+fn artwork_rule(role: &str, asset: &str) -> String {
+    // Package export writes each inline SVG under this stable relative name.
+    let path = if asset.trim_start().starts_with('<') || skin::png_artwork(asset) {
+        format!("assets/{role}.{}", skin::artwork_extension(asset))
+    } else {
+        asset.to_owned()
+    };
+    format!(
+        "{} {{ image: url(\"{path}\"); }}\n",
+        role.replace(".hover", ":hover")
+            .replace(".active", ":active")
+            .replace(".disabled", ":disabled")
+            .replace(".on", ":on"),
+    )
+}
+
+/// What Suhina's own editors set beyond settings, as `layout.css`: control placements and
+/// anchors, the toolbar, styles, artwork and the name. Empty when there is nothing to write.
+pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
+    let full = export(theme);
+    let mut css = String::new();
+    if theme.name != sheet_theme.name {
+        css.push_str(&format!("theme {{ name: \"{}\"; }}\n", theme.name.replace(['"', '\\'], "")));
+    }
+    // Artwork is compared by where it is kept: an edited image keeps its file, so only artwork
+    // the sheet does not name needs a rule here.
+    let paths = |theme: &Theme| -> std::collections::BTreeMap<String, String> {
+        theme.skin.assets.iter().map(|(role, asset)| (role.clone(), artwork_rule(role, asset))).collect()
+    };
+    if paths(theme) != paths(sheet_theme) {
+        for rule in paths(theme).values() {
+            css.push_str(rule);
+        }
+        // Artwork the sheet names that the theme no longer has.
+        for role in sheet_theme.skin.assets.keys().filter(|role| !theme.skin.assets.contains_key(*role)) {
+            css.push_str(&artwork_rule(role, "none").replace("url(\"none\")", "none"));
+        }
+    }
+    let structure = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|line| line.starts_with(".control-") || line.starts_with("toolbar ") || is_style_line(line))
+            .map(str::to_owned)
+            .collect()
+    };
+    // Only the rules that differ from the sheet's: a control moved in the app, not a copy of
+    // every placement the sheet already makes.
+    let theirs: std::collections::BTreeSet<String> = structure(&export(sheet_theme)).into_iter().collect();
+    for line in structure(&full).into_iter().filter(|line| !theirs.contains(line)) {
+        css.push_str(&line);
+        css.push('\n');
+    }
+    css
+}
+
+fn is_style_line(line: &str) -> bool {
+    line.split_once(" {").is_some_and(|(selector, rest)| {
+        !rest.contains("image:") && super::style_class::valid_selector(selector) && !selector.starts_with(".control-")
+    }) && !line.starts_with(":root")
+        && !line.starts_with("meter ")
+        && !line.starts_with("artwork ")
+        && !line.starts_with("theme ")
+        && !line.starts_with("liquid ")
+        && !line.starts_with("gradient-")
+        && !line.starts_with("session ")
+        && !line.starts_with(".window ")
+}
+
+/// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control
+/// placements, the toolbar and `--suhina-*` styles); everything else is for the style engine
+/// and is left alone. Nested groups (`@media`, `@layer`) are skipped.
+pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
+    let mut host = String::new();
+    let mut rest = css;
+    let mut rules = 0;
+    while let Some(start) = rest.find(|c: char| !c.is_whitespace()) {
+        rest = &rest[start..];
+        if let Some(comment) = rest.strip_prefix("/*") {
+            rest = comment.find("*/").map_or("", |end| &comment[end + 2..]);
+            continue;
+        }
+        let brace = rest.find('{');
+        let semicolon = rest.find(';');
+        if rest.starts_with('@') && semicolon.is_some_and(|s| brace.is_none_or(|b| s < b)) {
+            rest = semicolon.map_or("", |s| &rest[s + 1..]);
+            continue;
+        }
+        let Some(open) = brace else { break };
+        let mut depth = 0usize;
+        let mut close = None;
+        for (index, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        close = Some(open + index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else { break };
+        let selector = rest[..open].trim();
+        let body = &rest[open + 1..close];
+        rest = &rest[close + 1..];
+        rules += 1;
+        if rules > 1024 || selector.starts_with('@') || body.contains('{') {
+            continue;
+        }
+        // A list of selectors (`.control-a, .control-b`) is each of them.
+        for selector in selector.split(',').map(str::trim).filter(|s| !s.is_empty()).take(64) {
+            for declaration in body.split(';').filter(|d| !d.trim().is_empty()) {
+                let Some((property, _)) = declaration.split_once(':') else { continue };
+                let property = property.trim();
+                let wanted = property == "image"
+                    || match selector {
+                        "theme" => property == "name",
+                        "toolbar" => true,
+                        _ if selector.starts_with(".control-") => true,
+                        _ => super::style_class::valid_selector(selector) && property.starts_with("--suhina-"),
+                    };
+                if wanted {
+                    host.push_str(&format!("{selector} {{ {declaration}; }}\n"));
+                }
+            }
+        }
+    }
+    apply(theme, &host)
+}
+
+#[cfg(test)]
+#[path = "theme_css_tests.rs"]
+mod tests;

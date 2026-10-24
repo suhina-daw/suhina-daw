@@ -1,0 +1,113 @@
+/* Classic blue-and-cream paper controls, translucent glass panels and liquid materials over an original green meadow wallpaper. */
+/* Suhina theme. Settings are custom properties; see README.md. */
+:root {
+  --accent: #316AC5;
+  --background-image: url("background.png");
+  --background-opacity: 100;
+  --border: #ACA899;
+  --border-strong: #7F9DB9;
+  --browser-text-hint: #6C6C64;
+  --browser-text-primary: #171717;
+  --browser-text-secondary: #3F3F3F;
+  --browser-text-value: #172A45;
+  --clip-audioDefault: #C99070;
+  --clip-midiDefault: #83A9B4;
+  --control-activeBackground: #CAD9EF;
+  --control-background: #F5F4EA;
+  --control-hoverBackground: #FFF9D9;
+  --control-playingBackground: #D1E5BE;
+  --control-selectedBackground: #316AC5;
+  --grid-major: #B8B6A9;
+  --grid-minor: #DDDAD0;
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --liquid: 48 24 12;
+  --meter-hot: #D4AB26;
+  --meter-normal: #35B52E;
+  --pan-background: #FFFFFF;
+  --pan-centre: #9B9B96;
+  --panel-background: #ECE9D8D9;
+  --panel-hoverBackground: #E4E0CB;
+  --recording: #D13D29;
+  --recording-background: #F0D1C6;
+  --selection: #E5A629;
+  --session-header-height: 24px;
+  --session-return-width: 80px;
+  --session-scene-width: 84px;
+  --session-slot-height: 24px;
+  --session-track-width: 92px;
+  --slot-empty: #8E9A99;
+  --text-hint: #6C6C64;
+  --text-inverse: #FFFFFF;
+  --text-onColorDark: #161616;
+  --text-onColorLight: #FFFFFF;
+  --text-playing: #10290C;
+  --text-primary: #161616;
+  --text-secondary: #3F3F3F;
+  --text-value: #172A45;
+  --track-1: #C99070;
+  --track-2: #D8BA64;
+  --track-3: #83A9B4;
+  --track-4: #A699B8;
+  --track-5: #95AA80;
+  --track-6: #C18F9E;
+  --track-7: #879BBE;
+  --track-8: #80ADA1;
+  --track-headerBackground: #ECE9D8;
+  --track-headerSelectedBackground: #D3DFF1;
+  --track-mutedBackground: #D3D0C5;
+  --window-background: #FFFFFF00;
+}
+theme { name: "Suhina Meadow"; }
+
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original classic desktop / paper theme over an original meadow image.
+ */
+@layer suhina-meadow {
+  .window, .session, .arrangement { background-color: transparent; color: #161616; }
+  .application-bar, .menu-bar, .project-tabs {
+    /* Intentional transparency over this theme's private background PNG. */
+    background-color: transparent;
+    background-image: linear-gradient(#4293ffe6, #1d68e5d9 45%, #0752cfdf);
+    color: #ffffff;
+    border-color: #003ca8;
+  }
+  .toolbar, .status-bar { background-color: #ece9d8d9; color: #161616; }
+  .browser, .detail, .device-panel {
+    background-color: #fffffa99;
+    color: #161616;
+    box-shadow: inset 0 1px 0 #ffffffbb, inset -1px 0 0 #ffffff66;
+  }
+  .track-header { background-color: transparent; background-image: linear-gradient(#ffffff88, #ece9d866); }
+  .track-name { background-color: transparent; background-image: linear-gradient(#ffffff77, #ffffff44); }
+  .mixer {
+    /* Intentional transparency over this theme's private background PNG. */
+    background-color: transparent;
+    background-image: linear-gradient(120deg, #ffffff70, #dceaff40);
+    box-shadow: inset 1px 0 0 #ffffffcc, inset -1px 0 0 #7f9db977;
+  }
+  .button { color: #172a45; background-color: #ece9d8; border-color: #7f9db9; border-radius: 2px; }
+  .button:hover { color: #003c74; background-color: #fff4c9; border-color: #e5a629; }
+  .knob { color: #316ac5; background-color: #ece9d8; }
+  .value, .dropdown, .text-input { color: #161616; background-color: #ffffff; border-radius: 0px; }
+  .fader-scale { color: #5c5c56; }
+  .meter { background-color: #fffefa; }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #21a92b, #7cce3e 76%, #e3c02c 91%, #d85430); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #21a92b, #7cce3e 76%, #e3c02c 91%, #d85430); }
+}

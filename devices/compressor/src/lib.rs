@@ -19,11 +19,12 @@
 //! is no lookahead, so the device adds no latency.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
-use suhina_dsp::gain::db_to_gain;
-use suhina_dsp::{Biquad, Coefficients, Smoother};
+use suhina_dsp::gain::{db_to_gain, db_to_gain_f64};
+use suhina_dsp::{Biquad, Coefficients, Smoother, time_constant};
 
 /// Ramp for gain, threshold, ratio, knee and mix changes.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -68,8 +69,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "compressor", name: "Compressor", role: Role::Effect, params: &PARAMS };
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 /// Gain change, in decibels (zero or negative), the gain computer asks for at `level_db` with
 /// `threshold` (dB), `slope` (1 - 1/ratio) and a soft knee `knee` dB wide centred on the
 /// threshold.
@@ -86,15 +85,9 @@ fn gain_change(level_db: f64, threshold: f64, slope: f64, knee: f64) -> f64 {
     }
 }
 
-/// Coefficient of a one-pole smoother with time constant `seconds`.
-fn coefficient(seconds: f64, sample_rate: f64) -> f64 {
-    let frames = seconds * sample_rate;
-    if frames.is_finite() && frames > 0.0 { (-1.0 / frames).exp() } else { 0.0 }
-}
-
 pub struct Compressor {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     input: Smoother,
     threshold: Smoother,
     ratio: Smoother,
@@ -118,7 +111,7 @@ impl Compressor {
     pub fn new() -> Self {
         let mut compressor = Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             input: Smoother::new(1.0, 1),
             threshold: Smoother::new(0.0, 1),
             ratio: Smoother::new(1.0, 1),
@@ -141,7 +134,7 @@ impl Compressor {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn targets(&self) -> [f32; 6] {
@@ -162,8 +155,8 @@ impl Compressor {
     /// Attack and release coefficients and the detector filter from the parameters.
     fn tune(&mut self) {
         let sr = self.sample_rate;
-        self.attack = coefficient(self.value(param::ATTACK), sr);
-        self.release = coefficient(self.value(param::RELEASE), sr);
+        self.attack = time_constant(self.value(param::ATTACK), sr);
+        self.release = time_constant(self.value(param::RELEASE), sr);
         let high_pass = Coefficients::highpass(sr, self.value(param::SIDECHAIN_HIGH_PASS), BUTTERWORTH_Q);
         for detector in &mut self.detectors {
             detector.set(high_pass);
@@ -200,9 +193,9 @@ impl Device for Compressor {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let targets = self.targets();
         for (smoother, target) in self.smoothers().into_iter().zip(targets) {
             smoother.set_target(target);
@@ -213,7 +206,7 @@ impl Device for Compressor {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
@@ -231,7 +224,7 @@ impl Device for Compressor {
             let coefficient = if wanted > self.reduction { self.attack } else { self.release };
             let reduction = wanted + (self.reduction - wanted) * coefficient;
             self.reduction = if reduction > 1e-9 { reduction.min(MAX_REDUCTION_DB) } else { 0.0 };
-            let gain = 10.0f64.powf(-self.reduction / 20.0);
+            let gain = db_to_gain_f64(-self.reduction);
             let applied = output * (1.0 + mix * (gain - 1.0));
             for (sample, x) in frame.iter_mut().zip([left, right]) {
                 *sample = (x * applied) as f32;

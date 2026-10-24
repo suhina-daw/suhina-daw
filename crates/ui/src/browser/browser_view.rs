@@ -745,7 +745,7 @@ fn results_view(
         if shown.height() <= 0.0 {
             continue;
         }
-        let response = ui.interact(shown, Id::new(("browser-row", &row.item.key)), Sense::click_and_drag());
+        let response = ui.interact(shown, Id::new(("browser-row", row.node())), Sense::click_and_drag());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Browser {}", row.item.name))
         });
@@ -765,7 +765,7 @@ fn results_view(
             let button = widgets::button_area(
                 ui,
                 lead,
-                Id::new(("browser-play", &row.item.key)),
+                Id::new(("browser-play", row.node())),
                 format!("Preview {}", row.item.name),
             );
             let playing = state.previewing.as_deref() == Some(row.item.key.as_str());
@@ -839,7 +839,7 @@ fn results_view(
                 let dot = ui
                     .interact(
                         Rect::from_center_size(center, Vec2::splat(DOT_HIT)),
-                        Id::new(("browser-tag-dot", &row.item.key, name.as_str())),
+                        Id::new(("browser-tag-dot", row.node(), name.as_str())),
                         Sense::hover(),
                     )
                     .on_hover_text(format!("Tag {name}"));
@@ -899,43 +899,45 @@ fn results_view(
         if state.handled_press.take() != key {
             click_row(state, &rows, index, modifiers);
         }
-        // A heading opens with a click on its name: the same rules as its chevron (right
-        // below), which takes the clicks in the chevron zone instead of this one.
+        // A heading or a folder opens with a click on its name: the same rules as its chevron
+        // (right below), which takes the clicks in the chevron zone instead of this one (#869).
         if let Some(row) = rows.get(index)
-            && row.item.kind == ItemKind::Heading
+            && opens_on_click(row)
             && !ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
             && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth))
         {
-            state.toggle(&row.item.key);
+            state.toggle(row.node());
         }
     }
     if let Some(index) = double
         && let Some(row) = rows.get(index)
     {
-        // A double-click on the row itself opens it — but not on its chevron: the gesture's
-        // two clicks are within egui's double-click window (0.3 s, 6 pt) and its first one
-        // toggled already, so the double would open and close the folder again (#293); and
-        // not on a heading, whose single clicks toggle above.
+        // A double-click on the row itself opens a preset bank — but not on its chevron: the
+        // gesture's two clicks are within egui's double-click window (0.3 s, 6 pt) and its
+        // first one toggled already, so the double would open and close it again (#293); and
+        // not on a heading or a folder, whose single clicks toggle above, so a double-click
+        // leaves it open.
         let on_chevron = row.opens
             && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth));
-        if row.opens && !on_chevron && row.item.kind != ItemKind::Heading {
-            state.toggle(&row.item.key);
+        if row.opens && !on_chevron && !opens_on_click(row) {
+            state.toggle(row.node());
         } else if row.item.kind == ItemKind::Project {
             out.open_project = row.item.path();
         } else if row.item.kind != ItemKind::Heading && row.item.kind != ItemKind::Folder {
             out.add = vec![row.item.clone()];
         }
     }
-    // A click on a chevron opens; a click elsewhere on a folder only selects it. The second
-    // click of a rapid pair on the same chevron is a double and does not toggle: the first
-    // click of the gesture did, so the two together open the folder once (#293).
+    // A click on a chevron opens; a click elsewhere on a heading or a folder opens it too
+    // (above), on a preset bank only selects it. The second click of a rapid pair on the same
+    // chevron is a double and does not toggle: the first click of the gesture did, so the two
+    // together open the folder once (#293).
     if let Some((index, _)) = clicked
         && let Some(row) = rows.get(index)
         && row.opens
         && !ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
         && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| p.x < chevron_zone(area.left(), row.depth))
     {
-        state.toggle(&row.item.key);
+        state.toggle(row.node());
     }
     if let Some(index) = play
         && let Some(row) = rows.get(index)
@@ -962,15 +964,15 @@ fn results_view(
             state.start_drag(items);
         }
     }
-    if rows.len() as f32 * ROW > area.height() {
-        // A thin bar shows where the list is.
-        let share = area.height() / content;
-        let bar = Rect::from_min_size(
-            Pos2::new(area.right() - 3.0, area.top() + state.scroll * share),
-            Vec2::new(2.0, (area.height() * share).max(12.0)),
-        );
-        painter.rect_filled(bar, 0.0, theme::border_strong());
-    }
+    // The scroll bar every scroll area has, dragged and clicked like a device panel's; after
+    // the rows, so it takes the pointer over them (#867).
+    crate::kit::scroll::vertical_bar(ui, area, "browser-results-scroll", content, &mut state.scroll);
+}
+
+/// A heading or a folder opens and closes with a click anywhere on it; a preset bank only with
+/// its chevron or a double-click, as a click on it previews it (#869).
+fn opens_on_click(row: &Row) -> bool {
+    row.opens && matches!(row.item.kind, ItemKind::Heading | ItemKind::Folder)
 }
 
 fn click_row(state: &mut BrowserState, rows: &[Row], index: usize, modifiers: Modifiers) {
@@ -1032,8 +1034,7 @@ fn row_menu(
     ui.menu_button("Tag", |ui| {
         for tag in tags {
             let on = carried.contains(&tag.name);
-            let label = format!("{} {}", if on { "✓" } else { "  " }, tag.name);
-            if ui.button(label).clicked() {
+            if tag_entry(ui, tag, on).clicked() {
                 run(projects, "library.tag", json!({ "item": item.key, "tag": tag.name, "on": !on }), out);
                 state.relist();
                 ui.close();
@@ -1074,6 +1075,44 @@ fn row_menu(
         state.relist();
         ui.close();
     }
+}
+
+/// One entry of an item's Tag menu: a box, ticked while the item carries the tag, a swatch in
+/// the tag's colour and its name. The box and the swatch are painted, not text, so no font
+/// has to hold a check mark (#853). A click anywhere on the row toggles the tag.
+fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response {
+    const BOX: f32 = 12.0;
+    const SWATCH: f32 = 8.0;
+    let font = theme::ui_font(theme::TEXT);
+    let text_left = 6.0 + BOX + 6.0 + SWATCH + 6.0;
+    // As wide as its name needs while the menu measures itself, then as wide as the menu, so
+    // the hover fills the row.
+    let needed = text_left + widgets::text_width(ui, &tag.name, font.clone()) + 8.0;
+    let width = if ui.is_sizing_pass() { needed } else { needed.max(ui.available_width()) };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ui.spacing().interact_size.y), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &tag.name));
+    let painter = ui.painter();
+    let hover = widgets::hover(ui, &response);
+    if hover > 0.0 {
+        painter.rect_filled(rect, 3.0, theme::panel_hover().gamma_multiply(hover));
+    }
+    let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
+    painter.rect_filled(box_rect, 3.0, if on { theme::text_value() } else { theme::control_background() });
+    if on {
+        let r = box_rect.shrink(2.5);
+        let tick = [
+            Pos2::new(r.left(), r.center().y),
+            Pos2::new(r.left() + r.width() * 0.4, r.bottom()),
+            Pos2::new(r.right(), r.top()),
+        ];
+        painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, theme::window_background())));
+    }
+    let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
+    painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
+    let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
+    let color = motion::mix(theme::text_value(), theme::text_primary(), hover);
+    widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, &tag.name, font, color);
+    response
 }
 
 fn start_preview(

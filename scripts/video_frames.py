@@ -5,8 +5,8 @@
 
     python scripts/video_frames.py extract VIDEO OUT_DIR [--fps 6] [--from S] [--to S]
     python scripts/video_frames.py sheet FRAMES_DIR SHEET.jpg [--every N] [--cols C]
-           [--size WxH] [--crop X0,Y0,X1,Y1] [--first A] [--last B]
-    python scripts/video_frames.py track FRAMES_DIR --strip X0,X1,Y0,Y1 [--fps F]
+           [--size WxH] [--crop X0,Y0,X1,Y1] [--first A] [--last B] [--fps F] [--from S]
+    python scripts/video_frames.py track FRAMES_DIR --strip X0,X1,Y0,Y1 [--fps F] [--from S]
            [--scale PX_PER_UNIT,X_AT,UNIT_AT] [--pointer Y0,Y1]
 
 extract  pulls frames out of a video with ffmpeg (on the PATH) as f0001.jpg, f0002.jpg, ...
@@ -70,7 +70,7 @@ def sheet(args):
         x, y = (i % args.cols) * width, (i // args.cols) * height
         image.paste(frame, (x, y))
         number = int(path.stem[1:])
-        label = f"{number} {(number - 1) / args.fps:.1f}s"
+        label = f"{number} {args.start + (number - 1) / args.fps:.1f}s"
         draw.rectangle([x, y, x + 8 + 6 * len(label), y + 13], fill="black")
         draw.text((x + 3, y + 1), label, fill="yellow")
     image.save(args.sheet, quality=88)
@@ -116,7 +116,7 @@ def track(args):
             pointer = place(x0 + float(np.median(moved))) if len(moved) else None
         state = (tuple(lines), pointer)
         if state != last:
-            print(f"{i / args.fps:7.2f}s frame {i + 1:4d}  lines={lines}  pointer={pointer}")
+            print(f"{args.start + i / args.fps:7.2f}s frame {i + 1:4d}  lines={lines}  pointer={pointer}")
             last = state
 
 
@@ -139,10 +139,12 @@ def main():
     s.add_argument("--first", type=int)
     s.add_argument("--last", type=int)
     s.add_argument("--fps", type=float, default=6, help="the rate the frames were extracted at, for the labels")
+    s.add_argument("--from", dest="start", type=float, default=0.0, help="the --from they were extracted with")
     t = sub.add_parser("track")
     t.add_argument("frames")
     t.add_argument("--strip", required=True)
     t.add_argument("--fps", type=float, default=24)
+    t.add_argument("--from", dest="start", type=float, default=0.0, help="the --from they were extracted with")
     t.add_argument("--scale")
     t.add_argument("--pointer")
     t.add_argument("--contrast", type=float, default=25)

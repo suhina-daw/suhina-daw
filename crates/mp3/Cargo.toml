@@ -1,0 +1,32 @@
+[package]
+name = "suhina-mp3"
+description = "MP3 encoding through the vendored LAME 3.100 encoder, behind a safe API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+cc = "1"  # Apache-2.0 OR MIT: compiles the vendored C
+
+[dev-dependencies]
+# MPL-2.0: the decoder the tests check the files with
+symphonia = { version = "0.6", default-features = false, features = ["mp3"] }
+
+# The workspace lints, except that this crate may use `unsafe` (ADR 0029). It cannot inherit
+# them with `workspace = true` and change one, so they are repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"

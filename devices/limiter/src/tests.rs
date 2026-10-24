@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -61,11 +61,7 @@ fn level(signal: &[f32], hz: f64, from: usize) -> f64 {
     2.0 * re.hypot(im) / frames.len().max(1) as f64
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(Limiter::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Limiter::new());
 
 #[test]
 fn reports_the_lookahead_as_latency_at_every_rate() {

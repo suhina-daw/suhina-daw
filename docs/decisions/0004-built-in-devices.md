@@ -3,7 +3,7 @@ description: The interface of built-in effects and instruments (Device trait, pa
 read_when: device, built-in effect or instrument, effect, instrument, dsp, filter, parameter, automation, utility, device-api, conformance
 type: decision
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-10-23
 covers:
   - crates/dsp/**
   - crates/device-api/**
@@ -55,13 +55,18 @@ decision 9.
    percentage, an option index for a choice), not 0..1. A stored value keeps its meaning when a
    range changes, and import mappings convert units directly. `ParamInfo` converts to and from
    the 0..1 travel of a knob or an automation lane, and `clamp` turns any number, NaN included,
-   into a valid value.
+   into a valid value. A device keeps its values in a `ParamBank` (`device-api`), which clamps
+   each value it stores and ignores an index past the end, so every device's `set_param` and
+   `param` follow that rule by one tested path and the device writes only what it does when a
+   value changes.
 4. **The `Device` trait.** Construction, `prepare(sample_rate)` and drop run off the audio thread
    and may allocate. `reset`, `set_param(index, value)`, `param(index)` and
    `process(context, buffer)` run on it and must be real-time safe and panic-free whatever they
    are given. `process` works in place on interleaved stereo, the engine's format, and gets a
    `ProcessContext` (tempo, song position in beats, whether the transport runs) for devices that
-   follow the tempo. `latency()` reports added delay for compensation.
+   follow the tempo (`tempo_or_default` gives one between 1 and 1000 BPM, or 120 when the host's
+   makes no sense). `latency()` reports added delay for compensation. A device is made prepared
+   for `DEFAULT_SAMPLE_RATE` (48 kHz).
 5. **Automation: the host splits, the device smooths.** The host addresses parameters by index
    and splits a block where an automation point falls, so a change lands on its frame, and gives
    each part the song position of its own first frame; the device ramps a change that would click (20 ms for the utility). The output must not depend on
@@ -69,8 +74,12 @@ decision 9.
 6. **Every device passes the same contract tests.** `device_api::conformance::check` runs a
    device through hostile parameter values and input (NaN, infinities, extremes), several block
    sizes with parameter changes, `reset` against a fresh device, and every sample rate from
-   8 kHz to 384 kHz. Each device crate calls it from a test, next to its own tests of what it
-   sounds like.
+   8 kHz to 384 kHz. An effect or an instrument prepared at other rates and then at 48 kHz again
+   must sound as a fresh one does, and at its defaults an effect's impulse must first be heard
+   within 4 frames of its `latency()`, at 44.1, 48 and 96 kHz. Each device crate calls it from a
+   test (`conformance_test!`), next to its own tests of what it sounds like, and
+   `device-registry` runs it on every device it lists, as it makes them, so a crate that leaves
+   its own test out is still checked.
 7. **Order of work per device** stays as the roadmap says: observed behaviour written down, our
    own design, DSP, import mapping, tests. The import mapping lives in the format crate
    (`crates/als`), never in the device.

@@ -134,11 +134,15 @@ fn everything() -> Project {
                 ..track(1, false, Some(4), None)
             },
             Track {
-                midi_input: MidiInput { port: MidiPort::Named("Keys: Port 1, \"A\"".into()), channel: Some(16) },
+                midi_input: MidiInput {
+                    port: MidiPort::Named("Keys: Port 1, \"A\"".into()),
+                    channel: Some(16),
+                    ..Default::default()
+                },
                 ..track(2, true, Some(2), Some(1))
             },
             Track {
-                midi_input: MidiInput { port: MidiPort::Nothing, channel: None },
+                midi_input: MidiInput { port: MidiPort::Nothing, channel: None, ..Default::default() },
                 audio_input: AudioInput { channels: InputChannels::Stereo(255), monitor: Monitor::In },
                 ..track(3, false, Some(5), Some(1))
             },
@@ -546,7 +550,7 @@ fn a_track_without_a_midi_input_hears_every_controller() {
     let project =
         from_json(r#"{ "format": "suhina", "version": 1, "project": { "tracks": [ { "id": 1 } ] } }"#).unwrap();
     assert_eq!(project.tracks[0].midi_input, MidiInput::default());
-    assert_eq!(MidiInput::default(), MidiInput { port: MidiPort::All, channel: None });
+    assert_eq!(MidiInput::default(), MidiInput { port: MidiPort::All, channel: None, ..Default::default() });
     assert!(!to_json(&project).contains("midi_input"));
     assert_eq!(project.tracks[0].audio_input, AudioInput::default());
     assert_eq!(AudioInput::default(), AudioInput { channels: InputChannels::None, monitor: Monitor::Auto });
@@ -554,8 +558,22 @@ fn a_track_without_a_midi_input_hears_every_controller() {
     let all_on_one = r#"{ "format": "suhina", "version": 1, "project": { "tracks": [ { "id": 1, "midi_input": { "port": "all", "channel": 10 } } ] } }"#;
     assert_eq!(
         from_json(all_on_one).unwrap().tracks[0].midi_input,
-        MidiInput { port: MidiPort::All, channel: Some(10) }
+        MidiInput { port: MidiPort::All, channel: Some(10), ..Default::default() }
     );
+}
+
+#[test]
+fn midi_monitoring_round_trips_and_bad_modes_are_rejected() {
+    let mut project =
+        from_json(r#"{ "format": "suhina", "version": 1, "project": { "tracks": [ { "id": 1 } ] } }"#).unwrap();
+    for mode in [Monitor::Auto, Monitor::In, Monitor::Off] {
+        project.tracks[0].midi_input.monitor = mode;
+        assert_eq!(from_json(&to_json(&project)).unwrap(), project);
+    }
+    for mode in [serde_json::json!("sometimes"), serde_json::json!(true), serde_json::json!(3)] {
+        let text = serde_json::json!({"format": "suhina", "version": 1, "project": {"tracks": [{"id": 1, "midi_input": {"monitor": mode}}]}}).to_string();
+        assert!(from_json(&text).is_err());
+    }
 }
 
 /// A clip written before fade shapes existed has linear, unbent fades, so it sounds the same.

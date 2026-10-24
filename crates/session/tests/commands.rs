@@ -479,19 +479,19 @@ fn tracks_group_ungroup_and_move() {
 }
 
 fn names(session: &Session, ids: Vec<TrackId>) -> Vec<String> {
-    ids.iter().filter_map(|id| session.project().tracks.iter().find(|t| t.id == *id)).map(|t| t.name.clone()).collect()
+    ids.iter().filter_map(|id| session.project().track(*id)).map(|t| t.name.clone()).collect()
 }
 
 fn parent_of(session: &Session, name: &str) -> Option<String> {
     let p = session.project();
     let parent = p.tracks.iter().find(|t| t.name == name)?.parent?;
-    p.tracks.iter().find(|t| t.id == parent).map(|t| t.name.clone())
+    p.track(parent).map(|t| t.name.clone())
 }
 
 fn output_of(session: &Session, name: &str) -> Option<String> {
     let p = session.project();
     let channel = p.tracks.iter().find(|t| t.name == name)?.channel?;
-    let output = p.channels.iter().find(|c| c.id == channel)?.output?;
+    let output = p.channel(channel)?.output?;
     p.tracks.iter().find(|t| t.channel == Some(output)).map(|t| t.name.clone())
 }
 

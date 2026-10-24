@@ -59,11 +59,7 @@ fn sine(hz: f64, frames: usize) -> Vec<f32> {
         .collect()
 }
 
-#[test]
-fn passes_the_device_contract() {
-    let failures = conformance::check(&|| Box::new(Delay::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Delay::new());
 
 #[test]
 fn an_impulse_comes_back_after_the_time() {

@@ -257,6 +257,28 @@ fn unanalysed_files_are_pending_and_an_empty_scope_is_empty() {
     assert!(laid.similar(Path::new("nothing"), 5).is_empty());
 }
 
+#[test]
+fn an_update_worked_out_on_a_thread_is_taken_in_once_and_not_before_it_is_ready() {
+    let diff = || Diff { loaded: Vec::new(), work: Vec::new(), gone: Vec::new(), folders: HashSet::new() };
+    let mut map = SoundMap::new(None, 1);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    map.diffing = Some(receiver);
+    // Not sent yet: it is waited for.
+    assert!(!map.take_diff(false));
+    assert!(map.diffing.is_some());
+    // Sent, and the thread gone: the one poll takes it in, whole.
+    sender.send(diff()).unwrap();
+    drop(sender);
+    assert!(map.take_diff(false));
+    assert!(map.diffing.is_none());
+    // A thread that ended without an update is let go of.
+    let (sender, receiver) = std::sync::mpsc::channel::<Diff>();
+    map.diffing = Some(receiver);
+    drop(sender);
+    assert!(!map.take_diff(false));
+    assert!(map.diffing.is_none());
+}
+
 /// How long large scopes take to lay out and snap (run with `--ignored --nocapture` in release).
 #[test]
 #[ignore]
@@ -673,6 +695,24 @@ fn an_old_cache_is_analysed_again_never_misread() {
         Some(Analysis::Analysed { features, .. }) => assert_ne!(features, [1.0; features::FEATURE_COUNT]),
         other => panic!("{other:?}"),
     }
+}
+
+/// While a background update is worked out, the map says so, and refuses another; once taken
+/// in, it is free again.
+#[test]
+fn a_background_update_is_reported_until_it_is_taken_in() {
+    let mut map = SoundMap::new(None, 1);
+    assert!(!map.updating());
+    let (go, wait) = std::sync::mpsc::channel::<()>();
+    assert!(map.update_in_background(move || {
+        let _ = wait.recv();
+        Vec::new()
+    }));
+    assert!(map.updating());
+    assert!(!map.update_in_background(Vec::new), "one at a time");
+    go.send(()).unwrap();
+    map.wait();
+    assert!(!map.updating());
 }
 
 #[test]

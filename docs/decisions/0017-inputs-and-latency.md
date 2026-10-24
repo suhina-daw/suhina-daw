@@ -3,7 +3,7 @@ description: How played input reaches the engine (MIDI controllers first, audio 
 read_when: MIDI input, MIDI controller, keyboard, arm, armed track, track.setArm, midi.inputs, live notes, sustain pedal, input latency, monitoring, recording, low latency, midir
 type: decision
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-10-23
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs
@@ -18,7 +18,17 @@ covers:
 
 # 0017: Inputs, arming and live latency
 
-- **Status:** accepted (MIDI input; the shallower queue while armed, #265; a MIDI input per track, #278; audio input and monitoring, #267; notes placed by the driver's timestamps, #269; MIDI and audio recording with a count-in, #266 and #268)
+MIDI monitoring amendment: MIDI input now has the same Auto / In / Off choice as audio input.
+Auto follows record arm, In monitors without requiring arm, and Off allows armed recording
+without live instrument sound. Clip playback is unaffected. `track.setMidiInput` persists and
+undoes this choice; files without `midi_input.monitor` retain Auto. The engine receives an
+atomic `SetMidiInput` with independent recording-arm and monitoring flags. It keeps bounded,
+preallocated recording and monitoring target lists, routes notes only to monitoring targets,
+and records only armed targets. Turning monitoring off releases held voices. The low-latency
+queue stays active for monitored inputs as well as armed tracks. The existing `SetArmed`
+command retains Auto behavior for callers that do not choose a monitor mode.
+
+- **Status:** accepted (MIDI input; the shallower queue while armed, #265; a MIDI input per track, #278; audio input and monitoring, #267; notes placed by the driver's timestamps, #269; MIDI and audio recording with a count-in, #266 and #268; controllers, pitch bend and aftertouch reaching the instrument, #812)
 - **Date:** 2026-10-14
 
 ## Context
@@ -46,8 +56,10 @@ engine code.
    on Windows, CoreMIDI on macOS). It is the only code that opens a MIDI device; the session sees
    it as a `MidiSystem` (`crates/session/src/midi.rs`), as it sees the audio output as an
    `AudioSystem`. It reads note on, note off (a note on of velocity 0 too), the sustain pedal
-   (controller 64) and all-notes-off (controllers 120 and 123), on every channel; everything
-   else is ignored, short or malformed messages included.
+   (controller 64), all-notes-off (controllers 120 and 123), every other control change, pitch
+   bend and channel pressure (aftertouch), on every channel (amendment, #812); program change,
+   polyphonic key pressure, system exclusive and other system messages are ignored, as are short
+   or malformed messages.
 2. **Live notes reach the engine over their own queue.** The renderer has a live-note queue
    (`rtrb`, 1024 events) beside the controller's command queue (`crates/engine/src/live.rs`).
    Its sending end goes to the MIDI driver's callback thread, which may lock and allocate: it is
@@ -56,7 +68,15 @@ engine code.
    it the queue of a new player (another tab, a new output). The render thread takes the queue's
    events at the start of each block, after the controller's commands, and plays them at the
    block's first frame through `Chain::note_on` and `Chain::release_key`, the way the preview
-   voice plays its notes ([ADR 0011](0011-preview-and-added-audio.md)). Nothing on the render
+   voice plays its notes ([ADR 0011](0011-preview-and-added-audio.md)). A controller, pitch bend
+   or channel pressure message goes to the same armed tracks' instruments the same way, through
+   `Chain::live_control`, as a `NoteEvent` the device already takes (#812). A track that stops
+   hearing a source (disarmed, given another input, or the port closed) has the pitch bend and
+   pressure that source moved set back to the centre and to none, so its instrument is not left
+   bent. A stamped control waits for its frame as a note does, each value at its own frame so a
+   wheel moves smoothly, but controls take at most half of the waiting places: past that, a new
+   value takes the place of the one before it that moves the same control, at that one's frame,
+   so a stream never leaves a note-off playing ahead of its note-on. Nothing on the render
    thread allocates, locks or frees.
 3. **Arming is playing state, not an edit.** An armed track's instrument plays the live notes,
    whether the transport runs or not. Which tracks are armed is kept by the `Session` beside the
@@ -177,7 +197,8 @@ engine code.
 ## Consequences
 
 - A MIDI keyboard plays any instrument, built in or a plug-in, on armed tracks, with the sustain
-  pedal; the latency follows the buffer size chosen.
+  pedal, every other controller, pitch bend and channel pressure (#812); the latency follows the
+  buffer size chosen.
 - Live notes keep the spacing they were played with, a fixed delay after they were played
   (decision 10), instead of jittering by up to one block. Recording (#266) places them by the
   same times.

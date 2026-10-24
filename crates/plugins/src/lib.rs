@@ -613,7 +613,7 @@ impl Group {
     /// Loads `instance` as `launch` says into the group's process, starting one if none runs.
     /// Returns the generation it was loaded into, its latency and its link.
     fn load(&mut self, launch: &Launch, instance: u32) -> Result<(u64, u32, bool, Link), PluginError> {
-        let link = Link::create(launch.channels, launch.max_frames)?;
+        let mut link = Link::create(launch.channels, launch.max_frames)?;
         if !self.alive() {
             self.spawn(launch)?;
         }
@@ -635,6 +635,8 @@ impl Group {
             Message::Loaded { latency, edits_clips, .. } => (latency, edits_clips),
             _ => (0, false),
         };
+        // The host opened the link before it answered, and never opens it again.
+        link.host_opened();
         Ok((self.generation, latency, edits_clips, link))
     }
 }

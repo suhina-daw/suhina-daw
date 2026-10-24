@@ -39,12 +39,7 @@ fn run(device: &mut Pitch, input: &[(usize, NoteEvent)]) -> Vec<(usize, NoteEven
     output
 }
 
-/// The pitch effect passes every check a MIDI effect must.
-#[test]
-fn passes_the_contract_tests() {
-    let failures = conformance::check(&|| Box::new(Pitch::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(Pitch::new());
 
 /// At its defaults, the effect leaves every key where it is.
 #[test]

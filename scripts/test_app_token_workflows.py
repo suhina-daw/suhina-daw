@@ -24,7 +24,7 @@ class AppTokenWorkflowTests(unittest.TestCase):
             for _, block in blocks:
                 count += 1
                 with self.subTest(workflow=path.name, call=count):
-                    prefix = 'SUHINA_BOT' if path.name in ('open-issue.yml', 'comment-pr.yml') else 'DOCS_BOT'
+                    prefix = 'SUHINA_BOT' if path.name in ('open-issue.yml', 'comment-pr.yml', 'trusted-requests.yml') else 'DOCS_BOT'
                     self.assertNotRegex(block, r'(?m)^\s*app-id:')
                     self.assertIn('client-id: ${{ vars.' + prefix + '_CLIENT_ID }}', block)
                     self.assertIn('private-key: ${{ secrets.' + prefix + '_PRIVATE_KEY }}', block)

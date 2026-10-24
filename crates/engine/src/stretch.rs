@@ -8,7 +8,8 @@
 //! plays when and how fast (warp marker segments, loop jumps). The stretcher reads the playlist
 //! as one continuous input stream; each call covers one stretch of constant speed, and the speed
 //! is the ratio of the input it is given to the output it makes. Nothing here allocates once the
-//! voice exists (AGENTS.md rule 3).
+//! voice is prepared (AGENTS.md rule 3); preparing it, which builds the stretcher, runs off the
+//! audio thread.
 //!
 //! The stretcher runs at the file's sample rate, so pitch is kept against the file's own pitch;
 //! its output is then read at the project's sample rate with linear interpolation. Transpose is
@@ -191,15 +192,64 @@ fn playlist_on(
     Some((pieces, max_rate, None))
 }
 
+/// What a [`StretchVoice`]'s stretcher and buffers are built from ([`StretchVoice::spec`]): a
+/// worker builds them from this while the voice stays where it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StretchSpec {
+    channels: usize,
+    file_rate: f64,
+    pitch: f64,
+    max_rate: f64,
+    step: f64,
+}
+
+impl StretchSpec {
+    /// Builds the stretcher and the buffers. Allocates (1 to 4 ms for a mono clip at 48 kHz in a
+    /// release build): call it off the audio thread.
+    pub(crate) fn build(self) -> StretchParts {
+        let channels = self.channels;
+        let mut stretch = Stretch::new(channels, self.file_rate as f32);
+        if self.pitch != 1.0 {
+            stretch.set_transpose_factor(self.pitch as f32, 0.0);
+        }
+        // Input for one chunk at the fastest speed, or for a seek (which wants up to one block
+        // plus the output latency at that speed).
+        let input_frames = (CHUNK_FRAMES as f64 * self.max_rate).ceil() as usize
+            + stretch.block_samples() * 2
+            + (self.max_rate * stretch.output_latency() as f64).ceil() as usize
+            + 2;
+        // Room for one project block of up to CHUNK_FRAMES frames at any step, plus a chunk.
+        let fifo_frames = (CHUNK_FRAMES as f64 * self.step.max(1.0)) as usize + 2 * CHUNK_FRAMES + 4;
+        StretchParts {
+            stretch,
+            fifo: vec![0.0; fifo_frames * channels],
+            input: vec![0.0; input_frames * channels],
+            chunk: vec![0.0; CHUNK_FRAMES * channels],
+        }
+    }
+}
+
+/// A voice's stretcher and buffers, built by [`StretchSpec::build`] for
+/// [`StretchVoice::install`].
+pub(crate) struct StretchParts {
+    stretch: Stretch,
+    fifo: Vec<f32>,
+    input: Vec<f32>,
+    chunk: Vec<f32>,
+}
+
 /// One warped clip placement being stretched in real time.
 pub(crate) struct StretchVoice {
     data: Arc<AudioData>,
     pieces: Vec<Piece>,
     repeat: Option<Repeat>,
-    /// Built with its buffers when the voice first plays or moves ([`StretchVoice::prepare`]),
-    /// on the worker's thread: building every voice of a project with hundreds of stretched
-    /// clips for each edit held the window up for most of a second.
+    /// Built with its buffers before the voice first plays ([`StretchVoice::prepare`], or
+    /// [`StretchSpec::build`] on another thread and [`StretchVoice::install`]), off the audio
+    /// thread: building every voice of a project with hundreds of stretched clips for each edit
+    /// held the window up for most of a second.
     stretch: Option<Stretch>,
+    /// Moved since it was built: it plays from where the last seek put it.
+    started: bool,
     /// The pitch factor and the fastest speed of the playlist, for that build.
     pitch: f64,
     max_rate: f64,
@@ -287,6 +337,7 @@ impl StretchVoice {
             pieces,
             repeat,
             stretch: None,
+            started: false,
             pitch,
             max_rate,
             channels,
@@ -303,49 +354,67 @@ impl StretchVoice {
         })
     }
 
+    /// What the voice's stretcher and buffers are built from, to build them on another thread.
+    pub(crate) fn spec(&self) -> StretchSpec {
+        StretchSpec {
+            channels: self.channels,
+            file_rate: self.file_rate,
+            pitch: self.pitch,
+            max_rate: self.max_rate,
+            step: self.step,
+        }
+    }
+
     /// Builds the stretcher and the buffers, once. Allocates: the worker's thread (or an
-    /// offline render) runs it, before the voice's first frames, and the launcher's plan does for
-    /// the voices the audio thread plays itself.
+    /// offline render) runs it, before the voice's first frames.
     pub(crate) fn prepare(&mut self) {
+        if self.stretch.is_none() {
+            self.install(&mut Some(self.spec().build()));
+        }
+    }
+
+    /// Takes the stretcher and buffers built from [`StretchVoice::spec`] on another thread out of
+    /// `parts`. Never allocates or frees: a voice that has its own already leaves `parts` where
+    /// they are, for the caller to drop off the audio thread.
+    pub(crate) fn install(&mut self, parts: &mut Option<StretchParts>) {
         if self.stretch.is_some() {
             return;
         }
-        let channels = self.channels;
-        let mut stretch = Stretch::new(channels, self.file_rate as f32);
-        if self.pitch != 1.0 {
-            stretch.set_transpose_factor(self.pitch as f32, 0.0);
-        }
-        // Input for one chunk at the fastest speed, or for a seek (which wants up to one block
-        // plus the output latency at that speed).
-        let input_frames = (CHUNK_FRAMES as f64 * self.max_rate).ceil() as usize
-            + stretch.block_samples() * 2
-            + (self.max_rate * stretch.output_latency() as f64).ceil() as usize
-            + 2;
-        // Room for one project block of up to CHUNK_FRAMES frames at any step, plus a chunk.
-        let fifo_frames = (CHUNK_FRAMES as f64 * self.step.max(1.0)) as usize + 2 * CHUNK_FRAMES + 4;
-        self.fifo = vec![0.0; fifo_frames * channels];
-        self.input = vec![0.0; input_frames * channels];
-        self.chunk = vec![0.0; CHUNK_FRAMES * channels];
+        let Some(StretchParts { stretch, fifo, input, chunk }) = parts.take() else { return };
+        // The voice's own buffers are still the empty ones `with_clock` made, which free nothing.
+        self.fifo = fifo;
+        self.input = input;
+        self.chunk = chunk;
         self.stretch = Some(stretch);
+        self.started = false;
     }
 
-    /// Whether the stretcher and its buffers are built.
-    #[cfg(test)]
+    /// Whether the stretcher and the buffers are built.
     pub(crate) fn is_prepared(&self) -> bool {
         self.stretch.is_some()
     }
 
+    /// The voice, prepared ([`StretchVoice::prepare`]).
+    #[cfg(test)]
+    pub(crate) fn prepared(mut self) -> Self {
+        self.prepare();
+        self
+    }
+
     /// Rewinds the voice to the clip's first frame, for a transport restart or a relaunch.
-    /// Never allocates once [`StretchVoice::prepare`] has run.
+    /// Never allocates; nothing for a voice not prepared yet.
     pub(crate) fn restart(&mut self) {
         self.seek(0);
     }
 
     /// Moves the voice so that its next frame is `frames` project frames after the clip's start.
-    /// Runs the stretcher's start-up on the calling thread; allocates only the first time
-    /// ([`StretchVoice::prepare`]).
+    /// Runs the stretcher's start-up on the calling thread. Never allocates: a voice not
+    /// prepared yet ([`StretchVoice::prepare`]) stays where it is.
     pub(crate) fn seek(&mut self, frames: u64) {
-        self.prepare();
+        if self.stretch.is_none() {
+            return;
+        }
+        self.started = true;
         let at = (frames as f64 * self.step).round() as u64;
         let Some(piece) = self.piece(self.piece_at(at)) else { return };
         let into_piece = (at as f64 - piece.out_start * self.file_rate).max(0.0);
@@ -535,10 +604,15 @@ impl StretchVoice {
         }
     }
 
-    /// Renders the next `out.len() / 2` project frames as interleaved stereo into `out`.
+    /// Renders the next `out.len() / 2` project frames as interleaved stereo into `out`: silence
+    /// while the voice is not prepared. Never allocates.
     pub(crate) fn render(&mut self, out: &mut [f32]) {
-        // Not played or moved yet: from the clip's start.
         if self.stretch.is_none() {
+            out.fill(0.0);
+            return;
+        }
+        // Not played or moved yet: from the clip's start.
+        if !self.started {
             self.seek(0);
         }
         let channels = self.channels;
@@ -634,7 +708,7 @@ mod tests {
         let c = clip(60.0, 0.0, None);
         let (pieces, _, _) = playlist(&c, &r, &data, 120.0).unwrap();
         assert_eq!(pieces.len(), 40_000);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, 48_000).unwrap();
+        let mut voice = StretchVoice::new(&c, &r, data, 120.0, 48_000).unwrap().prepared();
         voice.seek(48_000 * 15);
         let mut out = vec![0.0f32; 2 * 4096];
         for _ in 0..4 {
@@ -651,7 +725,7 @@ mod tests {
         let data = sine(440.0, 8.0, rate);
         let r = region(&[(0.0, 0.0), (4.0, 4.0), (8.0, 4.0 + 2.0 * slower)], StretchMode::Smooth);
         let c = clip(8.0, 0.0, None);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, rate).unwrap();
+        let mut voice = StretchVoice::new(&c, &r, data, 120.0, rate).unwrap().prepared();
         let mut out = vec![0.0f32; 2 * 4 * rate as usize];
         for block in out.chunks_mut(2 * 512) {
             voice.render(block);
@@ -729,7 +803,7 @@ mod tests {
         let cut = (last.out_start + (last.src_end - last.src_start) / 8000.0 / last.rate) * 2.0;
         assert!(cut > 1_000.0 && cut < 30_000.0 && (cut * 2.0 - (cut * 2.0).round()).abs() < 1e-6, "{cut}");
         let render_from = |beat: f64| {
-            let mut voice = StretchVoice::new(&c, &r, data.clone(), 120.0, 48_000).unwrap();
+            let mut voice = StretchVoice::new(&c, &r, data.clone(), 120.0, 48_000).unwrap().prepared();
             voice.seek((beat * 24_000.0).round() as u64);
             let mut out = vec![0.0f32; 2 * 24_000];
             voice.render(&mut out);
@@ -791,7 +865,7 @@ mod tests {
         let data = clicks(0.5, 40.0, sr);
         let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
         let c = clip(length_beats, 0.0, None);
-        let mut voice = StretchVoice::new(&c, &r, data, 120.0, sr).unwrap();
+        let mut voice = StretchVoice::new(&c, &r, data, 120.0, sr).unwrap().prepared();
         let skipped = (seek * f64::from(sr)) as usize;
         if skipped > 0 {
             voice.seek(skipped as u64);
@@ -880,7 +954,7 @@ mod tests {
         let sr = 48_000;
         let data = sine(hz, 20.0, 44_100);
         let r = AudioRegion { transpose, ..region(markers, StretchMode::Smooth) };
-        let mut voice = StretchVoice::new(&clip(beats, 0.0, None), &r, data, 120.0, sr).unwrap();
+        let mut voice = StretchVoice::new(&clip(beats, 0.0, None), &r, data, 120.0, sr).unwrap().prepared();
         let frames = (beats * 0.5 * f64::from(sr)) as usize;
         let mut out = vec![0.0; frames * 2];
         for block in out.chunks_mut(512 * 2) {
@@ -917,7 +991,7 @@ mod tests {
             let r = region(&markers, StretchMode::Smooth);
             for (device_rate, block) in [(44_100, 441), (44_100, 448), (96_000, 37), (22_050, 1000)] {
                 let mut voice =
-                    StretchVoice::new(&clip(60.0, 0.0, None), &r, data.clone(), 120.0, device_rate).unwrap();
+                    StretchVoice::new(&clip(60.0, 0.0, None), &r, data.clone(), 120.0, device_rate).unwrap().prepared();
                 let mut out = vec![0.0; block * 2];
                 for _ in 0..(30 * device_rate as usize / block) {
                     voice.render(&mut out);

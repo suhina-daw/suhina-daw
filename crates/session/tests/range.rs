@@ -210,6 +210,38 @@ fn adding_a_section_inserts_empty_time_and_moves_everything_after_it() {
     assert!(run(&mut session, "range.insertTime", json!({ "start": 4.0, "end": 4.0 })).is_err());
 }
 
+#[test]
+fn adding_a_section_refuses_to_push_any_beat_past_the_end_of_the_song() {
+    let last = suhina_engine::MAX_START_BEAT;
+    let main = |p: &Project| p.channels.iter().position(|c| c.role == ChannelRole::Master).unwrap();
+    type Put = fn(&mut Project, f64, usize);
+    let cases: [(&str, Put); 3] = [
+        ("the loop's end", |p, last, _| p.transport.loop_range = Some(LoopRange { start: 1.0, end: last - 1000.0 })),
+        ("a tempo change", |p, last, _| {
+            p.transport.tempo_changes.push(TempoPoint { beat: last - 1000.0, bpm: 90.0, ramp: false });
+        }),
+        ("an automation point", |p, last, main| {
+            p.channels[main].automation.push(AutomationLane {
+                param: "volume".into(),
+                points: vec![AutomationPoint { beat: last - 1000.0, value: 0.5, curve: 0.0 }],
+                enabled: true,
+            });
+        }),
+    ];
+    for (what, put) in cases {
+        let mut p = project();
+        let at = main(&p);
+        put(&mut p, last, at);
+        let mut session = Session::new(p);
+        let before = session.project().clone();
+        let refused = run(&mut session, "range.insertTime", json!({ "start": 2.0, "end": 2002.0 }));
+        assert!(refused.is_err(), "{what} would pass the last beat");
+        assert_eq!(session.project(), &before, "{what}: nothing changed");
+        // A shorter one fits.
+        run(&mut session, "range.insertTime", json!({ "start": 2.0, "end": 502.0 })).unwrap();
+    }
+}
+
 /// A selection on several tracks moves by as many tracks, each from its own; a drop under the
 /// tracks makes a track of the clips' kind for them, in the same undo step.
 #[test]

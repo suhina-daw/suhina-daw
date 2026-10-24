@@ -329,8 +329,8 @@ impl MixLanes {
         let (left, right) = match value(&self.pan).filter(|_| self.pan_applies) {
             // Equal power, relative to the centre the rest of the gains were taken at.
             Some(pan) => {
-                let angle = (pan.clamp(-1.0, 1.0) + 1.0) * std::f64::consts::FRAC_PI_4;
-                (angle.cos() * std::f64::consts::SQRT_2, angle.sin() * std::f64::consts::SQRT_2)
+                let (left, right) = suhina_dsp::pan::gains(pan);
+                (left * std::f64::consts::SQRT_2, right * std::f64::consts::SQRT_2)
             }
             None => (1.0, 1.0),
         };
@@ -380,8 +380,8 @@ pub(crate) fn mixer_automated(project: &Project, track: TrackId) -> bool {
 }
 
 pub(crate) fn channel_of(project: &Project, track: TrackId) -> Option<&Channel> {
-    let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    project.channels.iter().find(|c| c.id == id)
+    let id = project.track(track)?.channel?;
+    project.channel(id)
 }
 
 /// `project` with every mixer parameter that follows a lane at its neutral value (volume 1,

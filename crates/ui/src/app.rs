@@ -711,10 +711,12 @@ impl App {
     /// Opens `session` in a new tab or in place of the active project, and makes it active.
     /// Returns its id, or `None` when no more projects can be open (the status bar says why).
     pub fn open_project(&mut self, session: Session, warnings: &[String], how: OpenAs) -> Option<ProjectId> {
+        let mut replaced = None;
         if how == OpenAs::Replace
             && let Some(active) = self.projects.active()
             && self.projects.close(active).is_ok()
         {
+            replaced = Some(active);
             self.stashes.remove(&active);
             self.closed.push(active);
             if self.shown_project == Some(active) {
@@ -744,6 +746,13 @@ impl App {
                 return None;
             }
         };
+        // Opening is no command (ADR 0007), so it has a line of its own beside the `action`
+        // lines; one opened in place of another says which it closed (#821). The name is quoted
+        // and escaped: a file name may hold a line break, which would start a line of its own.
+        match replaced {
+            Some(old) => suhina_plugins::trace!("project opened {} {name:?} in place of {}", id.0, old.0),
+            None => suhina_plugins::trace!("project opened {} {name:?} in a new tab", id.0),
+        }
         self.restore(id, Stash::default());
         self.plugin_dialog_hidden = false;
         Some(id)
@@ -856,6 +865,12 @@ impl App {
     /// Asks to open `path`, as a dropped file does: at once when nothing is open or the
     /// settings say how, otherwise after the user chose in the window.
     pub fn request_open(&mut self, path: PathBuf) {
+        // A theme package opened with Suhina (a double-click on it) is brought in, not opened.
+        if is_theme_package(&path) {
+            self.status = Status::Hint(format!("Bringing in the theme {}", path.display()));
+            self.themes.import(path);
+            return;
+        }
         if self.projects.is_empty() {
             self.open_request = Some((path, OpenAs::NewTab));
             return;
@@ -1156,7 +1171,7 @@ impl App {
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
         motion::set_enabled(ctx, settings.animations);
-        self.arrangement.headers_left = settings.track_headers == Side::Left;
+        self.arrangement.headers_left = headers_left(settings.track_headers);
         self.arrangement.returns_hidden = settings.view.returns_hidden;
         self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
         self.arrangement.waveform_appearance = settings.view.waveform;
@@ -1173,6 +1188,14 @@ impl App {
     /// name (the built-in one when there is no such file).
     pub fn set_themes(&mut self, ctx: &egui::Context, files: Vec<ThemeEntry>, folder: Option<String>) {
         self.themes.set(files, folder);
+        // A variant in use whose file went: its theme's own values take its place.
+        if self.themes.get(&self.settings.theme).is_none()
+            && let Some((base, _)) = self.settings.theme.split_once('@')
+            && self.themes.get(base).is_some()
+        {
+            self.settings.theme = base.to_owned();
+            self.settings_changed = true;
+        }
         theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
     }
 
@@ -1234,7 +1257,7 @@ impl App {
         if let Some(session) = self.session() {
             let project = session.project();
             for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channels.iter().find(|c| c.id == ch));
+                let channel = track.channel.and_then(|ch| project.channel(ch));
                 for device in channel.iter().flat_map(|c| c.devices.iter()) {
                     if let Some(path) = device_file_path(device) {
                         names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
@@ -1251,7 +1274,7 @@ impl App {
         if let Some(session) = self.session() {
             let project = session.project();
             for track in project.tracks.iter() {
-                let channel = track.channel.and_then(|ch| project.channels.iter().find(|c| c.id == ch));
+                let channel = track.channel.and_then(|ch| project.channel(ch));
                 for device in channel.iter().flat_map(|c| c.devices.iter()) {
                     if let Some(path) =
                         device_file_path(device).filter(|path| session.device_asset_note(path).is_some())
@@ -1848,7 +1871,12 @@ impl App {
                 None => self.export_dialog = Some(state),
             }
         }
-        let other_dialog = self.unsaved_prompt.is_some() || self.save_prompt.is_some() || self.project_dialog.is_some();
+        // A recovery offer, and the agent prompt after it, wait for the dialogs that ask about
+        // a project, the question about a clip's plug-in edits among them.
+        let other_dialog = self.unsaved_prompt.is_some()
+            || self.save_prompt.is_some()
+            || self.project_dialog.is_some()
+            || self.ara_prompt.is_some();
         if !other_dialog && let Some(offer) = self.recovery.first().cloned() {
             let written = suhina_session::backup::date_time(offer.written);
             let written = written.get(..16).unwrap_or(&written);
@@ -1896,6 +1924,9 @@ impl App {
                         .order(egui::Order::Foreground)
                         .fixed_pos(rect.min)
                         .show(ui.ctx(), |ui| {
+                            // An opaque back, so the name the view drew under the field does not
+                            // show through it (its font and place differ from the field's).
+                            let back = ui.painter().add(egui::Shape::Noop);
                             let field = crate::kit::widgets::text_input(
                                 ui,
                                 egui::TextEdit::singleline(&mut draft)
@@ -1904,6 +1935,11 @@ impl App {
                                     .desired_width(rect.width().max(120.0)),
                             );
                             field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, what));
+                            let covered = field.rect.union(rect);
+                            ui.painter().set(
+                                back,
+                                egui::Shape::rect_filled(covered, 2.0, theme::control_background().to_opaque()),
+                            );
                             if !focused {
                                 field.request_focus();
                             }
@@ -2034,8 +2070,8 @@ impl App {
                 return None;
             }
             let device = session.ara_device(track)?;
-            let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
-            let channel = project.channels.iter().find(|c| c.id == channel)?;
+            let channel = project.track(track)?.channel?;
+            let channel = project.channel(channel)?;
             channel.devices.get(device).map(|d| d.name.clone())
         })
     }
@@ -2140,6 +2176,13 @@ impl App {
 
     pub fn set_status(&mut self, status: Status) {
         self.status = status;
+    }
+
+    /// Takes `error` off the status bar if it is still what it shows.
+    pub fn clear_error(&mut self, error: &str) {
+        if matches!(&self.status, Status::Error(shown) if shown == error) {
+            self.status = Status::Hint(String::new());
+        }
     }
 
     /// The devices picked now: the picks on the selected device's track, or that device alone.
@@ -2297,7 +2340,7 @@ impl App {
                 .iter()
                 .find(|t| t.id == track)
                 .and_then(|t| t.channel)
-                .and_then(|c| session.project().channels.iter().find(|ch| ch.id == c))
+                .and_then(|c| session.project().channel(c))
                 .map_or(0, |c| c.devices.len());
             (0..chain)
                 .filter_map(|index| Some((index, session.plugin_report(track, index)?)))
@@ -2320,7 +2363,7 @@ impl App {
                 .iter()
                 .find(|t| t.id == track)
                 .and_then(|t| t.channel)
-                .and_then(|c| s.project().channels.iter().find(|ch| ch.id == c))
+                .and_then(|c| s.project().channel(c))
                 .map(|ch| ch.devices.len())
         })
     }
@@ -2337,6 +2380,8 @@ impl App {
             return;
         }
         if action.id.starts_with("projects.") {
+            // Traced like every other command, so a trace shows tabs switched and closed (#821).
+            suhina_plugins::trace!("action {} {}", action.id, action.params);
             if let Err(e) = self.projects.execute(action.id, &action.params) {
                 self.status = Status::Error(e.0);
             }
@@ -2348,6 +2393,7 @@ impl App {
         }
         // A critical operation is backed up first, when the settings say so.
         self.projects.back_up_before(action.id);
+        let mut no_input = false;
         let Ok(session) = self.projects.session_mut(None) else { return };
         // An audio track armed while it hears no input gets the device's first input (a stereo
         // pair where there are two channels), so Record has something to record and stays on
@@ -2367,10 +2413,20 @@ impl App {
             };
             if let Some(input) = input {
                 let _ = session.execute("track.setAudioInput", &json!({ "track": track.0, "input": input }));
+            } else {
+                // Armed with nothing to hear: say so, rather than a button that seems not to work.
+                no_input = true;
             }
         }
         suhina_plugins::trace!("action {} {}", action.id, action.params);
         match session.execute(action.id, &action.params) {
+            Ok(_) if no_input => {
+                self.revision += 1;
+                self.status = Status::Hint(
+                    "Armed, but the audio device has no input: choose an input device in Settings › Audio, then pick it under Audio From"
+                        .into(),
+                );
+            }
             Ok(result) => {
                 // A clip made by a double-click is selected, ready to edit: in the Arrangement
                 // the clip, in the Session its slot, so the detail area shows it.
@@ -2479,6 +2535,7 @@ impl App {
                 crate::interaction::grid::to_rgb(theme::midi_clip_default()),
                 crate::interaction::grid::to_rgb(theme::audio_clip_default()),
             );
+            session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
         }
         let notices = self.projects.poll_plugins();
         if let Some(last) = notices.last() {
@@ -2512,6 +2569,10 @@ impl App {
     /// Draws the window into `ui` and runs what the user asked for.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.control_editor_theme_changed(ui.ctx());
+        // Following the theme, the headers move when the theme does.
+        if self.settings.track_headers.is_none() {
+            self.arrangement.headers_left = headers_left(None);
+        }
         let capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         self.control_editor(ui, &capture.entries());
@@ -2601,11 +2662,16 @@ impl App {
             keys_for_shortcuts(ui.ctx());
             self.launch_keys(ui, &mut actions);
         }
-        for id in std::mem::take(&mut self.queued) {
-            self.do_action(&id, &mut actions);
-        }
-        for id in std::mem::take(&mut self.queued_menu_items) {
-            self.run_menu_item(&id, ui.ctx(), &mut actions);
+        // A menu bar item chosen while a dialog asks something is passed over, as its key is.
+        let queued = std::mem::take(&mut self.queued);
+        let menu_items = std::mem::take(&mut self.queued_menu_items);
+        if !self.dialog_holds_actions() {
+            for id in queued {
+                self.do_action(&id, &mut actions);
+            }
+            for id in menu_items {
+                self.run_menu_item(&id, ui.ctx(), &mut actions);
+            }
         }
         if !placing {
             self.shortcuts(ui, &mut actions);
@@ -2713,24 +2779,28 @@ impl App {
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
         if cfg!(target_os = "windows") {
-            egui::Panel::top("application-bar")
-                .exact_size(28.0)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| application_bar::show(ui, self.settings.view, &project_info, &timing));
+            with_bar_line(ui, "application-bar", |ui| {
+                egui::Panel::top("application-bar")
+                    .exact_size(28.0)
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| application_bar::show(ui, self.settings.view, &project_info, &timing))
+            });
         }
         // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
         // at the top of the screen has the same menus).
         if self.settings.view.menu_bar {
-            egui::Panel::top("menu-bar")
-                .exact_size(theme::MENU_BAR)
-                .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
-                .show(ui, |ui| {
-                    let _style_class = crate::kit::style_class::enter("menu-bar");
-                    let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
-                    ui.painter().fill_background(bar, 0.0, theme::panel_background());
-                    crate::kit::native_css::background(ui.painter(), bar);
-                    self.menu_bar(ui, &mut actions)
-                });
+            with_bar_line(ui, "menu-bar", |ui| {
+                egui::Panel::top("menu-bar")
+                    .exact_size(theme::MENU_BAR)
+                    .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(4, 0)))
+                    .show(ui, |ui| {
+                        let _style_class = crate::kit::style_class::enter("menu-bar");
+                        let bar = ui.max_rect().expand2(Vec2::new(4.0, 0.0));
+                        ui.painter().fill_background(bar, 0.0, theme::panel_background());
+                        crate::kit::native_css::background(ui.painter(), bar);
+                        self.menu_bar(ui, &mut actions)
+                    })
+            });
         }
         self.frame_trace.mark("menu bar");
         if self.projects.len() >= 2 {
@@ -2739,11 +2809,13 @@ impl App {
                 self.tab_row(ui, &mut actions)
             });
         }
-        egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
-            let _style_class = crate::kit::style_class::enter("toolbar");
-            ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
-            crate::kit::native_css::background(ui.painter(), ui.max_rect());
-            self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
+        with_bar_line(ui, "toolbar", |ui| {
+            egui::Panel::top("control-bar").exact_size(theme::CONTROL_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
+                let _style_class = crate::kit::style_class::enter("toolbar");
+                ui.painter().fill_background(ui.max_rect(), 0.0, theme::panel_background());
+                crate::kit::native_css::background(ui.painter(), ui.max_rect());
+                self.control_bar(ui, grid.as_ref(), cpu, ram, &mut actions)
+            })
         });
         self.frame_trace.mark("control bar");
         egui::Panel::bottom("status-bar").exact_size(theme::STATUS_BAR).frame(egui::Frame::NONE).show(ui, |ui| {
@@ -2763,6 +2835,8 @@ impl App {
         let workspace_base = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
             egui::Color32::TRANSPARENT
         } else {
+            // `#workspace { border-color }` is this line's own colour.
+            let _workspace = crate::kit::style_class::enter_named("workspace", "workspace");
             theme::border()
         };
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(workspace_base)).show(ui, |ui| {
@@ -2804,7 +2878,9 @@ impl App {
             self.frame_trace.mark("bars");
             let inner = if let Some(layout) = &css_workspace {
                 if let Some(panel) = layout.browser {
-                    self.browser_panel(ui, inner, Some((panel, layout.main)));
+                    over_view(ui, "panel-browser", panel, layout.main, |ui| {
+                        self.browser_panel(ui, inner, Some((panel, layout.main)));
+                    });
                 }
                 inner
             } else if browser_shown && !full_width {
@@ -2844,7 +2920,12 @@ impl App {
             {
                 let geometry =
                     css_workspace.as_ref().and_then(|layout| layout.detail.map(|detail| (layout.main, detail)));
-                self.detail_area(ui, inner, &mut actions, geometry)
+                match geometry {
+                    Some((main, detail)) => over_view(ui, "panel-detail", detail, main, |ui| {
+                        self.detail_area(ui, inner, &mut actions, geometry)
+                    }),
+                    None => self.detail_area(ui, inner, &mut actions, geometry),
+                }
             } else {
                 self.place_editors(&[]);
                 // A hidden piano roll does not keep the keyboard, nor the view to one track, and
@@ -2993,7 +3074,7 @@ impl App {
                                 .into_iter()
                                 .filter_map(|(track, device)| {
                                     let project = s.project();
-                                    let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
+                                    let channel = project.track(track)?.channel?;
                                     let name = project
                                         .channels
                                         .iter()
@@ -3137,9 +3218,10 @@ impl App {
                             self.devices_asked();
                             self.timeline = Some((self.revision, self.arrangement.folds.clone(), timeline));
                             // The headers can be moved from the view itself; that is the setting too.
-                            let side = if self.arrangement.headers_left { Side::Left } else { Side::Right };
-                            if side != self.settings.track_headers {
-                                self.settings.track_headers = side;
+                            // Moved there by hand: the user's side from now on, not the theme's.
+                            if self.arrangement.headers_left != headers_left(self.settings.track_headers) {
+                                let side = if self.arrangement.headers_left { Side::Left } else { Side::Right };
+                                self.settings.track_headers = Some(side);
                                 self.settings_changed = true;
                             }
                             if self.arrangement.returns_hidden != self.settings.view.returns_hidden {
@@ -3173,6 +3255,9 @@ impl App {
         self.frame_trace.mark("drags");
 
         crate::kit::liquid::finish_surfaces(ui.ctx());
+        // Actions collected above wait for a dialog that asks something, as the keys and the menu
+        // bar's queue do: they are dropped while one is open, and once an action opens one.
+        let actions_held = self.dialog_holds_actions();
         self.plugin_dialog(ui, window);
         self.project_dialogs(ui, window);
         if self.settings_open {
@@ -3188,6 +3273,9 @@ impl App {
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
         let ran = actions.len();
         for action in &actions {
+            if actions_held || self.dialog_holds_actions() {
+                break;
+            }
             // Closing a project with unsaved changes asks first (Save, Don't save, Cancel).
             let closing = (action.id == "projects.close")
                 .then(|| action.params["project"].as_u64().and_then(|n| u32::try_from(n).ok()).map(ProjectId))
@@ -3421,7 +3509,7 @@ impl App {
                 .iter()
                 .find(|t| t.id == track)
                 .and_then(|t| t.channel)
-                .and_then(|c| project.channels.iter().find(|ch| ch.id == c))
+                .and_then(|c| project.channel(c))
                 .is_some_and(|c| c.devices.iter().any(|d| d.name == name))
         });
         if on_track {
@@ -3475,7 +3563,7 @@ impl App {
                 .iter()
                 .find(|t| t.id == shown_track)
                 .and_then(|t| t.channel)
-                .and_then(|c| session.project().channels.iter().find(|ch| ch.id == c))
+                .and_then(|c| session.project().channel(c))
                 .map_or_else(Vec::new, |c| {
                     suhina_engine::model::walk_devices(&c.devices).into_iter().map(|(path, _)| path).collect()
                 });
@@ -4043,8 +4131,6 @@ impl App {
         &mut self.piano_roll
     }
 
-    /// Tells the active project where the panel shows its embedded plug-in editors this frame
-    /// (none: they are hidden).
     /// Whether something drawn over the whole window is open (Settings or a dialog): an embedded
     /// plug-in editor is a native window egui cannot draw over, so it is hidden meanwhile (#723).
     fn over_the_window(&self) -> bool {
@@ -4055,11 +4141,15 @@ impl App {
             || self.save_prompt.is_some()
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
+            || self.ara_prompt.is_some()
+            || self.missing.open
             || self.recovery_open.is_some()
             || !self.recovery.is_empty()
             || !self.agent_asks.is_empty()
     }
 
+    /// Tells the active project where the panel shows its embedded plug-in editors this frame
+    /// (none: they are hidden).
     fn place_editors(&mut self, places: &[detail_view::EditorPlace]) {
         // One placement a frame: with something over the window the editors are told to hide,
         // never shown first and hidden after (which left them over Settings).
@@ -4633,7 +4723,7 @@ impl App {
         if outcome.changed {
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
             motion::set_enabled(ui.ctx(), self.settings.animations);
-            self.arrangement.headers_left = self.settings.track_headers == Side::Left;
+            self.arrangement.headers_left = headers_left(self.settings.track_headers);
             self.arrangement.returns_hidden = self.settings.view.returns_hidden;
             self.arrangement.waveform_zoom = self.settings.view.waveform_zoom as f32 / 100.0;
             self.arrangement.waveform_appearance = self.settings.view.waveform;
@@ -4888,13 +4978,15 @@ impl App {
                     }
                     Err(e) => self.status = Status::Error(e.0),
                 }
-            } else if is(&path, "json") || is(&path, "zip") {
+            } else if is_theme_package(&path) || is(&path, "json") || is(&path, "zip") || is(&path, "css") {
+                // Before projects: a package's name ends in `.suhina` too.
+                self.status = Status::Hint(format!("Bringing in the theme {}", path.display()));
                 self.themes.import(path);
             } else if (is(&path, "als") || suhina_session::is_project_file(&path)) && !opened {
                 opened = true;
                 self.request_open(path);
             } else {
-                let what = "is not a sample, a MIDI file, a project (.suhina), a Live Set (.als), a theme (.json), a zip of themes or a folder for the browser";
+                let what = "is not a sample, a MIDI file, a project (.suhina), a Live Set (.als), a theme package (.theme.suhina), a theme (.css or .json), a zip of themes or a folder for the browser";
                 self.status = Status::Error(format!("{} {what}", path.display()));
             }
         }
@@ -4926,6 +5018,8 @@ impl App {
             || self.save_prompt.is_some()
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
+            || self.ara_prompt.is_some()
+            || self.missing.open
             || !self.agent_asks.is_empty();
         let session_view = self.shown == View::Session && !self.sample_map.view.large;
         // A clicked slot or button keeps the focus; only a text field takes the keys away.
@@ -4980,18 +5074,27 @@ impl App {
         }
     }
 
-    /// Runs the actions whose keys were pressed (the keymap), unless a text field has the
-    /// keyboard or Settings is waiting for a key to bind.
-    fn shortcuts(&mut self, ui: &Ui, actions: &mut Vec<Action>) {
-        let dialog = self.project_dialog.is_some()
+    /// Whether a dialog is open that the keymap's actions wait for: their keys, in either
+    /// window, and the menu bar's items do nothing meanwhile.
+    fn dialog_holds_actions(&self) -> bool {
+        self.project_dialog.is_some()
             || self.save_prompt.is_some()
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
+            || self.ara_prompt.is_some()
+            || self.missing.open
             || self.about_open
             || !self.agent_asks.is_empty()
-            || self.updates.open;
+            || self.updates.open
+    }
+
+    /// Runs the actions whose keys were pressed (the keymap), unless a text field has the
+    /// keyboard or Settings is waiting for a key to bind.
+    fn shortcuts(&mut self, ui: &Ui, actions: &mut Vec<Action>) {
+        // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
+        // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()
-            || dialog
+            || self.dialog_holds_actions()
             || (self.settings_open && self.page.capture.is_some())
             || widgets::value_active(ui.ctx())
         {
@@ -5401,7 +5504,7 @@ impl App {
                 if let Some(track) = focused_track {
                     let name = self
                         .session()
-                        .and_then(|s| s.project().tracks.iter().find(|t| t.id == track))
+                        .and_then(|s| s.project().track(track))
                         .map(|t| t.name.clone())
                         .unwrap_or_default();
                     self.rename = Some((json!({ "rename_track": track.0 }), name, false));
@@ -5484,8 +5587,8 @@ impl App {
                     && let Some((track, index)) = self.selected_device
                     && let Some(enabled) = self.session().and_then(|s| {
                         let p = s.project();
-                        let channel = p.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel)?;
-                        p.channels.iter().find(|c| c.id == channel)?.devices.get(index).map(|d| d.enabled)
+                        let channel = p.track(track).and_then(|t| t.channel)?;
+                        p.channel(channel)?.devices.get(index).map(|d| d.enabled)
                     })
                 {
                     actions.push(Action::new(
@@ -6010,8 +6113,11 @@ impl App {
             self.close_map_window();
             return;
         }
-        for action in &frame.keys {
-            self.do_action(action, actions);
+        // The map window's keys wait behind the same dialogs as the main window's.
+        if !self.dialog_holds_actions() {
+            for action in &frame.keys {
+                self.do_action(action, actions);
+            }
         }
         if !self.sample_map.view.window {
             return;
@@ -6136,15 +6242,13 @@ impl App {
         };
         let session = self.session();
         let name = |track: TrackId| {
-            session
-                .and_then(|s| s.project().tracks.iter().find(|t| t.id == track))
-                .map_or_else(String::new, |t| t.name.clone())
+            session.and_then(|s| s.project().track(track)).map_or_else(String::new, |t| t.name.clone())
         };
         let device = session
             .and_then(|s| {
                 let p = s.project();
-                let channel = p.tracks.iter().find(|t| t.id == from)?.channel?;
-                p.channels.iter().find(|c| c.id == channel)?.devices.get(index).map(|d| d.name.clone())
+                let channel = p.track(from)?.channel?;
+                p.channel(channel)?.devices.get(index).map(|d| d.name.clone())
             })
             .unwrap_or_default();
         if !released {
@@ -6335,7 +6439,7 @@ impl App {
     /// `copy`: Ctrl is held — a slot-to-slot drag says Copy instead of its move or swap.
     fn carry_label(&self, carry: &Carry, target: DropTarget, copy: bool) -> Option<String> {
         let project = self.session()?.project();
-        let name = |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(String::new, |x| x.name.clone());
+        let name = |t: TrackId| project.track(t).map_or_else(String::new, |x| x.name.clone());
         let clip = if carry.name.is_empty() { "clip" } else { carry.name.as_str() };
         match target {
             DropTarget::Slot { track, scene } => {
@@ -6387,7 +6491,7 @@ impl App {
     /// A track's name, or its id when the project has none by that id.
     fn track_name(&self, track: TrackId) -> String {
         self.session()
-            .and_then(|s| s.project().tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()))
+            .and_then(|s| s.project().track(track).map(|t| t.name.clone()))
             .unwrap_or_else(|| track.0.to_string())
     }
 
@@ -6473,8 +6577,7 @@ impl App {
 
     fn plan_drop(&self, items: &[BrowserItem], target: DropTarget, separate: bool) -> Option<drop::DropPlan> {
         let project = self.session()?.project();
-        let name =
-            |t: TrackId| project.tracks.iter().find(|x| x.id == t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
+        let name = |t: TrackId| project.track(t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
         if let [sample] = items
             && sample.kind == drop::ItemKind::Sample
             && sample.path().is_some_and(|path| !suhina_media::stems::is_stems_path(&path))
@@ -6482,7 +6585,7 @@ impl App {
                 DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
                 _ => None,
             }
-            && let Some(track) = project.tracks.iter().find(|t| t.id == track_id)
+            && let Some(track) = project.track(track_id)
             && track.content.notes
             && !track.content.audio
             && let Some(channel) = project.channels.iter().find(|c| Some(c.id) == track.channel)
@@ -6684,6 +6787,44 @@ impl App {
         (span > 0.0).then(|| ((beat - from) / span).clamp(0.0, 1.0) as f32)
     }
 
+    /// The toolbar's button that shows or hides the browser (`#control-browser-toggle`), the same
+    /// in the native toolbar and in one a theme lays out.
+    pub(crate) fn browser_toggle(&mut self, ui: &Ui, painter: &egui::Painter, browser_rect: Rect) {
+        let label = if self.settings.browser_open { "Hide browser" } else { "Show browser" };
+        let response = widgets::button_area(ui, browser_rect, Id::new("browser-toggle"), label);
+        let response = match self.keymap.binding_text("view.browser") {
+            Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
+            None => response.on_hover_text(label),
+        };
+        let browser_style = crate::kit::style_class::enter_named_response("button", "browser-toggle", &response);
+        widgets::button_surface(
+            painter,
+            browser_rect,
+            &response,
+            self.settings.browser_open,
+            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+            0.0,
+        );
+        // A panel with its left part filled while the browser shows.
+        let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
+        let ink = crate::kit::style_class::foreground(if self.settings.browser_open {
+            theme::text_primary()
+        } else {
+            theme::text_secondary()
+        });
+        painter.rect_stroke(icon, 0.0, theme::hairline(ink), egui::StrokeKind::Inside);
+        let side = Rect::from_min_size(icon.min, Vec2::new(5.0, icon.height()));
+        if self.settings.browser_open {
+            painter.rect_filled(side, 0.0, ink);
+        } else {
+            painter.vline(side.right() + 0.5, icon.y_range(), theme::hairline(ink));
+        }
+        if response.clicked() {
+            self.toggle_browser();
+        }
+        drop(browser_style);
+    }
+
     fn control_bar(
         &mut self,
         ui: &mut Ui,
@@ -6724,35 +6865,7 @@ impl App {
         let browser_rect = row(x, theme::ROW);
         x = browser_rect.right() + 4.0;
         let browser_rect = native_styles.place(ui, "browser", browser_rect);
-        let label = if self.settings.browser_open { "Hide browser" } else { "Show browser" };
-        let response = widgets::button_area(ui, browser_rect, Id::new("browser-toggle"), label);
-        let response = match self.keymap.binding_text("view.browser") {
-            Some(keys) => response.on_hover_text(format!("{label} ({keys})")),
-            None => response.on_hover_text(label),
-        };
-        let browser_style = crate::kit::style_class::enter_named_response("button", "browser-toggle", &response);
-        widgets::button_surface(
-            &painter,
-            browser_rect,
-            &response,
-            self.settings.browser_open,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-            0.0,
-        );
-        // A panel with its left part filled while the browser shows.
-        let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
-        let ink = if self.settings.browser_open { theme::text_primary() } else { theme::text_secondary() };
-        painter.rect_stroke(icon, 0.0, theme::hairline(ink), egui::StrokeKind::Inside);
-        let side = Rect::from_min_size(icon.min, Vec2::new(5.0, icon.height()));
-        if self.settings.browser_open {
-            painter.rect_filled(side, 0.0, ink);
-        } else {
-            painter.vline(side.right() + 0.5, icon.y_range(), theme::hairline(ink));
-        }
-        if response.clicked() {
-            self.toggle_browser();
-        }
-        drop(browser_style);
+        self.browser_toggle(ui, &painter, browser_rect);
         let tempo_rect = row(x, 56.0);
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
@@ -6765,7 +6878,8 @@ impl App {
             }
             Drag::Moving(_) | Drag::None => {}
         }
-        painter.fill_background(
+        crate::kit::native_css::surface(
+            &painter,
             tempo_rect,
             0.0,
             motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
@@ -6875,6 +6989,7 @@ impl App {
         if !crate::kit::control_layout::placement("transport-play").hidden {
             let response = widgets::button_area(ui, play, Id::new("play"), "Play");
             let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
+            crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
             if response.clicked() {
                 actions.push(self.play_action(false));
             }
@@ -6944,7 +7059,7 @@ impl App {
         let recording = self.session().is_some_and(|s| s.records_arrangement());
         crate::session::record_controls::record_button(ui, &painter, record, recording, actions);
         let position = native_styles.place(ui, "position", position_base);
-        painter.fill_background(position, 0.0, theme::window_background());
+        crate::kit::native_css::surface(&painter, position, 0.0, theme::window_background());
         widgets::text_in(
             &painter,
             position.shrink2(Vec2::new(PAD, 0.0)),
@@ -6997,7 +7112,7 @@ impl App {
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
             let percent = f64::from(milli.min(1000)) / 10.0;
-            painter.fill_background(rect, 0.0, theme::window_background());
+            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -7034,7 +7149,7 @@ impl App {
             let rect = row(right - 76.0, 76.0);
             right = rect.left() - PAD;
             let rect = native_styles.place(ui, "performance", rect);
-            painter.fill_background(rect, 0.0, theme::window_background());
+            crate::kit::native_css::surface(&painter, rect, 0.0, theme::window_background());
             let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
             widgets::text_in(
                 &painter,
@@ -7211,6 +7326,11 @@ fn keys_for_shortcuts(ctx: &egui::Context) {
     }
 }
 
+/// Whether `path` names a theme package (`<name>.theme.suhina`), which is no project.
+pub fn is_theme_package(path: &std::path::Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".theme.suhina"))
+}
+
 fn drop_overlay(ui: &Ui, area: Rect) {
     let is = |f: &egui::HoveredFile, ext: &str| {
         f.path.as_ref().is_none_or(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)))
@@ -7218,19 +7338,28 @@ fn drop_overlay(ui: &Ui, area: Rect) {
     let (project, themes) = ui.input(|i| {
         let files = &i.raw.hovered_files;
         (
-            files.iter().any(|f| is(f, "als") || f.path.as_deref().is_some_and(suhina_session::is_project_file)),
-            files.iter().any(|f| is(f, "json") || is(f, "zip")),
+            files.iter().any(|f| {
+                is(f, "als")
+                    || f.path.as_deref().is_some_and(|p| suhina_session::is_project_file(p) && !is_theme_package(p))
+            }),
+            files.iter().any(|f| {
+                is(f, "json") || is(f, "zip") || is(f, "css") || f.path.as_deref().is_some_and(is_theme_package)
+            }),
         )
     });
     let shown = motion::toward(ui.ctx(), Id::new("drop-overlay"), project || themes, motion::HOVER);
     if shown <= 0.0 {
         return;
     }
-    let painter = ui.painter_at(area);
+    // Above every window, Settings included, which takes the drop like the rest of the window.
+    let painter = ui
+        .ctx()
+        .layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("drop-overlay")))
+        .with_clip_rect(area);
     painter.rect_filled(area, 0.0, theme::window_background().gamma_multiply(DROP_DIM * shown));
     let text = theme::text_primary().gamma_multiply(shown);
     // A file whose name is not known yet counts as both; a project is the likelier.
-    let what = if themes && !project { "Drop to add the themes" } else { "Drop to open" };
+    let what = if themes && !project { "Drop to bring in the theme" } else { "Drop to open" };
     painter.text(area.center(), Align2::CENTER_CENTER, what, theme::ui_font(theme::TEXT + 2.0), text);
 }
 
@@ -7320,9 +7449,286 @@ pub(crate) const NAME_RECT_SLOT: &str = "slot-name-rect";
 /// Where a track's name is drawn in its header, by track id, in the view shown (#696).
 pub(crate) const NAME_RECT_TRACK: &str = "track-name-rect";
 
+/// Shows a bar with `show`, its separator line in the bar's own `border-color` (`.toolbar {
+/// border-color }`), else the theme's border.
+fn with_bar_line<R>(ui: &mut Ui, class: &str, show: impl FnOnce(&mut Ui) -> R) -> R {
+    let line = {
+        let _bar = crate::kit::style_class::enter(class);
+        let own = crate::kit::style_class::computed();
+        // A bar with no line (`border-width: 0`, or a transparent border) fills the line's pixel
+        // with its own background, so no gap shows the window behind it.
+        let lineless = own.as_ref().is_some_and(|c| {
+            (c.authored.border_width && c.border_width <= 0.0) || (c.authored.border && c.border.a() == 0)
+        });
+        if lineless {
+            own.as_ref().filter(|c| c.authored.background).map_or_else(theme::panel_background, |c| c.background)
+        } else {
+            theme::border()
+        }
+    };
+    let saved = ui.visuals().widgets.noninteractive.bg_stroke;
+    ui.visuals_mut().widgets.noninteractive.bg_stroke.color = line;
+    let shown = show(ui);
+    ui.visuals_mut().widgets.noninteractive.bg_stroke = saved;
+    shown
+}
+
+/// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view
+/// (both in the same cells), on a layer above the view, so it shows and takes the pointer there.
+fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
+    if panel.intersect(main).is_positive() {
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::new(("workspace-overlay", name)));
+        ui.scope_builder(egui::UiBuilder::new().layer_id(layer), draw).inner
+    } else {
+        draw(ui)
+    }
+}
+
+/// Whether the track headers are on the left: on the user's side, or else on the theme's, or else
+/// on the right.
+fn headers_left(side: Option<Side>) -> bool {
+    match side {
+        Some(side) => side == Side::Left,
+        None => crate::kit::style_class::theme_track_headers_left().unwrap_or(false),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panel_the_theme_lays_over_the_view_is_drawn_above_it() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.settings.browser_open = true;
+        app.use_test_skin(crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(
+                "#workspace { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); } \
+                 #panel-main { grid-column: 1; grid-row: 1; } \
+                 #panel-browser { grid-column: 1; grid-row: 1; width: 260px; justify-self: start; }",
+            )),
+            ..Default::default()
+        });
+        let layer = egui::LayerId::new(egui::Order::Middle, Id::new(("workspace-overlay", "panel-browser")));
+        let mut drawn = false;
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    app.ui(ui);
+                    drawn = ui.ctx().graphics(|layers| layers.get(layer).is_some_and(|list| !list.is_empty()));
+                },
+            );
+            output.textures_delta.clear();
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert!(drawn, "the browser is drawn on its own layer over the view");
+    }
+
+    #[test]
+    fn a_bar_draws_its_separator_in_its_own_border_colour() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.use_test_skin(crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(".menu-bar { border-color: #FF0000; }")),
+            ..Default::default()
+        });
+        let red = egui::Color32::from_rgb(0xFF, 0, 0);
+        let mut found = false;
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui),
+            );
+            output.textures_delta.clear();
+            // The separator runs the window's whole width; the toolbar's own lines are short.
+            found = output.shapes.iter().any(|shape| match &shape.shape {
+                egui::Shape::LineSegment { points, stroke } => {
+                    stroke.color == red && (points[1].x - points[0].x).abs() > 1000.0
+                }
+                egui::Shape::Rect(rect) => rect.fill == red && rect.rect.width() > 1000.0 && rect.rect.height() <= 2.0,
+                _ => false,
+            });
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert!(found, "the line under the menu bar is red");
+    }
+
+    #[test]
+    fn a_bar_without_a_line_fills_the_line_with_its_background() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.use_test_skin(crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(".menu-bar { background-color: #00FF00; border-width: 0; }")),
+            ..Default::default()
+        });
+        let green = egui::Color32::from_rgb(0, 0xFF, 0);
+        let mut found = false;
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui),
+            );
+            output.textures_delta.clear();
+            found = output.shapes.iter().any(|shape| match &shape.shape {
+                egui::Shape::LineSegment { points, stroke } => {
+                    stroke.color == green && (points[1].x - points[0].x).abs() > 1000.0
+                }
+                egui::Shape::Rect(rect) => {
+                    rect.fill == green && rect.rect.width() > 1000.0 && rect.rect.height() <= 2.0
+                }
+                _ => false,
+            });
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert!(found, "the menu bar's line is its own green");
+    }
+
+    #[test]
+    fn a_theme_keeps_the_header_column_at_its_least_width() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.shown = View::Arrangement;
+        // As a theme file is read: the sheet's --suhina-* values are the app's.
+        let css = ".arrangement { --suhina-header-min-width: 330px; }";
+        let mut theme = crate::kit::theme::Theme::default();
+        assert!(crate::kit::theme_css::read_host_rules(&mut theme, css).is_empty());
+        theme.skin.css = Some(std::sync::Arc::from(css));
+        app.use_test_skin(theme.skin);
+        app.arrangement.header_width = 200.0;
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui),
+            );
+            output.textures_delta.clear();
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert_eq!(app.arrangement.header_width, 330.0);
+    }
+
+    #[test]
+    fn an_arrangement_header_and_name_draw_the_sheet_s_backgrounds() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.shown = View::Arrangement;
+        app.use_test_skin(crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(
+                ".arrangement .track-header { background-color: #102030; } \
+                 .arrangement .track-name { background-color: #FF0000; }",
+            )),
+            ..Default::default()
+        });
+        let (mut header, mut name) = (false, false);
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui),
+            );
+            output.textures_delta.clear();
+            for shape in &output.shapes {
+                if let egui::Shape::Rect(rect) = &shape.shape {
+                    header |= rect.fill == egui::Color32::from_rgb(0x10, 0x20, 0x30);
+                    name |= rect.fill == egui::Color32::from_rgb(0xFF, 0, 0);
+                }
+            }
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert!(header && name, "header {header}, name {name}");
+    }
+
+    #[test]
+    fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
+        let ctx = egui::Context::default();
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.shown = View::Arrangement;
+        app.use_test_skin(crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(
+                ".clip { border-radius: 9px; opacity: 0.5; background-color: #2040FF; } \
+                 .clip-name { color: #FF0000; }",
+            )),
+            ..Default::default()
+        });
+        let (mut round, mut faded, mut red_name) = (false, false, false);
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui),
+            );
+            output.textures_delta.clear();
+            for shape in &output.shapes {
+                match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.corner_radius.nw == 9 => {
+                        round = true;
+                        faded |= rect.fill.a() < 200;
+                    }
+                    egui::Shape::Text(text) => {
+                        red_name |= text.galley.job.sections.iter().any(|s| {
+                            let c = s.format.color;
+                            c.r() > 0 && c.g() == 0 && c.b() == 0
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+        app.use_test_skin(crate::kit::skin::Skin::default());
+        assert!(round && faded && red_name, "round {round}, faded {faded}, red name {red_name}");
+    }
+
+    #[test]
+    fn a_rename_in_place_covers_the_name_drawn_under_it() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(Session::new(crate::demo::demo_project()), &[]);
+        app.settings.animations = false;
+        app.shown = View::Arrangement;
+        let track = app.session().unwrap().project().tracks[0].id.0;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size((1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        harness.state_mut().rename = Some((json!({ "rename_track": track }), "Renamed".into(), false));
+        harness.run();
+        let field = harness.get_by_label("Track name").rect();
+        let back = theme::control_background().to_opaque();
+        assert!(
+            harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Rect(rect) if rect.fill == back && rect.rect.contains_rect(field))),
+            "an opaque back under the field"
+        );
+    }
 
     #[test]
     fn css_workspace_moves_native_controls_and_preserves_project_state() {
@@ -7339,13 +7745,13 @@ mod tests {
         // Let the normal first-frame project/theme initialization finish before
         // checking that changing presentation does not edit the project.
         let before = harness.state().session().unwrap().project().clone();
-        harness.state_mut().save_toolbar_skin(crate::kit::skin::Skin {css:Some(std::sync::Arc::from("#workspace {display:grid;grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:minmax(0,1fr) 160px;gap:8px;} #panel-browser {grid-column:2;grid-row:1 / -1;} #panel-main {grid-column:1;grid-row:1;} #panel-detail {grid-column:1;grid-row:2;}")),..Default::default()});
+        harness.state_mut().use_test_skin(crate::kit::skin::Skin {css:Some(std::sync::Arc::from("#workspace {display:grid;grid-template-columns:minmax(0,1fr) 240px;grid-template-rows:minmax(0,1fr) 160px;gap:8px;} #panel-browser {grid-column:2;grid-row:1 / -1;} #panel-main {grid-column:1;grid-row:1;} #panel-detail {grid-column:1;grid-row:2;}")),..Default::default()});
         harness.run();
         let slot = harness.get_by_label("Stop Keys (scene 1)").rect();
         assert!(slot.right() < 1032.0, "native slot uses CSS main rectangle: {slot:?}");
         assert!(harness.query_by_label("Detail area splitter").is_none());
         assert_eq!(harness.state().session().unwrap().project(), &before);
-        harness.state_mut().save_toolbar_skin(crate::kit::skin::Skin::default());
+        harness.state_mut().use_test_skin(crate::kit::skin::Skin::default());
         harness.run();
         let native_slot = harness.get_by_label("Stop Keys (scene 1)").rect();
         assert!(
@@ -7417,6 +7823,46 @@ mod tests {
         harness.step();
         assert_eq!(harness.state().view.drop, None);
         assert_eq!(harness.state().session().map(|s| s.project().clone()), before);
+    }
+
+    #[test]
+    fn a_menu_bar_item_chosen_while_the_question_about_a_clips_edits_is_open_does_nothing() {
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        app.shown = View::Session;
+        app.ara_prompt = Some((Action::new("clip.moveMany", serde_json::json!({})), "Plug-in".into()));
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        harness.state_mut().queue_action("view.toggle");
+        harness.run();
+        assert_eq!(harness.state().shown, View::Session);
+        assert!(harness.state().ara_prompt.is_some(), "the question is still asked");
+        // Answered, the menu bar works again; the item chosen meanwhile is not run late.
+        harness.state_mut().ara_prompt = None;
+        harness.run();
+        assert_eq!(harness.state().shown, View::Session);
+        harness.state_mut().queue_action("view.toggle");
+        harness.run();
+        assert_eq!(harness.state().shown, View::Arrangement);
+    }
+
+    #[test]
+    fn an_agent_asking_to_connect_waits_for_the_question_about_a_clips_edits() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        app.ara_prompt = Some((Action::new("clip.moveMany", serde_json::json!({})), "Plug-in".into()));
+        app.ask_agent(1, "Helper".into());
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        assert!(harness.query_by_label("Allow Helper").is_none(), "one dialog at a time");
+        harness.state_mut().ara_prompt = None;
+        harness.run();
+        assert!(harness.query_by_label("Allow Helper").is_some());
     }
 
     #[test]
@@ -7701,6 +8147,32 @@ mod tests {
         assert!(clips(&harness) < slots, "the track's clips went with it, no other clip did");
     }
 
+    /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
+    /// editors hide, and the keys that edit the project wait until they close.
+    #[test]
+    fn the_ara_prompt_and_the_missing_files_panel_hold_the_keys_and_hide_the_editors() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = App::new();
+        app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+        assert!(!app.over_the_window());
+        app.missing.open = true;
+        assert!(app.over_the_window());
+        app.missing.open = false;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(Vec2::new(1280.0, 800.0))
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        harness.run();
+        let count = |h: &egui_kittest::Harness<'_, App>| h.state().session().map_or(0, |s| s.project().tracks.len());
+        let tracks = count(&harness);
+        harness.get_by_label("Track Keys").click();
+        harness.run();
+        harness.state_mut().ara_prompt = Some((Action::new("clip.moveMany", json!({})), "Editor".into()));
+        assert!(harness.state().over_the_window());
+        harness.key_press(egui::Key::Delete);
+        harness.run();
+        assert_eq!(count(&harness), tracks, "Delete waits for the prompt");
+    }
+
     #[test]
     fn a_device_dropped_on_a_return_column_goes_on_the_return() {
         use egui_kittest::kittest::Queryable;
@@ -7722,7 +8194,7 @@ mod tests {
         harness.run();
         let project = harness.state().session().map(|s| s.project().clone()).unwrap();
         let channel = project.tracks.iter().find(|t| t.name == "A Reverb").and_then(|t| t.channel).unwrap();
-        let devices = &project.channels.iter().find(|c| c.id == channel).unwrap().devices;
+        let devices = &project.channel(channel).unwrap().devices;
         assert!(devices.iter().any(|d| d.name == "Delay"), "{devices:?}");
     }
 
@@ -7772,6 +8244,7 @@ mod tests {
             bit_depth: None,
             normalize: false,
             dither: None,
+            mp3_rate: None,
             overwrite: false,
         };
 
@@ -7829,6 +8302,7 @@ mod tests {
             bit_depth: None,
             normalize: false,
             dither: None,
+            mp3_rate: None,
             overwrite: false,
         };
 

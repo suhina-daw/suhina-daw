@@ -423,8 +423,7 @@ impl Output {
             let sample_rate = choice.sample_rate.unwrap_or(default.sample_rate());
             // The device is asked for this period itself, so it stays within what the engine
             // renders in; the device aligns it further, or refuses it and says why (`exclusive`).
-            let most = MAX_BUFFER_FRAMES.min(devices::WASAPI_MOST_FRAMES);
-            let buffer = choice.buffer_frames.map(|frames| frames.clamp(MIN_BUFFER_FRAMES, most));
+            let buffer = devices::exclusive_buffer(choice.buffer_frames);
             let channels = default.channels().max(1);
             let cue = cue_channel(choice.cue_pair, channels);
             if let Some(pair) = choice.cue_pair.filter(|_| cue.is_none()) {
@@ -440,7 +439,7 @@ impl Output {
                 device_name,
                 sample_rate,
                 channels,
-                block: engine_block(choice.buffer_frames),
+                block: engine_block(buffer),
                 exclusive: true,
                 cue,
                 cue_gain: choice.cue_gain,

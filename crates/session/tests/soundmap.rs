@@ -173,3 +173,24 @@ fn samples_are_analysed_laid_out_and_compared() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&samples);
 }
+
+/// The sample map shows the browser's place "recent: all" as `library.search` does: the
+/// samples used lately, not an error.
+#[test]
+fn the_sample_map_takes_every_recent_item_as_a_place() {
+    let settings = temp("recent-all-settings");
+    let samples = temp("recent-all");
+    let (used, other) = (samples.join("kick 0.wav"), samples.join("hat 0.wav"));
+    wav(&used, &kick(0));
+    wav(&other, &hat(0));
+    let mut p = projects(&settings);
+    run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
+    run(&mut p, "clip.addFiles", json!({ "paths": [used.display().to_string()], "track": 3, "start": 0.0 })).unwrap();
+    for place in ["recent:all", "recent:samples"] {
+        let files = suhina_session::scope_files(&mut p, Some(place)).map_err(|e| e.0).unwrap();
+        let names: Vec<_> = files.iter().filter_map(|f| f.path.file_name()).collect();
+        assert_eq!(names, ["kick 0.wav"], "{place}");
+    }
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&samples);
+}

@@ -989,6 +989,9 @@ mod imp {
             if !OPEN.with(|open| open.try_borrow_mut().map(|mut open| open.push(state)).is_ok()) {
                 return Err("could not keep the editor's window".into());
             }
+            // In the middle of the screen, where AppKit puts a new window, rather than at the
+            // corner its frame starts at.
+            window.center();
             // The window takes the keyboard: this process is never the active app on its own,
             // so it asks to come forward when the user opens an editor.
             window.makeKeyAndOrderFront(None);

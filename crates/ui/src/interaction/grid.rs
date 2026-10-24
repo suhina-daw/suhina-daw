@@ -243,12 +243,12 @@ impl Grid {
             .tracks
             .iter()
             .filter(|t| {
-                let channel = t.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+                let channel = t.channel.and_then(|id| project.channel(id));
                 channel.is_some_and(|c| c.role == ChannelRole::Effect)
             })
             .collect();
         for (index, track) in project.tracks.iter().enumerate() {
-            let channel = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+            let channel = track.channel.and_then(|id| project.channel(id));
             let role = channel.map_or(ChannelRole::Regular, |c| c.role);
             let kind = match role {
                 ChannelRole::Effect => ColumnKind::Return,
@@ -425,8 +425,8 @@ impl Grid {
             return;
         }
         let channel_of = |track: TrackId| {
-            let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-            project.channels.iter().find(|c| c.id == id)
+            let id = project.track(track)?.channel?;
+            project.channel(id)
         };
         for column in &mut self.columns {
             let Some(channel) = channel_of(column.track) else { continue };

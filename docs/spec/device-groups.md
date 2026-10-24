@@ -3,7 +3,7 @@ description: Planned device groups - several devices on a track as one unit, wit
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-10-23
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -102,6 +102,10 @@ A group is either an **effect group** or an **instrument group**; it is never bo
   their frames, so the instruments are layered. There is no dry signal in an instrument group, so
   `mix` is fixed at 1 and not shown.
 
+`device.duplicateMany`, `device.paste` and the group commands check these rules on the whole chain
+after the edit, and a refused edit changes nothing. A MIDI effect, built-in or `.sd`, leads the
+chain and goes only on a track that plays notes.
+
 Splitting notes between branches by key or velocity (a bass on the low keys, a pad on the high
 ones) is not in the first version: every branch hears every note. It is its own issue
 (*Implementation plan*, 9), because it needs per-branch ranges in the model and a way to edit them.
@@ -175,6 +179,11 @@ Nothing about a device changes when it moves into a group.
 
 - **Built-in devices** run in the engine as they do now (ADR 0004): made, prepared and given their
   parameters when the graph is built, real-time safe on the audio thread.
+  A device in a branch is built as one on a track is (`group::Builder` and `Chain::build` give the
+  same results, #766): a Sampler gets its decoded sample and its manual slices, a parameter that
+  follows an automation lane starts where the lane starts and follows it while playing (each
+  branch keeps the lanes of its devices, planned for every block with the chain's), and a device
+  that holds a file is known by a hash of its state, so a changed file is a new device.
 - **Plug-ins** still run out of process (ADR 0006, AGENTS.md rule 5). A group is not a process
   boundary and never runs a plug-in in the engine. A crashed or hung plug-in in a branch does what
   it does on a track: an effect passes its input, an instrument is silent, the branch and the rest
@@ -351,6 +360,8 @@ is branch 1 of the group at 2, before its device 3. `track.devices` lists a grou
 | `device.addGroup` | edit | `track`; `position` (path, optional, default last); `name` (text, optional) | Adds an empty effect group with one empty branch (a passthrough). |
 | `device.move` | edit | `track`; `device` (path); `to` (path): the position to move it before | Moves a device within a track: along the chain, between branches, into or out of a group. Macro mappings follow the device; a mapping whose device leaves its group is removed. |
 | `device.duplicate` | edit | `track`; `device` (path) | Copies a device (a group with everything in it) next to itself. Plug-in copies start with the state the original has now. |
+| `device.duplicateMany` | edit | `track`; `devices` (paths) | Copies several devices, in their order, after the last of them. Refused, changing nothing, when the chain's rules would not hold for the result (a second instrument, a MIDI effect after the instrument or an effect, an instrument or a MIDI effect on a track that plays no notes, a MIDI effect in a group). |
+| `device.paste` | edit | `track`; `position` (path, optional, default last) | Puts the devices `device.copy` took into a chain. Refused, changing nothing, on the same rules as `device.duplicateMany`. |
 | `branch.add` | edit | `track`; `device` (path): a group; `position` (integer, optional, default last); `name` (text, optional) | Adds an empty branch. |
 | `branch.remove` | edit | `track`; `device`; `branch` (integer) | Removes a branch with its devices and their mappings. The last branch cannot be removed. |
 | `branch.duplicate` | edit | `track`; `device`; `branch` | Copies a branch next to itself. |

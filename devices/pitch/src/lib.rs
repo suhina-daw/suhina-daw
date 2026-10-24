@@ -20,7 +20,8 @@
 //! played key, the key it sent. Velocities, timing and every other event pass unchanged.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, MusicalScale, NoteEvent, ParamInfo, ProcessContext, Role, Unit, check_sample_rate,
+    Device, DeviceError, DeviceInfo, MusicalScale, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role, Unit,
+    check_sample_rate,
 };
 
 /// Parameter indices, in [`INFO`] order.
@@ -58,7 +59,7 @@ const SILENT: u8 = u8::MAX;
 const RELEASE: f32 = 0.5;
 
 pub struct Pitch {
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// The scale the last [`NoteEvent::Scale`] named.
     scale: Option<MusicalScale>,
     /// Per played key, the key its note sounds at, or [`SILENT`].
@@ -75,13 +76,13 @@ impl Default for Pitch {
 impl Pitch {
     /// A pitch effect at its default settings: no transposition, the whole keyboard, no scale.
     pub fn new() -> Self {
-        Self { values: PARAMS.map(|p| p.default), scale: None, sounding: [SILENT; 128] }
+        Self { params: ParamBank::new(&PARAMS), scale: None, sounding: [SILENT; 128] }
     }
 
     /// The key a note-on of `key` sounds at with the current settings and scale, or `None` when
     /// Block drops it.
     pub fn transform(&self, key: u8) -> Option<u8> {
-        let value = |index: usize| self.values.get(index).copied().unwrap_or_default();
+        let value = |index: usize| self.params.get(index);
         // Every value is a whole number in its range (`ParamInfo::clamp`).
         let lowest = value(param::LOWEST) as i32;
         let top = lowest + value(param::RANGE) as i32;
@@ -134,14 +135,12 @@ impl Device for Pitch {
 
     /// Sets parameter `index` to `value`, limited to its range and steps.
     fn set_param(&mut self, index: usize, value: f64) {
-        if let (Some(info), Some(slot)) = (PARAMS.get(index), self.values.get_mut(index)) {
-            *slot = info.clamp(value);
-        }
+        self.params.set(index, value);
     }
 
     /// The value of parameter `index`.
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     /// Notes are the device's whole business; the sound passes untouched.

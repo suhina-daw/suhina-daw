@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-10-22
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
@@ -74,6 +74,12 @@ Identify acceptance criteria, compatibility requirements, explicit exclusions an
 When sources disagree, describe the disagreement instead of choosing silently. Do not demand a
 deferred feature because a broader issue mentions it, or accept reduced scope without checking
 the recorded decisions. Check that `Closes #N` matches the work delivered.
+
+Check whether an open pull request, or one merged since this one's base, already solves the same
+problem, so that one of them would be left with nothing to do once the other merges. Start from
+the pull requests the *Overlap* notice lists and those that name the same issue or symptom. When
+one does, say so as the first finding, with both numbers and what each does, and leave the choice
+to a maintainer.
 
 ## 3. Check the repository's rules
 

@@ -19,11 +19,12 @@
 //! by up to two octaves either way.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::lfo::{Shape, wander, wave};
-use suhina_dsp::{Biquad, Coefficients, DelayLine, OnePole, Smoother};
+use suhina_dsp::{Biquad, Coefficients, DelayLine, OnePole, Smoother, time_constant};
 
 /// Ramp for feedback, mix, freeze and filter changes.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -256,11 +257,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 /// What the delay is and the parameters it has.
 pub const INFO: DeviceInfo = DeviceInfo { id: "delay", name: "Delay", role: Role::Effect, params: &PARAMS };
 
-/// Sample rate assumed until [`Device::prepare`] gives one.
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-/// Tempo used when the host gives none that makes sense.
-const FALLBACK_TEMPO: f64 = 120.0;
-
 /// Where a side's line is read, and how the read position follows the delay time.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct Reader {
@@ -372,7 +368,7 @@ struct Rates {
 impl Rates {
     /// The constants at `sample_rate`.
     fn new(sample_rate: f64) -> Self {
-        Self { repitch: (-1.0 / (REPITCH_SECONDS * sample_rate)).exp(), fade_step: 1.0 / (FADE_SECONDS * sample_rate) }
+        Self { repitch: time_constant(REPITCH_SECONDS, sample_rate), fade_step: 1.0 / (FADE_SECONDS * sample_rate) }
     }
 }
 
@@ -412,7 +408,7 @@ pub struct Delay {
     /// Per-frame constants from the sample rate.
     rates: Rates,
     /// Every parameter's value, in [`param`] order.
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// How much of the band-pass is heard (0 off, 1 on).
     filter: Smoother,
     /// Feedback gain.
@@ -461,7 +457,7 @@ impl Delay {
         let mut delay = Self {
             sample_rate: sr,
             rates: Rates::new(sr),
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             filter: still,
             feedback: still,
             mix: still,
@@ -484,12 +480,12 @@ impl Delay {
 
     /// The value of parameter `index`, 0.0 for an unknown one.
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     /// Whether switch `index` is on.
     fn on(&self, index: usize) -> bool {
-        self.value(index) >= 0.5
+        self.params.on(index)
     }
 
     /// Where each smoother is heading, in [`smoothers`](Self::smoothers) order.
@@ -644,9 +640,9 @@ impl Device for Delay {
 
     /// Sets parameter `index`, clamped to its range; the smoothed values ramp to it.
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let targets = self.targets();
         for (smoother, target) in self.smoothers().into_iter().zip(targets) {
             smoother.set_target(target);
@@ -655,18 +651,14 @@ impl Device for Delay {
 
     /// The value of parameter `index`, or `None` for an unknown one.
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     /// Runs interleaved stereo `buffer` through the delay in place, at the tempo and song
     /// position in `context`.
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         let sr = self.sample_rate;
-        let tempo = if context.tempo.is_finite() && context.tempo > 0.0 {
-            context.tempo.clamp(1.0, 1_000.0)
-        } else {
-            FALLBACK_TEMPO
-        };
+        let tempo = context.tempo_or_default();
         let beats_per_frame = tempo / 60.0 / sr;
         let lfo_beats = self.lfo_beats();
         let lfo_wave = self.lfo();

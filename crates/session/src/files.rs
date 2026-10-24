@@ -71,9 +71,7 @@ impl TrackKind {
 /// Where new tracks go when no track is named: after the last track that is neither a return
 /// nor in a group (before the returns).
 fn end_of_regular_tracks(p: &Project) -> usize {
-    let is_return = |t: &Track| {
-        t.channel.and_then(|c| p.channels.iter().find(|ch| ch.id == c)).is_some_and(|c| c.role == ChannelRole::Effect)
-    };
+    let is_return = |t: &Track| t.channel.and_then(|c| p.channel(c)).is_some_and(|c| c.role == ChannelRole::Effect);
     p.tracks.iter().rposition(|t| !is_return(t)).map_or(0, |i| i + 1)
 }
 
@@ -111,7 +109,7 @@ pub(crate) fn insert_track(
     // Into its group, or into the main channel like the other tracks.
     let main = p.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| c.id);
     let output = match parent {
-        Some(group) => p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel),
+        Some(group) => p.track(group).and_then(|t| t.channel),
         None => main,
     };
     p.channels.push(Channel {
@@ -156,7 +154,7 @@ pub(crate) fn insert_track(
 
 /// Whether `track` is inside the group `group` (at any depth).
 fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
-    let mut current = p.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+    let mut current = p.track(track).and_then(|t| t.parent);
     let mut steps = 0;
     while let Some(parent) = current {
         if parent == group {
@@ -166,7 +164,7 @@ fn within(p: &Project, track: TrackId, group: TrackId) -> bool {
         if steps > p.tracks.len() {
             return false;
         }
-        current = p.tracks.iter().find(|t| t.id == parent).and_then(|t| t.parent);
+        current = p.track(parent).and_then(|t| t.parent);
     }
     false
 }
@@ -357,7 +355,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     let stems_target = target;
     let (target, target_kind) = match target {
         Some(t) => {
-            let track = session.project.tracks.iter().find(|x| x.id == t).ok_or("the track is missing")?;
+            let track = session.project.track(t).ok_or("the track is missing")?;
             match TrackKind::of(track) {
                 Some(kind) => (Some(t), Some(kind)),
                 None if is_group(&session.project, t) => (None, None),
@@ -501,7 +499,7 @@ pub const EMPTY_AUDIO_CLIP_NAME: &str = "Audio clip";
 pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &session.project;
     let track = track_at(p, params, "track")?;
-    let target = p.tracks.iter().find(|t| t.id == track).ok_or("the track is missing")?;
+    let target = p.track(track).ok_or("the track is missing")?;
     // The clip's kind follows the track, notes first: a track that takes both got a MIDI clip
     // before, so it still does; audio tracks are the ones that play audio and not notes.
     let kind = if target.content.notes {
@@ -659,7 +657,7 @@ pub(crate) fn place_clip(
             let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
                 Some(lane) => lane,
                 None => {
-                    let name = p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default();
+                    let name = p.track(track).map(|t| t.name.clone()).unwrap_or_default();
                     let lane_id = p.new_lane_id()?;
                     p.arrangement.lanes.push(ArrangementLane {
                         id: lane_id,
@@ -805,7 +803,7 @@ fn is_group(p: &Project, track: TrackId) -> bool {
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| p.channel(c))
         .is_some_and(|c| c.role == ChannelRole::Submix)
 }
 
@@ -906,8 +904,8 @@ fn place_stems(
     for (track_name, color, _) in &sources {
         let id = insert_track(p, TrackKind::Audio, track_name, after)?;
         if let Some(group) = into {
-            let group_channel = p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel);
-            let channel = p.tracks.iter_mut().find(|t| t.id == id).and_then(|t| {
+            let group_channel = p.track(group).and_then(|t| t.channel);
+            let channel = p.track_mut(id).and_then(|t| {
                 t.parent = Some(group);
                 t.channel
             });
@@ -915,15 +913,15 @@ fn place_stems(
                 c.output = group_channel;
             }
         }
-        if let Some(track) = p.tracks.iter_mut().find(|t| t.id == id) {
+        if let Some(track) = p.track_mut(id) {
             track.color = *color;
         }
         tracks.push(id);
         after = Some(id);
     }
     // The master is there to compare with and to play whole; muted, so nothing sounds twice.
-    if let Some(channel) = tracks.first().and_then(|&m| p.tracks.iter().find(|t| t.id == m)).and_then(|t| t.channel)
-        && let Some(c) = p.channels.iter_mut().find(|c| c.id == channel)
+    if let Some(channel) = tracks.first().and_then(|&m| p.track(m)).and_then(|t| t.channel)
+        && let Some(c) = p.channel_mut(channel)
     {
         c.mute = true;
     }
@@ -933,7 +931,7 @@ fn place_stems(
     )?;
     let group = TrackId(grouped["track"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("the group was not made")?);
     let p = &mut session.project;
-    let group_channel = p.tracks.iter().find(|t| t.id == group).and_then(|t| t.channel);
+    let group_channel = p.track(group).and_then(|t| t.channel);
     if let Some(c) = p.channels.iter_mut().find(|c| Some(c.id) == group_channel) {
         for setting in suhina_media::stems::mastering_devices(&info) {
             let Some(device) = suhina_device_registry::info(setting.id) else { continue };

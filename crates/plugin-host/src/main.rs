@@ -188,8 +188,8 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         "test:hang" => loop {
             thread::sleep(Duration::from_secs(60));
         },
-        "test:clap" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
-        "test:vst3" => vst3::describe(file),
+        "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
+        "test:vst3" | "test:vst3-mix" => vst3::describe(file),
         #[cfg(debug_assertions)]
         _ if file.starts_with(FLAKY) => flaky(file),
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
@@ -473,12 +473,13 @@ fn start(
     let served = Served::open(link).map_err(|e| e.to_string())?;
     if plugin.starts_with("clap:")
         || plugin == "test:clap"
+        || plugin == "test:clap-mix"
         || plugin == "test:clap-delay"
         || plugin == "test:clap-ports"
     {
         return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(Loaded::Clap);
     }
-    if plugin.starts_with("vst3:") || plugin == "test:vst3" {
+    if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
         return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(Loaded::Vst3);
     }
     if ara.is_some() {

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -36,12 +36,7 @@ fn db(gain: f64) -> f64 {
     20.0 * gain.log10()
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(Compressor::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-    assert_eq!(Compressor::new().latency(), 0);
-}
+suhina_device_api::conformance_test!(Compressor::new());
 
 #[test]
 fn reduces_a_steady_sine_by_threshold_and_ratio() {

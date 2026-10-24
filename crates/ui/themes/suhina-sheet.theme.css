@@ -1,0 +1,109 @@
+/* A playful green-and-white Session worksheet with square SVG controls. Audio is calculated in decibels, not cells. */
+/* Suhina theme. Settings are custom properties; see README.md. */
+:root {
+  --accent: #217346;
+  --border: #D4DDD6;
+  --border-strong: #B3C4B8;
+  --browser-text-hint: #346C46;
+  --browser-text-primary: #123E24;
+  --browser-text-secondary: #1F5732;
+  --browser-text-value: #123E24;
+  --clip-audioDefault: #9BC2E6;
+  --clip-midiDefault: #A9D18E;
+  --control-activeBackground: #A9D18E;
+  --control-background: #FFFFFF;
+  --control-hoverBackground: #D3EBCB;
+  --control-playingBackground: #C6E0B4;
+  --control-selectedBackground: #217346;
+  --grid-major: #B9CCBF;
+  --grid-minor: #DFE8E2;
+  --kind-bass: #A84F4F;
+  --kind-clap: #5EC0B0;
+  --kind-closedHat: #C6AC5E;
+  --kind-crash: #E0A0C8;
+  --kind-cymbal: #A497CC;
+  --kind-effect: #9CC49C;
+  --kind-hat: #D8C47A;
+  --kind-kick: #D06E5E;
+  --kind-openHat: #D08F6E;
+  --kind-other: #8A8680;
+  --kind-percussion: #8FC06E;
+  --kind-ride: #C8B8E8;
+  --kind-rim: #8CA8E0;
+  --kind-snare: #73AAC0;
+  --kind-tom: #B074A4;
+  --kind-tonal: #6EB0D0;
+  --kind-vocal: #E8D0A0;
+  --meter-hot: #DC9A21;
+  --meter-intensity: 90;
+  --meter-normal: #00B050;
+  --pan-background: #FFFFFF;
+  --pan-centre: #95AB9C;
+  --panel-background: #F3F5F3;
+  --panel-hoverBackground: #C6E0B4;
+  --recording: #C33C36;
+  --recording-background: #F8E0DD;
+  --selection: #107C41;
+  --session-header-height: 24px;
+  --session-return-width: 80px;
+  --session-scene-width: 84px;
+  --session-slot-height: 22px;
+  --session-track-width: 88px;
+  --slot-empty: #C5D3C9;
+  --text-hint: #708276;
+  --text-inverse: #FFFFFF;
+  --text-onColorDark: #1C3827;
+  --text-onColorLight: #FFFFFF;
+  --text-playing: #143E25;
+  --text-primary: #24372B;
+  --text-secondary: #4C6253;
+  --text-value: #285B3C;
+  --track-1: #C99070;
+  --track-2: #D8BA64;
+  --track-3: #83A9B4;
+  --track-4: #A699B8;
+  --track-5: #95AA80;
+  --track-6: #C18F9E;
+  --track-7: #879BBE;
+  --track-8: #80ADA1;
+  --track-headerBackground: #F2F7F3;
+  --track-headerSelectedBackground: #D6EAD9;
+  --track-mutedBackground: #E7ECE8;
+  --window-background: #FFFFFF;
+}
+theme { name: "Suhina Sheet"; }
+
+/* Copyright (C) 2026 The Suhina contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Original spreadsheet-inspired Suhina Sheet materials. No external resources.
+ */
+@layer suhina-sheet {
+  .window, .session, .arrangement { background-color: #ffffff; color: #24372b; }
+  .session {
+    background-image: repeating-linear-gradient(0deg, transparent 0 21px, #e5ece7 21px 22px),
+                      repeating-linear-gradient(90deg, transparent 0 87px, #e5ece7 87px 88px);
+  }
+  .application-bar, .menu-bar, .project-tabs {
+    background-color: #217346;
+    color: #ffffff;
+    border-color: #185c37;
+  }
+  .toolbar, .status-bar { background-color: #f3f5f3; color: #355640; }
+  .browser {
+    background-color: #8fcea0;
+    background-image: linear-gradient(90deg, #64b682 0 45%, #8fcea0 45% 100%);
+    color: #123e24;
+  }
+  .detail, .device-panel { background-color: #f3f7f4; color: #24372b; }
+  .track-header { background-image: linear-gradient(#ffffff55, #ffffff22); }
+  .track-name { background-image: linear-gradient(#ffffff77, #ffffff55); }
+  .mixer { background-color: #f8faf8; box-shadow: inset -1px 0 0 #d4ddd6; }
+  .button { color: #285b3c; background-color: #ffffff; border-color: #a7bdae; border-radius: 0px; }
+  .button:hover { color: #185c37; background-color: #e2f0d9; border-color: #217346; }
+  .knob { color: #217346; background-color: #ffffff; }
+  .value, .dropdown, .text-input { color: #285b3c; background-color: #ffffff; border-radius: 0px; }
+  .fader-scale { color: #61766a; }
+  .meter { background-color: #e1e9e3; }
+  .meter-vertical .meter-level { background: linear-gradient(to top, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+  .meter-horizontal .meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
+}

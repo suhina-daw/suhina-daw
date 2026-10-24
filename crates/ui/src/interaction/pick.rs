@@ -61,7 +61,7 @@ impl PickField {
     /// The file extensions a file dialog offers; none for a folder.
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
-            Self::ExportFile => &["wav", "flac", "ogg"],
+            Self::ExportFile => &["wav", "flac", "ogg", "mp3"],
             Self::BackgroundImage => &["png"],
             field if field.folder() => &[],
             _ => &["suhina", "als"],

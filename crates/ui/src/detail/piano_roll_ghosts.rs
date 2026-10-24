@@ -342,7 +342,7 @@ fn notes_of<'a>(project: &'a Project, track: TrackId, clip: &Clip) -> Option<&'a
 fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
     let ts = project.transport.time_signature;
     let bar = if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };
-    let track_name = |track: TrackId| project.tracks.iter().find(|t| t.id == track).map_or("", |t| t.name.as_str());
+    let track_name = |track: TrackId| project.track(track).map_or("", |t| t.name.as_str());
     let content_name = |track: TrackId, clip: &Clip| -> Option<String> {
         notes_of(project, track, clip)?;
         let name = project.content(clip.content).map_or("", |c| c.name.as_str());

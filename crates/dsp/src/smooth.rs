@@ -84,11 +84,17 @@ pub struct OnePole {
     state: f64,
 }
 
+/// The coefficient of a one-pole filter with time constant `seconds` at `sample_rate`:
+/// `exp(-1 / (seconds · sample_rate))`, what each step keeps of the distance to its target.
+/// 0.0 (no smoothing) when the time constant is not a positive finite number of frames.
+pub fn time_constant(seconds: f64, sample_rate: f64) -> f64 {
+    let frames = seconds * sample_rate;
+    if frames.is_finite() && frames > 0.0 { (-1.0 / frames).exp() } else { 0.0 }
+}
+
 impl OnePole {
     pub fn new(seconds: f64, sample_rate: f64) -> Self {
-        let frames = seconds * crate::usable_sample_rate(sample_rate);
-        let coefficient = if frames.is_finite() && frames > 0.0 { (-1.0 / frames).exp() } else { 0.0 };
-        Self { coefficient, state: 0.0 }
+        Self { coefficient: time_constant(seconds, crate::usable_sample_rate(sample_rate)), state: 0.0 }
     }
 
     #[inline]
@@ -152,5 +158,14 @@ mod tests {
         assert_eq!(p.process(0.0), 0.0);
         let mut instant = OnePole::new(0.0, 48_000.0);
         assert_eq!(instant.process(0.7), 0.7);
+    }
+
+    #[test]
+    fn a_time_constant_keeps_what_one_frame_of_it_keeps() {
+        assert_eq!(time_constant(0.01, 48_000.0), (-1.0f64 / 480.0).exp());
+        for none in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(time_constant(none, 48_000.0), 0.0, "{none}");
+        }
+        assert_eq!(time_constant(0.01, f64::NAN), 0.0);
     }
 }

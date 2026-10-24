@@ -28,14 +28,16 @@ mod doorbell;
 mod events;
 mod keyboard;
 mod region;
+mod shm;
 mod source;
+mod sweep;
 
 pub use events::{Event, EventKind, MAX_EVENTS};
 pub use keyboard::take_keyboard_back;
 pub use source::{AudioSource, MAX_SOURCE_FRAMES};
+pub use sweep::sweep_leftovers;
 
 use std::fmt;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use doorbell::Doorbell;
@@ -115,7 +117,15 @@ impl Link {
 
     /// What the host process needs to open this link; pass it on its command line.
     pub fn address(&self) -> String {
-        self.region.path().display().to_string()
+        self.region.address().to_string()
+    }
+
+    /// The host has opened the link (it answered the load that named it), so the address is not
+    /// needed again: where the memory is a named file (macOS), its name goes now and a crash
+    /// leaves nothing behind. Elsewhere it has no name to remove. Not real-time safe (it may
+    /// remove a file); call it where the link is made.
+    pub fn host_opened(&mut self) {
+        self.region.unlink();
     }
 
     pub fn channels(&self) -> u32 {
@@ -245,7 +255,7 @@ pub struct Served {
 impl Served {
     /// Opens the link at `address` ([`Link::address`]).
     pub fn open(address: &str) -> Result<Self, IpcError> {
-        let region = Region::open(Path::new(address))?;
+        let region = Region::open(address)?;
         let to_host = Doorbell::open(region.name(), "host")?;
         let to_engine = Doorbell::open(region.name(), "engine")?;
         let seen = region.response();

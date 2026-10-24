@@ -20,6 +20,7 @@ use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::grid::ColumnKind;
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
+use crate::interaction::timeline_grid::{self, TimelineGrid};
 use crate::kit::meter::{self, Meters};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
@@ -30,6 +31,15 @@ use crate::settings::track_sizes::{TrackSize, TrackSizes};
 /// Width of the track header column: the default and how far it can be dragged.
 pub const HEADER_COLUMN: f32 = 336.0;
 const HEADER_COLUMN_RANGE: (f32, f32) = (160.0, 520.0);
+
+/// The narrowest the header column may be: Suhina's least, or the theme's when it gives one, never
+/// past `max_header`, what the view leaves for it.
+fn header_least(max_header: f32) -> f32 {
+    crate::kit::style_class::theme_header_min_width()
+        .unwrap_or(HEADER_COLUMN_RANGE.0)
+        .clamp(HEADER_COLUMN_RANGE.0, HEADER_COLUMN_RANGE.1)
+        .min(HEADER_COLUMN_RANGE.1.min(max_header))
+}
 const RULER: f32 = ROW;
 #[cfg(test)]
 const DEFAULT_LANE: f32 = 40.0;
@@ -70,8 +80,6 @@ const BEAT_WIDTH_RANGE: (f32, f32) = (1.0, 4000.0);
 /// How close grid lines may be drawn, in points: a finer grid coarsens until its lines are at
 /// least this far apart (`docs/spec/arrangement-editing.md` › The grid).
 const MIN_GRID_SPACING: f32 = 8.0;
-/// The coarsest grid, in bars, however far the view is zoomed out.
-const MAX_GRID_BARS: f64 = 1024.0;
 /// Bars of empty timeline after the last clip.
 const TAIL_BARS: f64 = 16.0;
 const CLIP_GAIN_RANGE: (f64, f64) = (-70.0, 24.0);
@@ -93,6 +101,13 @@ const MARKER_TAG_MAX: f32 = 120.0;
 /// The loop brace row under the ruler, the brace's bar in it, and how near an end of the brace
 /// the pointer grabs that end.
 const LOOP_ROW: f32 = 14.0;
+
+/// The loop row's height: room for `.loop-region { height }` when the theme makes the bar
+/// thicker than the native row allows (up to 40 points).
+fn loop_row_height() -> f32 {
+    let _style = crate::kit::style_class::enter("loop-region");
+    crate::kit::style_class::computed().and_then(|c| c.height).map_or(LOOP_ROW, |h| (h + 6.0).clamp(LOOP_ROW, 40.0))
+}
 const LOOP_BAR: f32 = 6.0;
 const LOOP_GRAB: f32 = 4.0;
 
@@ -159,7 +174,7 @@ fn edge_keys(ui: &Ui) -> (bool, bool) {
 /// least a grid step (or a 16th of a beat) long, its left edge no earlier than its content's
 /// start and its right edge no later than its audio's end (none for a looping clip), as
 /// `clip.trim` keeps them.
-fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64, f64) {
+fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &TimelineGrid, free: bool) -> (f64, f64) {
     let end = clip.start + clip.length;
     // A clip already shorter than a grid step keeps at least its length: a coarse grid (1 bar)
     // does not stretch a short clip just because its edge was touched.
@@ -169,7 +184,7 @@ fn edge_extent(clip: &ClipBox, drag: EdgeDrag, grid: &Grid, free: bool) -> (f64,
     if (drag.raw - start_edge).abs() < 1e-9 {
         return (clip.start, end);
     }
-    let beat = grid.place(drag.raw, free);
+    let beat = grid.place(drag.raw, free, false);
     match drag.grab {
         EdgeGrab::Left => (beat.max(clip.earliest_start).min(end - least).max(0.0), end),
         EdgeGrab::Right => {
@@ -434,6 +449,9 @@ pub struct ArrangementViewState {
     /// value instead of scrolling the view, which has to know before they draw themselves again.
     value_areas: Vec<Rect>,
     send_scroll_areas: Vec<Rect>,
+    /// Where the waveform zoom slider was drawn last frame: the wheel over it steps the zoom
+    /// and leaves the view where it is.
+    zoom_area: Option<Rect>,
     /// Volume and pan as knobs instead of fields (Settings › Session and mixer).
     pub knobs: bool,
     /// The track the user last worked on: the header they clicked, or the track of the clip they
@@ -464,7 +482,7 @@ pub struct ArrangementViewState {
     /// (Mirror), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
     /// The grid's lines show through the clips' bodies, faintly (Settings › Arrangement ›
-    /// Grid in clips; on by default).
+    /// TimelineGrid in clips; on by default).
     pub grid_in_clips: bool,
     /// How much larger audio clips' waveforms are drawn, 1 … 16: the display only, never the
     /// sound or the clip's gain (the slider by the ruler; Ctrl+Alt+Up and Down).
@@ -539,6 +557,7 @@ impl Default for ArrangementViewState {
             folds: Folds::default(),
             value_areas: Vec::new(),
             send_scroll_areas: Vec::new(),
+            zoom_area: None,
             knobs: false,
             targeted: None,
             track_drag: None,
@@ -764,7 +783,7 @@ impl ArrangementViewState {
 
     /// What the clip at `key` shows: the project's gain and fades, or the value of a drag in
     /// progress on it (fade ends on `grid`, or free when it is `None`).
-    fn shown(&self, key: (TrackId, ClipId), clip: &ClipBox, grid: Option<Grid>) -> Shown {
+    fn shown(&self, key: (TrackId, ClipId), clip: &ClipBox, grid: Option<TimelineGrid>) -> Shown {
         let mut shown = Shown::of(clip);
         if let Some((k, v)) = self.gain_drag
             && k == key
@@ -871,7 +890,7 @@ impl ArrangementViewState {
     /// How tall the view is when it shows only `track` ([`Self::focus`]): the ruler, the loop
     /// brace and marker rows under it, and the whole lane.
     pub fn focus_height(&self, track: TrackId) -> f32 {
-        RULER + 1.0 + LOOP_ROW + 1.0 + MARKER_ROW + 1.0 + self.lane_height(track) + 1.0
+        RULER + 1.0 + loop_row_height() + 1.0 + MARKER_ROW + 1.0 + self.lane_height(track) + 1.0
     }
 }
 
@@ -880,159 +899,19 @@ fn zoomed(beat_width: f32, factor: f32) -> f32 {
     (beat_width * factor).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1)
 }
 
-/// The Arrangement view's grid at one zoom: the lines drawn and the beats things snap to
-/// (`docs/spec/arrangement-editing.md` › The grid).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Grid {
-    /// Beats between lines inside a bar; a whole number of bars when it is a bar or more.
-    pub step: f64,
-    /// Beats in a bar: lines start again at every bar line.
-    pub bar_beats: f64,
-    /// Whether clips, drops, fades and ruler clicks snap to the lines (not with `none`).
-    pub snaps: bool,
-}
-
-impl Grid {
-    /// The grid for the value `chosen` in the control bar, at `beat_width` points a beat with
-    /// bars of `bar_beats` beats. Lines are the chosen step apart, or coarser where they would be
-    /// closer than [`MIN_GRID_SPACING`]: a straight step doubles up to the beat, a triplet goes
-    /// to the beat, then the beat goes to the bar and bars double. `none` draws beats and bars
-    /// by the zoom alone and does not snap.
-    pub fn new(chosen: Quantization, beat_width: f32, bar_beats: f64) -> Self {
-        let bar_beats = if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 };
-        let chosen_step = chosen.step(bar_beats);
-        let snaps = chosen_step > 0.0;
-        let mut step = if snaps { chosen_step } else { 1.0 };
-        // A note value longer than a bar that is not a whole number of bars (a half note in
-        // 3/8) is drawn on the bar lines instead, so lines stay on the bar.
-        if step > bar_beats + EPSILON && !is_whole(step / bar_beats) {
-            step = bar_beats;
-        }
-        let points = f64::from(beat_width.max(f32::MIN_POSITIVE));
-        let min = f64::from(MIN_GRID_SPACING);
-        while step * points < min && step < MAX_GRID_BARS * bar_beats {
-            step = if step >= bar_beats - EPSILON {
-                step * 2.0
-            } else if step < 1.0 - EPSILON && is_whole((1.0 / step).log2()) {
-                // A straight note value finer than a beat: 1/32, 1/16, 1/8, 1/4.
-                (step * 2.0).min(1.0)
-            } else if step < 1.0 - EPSILON {
-                // A triplet finer than a beat goes to the beat, whose lines are on the bar.
-                1.0
-            } else {
-                bar_beats
-            };
-            // A bar shorter than a beat (2/8): the beat is coarser than the bar, so go by bars.
-            if step > bar_beats + EPSILON && !is_whole(step / bar_beats) {
-                step = bar_beats;
-            }
-        }
-        Self { step, bar_beats, snaps }
-    }
-
-    /// Whether the step is one bar or more, so lines are only on bar lines.
-    fn in_bars(&self) -> bool {
-        self.step >= self.bar_beats - EPSILON
-    }
-
-    /// The grid line nearest to `beat` (never before the start), or `beat` itself with `free`
-    /// (Alt held) or a grid that does not snap.
-    pub fn place(&self, beat: f64, free: bool) -> f64 {
-        if !beat.is_finite() {
-            return 0.0;
-        }
-        let beat = beat.max(0.0);
-        if free || !self.snaps || self.step <= 0.0 {
-            return beat;
-        }
-        if self.in_bars() {
-            return (beat / self.step).round() * self.step;
-        }
-        // Inside a bar: lines from the bar line on, and the next bar line.
-        let bar_start = (beat / self.bar_beats).floor() * self.bar_beats;
-        let next_bar = bar_start + self.bar_beats;
-        let on_step = bar_start + ((beat - bar_start) / self.step).round() * self.step;
-        if on_step >= next_bar - EPSILON || (next_bar - beat) < (beat - on_step).abs() { next_bar } else { on_step }
-    }
-
-    /// The start of the grid cell `beat` is in (never before the start): the line at or before
-    /// it, counted from its bar line as `place` counts, so a step that does not fill the bar (a
-    /// two-beat step in 3/4) starts again at each bar. `beat` itself with `free` or no snapping.
-    pub fn cell(&self, beat: f64, free: bool) -> f64 {
-        if !beat.is_finite() {
-            return 0.0;
-        }
-        let beat = beat.max(0.0);
-        if free || !self.snaps || self.step <= 0.0 {
-            return beat;
-        }
-        if self.in_bars() {
-            return (beat / self.step + EPSILON).floor() * self.step;
-        }
-        let bar_start = (beat / self.bar_beats + EPSILON).floor() * self.bar_beats;
-        bar_start + ((beat - bar_start) / self.step + EPSILON).floor() * self.step
-    }
-
-    /// The beats of the lines from `first` to `last` (both included), each with whether it is a
-    /// bar line.
-    /// At most `limit` lines, so a bad zoom can never draw without end.
-    pub fn lines(&self, first: f64, last: f64, limit: usize) -> Vec<(f64, bool)> {
-        let mut lines = Vec::new();
-        if !(first.is_finite() && last.is_finite()) || self.step <= 0.0 {
-            return lines;
-        }
-        let first = first.max(0.0);
-        if self.in_bars() {
-            let mut n = (first / self.step).floor();
-            while lines.len() < limit {
-                let beat = n * self.step;
-                if beat > last {
-                    break;
-                }
-                lines.push((beat, true));
-                n += 1.0;
-            }
-            return lines;
-        }
-        let mut bar = (first / self.bar_beats).floor();
-        'bars: while lines.len() < limit {
-            let bar_start = bar * self.bar_beats;
-            if bar_start > last {
-                break;
-            }
-            if bar_start >= first - EPSILON {
-                lines.push((bar_start, true));
-            }
-            let mut k = ((first - bar_start) / self.step).ceil().max(1.0);
-            loop {
-                let beat = bar_start + k * self.step;
-                if beat >= bar_start + self.bar_beats - EPSILON {
-                    break;
-                }
-                if lines.len() >= limit || beat > last {
-                    break 'bars;
-                }
-                lines.push((beat, false));
-                k += 1.0;
-            }
-            bar += 1.0;
-        }
-        lines
-    }
-}
-
-/// Beats closer than this are the same grid line.
-const EPSILON: f64 = 1e-9;
-
-fn is_whole(value: f64) -> bool {
-    value.is_finite() && (value - value.round()).abs() < 1e-6
+/// The Arrangement view's grid for the value `chosen` in the control bar, at `beat_width` points
+/// a beat with bars of `bar_beats` beats (`docs/spec/arrangement-editing.md` › The grid): lines
+/// at least [`MIN_GRID_SPACING`] apart; `none` draws beats and bars by the zoom alone and does not
+/// snap.
+pub fn arrangement_grid(chosen: Quantization, beat_width: f32, bar_beats: f64) -> TimelineGrid {
+    TimelineGrid::new(chosen.step(timeline_grid::bar_length(bar_beats)), beat_width, bar_beats, MIN_GRID_SPACING)
 }
 
 /// Where a click `raw` beats into the ruler puts the play start marker: on `grid`, or where it
 /// was with `free` (Alt held); never before the start.
-fn ruler_beat(raw: f64, grid: Grid, free: bool) -> f64 {
+fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     let free = free || !grid.snaps;
-    let beat = grid.place(raw, free);
+    let beat = grid.place(raw, free, false);
     // Free clicks keep a thousandth of a beat, as the engine reports it.
     let beat = if free { (beat * 1000.0).round() / 1000.0 } else { beat };
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
@@ -1043,7 +922,7 @@ fn ruler_beat(raw: f64, grid: Grid, free: bool) -> f64 {
 /// fade. No fade and all the room
 /// there is snap too, so a clip that does not start or end on the grid can still be faded over
 /// its whole length.
-fn fade_length(raw: f64, edge: FadeEdge, clip: &ClipBox, other: f64, grid: Option<Grid>) -> f64 {
+fn fade_length(raw: f64, edge: FadeEdge, clip: &ClipBox, other: f64, grid: Option<TimelineGrid>) -> f64 {
     if !raw.is_finite() {
         return 0.0;
     }
@@ -1052,8 +931,8 @@ fn fade_length(raw: f64, edge: FadeEdge, clip: &ClipBox, other: f64, grid: Optio
     let snapped = match grid.filter(|g| g.snaps) {
         Some(g) => {
             let on_grid = match edge {
-                FadeEdge::In => g.place(clip.start + raw, false) - clip.start,
-                FadeEdge::Out => end - g.place(end - raw, false),
+                FadeEdge::In => g.place(clip.start + raw, false, false) - clip.start,
+                FadeEdge::Out => end - g.place(end - raw, false, false),
             };
             [0.0, room].into_iter().fold(on_grid, |best, v| if (v - raw).abs() < (best - raw).abs() { v } else { best })
         }
@@ -1167,7 +1046,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 
     // The header column, on either side, and the timeline beside it.
     let max_header = (area.width() - 120.0).max(HEADER_COLUMN_RANGE.0);
-    state.header_width = state.header_width.clamp(HEADER_COLUMN_RANGE.0, HEADER_COLUMN_RANGE.1.min(max_header));
+    state.header_width = state.header_width.clamp(header_least(max_header), HEADER_COLUMN_RANGE.1.min(max_header));
     let (headers, time_x) = if state.headers_left {
         let headers = egui::Rangef::new(area.left(), area.left() + state.header_width);
         (headers, egui::Rangef::new(headers.max + 1.0, area.right()))
@@ -1177,7 +1056,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     };
     let time = Rect::from_x_y_ranges(time_x, area.y_range());
     let ruler = Rect::from_min_size(time.min, Vec2::new(time.width(), RULER));
-    let loop_row = Rect::from_min_size(Pos2::new(time.left(), ruler.bottom() + 1.0), Vec2::new(time.width(), LOOP_ROW));
+    let loop_row =
+        Rect::from_min_size(Pos2::new(time.left(), ruler.bottom() + 1.0), Vec2::new(time.width(), loop_row_height()));
     let marker_row =
         Rect::from_min_size(Pos2::new(time.left(), loop_row.bottom() + 1.0), Vec2::new(time.width(), MARKER_ROW));
     // Return tracks and the main track are fixed rows along the bottom.
@@ -1225,7 +1105,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let sends = std::mem::take(&mut state.send_scroll_areas);
     if let Some(pointer) = widgets::pointer_over(ui, area) {
         let over_field = (fields.iter().any(|rect| rect.contains(pointer)) && widgets::wheel_moves_value(ui))
-            || (sends.iter().any(|rect| rect.contains(pointer)) && ui.input(|i| i.modifiers.shift));
+            || (sends.iter().any(|rect| rect.contains(pointer)) && ui.input(|i| i.modifiers.shift))
+            || state.zoom_area.is_some_and(|rect| rect.contains(pointer));
         let zoom = ui.input(|i| i.zoom_delta());
         if zoom != 1.0 && time.contains(pointer) && !over_field {
             let beat = (pointer.x - time.left() + state.scroll.x) / state.beat_width;
@@ -1281,11 +1162,21 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let x_of = move |beat: f64| time.left() - scroll_x + beat as f32 * beat_width;
     let first_beat = f64::from(state.scroll.x / state.beat_width);
     // The grid at this zoom: what is drawn is what snaps.
-    let grid = Grid::new(state.grid, state.beat_width, bar_beats);
+    let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
     let last_beat = f64::from((state.scroll.x + time.width()) / state.beat_width);
 
     // Ruler: bar numbers through the time-signature changes, a line at each labelled bar.
-    painter.fill_background(ruler, 0.0, theme::panel_background());
+    // `.ruler` styles it: its background, `color` for the bar numbers, `border-color` for
+    // their lines; `ruler` is its artwork (nine-sliced when the SVG says so).
+    let ruler_style = crate::kit::style_class::enter("ruler");
+    if !crate::kit::skin::paint(&painter, ruler, "ruler", crate::kit::skin::State::Normal, theme::text_secondary(), 0.0)
+    {
+        crate::kit::native_css::surface(&painter, ruler, 0.0, theme::panel_background());
+    }
+    let ruler_ink = crate::kit::style_class::foreground(theme::text_secondary());
+    let ruler_line =
+        crate::kit::style_class::computed().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
+    drop(ruler_style);
     let meter = &timeline.meter;
     let bar_width = bar_beats as f32 * state.beat_width;
     let label_every = [1u32, 2, 4, 8, 16, 32, 64].into_iter().find(|n| *n as f32 * bar_width >= 40.0).unwrap_or(128);
@@ -1320,7 +1211,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             continue;
         }
         let x = x_of(meter.bar_start(bar)).round() + 0.5;
-        ruler_painter.vline(x, ruler.y_range(), theme::hairline(theme::border()));
+        ruler_painter.vline(x, ruler.y_range(), theme::hairline(ruler_line));
         let label = Rect::from_min_max(Pos2::new(x + 3.0, ruler.top()), Pos2::new(x + 40.0, ruler.bottom()));
         widgets::text_in(
             &ruler_painter,
@@ -1328,10 +1219,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Align2::LEFT_CENTER,
             &(u64::from(bar) + 1).to_string(),
             theme::mono_font(theme::TEXT_SMALL),
-            theme::text_secondary(),
+            ruler_ink,
         );
     }
-    // Grid in the lanes: a line at every step of the grid the control bar's value sets, coarser
+    // TimelineGrid in the lanes: a line at every step of the grid the control bar's value sets, coarser
     // when zoomed out; bar lines stronger than the lines between them. When the time signature
     // changes, the bars come from the meter instead: a line at every bar and, zoomed in, at
     // every beat.
@@ -1452,7 +1343,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     let beat_at = |x: f32, free: bool, state: &ArrangementViewState| {
         ruler_beat(
             f64::from((x - time.left() + state.scroll.x) / state.beat_width),
-            Grid::new(state.grid, state.beat_width, bar_beats),
+            arrangement_grid(state.grid, state.beat_width, bar_beats),
             free,
         )
     };
@@ -1576,6 +1467,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             Sense::click_and_drag(),
         );
         response.widget_info(|| egui::WidgetInfo::slider(true, f64::from(state.waveform_zoom), "Waveform zoom"));
+        state.zoom_area = Some(response.rect);
         if response.double_clicked() {
             state.waveform_zoom = 1.0;
         } else if (response.clicked() || response.dragged())
@@ -1713,10 +1605,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         visible: lanes_area,
         scroll_x: state.scroll.x,
         beat_width: state.beat_width,
-        grid: {
-            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
-            if grid.snaps { grid.step } else { 0.0 }
-        },
+        grid: arrangement_grid(state.grid, state.beat_width, bar_beats),
     };
     let lanes_painter = painter.with_clip_rect(lanes_area);
     let mut track_number = 0;
@@ -1777,8 +1666,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         {
             // On the grid cell under the pointer, as a double-click makes a clip (Alt: free).
             let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
-            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
-            state.menu_beat = Some(grid.cell(raw, ui.input(|i| i.modifiers.alt)));
+            let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
+            state.menu_beat = Some(grid.place(raw, ui.input(|i| i.modifiers.alt), true));
         }
         body.context_menu(|ui| {
             empty_lane_menu(ui, clips_lane.track, clips_lane.notes, state, actions);
@@ -1807,8 +1696,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             && let Some(pointer) = body.interact_pointer_pos()
         {
             let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
-            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
-            let start = grid.cell(raw, ui.input(|i| i.modifiers.alt));
+            let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
+            let start = grid.place(raw, ui.input(|i| i.modifiers.alt), true);
             // The clip's kind follows the track, notes first, as the command decides it, and the
             // stacking setting follows.
             let stack = if lane.notes { state.stack_midi } else { state.stack_audio };
@@ -1984,9 +1873,10 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         if state.marquee_time {
             // Painting time: the selection follows the pointer, on the grid (Alt: free), over the
             // tracks the drag crosses; the clips' selection is left alone.
-            let grid = Grid::new(state.grid, state.beat_width, bar_beats);
+            let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
             let free = ui.input(|i| i.modifiers.alt);
-            let beat_of = |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free);
+            let beat_of =
+                |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
             let tracks: Vec<TrackId> =
                 rows.iter().filter(|r| r.time.y_range().intersects(whole.y_range())).map(|r| r.clips).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
@@ -2215,7 +2105,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         crate::interaction::empty_space::empty_space(ui, &painter, buttons, actions);
     }
     let beat_at =
-        |x: f32, free: bool| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free);
+        |x: f32, free: bool| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
     let free = ui.input(|i| i.modifiers.alt);
     if let Some(probe) = state.drop.as_mut() {
         for row in rows.iter() {
@@ -2262,14 +2152,25 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
     if response.dragged_by(egui::PointerButton::Primary) {
         let dx = response.drag_delta().x;
         let width = if state.headers_left { state.header_width + dx } else { state.header_width - dx };
-        state.header_width = width.clamp(HEADER_COLUMN_RANGE.0, HEADER_COLUMN_RANGE.1.min(max_header));
+        state.header_width = width.clamp(header_least(max_header), HEADER_COLUMN_RANGE.1.min(max_header));
     }
 
     // Playhead through ruler and lanes.
     if timeline.running || timeline.beat > 0.0 {
         let x = x_of(timeline.beat).round() + 0.5;
         if x >= time.left() && x <= time.right() {
-            painter.vline(x, time.y_range(), theme::hairline(theme::accent()));
+            // `.playhead { color; width }`: its colour and thickness.
+            let _style = crate::kit::style_class::enter("playhead");
+            let color = crate::kit::style_class::foreground(theme::accent());
+            match crate::kit::style_class::computed().and_then(|c| c.width) {
+                Some(width) if width > 0.0 => {
+                    painter.vline(x, time.y_range(), egui::Stroke::new(width.min(8.0), color));
+                }
+                Some(_) => {}
+                None => {
+                    painter.vline(x, time.y_range(), theme::hairline(color));
+                }
+            }
         }
     }
 }
@@ -2291,7 +2192,7 @@ fn marker_flags(
         Some((i, raw)) if i == index => {
             let free = ui.input(|input| input.modifiers.alt);
             let bar_beats = if timeline.bar_beats > 0.0 { timeline.bar_beats } else { 4.0 };
-            ruler_beat(raw, Grid::new(state.grid, state.beat_width, bar_beats), free)
+            ruler_beat(raw, arrangement_grid(state.grid, state.beat_width, bar_beats), free)
         }
         _ => beat,
     };
@@ -2406,7 +2307,7 @@ fn dragged_loop(
     raw: f64,
 ) -> Option<(f64, f64)> {
     let bar_beats = if timeline.bar_beats > 0.0 { timeline.bar_beats } else { 4.0 };
-    let snap = |beat: f64| ruler_beat(beat, Grid::new(state.grid, state.beat_width, bar_beats), free);
+    let snap = |beat: f64| ruler_beat(beat, arrangement_grid(state.grid, state.beat_width, bar_beats), free);
     let brace = timeline.loop_brace.map(|b| (b.start, b.end));
     let (start, end) = match (grab, brace) {
         (LoopGrab::New(anchor), _) => {
@@ -2472,7 +2373,9 @@ fn loop_brace(
         let grab = match (part(origin.x), timeline.loop_brace) {
             (Some(LoopGrab::Body(_)), Some(brace)) => LoopGrab::Body(raw - brace.start),
             (Some(grab), _) => grab,
-            (None, _) => LoopGrab::New(ruler_beat(raw, Grid::new(state.grid, state.beat_width, bar_beats), free)),
+            (None, _) => {
+                LoopGrab::New(ruler_beat(raw, arrangement_grid(state.grid, state.beat_width, bar_beats), free))
+            }
         };
         state.loop_drag = Some((grab, raw));
     }
@@ -2522,17 +2425,28 @@ fn loop_brace(
     let Some((start, end)) = shown else { return };
     let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.loop_drag.is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
+    // `.loop-region` styles the bar, `:checked` while looping is on; `height` is its thickness
+    // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
+    let _style = crate::kit::style_class::enter("loop-region");
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, enabled);
+    let thickness = crate::kit::native_css::thickness(LOOP_BAR).clamp(1.0, row.height());
     let bar = Rect::from_min_max(
-        Pos2::new(left, row.center().y - LOOP_BAR / 2.0),
-        Pos2::new(right.max(left + 1.0), row.center().y + LOOP_BAR / 2.0),
+        Pos2::new(left, row.center().y - thickness / 2.0),
+        Pos2::new(right.max(left + 1.0), row.center().y + thickness / 2.0),
     );
     let (fill, edge) = if enabled {
         (theme::control_active(), theme::text_secondary())
     } else {
         (theme::control_background(), theme::text_hint())
     };
-    painter.fill_background(bar, 0.0, fill);
-    painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
+    let state = if enabled { crate::kit::skin::State::On } else { crate::kit::skin::State::Normal };
+    if !crate::kit::skin::paint(&painter, bar, "loop-region", state, edge, 0.0) {
+        let authored = crate::kit::style_class::computed().is_some_and(|c| c.authored.border || c.border_width > 0.0);
+        crate::kit::native_css::surface(&painter, bar, 0.0, fill);
+        if !authored {
+            painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
+        }
+    }
 }
 
 /// The Back to arrangement glyph: an arrow curving over the top from the right to the left, its
@@ -2589,9 +2503,9 @@ fn clip_box<'a>(
     let key = (lane.track, clip.id);
     let mine = |drag: &ClipDrag| (drag.track, drag.clip) == key;
     // A moved clip starts on a grid line, or where it is let go with Alt held.
-    let grid = Grid::new(state.grid, state.beat_width, bar_beats);
+    let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
     let free = ui.input(|i| i.modifiers.alt);
-    let snapped = |raw: f64| grid.place(raw, free);
+    let snapped = |raw: f64| grid.place(raw, free, false);
     let at = match state.clip_drag {
         Some(drag) if mine(&drag) => snapped(drag.start),
         // Another clip of the selection is dragged: this one moves by as much.
@@ -3255,17 +3169,23 @@ fn clip_box<'a>(
     // The gain sits on top of the clip.
     if let Some((field, db, hover)) = gain_paint {
         let gain_painter = painter.with_clip_rect(row.clip);
+        // `.clip-gain`: its background, border, radius and text.
+        let _style = crate::kit::style_class::enter("clip-gain");
         let fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
-        gain_painter.fill_background(field, 0.0, fill);
+        crate::kit::native_css::surface(&gain_painter, field, 0.0, fill);
         let text = format!("{} dB", widgets::format_db(db));
-        let font = theme::mono_font(theme::TEXT_TINY);
+        let font = theme::mono_font(
+            crate::kit::style_class::computed()
+                .filter(|c| c.authored.font_size)
+                .map_or(theme::TEXT_TINY, |c| c.font_size),
+        );
         widgets::text_in(
             &gain_painter,
             field.shrink2(Vec2::new(3.0, 0.0)),
             Align2::RIGHT_CENTER,
             &text,
             font,
-            theme::text_value(),
+            crate::kit::style_class::foreground(theme::text_value()),
         );
     }
     // The handles sit on top of everything on the clip, where the fades now end.
@@ -3283,9 +3203,25 @@ fn clip_box<'a>(
     for (edge, hover) in handles {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
         let handle = fade_handle(rect, edge, length as f32 * state.beat_width);
+        // `.clip-fade-handle`: its fill (`background-color`), border and radius, or the
+        // `clip.fade-handle` artwork.
+        let _style = crate::kit::style_class::enter("clip-fade-handle");
         let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
-        handle_painter.rect_filled(handle, 0.0, fill);
-        handle_painter.rect_stroke(handle, 0.0, theme::hairline(theme::window_background()), StrokeKind::Outside);
+        let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
+        if !crate::kit::skin::paint(&handle_painter, handle, "clip.fade-handle", state, fill, 0.0) {
+            let authored = crate::kit::style_class::computed();
+            if authored.as_ref().is_some_and(|c| c.authored.background || c.authored.border) {
+                crate::kit::native_css::surface(&handle_painter, handle, 0.0, fill);
+            } else {
+                handle_painter.rect_filled(handle, 0.0, fill);
+                handle_painter.rect_stroke(
+                    handle,
+                    0.0,
+                    theme::hairline(theme::window_background()),
+                    StrokeKind::Outside,
+                );
+            }
+        }
     }
     for (edge, hover) in curves {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
@@ -3387,20 +3323,54 @@ fn paint_clip(
     if !rect.intersects(view) {
         return;
     }
+    let off = lane.mute || !clip.enabled;
+    crate::kit::native_css::set_variable("--clip-colour", crate::kit::native_css::hex(rgb(clip.color)));
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, off);
+    // `:playing` while the play position is inside it, `:recording` while a take records over it.
+    let end = clip.start + clip.length;
+    let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, playing);
+    let recording = timeline
+        .recording_spans
+        .iter()
+        .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Recording, recording);
+    // The sheet's opacity fades the whole clip, its waveform, notes and name too.
+    let faded;
+    let painter = match crate::kit::style_class::computed().map(|style| style.opacity).filter(|o| *o < 1.0) {
+        Some(opacity) => {
+            let mut fade = painter.clone();
+            fade.multiply_opacity(opacity.clamp(0.0, 1.0));
+            faded = fade;
+            &faded
+        }
+        None => painter,
+    };
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    let off = lane.mute || !clip.enabled;
     let strength = if clip.audio {
         painter.ctx().data(|d| d.get_temp::<u8>(Id::new(AUDIO_COLOUR_STRENGTH))).unwrap_or(82)
     } else {
         82
     };
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    let body = colour_surface(theme::panel_background(), rgb(clip.color), strength, off);
-    painter.fill_background(rect, 2.0, body);
+    let body =
+        crate::kit::style_class::background(colour_surface(theme::panel_background(), rgb(clip.color), strength, off));
+    let radius = crate::kit::style_class::radius(2.0);
+    painter.fill_background(rect, radius, body);
+    crate::kit::native_css::background_rounded(painter, rect, radius);
     let bar = clip_name_bar(rect);
     if let Some(bar) = bar {
-        painter.rect_filled(bar.shrink2(Vec2::new(2.0, 0.0)), 0.0, motion::mix(body, ink_on(body), 0.045));
+        let _name_bar = crate::kit::style_class::enter("clip-name");
+        let fill = crate::kit::style_class::background(motion::mix(body, ink_on(body), 0.045));
+        // The bar keeps the clip's rounded top corners.
+        let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
+        painter.rect_filled(
+            bar.shrink2(Vec2::new(2.0, 0.0)),
+            egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 },
+            fill,
+        );
     } else {
         painter.fill_background(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
@@ -3416,7 +3386,15 @@ fn paint_clip(
             theme::hairline(motion::mix(body, edge_ink, 0.4)),
         );
     }
-    painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(edge_width, rect.height())), 0.0, edge_ink);
+    // The leading edge follows the clip's rounded left corners.
+    let left = radius.clamp(0.0, 255.0) as u8;
+    painter.rect_filled(
+        // Inset from rounder corners, so it never stands outside them.
+        Rect::from_min_size(rect.min, Vec2::new(edge_width, rect.height()))
+            .shrink2(Vec2::new(0.0, (radius - edge_width).max(0.0).min(rect.height() / 2.0 - 1.0).max(0.0))),
+        egui::CornerRadius { nw: left, sw: left, ne: 0, se: 0 },
+        edge_ink,
+    );
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
     // shades: the body is one colour all along.
     // The grid shows through the body, faintly, the bars a little stronger.
@@ -3436,7 +3414,16 @@ fn paint_clip(
         .ctx()
         .data(|d| d.get_temp::<crate::settings::view_settings::WaveformAppearance>(Id::new(WAVEFORM_APPEARANCE)))
         .unwrap_or_default();
-    let content_ink = appearance.ink(ink);
+    // Theme: the sheet's `.clip-waveform` and `.clip-notes` colours, else Dark.
+    let themed = |class: &str| {
+        let _part = crate::kit::style_class::enter(class);
+        crate::kit::style_class::foreground(appearance.ink(ink))
+    };
+    let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColour::Theme {
+        themed(if clip.audio { "clip-waveform" } else { "clip-notes" })
+    } else {
+        appearance.ink(ink)
+    };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
     let color = ink;
@@ -3458,7 +3445,10 @@ fn paint_clip(
             Pos2::new(left, rect.top() + 3.0),
             Pos2::new(rect.right() - 5.0, bar.map_or(rect.top(), |bar| bar.bottom()) - 3.0),
         );
-        widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, theme::ui_font(theme::TEXT), text_color);
+        let _name = crate::kit::style_class::enter("clip-name");
+        let font = theme::ui_font(crate::kit::style_class::font_size(theme::TEXT));
+        let text_color = crate::kit::style_class::foreground(text_color);
+        widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = Rect::from_min_max(
         Pos2::new(rect.left() + 3.0, bar.map_or(rect.top() + 4.0, |bar| bar.bottom() + 3.0)),
@@ -3813,7 +3803,14 @@ fn track_header(
     actions: &mut Vec<Action>,
 ) {
     let mut work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement track header");
-    let _style_class = crate::kit::style_class::enter("track-header");
+    let _style_class = crate::kit::style_class::enter_named("track-header", &format!("track-{}", lane.track.0));
+    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(lane.color)));
+    crate::kit::native_css::mark(
+        crate::kit::native_css::HostState::Selected,
+        state.selected_tracks.contains(&lane.track),
+    );
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, lane.mute);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Armed, lane.armed);
     work_trace.mark("style");
     let _artwork = crate::kit::artwork::track_color(rgb(lane.color));
     let spacious = rect.height() >= 60.0;
@@ -3897,7 +3894,8 @@ fn track_header(
     // Preserve track identity when selected: a small brightness lift and outline, without
     // replacing the track colour with the global selection accent.
     let background = if selected { theme::track_header_selected() } else { theme::track_header_background() };
-    let surface = colour_surface(background, rgb(lane.color), state.header_colour_strength, lane.mute);
+    let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
+    let surface = colour_surface(background, rgb(lane.color), strength, lane.mute);
     let header_fill = if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface };
     if !crate::kit::skin::paint_colored(
         painter,
@@ -3910,6 +3908,8 @@ fn track_header(
         painter.fill_background(rect, 0.0, header_fill);
     }
     crate::kit::liquid::paint(painter, rect, header_fill, crate::kit::liquid::Surface::Track);
+    // The sheet's own background for the header (`.arrangement .track-header`) over the native one.
+    crate::kit::native_css::surface(painter, rect.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
     if selected {
         let outline = motion::mix(theme::border_strong(), saturated(rgb(lane.color)), 0.5);
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
@@ -4046,6 +4046,14 @@ fn track_header(
     let arm = lane
         .armable
         .then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(solo_width, header_row)));
+    let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
+    let monitor = lane.plays_notes.then(|| {
+        Rect::from_min_size(
+            Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
+            Vec2::new(monitor_width, header_row),
+        )
+    });
+    let controls_end = monitor.unwrap_or(arm.unwrap_or(cue)).right();
     // A lane tall enough for two rows has its volume and pan beside the buttons, where the
     // other level controls are, and the automation button, the name and the sends on the row
     // below, the button under the track-on toggle; a short lane keeps one row of buttons, name
@@ -4054,7 +4062,7 @@ fn track_header(
     // Beside the buttons only where the volume bar keeps its room; a narrow header has the name
     // on the first row and the volume, the sends and the pan across the second, the bar as wide
     // as it can be.
-    let beside_room = row.right() - PAN_FIELD - 4.0 - (arm.unwrap_or(cue).right() + PAD);
+    let beside_room = row.right() - PAN_FIELD - 4.0 - (controls_end + PAD);
     let side = tall && beside_room >= LEAST_VOLUME;
     let stacked = tall && !side;
     let below_top = if name_first || narrow { inner.top() } else { row.bottom() + header_gap };
@@ -4115,7 +4123,7 @@ fn track_header(
             Pos2::new(sends_left - SEND_GAP - 4.0, below.top() + header_row),
         )
     } else {
-        Rect::from_min_max(Pos2::new(arm.unwrap_or(cue).right() + PAD, row.top()), Pos2::new(row.right(), row.bottom()))
+        Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), Pos2::new(row.right(), row.bottom()))
     };
     // Keep a usable level control even on a single-row lane. Reserve the name's
     // minimum first; sends and pan stay in the expanded layout.
@@ -4130,6 +4138,7 @@ fn track_header(
     name = crate::kit::control_layout::place("arrangement-name", name, clip);
     let name_visible = !crate::kit::control_layout::placement("arrangement-name").hidden;
     let name_style = crate::kit::style_class::enter_named("track-name", &format!("track-{}", lane.track.0));
+    crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(header_fill));
     if name_visible {
         crate::kit::skin::paint_colored(
             painter,
@@ -4139,12 +4148,15 @@ fn track_header(
             header_fill,
             rgb(lane.color),
         );
+        // The sheet's own background for the name (`.arrangement .track-name`).
+        crate::kit::native_css::surface(painter, name.intersect(clip), 0.0, egui::Color32::TRANSPARENT);
     }
-    let name_color = if lane.mute {
+    // Ink that reads on the fill, unless the sheet gives the name a colour.
+    let name_color = crate::kit::style_class::foreground(if lane.mute {
         motion::mix(header_fill, theme::text_on(header_fill), 0.75)
     } else {
         theme::text_on(header_fill)
-    };
+    });
     if name_visible && lane.kind == ColumnKind::Track && (lane.plays_notes || lane.plays_audio) {
         let type_rect = Rect::from_min_size(name.min, Vec2::new(16.0, name.height()));
         crate::kit::mixer_controls::track_type(
@@ -4223,6 +4235,33 @@ fn track_header(
         widgets::text_in(painter, toggle, Align2::CENTER_CENTER, &number, theme::mono_font(theme::TEXT_SMALL), text);
     }
 
+    if let Some(at) = monitor.filter(|at| at.intersects(clip)) {
+        let mode = lane.midi_input.monitor;
+        let text = menus::monitor_name(mode);
+        let response = widgets::button_area(
+            ui,
+            at.intersect(clip),
+            id.with("midi-monitor"),
+            format!("MIDI monitoring of {}: {text}", lane.name),
+        )
+        .on_hover_text(format!(
+            "Input monitoring · {text}\n{}\nClick to choose when you hear your MIDI keyboard.",
+            menus::midi_monitor_explanation(mode)
+        ));
+        let active = mode == suhina_engine::model::Monitor::In;
+        let (fill, ink) = widgets::toggle_colors(ui, &response, active);
+        painter.rect_filled(at, 0.0, fill);
+        widgets::text_in(
+            painter,
+            at,
+            Align2::CENTER_CENTER,
+            text,
+            theme::ui_font(if at.height() < 16.0 { 9.0 } else { 10.0 }),
+            ink,
+        );
+        egui::Popup::menu(&response).show(|ui| menus::midi_monitor_choices(ui, lane.track, mode, actions));
+    }
+
     if let Some(volume) = compact_volume {
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
     }
@@ -4230,7 +4269,7 @@ fn track_header(
     if narrow {
         // Name and automation are above; the second row keeps the four track controls
         // and a draggable volume field. Pan and sends return when the column is widened.
-        let volume = Rect::from_min_max(Pos2::new(arm.unwrap_or(cue).right() + PAD, row.top()), row.right_bottom());
+        let volume = Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), row.right_bottom());
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
     }
 
@@ -4238,7 +4277,7 @@ fn track_header(
     // the volume, the sends and the pan across the second row.
     if tall && !narrow {
         let (volume, pan) = if side {
-            let left = arm.unwrap_or(cue).right() + PAD;
+            let left = controls_end + PAD;
             let pan =
                 Rect::from_min_max(Pos2::new(row.right() - PAN_FIELD, row.top()), Pos2::new(row.right(), row.bottom()));
             (Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new((pan.left() - 4.0).max(left), row.bottom())), pan)
@@ -4445,9 +4484,12 @@ fn send_knob(
         _ => committed.unwrap_or(level),
     };
     let position = ((shown - VOLUME_RANGE.0) / (VOLUME_RANGE.1 - VOLUME_RANGE.0)) as f32;
+    // `.send` styles it here as in the mixer.
+    let _style = crate::kit::style_class::enter_response("send", &response);
     let amount = widgets::hover(ui, &response);
     let surface = motion::mix(background, theme::control_hover(), amount);
-    let pointer = theme::text_on(surface);
+    crate::kit::native_css::surface(painter, rect, 0.0, egui::Color32::TRANSPARENT);
+    let pointer = crate::kit::style_class::foreground(theme::text_on(surface));
     if amount > 0.0 || response.has_focus() {
         let fill = theme::control_hover().gamma_multiply(amount.max(0.3));
         widgets::track_button_face(ui, painter, rect, &response, fill);
@@ -4477,7 +4519,8 @@ fn value_control(
         return;
     }
     let rect = crate::kit::control_layout::place(name, rect, clip);
-    let _style = crate::kit::style_class::enter("value");
+    // Named as Edit interface names them, so a theme selects one by id (`#arrangement-volume`).
+    let _style = crate::kit::style_class::enter_named("value", name);
     let _pan_style = matches!(control, Control::Pan).then(|| crate::kit::style_class::enter("pan"));
     let track = lane.track;
     let (value, per_point, per_tick, range, default) = match control {
@@ -4630,33 +4673,19 @@ fn value_action(control: Control, tracks: &[TrackId], from: f64, to: f64) -> Act
     }
 }
 
-/// A volume field: fill from the left up to the level, a tick at its end, the value on the right.
+/// A volume field: fill from the left up to the level, the value on the right. Its track and fill
+/// take their shape from the sheet (`#arrangement-volume` and its `.value-fill`: background,
+/// border, radius, `height` for the thickness) or from `volume.track` and `volume.fill` artwork;
+/// without either it is the native capsule.
 fn volume_field(painter: &egui::Painter, rect: Rect, db: f64, hover: f32) {
-    let fill = theme::control_selected();
-    let radius = rect.height() * 0.5;
-    painter.fill_background(rect, radius, motion::mix(theme::control_background(), theme::control_hover(), hover));
-    let x = rect.left() + rect.width() * volume_position(db);
-    // Clip the filled capsule rather than introducing square corners at its left edge.
-    let filled = Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom()));
-    painter.with_clip_rect(painter.clip_rect().intersect(filled)).fill_background(rect, radius, fill);
-    let text = rect.shrink2(Vec2::new(8.0, 0.0));
-    let unfilled = Rect::from_min_max(Pos2::new(x, rect.top()), rect.max);
-    widgets::text_in(
-        &painter.with_clip_rect(painter.clip_rect().intersect(unfilled)),
-        text,
-        Align2::RIGHT_CENTER,
+    crate::kit::mixer_controls::level_bar(
+        painter,
+        rect,
+        "volume",
+        (0.0, volume_position(db)),
+        hover,
         &widgets::format_db(db),
-        theme::mono_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
-    // The value can cross the fill boundary; keep both portions readable.
-    widgets::text_in(
-        &painter.with_clip_rect(painter.clip_rect().intersect(filled)),
-        text,
         Align2::RIGHT_CENTER,
-        &widgets::format_db(db),
-        theme::mono_font(theme::TEXT_SMALL),
-        theme::text_on(fill),
     );
 }
 
@@ -4977,14 +5006,14 @@ mod tests {
     }
 
     /// A grid of `step` beats at a zoom where its lines are far enough apart, in 4/4.
-    fn beats(step: f64) -> Grid {
-        Grid::new(Quantization::Beats(step), 1000.0, 4.0)
+    fn beats(step: f64) -> TimelineGrid {
+        arrangement_grid(Quantization::Beats(step), 1000.0, 4.0)
     }
 
     /// The grid step for the control bar's `value`, at `beat_width` points a beat.
     fn step(value: &str, beat_width: f32, bar_beats: f64) -> f64 {
         let chosen = suhina_session::parse_quantization(value).unwrap_or(Quantization::None);
-        Grid::new(chosen, beat_width, bar_beats).step
+        arrangement_grid(chosen, beat_width, bar_beats).step
     }
 
     #[test]
@@ -5010,7 +5039,7 @@ mod tests {
         // Bars follow the time signature: a bar of 3/4 is three beats.
         assert_eq!(step("1 bar", 400.0, 3.0), 3.0);
         assert_eq!(step("2 bars", 400.0, 3.0), 6.0);
-        assert!(Grid::new(Quantization::Beats(0.25), 400.0, 4.0).snaps);
+        assert!(arrangement_grid(Quantization::Beats(0.25), 400.0, 4.0).snaps);
     }
 
     #[test]
@@ -5054,74 +5083,23 @@ mod tests {
 
     #[test]
     fn none_draws_beats_and_bars_by_the_zoom_and_does_not_snap() {
-        let grid = Grid::new(Quantization::None, 400.0, 4.0);
+        let grid = arrangement_grid(Quantization::None, 400.0, 4.0);
         assert_eq!((grid.step, grid.snaps), (1.0, false));
         assert_eq!(step("none", 7.0, 4.0), 4.0);
-        assert_eq!(grid.place(2.1337, false), 2.1337);
+        assert_eq!(grid.place(2.1337, false, false), 2.1337);
         assert_eq!(ruler_beat(2.1337, grid, false), 2.134);
         let clip = audio_clip();
         assert_eq!(fade_length(1.3, FadeEdge::In, &clip, 0.0, Some(grid)), 1.3);
     }
 
     #[test]
-    fn places_snap_to_the_lines_inside_each_bar_unless_free() {
-        let sixteenths = beats(0.25);
-        assert_eq!(sixteenths.place(2.13, false), 2.25);
-        assert_eq!(sixteenths.place(2.13, true), 2.13);
-        assert_eq!(sixteenths.place(-1.0, false), 0.0);
-        assert_eq!(sixteenths.place(f64::NAN, false), 0.0);
-        // Triplet lines start again at each bar line: in 3/4 a half-note triplet (4/3 beats)
-        // has lines at 0, 4/3 and 8/3, then the bar line at 3.
-        let grid = Grid::new(Quantization::Beats(4.0 / 3.0), 400.0, 3.0);
-        assert!((grid.place(1.5, false) - 4.0 / 3.0).abs() < 1e-12);
-        assert_eq!(grid.place(2.9, false), 3.0);
-        assert!((grid.place(4.4, false) - (3.0 + 4.0 / 3.0)).abs() < 1e-12);
-        // Bars: on whole steps from the start.
-        let two_bars = Grid::new(Quantization::Bars(2), 8.0, 4.0);
-        assert_eq!(two_bars.place(11.0, false), 8.0);
-        assert_eq!(two_bars.place(13.0, false), 16.0);
-    }
-
-    #[test]
-    fn a_cell_starts_at_the_line_before_counted_from_its_bar() {
-        // In 3/4 a two-beat step has lines at 0 and 2 in each bar, then the bar line at 3: a
-        // click at 3.1 is in the cell that starts on the bar line, not at beat 2.
-        let grid = Grid::new(Quantization::Beats(2.0), 400.0, 3.0);
-        assert_eq!(grid.cell(3.1, false), 3.0);
-        assert_eq!(grid.cell(2.9, false), 2.0);
-        assert_eq!(grid.cell(5.5, false), 5.0);
-        assert_eq!(grid.cell(3.1, true), 3.1);
-        assert_eq!(grid.cell(-1.0, false), 0.0);
-        // Bars: whole steps from the start.
-        let two_bars = Grid::new(Quantization::Bars(2), 8.0, 4.0);
-        assert_eq!(two_bars.cell(15.9, false), 8.0);
-    }
-
-    #[test]
-    fn lines_are_drawn_at_every_step_with_bar_lines_marked() {
-        assert_eq!(
-            beats(1.0).lines(3.5, 6.0, 100),
-            vec![(4.0, true), (5.0, false), (6.0, false)],
-            "the bar before the view starts the lines"
-        );
-        let in_3_4 = Grid::new(Quantization::Beats(4.0 / 3.0), 400.0, 3.0);
-        let lines: Vec<f64> = in_3_4.lines(0.0, 3.0, 100).into_iter().map(|(b, _)| (b * 1000.0).round()).collect();
-        assert_eq!(lines, vec![0.0, 1333.0, 2667.0, 3000.0]);
-        let two_bars = Grid::new(Quantization::Bars(2), 8.0, 4.0);
-        assert_eq!(two_bars.lines(1.0, 17.0, 100), vec![(0.0, true), (8.0, true), (16.0, true)]);
-        // Never more than asked for.
-        assert_eq!(beats(0.125).lines(0.0, 1e9, 50).len(), 50);
-        assert!(beats(1.0).lines(f64::NAN, 4.0, 10).is_empty());
-    }
-
-    #[test]
     fn a_ruler_click_lands_on_the_grid_unless_alt_is_held() {
         // 1 bar at 8 points a beat: the grid is a bar.
-        let bars = Grid::new(Quantization::Bars(1), 8.0, 4.0);
+        let bars = arrangement_grid(Quantization::Bars(1), 8.0, 4.0);
         assert_eq!(ruler_beat(17.9, bars, false), 16.0);
         assert_eq!(ruler_beat(18.1, bars, false), 20.0);
         // 1/16 at 60 points a beat: sixteenths.
-        let sixteenths = Grid::new(Quantization::Beats(0.25), 60.0, 4.0);
+        let sixteenths = arrangement_grid(Quantization::Beats(0.25), 60.0, 4.0);
         assert_eq!(ruler_beat(2.13, sixteenths, false), 2.25);
         assert_eq!(ruler_beat(2.1337, sixteenths, true), 2.134);
         assert_eq!(ruler_beat(-3.0, bars, true), 0.0);

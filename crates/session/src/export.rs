@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use suhina_engine::Renderer;
 use suhina_engine::model::{Project, TrackId};
 use suhina_media::write::{self, AudioFileSpec, AudioFormat, BitDepth};
+use suhina_mp3::Mp3Rate;
 
 use crate::commands::{number, track_at};
 use crate::{CommandError, Session};
@@ -46,6 +47,9 @@ pub struct ExportData {
     /// The project's folder, for the missing files' warnings.
     pub folder: Option<PathBuf>,
     pub trusted: suhina_media::Trusted,
+    /// The project's own name: the stem of the file it was opened from, what the MP3 export
+    /// writes as the ID3 title; empty when the project was never saved.
+    pub title: String,
 }
 
 /// Runs an export against data taken off the session ([`Session::export_data`]): what a worker
@@ -67,17 +71,24 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     let path = PathBuf::from(path_text);
 
     // The format: the parameter's, else the file name's extension's; they agree when both name
-    // one.
-    let asked = params.get("format").and_then(Value::as_str);
+    // one. A format the command does not know is refused, never passed over for the extension.
+    let asked = match params.get("format").filter(|value| !value.is_null()).and_then(Value::as_str) {
+        None => None,
+        Some(name) => Some(
+            AudioFormat::from_extension(name)
+                .ok_or_else(|| format!("{name} is not a format; wav, flac, ogg or mp3"))?,
+        ),
+    };
     let said = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
-    let format =
-        match (asked.and_then(AudioFormat::from_extension), said.as_deref().and_then(AudioFormat::from_extension)) {
-            (Some(a), Some(s)) if a != s => {
-                return Err(format!("the file name says .{}, and the format says {}", s.name(), a.name()).into());
-            }
-            (Some(a), _) | (None, Some(a)) => a,
-            (None, None) => return Err("name the file .wav, .flac or .ogg, or pass format".into()),
-        };
+    let format = match (asked, said.as_deref().and_then(AudioFormat::from_extension)) {
+        (Some(a), Some(s)) if a != s => {
+            return Err(format!("the file name says .{}, and the format says {}", s.name(), a.name()).into());
+        }
+        (Some(a), _) | (None, Some(a)) => a,
+        (None, None) => {
+            return Err("name the file .wav, .flac, .ogg or .mp3, or pass format".into());
+        }
+    };
 
     let sample_rate = match params.get("sample_rate") {
         None | Some(Value::Null) => 48_000u64,
@@ -91,15 +102,27 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         None => match format {
             AudioFormat::Wav => BitDepth::Float32,
             AudioFormat::Flac => BitDepth::Pcm24,
-            AudioFormat::Ogg => BitDepth::Float32,
+            AudioFormat::Ogg | AudioFormat::Mp3 => BitDepth::Float32,
         },
     };
-    if format == AudioFormat::Ogg && params.get("bit_depth").filter(|value| !value.is_null()).is_some() {
-        return Err("bit_depth does not apply to ogg".into());
+    if !format.has_depth() && params.get("bit_depth").filter(|value| !value.is_null()).is_some() {
+        return Err(format!("bit_depth does not apply to {}", format.name()).into());
     }
     if format == AudioFormat::Flac && depth == BitDepth::Float32 {
         return Err("flac is written at 24 or 16 bits, not 32f".into());
     }
+
+    // The MP3 rate, the constant kbps or the variable quality; asked for only with mp3.
+    let mp3_rate = match params.get("mp3_rate").filter(|value| !value.is_null()).and_then(Value::as_str) {
+        Some(name) => {
+            if format != AudioFormat::Mp3 {
+                return Err("mp3_rate goes with mp3".into());
+            }
+            Mp3Rate::from_name(name)
+                .ok_or_else(|| format!("{name} is not an mp3 rate; 128, 192, 256, 320, v0 or v2"))?
+        }
+        None => Mp3Rate::default(),
+    };
 
     let overwrite = params.get("overwrite").and_then(Value::as_bool).unwrap_or(false);
     // Dither: on for a reduced depth unless the job says otherwise; not a thing at 32f.
@@ -231,7 +254,15 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     write::write_audio_file(
         &path,
         &written,
-        &AudioFileSpec { format, depth, sample_rate, dither, seed: export_seed(params) },
+        &AudioFileSpec {
+            format,
+            depth,
+            sample_rate,
+            dither,
+            seed: export_seed(params),
+            mp3_rate,
+            title: data.title.clone(),
+        },
         write::WriteMode::Export { overwrite },
     )?;
 
@@ -243,7 +274,9 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         "path": path.display().to_string(),
         "format": format.name(),
         "sample_rate": sample_rate,
-        "bit_depth": depth.name(),
+        // A format without a depth (ogg, mp3) reports none: the float the encoder is fed is
+        // not a property of the file.
+        "bit_depth": if format.has_depth() { json!(depth.name()) } else { Value::Null },
         "seconds": written.len() as f64 / 2.0 / f64::from(sample_rate),
         "peak": peak,
         "misses": renderer.plugin_misses(),
@@ -304,7 +337,7 @@ fn send_warnings(project: &suhina_engine::model::Project, source: Option<TrackId
     use suhina_engine::model::ChannelRole;
 
     let Some(source) = source else { return Vec::new() };
-    let Some(own) = project.tracks.iter().find(|t| t.id == source).and_then(|t| t.channel) else {
+    let Some(own) = project.track(source).and_then(|t| t.channel) else {
         return Vec::new();
     };
     // The channels that play into the node: their output chains reach the source's channel.
@@ -329,7 +362,7 @@ fn send_warnings(project: &suhina_engine::model::Project, source: Option<TrackId
     for channel in project.channels.iter().filter(|c| under.contains(&c.id)) {
         for send in &channel.sends {
             if !said.contains(&send.target)
-                && let Some(target) = project.channels.iter().find(|c| c.id == send.target)
+                && let Some(target) = project.channel(send.target)
                 && target.role == ChannelRole::Effect
             {
                 said.push(send.target);
@@ -380,6 +413,7 @@ impl Session {
             plugins: self.plugins.env_handle(),
             folder: self.audio_folder().map(Path::to_path_buf),
             trusted: self.trusted.clone(),
+            title: self.export_title(),
         }
     }
 
@@ -417,7 +451,14 @@ impl Session {
             plugins: self.plugins.env_handle(),
             folder: self.audio_folder().map(Path::to_path_buf),
             trusted: self.trusted.clone(),
+            title: self.export_title(),
         }
+    }
+
+    /// The title an mp3 export writes: the stem of the file the project was opened from, or
+    /// nothing for a project never saved.
+    fn export_title(&self) -> String {
+        self.source().and_then(Path::file_stem).map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default()
     }
 }
 

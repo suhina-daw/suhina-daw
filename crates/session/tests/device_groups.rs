@@ -200,6 +200,29 @@ fn a_device_is_duplicated_with_everything_in_it() {
 }
 
 #[test]
+fn several_devices_are_duplicated_only_from_one_chain_or_branch() {
+    let mut session = Session::new(project(false));
+    for id in ["utility", "overdrive", "compressor"] {
+        add(&mut session, id);
+    }
+    run(&mut session, "device.group", json!({ "track": 1, "device": 1, "count": 2 })).unwrap();
+    // The chain is now Utility and a group; the top-level device and one inside the group are
+    // in different places, and neither is copied.
+    let before = session.project().clone();
+    let mixed = run(&mut session, "device.duplicateMany", json!({ "track": 1, "devices": [0, "1/0/1"] }));
+    assert!(mixed.is_err(), "{mixed:?}");
+    assert_eq!(session.project(), &before, "nothing changed");
+    // Two devices of the same branch are copied into it.
+    let made = run(&mut session, "device.duplicateMany", json!({ "track": 1, "devices": ["1/0/0", "1/0/1"] })).unwrap();
+    assert_eq!(made["devices"], json!(["1/0/2", "1/0/3"]));
+    assert_eq!(devices(&session).len(), 2);
+    assert_eq!(
+        names(&devices(&session)[1].as_group().unwrap().branches[0].devices),
+        ["Overdrive", "Compressor", "Overdrive", "Compressor"]
+    );
+}
+
+#[test]
 fn instruments_in_groups_follow_the_chain_rules() {
     let mut session = Session::new(project(true));
     add(&mut session, "fm-synth");

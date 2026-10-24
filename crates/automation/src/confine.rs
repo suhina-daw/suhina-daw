@@ -25,6 +25,8 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
         "project.save" => confine_save(workspace, &mut params, source)?,
         "project.export" => confine_export(workspace, &mut params)?,
         "project.autosave" => confine_autosave(workspace, &params, source)?,
+        "project.collect" => confine_collect(workspace, &mut params, source)?,
+        "device.setNamFile" => confine_one_file(workspace, &mut params, "path")?,
         "clip.addFiles" => {
             if let Some(paths) = params.get_mut("paths").and_then(Value::as_array_mut) {
                 for path in paths.iter_mut() {
@@ -182,6 +184,36 @@ fn confine_autosave(workspace: &Workspace, params: &Value, source: Option<&Path>
     Ok(())
 }
 
+/// `project.collect` copies files into `Samples/Collected` of its folder, so that folder is below
+/// the write root: the given `folder`, which may be new, or without one the folder of the
+/// project's own file. A `Samples` or `Collected` that is there already must be below it too, so
+/// a symlink there cannot lead the copies out.
+fn confine_collect(workspace: &Workspace, params: &mut Value, source: Option<&Path>) -> Result<(), String> {
+    let folder = match params.get("folder") {
+        Some(Value::String(folder)) if !folder.trim().is_empty() => workspace.writable_new_folder(folder.trim())?,
+        // The command would read a blank folder as the working folder, which nothing checked.
+        Some(Value::String(_)) => return Err("folder must not be blank".into()),
+        None | Some(Value::Null) => match source {
+            Some(source) => {
+                let folder = source.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+                workspace.writable_folder(folder)?
+            }
+            // The command itself says it needs a folder.
+            None => return Ok(()),
+        },
+        Some(_) => return Err("folder must be text".into()),
+    };
+    let mut inside = folder.clone();
+    for part in suhina_session::COLLECTED {
+        inside = inside.join(part);
+        if std::fs::symlink_metadata(&inside).is_ok() {
+            workspace.writable_folder(&inside)?;
+        }
+    }
+    params["folder"] = json!(display_path(&folder));
+    Ok(())
+}
+
 /// A folder `place` must be below the read root; `pinned` and `recent:…` are the library's own.
 fn confine_place(workspace: &Workspace, params: &mut Value) -> Result<(), String> {
     if let Some(place) = params.get("place").and_then(Value::as_str)
@@ -304,6 +336,70 @@ mod from_the_tool_lists {
         assert_eq!(confine(&workspace, "soundmap.layout", place.clone(), None).unwrap(), place);
         let voice = confine(&workspace, "library.info", json!({ "item": "bank.syx#4" }), None).unwrap();
         assert!(voice["item"].as_str().unwrap().ends_with("bank.syx#4"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn project_collect_writes_only_below_the_write_root() {
+        let (dir, read_only) = roots("collect");
+        std::fs::create_dir_all(dir.join("out/song")).unwrap();
+        let workspace = Workspace::new(Some(&dir.join("inside")), Some(&dir.join("out"))).unwrap();
+        let collect =
+            |w: &Workspace, params: Value, source: Option<&Path>| confine(w, "project.collect", params, source);
+        let outside = dir.join("outside").join("collected");
+
+        // A folder outside the write root, by an absolute path or by '..', is refused, and nothing is made.
+        assert!(collect(&workspace, json!({ "folder": outside.display().to_string() }), None).is_err());
+        assert!(collect(&workspace, json!({ "folder": "../outside/collected" }), None).is_err());
+        assert!(!outside.exists());
+        // Without a write root nothing is written, whatever the folder.
+        assert!(collect(&read_only, json!({ "folder": "collected" }), None).is_err());
+        // Without a folder the project's own folder is used, which must be below the write root.
+        let source = dir.join("inside").join("own.suhina");
+        assert!(collect(&workspace, json!({}), Some(&source)).is_err());
+        let source = dir.join("out").join("song").join("own.suhina");
+        assert!(collect(&read_only, json!({}), Some(&source)).is_err());
+        let ok = collect(&workspace, json!({}), Some(&source)).unwrap();
+        assert!(ok["folder"].as_str().unwrap().ends_with("song"), "{ok}");
+        // A project with no file is left to the command, which asks for a folder.
+        assert_eq!(collect(&workspace, json!({}), None).unwrap(), json!({}));
+
+        // Below the write root it works, in a folder that is new or one that is there.
+        let ok = collect(&workspace, json!({ "folder": "fresh" }), None).unwrap();
+        assert!(Path::new(ok["folder"].as_str().unwrap()).is_absolute());
+        assert!(ok["folder"].as_str().unwrap().ends_with("fresh"));
+        assert!(collect(&workspace, json!({ "folder": "song" }), None).is_ok());
+        assert!(collect(&workspace, json!({ "folder": 3 }), None).is_err());
+        // A blank folder is refused, with or without a project file.
+        for blank in ["", "  "] {
+            assert!(collect(&workspace, json!({ "folder": blank }), None).is_err());
+            assert!(collect(&workspace, json!({ "folder": blank }), Some(&source)).is_err());
+        }
+        #[cfg(unix)]
+        {
+            // A Samples folder or a folder that leads outside is refused.
+            std::os::unix::fs::symlink(dir.join("outside"), dir.join("out").join("link")).unwrap();
+            assert!(collect(&workspace, json!({ "folder": "link" }), None).is_err());
+            std::os::unix::fs::symlink(dir.join("outside"), dir.join("out").join("song").join("Samples")).unwrap();
+            assert!(collect(&workspace, json!({ "folder": "song" }), None).is_err());
+            assert!(collect(&workspace, json!({}), Some(&source)).is_err());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_nam_model_or_impulse_response_is_read_below_the_read_root_only() {
+        let (dir, workspace) = roots("nam");
+        std::fs::write(dir.join("inside/amp.nam"), b"x").unwrap();
+        std::fs::write(dir.join("outside/amp.nam"), b"x").unwrap();
+        let set = |path: &str| {
+            confine(&workspace, "device.setNamFile", json!({ "track": 1, "device": 0, "path": path }), None)
+        };
+        let ok = set("amp.nam").unwrap();
+        assert!(Path::new(ok["path"].as_str().unwrap()).is_absolute());
+        assert_eq!(ok["track"], 1);
+        assert!(set(&dir.join("outside/amp.nam").display().to_string()).is_err());
+        assert!(set("../outside/amp.nam").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -18,6 +18,7 @@ suhina-project-file = { path = "crates/project-file" }
 suhina-session = { path = "crates/session" }
 suhina-automation = { path = "crates/automation" }
 suhina-media = { path = "crates/media" }
+suhina-mp3 = { path = "crates/mp3" }
 suhina-library = { path = "crates/library" }
 suhina-dsp = { path = "crates/dsp" }
 suhina-device-api = { path = "crates/device-api" }
@@ -48,6 +49,7 @@ suhina-style = { path = "crates/style" }
 suhina-soundmap = { path = "crates/soundmap" }
 suhina-separation = { path = "crates/separation" }
 suhina-update = { path = "crates/update" }
+suhina-theme-package = { path = "crates/theme-package" }
 
 # external (licences must be GPLv3-compatible)
 hound = "3.5"  # Apache-2.0
@@ -85,6 +87,12 @@ opt-level = 2
 [profile.dev]
 opt-level = 1
 debug = "line-tables-only"
+
+# Test binaries without debug info: each one's .pdb on Windows is about 120 MB, and old copies pile
+# up in target/debug/deps. A panic still names its file and line; for line numbers in a backtrace,
+# run with CARGO_PROFILE_TEST_DEBUG=line-tables-only.
+[profile.test]
+debug = false
 
 [profile.release]
 lto = "thin"

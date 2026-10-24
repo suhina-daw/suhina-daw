@@ -133,32 +133,99 @@ fn sizes_are_checked() {
 
 #[test]
 fn opening_something_else_fails_cleanly() {
-    let dir = std::env::temp_dir();
-    let stranger = dir.join(format!("not-a-link-{}", std::process::id()));
+    let stranger = std::env::temp_dir().join(format!("not-a-link-{}", std::process::id()));
     let _ = std::fs::write(&stranger, [0u8; 1024]);
     assert!(matches!(Served::open(&stranger.display().to_string()), Err(IpcError::BadLink(_))));
     let _ = std::fs::remove_file(&stranger);
 
-    let short = dir.join(format!("suhina-ipc-short-{}", std::process::id()));
-    let _ = std::fs::write(&short, [0u8; 16]);
-    assert!(matches!(Served::open(&short.display().to_string()), Err(IpcError::BadLink(_))));
-    let _ = std::fs::remove_file(&short);
+    // Shared memory of a link's kind that does not hold one.
+    let short = shm::with_bytes("ipc", &[0u8; 16]);
+    assert!(matches!(Served::open(short.address()), Err(IpcError::BadLink(_))));
+    let garbage = shm::with_bytes("ipc", &[0xAAu8; 4096]);
+    assert!(matches!(Served::open(garbage.address()), Err(IpcError::BadLink(_))));
+    // An audio source is not a link, whatever it holds.
+    let source = AudioSource::from_interleaved(&[0.5; 4096], 2, 48_000.0).unwrap_or_else(|e| panic!("{e}"));
+    assert!(Served::open(&source.address()).is_err());
 
-    let garbage = dir.join(format!("suhina-ipc-garbage-{}", std::process::id()));
-    let _ = std::fs::write(&garbage, [0xAAu8; 4096]);
-    assert!(matches!(Served::open(&garbage.display().to_string()), Err(IpcError::BadLink(_))));
-    let _ = std::fs::remove_file(&garbage);
-
-    assert!(Served::open("suhina-ipc-does-not-exist").is_err());
+    let own = std::process::id();
+    for address in [
+        "suhina-ipc-does-not-exist".to_string(),
+        "Local\\suhina-ipc-does-not-exist".to_string(),
+        "Local\\suhina-ipc-1-2-3".to_string(),
+        format!("/proc/{own}/fd/0"),
+        format!("/proc/{own}/fd/99999"),
+        format!("/proc/{own}/fd/0#0"),
+        format!("/proc/{own}/fd/0#"),
+        "/proc/self/fd/0".to_string(),
+        String::new(),
+    ] {
+        assert!(Served::open(&address).is_err(), "{address}");
+    }
 }
 
 #[test]
-fn the_region_is_removed_with_the_link() {
+fn the_region_goes_with_the_link() {
     let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
     let address = link.address();
-    assert!(std::path::Path::new(&address).exists());
+    let file = cfg!(not(any(windows, target_os = "linux")));
+    // On Linux the address is the engine's descriptor under /proc, which exists while it holds
+    // it: no file in /dev/shm. On Windows it is a mapping's name, no file at all.
+    if cfg!(target_os = "linux") {
+        let path = address.split('#').next().unwrap_or_default();
+        assert!(address.starts_with("/proc/") && std::path::Path::new(path).exists(), "{address}");
+    } else {
+        assert_eq!(std::path::Path::new(&address).exists(), file, "{address}");
+    }
     drop(link);
-    assert!(!std::path::Path::new(&address).exists());
+    // On Linux the address is a descriptor number, which another test may take next.
+    if !cfg!(target_os = "linux") {
+        assert!(Served::open(&address).is_err());
+    }
+    if file {
+        assert!(!std::path::Path::new(&address).exists());
+    }
+}
+
+/// A descriptor number that is closed and taken by another region must not open as the old one
+/// (a host that opens late, after the engine gave up on its load).
+#[test]
+#[cfg(target_os = "linux")]
+fn a_reused_descriptor_number_does_not_open_the_old_address() {
+    let first = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+    let old = first.address();
+    let number = old.split("/fd/").nth(1).and_then(|r| r.split('#').next()).map(str::to_string);
+    drop(first);
+    // Make links until one has the number the first had (usually the very next).
+    let mut keep = Vec::new();
+    for _ in 0..64 {
+        let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+        let same = link.address().split("/fd/").nth(1).and_then(|r| r.split('#').next()).map(str::to_string) == number;
+        keep.push(link);
+        if same {
+            break;
+        }
+    }
+    assert!(matches!(Served::open(&old), Err(IpcError::BadLink(_))), "{old}");
+    for link in &keep {
+        assert!(Served::open(&link.address()).is_ok());
+    }
+}
+
+#[test]
+fn a_link_works_on_once_its_name_is_gone() {
+    let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let address = link.address();
+    let host = halving_host(address.clone(), 2, None);
+    // Wait until the host has opened it, as the engine waits for the host's answer to a load.
+    let mut output = vec![0.0; BLOCK * 2];
+    assert_eq!(link.process(&ramp(BLOCK * 2, 0.0), &mut output, LONG), Outcome::Done);
+    link.host_opened();
+    if cfg!(not(any(windows, target_os = "linux"))) {
+        assert!(!std::path::Path::new(&address).exists());
+    }
+    assert_eq!(link.process(&ramp(BLOCK * 2, 1.0), &mut output, LONG), Outcome::Done);
+    assert_eq!(output, ramp(BLOCK * 2, 1.0).iter().map(|v| v * 0.5).collect::<Vec<_>>());
+    assert_eq!(host.join().unwrap_or_else(|_| panic!("host")), 2);
 }
 
 #[test]

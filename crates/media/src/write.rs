@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Writing the audio files an export renders: one entry point for WAV (32-bit float and
-//! 16/24-bit PCM with dithering), FLAC and Ogg Vorbis, so the export everywhere — the app, the
-//! CLI and the MCP server — and every caller of an offline render write through the same code
-//! ([`docs/spec/export.md`](../../docs/spec/export.md) › Formats). The engine decodes and
-//! never writes; this is the crate that writes.
+//! 16/24-bit PCM with dithering), FLAC, Ogg Vorbis and MP3, so the export everywhere — the
+//! app, the CLI and the MCP server — and every caller of an offline render write through the
+//! same code ([`docs/spec/export.md`](../../docs/spec/export.md) › Formats). The engine
+//! decodes and never writes; this is the crate that writes.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use suhina_mp3::{Mp3Encoder, Mp3Rate, Mp3Settings, Mp3Tags, assemble_mp3_file};
 
 /// The file formats an export writes, by the names the `project.export` command and the
 /// dialog use.
@@ -20,6 +22,8 @@ pub enum AudioFormat {
     Flac,
     /// Ogg Vorbis, no depth.
     Ogg,
+    /// MP3, through the vendored LAME encoder, no depth.
+    Mp3,
 }
 
 impl AudioFormat {
@@ -29,6 +33,7 @@ impl AudioFormat {
             "wav" => Some(Self::Wav),
             "flac" => Some(Self::Flac),
             "ogg" => Some(Self::Ogg),
+            "mp3" => Some(Self::Mp3),
             _ => None,
         }
     }
@@ -39,7 +44,13 @@ impl AudioFormat {
             Self::Wav => "wav",
             Self::Flac => "flac",
             Self::Ogg => "ogg",
+            Self::Mp3 => "mp3",
         }
+    }
+
+    /// Whether the format carries a bit depth at all: PCM ones do, Ogg Vorbis and MP3 do not.
+    pub fn has_depth(self) -> bool {
+        matches!(self, Self::Wav | Self::Flac)
     }
 }
 
@@ -82,22 +93,34 @@ impl BitDepth {
 }
 
 /// How a file is written: the format, the depth, the sample rate, whether dithering applies
-/// to a reduced depth, and the seed the dither's noise is made from — exports are
-/// deterministic, so the same render writes the same bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// to a reduced depth, the seed the dither's noise is made from — exports are deterministic,
+/// so the same render writes the same bytes — and, for MP3, the rate and the ID3 title.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioFileSpec {
     pub format: AudioFormat,
     pub depth: BitDepth,
     pub sample_rate: u32,
     pub dither: bool,
     pub seed: u64,
+    /// The MP3 rate; other formats leave it at the default.
+    pub mp3_rate: Mp3Rate,
+    /// The ID3 title an MP3 file carries, normally the project's name; empty writes none.
+    pub title: String,
 }
 
 impl AudioFileSpec {
     /// The spec for a 32-bit float WAV at `sample_rate`, what a render is shared as when no
     /// depth is asked for.
     pub fn float_wav(sample_rate: u32) -> Self {
-        Self { format: AudioFormat::Wav, depth: BitDepth::Float32, sample_rate, dither: false, seed: 0 }
+        Self {
+            format: AudioFormat::Wav,
+            depth: BitDepth::Float32,
+            sample_rate,
+            dither: false,
+            seed: 0,
+            mp3_rate: Mp3Rate::default(),
+            title: String::new(),
+        }
     }
 }
 
@@ -163,6 +186,7 @@ pub fn write_audio_file(path: &Path, samples: &[f32], spec: &AudioFileSpec, mode
         AudioFormat::Wav => write_wav(&stage, samples, spec),
         AudioFormat::Flac => write_flac(&stage, samples, spec),
         AudioFormat::Ogg => write_ogg(&stage, samples, spec),
+        AudioFormat::Mp3 => write_mp3(&stage, samples, spec),
     };
     if let Err(e) = encoded {
         // A failed encode leaves the destination alone: what was there still plays.
@@ -645,6 +669,36 @@ fn write_ogg(path: &Path, samples: &[f32], spec: &AudioFileSpec) -> Result<(), S
     let mut sink = encoder.finish().map_err(fail)?;
     sink.flush().map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(())
+}
+
+/// Writes an MP3 through the vendored LAME 3.100 encoder (`suhina-mp3`): the mix is fed in
+/// blocks, the stream is flushed, and the LAME tag frame replaces the empty frame LAME
+/// leaves at the stream's start, so players get gapless playback and the true length. The
+/// ID3v2 header carries the title when the spec has one.
+fn write_mp3(path: &Path, samples: &[f32], spec: &AudioFileSpec) -> Result<(), String> {
+    let fail = |e: suhina_mp3::Mp3Error| format!("{}: {e}", path.display());
+    let mut encoder = Mp3Encoder::new(&Mp3Settings {
+        rate: spec.mp3_rate,
+        sample_rate: spec.sample_rate,
+        channels: 2,
+        tags: Mp3Tags { title: spec.title.clone() },
+    })
+    .map_err(fail)?;
+    let mut stream: Vec<u8> = Vec::new();
+    // The encoder takes one slice per channel; blocks of a second, so a long mix does not
+    // hold a giant block at once. The samples are interleaved, so a channel is every other
+    // one. The encoder takes only full scale: a sample over it clamps there and a NaN
+    // becomes 0, as the PCM depths treat hostile values.
+    let full_scale = |sample: &f32| if sample.is_nan() { 0.0 } else { sample.clamp(-1.0, 1.0) };
+    let block_frames = spec.sample_rate as usize;
+    for block in samples.chunks(block_frames * 2) {
+        let left: Vec<f32> = block.iter().step_by(2).map(full_scale).collect();
+        let right: Vec<f32> = block.iter().skip(1).step_by(2).map(full_scale).collect();
+        encoder.encode(&left, &right, &mut stream).map_err(fail)?;
+    }
+    let tag = encoder.finish(&mut stream).map_err(fail)?;
+    let file = assemble_mp3_file(&stream, &tag).map_err(fail)?;
+    std::fs::write(path, &file).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 #[cfg(test)]

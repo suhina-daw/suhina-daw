@@ -7,6 +7,7 @@
 // Release builds on Windows start without a console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod crash_log;
 mod liquid;
 #[cfg(target_os = "macos")]
 mod mac_menu;
@@ -125,6 +126,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // A crash leaves a file in <data>/crashes/, which a start from the desktop otherwise loses.
+    if let Some(folder) = eframe::storage_dir(app_id()) {
+        crash_log::install(folder.join("crashes"));
+    }
     // One app per build: a second start hands its project to the first and exits.
     let repaint = std::sync::Arc::new(std::sync::OnceLock::new());
     let Ok(agents) = endpoints(&args, &repaint) else { return ExitCode::SUCCESS };
@@ -174,6 +179,7 @@ fn main() -> ExitCode {
         see_through: if see_through_asked { None } else { Some(false) },
         blurred: false,
         themes,
+        theme_error: None,
         recent,
         #[cfg(target_os = "macos")]
         mac_menu: None,
@@ -334,6 +340,8 @@ struct Window {
     /// The system blurs what shows through: on while the theme has a see-through background.
     blurred: bool,
     themes: theme_io::ThemeIo,
+    /// The theme files' last error in the status bar, cleared once they read without one.
+    theme_error: Option<String>,
     /// The projects opened and saved lately, for the project dialog.
     recent: recent::Recent,
     /// The macOS menu bar, once installed (#650).
@@ -354,10 +362,18 @@ struct StartUp {
 impl eframe::App for Window {
     /// Nothing behind the backgrounds: where none is painted, the desktop shows.
     fn clear_color(&self, visuals: &eframe::egui::Visuals) -> [f32; 4] {
-        if self.see_through == Some(true) { [0.0; 4] } else { visuals.panel_fill.to_normalized_gamma_f32() }
+        if self.see_through == Some(true) {
+            [0.0; 4]
+        } else {
+            // A window that cannot show the desktop clears to the panel colour over black, opaque:
+            // a theme's see-through colours then read dark, never as the white behind the window.
+            let [r, g, b, _] = visuals.panel_fill.to_array();
+            eframe::egui::Color32::from_rgba_premultiplied(r, g, b, 255).to_normalized_gamma_f32()
+        }
     }
 
     fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
+        crash_log::set_theme(&self.app.settings().theme);
         // Asked once the GPU and the window are both there, which can be a frame or two in.
         if self.see_through.is_none()
             && let (Some(gpu), Some(window)) = (frame.wgpu_render_state(), frame.winit_window())
@@ -594,6 +610,11 @@ impl Window {
     /// Opens a Live Set in a new tab or in place of the active project: imports it, decodes its
     /// audio and starts playing it, stopped.
     fn open(&mut self, path: &Path, how: OpenAs) {
+        // A theme package (a double-click on it, or handed over by a second start) is brought in.
+        if suhina_ui::app::is_theme_package(path) {
+            self.app.request_open(path.to_path_buf());
+            return;
+        }
         match Session::open(path) {
             Ok((session, warnings)) => {
                 self.show_session(session, warnings, how);
@@ -659,6 +680,10 @@ impl Window {
             self.themes.queue(action);
         }
         if let Some(reply) = self.themes.tick(ctx) {
+            if let Some(css) = reply.user_css {
+                suhina_ui::kit::native_css::set_user_sheet(css);
+                ctx.request_repaint();
+            }
             if reply.replace {
                 self.app.set_themes(ctx, reply.entries, reply.folder);
             } else {
@@ -669,10 +694,17 @@ impl Window {
             if let Some(id) = reply.select {
                 self.app.use_theme(ctx, &id);
             }
+            let clean = reply.notices.iter().all(Result::is_ok);
+            if clean && let Some(error) = self.theme_error.take() {
+                self.app.clear_error(&error);
+            }
             for notice in reply.notices {
                 self.app.set_status(match notice {
                     Ok(message) => Status::Done(message),
-                    Err(error) => Status::Error(error),
+                    Err(error) => {
+                        self.theme_error = Some(error.clone());
+                        Status::Error(error)
+                    }
                 });
             }
         }
@@ -855,7 +887,20 @@ fn load_keymap() -> (Keymap, Vec<String>) {
 fn save_file(name: &str, text: &str) -> Result<(), String> {
     let dir = eframe::storage_dir(app_id()).ok_or("there is no folder to keep settings in")?;
     std::fs::create_dir_all(&dir).map_err(|e| save_error::message(name, &e))?;
-    std::fs::write(dir.join(name), text).map_err(|e| save_error::message(name, &e))
+    write_whole(&dir.join(name), text).map_err(|e| save_error::message(name, &e))
+}
+
+/// Writes `text` to `path` whole or not at all: into a file beside it, then renamed over it, so a
+/// crash or a full disk while writing never leaves the settings half written (they would then be
+/// read as defaults).
+fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
+    std::fs::write(&temporary, text)?;
+    std::fs::rename(&temporary, path).inspect_err(|_| {
+        let _removed = std::fs::remove_file(&temporary);
+    })
 }
 
 #[cfg(test)]
@@ -864,6 +909,18 @@ mod tests {
 
     fn parse(v: &[&str]) -> Result<Option<Args>, String> {
         parse_args(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn settings_are_written_whole_over_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("suhina-write-whole-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.txt");
+        std::fs::write(&path, "old").unwrap();
+        write_whole(&path, "animations = off\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "animations = off\n");
+        assert!(!dir.join("settings.txt.tmp").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -91,7 +91,10 @@ chooses. Agents cannot change these settings. Standalone MCP keeps its `--write-
 
 ## Theme gallery and colour editor
 
-Themes shows a miniature musical scene for every built-in or custom palette. The scenes
+Themes has a search field beside *Other themes*: it shows the themes whose name, id or a
+variant's name contains the text, ignoring case, and *No themes match* when none does; the theme in
+use always shows. A theme left in an earlier file format says *Not converted* on its card, with
+the reason when hovered. Themes shows a miniature musical scene for every built-in or custom palette. The scenes
 use the same browser, MIDI/audio clips, grid, controls and meters; drawing them never
 installs a theme or loads another project. The active card has an accent border and Active
 label. The active theme is featured once at full width with a 170 px preview; other
@@ -119,10 +122,11 @@ Edit current theme opens a child view, with Back to themes and the current theme
 Its Liquid section defaults to Use global liquid settings. Turning that off copies the
 current global Panel/Track/Clip strengths into independent theme overrides. The three
 sliders then apply live and save with the theme; turning inheritance back on removes
-the override. Editing a built-in creates a custom copy. The renderer uses theme values
-when present, otherwise global settings; GPU support, reduced effects and high contrast
-remain final gates. Theme JSON optionally contains `liquid: {panels, tracks, clips}`,
-with each integer from 0 to 100. Missing `liquid` preserves global inheritance. Copies
+the override. Settings edits are saved in a variant of the theme (Custom, made the first time
+on the theme's own values), so a built-in theme is not copied for them. The renderer uses theme
+values when present, otherwise global settings; GPU support, reduced effects and high contrast
+remain final gates. A theme's `--liquid` property is `auto` or three integers from 0 to 100
+(panels, tracks, clips); `auto` preserves global inheritance. Copies
 and exports retain these values; Reset changes restores both entry colours and inheritance.
 Colours are grouped into Surfaces, Text, Tracks & clips, Controls, Meters and Sample map.
 Each colour has its swatch, hex and wrapping token on the first line, followed by the
@@ -137,7 +141,12 @@ creations; explicit colours and copies of existing clip content remain unchanged
 `track.1`–`track.8` swatches remain readable in theme files and in colour pickers/browser
 icons for compatibility, but are hidden from this editor. Older theme files inherit their
 MIDI default from `track.3` and audio default from `track.1`; explicit new tokens win.
-Changes apply and save live; editing a built-in palette still creates a custom copy.
+Changes apply and save live into the variant in use; moving controls or changing artwork of a
+built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
+card, the theme's own values first; clicking one uses that variant. More › New variant starts
+one from the values in use, and with a variant in use the name field renames the variant.
+*Theme settings* lists the settings the theme declares with `@property`, each with a control
+for its type ([theme skins](theme-skins.md#theme-storage-one-sheet-variants-and-layout)).
 Save as new theme duplicates the current palette and focuses its editable name. Reset
 changes restores the palette captured when entering the editor, without changing the
 built-in source. The name field reserves the same space for built-in and custom themes,

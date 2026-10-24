@@ -16,6 +16,7 @@ use suhina_device_api::{ParamInfo, ParamKind, Unit};
 use suhina_engine::model::automation::{MUTE, PAN, VOLUME};
 use suhina_engine::model::{AutomationLane, AutomationPoint, ClipId, DeviceKind, Project, Rgb, TrackId};
 
+use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, Action};
 
@@ -334,7 +335,7 @@ impl Params {
     pub fn build(project: &Project) -> Self {
         let mut tracks = HashMap::new();
         for track in &project.tracks {
-            let Some(channel) = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id)) else {
+            let Some(channel) = track.channel.and_then(|id| project.channel(id)) else {
                 continue;
             };
             let lane_of = |lanes: &[AutomationLane], id: &str| lanes.iter().find(|l| l.param == id).cloned();
@@ -618,8 +619,8 @@ pub struct Geometry {
     pub visible: Rect,
     pub scroll_x: f32,
     pub beat_width: f32,
-    /// The clip grid at this zoom, in beats.
-    pub grid: f64,
+    /// The arrangement's grid at this zoom: points snap to the lines it draws.
+    pub grid: TimelineGrid,
 }
 
 impl Geometry {
@@ -633,9 +634,10 @@ impl Geometry {
         f64::from((x - self.time.min + self.scroll_x) / self.beat_width)
     }
 
-    /// `beat` on the grid, or free (to a thousandth) with `free`; never before the start.
+    /// `beat` on the nearest grid line, or free (to a thousandth) with `free` or a grid that does
+    /// not snap; never before the start.
     fn snap(&self, beat: f64, free: bool) -> f64 {
-        let beat = if free || self.grid <= 0.0 { round(beat, 1000.0) } else { (beat / self.grid).round() * self.grid };
+        let beat = if free || !self.grid.snaps { round(beat, 1000.0) } else { self.grid.place(beat, false, false) };
         if beat.is_finite() { beat.max(0.0) } else { 0.0 }
     }
 }
@@ -1595,6 +1597,33 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::R
 mod tests {
     use super::*;
 
+    #[test]
+    fn points_snap_to_the_lines_the_arrangement_draws() {
+        // 3/4 with a half-note grid: lines at 0, 2, 3, 5, 6, ... (they start again at each bar).
+        let grid = TimelineGrid::new(2.0, 400.0, 3.0, 8.0);
+        let geometry = Geometry {
+            time: egui::Rangef::new(0.0, 1000.0),
+            headers: egui::Rangef::new(0.0, 0.0),
+            visible: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1000.0)),
+            scroll_x: 0.0,
+            beat_width: 400.0,
+            grid,
+        };
+        let drawn: Vec<f64> = grid.lines(0.0, 9.0, 100).into_iter().map(|(beat, _)| beat).collect();
+        assert_eq!(drawn, vec![0.0, 2.0, 3.0, 5.0, 6.0, 8.0, 9.0]);
+        assert_eq!(geometry.snap(3.9, false), 3.0, "not beat 4, which has no line");
+        assert_eq!(geometry.snap(4.2, false), 5.0);
+        assert_eq!(geometry.snap(2.6, false), 3.0);
+        for n in 0..900 {
+            let snapped = geometry.snap(f64::from(n) / 100.0, false);
+            assert!(drawn.contains(&snapped), "{n}: {snapped}");
+        }
+        assert_eq!(geometry.snap(3.9123, true), 3.912);
+        let none = Geometry { grid: TimelineGrid { snaps: false, ..grid }, ..geometry };
+        assert_eq!(none.snap(3.9123, false), 3.912);
+        assert_eq!(geometry.snap(f64::NAN, false), 0.0);
+    }
+
     /// A volume placed on the lane and read back is the same, and sits where the mixer's field puts it.
     #[test]
     fn volume_positions_and_values_are_inverses() {
@@ -1768,8 +1797,7 @@ mod tests {
     fn sd_parameters_are_listed_and_use_their_control_scale() {
         let mut project = crate::demo::demo_project();
         let track = project.tracks[0].id;
-        let Some(channel) = project.tracks[0].channel.and_then(|id| project.channels.iter_mut().find(|c| c.id == id))
-        else {
+        let Some(channel) = project.tracks[0].channel.and_then(|id| project.channel_mut(id)) else {
             return;
         };
         let mut graph =
@@ -1890,8 +1918,7 @@ mod tests {
     fn built_in_and_sd_parameters_carry_their_group() {
         let mut project = crate::demo::demo_project();
         let track = project.tracks[0].id;
-        let Some(channel) = project.tracks[0].channel.and_then(|id| project.channels.iter_mut().find(|c| c.id == id))
-        else {
+        let Some(channel) = project.tracks[0].channel.and_then(|id| project.channel_mut(id)) else {
             return;
         };
         channel.devices.push(suhina_engine::model::Device::new("FM Synth", DeviceKind::Builtin("fm-synth".into())));

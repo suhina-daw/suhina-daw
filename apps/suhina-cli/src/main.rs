@@ -18,6 +18,7 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
                          [--source <track or group>] [<fm>]
        suhina-cli play (<project.als> | --demo) [--scene <n> | --launcher] [<fm>] [<output>]
        suhina-cli fm-synth voices <file.syx>
+       suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>))
        suhina-cli commands [--markdown]
        suhina-cli mcp [--read-root <dir>] [--write-root <dir>] [--audio]
        suhina-cli mcp --attach
@@ -35,7 +36,7 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
 commands:
   render    render a project offline to a 32-bit float stereo WAV file; --source renders one
             track or group (its id or name) through project.export instead — the sum at that
-            node, with the file's extension choosing the format there (wav, flac or ogg)
+            node, with the file's extension choosing the format there (wav, flac, ogg or mp3)
   play      play a project once on the default audio output, or with --launcher launch its
             clips and scenes by typing commands
   commands  list every command the MCP server and the UI run, with what it does; --markdown
@@ -58,6 +59,10 @@ commands:
             set-hosting chooses whether a plug-in's instances share a process per file (the
             default), per vendor, or each run in one of their own
   fm-synth  fm-synth voices: list the voices in a DX7 voice or bank file (.syx)
+  theme     theme pack: pack a theme's folder (its theme.css and files) into a theme package
+            with a manifest of each file's SHA-256 sum, after checking it as an import does;
+            the package is <folder name>.theme.suhina beside the folder unless -o names it;
+            theme validate: check a package or a folder and list what the checks found
   plugin    plugin run: put an audio file through a plug-in (a name or id from plugins list)
             in its own process, offline, and write a 32-bit float stereo WAV; --tail adds
             that many seconds of silence for reverbs and delays to ring out (default 2);
@@ -155,6 +160,13 @@ fn main() -> ExitCode {
             }
         }
         Some("fm-synth") => match fm_synth(args.get(1..).unwrap_or_default()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("error: {message}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("theme") => match theme(args.get(1..).unwrap_or_default()) {
             Ok(()) => ExitCode::SUCCESS,
             Err(message) => {
                 eprintln!("error: {message}");
@@ -444,6 +456,66 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
 }
 
 /// `fm-synth voices <file.syx>`.
+/// `theme pack` and `theme validate` (`docs/spec/theme-skins.md` › Theme packages).
+fn theme(args: &[String]) -> Result<(), String> {
+    use suhina_theme_package as package;
+    let usage = || {
+        format!(
+            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>))\n\n{USAGE}"
+        )
+    };
+    let print_warnings = |warnings: &[String]| {
+        for warning in warnings {
+            println!("warning: {warning}");
+        }
+    };
+    match (args.first().map(String::as_str), args.get(1)) {
+        (Some("pack"), Some(folder)) => {
+            let folder = std::path::Path::new(folder);
+            let out = match (args.get(2).map(String::as_str), args.get(3)) {
+                (Some("-o" | "--output"), Some(out)) => std::path::PathBuf::from(out),
+                (None, _) => {
+                    let name = folder.file_name().and_then(|n| n.to_str()).ok_or("the folder has no name")?;
+                    folder.with_file_name(format!("{name}{}", package::EXTENSION))
+                }
+                _ => return Err(usage()),
+            };
+            let id = folder
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_ascii_lowercase().replace(' ', "-"))
+                .ok_or("the folder has no name")?;
+            let files = package::read_folder(folder)?;
+            let name = files
+                .get("theme.css")
+                .and_then(|css| std::str::from_utf8(css).ok())
+                .and_then(package::sheet_name)
+                .unwrap_or_else(|| id.clone());
+            let warnings = package::validate(&files)?;
+            let bytes = package::pack(&id, &name, &files)?;
+            std::fs::write(&out, bytes).map_err(|e| format!("{}: {e}", out.display()))?;
+            print_warnings(&warnings);
+            println!("packed {name} ({} files) into {}", files.len(), out.display());
+            Ok(())
+        }
+        (Some("validate"), Some(path)) => {
+            let path = std::path::Path::new(path);
+            let (what, warnings) = if path.is_dir() {
+                let files = package::read_folder(path)?;
+                (format!("{} files", files.len()), package::validate(&files)?)
+            } else {
+                let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+                let read = package::read(&bytes)?;
+                (format!("{} ({}), {} files", read.name, read.id, read.files.len()), read.warnings)
+            };
+            print_warnings(&warnings);
+            println!("valid: {what}, {} warnings", warnings.len());
+            Ok(())
+        }
+        _ => Err(usage()),
+    }
+}
+
 fn fm_synth(args: &[String]) -> Result<(), String> {
     let (Some("voices"), Some(path)) = (args.first().map(String::as_str), args.get(1)) else {
         return Err(format!("usage: suhina-cli fm-synth voices <file.syx>\n\n{USAGE}"));
@@ -462,7 +534,12 @@ fn render(args: &Args) -> Result<(), String> {
     let env = suhina_session::PluginEnv::from_library(&mut library);
     if let Some(node) = &args.node {
         // The node render `project.export` runs: the export's own writer and rules, the file
-        // name's extension choosing the format (wav, flac or ogg).
+        // name's extension choosing the format (wav, flac, ogg or mp3). An mp3's title is the
+        // project file's stem, as the app writes it.
+        let title = match &args.source {
+            Source::Als(path) => path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            Source::Demo => String::new(),
+        };
         let data = suhina_session::ExportData {
             warnings: Vec::new(),
             project,
@@ -471,6 +548,7 @@ fn render(args: &Args) -> Result<(), String> {
             plugins: Some(std::sync::Arc::new(env)),
             folder: None,
             trusted: suhina_media::Trusted::default(),
+            title,
         };
         let params = serde_json::json!({
             "path": path.display().to_string(),
@@ -1029,161 +1107,5 @@ fn demo_project() -> Project {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn demo_project_is_valid_and_renders_two_bars() {
-        let project = demo_project();
-        assert_eq!(project.validate(), Ok(()));
-        let samples = suhina_engine::render_offline(&project, 48_000, 512).unwrap();
-        let seconds = samples.len() as f64 / 2.0 / 48_000.0;
-        assert!((4.0..4.2).contains(&seconds), "{seconds} s");
-        let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-        assert!(peak > 0.1 && peak <= 1.0, "peak {peak}");
-    }
-
-    #[test]
-    fn render_args_need_one_project_and_an_output() {
-        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let parse_render = |a: &[String]| parse_args(a, Command::Render);
-        assert!(parse_render(&args(&["-o", "x.wav"])).is_err());
-        assert!(parse_render(&args(&["--demo"])).is_err());
-        assert!(parse_render(&args(&["--demo", "-o"])).is_err());
-        assert!(parse_render(&args(&["--demo", "a.als", "-o", "x.wav"])).is_err());
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--sample-rate", "abc"])).is_err());
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--scene", "0"])).is_err());
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--bogus"])).is_err());
-        let ok = parse_render(&args(&["a.als", "-o", "x.wav", "--sample-rate", "44100", "--scene", "2"])).unwrap();
-        assert_eq!(ok.sample_rate, 44_100);
-        assert_eq!(ok.scene, Some(1));
-        assert!(matches!(ok.source, Source::Als(_)));
-        assert_eq!(ok.cue, None);
-        let cued = parse_render(&args(&["--demo", "-o", "x.wav", "--cue", "cue.wav"])).unwrap();
-        assert_eq!(cued.cue, Some(PathBuf::from("cue.wav")));
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--cue"])).is_err());
-        assert!(parse_args(&args(&["--demo", "--cue", "cue.wav"]), Command::Play).is_err());
-        // --source: a name, render only, and no cue beside it.
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--source"])).is_err());
-        assert!(parse_args(&args(&["--demo", "--source", "Bass"]), Command::Play).is_err());
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav", "--cue", "cue.wav", "--source", "Bass"])).is_err());
-        let ok = parse_render(&args(&["--demo", "-o", "x.wav", "--source", "Chords"])).unwrap();
-        assert_eq!(ok.node.as_deref(), Some("Chords"));
-        assert!(parse_render(&args(&["--demo", "-o", "x.wav"])).unwrap().node.is_none());
-    }
-
-    /// `render --source <track>` renders the sum at that node alone: the same export the
-    /// command runs, and not the whole mix.
-    #[test]
-    fn a_source_render_writes_the_nodes_sum_alone() {
-        let peak_of = |path: &std::path::Path| {
-            hound::WavReader::open(path)
-                .unwrap()
-                .samples::<f32>()
-                .map(Result::unwrap)
-                .fold(0.0f32, |m, s| m.max(s.abs()))
-        };
-        let dir = std::env::temp_dir().join(format!("suhina-cli-source-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let whole = dir.join("whole.wav");
-        let chords = dir.join("chords.wav");
-        let args = |output: &std::path::Path, node: Option<&str>| Args {
-            source: Source::Demo,
-            output: Some(output.to_path_buf()),
-            cue: None,
-            node: node.map(str::to_string),
-            scene: None,
-            launcher: false,
-            sample_rate: 48_000,
-            fm: None,
-            audio_output: suhina_session::OutputChoice::default(),
-        };
-        render(&args(&whole, None)).unwrap();
-        render(&args(&chords, Some("Chords"))).unwrap();
-        let chords_peak = peak_of(&chords);
-        assert!(chords_peak > 0.1, "the node sounds alone: {chords_peak}");
-        assert!(peak_of(&whole) > chords_peak, "the whole mix sums its tracks over one of them");
-        assert!(
-            !hound::WavReader::open(&chords).unwrap().samples::<f32>().map(Result::unwrap).eq(hound::WavReader::open(
-                &whole
-            )
-            .unwrap()
-            .samples::<f32>()
-            .map(Result::unwrap)),
-            "the node render is not the whole mix"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn play_args_take_a_project_but_no_output() {
-        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(parse_args(&args(&["--demo"]), Command::Play).is_ok());
-        assert!(parse_args(&args(&["a.als", "--scene", "3"]), Command::Play).is_ok());
-        assert!(parse_args(&args(&["--demo", "-o", "x.wav"]), Command::Play).is_err());
-        assert!(parse_args(&args(&[]), Command::Play).is_err());
-        assert!(parse_args(&args(&["a.als", "--launcher"]), Command::Play).unwrap().launcher);
-        assert!(parse_args(&args(&["a.als", "--launcher", "--scene", "1"]), Command::Play).is_err());
-        assert!(parse_args(&args(&["a.als", "--launcher", "-o", "x.wav"]), Command::Render).is_err());
-    }
-
-    #[test]
-    fn scene_replaces_the_arrangement_with_its_clips() {
-        let mut project = demo_project();
-        let clip = project.arrangement.lanes[0].clips[0].clone();
-        project.launcher = Launcher {
-            mappings: Vec::new(),
-            scenes: vec![Scene::default(), Scene::default()],
-            columns: vec![LauncherColumn {
-                track: TrackId(1),
-                slots: vec![Slot::default(), Slot { clip: Some(clip), has_stop: true }],
-            }],
-        };
-        let scene_2 = scene_as_arrangement(&project, 1).unwrap();
-        assert_eq!(scene_2.arrangement.lanes.len(), 1);
-        assert_eq!(scene_2.arrangement.lanes[0].clips.len(), 1);
-        assert!(scene_as_arrangement(&project, 0).unwrap().arrangement.lanes[0].clips.is_empty());
-        assert!(scene_as_arrangement(&project, 2).is_err());
-    }
-
-    #[test]
-    fn fm_plays_every_note_track_with_a_voice_from_a_bank() {
-        use suhina_device_fm_synth::{FmSynth, Patch, patch};
-        // A bank whose second voice is a two-operator sound, written to a file.
-        let mut synth = FmSynth::new();
-        let index = |id: &str| suhina_device_fm_synth::INFO.param_index(id).unwrap();
-        use suhina_device_api::Device as _;
-        synth.set_param(index("op2.level"), 80.0);
-        synth.set_param(index("op2.coarse"), 3.0);
-        let mut voice = synth.patch();
-        voice.set_name("TWO OPS");
-        let path = std::env::temp_dir().join(format!("suhina-cli-bank-{}.syx", std::process::id()));
-        std::fs::write(&path, patch::write_bank(&[Patch::default(), voice])).unwrap();
-
-        let choice = FmChoice { voices: Some(path.clone()), voice: 1 };
-        let loaded = load_voice(&choice).unwrap();
-        assert_eq!(loaded.name(), "TWO OPS");
-        assert!(load_voice(&FmChoice { voices: Some(path.clone()), voice: 40 }).is_err());
-        assert!(fm_synth(&["voices".into(), path.display().to_string()]).is_ok());
-
-        let mut project = demo_project();
-        put_fm_synth_on_note_tracks(&mut project, &loaded);
-        // Twice: the synth replaces the instrument it put there before.
-        put_fm_synth_on_note_tracks(&mut project, &loaded);
-        assert!(project.channels.iter().all(|c| c.devices.len() == 1));
-        let stored = &project.channels[0].devices[0];
-        assert_eq!(stored.kind, DeviceKind::Builtin("fm-synth".into()));
-        assert!(stored.params.iter().any(|p| p.id == "op2.coarse" && p.value == 3.0));
-        let samples = suhina_engine::render_offline(&project, 48_000, 512).unwrap();
-        let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-        assert!(peak > 0.05 && peak <= 1.0, "peak {peak}");
-        let _ = std::fs::remove_file(path);
-
-        // A MIDI effect leading a chain stays before the synth.
-        let pitch = Device::new("Pitch", DeviceKind::Builtin("pitch".into()));
-        project.channels[0].devices.insert(0, pitch);
-        put_fm_synth_on_note_tracks(&mut project, &loaded);
-        let ids: Vec<&DeviceKind> = project.channels[0].devices.iter().map(|d| &d.kind).collect();
-        assert_eq!(ids, [&DeviceKind::Builtin("pitch".into()), &DeviceKind::Builtin("fm-synth".into())]);
-    }
-}
+#[path = "main_tests.rs"]
+mod tests;

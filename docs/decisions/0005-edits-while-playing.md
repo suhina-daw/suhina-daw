@@ -3,7 +3,7 @@ description: How edits reach an engine that is already playing — a new graph b
 read_when: edit while playing, graph swap, renderer rebuild, Controller::update, live edits, volume change not heard, LOOP-26
 type: decision
 status: current
-last_verified: 2026-10-20
+last_verified: 2026-10-23
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
@@ -63,9 +63,10 @@ clip; devices (ADR 0004) will add many more parameters.
    edit (or its undo) inserted or removed one scene: the session finds that with
    `SceneShift::between` and sends it with the graph (`Controller::update_with_scenes`), so a
    playing or queued clip moves with its row and a removed row's clips stop. A time signature a
-   launched scene set stays across the swap, like its tempo, unless the project's own changed. A playing launched clip whose prepared
-   audio is unchanged keeps its stretch voice (moved from the old graph to the new); otherwise
-   the new voice is moved to the clip's position. Level meters keep their levels and clip
+   launched scene set stays across the swap, like its tempo, unless the project's own changed. A slot
+   whose stretched audio is unchanged keeps its built stretch voice (moved from the old graph to
+   the new, whether its clip plays or not; ADR 0003 › decision 7); any other playing clip's new
+   voice is moved to the clip's position. Level meters keep their levels and clip
    indicators while each meter slot plays the same track as before; a slot that now holds
    another track (tracks moved in the project's order) starts from silence
    ([level meters](../spec/level-meters.md)).
@@ -79,6 +80,8 @@ clip; devices (ADR 0004) will add many more parameters.
    never play out of time. That silence is the move's, so it is not counted as underruns.
 7. **The stretch worker thread serves every graph.** It owns a list of workers; a new graph's
    worker joins it before the graph is sent, and a worker leaves when its graph has been dropped.
+   The launcher's preparers (ADR 0003 › decision 7) join the same way and leave once their graph
+   has been swapped out.
 8. **The session notifies the player.** After an edit or undo/redo command changes the project,
    `Session::execute` calls `Player::update`, so the CLI, MCP and the window all get the same
    behaviour. The arrangement's loop region is part of the graph too, so a loop edit takes

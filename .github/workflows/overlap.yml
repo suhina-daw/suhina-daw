@@ -1,0 +1,253 @@
+name: Overlap
+
+# Lists the other open work that changes the same files as a pull request: other open pull requests
+# and claims whose `Touches:` line covers them. Two pieces of work on the same code are found when
+# the code is written rather than by a claim beforehand, so a bug fix or a small change needs no
+# issue or claim (CONTRIBUTING.md › Working on an issue). It writes one comment on the pull request
+# and keeps it up to date with each push; it never fails, and a lookup that fails only leaves its
+# part out.
+#
+# Pull requests in one stack (each one's base branch is the branch of the one below it, down to
+# main) change the same code on purpose and are not listed, nor are the claims of the issues the
+# pull request closes, nor the files every pull request may meet (`Cargo.lock`, the generated
+# index and command list; the parity report is generated only in parts, so it stays).
+#
+# pull_request_target runs this file as it is on main, so pull requests from forks get the comment
+# too; it never checks out or runs the pull request's code, it only reads lists through the API.
+on:
+  pull_request_target:
+    # `edited`: a new description or base branch changes which claims and stack are left out.
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: overlap-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          # As in claim.yml, which accepts `/claim @login` only from them.
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const MARKER = "<!-- overlap -->";
+            // Files many pull requests meet without overlapping in what they do.
+            const common = (path) =>
+              path === "Cargo.lock" ||
+              path === "docs/INDEX.md" ||
+              path === "docs/commands.md";
+            // A `Touches:` line read as the claim bot reads it (claim.yml): at most 20 plain relative
+            // paths, a trailing `/`, `/*` or `/**` dropped, anything else on the line ignored.
+            const PATH = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+            const touchedPaths = (text) => {
+              const line = String(text || "").match(/\bTouches:[ \t]*([^\n]*)/i);
+              if (!line) return [];
+              const paths = [];
+              for (const word of line[1].split(/\s+(?:Plan|When):/i)[0].split(/[\s,;]+/)) {
+                const path = word
+                  .replace(/[`"']/g, "")
+                  .replace(/^\.\//, "")
+                  .replace(/(?:\/\*\*|\/\*|\/)+$/, "");
+                const plain = PATH.test(path) && !path.split("/").some((part) => part === "." || part === "..");
+                if (plain && !paths.includes(path)) paths.push(path);
+                if (paths.length === 20) break;
+              }
+              return paths;
+            };
+            // A claimed path covers a file when the file is it or lies under it.
+            const covers = (path, file) => file === path || file.startsWith(`${path}/`);
+
+            let mine = [];
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                ...context.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              });
+              // A renamed file counts under both names: work on the old one meets it too.
+              mine = [...new Set(files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean)))].filter(
+                (path) => !common(path),
+              );
+            } catch (error) {
+              core.warning(`Could not read this pull request's files: ${error.message}`);
+              return;
+            }
+
+            const found = [];
+            let closes = [];
+            let incomplete = false;
+            try {
+              const pulls = [];
+              let cursor = null;
+              let repo = {};
+              do {
+                try {
+                  const open = await github.graphql(
+                    `query ($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+                       repository(owner: $owner, name: $name) {
+                         pullRequest(number: $number) { closingIssuesReferences(first: 10) { nodes { number } } }
+                         pullRequests(states: OPEN, first: 100, after: $cursor, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                           pageInfo { hasNextPage endCursor }
+                           nodes {
+                             number title headRefName baseRefName headRepository { nameWithOwner }
+                             files(first: 100) { totalCount nodes { path changeType } }
+                           }
+                         }
+                       }
+                     }`,
+                    { owner: context.repo.owner, name: context.repo.repo, number: pr.number, cursor },
+                  );
+                  repo = open.repository || {};
+                  const page = repo.pullRequests || {};
+                  pulls.push(...(page.nodes || []));
+                  const next = page.pageInfo && page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+                  if (next && next === cursor) throw new Error("the page cursor did not advance");
+                  cursor = next;
+                } catch (error) {
+                  incomplete = true;
+                  core.warning(`Could not finish reading open pull requests: ${error.message}`);
+                  break;
+                }
+              } while (cursor);
+              closes = ((repo.pullRequest && repo.pullRequest.closingIssuesReferences.nodes) || []).map((n) => n.number);
+              // GitHub links `Closes #N` only from a pull request into the default branch, so a
+              // stacked one's closing words are read from its description too (as claim.yml does).
+              // Closing words inside an HTML comment (the template's example) do not count.
+              // An HTML comment left open runs to the end of the body, as GitHub renders it.
+              const said = String(pr.body || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+              for (const match of said.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi)) {
+                const number = Number(match[1]);
+                if (!closes.includes(number)) closes.push(number);
+              }
+              // The whole stack this pull request is in: the branches below it down to main, and
+              // every pull request built on its branch or on one built on it. Only branches of this
+              // repository stack (a base is always here); a fork's branch of the same name does not.
+              const here = `${context.repo.owner}/${context.repo.repo}`;
+              const local = (p) => Boolean(p.headRepository) && p.headRepository.nameWithOwner === here;
+              const stack = new Set();
+              for (let base = pr.base.ref, below; (below = pulls.find((p) => local(p) && p.headRefName === base && !stack.has(p.number))); base = below.baseRefName) {
+                stack.add(below.number);
+              }
+              const heads = pr.head.repo && pr.head.repo.full_name === here ? [pr.head.ref] : [];
+              while (heads.length > 0) {
+                const head = heads.pop();
+                for (const above of pulls.filter((p) => p.baseRefName === head && !stack.has(p.number))) {
+                  stack.add(above.number);
+                  if (local(above)) heads.push(above.headRefName);
+                }
+              }
+              for (const other of pulls) {
+                if (other.number === pr.number || stack.has(other.number)) continue;
+                const nodes = (other.files && other.files.nodes) || [];
+                let theirs = nodes.map((file) => file.path);
+                // REST supplies both further pages and the old names GraphQL leaves out.
+                if (other.files && (other.files.totalCount > nodes.length || nodes.some((file) => file.changeType === "RENAMED"))) {
+                  try {
+                    const all = await github.paginate(github.rest.pulls.listFiles, {
+                      ...context.repo,
+                      pull_number: other.number,
+                      per_page: 100,
+                    });
+                    theirs = all.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean));
+                  } catch (error) {
+                    // Keep the known files and still compare the remaining pull requests.
+                    core.warning(`Could not read the files of #${other.number}: ${error.message}`);
+                  }
+                }
+                const hit = mine.filter((file) => theirs.includes(file));
+                if (hit.length > 0) found.push({ name: `#${other.number}`, title: other.title, hit });
+              }
+            } catch (error) {
+              incomplete = true;
+              core.warning(`Could not read the open pull requests: ${error.message}`);
+            }
+            try {
+              // A claim assigns the claimer and an accepted `/unclaim` takes the assignee off, so the
+              // open issues with someone assigned are the claims; the paths are those of the newest
+              // `/claim` by an assignee or naming one (`/claim @login`), so a refused command by
+              // anyone else changes nothing.
+              const assigned = await github.paginate(github.rest.issues.listForRepo, {
+                ...context.repo,
+                state: "open",
+                assignee: "*",
+                per_page: 100,
+              });
+              const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+              for (const issue of assigned) {
+                if (issue.pull_request || closes.includes(issue.number)) continue;
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  ...context.repo,
+                  issue_number: issue.number,
+                  per_page: 100,
+                });
+                const assignees = (issue.assignees || []).map((who) => who.login.toLowerCase());
+                const claims = comments.filter((entry) => {
+                  const text = (entry.body || "").trim();
+                  if (!/^\/claim\b/i.test(text)) return false;
+                  const by = ((entry.user && entry.user.login) || "").toLowerCase();
+                  const named = (text.match(/^\/claim\s+@([A-Za-z0-9-]+)/i) || [])[1];
+                  // `/claim @login` counts only from a maintainer, as the claim bot accepts it.
+                  if (named !== undefined) return maintainers.includes(by) && assignees.includes(named.toLowerCase());
+                  return assignees.includes(by);
+                });
+                const newest = claims.pop();
+                if (!newest) continue;
+                const paths = touchedPaths(newest.body);
+                const hit = mine.filter((file) => paths.some((path) => covers(path, file)));
+                if (hit.length > 0) found.push({ name: `#${issue.number}`, title: issue.title, hit, claim: true });
+              }
+            } catch (error) {
+              incomplete = true;
+              core.warning(`Could not read the claims: ${error.message}`);
+            }
+
+            let body;
+            if (found.length > 0) {
+              const lines = found.slice(0, 10).map((entry) => {
+                const where = entry.hit.slice(0, 3).map((path) => `\`${path}\``).join(", ");
+                const more = entry.hit.length > 3 ? `, and ${entry.hit.length - 3} more` : "";
+                return `- ${entry.name} ${entry.title}${entry.claim ? " (a claim)" : ""}: ${where}${more}`;
+              });
+              if (found.length > 10) lines.push(`- and ${found.length - 10} more`);
+              body =
+                `${MARKER}\nOther open work changes the same files:\n\n${lines.join("\n")}\n\n` +
+                `When it builds something this needs, build on it (stack on its branch, or write ` +
+                `\`Depends on #N\`); when it changes the same code for another reason, say so in both ` +
+                `pull requests. This is a notice, not a check.`;
+            } else {
+              if (incomplete) return;
+              body = `${MARKER}\nNo other open pull request or claim changes these files now.`;
+            }
+
+            if (incomplete) body += "\n\nThe scan is incomplete because an API lookup failed; other overlaps may be missing.";
+
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              const previous = comments.find(
+                (entry) => entry.user && entry.user.type === "Bot" && (entry.body || "").startsWith(MARKER),
+              );
+              if (previous) {
+                // Preserve the last complete notice until a complete scan can replace it.
+                if (incomplete) return;
+                if (previous.body !== body) {
+                  await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body });
+                }
+              } else if (found.length > 0) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body });
+              }
+            } catch (error) {
+              core.warning(`Could not write the comment: ${error.message}`);
+            }

@@ -1,6 +1,8 @@
 ## What and why
 
-<!-- A few lines. Link the issue it closes: "Closes #123". One pull request per issue: when the
+<!-- A few lines. Link the issue it closes: "Closes #123"; a bug or small change without an issue
+     says what it fixes. A small fix found along the way in the same code goes under "Also fixed".
+     One pull request per issue: when the
      issue already has an open one, push to it or offer your change there instead
      (CONTRIBUTING.md › Working on an issue). When it builds on another open pull request that it
      cannot be stacked on, add a line "Depends on #123": a check keeps it from merging first. -->

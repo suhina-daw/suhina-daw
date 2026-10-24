@@ -201,8 +201,8 @@ impl Levels {
     pub(crate) fn build(project: &Project, chains: &[Chain]) -> Self {
         let tracks: Vec<TrackId> = project.tracks.iter().take(MAX_METERED_TRACKS).map(|t| t.id).collect();
         let channel_of = |track: TrackId| {
-            let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-            project.channels.iter().find(|c| c.id == id)
+            let id = project.track(track)?.channel?;
+            project.channel(id)
         };
         let master = project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| c.id);
         let is_group =
@@ -237,7 +237,7 @@ impl Levels {
                 if is_bus(group_track) {
                     return None;
                 }
-                let volume = project.channels.iter().find(|c| c.id == output).map_or(0.0, |c| c.volume);
+                let volume = project.channel(output).map_or(0.0, |c| c.volume);
                 let volume = if volume.is_finite() { volume.max(0.0) as f32 } else { 0.0 };
                 Some((group, volume))
             })

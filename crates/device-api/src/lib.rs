@@ -226,6 +226,17 @@ impl Default for ProcessContext {
     }
 }
 
+impl ProcessContext {
+    /// The tempo a device can follow: [`tempo`](Self::tempo) limited to 1..=1000 BPM, or
+    /// [`DEFAULT_TEMPO`] when the host gives none that makes sense (not finite, or not above 0).
+    pub fn tempo_or_default(&self) -> f64 {
+        if self.tempo.is_finite() && self.tempo > 0.0 { self.tempo.clamp(1.0, 1_000.0) } else { DEFAULT_TEMPO }
+    }
+}
+
+/// The tempo [`ProcessContext::tempo_or_default`] falls back on, in beats per minute.
+pub const DEFAULT_TEMPO: f64 = 120.0;
+
 /// A note or a performance control for an instrument. Values are plain and in range for a
 /// well-behaved host, but a device must accept any value without misbehaving: keys above 127
 /// are ignored, numbers that are not finite are ignored, and the rest are limited to their
@@ -347,6 +358,10 @@ impl fmt::Display for DeviceError {
 
 impl std::error::Error for DeviceError {}
 
+/// The sample rate a device is prepared for when it is made, before the host calls
+/// [`Device::prepare`].
+pub const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
+
 /// Lowest and highest sample rates a device must accept in [`Device::prepare`].
 pub const SAMPLE_RATE_RANGE: (f64, f64) = (8_000.0, 384_000.0);
 
@@ -356,6 +371,52 @@ pub fn check_sample_rate(sample_rate: f64) -> Result<f64, DeviceError> {
         Ok(sample_rate)
     } else {
         Err(DeviceError::InvalidSampleRate(sample_rate))
+    }
+}
+
+/// A device's parameter values, in [`DeviceInfo::params`] order: the plumbing every device's
+/// [`Device::set_param`] and [`Device::param`] share. A value is always valid for its parameter
+/// ([`ParamInfo::clamp`]), and an index past the end is ignored. Real-time safe.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamBank<const N: usize> {
+    params: &'static [ParamInfo; N],
+    values: [f64; N],
+}
+
+impl<const N: usize> ParamBank<N> {
+    /// Every parameter at its default.
+    pub fn new(params: &'static [ParamInfo; N]) -> Self {
+        Self { params, values: params.each_ref().map(|p| p.default) }
+    }
+
+    /// The value of parameter `index`, or 0.0 for an index past the end.
+    pub fn get(&self, index: usize) -> f64 {
+        self.values.get(index).copied().unwrap_or(0.0)
+    }
+
+    /// Whether parameter `index` (a toggle) is on: its value is at least 0.5.
+    pub fn on(&self, index: usize) -> bool {
+        self.get(index) >= 0.5
+    }
+
+    /// Sets parameter `index` to `value` made valid for it, and returns what was stored; `None`
+    /// (and nothing changes) for an index past the end. What [`Device::set_param`] calls before
+    /// it reacts to the change.
+    pub fn set(&mut self, index: usize, value: f64) -> Option<f64> {
+        let info = self.params.get(index)?;
+        let slot = self.values.get_mut(index)?;
+        *slot = info.clamp(value);
+        Some(*slot)
+    }
+
+    /// The value of parameter `index`, `None` past the end: what [`Device::param`] returns.
+    pub fn param(&self, index: usize) -> Option<f64> {
+        self.values.get(index).copied()
+    }
+
+    /// Every value, in parameter order.
+    pub fn values(&self) -> &[f64; N] {
+        &self.values
     }
 }
 
@@ -547,6 +608,30 @@ mod tests {
         assert_eq!(major.step(0, i32::MAX), 12 * (1_000 / 7) + 11);
         for bad in [MusicalScale::new(12, &[0]), MusicalScale::new(0, &[]), MusicalScale::new(0, &[12])] {
             assert!(bad.is_none());
+        }
+    }
+
+    #[test]
+    fn a_bank_keeps_valid_values_and_ignores_unknown_indices() {
+        static PARAMS: [ParamInfo; 3] = [GAIN, MODE, ON];
+        let mut bank = ParamBank::new(&PARAMS);
+        assert_eq!(bank.values(), &[0.0, 1.0, 1.0]);
+        assert!(bank.on(2) && !bank.on(0));
+        assert_eq!(bank.set(0, 30.0), Some(12.0));
+        assert_eq!(bank.set(1, f64::NAN), Some(1.0));
+        assert_eq!(bank.set(2, 0.2), Some(0.0));
+        assert_eq!(bank.set(3, 1.0), None);
+        assert_eq!(bank.set(usize::MAX, 1.0), None);
+        assert_eq!((bank.param(0), bank.param(3)), (Some(12.0), None));
+        assert_eq!((bank.get(1), bank.get(9)), (1.0, 0.0));
+    }
+
+    #[test]
+    fn a_tempo_that_makes_no_sense_falls_back() {
+        let at = |tempo| ProcessContext { tempo, ..ProcessContext::default() }.tempo_or_default();
+        assert_eq!([at(90.0), at(0.5), at(5_000.0)], [90.0, 1.0, 1_000.0]);
+        for bad in [0.0, -10.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(at(bad), DEFAULT_TEMPO);
         }
     }
 

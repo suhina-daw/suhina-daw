@@ -13,11 +13,11 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 | `crates/ui/fonts/manrope/Manrope-Variable.ttf` | Manrope (default UI typeface) | The Manrope Project Authors | [google/fonts](https://github.com/google/fonts/tree/main/ofl/manrope) | OFL-1.1 (`crates/ui/fonts/manrope/OFL.txt`) |
 | `crates/ui/fonts/encode-sans/EncodeSansSemiExpanded-Regular.ttf` | Encode Sans Semi Expanded Regular (the UI typeface) | The Encode Project Authors (Pablo Impallari, Andres Torresi, Jacques Le Bailly) | [google/fonts](https://github.com/google/fonts/tree/main/ofl/encodesanssemiexpanded) | OFL-1.1 (`crates/ui/fonts/encode-sans/OFL.txt`) |
 | `crates/ui/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf` | IBM Plex Mono Regular (numbers, times, positions) | IBM Corp. | [google/fonts](https://github.com/google/fonts/tree/main/ofl/ibmplexmono) | OFL-1.1 (`crates/ui/fonts/ibm-plex-mono/OFL.txt`) |
-| `crates/ui/themes/dracula.json` | Dracula colour palette, mapped onto Suhina's tokens | Dracula Theme | [dracula/dracula-theme](https://github.com/dracula/dracula-theme) | MIT (`crates/ui/themes/licenses/dracula.txt`) |
-| `crates/ui/themes/nord.json` | Nord colour palette, mapped onto Suhina's tokens | Sven Greb | [nordtheme/nord](https://github.com/nordtheme/nord) | MIT (`crates/ui/themes/licenses/nord.txt`) |
-| `crates/ui/themes/catppuccin-mocha.json`, `catppuccin-latte.json` | Catppuccin Mocha and Latte colour palettes, mapped onto Suhina's tokens | Catppuccin | [catppuccin/palette](https://github.com/catppuccin/palette) | MIT (`crates/ui/themes/licenses/catppuccin.txt`) |
-| `crates/ui/themes/solarized-dark.json` | Solarized colour palette (dark), mapped onto Suhina's tokens | Ethan Schoonover | [altercation/solarized](https://github.com/altercation/solarized) | MIT (`crates/ui/themes/licenses/solarized.txt`) |
-| `crates/ui/themes/editor-dark.json`, `suhina-light.json`, `high-contrast.json` | Suhina's own themes | Suhina contributors | Original work | GPL-3.0-or-later |
+| `crates/ui/themes/dracula.theme.css` | Dracula colour palette, mapped onto Suhina's tokens | Dracula Theme | [dracula/dracula-theme](https://github.com/dracula/dracula-theme) | MIT (`crates/ui/themes/licenses/dracula.txt`) |
+| `crates/ui/themes/nord.theme.css` | Nord colour palette, mapped onto Suhina's tokens | Sven Greb | [nordtheme/nord](https://github.com/nordtheme/nord) | MIT (`crates/ui/themes/licenses/nord.txt`) |
+| `crates/ui/themes/catppuccin-mocha.theme.css`, `catppuccin-latte.theme.css` | Catppuccin Mocha and Latte colour palettes, mapped onto Suhina's tokens | Catppuccin | [catppuccin/palette](https://github.com/catppuccin/palette) | MIT (`crates/ui/themes/licenses/catppuccin.txt`) |
+| `crates/ui/themes/solarized-dark.theme.css` | Solarized colour palette (dark), mapped onto Suhina's tokens | Ethan Schoonover | [altercation/solarized](https://github.com/altercation/solarized) | MIT (`crates/ui/themes/licenses/solarized.txt`) |
+| `crates/ui/themes/editor-dark.theme.css`, `suhina-light.theme.css`, `high-contrast.theme.css` | Suhina's own themes | Suhina contributors | Original work | GPL-3.0-or-later |
 | egui's default fonts (`epaint_default_fonts` crate, compiled in as fallbacks) | Ubuntu Light, Hack, Noto Emoji, emoji-icon-font | Canonical / Dalton Maag; Source Foundry; Google; John Slegers | [crates.io: epaint_default_fonts](https://crates.io/crates/epaint_default_fonts) | Ubuntu Font Licence 1.0, MIT, OFL-1.1 and Apache-2.0 (per font, in the crate) |
 
 ## Documentation
@@ -38,12 +38,14 @@ changed. The full list with copyright lines is in [`NOTICE`](NOTICE).
 
 ## Vendored code
 
-Third-party source kept unchanged in `third_party/`, built into Suhina only with a Cargo
-feature.
+Third-party source kept in `third_party/`. The ASIO SDK's host part is unchanged and built only
+with the `asio` feature. LAME's encoder sources are unchanged and always built (for MP3 export),
+with Suhina's own `fft.c` in place of upstream's, which is not redistributed.
 
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
 | `third_party/asiosdk` | Steinberg ASIO SDK 2.3.4, host part (`asio` feature) | Steinberg Media Technologies GmbH | https://www.steinberg.net/asiosdk | GPL-3.0 (`third_party/asiosdk/LICENSE.txt`; see `VENDORED.md`) |
+| `third_party/lame` | LAME 3.100, the MP3 encoder's sources | The LAME Project (Mike Cheng, Mark Taylor and the authors named in its README) | https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz | LGPL-2.0-or-later, used as LGPL-2.1-or-later (`third_party/lame/COPYING`; see `VENDORED.md`) |
 
 ## Test data in the repository
 

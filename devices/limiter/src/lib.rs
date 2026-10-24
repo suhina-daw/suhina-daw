@@ -20,10 +20,11 @@
 //! times the drive.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
-use suhina_dsp::Smoother;
 use suhina_dsp::gain::db_to_gain;
+use suhina_dsp::{Smoother, time_constant};
 
 /// How far ahead the limiter looks, in seconds.
 pub const LOOKAHEAD_SECONDS: f64 = 0.0015;
@@ -45,8 +46,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "limiter", name: "Limiter", role: Role::Effect, params: &PARAMS };
-
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
 
 /// Lookahead in frames at `sample_rate`: [`LOOKAHEAD_SECONDS`] rounded up, at least one.
 pub fn lookahead_frames(sample_rate: f64) -> usize {
@@ -103,7 +102,7 @@ impl SlidingMinimum {
 
 pub struct Limiter {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// Linear gain into the limiter (`ceiling - threshold` dB).
     drive: Smoother,
     /// The ceiling as a linear level.
@@ -136,7 +135,7 @@ impl Limiter {
     pub fn new() -> Self {
         let mut limiter = Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             drive: Smoother::new(1.0, 1),
             ceiling: Smoother::new(1.0, 1),
             release: 0.0,
@@ -162,7 +161,7 @@ impl Limiter {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn targets(&self) -> [f32; 2] {
@@ -171,8 +170,7 @@ impl Limiter {
     }
 
     fn tune(&mut self) {
-        let frames = self.value(param::RELEASE) * self.sample_rate;
-        self.release = if frames.is_finite() && frames > 0.0 { (-1.0 / frames).exp() } else { 0.0 };
+        self.release = time_constant(self.value(param::RELEASE), self.sample_rate);
     }
 
     /// Buffers for the current sample rate. Allocates: only from `new` and `prepare`.
@@ -220,9 +218,9 @@ impl Device for Limiter {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let [drive, ceiling] = self.targets();
         self.drive.set_target(drive);
         self.ceiling.set_target(ceiling);
@@ -232,7 +230,7 @@ impl Device for Limiter {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {

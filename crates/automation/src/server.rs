@@ -669,10 +669,10 @@ impl AudioSnapshot {
     }
 }
 
-/// The file `project.save` without a path would write, and whose folder `project.autosave`
-/// writes into: the source of the project it runs in. `None` for every other command.
+/// The file `project.save` without a path would write, and whose folder `project.autosave` and
+/// `project.collect` without a folder write into: the source of the project it runs in. `None` for every other command.
 fn save_source(projects: &mut Projects, target: Option<ProjectId>, id: &str) -> Option<PathBuf> {
-    if id != "project.save" && id != "project.autosave" {
+    if !matches!(id, "project.save" | "project.autosave" | "project.collect") {
         return None;
     }
     projects.session_mut(target).ok()?.source().map(Path::to_path_buf)
@@ -952,6 +952,57 @@ mod refused_tests {
                 assert!(refused(id, None, attached).is_none(), "{id}");
             }
         }
+    }
+
+    /// Which parameters are file paths is a hand-kept list in [`confine`]. Every command with a
+    /// parameter that is named like a file or a folder is therefore either handled there or
+    /// refused to agents, or is listed here with why it needs neither.
+    #[test]
+    fn every_command_with_a_file_or_folder_parameter_is_confined_or_refused() {
+        use crate::confine::confine;
+        use crate::workspace::Workspace;
+        use serde_json::Value;
+
+        // Parameters of these commands name something other than a place on disk to read or write.
+        const NOT_A_PLACE: [(&str, &str); 3] = [
+            ("plugins.setFolderEnabled", "toggles a folder the user added; touches no files"),
+            ("plugins.scanFile", "reads again a file in the plug-in catalog; any other is refused"),
+            ("library.refresh", "reads again a folder the user added; any other is refused"),
+        ];
+        let dir = std::env::temp_dir().join(format!("suhina-confine-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("inside")).unwrap();
+        std::fs::create_dir_all(dir.join("outside")).unwrap();
+        let workspace = Workspace::new(Some(&dir.join("inside")), None).unwrap();
+        let outside = dir.join("outside").join("secret.wav").display().to_string();
+        let mut unconfined = Vec::new();
+        for command in suhina_session::all_commands().as_array().unwrap() {
+            let id = command["id"].as_str().unwrap();
+            let properties = command["params"]["properties"].as_object().unwrap();
+            for (name, schema) in properties {
+                let is_text = |t: &str| t == "string";
+                let kind = &schema["type"];
+                let is_path = ["path", "paths", "folder", "file", "to", "item", "preset", "sd", "output", "place"]
+                    .contains(&name.as_str())
+                    && (kind.as_str().is_some_and(is_text)
+                        || (kind == "array" && schema["items"]["type"].as_str().is_some_and(is_text)));
+                if !is_path || NOT_A_PLACE.iter().any(|(c, _)| *c == id) || refused(id, None, false).is_some() {
+                    continue;
+                }
+                let value = if kind == "array" { json!([outside]) } else { json!(outside) };
+                let mut params = serde_json::Map::new();
+                params.insert(name.clone(), value);
+                // Other required parameters are not looked at by confine, only this one.
+                if confine(&workspace, id, Value::Object(params), None).is_ok() {
+                    unconfined.push(format!("{id} {name}"));
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            unconfined.is_empty(),
+            "these file or folder parameters pass `confine` an outside path; handle them there or refuse the command: {unconfined:?}"
+        );
     }
 }
 

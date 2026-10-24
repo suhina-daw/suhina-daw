@@ -66,6 +66,7 @@ pub use rack::{
     is_instrument, plugin_group, start_offline,
 };
 pub use recording::{COUNT_IN_BARS, RECORDED_FOLDER};
+pub use relink::COLLECTED;
 pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_plugins::Placement;
@@ -343,6 +344,8 @@ pub struct Session {
     /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
     track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
     track_type_colours: Option<(suhina_model::Rgb, suhina_model::Rgb)>,
+    /// A new clip takes its track's colour rather than the MIDI or audio default.
+    new_clips_take_track_colour: bool,
     /// The project's plug-ins, running while it plays (ADR 0006).
     pub(crate) plugins: rack::Rack,
     /// The project's decoded audio, by the key its regions name (ADR 0011).
@@ -371,6 +374,7 @@ pub struct Session {
     /// The armed tracks, whose instruments play the MIDI inputs (ADR 0017). Not part of the
     /// project: arming is not undone and not saved.
     armed: Vec<suhina_model::TrackId>,
+    live_targets: Vec<suhina_model::TrackId>,
     /// Takes being recorded and the count-in (`docs/spec/recording.md`).
     pub(crate) recording: recording::Recording,
     /// The metronome: on, its level in dB, its sound. Not part of the project; a new output gets
@@ -408,6 +412,7 @@ impl Session {
             param_gesture: None,
             track_colours: (Vec::new(), None),
             track_type_colours: None,
+            new_clips_take_track_colour: false,
             plugins: rack::Rack::default(),
             audio: suhina_engine::AudioPool::new(),
             audio_changed: false,
@@ -420,6 +425,7 @@ impl Session {
             player_behind: false,
             backup: backup::SessionBackups::default(),
             armed: Vec::new(),
+            live_targets: Vec::new(),
             recording: recording::Recording::default(),
             metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
         }
@@ -674,14 +680,44 @@ impl Session {
         self.send_armed();
     }
 
-    /// Tells the playing engine every armed track and what each hears (its MIDI input): after a
-    /// new player, an arm, or an edit or undo that may have changed an input.
+    /// Synchronizes recording and monitoring targets after a new player, arm, edit or undo.
+    /// Previous targets are included so switching In off, or deleting a track, clears it too.
     fn send_armed(&mut self) {
-        let armed: Vec<_> = self.armed().into_iter().map(|track| (track, live_filter(&self.project, track))).collect();
+        let armed = self.armed();
+        let active: Vec<_> = self
+            .project
+            .tracks
+            .iter()
+            .filter(|t| armed.contains(&t.id) || (t.content.notes && t.midi_input.monitor == suhina_model::Monitor::In))
+            .map(|t| t.id)
+            .collect();
+        let mut targets = std::mem::replace(&mut self.live_targets, active.clone());
+        for track in &active {
+            if !targets.contains(track) {
+                targets.push(*track);
+            }
+        }
         if let Some(player) = self.player.as_mut() {
-            for (track, input) in armed {
+            for track in targets {
+                let is_armed = armed.contains(&track);
+                let monitoring = self.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| {
+                    if !t.content.notes {
+                        return is_armed;
+                    }
+                    match t.midi_input.monitor {
+                        suhina_model::Monitor::Auto => is_armed,
+                        suhina_model::Monitor::In => true,
+                        suhina_model::Monitor::Off => false,
+                    }
+                });
+                let input = live_filter(&self.project, track);
                 // A full queue means an engine that does not run; it has nothing to arm.
-                let _ = player.send(suhina_engine::LaunchCommand::SetArmed { track, armed: true, input });
+                let _ = player.send(suhina_engine::LaunchCommand::SetMidiInput {
+                    track,
+                    armed: is_armed,
+                    monitoring,
+                    input,
+                });
             }
         }
     }
@@ -698,21 +734,11 @@ impl Session {
     /// Arms `track` or disarms it; `exclusive` also disarms every other track. The playing
     /// engine hears it from its next block.
     pub(crate) fn set_armed(&mut self, track: suhina_model::TrackId, armed: bool, exclusive: bool) {
-        let before = self.armed.clone();
         // Tracks removed since they were armed are forgotten.
         let tracks = &self.project.tracks;
         self.armed.retain(|id| *id != track && !exclusive && tracks.iter().any(|t| t.id == *id));
         if armed {
             self.armed.push(track);
-        }
-        if let Some(player) = self.player.as_mut() {
-            for id in before.iter().filter(|id| !self.armed.contains(id)) {
-                let _ = player.send(suhina_engine::LaunchCommand::SetArmed {
-                    track: *id,
-                    armed: false,
-                    input: Default::default(),
-                });
-            }
         }
         self.send_armed();
     }
@@ -793,6 +819,12 @@ impl Session {
         self.plugins.sync(&self.project, &self.audio, self.player.as_mut())
     }
 
+    /// How often the state of each running plug-in is read for backups and the unsaved-changes
+    /// check (every 30 seconds unless set). For tests, which need not wait that long.
+    pub fn set_plugin_read_interval(&mut self, every: std::time::Duration) {
+        self.plugins.set_save_every(every);
+    }
+
     /// The plug-ins (by spec) found to edit clips over ARA since the last call although the
     /// catalog did not say so ([`Rack::take_ara_learned`](crate::rack::Rack::take_ara_learned)).
     pub fn take_ara_learned(&mut self) -> Vec<String> {
@@ -826,7 +858,7 @@ impl Session {
     /// Tells the plug-ins on `track` that edit clips (ARA, ADR 0028) which of its arrangement
     /// clips is selected, so their editors show it; `None` selects none. Never waits for a host.
     pub fn select_ara_clip(&mut self, track: suhina_model::TrackId, clip: Option<suhina_model::ClipId>) {
-        let Some(channel) = self.project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel) else {
+        let Some(channel) = self.project.track(track).and_then(|t| t.channel) else {
             return;
         };
         let region = clip.map(|c| format!("clip-{}", c.0));
@@ -1177,6 +1209,11 @@ impl Session {
         self.track_type_colours = Some((midi, audio));
     }
 
+    /// Whether a new clip takes its track's colour (`true`) or the MIDI or audio default.
+    pub fn set_new_clips_take_track_colour(&mut self, on: bool) {
+        self.new_clips_take_track_colour = on;
+    }
+
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
     /// (#690, #709). A track without a colour of its own showed its place's colour from the
     /// palette, so it is given that colour now, before the places shift; a new track gets the
@@ -1245,16 +1282,21 @@ impl Session {
                 )
             })
             .collect();
-        for clip in self.project.arrangement.lanes.iter_mut().flat_map(|lane| &mut lane.clips).chain(
-            self.project
-                .launcher
-                .columns
-                .iter_mut()
-                .flat_map(|column| &mut column.slots)
-                .filter_map(|slot| slot.clip.as_mut()),
-        ) {
+        let take_track = self.new_clips_take_track_colour;
+        let track_colours: std::collections::HashMap<_, _> =
+            self.project.tracks.iter().filter_map(|track| Some((track.id, track.color?))).collect();
+        let lanes = self.project.arrangement.lanes.iter_mut().flat_map(|lane| {
+            let track = lane.track;
+            lane.clips.iter_mut().map(move |clip| (track, clip))
+        });
+        let slots = self.project.launcher.columns.iter_mut().flat_map(|column| {
+            let track = column.track;
+            column.slots.iter_mut().filter_map(move |slot| slot.clip.as_mut().map(|clip| (Some(track), clip)))
+        });
+        for (track, clip) in lanes.chain(slots) {
             if clip.color.is_none() && !old_clips.contains(&clip.id) {
-                clip.color = new_contents.get(&clip.content).copied();
+                let own = track.and_then(|track| track_colours.get(&track)).copied().filter(|_| take_track);
+                clip.color = own.or_else(|| new_contents.get(&clip.content).copied());
             }
         }
     }
@@ -1439,7 +1481,7 @@ impl Session {
         // Paths still attached to devices, by kind.
         let mut need: HashMap<String, String> = HashMap::new();
         for track in &self.project.tracks {
-            let Some(channel) = track.channel.and_then(|ch| self.project.channels.iter().find(|c| c.id == ch)) else {
+            let Some(channel) = track.channel.and_then(|ch| self.project.channel(ch)) else {
                 continue;
             };
             for device in &channel.devices {
@@ -1598,7 +1640,7 @@ pub(crate) fn plugin_key_at(project: &Project, track: suhina_model::TrackId, dev
 
 /// The key of the plug-in device at `path` on `track`'s channel, inside device groups too.
 pub(crate) fn plugin_key_at_path(project: &Project, track: suhina_model::TrackId, path: &[usize]) -> Option<u64> {
-    let channel = project.tracks.iter().find(|t| t.id == track)?.channel?;
+    let channel = project.track(track)?.channel?;
     suhina_engine::plugin_devices(project).into_iter().find(|d| d.channel == channel && d.path == path).map(|d| d.key)
 }
 
@@ -1616,7 +1658,7 @@ fn unknown_command(id: &str) -> CommandError {
 fn live_filter(project: &Project, track: suhina_model::TrackId) -> suhina_engine::LiveFilter {
     use suhina_engine::{LiveFilter, LivePorts};
     use suhina_model::MidiPort;
-    let Some(input) = project.tracks.iter().find(|t| t.id == track).map(|t| &t.midi_input) else {
+    let Some(input) = project.track(track).map(|t| &t.midi_input) else {
         return LiveFilter::default();
     };
     let ports = match &input.port {

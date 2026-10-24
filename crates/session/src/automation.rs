@@ -94,9 +94,8 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
 }
 
 fn channel_of(session: &Session, track: TrackId) -> Result<&suhina_model::Channel, CommandError> {
-    let id = session.project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
-    id.and_then(|id| session.project.channels.iter().find(|c| c.id == id))
-        .ok_or_else(|| "the track has no mixer channel".into())
+    let id = session.project.track(track).and_then(|t| t.channel);
+    id.and_then(|id| session.project.channel(id)).ok_or_else(|| "the track has no mixer channel".into())
 }
 
 impl Target {

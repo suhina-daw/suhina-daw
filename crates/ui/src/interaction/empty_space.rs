@@ -3,7 +3,6 @@
 
 //! The empty space after the last track, in the Session view and the Arrangement view alike.
 
-use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Id, Pos2, Rect, Ui, Vec2};
 use serde_json::json;
 
@@ -31,9 +30,26 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
             break;
         }
         let response = widgets::button_area(ui, rect, Id::new(("add-track", kind, area.min.x as i32)), label);
+        // `.add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
+        // `#add-return-track` one of them; `button.add-track` is their artwork.
+        let name = format!("add-{kind}-track");
+        let _style = crate::kit::style_class::enter_named_response("add-track", &name, &response);
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(rect, 0.0, fill);
-        widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font.clone(), theme::text_secondary());
+        let state = crate::kit::skin::State::response(&response, false);
+        if !crate::kit::skin::paint(painter, rect, "add-track", state, theme::text_secondary(), 0.0) {
+            crate::kit::native_css::surface(painter, rect, 0.0, fill);
+        }
+        let font = crate::kit::style_class::computed()
+            .filter(|c| c.authored.font_size)
+            .map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
+        widgets::text_in(
+            painter,
+            rect,
+            Align2::CENTER_CENTER,
+            label,
+            font,
+            crate::kit::style_class::foreground(theme::text_secondary()),
+        );
         if response.clicked() {
             if kind == "return" {
                 actions.push(Action::new("return.add", json!({})));

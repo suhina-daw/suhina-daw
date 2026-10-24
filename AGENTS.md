@@ -19,13 +19,15 @@ that describe them (*Code and its documents*). Read only the documents that matc
 2. **Never crash.** Non-test code never panics: no `unwrap()`, `expect()`, `panic!`,
    `unreachable!`, `todo!` or `unimplemented!`. Return the crate's error type. Input-derived
    numbers are hostile: use `get()` and `checked_*`, cap allocations sized by input. No `unsafe`
-   (`unsafe_code = "forbid"` workspace-wide), except in the two crates plug-in hosting needs,
-   `crates/ipc` and `crates/plugin-host` ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)):
+   (`unsafe_code = "forbid"` workspace-wide), except in three crates: the two plug-in hosting
+   needs, `crates/ipc` and `crates/plugin-host` ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)),
+   and the MP3 encoder, `crates/mp3` ([ADR 0029](docs/decisions/0029-mp3-encoder.md)):
    there every `unsafe` block is small, tested and explained in a `// SAFETY:` comment, and the
    crate offers a safe API.
 3. **Real-time safety.** Code reachable from the audio callback never allocates, frees, locks,
-   blocks, logs or does I/O. Hand data to it through lock-free queues (`rtrb`) and swap whole
-   graphs atomically.
+   logs or does I/O. It blocks only to wait for a plug-in host's answer within the block's
+   deadline ([ADR 0006](docs/decisions/0006-plug-in-hosting.md) › 4). Hand data to it through
+   lock-free queues (`rtrb`) and swap whole graphs atomically.
 4. **One render path.** Offline rendering and real-time playback run the same engine code, so
    offline renders are the test oracle for the engine.
 5. **Plug-ins run sandboxed, out of process.** Third-party plug-ins (CLAP, VST3, later bridged
@@ -88,12 +90,16 @@ crates/
   flp      L1 FL Studio project (.flp) container and event stream; no model mapping yet (epic #271)
   project-file L1 Suhina's own project file (.suhina, versioned JSON): reads and writes the model (ADR 0010)
   media    L2 finds and decodes a project's audio files (symphonia) into the engine's AudioPool;
-           reads MIDI files, file metadata (tempo, key) and detects tempo
+           reads MIDI files, file metadata (tempo, key) and detects tempo; writes the files an
+           export renders (WAV, FLAC, Ogg Vorbis, MP3)
+  mp3      L2 MP3 encoding through the vendored LAME 3.100 encoder (ADR 0029); no file I/O
   library  L2 the browser's library: added folders, an index kept on disk and watched, search, pins,
            recent items, colour tags (ADR 0012)
   soundmap L2 the sample map: features of samples, layouts by how they sound (t-SNE), grids, kinds, the feature cache
   update   L2 updates: whether a newer nightly or test build is out (GitHub, through the system's
            curl), downloading it, checking its SHA-256 and putting it in place of the running build
+  theme-package L1 theme packages (.theme.suhina): a theme's files with a SHA-256 manifest, packed, read
+           and validated; used by the app's export and import and suhina-cli theme
   separation L2 stem separation: chunking, weighted overlap-add and resampling around an inference backend
              trait, and a deterministic test backend (a band splitter); no model or commands yet (#146)
   session  L2 open projects (tabs, ADR 0007), undo history, the command registry (ADR 0002), the
@@ -148,7 +154,8 @@ docs/
   commands.md generated list of every command (suhina-cli commands --markdown)
 assets/brand/ the logo as SVG: `suhina-logo.svg` (the name with the wave, drawn on the splash by
               `crates/ui/src/kit/logo.rs`) and `suhina-mark.svg` (the wave mark alone, for icons)
-third_party/  vendored source built behind a feature: the ASIO SDK's host part (GPL-3.0, `asio`)
+third_party/  vendored source: the ASIO SDK's host part (GPL-3.0, built with `asio`) and LAME 3.100's
+              encoder (LGPL, always built for MP3 export; Suhina's own fft.c, ADR 0029)
 scripts/   research helpers (e.g. extracting and diffing .als files), the parity measurement
            (parity/, reading a manual the user owns; its output is never committed), docs.py
            (the docs index), release_notes.py and discord_post.py (release notes, Discord posts)
@@ -197,14 +204,22 @@ lists those files and what else is left out (`third_party/`, fixtures, generated
 Work is tracked in the GitHub project **Suhina**
 (<https://github.com/orgs/suhina-daw/projects/1>), and nowhere else. New work, bugs found while
 testing and follow-ups a change leaves open go there as items, written in English, with a
-Status, a Priority (P0 to P2) and a Phase (the ROADMAP milestone). Work that a pull request will
-close gets an issue, so the pull request can say `Closes #N`. An issue gets a type label and
+Status, a Priority (P0 to P2) and a Phase (the ROADMAP milestone). A feature or a piece of an epic
+gets an issue, so the pull request can say `Closes #N`; a bug fixed at once
+or a small change goes straight to a pull request that says what it fixes. An issue gets a type label and
 area labels (`CONTRIBUTING.md` › Issues lists them); a larger piece split into issues is an
 `epic`, and repository, build and release work is a `chore`. Items imported from the earlier
 board keep their old key in the title (`(LOOP-27)`); a pull request for one names that key.
-Before starting, claim the item the way [`CONTRIBUTING.md`](CONTRIBUTING.md) › *Working on an issue*
+Before starting a feature or a piece of an epic, claim it the way [`CONTRIBUTING.md`](CONTRIBUTING.md) › *Working on an issue*
 describes, for a person and for an agent alike: no assignee and no open pull request for it,
 `Backlog` or `Ready` on the board (`Ready` for a feature, unless you are a trusted contributor), and a `/claim` comment with the plan.
+A bug or a small change needs no issue and no claim: the [Overlap](.github/workflows/overlap.yml) notice on the
+pull request lists other open work on the same files.
+
+**What belongs in one pull request.** A fix found while working that is small and in the same code
+goes in the same pull request, under *Also fixed* in its description. Make it a pull request of its
+own, or an issue, when it is larger, in other code, or in code another open pull request or claim
+is changing.
 
 Several agents often run at once, so an agent never starts work that exists already:
 
@@ -234,7 +249,18 @@ Several agents often run at once, so an agent never starts work that exists alre
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
   board's Priority and Phase afterwards. A pull request itself — its branch, its description and
   its merge — stays under the person's account.
-- **Comment on a pull request as the bot when the comment is an agent's feedback.** A review an
+- **Use the caller's existing access; do not request elevated access to post.** The two bot
+  workflows require repository write access, not admin access. Their posting rules apply only
+  when the caller already has the required access and the configured connector permits the action.
+  Without write access, post ordinary issues and PR comments through the user's authenticated
+  account, within the user's authorization; identify agent-written feedback as AI-assisted.
+  Trusted contributors can instead use the scoped comment commands in
+  [Trusted bot requests](docs/claim-bot.md#trusted-bot-requests). Post those requests as the user;
+  the bot records their authenticated identity. Do not ask for admin/write access, broader token
+  scopes, App keys or secrets to satisfy the bot posting convention. A denied connector action
+  is not permission to bypass its restriction with another tool: explain that limit and leave
+  the prepared text for the user when no authorized posting route is available.
+- **Comment on a pull request as the bot when the caller has write access and the comment is an agent's feedback.** A review an
   agent wrote, the changes it asks for or a summary of what it found goes onto the pull request's
   conversation through the [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so
   it is written by `suhina-bot[bot]` and the person who ran the session is not its author. It is a
@@ -254,7 +280,7 @@ Several agents often run at once, so an agent never starts work that exists alre
   This posting rule applies to agents a person runs. Installed reviewers such as Codex and
   CodeRabbit post through their own apps and follow [Code Review Rules](#code-review-rules).
 
-- **Before writing code**, comment `/claim` with the plan and a `Touches:` line naming the paths
+- **Before writing code for a feature or a piece of an epic**, comment `/claim` with the plan and a `Touches:` line naming the paths
   you will change (`Touches: crates/ui/src/detail, crates/session`), and read the bot's answer.
   When it says the work is taken, that it is blocked by another issue, or that it is already yours
   and names a pull request, do not start a second one: continue in that pull request, take the
@@ -277,7 +303,8 @@ the same issue is opened only when the user asks for one, and its description sa
 
 **Overlapping work across issues.** Two issues often need the same code: a helper, a command, a
 model field. The claim bot lists the open pull requests and other claims that touch the paths in
-your `Touches:` line; without one, list them yourself before writing code
+your `Touches:` line, and the Overlap notice lists them again on the pull request as its files
+change; without a claim, list them yourself before writing code
 (`gh pr list --state open --json number,title,files`), and read every one that touches the crates,
 views or commands you will change. Then:
 
@@ -383,7 +410,9 @@ request to document a setting.
 
 **Documentation is part of the change.** A pull request that changes how something works updates,
 in the same pull request, every document that describes it, so the docs never describe code
-that no longer exists:
+that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of document holds
+(an ADR, a spec, a system document), how an ADR is amended and what the status fields mean;
+`python scripts/docs.py check` enforces it.
 
 | If you change | Update |
 |---|---|
@@ -446,7 +475,9 @@ procedure, the rules in this file and any more specific instructions for the cha
 review runs no tests or builds: it reads the CI results of the push it reviews.
 
 Trace changed behaviour through callers, shared code and side effects. Check the agreed scope
-against relevant issues and documents, previous fixes and existing review feedback. Equivalent
+against relevant issues and documents, previous fixes and existing review feedback. First check
+whether an open or recently merged pull request already solves the same problem; when one does,
+that is the first finding. Equivalent
 operations share project semantics, but desktop and MCP authorization may deliberately differ;
 batch and nested execution must preserve the caller's restrictions.
 

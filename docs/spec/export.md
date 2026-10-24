@@ -3,7 +3,7 @@ description: Rendering the mix to an audio file the user chose: the File › Exp
 read_when: export, export dialog, mixdown, bounce, render to a file, render the mix, render a track, render a group, stems, premaster, source, node, WAV, AIFF, FLAC, Ogg Vorbis, MP3, bit depth, 32-bit float, 24-bit, 16-bit, dither, normalize, sample rate, tail, range, loop region, project.export, overwrite, PickField, export a project, parallel rendering, thread count, pre-roll, deterministic, check it renders
 type: spec
 status: draft
-last_verified: 2026-10-22
+last_verified: 2026-10-23
 covers:
   - crates/automation/src/render.rs
   - crates/engine/src/buses.rs
@@ -50,7 +50,7 @@ controls here are Suhina's own.
 One command carries the whole feature, per ADR 0002, so the app, `suhina-cli` and the MCP server
 all export the same way:
 
-> `project.export {path|output, format?, sample_rate?, bit_depth?, overwrite?, range?, tail?, normalize?, dither?}`
+> `project.export {path|output, format?, sample_rate?, bit_depth?, mp3_rate?, overwrite?, range?, tail?, normalize?, dither?}`
 
 It renders the active project's arrangement with the same offline render the playback engine and
 `suhina-cli render` use (AGENTS.md rule 4), with the project's plug-ins started as
@@ -66,9 +66,10 @@ line, which is also how the golden renders of the tests run.
 | Param | Meaning |
 |---|---|
 | `path` | The file to write, required when `output` is not given; aliases, same value. Absolute path from the desktop app; below the write root from the MCP server, like `project.render`'s `output` today |
-| `format` | `wav` (default), `flac` or `ogg`; left out, the file name's extension decides it |
-| `sample_rate` | Hertz; default 48 000, the render default today. The dialog prefills the project's rate |
-| `bit_depth` | `32f` (default for WAV), `24` or `16`; applies to PCM only, an error with `ogg` |
+| `format` | `wav` (default), `flac`, `ogg` or `mp3`, in any case; left out, the file name's extension decides it. Another name is refused, `"aiff is not a format; wav, flac, ogg or mp3"` |
+| `sample_rate` | Hertz; default 48 000, the render default today. The dialog prefills the project's rate; with `mp3` the dialog offers 32 000, 44 100 and 48 000, the rates the encoder writes — an export at another rate is refused, `"sample rate 96000 is not one the encoder writes; 32, 44.1 and 48 kHz and their MPEG 2 halves are"` |
+| `bit_depth` | `32f` (default for WAV), `24` or `16`; applies to PCM only, an error with `ogg` or `mp3` |
+| `mp3_rate` | The MP3's rate: `320` (default), `256`, `192` or `128` kbps, or the variable qualities `v0` and `v2`; asked for only with `mp3` |
 | `overwrite` | `false` by default: an existing file is never replaced (the text below) |
 | `source` | A track id, or a track or group name; left out, the whole mix. Renders one node of the track tree — [Sources](#sources-rendering-one-node-of-the-track-tree) |
 | `range` | `{start, end}` in beats from the arrangement's start; default the whole arrangement |
@@ -77,7 +78,7 @@ line, which is also how the golden renders of the tests run.
 | `dither` | Triangular dither, applied when the file's depth is `16` or `24`; default `true` there and `false` at `32f` |
 
 The result mirrors `RenderSummary`, so scripts can read it: `{path, format, sample_rate,
-bit_depth, seconds, peak, warnings}`; `warnings` lists missing files and the plug-ins that
+bit_depth, seconds, peak, warnings}`, `bit_depth` null for `ogg` and `mp3`; `warnings` lists missing files and the plug-ins that
 would not start, as `project_render` does.
 
 Rules the command keeps, wherever it runs:
@@ -160,7 +161,7 @@ format below goes through the same entry point.
 | WAV | `32f`, `24`, `16` | [hound](https://github.com/hound) (already a dependency for the plug-in path; PCM and float WAV and AIFF) | Apache-2.0 OR MIT, on the allowlist |
 | FLAC | `24`, `16` | `flacenc` (pure Rust) — to verify at adoption | MIT OR Apache-2.0, on the allowlist |
 | Ogg Vorbis | n/a | bindings to libvorbis (`quality` 5) — the bindings crate is chosen at implementation | libvorbis is BSD-3-Clause; the licence of the chosen binding crate is checked with `cargo deny check` before it is added |
-| MP3 | — | not in the first version | LAME is LGPL-2.0-only, and the allowlist in `deny.toml` deliberately stops at LGPL-2.1. Checked in October 2026: the Rust port of shine declares LGPL-2.0 and fails the allowlist the same way; the one licence-clean encoder is `rusty_mp3` (Apache-2.0, pure Rust, no dependencies) — young, single-maintainer, unproven for a mixdown, so it is an evaluation of its own that adds a row here, not a guess in this change |
+| MP3 | n/a | LAME 3.100, vendored as C source in `third_party/lame/` (encoder files only; its `fft.c` is replaced by Suhina's own Hartley transform), compiled by `crates/mp3` behind a safe API ([ADR 0029](../decisions/0029-mp3-encoder.md)) | LGPL-2.0-or-later used as LGPL-2.1-or-later; the three headers with no notice fall under the package licence, whose section 3 offers the GPL reading; recorded in `third_party/lame/VENDORED.md`. MP3 patents expired 2017. `deny.toml` unchanged (cargo-deny does not see vendored C) |
 
 Dither (triangular, seeded from the export's parameters so renders stay golden-file
 reproducible) applies when the file's depth is reduced; an oversampled renderer's noise is
@@ -171,6 +172,12 @@ The export holds one whole-file buffer — the render itself — whichever forma
 quantizes and encodes frame by frame and writes its bytes out as they come, where the encoder's
 own whole-stream `ByteSink` would hold the whole file in memory again before writing it; the
 staged rules keep the file's landing atomic all the same.
+
+The MP3 file's ID3v2 header carries the title — the project's own name, the stem of the file
+it was opened from; an unsaved project writes none, and so does `suhina-cli render --source`
+of the demo — and nothing else. After encoding, the
+LAME tag frame replaces the empty frame LAME leaves at the stream's start, so players get
+gapless playback and the true length.
 
 ## In the app
 
@@ -189,7 +196,9 @@ The dialog:
 - **Source**: *Whole mix* ‹default›, then every track and group in tree order, groups shown with
   the tracks inside them indented. Choosing a node renders that node ([Sources](#sources-rendering-one-node-of-the-track-tree)).
 - **Format** with the file's extension following the choice; **Depth** shown only for PCM
-  formats; **Sample rate** (44 100, 48 000, 88 200, 96 000, the project's prefilled);
+  formats (Ogg Vorbis and MP3 take none); **Sample rate** (44 100, 48 000, 88 200, 96 000, the
+  project's prefilled; with MP3 the row offers 32 000, 44 100 and 48 000); **MP3 rate**
+  (320 kbps ‹default›, 256, 192, 128, VBR V0, VBR V2), shown only for MP3;
   **Range** (Whole ‹default›, Loop region, or Start/End beat fields the user fills; Loop region
   takes the project's loop region when it has one, Start/End stay grey otherwise);
   **Tail** in beats; **Normalize**; **Dither**.
@@ -221,7 +230,8 @@ said.
   round-off.
 - **Compressed formats round-trip in the tree:** the FLAC and Ogg exports decode through
   symphonia to the same length and sample rate as the WAV golden; Ogg's RMS matches it within a
-  tolerance named in the test.
+  tolerance named in the test; the MP3 export likewise, and the same export is byte-identical
+  across runs, header and LAME tag included.
 - **Ranges and tails:** an explicit range starts frame-true at its `start` beat (the same skip
   `clip.consolidate` does), a `tail` grows the file, the loop-region preset matches the model,
   and the empty-arrangement, range-validity and overwrite refusals carry the texts quoted above.
@@ -284,5 +294,4 @@ effects. It builds on the encode step and the node rendering this spec adds, sli
 New file formats and new options plug into the writer and the render job without touching the
 core: the format table above is where an encoder joins, and a render job's settings are the same
 command's params whatever the file. Stems — what the matrix's presets produce — stay out of
-#601, with video, MIDI files and cloud places. MP3 waits for its encoder evaluation (the format
-table above is where it joins).
+#601, with video, MIDI files and cloud places.

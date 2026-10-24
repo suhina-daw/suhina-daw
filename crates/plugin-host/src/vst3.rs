@@ -17,14 +17,15 @@
 //!
 //! A plug-in is named `vst3:<bundle or file>` (the first audio class in it) or
 //! `vst3:<bundle or file>#<class id>`, the class id as 32 hex digits; `test:vst3` is a gain
-//! built into the host for tests ([`crate::test_vst3`]).
+//! built into the host for tests ([`crate::test_vst3`]), and `test:vst3-mix` the same gain mixing
+//! its first two channels into the first.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, c_void};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -32,7 +33,7 @@ use suhina_ipc::Served;
 use suhina_plugins::ParamInfo;
 use suhina_plugins::scan::PluginInfo;
 
-use crate::vst3_events::{BlockEvents, MidiMapping};
+use crate::vst3_events::{BlockEvents, MidiMapping, Shown};
 use crate::vst3_params::{BlockChanges, Pending};
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
@@ -193,8 +194,8 @@ impl ModuleFile {
         Ok(Self { factory: Some(factory), library: Some(library) })
     }
 
-    fn test() -> Self {
-        Self { factory: crate::test_vst3::factory(), library: None }
+    fn test(mix: bool) -> Self {
+        Self { factory: crate::test_vst3::factory(mix), library: None }
     }
 
     fn factory(&self) -> Result<&ComPtr<IPluginFactory>, String> {
@@ -377,8 +378,9 @@ fn shared_module(key: PathBuf, open: impl FnOnce() -> Result<ModuleFile, String>
 
 /// The module and class a plug-in name points at.
 fn open(spec: &str) -> Result<(Module, Option<TUID>), String> {
-    if spec == "test:vst3" {
-        return Ok((shared_module(PathBuf::from(spec), || Ok(ModuleFile::test()))?, None));
+    if spec == "test:vst3" || spec == "test:vst3-mix" {
+        let mix = spec == "test:vst3-mix";
+        return Ok((shared_module(PathBuf::from(spec), || Ok(ModuleFile::test(mix)))?, None));
     }
     let file = spec.strip_prefix("vst3:").ok_or_else(|| format!("not a VST3 plug-in: {spec:?}"))?;
     let (path, cid) = match file.rsplit_once('#') {
@@ -594,11 +596,20 @@ pub(crate) struct Vst3Plugin {
     sample_rate: f64,
     /// Its number in the process, which its audio thread serves as.
     instance: u32,
+    /// What its audio thread played since the last trace line; written by that thread, traced
+    /// from [`Vst3Plugin::tick`] (`docs/debugging.md`).
+    watch: Arc<Watch>,
     connections: Option<(ComPtr<IConnectionPoint>, ComPtr<IConnectionPoint>)>,
     controller: Option<ComPtr<IEditController>>,
     separate_controller: bool,
     /// Parameter values for the processor's next block.
     pending: Pending,
+    /// The values the audio thread gave mapped MIDI controllers, given to the controller too
+    /// on the main thread ([`Vst3Plugin::tick`]) so the editor shows them.
+    shown: Option<Shown>,
+    /// With a trace, what the audio thread gave the plug-in, written here on the main thread
+    /// ([`Vst3Plugin::tick`]) so the audio thread never formats or writes.
+    midi_watch: Option<Arc<MidiWatch>>,
     /// The plug-in's name, for its editor's window.
     name: String,
     editor: Option<crate::vst3_editor::Editor>,
@@ -677,6 +688,8 @@ impl Vst3Plugin {
             controller,
             separate_controller,
             pending,
+            shown: None,
+            midi_watch: None,
             name,
             editor: None,
             ara: None,
@@ -685,6 +698,7 @@ impl Vst3Plugin {
             _handler: handler,
             _host: host,
             loaded_at: std::time::Instant::now(),
+            watch: Arc::new(Watch::default()),
             module,
         };
         plugin.connect();
@@ -735,15 +749,26 @@ impl Vst3Plugin {
         let (stop, flush) = (self.stop.clone(), self.flush.clone());
         let pending = self.pending.clone();
         let mapping = MidiMapping::of(self.controller.as_ref());
+        self.shown = Some(mapping.shown());
+        self.midi_watch = suhina_plugins::trace::on().then(|| Arc::new(MidiWatch::default()));
+        let midi_watch = self.midi_watch.clone();
         let (buses, sample_rate, instance) = (self.buses.clone(), self.sample_rate, self.instance);
-        // An ARA-bound instance's output is traced with its track's name.
-        let bound = self.ara.as_ref().map(|ara| ara.track().to_string());
+        let watch = (self.ara.is_some() && suhina_plugins::trace::on()).then(|| self.watch.clone());
         let audio = AudioSide(processor);
         let thread = thread::Builder::new()
             .name("plug-in audio".into())
             .spawn(move || {
                 let _realtime = crate::real_time_thread();
-                serve(instance, audio, served, buses, sample_rate, (pending, mapping), (&stop, &flush), bound)
+                serve(
+                    instance,
+                    audio,
+                    served,
+                    buses,
+                    sample_rate,
+                    (pending, mapping, midi_watch),
+                    (&stop, &flush),
+                    watch,
+                )
             })
             .map_err(|e| e.to_string())?;
         self.audio = Some(thread);
@@ -977,11 +1002,49 @@ impl Vst3Plugin {
     /// Moved or trimmed clips change in place while it plays; adding or taking out regions
     /// needs its renderers changed, which ARA allows only while it does not render, so its
     /// processing stops for that and starts again, as for a latency change.
-    /// Between messages: lets a bound ARA document send its queued model changes (#718).
+    /// Between messages: lets a bound ARA document send its queued model changes (#718), and
+    /// gives the controller what MIDI controllers moved, so the editor shows it (#812).
     pub(crate) fn tick(&self) {
         if let Some(ara) = &self.ara {
             ara.tick();
+            self.trace_output();
         }
+        // What a MIDI controller moved goes to the controller as well, which the editor draws
+        // from: the processor alone has it otherwise.
+        if let (Some(shown), Some(controller)) = (&self.shown, &self.controller) {
+            for (id, value) in shown.take() {
+                // SAFETY: a live controller, on the main thread, for a parameter its own
+                // `IMidiMapping` named.
+                let _ = unsafe { controller.setParamNormalized(id, value) };
+            }
+        }
+        if let Some(watch) = &self.midi_watch {
+            watch.write(self.instance);
+        }
+    }
+
+    /// With a trace, once a second of audio: whether the ARA-bound plug-in plays, the song's
+    /// place it was told and the loudest sample (a silent ARA track says here whether the
+    /// plug-in played nothing or was not asked to). Written here, on the main thread, from what
+    /// the audio thread set ([`Watch`]).
+    fn trace_output(&self) {
+        let rate = self.sample_rate;
+        let watch = &self.watch;
+        if rate <= 0.0 || (watch.frames.load(Ordering::Acquire) as f64) < rate {
+            return;
+        }
+        watch.take_frames();
+        let peak = watch.take_peak();
+        let playing = watch.playing.load(Ordering::Relaxed);
+        let track = self.ara.as_ref().map_or("", |ara| ara.track());
+        suhina_plugins::trace!(
+            "ara audio {} ({}): {}, song at {:.2} s, peak {:.4}",
+            self.instance,
+            track,
+            if playing { "playing" } else { "stopped" },
+            watch.song_samples.load(Ordering::Relaxed) as f64 / rate,
+            peak
+        );
     }
 
     /// How far the analysis of a bound ARA document's track has come, when it changed.
@@ -1229,18 +1292,17 @@ fn serve(
     mut served: Served,
     buses: (Vec<usize>, Vec<usize>),
     sample_rate: f64,
-    (pending, mapping): (Pending, MidiMapping),
+    (pending, mapping, midi_watch): (Pending, MidiMapping, Option<Arc<MidiWatch>>),
     (stop, flush): (&AtomicBool, &AtomicBool),
-    ara_track: Option<String>,
+    watch: Option<Arc<Watch>>,
 ) -> Served {
     let processor = audio.0;
     let waiting = pending.clone();
     // SAFETY: a live, active processor, on the audio thread.
     let _ = unsafe { processor.setProcessing(1) };
     let mut block = Vst3Block::new(processor, &served, buses, sample_rate, (pending, mapping));
-    if let Some(track) = ara_track.filter(|_| suhina_plugins::trace::on()) {
-        block.watch = Some(Watch { instance, track, frames: 0, peak: 0.0 });
-    }
+    block.watch = watch;
+    block.midi_watch = midi_watch;
     if let Some(mut block) = crate::audio::serve(instance, block, &mut served, stop) {
         if flush.load(Ordering::Acquire) && waiting.lock().is_ok_and(|w| !w.is_empty()) {
             block.flush();
@@ -1271,18 +1333,105 @@ struct Vst3Block {
     inputs: Vec<AudioBusBuffers>,
     outputs: Vec<AudioBusBuffers>,
     context: ProcessContext,
-    /// With a trace, an ARA-bound plug-in's output summed up once a second (`docs/debugging.md`).
-    watch: Option<Watch>,
+    /// With a trace, an ARA-bound plug-in's output summed up (`docs/debugging.md`).
+    watch: Option<Arc<Watch>>,
+    /// With a trace, the notes, controllers and parameter changes it was given, counted for
+    /// the main thread to write once a second of audio (`docs/debugging.md`).
+    midi_watch: Option<Arc<MidiWatch>>,
+    /// The frames played since the last second of audio was marked for [`MidiWatch`].
+    midi_frames: u64,
 }
 
-/// What an ARA-bound plug-in played since the last trace line: its instance, the frames and the
-/// loudest sample.
+/// What a plug-in was given since the last trace line: events by kind, and the parameter
+/// changes the controllers, pitch bend and pressure became through its MIDI mapping. Counted
+/// on the audio thread without a lock; the main thread writes and clears it when a second of
+/// audio has passed ([`MidiWatch::write`]).
+struct MidiWatch {
+    notes: AtomicU32,
+    controllers: AtomicU32,
+    bends: AtomicU32,
+    pressures: AtomicU32,
+    mapped: AtomicU32,
+    /// The last mapped change's parameter, [`NO_PARAM`] for none, and its value's bits.
+    last_id: AtomicU64,
+    last_value: AtomicU64,
+    /// A second of audio has passed since the last line.
+    due: AtomicBool,
+}
+
+/// No mapped change since the last line: not any `ParamID`, which is 32 bits.
+const NO_PARAM: u64 = u64::MAX;
+
+impl Default for MidiWatch {
+    fn default() -> Self {
+        Self {
+            notes: AtomicU32::new(0),
+            controllers: AtomicU32::new(0),
+            bends: AtomicU32::new(0),
+            pressures: AtomicU32::new(0),
+            mapped: AtomicU32::new(0),
+            last_id: AtomicU64::new(NO_PARAM),
+            last_value: AtomicU64::new(0),
+            due: AtomicBool::new(false),
+        }
+    }
+}
+
+impl MidiWatch {
+    /// On the main thread: when a second of audio has passed and anything came, writes the
+    /// trace line, and starts the next second's count.
+    fn write(&self, instance: u32) {
+        if !self.due.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let take = |count: &AtomicU32| count.swap(0, Ordering::AcqRel);
+        let (notes, controllers, bends, pressures, mapped) =
+            (take(&self.notes), take(&self.controllers), take(&self.bends), take(&self.pressures), take(&self.mapped));
+        let last = match self.last_id.swap(NO_PARAM, Ordering::AcqRel) {
+            NO_PARAM => None,
+            id => Some((id as ParamID, f64::from_bits(self.last_value.load(Ordering::Acquire)))),
+        };
+        if notes + controllers + bends + pressures > 0 {
+            suhina_plugins::trace!(
+                "vst3 events {instance}: notes {notes}, controllers {controllers}, bends {bends}, pressure {pressures}; mapped {mapped}, last {last:?}"
+            );
+        }
+    }
+}
+
+/// What an ARA-bound plug-in played since the last trace line, which the audio thread sets and
+/// [`Vst3Plugin::trace_output`] reads: atomics, as the audio thread must not allocate, lock or
+/// write a file.
+#[derive(Default)]
 struct Watch {
-    instance: u32,
-    /// The track it plays, by name.
-    track: String,
-    frames: u64,
-    peak: f32,
+    frames: AtomicU64,
+    /// The loudest sample, as `f32` bits.
+    peak: AtomicU32,
+    /// The song's place it was told, in samples, and whether it plays.
+    song_samples: AtomicI64,
+    playing: AtomicBool,
+}
+
+impl Watch {
+    /// Raises the peak to the loudest sample of `output`. The block's peak starts from zero and
+    /// is merged with `fetch_max`, so a [`Watch::take_peak`] between two blocks never has an old
+    /// peak written back. The bits of a non-negative `f32` order like the numbers, and a NaN
+    /// sample is passed over by `f32::max`.
+    fn merge_peak(&self, output: &[f32]) {
+        let peak = output.iter().fold(0.0_f32, |peak, s| peak.max(s.abs()));
+        self.peak.fetch_max(peak.to_bits(), Ordering::Relaxed);
+    }
+
+    /// The loudest sample since the last call, which starts the next interval from silence.
+    fn take_peak(&self) -> f32 {
+        f32::from_bits(self.peak.swap(0, Ordering::Relaxed))
+    }
+
+    /// The frames played since the last call. A swap, so frames the audio thread adds meanwhile
+    /// count for the next interval rather than being erased.
+    fn take_frames(&self) -> u64 {
+        self.frames.swap(0, Ordering::AcqRel)
+    }
 }
 
 // SAFETY: the block is used by one audio thread at a time (behind its lock, `crate::audio`),
@@ -1340,6 +1489,8 @@ impl Vst3Block {
             outputs,
             context,
             watch: None,
+            midi_watch: None,
+            midi_frames: 0,
         }
     }
 }
@@ -1418,30 +1569,47 @@ fn follow_song(context: &mut ProcessContext, events: &[suhina_ipc::Event]) {
 }
 
 impl Vst3Block {
-    /// Sums up an ARA-bound plug-in's `output` of `frames` frames and traces it once a second:
-    /// the song's place it was told, whether it plays, the loudest sample (a silent ARA track
-    /// says here whether the plug-in played nothing or was not asked to).
+    /// Sums up an ARA-bound plug-in's `output` of `frames` frames for the trace
+    /// ([`Vst3Plugin::trace_output`]). Never allocates or locks.
     fn watch_output(&mut self, output: &[f32], frames: usize) {
-        let rate = self.context.sampleRate;
-        let Some(watch) = self.watch.as_mut() else { return };
-        watch.peak = output.iter().fold(watch.peak, |peak, s| peak.max(s.abs()));
-        watch.frames += frames as u64;
-        if rate <= 0.0 || (watch.frames as f64) < rate {
-            return;
-        }
+        let Some(watch) = self.watch.as_ref() else { return };
+        watch.merge_peak(output);
         use vst3::Steinberg::Vst::ProcessContext_::StatesAndFlags_ as Flags;
         #[allow(clippy::unnecessary_cast, reason = "the flags are signed on Windows")]
         let playing = self.context.state & (Flags::kPlaying as u32) != 0;
-        suhina_plugins::trace!(
-            "ara audio {} ({}): {}, song at {:.2} s, peak {:.4}",
-            watch.instance,
-            watch.track,
-            if playing { "playing" } else { "stopped" },
-            self.context.projectTimeSamples as f64 / rate,
-            watch.peak
-        );
-        watch.frames = 0;
-        watch.peak = 0.0;
+        watch.playing.store(playing, Ordering::Relaxed);
+        watch.song_samples.store(self.context.projectTimeSamples, Ordering::Relaxed);
+        watch.frames.fetch_add(frames as u64, Ordering::Release);
+    }
+
+    /// With a trace, counts what the block gives the plug-in, and marks each second of audio
+    /// for the main thread to write ([`MidiWatch::write`]): whether a wheel moved on a
+    /// controller reaches the plug-in, and as which parameter. Atomics only: real-time safe.
+    fn watch_events(&mut self, events: &[suhina_ipc::Event], frames: usize) {
+        use suhina_ipc::EventKind;
+        let rate = self.context.sampleRate;
+        let Some(watch) = self.midi_watch.as_deref() else { return };
+        let count = |counter: &AtomicU32| counter.fetch_add(1, Ordering::Relaxed);
+        for event in events {
+            match event.kind {
+                EventKind::NoteOn { .. } | EventKind::NoteOff { .. } => count(&watch.notes),
+                EventKind::Controller { .. } => count(&watch.controllers),
+                EventKind::PitchBend { .. } => count(&watch.bends),
+                EventKind::Pressure { .. } => count(&watch.pressures),
+                _ => continue,
+            };
+            if let Some((_, id, value)) = self.mapping.controller(event) {
+                count(&watch.mapped);
+                watch.last_value.store(value.to_bits(), Ordering::Release);
+                watch.last_id.store(u64::from(id), Ordering::Release);
+            }
+        }
+        self.midi_frames += frames as u64;
+        if rate <= 0.0 || (self.midi_frames as f64) < rate {
+            return;
+        }
+        self.midi_frames = 0;
+        watch.due.store(true, Ordering::Release);
     }
 }
 
@@ -1455,14 +1623,10 @@ impl crate::audio::Block for Vst3Block {
             }
         }
         if let Some(main) = self.in_buffers.first_mut() {
-            for (index, channel) in main.iter_mut().enumerate() {
-                let source = index.min(link_channels.saturating_sub(1));
-                for (frame, sample) in channel.iter_mut().take(frames).enumerate() {
-                    *sample = input.get(frame * link_channels + source).copied().unwrap_or(0.0);
-                }
-            }
+            crate::audio::feed_main(input, link_channels, frames, main);
         }
         follow_song(&mut self.context, events);
+        self.watch_events(events, frames);
         let mapping = &self.mapping;
         let mut data = ProcessData {
             processMode: ProcessModes_::kRealtime as int32,
@@ -1489,14 +1653,7 @@ impl crate::audio::Block for Vst3Block {
             return;
         }
         if let Some(main) = self.out_buffers.first() {
-            for channel in 0..link_channels {
-                let Some(source) = main.get(channel.min(main.len().saturating_sub(1))) else { break };
-                for (frame, sample) in source.iter().take(frames).enumerate() {
-                    if let Some(out) = output.get_mut(frame * link_channels + channel) {
-                        *out = *sample;
-                    }
-                }
-            }
+            crate::audio::collect_main(main, link_channels, frames, output);
         }
         self.watch_output(output, frames);
     }
@@ -1505,6 +1662,52 @@ impl crate::audio::Block for Vst3Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
+        let watch = Watch::default();
+        watch.merge_peak(&[0.25, -0.75, 0.5]);
+        watch.merge_peak(&[0.5, f32::NAN]);
+        watch.merge_peak(&[]);
+        assert_eq!(watch.take_peak(), 0.75);
+        assert_eq!(watch.take_peak(), 0.0);
+        watch.merge_peak(&[-0.125]);
+        assert_eq!(watch.take_peak(), 0.125);
+    }
+
+    /// The main thread resets the counters while the audio thread keeps adding to them: no
+    /// frame is lost, and a peak that was taken never comes back.
+    #[test]
+    fn resetting_the_trace_watch_loses_no_frames_and_repeats_no_peak() {
+        const BLOCKS: u32 = 200_000;
+        let watch = Arc::new(Watch::default());
+        let audio = {
+            let watch = watch.clone();
+            std::thread::spawn(move || {
+                for block in 1..=BLOCKS {
+                    watch.merge_peak(&[block as f32]);
+                    watch.frames.fetch_add(1, Ordering::Release);
+                }
+            })
+        };
+        let (mut frames, mut peaks) = (0_u64, Vec::new());
+        while !audio.is_finished() {
+            frames += watch.take_frames();
+            let peak = watch.take_peak();
+            if peak > 0.0 {
+                peaks.push(peak);
+            }
+        }
+        audio.join().unwrap();
+        frames += watch.take_frames();
+        let peak = watch.take_peak();
+        if peak > 0.0 {
+            peaks.push(peak);
+        }
+        assert_eq!(frames, u64::from(BLOCKS), "frames were erased by a reset");
+        assert_eq!(peaks.last().copied(), Some(BLOCKS as f32));
+        assert!(peaks.windows(2).all(|pair| pair[0] < pair[1]), "an old peak was written back");
+    }
 
     #[test]
     fn a_module_is_loaded_once_and_kept() {

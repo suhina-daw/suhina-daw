@@ -10,6 +10,7 @@ covers:
   - crates/ui/src/kit/widgets.rs
   - crates/ui/src/app.rs
   - apps/suhina/src/main.rs
+  - crates/ui/src/kit/theme_vars.rs
 ---
 
 # 0031: Style sheets for the whole UI
@@ -39,17 +40,34 @@ retains the computed snapshot until state, source, palette or viewport changes.
 Box and text shadow painters consume toolkit-independent `ResolvedShadow` values.
 The compatibility adapter converts Stylo values only at its boundary.
 
-The complete sheet remains on Stylo/Blitz if it needs unsupported syntax or a
-substituted expression that the native engine cannot resolve. This includes
-radial/conic gradients, other interpolation spaces and hints, animations, CSS layers
-and legacy Flex/Grid at this stage. Native linear gradients use bounded stops,
-premultiplied transparency and the existing texture cache/mesh painter; regression
-tests compare both colour ramps and geometry with the compatibility path. This
-temporary compatibility path is not an additional author-facing theme format;
-it will be removed after equivalent native adapters and tests exist. Tests compare
-native and compatibility paint values and exercise live switching between them.
-Theme storage is still the legacy format during this stage;
-no installed theme is automatically converted or rewritten on this account.
+The Stylo/Blitz compatibility engine has been removed. `suhina-style` now covers what
+themes used it for: cascade layers, `calc()`, `color-mix()`, media ranges, viewport
+units, `[data-object]` selectors, radial/conic gradients, the `background` and layout
+shorthands, standard Flex/Grid properties on Taffy for the toolbar and workspace, and
+transitions and keyframe animations. Before removal, tests compared native and Stylo
+gradient pixels and geometry, paint values and authored markers; every bundled theme
+parses without a notice. Unknown declarations are skipped with a notice and the rest of
+the sheet applies; a sheet that does not parse keeps the last working one.
+Persistent component anchors (`suhina_style::anchor`: an edge follows another element's
+edge in the same container with a gap; cycle and chain-length validation; missing or
+hidden targets fall back) are connected to the native placement adapter and the Edit
+interface. They are part of the layout model, not of the `skin.controls` offsets, and move
+with it to `position: overlay` and component layout.
+Theme storage follows *Amendment: theme settings and variants*: a theme's folder holds its
+`theme.css` (the author's sheet, never rewritten), `variants/*.json` (values for its settings,
+written by the settings editors) and `layout.css` (what the Edit interface sets); no JSON theme
+is written. Settings are registered custom properties (`@property`, `suhina_style::registered`):
+the core set in `crates/ui/src/kit/theme_vars.rs` and any a theme declares. A theme of an
+earlier version (JSON, or a `theme.css` importing `advanced.css`) is migrated once, only after
+the new files read back as the same theme; its old files are kept in `legacy/`. The built-in
+themes are in the same form (`crates/ui/themes/<id>.theme.css` and `<id>.layout.css`); their
+artwork and Meadow's background stay embedded beside them.
+
+Device panels use the tiers: `.sd` version 6 adds an optional panel `style`, applied in the
+Device tier bounded to its panel; `#id` selects a control by its id; `user.css` in the themes
+folder is the User tier for every view. Panel layout from CSS (a group/layout tree in the SDK)
+is not yet connected: panel sheets style colours, ink, accents and the other painted
+properties.
 
 ## Device panels use the same style engine
 
@@ -159,12 +177,13 @@ The language is CSS's core, everything in it that does not depend on HTML:
 - `@import "file.css"`, `@font-face`, and `@media` (section 3).
 
 The built-in default style sheet reproduces Suhina Dark exactly, so the move changes nothing on
-screen until a theme does. **JSON themes are retired:** built-in themes are rewritten as `.css`. Existing user themes are converted only after a validated round trip, with their original files and artwork preserved. Legacy JSON remains readable during the staged migration. The style sheet is the only source of the theme: nothing is mirrored into another
-file, and Suhina writes to a style sheet only when the person edits it in Suhina (the colour editor,
-the Edit interface), keeping the file's comments and formatting outside the rule it changes.
+screen until a theme does. **JSON themes are retired:** built-in themes are rewritten as `.css`. Existing user themes are converted only after a validated round trip, with their original files and artwork preserved. Legacy JSON remains readable during the staged migration. The style sheet is the theme's own source and Suhina never
+writes it: the settings a person changes in Suhina are values in a variant of the theme, and the
+Edit interface writes the theme's `layout.css`.
+*Amended 2026-10-23, see Amendment: theme settings and variants.*
 
-Settings › Appearance keeps choosing, duplicating, reloading, importing and exporting themes; its
-colour editor changes the variables in the theme's `window` rule.
+Settings › Appearance keeps choosing, duplicating, reloading, importing and exporting themes, and
+chooses a theme's variant; its colour editor changes the variant's values.
 
 **Packages.** A theme exports as a ZIP of its folder, with its images and fonts and the generated
 README (section 8). Built-in themes and the default artwork are embedded in the app; editing one
@@ -647,3 +666,55 @@ handling into steps 1 and 4, its painters into step 2. PR 809's glass work is in
 4. **Artwork by file name:** should a theme that is only a folder of images (`knob.body.svg`,
    `fader.cap.hover.svg`, as in PR 841) still work, with the names read as rules, so artists can
    theme without writing CSS?
+
+## Amendment: theme settings and variants (2026-10-23)
+
+[PR 880](https://github.com/suhina-daw/suhina-daw/pull/880). A theme is one style sheet,
+`theme.css`, as its author wrote it; Suhina reads it and never writes it. What a person can change
+in Suhina are **registered custom properties**: a core set every theme has (the palette tokens and
+the former model fields: meter style, segments and intensity, artwork frame rate, liquid
+materials, surface gradients, background strength, Session geometry), registered with Suhina
+Dark's values, and any a theme declares with `@property` (`syntax`, `initial-value`, and Suhina's
+`label`, `group`, `range`, `step` for the settings panel). A **variant** is a JSON file in the
+theme's `variants/` folder with values for those properties, a name and an optional `appearance`
+(light or dark); its values apply in a Variant tier above the theme's rules. The settings editors
+write only variants: an edit to a theme's own values makes a variant, *Custom*, so a built-in
+theme needs no copy for it (its variants are kept in a folder of its id without its CSS).
+`layout.css`, written by Suhina only, holds what the Edit interface and editors set beyond
+settings: placements and anchors, the toolbar, artwork and the name. A change of layout or
+artwork to a built-in theme still copies it. The picker shows one card per theme with a swatch
+per variant. Open: rendered thumbnails per variant, and following the system's appearance with
+the variant's `appearance`.
+
+## Amendment: control shapes, overlays and presentation from the theme (2026-10-23)
+
+Accepted for the parts below; *presentation defaults* is proposed.
+
+A first theme made by hand on disk ([#880](https://github.com/suhina-daw/suhina-daw/pull/880)) found
+the controls' shapes fixed in code: the CSS reached their colours only. So:
+
+- **Control surfaces.** A native control's surface (background, `border-width` and
+  `border-color`, radius, shadows, opacity) comes from its element, the native values where the
+  sheet sets none. A transparent background paints nothing. A view's or bar's background is the
+  surface behind its controls, not their fill.
+- **Level bars.** Volume and pan fields are one level bar with a track and a `.value-fill`, a
+  `height` for thickness, ids by their Edit interface names and artwork roles of their own.
+- **Overlays.** A workspace panel the grid lays over the view is drawn on a layer above it.
+- **Track headers' side.** `--suhina-track-headers` on `.arrangement` is used while the user's
+  setting is *Theme*, the new default; the user's Left or Right wins.
+
+A second theme made by hand (2026-10-23, round 2) added: host states (`:checked`, `:selected`,
+`:playing`, `:recording`, `:armed`, `:muted`) and host variables (`--track-colour`,
+`--track-fill`) in the cascade, per-view track artwork, a bar's own separator colour, `.menu` and
+`.popup` classes and a least header width a theme may set.
+
+**Proposed: presentation defaults from the theme.** The Settings page's other presentation
+choices (header and clip colour strength, waveform and note colours, mixer knobs or fields)
+would work the same way: the theme gives a default as a `--suhina-*` property, the setting gains
+*Theme* and stays the user's override, and the root element says the value in use
+(`[data-track-headers=left]`) so a theme can lay out each case. Open: which choices count as
+presentation; whether present users keep their values as overrides; how this meets the
+appearance, layout and interaction split of [#623](https://github.com/suhina-daw/suhina-daw/issues/623),
+[#625](https://github.com/suhina-daw/suhina-daw/issues/625) and
+[#868](https://github.com/suhina-daw/suhina-daw/issues/868); and whether a profile that bundles a
+theme, its variant, the workspace, interaction and keymap belongs here or in an ADR of its own.

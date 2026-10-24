@@ -87,6 +87,9 @@ pub struct DeviceBox {
     pub name: String,
     /// What it is: a built-in effect or instrument, a plug-in format, or one Suhina cannot run.
     pub kind: String,
+    /// What a theme selects its panel by, after `#device-`: a built-in device's id
+    /// (`#device-compressor`), `sd` for a device file, `plugin` for a plug-in.
+    pub theme_id: String,
     pub enabled: bool,
     /// Parameter ids and values as text.
     pub params: Vec<(String, String)>,
@@ -460,7 +463,7 @@ impl Detail {
             .iter()
             .find(|t| t.id == chain.track)
             .and_then(|t| t.channel)
-            .and_then(|c| project.channels.iter().find(|ch| ch.id == c))
+            .and_then(|c| project.channel(c))
         else {
             return;
         };
@@ -472,8 +475,28 @@ impl Detail {
                     }
                 }
                 let Some(device) = suhina_engine::model::device_at(devices, &device_box.at.0) else { continue };
+                // A built-in parameter's description, for its kind and range.
+                let info = match &device.kind {
+                    DeviceKind::Builtin(id) => suhina_device_registry::info(id),
+                    _ => None,
+                };
                 for lane in device.automation.iter().filter(|l| l.enabled && !l.points.is_empty()) {
-                    let Some(value) = lane.value_at(beat, false) else { continue };
+                    let spec = info.and_then(|info| info.params.iter().find(|p| p.id == lane.param));
+                    // On/off and choice parameters hold each point's value until the next, as the
+                    // engine plays them and the lane draws them.
+                    let stepped = match spec {
+                        Some(spec) => matches!(
+                            spec.kind,
+                            suhina_device_api::ParamKind::Toggle | suhina_device_api::ParamKind::Choice(_)
+                        ),
+                        None => device_box
+                            .graph
+                            .as_ref()
+                            .and_then(|g| g.parameters.iter().find(|p| p.id == lane.param))
+                            .is_some_and(|p| p.control.is_stepped()),
+                    };
+                    let Some(value) = lane.value_at(beat, stepped) else { continue };
+                    let value = spec.map_or(value, |spec| spec.clamp(value));
                     for (id, v) in &mut device_box.values {
                         if *id == lane.param {
                             *v = value;
@@ -515,8 +538,7 @@ pub fn build_with(
     nam: crate::detail::nam_panel::Lists,
 ) -> Detail {
     let bar = bar_beats(project);
-    let track_name =
-        |id: TrackId| project.tracks.iter().find(|t| t.id == id).map(|t| t.name.clone()).unwrap_or_default();
+    let track_name = |id: TrackId| project.track(id).map(|t| t.name.clone()).unwrap_or_default();
     let found = clip.and_then(|clip| match clip {
         ClipRef::Arrangement(id, clip) => project
             .arrangement
@@ -587,13 +609,8 @@ fn chain(
     plugins: &mut dyn FnMut(TrackId, &[usize]) -> Option<PluginReport>,
     nam: crate::detail::nam_panel::Lists,
 ) -> Chain {
-    let track_name = project.tracks.iter().find(|t| t.id == id).map(|t| t.name.clone()).unwrap_or_default();
-    let channel = project
-        .tracks
-        .iter()
-        .find(|t| t.id == id)
-        .and_then(|t| t.channel)
-        .and_then(|c| project.channels.iter().find(|ch| ch.id == c));
+    let track_name = project.track(id).map(|t| t.name.clone()).unwrap_or_default();
+    let channel = project.tracks.iter().find(|t| t.id == id).and_then(|t| t.channel).and_then(|c| project.channel(c));
     let devices = channel
         .map(|c| c.devices.iter().enumerate().map(|(index, d)| device_box(d, &[index], id, plugins)).collect())
         .unwrap_or_default();
@@ -614,6 +631,12 @@ fn device_box(
         at: DeviceAt(path.to_vec()),
         group: d.as_group().map(|g| group_box(g, d, path, id, plugins)),
         name: device_display_name(d),
+        theme_id: match &d.kind {
+            DeviceKind::Builtin(id) => id.to_ascii_lowercase(),
+            DeviceKind::Sd => "sd".into(),
+            DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. } => "plugin".into(),
+            _ => "unsupported".into(),
+        },
         kind: match &d.kind {
             DeviceKind::Builtin(_) => "Suhina".into(),
             DeviceKind::Sd => d
@@ -879,6 +902,13 @@ fn chain_row(
                 )
             });
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
+            // `.device { width }` or `#device-<id> { width }` widens the panel (up to 1600 points).
+            let width = {
+                let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+                crate::kit::style_class::computed()
+                    .and_then(|c| c.width)
+                    .map_or(width, |themed| width.max(themed.clamp(120.0, 1600.0)))
+            };
             let height = sdk_viewport(device)
                 .map_or_else(|| panel_height(device, width - PAD * 2.0, editor), |v| ROW + PAD * 2.0 + v[1]);
             (width, height)
@@ -1361,9 +1391,20 @@ fn device_panel(
             painter.rect_stroke(rect, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
         }
     };
-    painter.fill_background(rect, 0.0, theme::panel_background());
+    // `.device` styles every device's panel and `#device-compressor` (a built-in device's id)
+    // one kind of them; `.device-header` its header row. Everything inside (`.device-control`,
+    // the generated parameter list's widgets) is in that scope.
+    let _device_style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, !device.enabled);
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
+    crate::kit::native_css::surface(painter, rect, 0.0, theme::panel_background());
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.fill_background(header, 0.0, theme::control_background());
+    {
+        let _header = crate::kit::style_class::enter("device-header");
+        crate::kit::native_css::surface(painter, header, 0.0, theme::control_background());
+    }
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
@@ -1915,6 +1956,10 @@ fn parameter_widget(
                 .max_decimals(style.decimals),
         ),
         ParameterControl::Knob | ParameterControl::LogKnob => knob(ui, parameter, rect, accent, value),
+        // `.slider { --suhina-appearance: knob }` draws a slider as a knob.
+        ParameterControl::Slider | ParameterControl::LogSlider | ParameterControl::Integer if slider_as_knob() => {
+            knob(ui, parameter, rect, accent, value)
+        }
         ParameterControl::VerticalSlider => {
             let rect = Rect::from_center_size(rect.center(), Vec2::new(ui.spacing().interact_size.y, rect.height()));
             let mut slider_ui =
@@ -1928,6 +1973,7 @@ fn parameter_widget(
                     .step_by(style.step),
             )
         }
+        control if themed_slider() => themed_slider_widget(ui, parameter, rect, control, value),
         control => ui.add(
             egui::Slider::new(value, parameter.min..=parameter.max)
                 .show_value(false)
@@ -1937,6 +1983,91 @@ fn parameter_widget(
                 .step_by(if control == ParameterControl::Integer { 1.0 } else { style.step }),
         ),
     }
+}
+
+/// Whether the theme draws parameter sliders as knobs (`.slider { --suhina-appearance: knob }`).
+pub(crate) fn slider_as_knob() -> bool {
+    let _style = crate::kit::style_class::enter("slider");
+    crate::kit::style_class::knob_preference(false)
+}
+
+/// Whether the theme gives sliders parts of their own: `.slider-rail`, `.slider-fill` or
+/// `.slider-handle` with a background, or `slider.rail` / `slider.fill` / `slider.handle` artwork.
+pub(crate) fn themed_slider() -> bool {
+    let _style = crate::kit::style_class::enter("slider");
+    ["slider-rail", "slider-fill", "slider-handle"].into_iter().any(|class| {
+        let _part = crate::kit::style_class::enter(class);
+        crate::kit::style_class::computed().is_some_and(|c| c.authored.background || c.has_gradient())
+    }) || ["slider.rail", "slider.fill", "slider.handle"].into_iter().any(crate::kit::skin::has_own)
+}
+
+/// A parameter slider drawn from the theme's parts: the rail (`.slider-rail`, `height` its
+/// thickness), the fill up to the value (`.slider-fill`) and the handle (`.slider-handle`,
+/// `width`), each also as artwork. Dragged sideways, back to its default on a double click.
+fn themed_slider_widget(
+    ui: &mut Ui,
+    parameter: &GraphParameter,
+    rect: Rect,
+    control: ParameterControl,
+    value: &mut f64,
+) -> egui::Response {
+    use crate::kit::skin::{self, State};
+    let (min, max) = (parameter.min, parameter.max);
+    let logarithmic = control == ParameterControl::LogSlider && min > 0.0 && max > min;
+    let height = ui.spacing().interact_size.y.min(rect.height()).max(8.0);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), height), Sense::click_and_drag());
+    let _style = crate::kit::style_class::enter_response("slider", &response);
+    let to_position = |v: f64| {
+        if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
+    };
+    let handle_width = {
+        let _handle = crate::kit::style_class::enter("slider-handle");
+        crate::kit::style_class::computed().and_then(|c| c.width).unwrap_or(8.0).clamp(2.0, rect.width().max(2.0))
+    };
+    let travel = (rect.width() - handle_width).max(1.0);
+    if let Some(pointer) = response.interact_pointer_pos().filter(|_| response.dragged() || response.clicked()) {
+        let position = f64::from(((pointer.x - rect.left() - handle_width / 2.0) / travel).clamp(0.0, 1.0));
+        let mut next = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
+        let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
+        if step > 0.0 {
+            next = (min + ((next - min) / step).round() * step).clamp(min, max);
+        }
+        *value = next;
+    }
+    let position = to_position(*value).clamp(0.0, 1.0) as f32;
+    let state = State::response(&response, false);
+    let painter = ui.painter_at(rect);
+    let rail = {
+        let _rail = crate::kit::style_class::enter("slider-rail");
+        let thickness = crate::kit::native_css::thickness(4.0).clamp(1.0, rect.height());
+        let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), thickness));
+        if !(skin::has_own("slider.rail") && skin::paint(&painter, rail, "slider.rail", state, theme::text_hint(), 0.0))
+        {
+            crate::kit::native_css::surface(&painter, rail, thickness / 2.0, theme::control_background());
+        }
+        rail
+    };
+    let at = rect.left() + handle_width / 2.0 + travel * position;
+    {
+        let _fill = crate::kit::style_class::enter("slider-fill");
+        let fill = Rect::from_min_max(rail.min, Pos2::new(at, rail.bottom()));
+        if fill.width() >= 1.0
+            && !(skin::has_own("slider.fill")
+                && skin::paint(&painter, fill, "slider.fill", state, theme::accent(), 0.0))
+        {
+            crate::kit::native_css::surface(&painter, fill, rail.height() / 2.0, theme::control_selected());
+        }
+    }
+    {
+        let _handle = crate::kit::style_class::enter_response("slider-handle", &response);
+        let handle = Rect::from_center_size(Pos2::new(at, rect.center().y), Vec2::new(handle_width, rect.height()));
+        if !(skin::has_own("slider.handle")
+            && skin::paint(&painter, handle, "slider.handle", state, theme::text_primary(), 0.0))
+        {
+            crate::kit::native_css::surface(&painter, handle, 2.0, theme::text_primary());
+        }
+    }
+    response
 }
 
 /// A knob in `rect`, logarithmic for a `LogKnob`: dragged up and down (finer with Shift),
@@ -2115,10 +2246,17 @@ fn clip_properties(
         let height = ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW;
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
     } else {
-        Rect::from_min_max(area.min, Pos2::new(area.left() + CLIP_WIDTH, area.bottom()))
+        // `.clip-info { width }` in the theme (120 to 480 points).
+        let width = {
+            let _style = crate::kit::style_class::enter("clip-info");
+            crate::kit::style_class::computed().and_then(|c| c.width).map_or(CLIP_WIDTH, |w| w.clamp(120.0, 480.0))
+        };
+        Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
-    painter.fill_background(column, 0.0, theme::panel_background());
+    // `.clip-info` styles the clip's column: its background and its text.
+    let _style = crate::kit::style_class::enter("clip-info");
+    crate::kit::native_css::surface(painter, column, 0.0, theme::panel_background());
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
     // title last; text never wraps (› Clip column in `docs/spec/ui-clip-editor.md`).
     let title = Rect::from_min_size(column.min, Vec2::new(column.width(), ROW));
@@ -2318,10 +2456,18 @@ fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Showing) -> Opt
         if response.clicked() && value != showing {
             picked = Some(value);
         }
+        // `.editor-tab` (`:checked` for the one shown), `#tab-clip` and `#tab-devices`.
+        let _style = crate::kit::style_class::enter_named_response(
+            "editor-tab",
+            &format!("tab-{}", text.to_ascii_lowercase()),
+            &response,
+        );
+        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, value == showing);
         let on = motion::toward(ui.ctx(), response.id.with("on"), value == showing, motion::VALUE);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.fill_background(cell, 0.0, motion::mix(idle, theme::control_selected(), on));
-        let color = motion::mix(theme::text_secondary(), theme::text_inverse(), on);
+        crate::kit::native_css::surface(painter, cell, 0.0, motion::mix(idle, theme::control_selected(), on));
+        let color =
+            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
@@ -2860,6 +3006,31 @@ mod tests {
             on_clip(ClipRef::Slot(TrackId(2), 1), json!({ "loop": true })),
             json!({ "track": 2, "scene": 2, "loop": true })
         );
+    }
+
+    /// While the transport runs, a panel shows what its automation plays: a toggle holds each
+    /// point's value, a continuous parameter moves between them (#706).
+    #[test]
+    fn panels_follow_automation_as_the_engine_plays_it() {
+        use suhina_engine::model::{AutomationLane, AutomationPoint};
+        let mut project = demo_project();
+        let mut utility = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+        for param in ["mono", "balance"] {
+            let mut lane = AutomationLane::new(param);
+            lane.points = vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(4.0, -1.0)];
+            utility.automation.push(lane);
+        }
+        project.channels[0].devices.push(utility);
+        let mut detail = build(&project, Some(TrackId(1)), None);
+        detail.follow_automation(&project, 1.0);
+        let Detail::Devices(chain) = &detail else { panic!("expected the chain") };
+        let value = |id: &str| chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == id)).map(|v| v.1);
+        assert_eq!(value("mono"), Some(1.0), "a toggle holds its point's value");
+        assert_eq!(value("balance"), Some(0.5), "a continuous one is a quarter of the way down");
+        detail.follow_automation(&project, 5.0);
+        let Detail::Devices(chain) = &detail else { panic!("expected the chain") };
+        let value = |id: &str| chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == id)).map(|v| v.1);
+        assert_eq!((value("mono"), value("balance")), (Some(0.0), Some(-1.0)), "the last point, kept in range");
     }
 
     #[test]

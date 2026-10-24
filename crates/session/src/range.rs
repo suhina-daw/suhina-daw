@@ -28,7 +28,7 @@ fn lane_of(p: &mut Project, track: TrackId) -> Result<usize, CommandError> {
     if let Some(lane) = p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
         return Ok(lane);
     }
-    let name = p.tracks.iter().find(|t| t.id == track).map(|t| t.name.clone()).unwrap_or_default();
+    let name = p.track(track).map(|t| t.name.clone()).unwrap_or_default();
     let id = p.new_lane_id()?;
     p.arrangement.lanes.push(ArrangementLane { id, name, track: Some(track), clips: Vec::new() });
     Ok(p.arrangement.lanes.len() - 1)
@@ -147,6 +147,27 @@ pub(crate) fn insert_time(session: &mut Session, params: &Value) -> Result<Value
         .map(|c| c.start)
         .chain(p.arrangement.markers.iter().map(|m| m.beat))
         .fold(0.0, f64::max);
+    // The rest that moves later too: tempo changes, automation points and the loop's end, which
+    // `transport.setLoop` and the automation commands also keep within the song's last beat.
+    let automation: Vec<f64> = p
+        .channels
+        .iter()
+        .flat_map(|channel| {
+            let devices = suhina_model::walk_devices(&channel.devices);
+            let device_lanes = devices.into_iter().flat_map(|(_, device)| &device.automation);
+            channel.automation.iter().chain(device_lanes).flat_map(|lane| lane.points.iter().map(|pt| pt.beat))
+        })
+        .collect();
+    let loop_end = p.transport.loop_range.as_ref().filter(|r| after(r.start) || r.end > start + 1e-9).map(|r| r.end);
+    let last = p
+        .transport
+        .tempo_changes
+        .iter()
+        .map(|change| change.beat)
+        .chain(automation)
+        .filter(|beat| after(*beat))
+        .chain(loop_end)
+        .fold(last, f64::max);
     if last + length > suhina_engine::MAX_START_BEAT {
         return Err(format!("the song would run past beat {}", suhina_engine::MAX_START_BEAT).into());
     }
@@ -416,7 +437,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     }
     for (goes, clip) in &taken {
         {
-            let target = p.tracks.iter().find(|t| t.id == *goes).ok_or("the target track is missing")?;
+            let target = p.track(*goes).ok_or("the target track is missing")?;
             let kinds = p.content(clip.content).map_or((false, false), |c| {
                 (
                     c.lanes.iter().any(|l| matches!(l.data, suhina_model::LaneData::Notes(_))),
@@ -486,14 +507,14 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
 /// the carry.
 fn add_editor_like(session: &mut Session, from: TrackId, device: usize, to: TrackId) -> Result<(), CommandError> {
     let p = &mut session.project;
-    let channel_of = |p: &suhina_model::Project, track: TrackId| p.tracks.iter().find(|t| t.id == track)?.channel;
+    let channel_of = |p: &suhina_model::Project, track: TrackId| p.track(track)?.channel;
     let source = channel_of(p, from)
-        .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| p.channel(c))
         .and_then(|c| c.devices.get(device))
         .map(|d| (d.name.clone(), d.kind.clone()))
         .ok_or("the plug-in that edits the clip is missing")?;
     let target = channel_of(p, to).ok_or("the track has no channel")?;
-    let channel = p.channels.iter_mut().find(|c| c.id == target).ok_or("the track has no channel")?;
+    let channel = p.channel_mut(target).ok_or("the track has no channel")?;
     if channel.devices.iter().any(|d| d.kind == source.1) {
         return Ok(());
     }

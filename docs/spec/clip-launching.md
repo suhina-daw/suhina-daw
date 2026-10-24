@@ -3,7 +3,7 @@ description: How launching clips and scenes behaves: quantisation, stop buttons,
 read_when: clip launching, scenes, launch quantisation, stop, session view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-10-16
+last_verified: 2026-10-23
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -288,8 +288,11 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
   boundary. `clip.setFades {track, scene, …}` sets a slot clip's fades, with the same parameters
   and checks as for an arrangement clip (`scene` instead of `index`); one undo step.
 - **Time-stretching.** Launched warped clips are time-stretched like arrangement clips (ADR
-  0003): each one's stretcher is prepared for the project's start tempo when the project opens
-  and rewound at every launch; where the tempo map is at another tempo they are re-pitched.
+  0003): each one's stretcher is prepared for the project's start tempo, in the background after
+  the project opens or an edit changes the clip, and rewound at every launch; where the tempo map
+  is at another tempo they are re-pitched. A launch that comes before its stretcher is ready (an
+  unquantised launch right after such an edit) starts on time; its stretched audio is silent
+  until the stretcher arrives, a few milliseconds later, and then plays from where the clip is.
 - **Tempo map.** While no scene tempo applies, the launcher clock reads its beat from the
   project's [tempo map](tempo-map.md), so launched clips stay on the arrangement's grid through
   tempo changes and ramps, and bar quantisation waits for the next bar line of the meter.

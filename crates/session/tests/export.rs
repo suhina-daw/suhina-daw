@@ -208,3 +208,65 @@ fn a_node_render_names_the_returns_its_sends_go_to() {
     assert!(warnings.is_empty(), "{warnings:?}");
     cleanup(&[&path]);
 }
+
+#[test]
+fn an_mp3_export_decodes_to_the_signal_and_is_deterministic() {
+    let project = one_track();
+    let mut session = Session::new(project.clone());
+    let source = suhina_engine::render_offline(&project, SR, 512).unwrap();
+    let path = temp_file("mp3", "mp3");
+    let result = run(&mut session, json!({ "path": path.display().to_string(), "mp3_rate": "320" })).unwrap();
+    assert_eq!(result["format"], "mp3");
+    // An mp3 has no bit depth, so the result names none.
+    assert!(result["bit_depth"].is_null(), "{}", result["bit_depth"]);
+    let decoded = suhina_media::decode_file(&path).unwrap();
+    assert_eq!(decoded.sample_rate, SR);
+    assert_eq!(decoded.channels, 2);
+    // The encoder's delay and padding ride along; the length is within a few frames.
+    assert!(
+        ((decoded.samples.len() as i64) - source.len() as i64).abs() < 10_000,
+        "decoded {} samples for {}",
+        decoded.samples.len(),
+        source.len()
+    );
+    let rms = |values: &[f32]| {
+        let sum: f64 = values.iter().map(|s| f64::from(*s) * f64::from(*s)).sum();
+        (sum / values.len().max(1) as f64).sqrt()
+    };
+    let source_rms = rms(&source);
+    let decoded_rms = rms(&decoded.samples);
+    let db = 20.0 * (decoded_rms / source_rms).log10();
+    assert!(db.abs() < 1.5, "the mp3 decodes at {db:.2} dB of the source's level");
+    // The same export writes the same bytes, header and LAME tag included.
+    let second = temp_file("mp3-second", "mp3");
+    run(&mut session, json!({ "path": second.display().to_string(), "mp3_rate": "320" })).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), std::fs::read(&second).unwrap());
+    cleanup(&[&path, &second]);
+}
+
+#[test]
+fn an_mp3_export_refuses_what_does_not_apply() {
+    let mut session = Session::new(one_track());
+    let path = temp_file("mp3-no", "mp3");
+    // A rate the encoder does not write.
+    let error = run(&mut session, json!({ "path": path.display().to_string(), "sample_rate": 96_000 })).unwrap_err();
+    assert!(error.contains("96000 is not one the encoder writes"), "{error}");
+    // A depth mp3 does not take.
+    let error = run(&mut session, json!({ "path": path.display().to_string(), "bit_depth": "16" })).unwrap_err();
+    assert_eq!(error, "bit_depth does not apply to mp3");
+    // The mp3 rate goes with mp3 only.
+    let wav = temp_file("mp3-no", "wav");
+    let error = run(&mut session, json!({ "path": wav.display().to_string(), "mp3_rate": "320" })).unwrap_err();
+    assert_eq!(error, "mp3_rate goes with mp3");
+    // An unknown rate name.
+    let error = run(&mut session, json!({ "path": path.display().to_string(), "mp3_rate": "v9" })).unwrap_err();
+    assert_eq!(error, "v9 is not an mp3 rate; 128, 192, 256, 320, v0 or v2");
+    // A format the command does not know is refused, not passed over for the extension; its
+    // case does not matter.
+    let error = run(&mut session, json!({ "path": wav.display().to_string(), "format": "aiff" })).unwrap_err();
+    assert_eq!(error, "aiff is not a format; wav, flac, ogg or mp3");
+    let error = run(&mut session, json!({ "path": wav.display().to_string(), "format": "MP3" })).unwrap_err();
+    assert_eq!(error, "the file name says .wav, and the format says mp3");
+    assert!(!wav.exists(), "a refused export wrote the file");
+    cleanup(&[&path, &wav]);
+}

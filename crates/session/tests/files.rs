@@ -130,7 +130,7 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
     let id = TrackId(added["track"].as_u64().unwrap() as u32);
     let p = session.project();
     assert_eq!(names(p), ["1 MIDI", "2 MIDI", "3 Audio", "4 Audio", "Audio 3", "A Return", "B Return"]);
-    let track = p.tracks.iter().find(|t| t.id == id).unwrap();
+    let track = p.track(id).unwrap();
     assert_eq!(track.content, ContentKinds { notes: false, audio: true });
     let channel = p.channels.iter().find(|c| Some(c.id) == track.channel).unwrap();
     assert_eq!((channel.role, channel.output), (ChannelRole::Regular, Some(ChannelId(100))));

@@ -123,6 +123,7 @@ fn export_ratio(mut project: Project, plugins: Option<Arc<PluginEnv>>) -> (f32, 
         plugins,
         folder: None,
         trusted: Trusted::default(),
+        title: String::new(),
     };
     let path = std::env::temp_dir().join(format!("suhina-export-plugin-{}.wav", std::process::id()));
     let params = json!({ "path": path.display().to_string() });
@@ -324,12 +325,8 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.set_plugin_env(env());
-    // The responder delay is set before the plug-in's host process is born: the host
-    // inherits it at its spawn, and its first state read holds the reply out, so the cancel
-    // happens while the read is genuinely out, not racing its answer.
-    // SAFETY: single-threaded around here for the env (the tests' hosts inherit it); no
-    // reader inside this process reads it concurrently.
-    unsafe { std::env::set_var("SUHINA_TEST_PLUGIN_SAVE_DELAY_MS", "300") };
+    // The gate is known before the plug-in's host process is born, which inherits it.
+    let mut gate = StateGate::new();
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + Duration::from_secs(30);
     session.sync_plugins();
@@ -337,10 +334,13 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
     });
 
-    // The read is out and stays out; the export is cancelled while it is; the late reply
-    // lands (the delay is past) and starts nothing — the round is gone with the cancel.
+    // The read is out and held out, so the cancel happens while it is genuinely out, not
+    // racing its answer; the late reply then lands and starts nothing — the round is gone
+    // with the cancel.
+    gate.hold();
     assert!(matches!(digs(&mut session, &mut renderer, deadline), suhina_session::ExportGather::Pending));
     session.cancel_export_gather();
+    gate.release();
     std::thread::sleep(Duration::from_millis(400));
     // A later export gathers its own round, and its read answers it: the job was cleaned up.
     let data = loop {
@@ -363,18 +363,17 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
     session.set_plugin_env(env());
-    // The responder delay is set before the plug-in's host process is born: the host
-    // inherits it at its spawn, and its first state read holds the reply out.
-    // SAFETY: single-threaded around here for the env (the tests' hosts inherit it); no
-    // reader inside this process reads it concurrently.
-    unsafe { std::env::set_var("SUHINA_TEST_PLUGIN_SAVE_DELAY_MS", "300") };
+    // The gate is known before the plug-in's host process is born, which inherits it.
+    let mut gate = StateGate::new();
     session.sync_plugins();
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &json!({ "track": 1, "device": 0 })).unwrap()["status"] == "running"
     });
 
-    // The read goes out, and the caller's deadline is already past: the round settles on the
+    // The read goes out and is held out (the start's own read was answered before the
+    // plug-in ran), and the caller's deadline is already past: the round settles on the
     // launch-time fallback, and says which plug-in did not answer.
+    gate.hold();
     let gone = Instant::now();
     let mut block = vec![0.0f32; 256 * 2];
     renderer.process(&mut block);
@@ -386,6 +385,7 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     let suhina_session::ExportGather::Ready(data) = session.gather_export_data(gone) else {
         panic!("an expired gather must settle");
     };
+    gate.release();
     let notices = data.warnings;
     assert!(
         notices
@@ -395,6 +395,47 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     );
     assert!(!session.can_undo());
 }
+
+/// The test plug-in's state-read gate (`SUHINA_TEST_PLUGIN_STATE_GATE`): while it is held, the
+/// plug-in's state reads keep their replies, so a test holds a read out for as long as it
+/// needs, never racing its answer. Hosts inherit the variable at their spawn, so it names one
+/// file for the whole test binary, and the tests that hold it take turns. Dropped, it lets
+/// every read go.
+struct StateGate {
+    path: PathBuf,
+    _turn: std::sync::MutexGuard<'static, ()>,
+}
+
+impl StateGate {
+    fn new() -> Self {
+        static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        static SET: std::sync::Once = std::sync::Once::new();
+        let turn = TURN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = std::env::temp_dir().join(format!("suhina-state-gate-{}", std::process::id()));
+        // SAFETY: set once, to the same value for every test; the tests' hosts inherit it at
+        // their spawn, and nothing inside this process reads it.
+        SET.call_once(|| unsafe { std::env::set_var("SUHINA_TEST_PLUGIN_STATE_GATE", &path) });
+        let _ = std::fs::remove_file(&path);
+        Self { path, _turn: turn }
+    }
+
+    /// From now on, the plug-in's state reads hold their replies.
+    fn hold(&mut self) {
+        std::fs::write(&self.path, b"").unwrap();
+    }
+
+    /// The held reads answer.
+    fn release(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+impl Drop for StateGate {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 /// Plays blocks while the session looks after its plug-ins, until `done` holds.
 fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: impl FnMut(&mut Session) -> bool) {
     let deadline = Instant::now() + PATIENT;

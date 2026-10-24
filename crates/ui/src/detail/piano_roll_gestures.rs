@@ -15,9 +15,10 @@ use serde_json::json;
 use suhina_engine::model::Note;
 
 use super::{
-    EDGE, EPSILON, Effect, LEAST_KEY_ROWS, Layout, MAX_NOTES_PER_COMMAND, MIN_LENGTH, NoteGrid, PianoClip,
-    PianoRollState, velocity_at,
+    EDGE, EPSILON, Effect, LEAST_KEY_ROWS, Layout, MAX_NOTES_PER_COMMAND, MIN_LENGTH, PianoClip, PianoRollState,
+    velocity_at,
 };
+use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
@@ -59,14 +60,14 @@ impl Part {
 /// How far a drag of the grabbed note's left edge by `raw` beats moves the selection's starts,
 /// their ends kept: the start on the grid unless `free` (onto or past its end, the last line
 /// before it), no start before beat 0 and no note shorter than a hundredth of a beat.
-pub fn start_by(raw: f64, grabbed: &Note, moved: &[Note], grid: NoteGrid, free: bool) -> f64 {
+pub fn start_by(raw: f64, grabbed: &Note, moved: &[Note], grid: TimelineGrid, free: bool) -> f64 {
     if !raw.is_finite() {
         return 0.0;
     }
     let end = grabbed.time + grabbed.duration;
     let mut start = grid.place(grabbed.time + raw, free, false);
     if grid.snaps && !free && start >= end - EPSILON {
-        start = ((end / grid.step - EPSILON).ceil() - 1.0) * grid.step;
+        start = grid.previous_line(end);
     }
     let shortest = moved.iter().map(|n| n.duration).fold(f64::INFINITY, f64::min);
     let earliest = moved.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
@@ -266,7 +267,7 @@ mod tests {
 
     #[test]
     fn the_left_edge_snaps_and_stops_before_the_end_and_at_beat_0() {
-        let grid = NoteGrid::new(0.25, 40.0);
+        let grid = TimelineGrid::new(0.25, 40.0, 4.0, 6.0);
         let grabbed = note(1.0, 1.0, 60);
         assert_eq!(start_by(0.3, &grabbed, &[grabbed], grid, false), 0.25);
         assert!((start_by(0.3, &grabbed, &[grabbed], grid, true) - 0.3).abs() < 1e-12);

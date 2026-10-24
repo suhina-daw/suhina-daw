@@ -17,11 +17,12 @@
 //! host for compensation, whatever the settings).
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::gain::{SILENCE_DB, db_to_gain_or_silence};
 use suhina_dsp::shape::Curve;
-use suhina_dsp::{Biquad, Coefficients, DcBlocker, Oversampler2x, Smoother};
+use suhina_dsp::{Biquad, Coefficients, DcBlocker, Oversampler2x, Smoother, time_constant};
 
 /// Delay the device adds, in frames.
 pub const LATENCY: u32 = Oversampler2x::LATENCY;
@@ -97,7 +98,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 pub const INFO: DeviceInfo =
     DeviceInfo { id: "vinyl-distortion", name: "Vinyl Distortion", role: Role::Effect, params: &PARAMS };
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
 /// Seed of the crackle's random numbers after a reset.
 const SEED: u32 = 0x1234_5678;
 const DELAY: usize = LATENCY as usize;
@@ -142,7 +142,7 @@ impl Band {
 
 pub struct VinylDistortion {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     tracing_drive: Smoother,
     pinch_drive: Smoother,
     crackle_gain: Smoother,
@@ -167,11 +167,11 @@ impl Default for VinylDistortion {
 impl VinylDistortion {
     pub fn new() -> Self {
         let sr = DEFAULT_SAMPLE_RATE;
-        let values = PARAMS.map(|p| p.default);
+        let params = ParamBank::new(&PARAMS);
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         let mut vinyl = Self {
             sample_rate: sr,
-            values,
+            params,
             tracing_drive: Smoother::new(0.0, ramp),
             pinch_drive: Smoother::new(0.0, ramp),
             crackle_gain: Smoother::new(0.0, ramp),
@@ -188,7 +188,7 @@ impl VinylDistortion {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn curve(&self) -> Curve {
@@ -232,7 +232,7 @@ impl VinylDistortion {
         self.dry_at = 0;
         self.seed = SEED;
         self.click = [0.0; 2];
-        self.click_decay = (-1.0 / (CLICK_SECONDS * sr)).exp();
+        self.click_decay = time_constant(CLICK_SECONDS, sr);
     }
 
     /// The next random number, from 0.0 to 1.0.
@@ -282,9 +282,9 @@ impl Device for VinylDistortion {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let [tracing, pinch, crackle] = self.targets();
         for band in &mut self.tracing {
             wake(band, &self.tracing_drive, tracing);
@@ -299,7 +299,7 @@ impl Device for VinylDistortion {
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn latency(&self) -> u32 {

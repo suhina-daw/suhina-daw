@@ -182,13 +182,30 @@ pub struct ThemesView {
     pub gradients: crate::kit::gradient::Gradients,
     /// The folder theme files are kept in, if there is one.
     pub folder: Option<String>,
+    /// Every theme variant: its entry's id (`<theme>@<variant>`) and its name.
+    pub variants: Vec<(String, String)>,
+    /// Themes left in an earlier file format, by id, and why they were not converted.
+    pub kept: Vec<(String, String)>,
+    /// The name of the variant in use, when one is.
+    pub variant: Option<String>,
+    /// The settings the theme in use declares itself (`@property` with a label), in its order.
+    pub declared: Vec<suhina_style::registered::Registered>,
+    /// The value of every custom property of the theme in use, with its variant's.
+    pub values: std::collections::BTreeMap<String, String>,
 }
 
 /// What the page asks the app to do with the themes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThemeRequest {
-    /// Use the theme with this id.
+    /// Use the theme with this id (`<theme>@<variant>` for a variant).
     Use(String),
+    /// Set one of the theme's declared settings, in the variant in use (made when there is none).
+    EditValue {
+        name: String,
+        value: String,
+    },
+    /// A new variant of the theme in use, with its values, named.
+    NewVariant(String),
     /// Use these colours; a built-in theme is copied first, since it does not change.
     Edit(Palette),
     EditRgba {
@@ -206,7 +223,8 @@ pub enum ThemeRequest {
         liquid: Option<crate::kit::liquid::Options>,
         gradients: crate::kit::gradient::Gradients,
     },
-    /// Give the theme in use this name (and its file a name made from it).
+    /// Give the theme in use this name (and its folder a name made from it); for a variant, the
+    /// variant's name.
     Rename(String),
     /// A copy of the theme in use, to change.
     Duplicate,
@@ -221,6 +239,8 @@ pub enum ThemeRequest {
     OpenFolder,
     /// Write every theme file into one zip.
     Backup,
+    /// Write the theme in use as a theme package to share (`.theme.suhina`).
+    ExportPackage,
     /// Write a theme template and a README on the format into a zip.
     ExportTemplate,
 }
@@ -281,7 +301,8 @@ pub struct PageState {
     pub window: bool,
     pub capture: Option<String>,
     /// The name being typed for a theme, with the theme's id.
-    pub theme_name: Option<(String, String)>,
+    /// The theme id, the name it had on disk, and the text being edited.
+    pub theme_name: Option<(String, String, String)>,
     /// The colour editor is a child view of Themes, not another sidebar page.
     pub theme_editor: bool,
     pub theme_restore: Option<(String, String)>,
@@ -292,6 +313,8 @@ pub struct PageState {
     pub theme_original: Option<Palette>,
     pub theme_original_rgb: Option<std::collections::BTreeMap<String, [u8; 3]>>,
     pub theme_rename_focus: bool,
+    /// What the theme list is filtered by: part of a theme's or a variant's name, or its id.
+    pub theme_search: String,
     /// A colour picker is open while its primary pointer button is held.
     pub theme_colour_held: bool,
     /// The audio devices were listed since the Audio page was opened.
@@ -1035,9 +1058,11 @@ fn theme_page(
                 }
                 ui.menu_button("More", |ui| {
                     for (label, action) in [
+                        ("New variant", ThemeRequest::NewVariant("Variant".into())),
                         ("Duplicate theme", ThemeRequest::Duplicate),
                         ("Reload themes", ThemeRequest::Reload),
                         ("Open the themes folder", ThemeRequest::OpenFolder),
+                        ("Export theme…", ThemeRequest::ExportPackage),
                         ("Back up themes", ThemeRequest::Backup),
                         ("Export the theme template", ThemeRequest::ExportTemplate),
                     ] {
@@ -1052,20 +1077,47 @@ fn theme_page(
             ui.add_space(10.0);
             let gap = 10.0;
             let width = ((page.width() - gap) / 2.0).max(80.0);
-            if let Some((id, name, built_in)) = themes.list.iter().find(|(id, _, _)| *id == themes.current) {
-                let active = theme_card(ui, themes, id, name, *built_in, page.width(), true);
+            let current = crate::kit::theme_vars::split_id(&themes.current).0;
+            if let Some((_, name, built_in)) = themes.list.iter().find(|(id, _, _)| id == current) {
+                let (active, chosen) = theme_card(ui, themes, &themes.current, name, *built_in, page.width(), true);
                 state.theme_colour_held |=
                     active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
+                if let Some(id) = chosen {
+                    request = Some(ThemeRequest::Use(id));
+                }
                 ui.add_space(gap);
             }
-            ui.label("Other themes");
-            let mut others = themes.list.iter().filter(|(id, _, _)| *id != themes.current);
+            ui.horizontal(|ui| {
+                ui.label("Other themes");
+                let search = ui.add(
+                    egui::TextEdit::singleline(&mut state.theme_search)
+                        .hint_text("Search themes")
+                        .frame(widgets::input_frame())
+                        .desired_width(200.0),
+                );
+                search.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Search themes"));
+                widgets::input_line(ui, &search);
+            });
+            let query = state.theme_search.trim().to_lowercase();
+            let mut others = themes
+                .list
+                .iter()
+                .filter(|(id, _, _)| id != current)
+                .filter(|(id, name, _)| theme_matches(&query, id, name, &themes.variants))
+                .peekable();
+            if others.peek().is_none() && !query.is_empty() {
+                ui.label(egui::RichText::new("No themes match").color(theme::text_hint()));
+            }
             while let Some(first) = others.next() {
                 let second = others.next();
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     for (id, name, built_in) in std::iter::once(first).chain(second) {
-                        if theme_card(ui, themes, id, name, *built_in, width, false).clicked() {
+                        let (card, chosen) = theme_card(ui, themes, id, name, *built_in, width, false);
+                        if let Some(id) = chosen {
+                            request = Some(ThemeRequest::Use(id));
+                            state.scrolled = None;
+                        } else if card.clicked() {
                             request = Some(ThemeRequest::Use(id.clone()));
                             state.scrolled = None;
                         }
@@ -1079,7 +1131,20 @@ fn theme_page(
     request
 }
 
-/// The current palette is featured once; every other palette stays in the compact grid.
+/// Whether a theme shows for `query` (lower case): an empty query, or part of its name, its id or
+/// the name of one of its variants.
+fn theme_matches(query: &str, id: &str, name: &str, variants: &[(String, String)]) -> bool {
+    query.is_empty()
+        || name.to_lowercase().contains(query)
+        || id.to_lowercase().contains(query)
+        || variants.iter().any(|(entry, variant)| {
+            crate::kit::theme_vars::split_id(entry).0 == id && variant.to_lowercase().contains(query)
+        })
+}
+
+/// The current palette is featured once; every other palette stays in the compact grid. A theme
+/// with variants has a row of swatches under its name, one per variant (the theme's own values
+/// first); clicking one uses that variant. Returns the card's response and the variant clicked.
 fn theme_card(
     ui: &mut Ui,
     themes: &ThemesView,
@@ -1088,12 +1153,33 @@ fn theme_card(
     built_in: bool,
     width: f32,
     active: bool,
-) -> egui::Response {
+) -> (egui::Response, Option<String>) {
+    let base = crate::kit::theme_vars::split_id(id).0;
+    let variants: Vec<(&str, &str)> = std::iter::once((base, "Theme's own"))
+        .chain(
+            themes
+                .variants
+                .iter()
+                .filter(|(variant, _)| crate::kit::theme_vars::split_id(variant).0 == base)
+                .map(|(variant, label)| (variant.as_str(), label.as_str())),
+        )
+        .collect();
+    let swatches = if variants.len() > 1 { 22.0 } else { 0.0 };
     let preview_height = if active { 170.0 } else { 92.0 };
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, preview_height + 50.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, preview_height + 50.0 + swatches), Sense::hover());
+    let card = Rect::from_min_size(rect.min, Vec2::new(width, preview_height + 50.0));
     let response =
-        ui.interact(rect, Id::new(("theme", id)), if active { Sense::click_and_drag() } else { Sense::click() });
+        ui.interact(card, Id::new(("theme", base)), if active { Sense::click_and_drag() } else { Sense::click() });
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Theme: {name}")));
+    let mut chosen = None;
+    let kept = themes.kept.iter().find(|(kept, _)| kept == base).map(|(_, why)| why.as_str());
+    // Two themes with one name: the folder tells them apart.
+    let twin = themes.list.iter().any(|(other, other_name, _)| other != base && other_name.eq_ignore_ascii_case(name));
+    let name = if twin { format!("{name} ({base})") } else { name.to_string() };
+    let label = match themes.variants.iter().find(|(variant, _)| variant == id) {
+        Some((_, variant)) if active => format!("{name} · {variant}"),
+        _ => name.clone(),
+    };
     if ui.is_rect_visible(rect) {
         let palette = themes.previews.iter().find(|(key, _)| key == id).map_or(&themes.colors, |(_, p)| p);
         let preview = Rect::from_min_size(rect.min + Vec2::splat(5.0), Vec2::new(width - 10.0, preview_height));
@@ -1114,7 +1200,7 @@ fn theme_card(
             ui.painter(),
             name_rect,
             Align2::LEFT_CENTER,
-            name,
+            &label,
             theme::ui_font(theme::TEXT),
             theme::text_primary(),
         );
@@ -1126,6 +1212,8 @@ fn theme_card(
                 "Active"
             } else if built_in {
                 "Built-in"
+            } else if kept.is_some() {
+                "Not converted"
             } else {
                 "Custom"
             },
@@ -1133,7 +1221,45 @@ fn theme_card(
             if active { theme::accent() } else { theme::text_secondary() },
         );
     }
-    response
+    let response = match kept {
+        Some(why) => response.on_hover_text(why),
+        None => response,
+    };
+    if swatches > 0.0 {
+        let in_use = if active { themes.current.as_str() } else { "" };
+        for (index, (variant, variant_name)) in variants.iter().enumerate() {
+            let centre = pos2(rect.left() + 16.0 + index as f32 * 22.0, rect.top() + preview_height + 59.0);
+            if centre.x + 8.0 > rect.right() {
+                break;
+            }
+            let area = Rect::from_center_size(centre, Vec2::splat(18.0));
+            let swatch = ui.interact(area, Id::new(("theme-variant", *variant)), Sense::click());
+            swatch.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Variant: {variant_name}"))
+            });
+            let swatch = swatch.on_hover_text(*variant_name);
+            if swatch.clicked() {
+                chosen = Some((*variant).to_string());
+            }
+            if ui.is_rect_visible(area) {
+                let palette = themes.previews.iter().find(|(key, _)| key == variant).map(|(_, p)| *p);
+                let palette = palette.unwrap_or(themes.colors);
+                let painter = ui.painter();
+                painter.circle_filled(centre, 7.0, palette.window_background);
+                painter.circle_filled(centre, 4.5, palette.accent);
+                let selected = *variant == in_use;
+                let ring = if selected {
+                    theme::accent()
+                } else if swatch.hovered() {
+                    theme::border_strong()
+                } else {
+                    theme::border()
+                };
+                painter.circle_stroke(centre, 8.0, egui::Stroke::new(if selected { 2.0 } else { 1.0 }, ring));
+            }
+        }
+    }
+    (response, chosen)
 }
 
 /// Each colour appears in exactly one understandable group; the token name stays visible.
@@ -1163,27 +1289,40 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
         return None;
     }
     ui.label(egui::RichText::new("Edit current theme").strong());
-    ui.label(&themes.name);
+    ui.label(match &themes.variant {
+        Some(variant) => format!("{} · {variant}", themes.name),
+        None => themes.name.clone(),
+    });
     ui.label(
-        egui::RichText::new("Changes apply and save immediately. Built-in themes become a custom copy.")
-            .small()
-            .color(theme::text_secondary()),
+        egui::RichText::new(
+            "Changes apply and save immediately. Colours and other settings are saved in a variant of the \
+             theme (a new one, Custom, the first time); the theme's own file never changes. Moving \
+             controls or changing artwork of a built-in theme makes a custom copy.",
+        )
+        .small()
+        .color(theme::text_secondary()),
     );
-    if state.theme_name.as_ref().is_none_or(|(id, _)| *id != themes.current) {
-        state.theme_name = Some((themes.current.clone(), themes.name.clone()));
+    // With a variant in use, the name is the variant's, and a built-in theme's variant has one too.
+    let (shown, renamable, label) = match &themes.variant {
+        Some(variant) => (variant.clone(), true, "Variant name"),
+        None => (themes.name.clone(), !themes.built_in, "Theme name"),
+    };
+    // A name changed on disk (the theme's own sheet, reloaded) replaces the field's text too.
+    if state.theme_name.as_ref().is_none_or(|(id, source, _)| *id != themes.current || *source != shown) {
+        state.theme_name = Some((themes.current.clone(), shown.clone(), shown.clone()));
     }
-    if let Some((_, name)) = state.theme_name.as_mut() {
+    if let Some((_, _, name)) = state.theme_name.as_mut() {
         let edit = ui.add_enabled(
-            !themes.built_in,
+            renamable,
             egui::TextEdit::singleline(name).frame(widgets::input_frame()).desired_width(260.0),
         );
-        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, !themes.built_in, "Theme name"));
+        edit.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, renamable, label));
         widgets::input_line(ui, &edit);
         if state.theme_rename_focus {
             edit.request_focus();
             state.theme_rename_focus = false;
         }
-        if !themes.built_in && edit.lost_focus() && !name.trim().is_empty() && name.trim() != themes.name {
+        if renamable && edit.lost_focus() && !name.trim().is_empty() && name.trim() != shown {
             request = Some(ThemeRequest::Rename(name.trim().to_string()));
         }
     }
@@ -1218,6 +1357,9 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
         }
     });
     ui.add_space(8.0);
+    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor) {
+        request = Some(edit);
+    }
     if let Some(edit) = super::skin_editor::show(ui, themes, &mut state.skin_editor) {
         request = Some(edit);
     }
@@ -2188,11 +2330,15 @@ fn segmented<T: Copy + PartialEq>(
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
+        // A part is a `.button` (`:checked` when chosen), as the sheet's generic rules say.
+        let _style = crate::kit::style_class::enter_response("button", &response);
+        crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, *value == current);
         let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
         let hover = widgets::hover(ui, &response);
         let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
-        painter.fill_background(cell, 0.0, motion::mix(idle, theme::control_selected(), selected));
-        let color = motion::mix(theme::text_secondary(), theme::text_inverse(), selected);
+        crate::kit::native_css::surface(painter, cell, 0.0, motion::mix(idle, theme::control_selected(), selected));
+        let color =
+            crate::kit::style_class::foreground(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
@@ -2241,6 +2387,16 @@ pub(super) fn edit_rgba(ui: &mut Ui, rgba: &mut [u8; 4], alpha: egui::color_pick
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_theme_search_matches_names_ids_and_variant_names() {
+        let variants = vec![("nord@frost".to_string(), "Frost".to_string())];
+        assert!(theme_matches("", "nord", "Nord", &variants));
+        assert!(theme_matches("nor", "nord", "Nord", &variants));
+        assert!(theme_matches("frost", "nord", "Nord", &variants));
+        assert!(!theme_matches("frost", "dracula", "Dracula", &variants));
+        assert!(theme_matches("test-new", "test-new-theme", "Kajo", &[]));
+    }
 
     #[test]
     fn settings_tree_does_not_cover_the_material_with_opaque_rows() {

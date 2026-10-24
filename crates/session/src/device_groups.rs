@@ -118,13 +118,11 @@ pub(crate) enum Kind {
 /// effect or an effect (everything else, unknown and missing devices included).
 pub(crate) fn kind_of(session: &Session, device: &Device) -> Kind {
     match &device.kind {
-        DeviceKind::Builtin(id) => {
-            if suhina_device_registry::info(id).is_some_and(|info| info.role == Role::Instrument) {
-                Kind::Instrument
-            } else {
-                Kind::Effect
-            }
-        }
+        DeviceKind::Builtin(id) => match suhina_device_registry::info(id).map(|info| info.role) {
+            Some(Role::Instrument) => Kind::Instrument,
+            Some(Role::MidiEffect) => Kind::MidiEffect,
+            _ => Kind::Effect,
+        },
         DeviceKind::Sd => match crate::devices::sd_graph(device).map(|g| g.role) {
             Ok(suhina_device_sdk::DeviceRole::Instrument) => Kind::Instrument,
             Ok(suhina_device_sdk::DeviceRole::MidiEffect) => Kind::MidiEffect,
@@ -155,6 +153,9 @@ pub(crate) fn check_chain(session: &Session, devices: &[Device], plays_notes: bo
     let midi = kinds.iter().take_while(|k| **k == Kind::MidiEffect).count();
     if kinds.iter().skip(midi).any(|k| *k == Kind::MidiEffect) {
         return Err("MIDI effects go first in a track's chain".into());
+    }
+    if !plays_notes && midi > 0 {
+        return Err("a MIDI effect goes on a MIDI track".into());
     }
     let instruments: Vec<usize> =
         kinds.iter().enumerate().filter(|(_, k)| **k == Kind::Instrument).map(|(i, _)| i).collect();
@@ -203,12 +204,12 @@ fn check_group(session: &Session, group: &DeviceGroup) -> Result<(), CommandErro
 /// Whether the track the parameters name plays notes.
 fn plays_notes(session: &Session, params: &Value) -> Result<bool, CommandError> {
     let track = track_id(&session.project, params)?;
-    Ok(session.project.tracks.iter().find(|t| t.id == track).is_some_and(|t| t.content.notes))
+    Ok(session.project.track(track).is_some_and(|t| t.content.notes))
 }
 
 /// Applies `edit` to a copy of the track's devices, checks the chain's rules on the result and
 /// keeps it only when they hold, so a refused edit changes nothing.
-fn edit_chain<T>(
+pub(crate) fn edit_chain<T>(
     session: &mut Session,
     params: &Value,
     edit: impl FnOnce(&mut Vec<Device>) -> Result<T, CommandError>,
@@ -457,7 +458,7 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
         .iter()
         .find(|t| t.id == track)
         .and_then(|t| t.channel)
-        .and_then(|c| heard.channels.iter().find(|ch| ch.id == c))
+        .and_then(|c| heard.channel(c))
         .map(|c| c.devices.clone());
     edit_chain(session, params, |devices| {
         let path = device_path(devices, params, "device")?;

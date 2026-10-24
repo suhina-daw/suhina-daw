@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-10-23
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -127,7 +127,7 @@ request there, and is grouped by its head repository and branch instead.
 | Pull request | Built |
 |---|---|
 | opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
-| anyone else's, from a fork or a branch | when a maintainer adds the `test-build` label, of the commit the label was added on |
+| anyone else's, from a fork or a branch | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
 
 A pull request with the `test-build-windows` label is built for Windows only, which keeps the
 shared runners free while only that platform is being tried; its comment lists the other two as
@@ -140,7 +140,8 @@ binary to try.
 
 The build is of the pull request's head merged with `main`, as the event saw it, so a push after
 the label is not what gets built. A push by anyone but a maintainer takes the label off, and the
-new commits are built when a maintainer has read them and adds the label again; the comment on such
+new commits are built when a maintainer adds the label again or a trusted contributor posts a new
+`/test-build` after reading the diff; the comment on such
 a build says it is a contributor's. A first-time contributor's run also waits for a maintainer's
 *Approve and run*.
 
@@ -167,7 +168,25 @@ merge cleanly fails the run and is named in the error.
 
 The build has a read-only token and no secrets, and for a fork GitHub runs `test-build.yml` as the
 fork has it; so `test-build-links.yml`, which runs from `main` and never runs pull request code,
-links only runs a maintainer started. The maintainers are listed in both workflows.
+links only runs a maintainer started or a `suhina-bot[bot]` run with a bot-authored authorization
+for that exact commit, written before the run started. It rechecks the original human comment
+and current `TRUSTED_CONTRIBUTORS` membership. The build checks the App's proof without relying
+on repository variables, which may be unavailable in fork PR runs; the default-branch gateway
+and linker check membership. A rerun retains the original run actor's authorization, not the
+rerunner's. Both workflows verify the commit-bound proof;
+a forged or stale proof, removed trusted user, edited/deleted request or another PR's comment
+cannot authorize a link. All role checks read the repository variable `MAINTAINERS`, using
+comma/whitespace-separated logins, optional `@` prefixes and case-insensitive exact matching.
+An empty list grants no maintainer authority. Set it at repository level, not as an environment
+override. For fork PRs, maintainers also use `/test-build`: the build may not receive repository
+variables, so direct maintainer labels cannot reliably be authorized there. Automatic builds
+of maintainer PRs continue for branches in this repository.
+
+Trusted contributors use `/test-build` on an open PR, as described in
+[Trusted bot requests](claim-bot.md#trusted-bot-requests). The bot attributes the request, records
+the head SHA and applies `test-build` using its App token. No extra GitHub label permissions are
+needed. A new push requires a new request; merge approval remains maintainer-only. The first
+fork-run approval required by GitHub is still a separate maintainer action.
 
 Each linked build is also posted to the pull request's thread in the Discord testing forum
 (see [Discord](#discord)).
@@ -193,6 +212,11 @@ any `.md`, `LICENSE`, `NOTICE`), a script under `scripts/` or a file under `.git
 build or test reads them. A change to `ci.yml` itself still runs every job. The `docs` job runs on
 every change, so the script tests and the tests of the claim bot and the Depends on check still run; in the Actions tab the
 skipped jobs show as skipped and `ci` passes.
+
+**The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
+restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
+saved its own (about 0.8 GB per system), `main`'s were evicted and about half the runs compiled
+every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½.
 
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
@@ -229,8 +253,9 @@ permissions › **Contents** and **Pull requests**: Read and write; its public C
 `DOCS_BOT_CLIENT_ID` variable and its private key the `DOCS_BOT_PRIVATE_KEY` secret in the
 `docs-bot` environment, which `pull_request_target` may use
 because it runs on `main`; and Settings › General › **Allow auto-merge** is on. Without that setting the
-*approve and queue* job fails, and nothing merges. The maintainers are listed in the workflow as in
-the test build's.
+*approve and queue* job fails, and nothing merges. Maintain the shared `MAINTAINERS` repository
+variable in Settings → Secrets and variables → Actions → Variables. Changing that list controls
+who may authorize a merge; there is no maintainer name embedded in the workflows.
 
 Use the Client ID from the app's GitHub settings (or the public `GET /apps/{app_slug}` response),
 not its numeric App ID. `actions/create-github-app-token` v3 deprecates the `app-id` input.

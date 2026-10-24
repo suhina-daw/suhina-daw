@@ -290,12 +290,12 @@ impl Timeline {
             .tracks
             .iter()
             .filter(|t| {
-                let channel = t.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+                let channel = t.channel.and_then(|id| project.channel(id));
                 channel.is_some_and(|c| c.role == ChannelRole::Effect)
             })
             .collect();
         for (position, track) in project.tracks.iter().enumerate() {
-            let channel = track.channel.and_then(|id| project.channels.iter().find(|c| c.id == id));
+            let channel = track.channel.and_then(|id| project.channel(id));
             let kind = match channel.map(|c| c.role) {
                 Some(ChannelRole::Master) => continue,
                 Some(ChannelRole::Effect) => ColumnKind::Return,
@@ -453,8 +453,8 @@ impl Timeline {
     /// [`Timeline::follow`].
     pub fn follow_automation(&mut self, project: &Project) {
         let channel_of = |track: TrackId| {
-            let id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-            project.channels.iter().find(|c| c.id == id)
+            let id = project.track(track)?.channel?;
+            project.channel(id)
         };
         for lane in &mut self.lanes {
             let Some(channel) = channel_of(lane.track) else { continue };
@@ -567,7 +567,7 @@ fn first_inside(project: &Project, group: TrackId) -> Option<TrackId> {
 /// Whether `track` is inside `group`: one of its own tracks, or of a group inside it. A broken
 /// parent chain stops the walk.
 fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
-    let mut parent = project.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+    let mut parent = project.track(track).and_then(|t| t.parent);
     let mut hops = 0;
     while let Some(id) = parent {
         if id == group {
@@ -577,7 +577,7 @@ fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
         if hops > project.tracks.len() {
             break;
         }
-        parent = project.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+        parent = project.track(id).and_then(|t| t.parent);
     }
     false
 }
@@ -887,7 +887,7 @@ mod tests {
         let mut project = demo_project();
         let track = project.tracks[0].id;
         let channel = project.tracks[0].channel.unwrap();
-        let c = project.channels.iter_mut().find(|c| c.id == channel).unwrap();
+        let c = project.channel_mut(channel).unwrap();
         c.volume = 1.0;
         c.automation.push(AutomationLane {
             param: "volume".into(),

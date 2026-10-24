@@ -54,7 +54,7 @@ pub(crate) fn build(
     // when it has none (#395); a group's chain makes it a bus.
     for track in &project.tracks {
         if chains.iter().all(|c| c.track != track.id) && automation::mixer_automated(project, track.id) {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -69,7 +69,7 @@ pub(crate) fn build(
             && track.channel.is_some_and(|ch| !fed_channel(ch))
             && track_gains(project, track.id).is_some()
         {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -80,7 +80,7 @@ pub(crate) fn build(
         if chains.iter().all(|c| c.track != track.id)
             && planned.iter().any(|p| p.source == track.id || p.target == track.id)
         {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -91,7 +91,7 @@ pub(crate) fn build(
             && chains.iter().all(|c| c.track != track.id)
             && track_gains(project, track.id).is_some()
         {
-            chains.push(Chain::passthrough(track.id, column_of(track.id)));
+            chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
 
@@ -101,7 +101,7 @@ pub(crate) fn build(
     if let Some(source) = source
         && chains.iter().all(|c| c.track != source)
     {
-        chains.push(Chain::passthrough(source, column_of(source)));
+        chains.push(Chain::passthrough(source, column_of(source), sample_rate));
     }
 
     // A bus: a track with a chain that some other channel plays into.
@@ -134,7 +134,7 @@ pub(crate) fn build(
                 && !buses_after(track.id).is_empty()
                 && track_gains(project, track.id).is_some()
             {
-                chains.push(Chain::passthrough(track.id, column_of(track.id)));
+                chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
             }
         }
     }
@@ -326,9 +326,9 @@ pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<
     let channel = project.channels.iter().find(|c| c.id == channel_id)?;
     let volume = if channel.volume.is_finite() { channel.volume.max(0.0) } else { 0.0 };
     let pan = if pan && channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
-    Some(((angle.cos() * scale) as f32, (angle.sin() * scale) as f32))
+    Some(((left * scale) as f32, (right * scale) as f32))
 }
 
 /// A track's equal-power pan (when `pan`) and the volume of every channel from its own up to,
@@ -362,7 +362,7 @@ pub(crate) fn gains_until(
         volume *= gain(master);
     }
     let pan = if pan && channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
-    Some(((angle.cos() * scale) as f32, (angle.sin() * scale) as f32))
+    Some(((left * scale) as f32, (right * scale) as f32))
 }

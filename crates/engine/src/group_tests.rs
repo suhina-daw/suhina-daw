@@ -233,8 +233,10 @@ fn a_nested_group_reports_its_latency_to_the_outer_one() {
 
     let assets = crate::DeviceAssets::new();
     let mut plugins = crate::Plugins::new();
+    let audio = crate::AudioPool::new();
     let mut builder = crate::group::Builder {
         sample_rate: SR,
+        audio: &audio,
         assets: &assets,
         plugins: &mut plugins,
         keys: &[],
@@ -252,4 +254,160 @@ fn compensation_is_cut_at_two_seconds() {
     assert_eq!(compensation([31, 0, 10].into_iter(), 96_000), (31, vec![0, 31, 21]));
     assert_eq!(compensation([200_000, 0].into_iter(), 96_000), (96_000, vec![0, 96_000]));
     assert_eq!(compensation(std::iter::empty(), 96_000), (0, vec![]));
+}
+
+// A device in a group is built as the chain builds it (#766).
+
+/// A second of noise as the sample "noise.wav".
+fn noise_pool() -> crate::AudioPool {
+    let mut pool = crate::AudioPool::new();
+    let mut seed = 12_345u32;
+    let samples = (0..SR as usize)
+        .map(|_| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / 8_388_608.0 - 1.0
+        })
+        .collect();
+    pool.files
+        .insert("noise.wav".into(), std::sync::Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples }));
+    pool
+}
+
+fn sampler() -> Device {
+    let mut sampler = device("sampler", &[]);
+    sampler.set_sample_file("noise.wav");
+    sampler
+}
+
+#[test]
+fn a_sampler_in_a_group_plays_its_sample() {
+    let pool = noise_pool();
+    let play = |devices: Vec<Device>| {
+        let project = project(vec![note(0.0, 1.0, 60)], 1.0, devices);
+        crate::render_offline_with_audio(&project, &pool, SR, 512).unwrap_or_default()
+    };
+    let plain = play(vec![sampler()]);
+    assert!(peak(&plain) > 0.01, "the sampler sounds at all");
+    let grouped = play(vec![group(vec![branch(vec![sampler()])], &[])]);
+    assert_eq!(plain, grouped, "bit for bit, as in the chain");
+    let nested = play(vec![group(vec![branch(vec![group(vec![branch(vec![sampler()])], &[])])], &[])]);
+    assert_eq!(plain, nested);
+}
+
+/// The sampler playing slices set by hand: the key above the root key plays the second slice.
+fn sliced_sampler(slices: &[f64]) -> Device {
+    let mut sampler = device("sampler", &[("playback", 3.0), ("slice_by", 3.0)]);
+    sampler.set_sample_file("noise.wav");
+    if !slices.is_empty() {
+        let _ = sampler.set_sample_slices(slices);
+    }
+    sampler
+}
+
+#[test]
+fn a_sampler_in_a_group_plays_its_manual_slices() {
+    let pool = noise_pool();
+    let play = |devices: Vec<Device>| {
+        let project = project(vec![note(0.0, 1.0, 61)], 1.0, devices);
+        crate::render_offline_with_audio(&project, &pool, SR, 512).unwrap_or_default()
+    };
+    let slices = [0.25, 0.5, 0.75];
+    let plain = play(vec![sliced_sampler(&slices)]);
+    assert!(peak(&plain) > 0.01, "the slice sounds at all");
+    assert_ne!(plain, play(vec![sliced_sampler(&[])]), "the stored slices decide what is heard");
+    let grouped = play(vec![group(vec![branch(vec![sliced_sampler(&slices)])], &[])]);
+    assert_eq!(plain, grouped, "bit for bit, as in the chain");
+    let nested = play(vec![group(vec![branch(vec![group(vec![branch(vec![sliced_sampler(&slices)])], &[])])], &[])]);
+    assert_eq!(plain, nested);
+}
+
+fn lane(param: &str, points: &[(f64, f64)]) -> AutomationLane {
+    AutomationLane {
+        param: param.into(),
+        points: points.iter().map(|&(beat, value)| AutomationPoint::new(beat, value)).collect(),
+        enabled: true,
+    }
+}
+
+#[test]
+fn a_parameter_of_a_device_in_a_group_follows_its_lane() {
+    // The utility's gain: unity, then a jump to half at beat 2.
+    let mut utility = device("utility", &[("gain", -20.0)]);
+    utility.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -6.0206), (3.0, -6.0206)])];
+    let alone = render(vec![utility.clone()]);
+    let grouped = render(vec![group(vec![branch(vec![utility.clone()])], &[])]);
+    let nested =
+        render(vec![group(vec![branch(vec![device("utility", &[]), group(vec![branch(vec![utility])], &[])])], &[])]);
+    let plain = reference();
+    let beat = SR as usize / 2;
+    // Before the jump the lane's unity, not the set value (-20 dB), is heard; after it, half.
+    assert!(max_diff(&alone[..beat * 4], &plain[..beat * 4]) < 1e-4, "the chain follows the lane");
+    for (name, out) in [("a group", &grouped), ("a group in a group", &nested)] {
+        assert_eq!(&alone, out, "{name} plays the lane like the chain");
+    }
+    let settle = SR as usize / 40;
+    let tail = beat * 2 + settle..beat * 3;
+    let half: Vec<f32> = plain[tail.start * 2..tail.end * 2].iter().map(|s| s * 0.5).collect();
+    assert!(max_diff(&grouped[tail.start * 2..tail.end * 2], &half) < 1e-4);
+}
+
+#[test]
+fn a_lane_in_a_group_keeps_playing_through_a_graph_swap() {
+    let mut utility = device("utility", &[("gain", -20.0)]);
+    utility.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -6.0206), (3.0, -6.0206)])];
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![group(vec![branch(vec![utility.clone()])], &[])]);
+    // The edit moves the set value, which the lane overrides, and the jump at beat 2 to a quarter:
+    // the swap adopts the running group and takes the edited lane.
+    let mut edited = p.clone();
+    if let Some(g) = edited.channels[0].devices[0].as_group_mut() {
+        let device = &mut g.branches[0].devices[0];
+        device.params = vec![DeviceParam::new("gain", -40.0)];
+        device.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -12.0412), (3.0, -12.0412)])];
+    }
+    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480);
+    controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
+    out.extend(blocks(&mut renderer, 100, 480));
+    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let reference = blocks(&mut untouched, 150, 480);
+    // The swap comes before the jump at beat 2 (frame 48 000): until then the lane's unity is
+    // heard, not the edited value; after it, a quarter of the untouched project's half.
+    let beat = SR as usize / 2;
+    let jump = beat * 2 * 2;
+    assert!(peak(&reference[..jump]) > 0.05);
+    assert!(max_diff(&out[..jump], &reference[..jump]) < 1e-4, "{}", max_diff(&out[..jump], &reference[..jump]));
+    let settled = (beat * 2 + SR as usize / 40) * 2;
+    let half = scaled(&reference[settled..], 0.5);
+    assert!(max_diff(&out[settled..], &half) < 1e-4, "{}", max_diff(&out[settled..], &half));
+}
+
+#[test]
+fn a_file_device_in_a_group_is_known_by_its_file() {
+    let assets = crate::DeviceAssets::new();
+    let audio = noise_pool();
+    let mut plugins = crate::Plugins::new();
+    let mut identity = |state: &[u8]| {
+        let mut cab = device("nam-cab-loader", &[]);
+        cab.state = Some(state.to_vec());
+        let outer = group(vec![branch(vec![cab.clone()])], &[]);
+        let mut builder = crate::group::Builder {
+            sample_rate: SR,
+            audio: &audio,
+            assets: &assets,
+            plugins: &mut plugins,
+            keys: &[],
+            channel: ChannelId(1),
+            frames_per_beat: 24_000.0,
+        };
+        let built = outer.as_group().and_then(|g| builder.group(&outer, g, 0, &[0])).map(|b| b.id);
+        (built, crate::chain::device_identity("nam-cab-loader", &cab, &audio))
+    };
+    let (first, chain_first) = identity(b"one.wav");
+    let (again, _) = identity(b"one.wav");
+    let (other, chain_other) = identity(b"two.wav");
+    assert_eq!(first, again);
+    assert_ne!(first, other, "a new file is a new device: a swap rebuilds it");
+    assert_ne!(chain_first, chain_other);
+    assert!(first.is_some_and(|id| id.contains(&chain_first)), "the same identity as in a chain");
 }

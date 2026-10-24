@@ -19,12 +19,12 @@ covers:
   - crates/ui/themes/THEME-PACKAGE-README.md
   - crates/ui/themes/dark-gloss.css
   - crates/ui/themes/compact-session.css
-  - crates/ui/themes/suhina-sheet.json
-  - crates/ui/themes/suhina-sheet.css
-  - crates/ui/themes/suhina-meadow.json
-  - crates/ui/themes/suhina-meadow.css
-  - crates/ui/themes/suhina-blocks.json
-  - crates/ui/themes/suhina-blocks.css
+  - crates/ui/themes/suhina-sheet.theme.css
+  - crates/ui/themes/suhina-sheet.layout.css
+  - crates/ui/themes/suhina-meadow.theme.css
+  - crates/ui/themes/suhina-meadow.layout.css
+  - crates/ui/themes/suhina-blocks.theme.css
+  - crates/ui/themes/suhina-blocks.layout.css
   - crates/ui/src/kit/skin.rs
   - crates/ui/src/app/themed_toolbar.rs
   - crates/ui/src/settings/skin_editor.rs
@@ -37,7 +37,13 @@ covers:
   - crates/ui/src/kit/native_css/workspace.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
   - crates/ui/src/kit/theme_css.rs
+  - crates/ui/src/kit/theme_vars.rs
+  - crates/style/src/registered.rs
   - crates/ui/src/kit/style_class.rs
+  - crates/theme-package/src/lib.rs
+  - crates/ui/src/detail/piano_roll.rs
+  - crates/ui/src/session/mixer_strip.rs
+  - crates/ui/src/interaction/empty_space.rs
 ---
 
 Toolbar editing keeps the real native controls and their layout visible. Entering or
@@ -243,6 +249,18 @@ one logical pixel steps while retaining peer alignment; Alt+Shift-drag is free
 without grid or peer snapping.
 Fractional offsets survive CSS and JSON storage at 1/1024 logical pixel resolution.
 Alt alone retains normal snapping. Dragging creates no persistent peer anchor.
+A persistent anchor is explicit: `--suhina-anchor-left|top|right|bottom:
+<control> <edge> [<gap>px]` (JSON `anchors: { "bottom": "arrangement-volume top 4px" }`)
+makes that edge follow the target's edge on the same axis. Opposite edges keep the gap
+between the controls; matching edges inset by it. With one anchored edge a full-width or
+full-height control keeps its other edge, otherwise it moves at its size; two anchored
+edges set both. The target is resolved in the same container: drawn earlier in the frame,
+or the previous frame's rectangle moved as far as the container moved (scrolling), with
+one repaint when it has since changed. A hidden, absent or foreign target leaves the edge
+at the control's own placement. Cycles, self-anchors and chains of more than eight links
+are dropped with a warning when a theme loads and refused by the editor. Gaps are whole
+points within ±16384; the result stays inside the container. The toolkit-independent
+parts (names, parsing, validation, axis arithmetic) are `suhina_style::anchor`.
 Drag an outline or select a semantic element and edit offsets, size,
 bottom anchoring and direction. Matching instances share that theme rule. Done merges only
 edited entries into the latest theme; Cancel/Escape discards the draft. A theme switch cancels
@@ -304,9 +322,9 @@ Changing a bundled theme creates an editable copy. Duplicating, renaming, resett
 exporting and importing preserve the complete theme. Old colour-only themes retain
 Suhina's existing layout and controls.
 
-The optional `skin` object in theme JSON contains `assets`, `meter`, and `toolbar`.
-Artwork may be inline SVG strings or PNG data URIs in JSON, or relative `.svg`/`.png` file paths beside
-that JSON. Portable ZIPs put each theme and its artwork in a separate folder.
+A theme's artwork is named in its `theme.css` (`play { image: url("assets/play.svg"); }`)
+with relative `.svg`/`.png` paths inside the theme's folder. Portable ZIPs put each theme
+and its artwork in a separate folder.
 Artwork changes presentation only: command dispatch, keyboard access, value ranges,
 gestures and undo remain owned by the application. Missing or invalid artwork uses
 Suhina's normal drawing. Network resources, embedded SVG images and SVG scripts are not
@@ -353,16 +371,69 @@ remain within the theme folder, contain no parent traversal or symlinks, and nam
 supported assets. Reads, file counts, SVG sizes and total expanded data are bounded.
 Imports choose unused theme ids rather than overwriting existing themes.
 
-## Native CSS in this draft
+## Native CSS: controls and the toolbar
 
 The native centred toolbar exposes the same `.toolbar-module` ids as the custom
 layout, without opting into new geometry for colour/paint-only rules. Module
 scopes are siblings rather than nested controls; their palette/style changes
-must be restored before painting another module. Shared button scopes encompass
-their SVG body, foreground glyph and label. Button CSS gradients/shadows are
-painted above the body artwork and below glyphs/text; SVG button bodies respect
-the resolved corner radius. A default SVG must not bypass the CSS background.
-Native hit rectangles, ids, commands and default geometry remain unchanged.
+must be restored before painting another module. Native hit rectangles, ids,
+commands and default geometry remain unchanged.
+
+**Control surfaces.** A control paints its own surface through one function
+(`native_css::surface`): `background-color`, `background-image`, `border-radius`,
+`border-width` with `border-color` (no border without a width), `box-shadow` and
+`opacity` from its element, the native values where the sheet sets none. A transparent
+background paints nothing, never a see-through hole in the window. A button the sheet
+shapes (background, radius or border width) is not covered by the artwork Suhina ships;
+a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
+fields paint the same way.
+
+**Views and controls.** A background on a view or bar (`.window`, `.toolbar`, `.session`,
+`.arrangement`, `.browser`, `.mixer`, `.detail` and the others in `style_class::SURFACES`)
+sets the surfaces inside it, not the fill of the controls on it. The add-track buttons
+under the last track keep their own fill.
+
+**Level bars.** Volume and pan fields of the track headers and the mixer are one level
+bar (`mixer_controls::level_bar`): the field's element is the track and `.value-fill` the
+lit part; `height` sets the thickness of either. `#arrangement-volume`,
+`#arrangement-pan`, `#mixer-volume` and `#mixer-pan` select them, and `volume.track`,
+`volume.fill`, `pan.track` and `pan.fill` are artwork roles. Without any of these the
+volume field is the native capsule and the pan field the native flat field.
+
+**Artwork over opaque surfaces.** Artwork clears the window's pixels under it only when
+the theme's surfaces are see-through; over opaque ones the desktop would show wherever the
+artwork leaves a pixel uncovered.
+
+**Theme-given presentation.** `.arrangement { --suhina-track-headers: left | right; }` is
+the side of the Arrangement view's track headers while the user's Track headers setting
+is *Theme* (the default); Left and Right are the user's own and win.
+
+**Host states and variables.** The host marks elements with states the sheet matches
+(`native_css::mark`): `:checked` on a toggle that is on, `:playing` and `:recording` on the
+transport's buttons, `:selected` on the selected track's header, column, strip and name,
+`:armed` and `:muted`. It gives elements custom properties below every rule
+(`native_css::set_variable`): a track's header, column and strip `--track-colour`, its name
+`--track-fill`. A track name's text takes the sheet's `color` when one applies. Artwork has an
+`.on` state (`solo:on`), falling back to `.active`, and per-view track roles
+(`track.name.mixer` and the others) over `track.name` and `track.body`.
+
+**Classes for menus and popups.** An open menu of the menu bar is `.menu`; the metronome's level
+slider is `.popup#metronome-level`, outside the toggle's scope.
+
+**Bar lines.** The separator under a bar uses that bar's `border-color`, and the line above the
+view `#workspace`'s; `--border` stays every other line.
+
+**Header width.** `.arrangement { --suhina-header-min-width }` (160 to 520 points) is the least
+width of the Arrangement header column, so the header's narrower layouts do not break a theme's
+placements.
+
+**Theme folders.** A folder is a theme when it holds `theme.css`; one without it is named in the
+warnings. Renaming a theme keeps its folder (its id). Two themes with one name are named in the
+warnings and show their folder names. Placement rules accept selector lists.
+
+**Workspace overlays.** A browser or detail panel that the `#workspace` grid places in
+the same cells as `#panel-main` is drawn on a layer above the view, so it shows and takes
+the pointer there.
 
 Connected native text helpers support computed CSS `text-shadow`, including lists,
 inherited/currentColor colours and animated offsets/colours. Up to four layers
@@ -372,35 +443,71 @@ weighted approximation on the cached native glyphs, bounded to 32 points of blur
 and offsets of ±256 points. This is not a full image convolution. Native clipping
 still applies. Ordinary egui text that bypasses the shared/native helper is not
 covered yet. The editor includes an original dark gloss CSS example demonstrating
-gradients, rounded SVG-backed buttons and bounded text/box shadows without changing
-the native toolbar/workspace layout.
+gradients, rounded buttons and bounded text/box shadows without changing the native
+toolbar/workspace layout.
 
-The initial reader supports `:root` palette variables (`--window-background` maps to
-`window.background`), class/descendant colour, background and border colours, integer
-pixel font sizes and corner radii. `.meter` accepts `style`, `segments` and `intensity`; `.toolbar`
-accepts comma-separated `order` and `hidden` module lists. Control `image` declarations
-name package-relative SVG/PNG artwork, including state suffixes. `.window` accepts a relative PNG
-`background-image`, `background-opacity` and `background-blur` (0–100).
+Host rules the app reads itself, beside the engine: `.meter` accepts `style`, `segments`
+and `intensity`; `.toolbar` accepts comma-separated `order` and `hidden` module lists;
+control `image` declarations name package-relative SVG/PNG artwork, including state
+suffixes; `.window` accepts a relative PNG `background-image`, `background-opacity` and
+`background-blur` (0–100). Placement offsets in `layout.css` (`left`, `top`, `right`,
+`bottom`) are the app's too and give no notice.
 
-These are a bounded native subset, not complete CSS. Variables with `var()`, arbitrary
-modern selectors, queries, layout algorithms and animations are not implemented by this
-reader. The advanced target and engine research are in
-[ADR 0030](../decisions/0030-native-theme-css.md).
+### Theme storage: one sheet, variants and layout
 
-Every edited theme has `<id>.json`, `<id>/style.css` and `<id>/assets/` in the themes
-folder. CSS and JSON changes are observed within the existing one-second poll interval.
-An editor change writes both; an external CSS change updates JSON; an external JSON
-change updates CSS. Native editor saves patch only changed declarations, retaining
-unrelated comments and formatting. Installed package README files are not rewritten.
-Independent field edits merge; conflicting changes to
-one field preserve both files and report the field. A malformed stylesheet or missing
-resource does not overwrite the saved JSON or replace the currently loaded theme.
+A theme is a folder `<id>/` in the themes folder ([ADR 0031](../decisions/0031-style-sheets.md),
+amendment *Theme settings and variants*):
 
-Saving a theme retains byte-identical package files, including SVG/PNG artwork,
-examples and documentation. Palette and liquid edits update only changed files;
-unchanged resources keep their timestamps. Editor saves compare the JSON and CSS
-sources for conflicts without decoding the package's images again, and validate
-resources when the package fingerprint changes outside the editor.
+- `theme.css`: the theme's style sheet as its author wrote it, the whole look (rules,
+  variables, `@media`, gradients, artwork `image` rules, `theme { name }`). Suhina reads it and
+  never writes it once it is there.
+- `variants/<variant>.json`: values for the theme's settings,
+  `{ "name": "Frost", "appearance": "light", "values": { "--accent": "#88C0D0" } }`. The file's
+  name is the variant's id; `name` is its label; values are CSS text checked against each
+  property's syntax (`var()` may refer to the theme's own variables). A value may also be for
+  any variable the theme's `:root` sets without `@property` (a helper colour); the theme's
+  variables that refer to it follow, in the painted sheet and in the model. A name the sheet
+  never sets is refused with a warning. At most 64 variants of
+  64 KiB each, 256 values of 1 KiB each.
+- `layout.css`: written by Suhina only, for what the Edit interface and editors set beyond
+  settings: `.control-NAME` placements and anchors, `toolbar` order and offsets, `--suhina-*`
+  styles, artwork chosen in the app and the name. Removed when the sheet says the same.
+- `assets/`, `background.png`, `README.md` and `examples/`.
+
+**Settings are custom properties.** The core set every theme has is registered with
+`@property` and Suhina Dark's values (`crates/ui/src/kit/theme_vars.rs`): each palette token
+(`--accent`, `--track-headerBackground`), `--meter-style`, `--meter-segments`,
+`--meter-intensity`, `--artwork-fps`, `--liquid` (`auto` or three strengths),
+`--gradient-panels|tracks|clips` (`none` or `<angle>deg, <colour> <position>%, ...`),
+`--background-image` (`none` or `url("background.png")`), `--background-opacity`,
+`--background-blur` and `--session-track-width|return-width|scene-width|slot-height|header-height`
+(`auto` or a length). A theme sets them in `:root` and may declare its own with `@property`
+(`syntax`, `initial-value`, and Suhina's `label`, `group`, `range`, `step`); a declared property
+with a label is listed under *Theme settings* with a control for its type. The theme's values
+are read at the root of a 1280 by 800 dark window. A variant's values apply in the Variant tier,
+above the theme's rules, including its conditional ones.
+
+**Editing.** A setting changed in Suhina is written to the variant in use; on a theme's own values
+a variant named *Custom* is made first. A built-in theme's variants are kept in a folder of its
+id holding only `variants/`, without a copy of its CSS. Moving controls or changing artwork
+edits the theme's `layout.css`; for a built-in theme it copies the theme first. *New variant*
+starts one from the values in use; with a variant in use, the name field renames it. The picker
+shows one card per theme and a swatch per variant, the theme's own values first.
+
+Changes to any file of the folder are noticed within the one-second poll, and only files whose
+bytes changed are written. A save over an edit of a variant file made outside Suhina since it was
+last read is refused and leaves the file as it is; reading the themes again makes the edit the
+variant. A malformed sheet or missing resource does not replace the loaded theme. Installed
+package README files are not rewritten.
+
+**Migration of earlier themes.** A theme of an earlier version, `<id>.json` beside
+`<id>/style.css`, or a `theme.css` of the earlier form (rules such as `meter { style: ... }` and
+an `@import "advanced.css";`), is read as before and migrated once. The new `theme.css` (the
+comments at the top of the old sheet, the values as custom properties, then the free-form CSS it
+carried) and `layout.css` are read back and must give the same theme with no warnings; only then
+are the old files kept in `<id>/legacy/` (never deleted; a later copy gets a numbered name). A
+theme that does not read without warnings stays as it is, with a warning, so no rule is lost.
+ZIP packages and dropped files from earlier versions are read the same way.
 File operations and live-reload polling run on one background worker. While a save
 is in flight, later samples of the same slider replace queued saves; rename,
 reload, import and export retain their order. Preview changes remain immediate,
@@ -412,28 +519,60 @@ document instead of discarding it and rebuilding a fallback document per control
 Viewport changes also retain the scope tree while updating media conditions and
 viewport-dependent values. The next repaint consumes the refreshed style snapshot.
 
-ZIP export places each JSON, style.css, SVG and background PNG together under its theme
-id. Import validates resources before writing any theme, and gives colliding ids a suffix.
-The in-app CSS editor accepts native values and styles; package-relative image URLs are
-resolved when importing or reloading theme files. The SVG editor accepts vector markup.
+A backup holds each theme folder as it is, variants and `layout.css` included; a package
+exported from a theme's values holds its `theme.css`, `layout.css`, SVG/PNG artwork and
+background under its theme id. Import validates resources before writing any theme, copies a
+theme folder's files as they are, and gives colliding ids a suffix. The in-app *Native CSS* box
+accepts settings and layout in the earlier form (they go to the variant and `layout.css`);
+package-relative image URLs are resolved when importing or reloading theme files. The SVG editor
+accepts vector markup.
 
 ## Advanced CSS adapter (experimental)
 
-Migration to [ADR 0031](../decisions/0031-style-sheets.md) is staged. Sheets using
-only the implemented native paint subset (colour, font size, uniform radius,
-opacity, box/text shadows, linear/repeating-linear sRGB gradients, supported selectors, variables and media conditions)
-now resolve through `suhina-style` without creating a Stylo document for those
-paint scopes. Authored-property markers preserve each native control's defaults.
-Unchanged scopes reuse their previous results. Unsupported syntax or substituted
-values keep the complete sheet on the compatibility adapter; features are not
-silently dropped to make a sheet eligible. Radial/conic gradients, interpolation
-spaces other than sRGB, interpolation hints, motion, CSS layers and the
-existing Flex/Grid adapters still use Stylo. Both paths feed the same bounded
-box/text shadow painters through Suhina's own resolved shadow data.
+Advanced CSS runs on `suhina-style` alone ([ADR 0031](../decisions/0031-style-sheets.md));
+the Stylo/Blitz compatibility engine and its generated HTML are gone. The native engine
+implements what the bundled themes and the editor's examples use:
 
-Trace spans `style paint parse`, `style paint resolve` and `legacy CSS resolve`
-separate the new paint work from compatibility restyling. These are UI-thread
-boundaries; no audio callback is instrumented.
+- **Syntax and cascade:** `@layer` (named, anonymous, nested, order statements; later
+  layers win, unlayered rules win over layers, `!important` reverses), `@media` with
+  `min-`/`max-` and range forms (`(400px <= width <= 800px)`), `orientation`,
+  `prefers-color-scheme` and `prefers-reduced-motion`, custom properties with fallbacks,
+  `inherit`/`initial`/`unset`, specificity and source order.
+- **Selectors:** type, `#id`, `.class`, `*`, descendant, `>`, `+`, `~`, `:is()`, `:not()`,
+  `:where()`, structural pseudo-classes, the native states, and `[data-object]` /
+  `[data-object=name]` for named project objects.
+- **Values:** hex, `rgb()`, `hsl()`, named colours, `color-mix()` in srgb, srgb-linear,
+  oklab, hsl and oklch (shorter hue arc); `calc()`, `min()`, `max()`, `clamp()` of one
+  unit; `px`, `em`, `%`, `fr` and viewport units (`vw`, `vh`, `vmin`, `vmax`).
+- **Paint:** colours, opacity, radii (the top-left radius is drawn), the `background`
+  shorthand, linear/radial/conic and repeating gradients in sRGB, up to 32 parsed and 4
+  drawn box/text shadow layers.
+- **Layout:** `display` (flex, grid, block, none), flex direction/wrap/grow/shrink/basis,
+  justify/align, `grid-template-columns`/`-rows` with `minmax()` and `repeat()`,
+  `grid-column`/`grid-row` lines and spans, sizes with min/max, margins (auto, negative),
+  padding, gaps and `visibility`; `gap`, `padding`, `margin` and `flex` are shorthands.
+- **Motion:** `transition` (colours, opacity, radius and font size; durations, easing
+  keywords, `cubic-bezier()`, `steps()`, delays) and `@keyframes` with `animation`
+  (count, direction, fill, play state), interpolating colours, numbers, lengths and
+  shadow lists.
+
+A declaration the engine does not know is skipped with a notice giving its line and
+column, and the rest of the sheet applies, as in CSS. A variable that does not produce a
+valid value makes the property unset. A sheet that does not parse at all (too large, too
+deeply nested, unbalanced) keeps the last working styles. Not implemented: transforms,
+filters, other gradient interpolation spaces and hints, font families and weights,
+container queries and geometry animation.
+
+**Tiers.** Every style resolves through four tiers: Suhina's defaults, the theme's sheet,
+device panel sheets (`.sd` version 6 `style`, bounded to their panel; `#id` selects a control
+by its id) and the user's own `user.css` in the themes folder. A higher tier wins even over
+`!important` in a lower one. `user.css` is read like a theme file (watched, at most 128 KiB, a
+sheet that does not parse is reported and the last working one stays) and stays when the theme
+changes. The engine runs whenever any of these sheets exists, also for a theme without one.
+See [sd-device-format.md](sd-device-format.md) › Panel style sheets.
+
+Trace spans `style paint parse` and `style paint resolve` mark the engine's UI-thread
+work; no audio callback is instrumented.
 
 ### Workspace layout contract
 
@@ -497,15 +636,12 @@ that reads on a dark panel can disappear on a bright volume/pan field fill:
         --text-value:#14212C; --text-inverse:#14212C; }
 ```
 
-`skin.css` retains an authored modern stylesheet verbatim in JSON. Export and native
-storage additionally write `advanced.css`, referenced by `advanced-stylesheet`.
-Editing either representation mirrors to the other without changing comments or
-formatting. Conflicting source edits preserve both files. This source remains separate
-from canonical `style.css`, which maps literal palette and skin values into native JSON.
-The same byte limit and package path restrictions apply to both stylesheets.
+The theme's `theme.css` is kept byte for byte; Suhina's own settings and layout live in its
+variants and `layout.css`. The same byte limit and package path restrictions apply to every
+stylesheet. The *Theme style sheet* section of the editor lists the sheet's notices.
 
-The advanced editor supplies a Flex example and calls the Stylo/Taffy adapter. Stylo
-computes variables, layers, inheritance, CSS colours, value expressions and viewport
+The native engine
+computes variables, layers, inheritance, colours, value expressions and viewport
 media conditions for class scopes. Taffy computes Flex/Grid rectangles for the actual
 visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles bound their
 native input targets. The host still defines toolbar height. A stylesheet without
@@ -523,7 +659,7 @@ Palette scopes track real theme revisions: a theme switch or live colour/opacity
 made during rendering survives enclosing scope cleanup instead of restoring stale colours.
 
 Connected native surfaces paint linear, radial and conic gradients, including repeating
-forms, using Stylo's computed stops, CSS colour interpolation and premultiplied
+forms, using the native computed stops, sRGB interpolation and premultiplied
 transparency. Radial geometry resolves circle/ellipse radii, extent keywords and the
 authored centre against the real surface; conic geometry resolves the authored centre
 and start angle. Up to four layers with 64 items each use bounded cached 1024-pixel
@@ -545,16 +681,15 @@ the template bounds at four samples per physical pixel, capped at 256 per axis,
 rather than regenerating a full-size texture for every short meter level. Display
 scale is part of the texture key; geometry and blur distances remain in logical points.
 
-The style document persists while native scope structure stays unchanged. Native state
-changes snapshot the previous state and restyle that document, allowing Stylo transitions
-and keyframes to advance using egui's monotonic frame clock. Connected computed paint
-properties (colours, opacity, font sizes, radii and gradients where CSS defines their
-interpolation) consume these samples. Active animations schedule repainting at 16 ms;
-the final sample also triggers a repaint. Disabling animations or selecting high contrast
-suppresses CSS motion, including authors' important animation declarations. Geometry
-animation is not connected to native layout; changing the scope structure rebuilds the
-document and restarts animations. The adapter does not yet supply the global motion
-setting to `prefers-reduced-motion` queries.
+Computed targets persist while native scope structure stays unchanged. A native state
+change that changes a transitioned property starts a transition from the value being
+painted; keyframe animations run from when an element's animation list first applies.
+Both advance with egui's monotonic frame clock. Connected paint properties (colours,
+opacity, font sizes, radii, and shadow lists in keyframes) consume these samples. Active
+motion schedules repainting at 16 ms; the final sample also triggers a repaint. Disabling
+animations or selecting high contrast suppresses CSS motion and makes
+`prefers-reduced-motion: reduce` match. Geometry animation is not connected to native
+layout.
 
 The editor
 reports source-line notices for known unsupported effect/font declarations while
@@ -566,3 +701,134 @@ a claim of universal CSS conformance.
 SVG symbol roles (`play`, `stop`, `record`, `solo`, `arm`, `cue`, `track.midi`,
 `track.audio`, `knob.body`, `knob.pointer`) fit and centre their intrinsic aspect ratio
 inside the destination rectangle. Surface artwork continues stretching to its rectangle.
+
+## Theme packages
+
+A theme package is one file, `<id>.theme.suhina`: a zip of the theme's folder with
+`manifest.json` at its root. The manifest says `"format": "suhina-theme"`, `"version": 1`,
+the theme's `id` and `name`, and under `files` every other entry's path and SHA-256 sum
+(lowercase hex). `crates/theme-package` packs a folder and reads a package; the app's
+**Export theme…** (Settings › Appearance › Themes › More), its import and `suhina-cli theme pack` and
+`suhina-cli theme validate` all use it, so they accept and refuse the same packages.
+
+Reading refuses a package, before anything is written, when:
+
+- it is not a zip, has no manifest, or its manifest is not a Suhina theme or names no id;
+- its version is newer than this build reads (the message says to update Suhina);
+- an entry's path is absolute, has `..`, a drive or a backslash, or is a link;
+- an entry is missing from the manifest, a manifest entry is missing from the zip, or a sum
+  differs;
+- a file is larger than its kind allows (style sheets and SVGs 128 KiB, PNGs 8 MiB, others
+  1 MiB; 512 files and 32 MiB together);
+- `theme.css` is missing or does not parse, an SVG is not well-formed SVG or holds a script,
+  an image, a foreign object or a link, a PNG lacks the PNG signature, or a `.json` is not
+  JSON.
+
+A style sheet's notices (an unknown property, a value that does not read) are warnings, not
+refusals. The same checks run on every import of theme files, a zip of them included. A
+package is not signed by Suhina; whoever shares one signs the file with a key of their own.
+A dropped file or one Suhina is asked to open whose name ends in `.theme.suhina` is brought in
+as a theme, never opened as a project, and the drop overlay draws above every window.
+
+Theme backups (`suhina-themes-<local date and time>.zip`) leave Suhina's own copies out
+(`_defaults` and the template).
+
+## Artwork: variables, text, nine-slice and clearing
+
+Before an SVG is rasterised, `var(--name)` and `var(--name, fallback)` are replaced by the
+theme's resolved root variables (its `:root` with the chosen variant above it); an unknown
+name without a fallback is left as written. The texture cache keys on the substituted
+source, so a variant switch redraws the artwork. `<text>` renders with the bundled typefaces:
+Manrope for the default, sans-serif and serif families, IBM Plex Mono for monospace; system
+fonts are never loaded.
+
+`data-suhina-slice` on the root element (one, two or four non-negative numbers, in SVG user
+units, which are logical points) makes artwork nine-sliced: it is rasterised once at its own
+size and drawn as nine quads, corners at their size (scaled down evenly when the destination
+is smaller than two insets), edges stretched along one axis, the centre along both. Insets
+that leave no centre are ignored.
+
+Button, fader and track artwork clears the area under it to transparent only when the
+window, panel or track header colour has alpha below 255 (the desktop shows through); over an
+opaque theme it is composited normally.
+
+## Parts added for themes
+
+These native parts take the sheet (the theme package README lists every selector):
+
+- **Sends:** `.send` in the mixer and the Arrangement header; `#mixer-send-N` by place from
+  the left; `--suhina-appearance: knob` draws mixer sends as knobs; artwork `send` and
+  `send.fill`.
+- **Add-track buttons:** `.add-track`, `#add-midi-track`, `#add-audio-track`,
+  `#add-return-track`, artwork `add-track`.
+- **Ruler, loop region, play position:** `.ruler` (background, `color`, `border-color`;
+  artwork `ruler`), `.loop-region` (`:checked` while looping; `height`; artwork `loop-region`,
+  `.on`), `.playhead` (`color`, `width`; `width: 0` hides it).
+- **Clips:** `--clip-colour`; `:selected`, `:muted`, `:playing` (the play position inside the
+  clip while the transport runs), `:recording` (a recording span over it on its track);
+  `.clip-gain`, `.clip-fade-handle` (artwork `clip.fade-handle`).
+- **Level bars:** `font-size` for the value; `.value-handle` with a `width` (or artwork
+  `volume.handle`, `pan.handle`) draws a handle at the fill's moving end; a narrow field drops
+  its inset before its value is cut.
+- **Faders:** `.fader-cap { width; height }` (4–64 by 4–96) and `.fader-rail { width }`
+  (1–32), in paint and in the strip's travel.
+- **Mixer strips:** `mixer-divider` is a placeable control; the divider's drag area and its
+  highlight follow it and stay inside the strip. A strip without an audio input resolves its
+  input's caption, source and monitor rectangles without drawing them, so anchors to them line
+  up across strips. After placement, an anchored part that overlaps another part (other than
+  one containing the other, as the meter in the fader's column) or the toggles is not drawn.
+- **Piano roll:** `.piano-grid` (background; `border-color` for the lines), `.piano-row`,
+  `.piano-row-black` (without a scale), `.piano-key`, `.piano-key-black`, `.piano-note` with
+  `--clip-colour`, `:selected` and `:muted` (background, border, radius, `color` for its name),
+  `.velocity` (`color` of the stems), `.ruler`; the tool buttons `.piano-tool` with
+  `#piano-<tool>` ids, `:checked` and artwork `piano.<tool>`; `.midi-tools`, `.clip-info`,
+  `.editor-tab` (`#tab-clip`, `#tab-devices`, `:checked`).
+- **Device panels:** `.device` with `#device-<id>` (a built-in device's registry id; `plugin`,
+  `sd`, `unsupported` otherwise), `:selected` and `:muted` (off), and `.device-header`.
+- **Generic widgets:** inside any scope that maps the sheet onto egui (Settings, dialogs, the
+  start page `.start-page`, the browser, the sample map, the Plug-in manager
+  `.plugin-manager`, popups), `.button`, `.button:hover`, `.button:active`, `.button:disabled`
+  set egui's widget fills, outlines (`border-width: 0` removes them), text and radius;
+  `.button:checked` the selection; `.text-input` text fields' background.
+- **Pan field:** the native field takes `.pan` and `#mixer-pan` colours.
+
+**New clip colour** (Settings › Arrangement › Tracks): *Track colour* (default) gives a new
+clip its track's colour; *Theme default* the theme's MIDI or audio clip default. Arming an
+audio track while the audio device has no input says so in the status bar.
+
+
+## Round 4 additions
+
+- **Clips:** `border-radius` reaches the name bar's top corners and the leading edge, inset from
+  corners rounder than it.
+- **Text shadows:** a blurred shadow's nine taps stay within 12 % of the text's height of it
+  (and half the blur), so small text keeps one soft shadow rather than visible copies.
+- **Piano roll sizes:** `.piano-tool { width; height }` (8–96 points), `.midi-tools { width }`
+  (80–400), `.clip-info { width }` (120–480); the ×2 and ÷2 buttons share the column's width.
+- **Loop row:** `.loop-region { height }` plus 6 points sets the Arrangement's loop row height,
+  between 14 and 40.
+- **Nine-slice:** insets that do not fit shrink by one factor on both axes.
+- **Settings' segmented choices** are `.button` parts, the chosen one `:checked`.
+- **Export** adds the theme guide (`README.md`) to a package whose folder has none.
+- **Opaque windows:** where the system does not composite the window's transparency, the window
+  clears to the panel colour over black, opaque.
+- **Variants:** a theme read again is read with the whole list; a variant in use whose file is
+  gone gives way to its theme.
+- **Background pictures:** a PNG of up to 64 MiB and 8192 pixels a side is read; one over 8 MiB
+  or 4 megapixels is scaled down to fit 2560 by 1600 and written again as PNG.
+- **Device panels:** `width` on `.device` or `#device-<id>` (120–1600); a container's
+  background (a device panel, Settings, a dialog, a view) is not mapped onto egui's widget
+  fills. Parameter sliders draw from `.slider-rail` (`height`), `.slider-fill` and
+  `.slider-handle` (`width`) with artwork `slider.rail`, `slider.fill`, `slider.handle` once one
+  part is themed; `.slider { --suhina-appearance: knob }` draws them as knobs.
+- **Radius in percent:** a percentage is that share of 256 points, clamped to half the shorter
+  side when painted (so 50 % is round); a shadow's radius is clamped the same way.
+- **Header tint:** `.arrangement { --suhina-header-tint: 0–100 }` overrides the user's header
+  colour strength for the track's tint.
+- **Bars:** a bar with `border-width: 0` or a transparent border fills its separator line with
+  its own background.
+- **Lit toggles:** the inverse ink gives way to the readable one when its contrast with the lit
+  fill is under 3:1.
+
+Not built yet: a background attached to the desktop's wallpaper, one gradient across the stack
+of bars, and a slider id per parameter.

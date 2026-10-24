@@ -639,6 +639,9 @@ fn column_header(
 ) {
     let _artwork = crate::kit::artwork::track_color(rgb(column.color));
     let _style_class = crate::kit::style_class::enter_named("track-header", &format!("track-{}", column.track.0));
+    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Muted, column.mute);
     if rect.width() <= 0.0 {
         return;
     }
@@ -682,8 +685,10 @@ fn column_header(
     crate::kit::native_css::background(painter, rect);
     let _name_style =
         crate::kit::style_class::enter_named_response("track-name", &format!("track-{}", column.track.0), &response);
+    crate::kit::native_css::set_variable("--track-fill", crate::kit::native_css::hex(fill));
     crate::kit::native_css::background(painter, rect);
-    let color = theme::text_on(fill);
+    // Ink that reads on the fill, unless the sheet gives the name a colour.
+    let color = crate::kit::style_class::foreground(theme::text_on(fill));
     if state.selected == Some(column.track) {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
     }
@@ -736,6 +741,10 @@ fn column_body(
     let editable = column.kind == ColumnKind::Track;
     let can_paste = state.can_paste;
     let _column_style = crate::kit::style_class::enter_named("track-column", &format!("track-{}", column.track.0));
+    crate::kit::native_css::set_variable("--track-colour", crate::kit::native_css::hex(rgb(column.color)));
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, state.selected == Some(column.track));
+    // The column's own background from the sheet, under its slots.
+    crate::kit::native_css::background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip));
     if crate::kit::style_class::property("--suhina-track-artwork").as_deref() == Some("on") {
         let body = Rect::from_x_y_ranges(span, bands.body.y_range());
         crate::kit::skin::paint_colored(

@@ -104,6 +104,11 @@ pub(crate) struct BranchRun {
     /// values on running devices.
     values: Vec<Vec<f64>>,
     ids: Vec<String>,
+    /// Each slot's manual sample slices, as the chain keeps them, so a graph swap can hand the
+    /// new ones to a running Sampler.
+    sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
+    /// The lanes of its devices' automated parameters, by slot in the branch.
+    lanes: DeviceLanes,
     buffer: Vec<f32>,
     /// Its gains, smoothed: its volume and pan while it is heard, 0 while it is muted or
     /// another branch is soloed.
@@ -130,13 +135,14 @@ pub(crate) struct GroupSlot {
     events: Vec<(usize, NoteEvent)>,
     span_events: Vec<(usize, NoteEvent)>,
     midi_scratch: Vec<(usize, NoteEvent)>,
-    lanes: DeviceLanes,
 }
 
-/// What builds the devices inside a group: the sample rate, the files of file-backed devices, the
-/// plug-ins (their slots and processors, by the keys of the channel's plug-in devices).
+/// What builds the devices inside a group: the sample rate, the decoded audio a Sampler plays,
+/// the files of file-backed devices, the plug-ins (their slots and processors, by the keys of the
+/// channel's plug-in devices).
 pub(crate) struct Builder<'a> {
     pub(crate) sample_rate: u32,
+    pub(crate) audio: &'a crate::AudioPool,
     pub(crate) assets: &'a crate::DeviceAssets,
     pub(crate) plugins: &'a mut Plugins,
     pub(crate) keys: &'a [PluginDevice],
@@ -145,20 +151,28 @@ pub(crate) struct Builder<'a> {
 }
 
 /// A slot built for a stored device: the slot, its identity for graph swaps, its parameter
-/// values and its latency.
+/// values, its latency and its manual sample slices.
 pub(crate) struct Built {
     pub(crate) slot: Slot,
     pub(crate) id: String,
     pub(crate) values: Vec<f64>,
     pub(crate) latency: u32,
+    pub(crate) slices: Option<std::sync::Arc<[f64]>>,
 }
 
 impl Builder<'_> {
     /// The slot of the device at `path` on the channel, inside a group, or `None` for one that
     /// does not run there: switched off, unknown, not compiling, or a plug-in that is not
     /// installed. A switched-off plug-in keeps its slot, and its process, and passes the sound.
-    /// Allocates.
-    pub(crate) fn device(&mut self, stored: &suhina_model::Device, depth: usize, path: &[usize]) -> Option<Built> {
+    /// `lanes` is the branch's, and `slot` the index the device takes there: the lanes of its
+    /// automated parameters are added under it. Allocates.
+    pub(crate) fn device(
+        &mut self,
+        stored: &suhina_model::Device,
+        depth: usize,
+        path: &[usize],
+        (lanes, slot): (&mut DeviceLanes, usize),
+    ) -> Option<Built> {
         if matches!(stored.kind, DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. }) {
             return self.plugin(stored, path);
         }
@@ -166,8 +180,8 @@ impl Builder<'_> {
             return None;
         }
         match &stored.kind {
-            DeviceKind::Builtin(id) => self.builtin(id, stored),
-            DeviceKind::Sd => self.sd(stored),
+            DeviceKind::Builtin(id) => self.builtin(id, stored, lanes, slot),
+            DeviceKind::Sd => self.sd(stored, lanes, slot),
             DeviceKind::Group(group) => self.group(stored, group, depth, path),
             _ => None,
         }
@@ -187,12 +201,24 @@ impl Builder<'_> {
             params: SlotParams::new(stored, self.frames_per_beat),
         };
         let latency = if stored.enabled { info.latency } else { 0 };
-        Some(Built { slot: Slot::Plugin(slot), id: format!("plugin:{key:016x}"), values: Vec::new(), latency })
+        Some(Built {
+            slot: Slot::Plugin(slot),
+            id: format!("plugin:{key:016x}"),
+            values: Vec::new(),
+            latency,
+            slices: None,
+        })
     }
 
-    fn builtin(&self, id: &str, stored: &suhina_model::Device) -> Option<Built> {
+    fn builtin(&self, id: &str, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
         let asset = crate::assets::stored_path(id, stored.state.as_deref()).and_then(|path| self.assets.get(path));
         let mut device = suhina_device_registry::create_with(id, asset)?;
+        // What a chain gives its Sampler: the decoded sample and the manual slices.
+        if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
+            device.load_shared_sample(source.sample_rate, source.channels, source.clone());
+        }
+        let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);
+        device.load_sample_slices(slices.clone());
         device.prepare(f64::from(self.sample_rate)).ok()?;
         let info = device.info();
         let mut values: Vec<f64> = info.params.iter().map(|p| p.default).collect();
@@ -201,26 +227,29 @@ impl Builder<'_> {
                 *slot = p.value;
             }
         }
+        lanes.add(slot, device.as_ref(), &stored.automation, self.frames_per_beat);
         for (index, &value) in values.iter().enumerate() {
-            device.set_param(index, value);
+            // A parameter that follows a lane starts where the lane starts.
+            device.set_param(index, lanes.initial(slot, index).unwrap_or(value));
         }
         device.reset();
         let latency = device.latency();
         // A built-in MIDI effect runs on the events, as in a chain (#678).
-        let slot = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
-        Some(Built { slot, id: id.to_owned(), values, latency })
+        let kind = if info.role == Role::MidiEffect { Slot::MidiDevice(device) } else { Slot::Device(device) };
+        Some(Built { slot: kind, id: crate::chain::device_identity(id, stored, self.audio), values, latency, slices })
     }
 
-    fn sd(&self, stored: &suhina_model::Device) -> Option<Built> {
+    fn sd(&self, stored: &suhina_model::Device, lanes: &mut DeviceLanes, slot: usize) -> Option<Built> {
         let bytes = stored.state.as_deref()?;
         let text = std::str::from_utf8(bytes).ok()?;
         let graph = suhina_device_sdk::DeviceGraph::from_sd(text).ok()?;
         let rate = f64::from(self.sample_rate);
-        let mut slot = match graph.role {
+        let mut built = match graph.role {
             suhina_device_sdk::DeviceRole::Effect => Slot::Sd(graph.compile_at(rate).ok()?),
             suhina_device_sdk::DeviceRole::MidiEffect => Slot::MidiSd(graph.compile_midi().ok()?),
             suhina_device_sdk::DeviceRole::Instrument => Slot::InstrumentSd(graph.compile_instrument_at(rate).ok()?),
         };
+        lanes.add_sd(slot, &graph.parameters, &stored.automation, self.frames_per_beat);
         let mut values = Vec::with_capacity(graph.parameters.len());
         for (index, parameter) in graph.parameters.iter().enumerate() {
             let value = stored
@@ -228,13 +257,19 @@ impl Builder<'_> {
                 .iter()
                 .find(|value| value.id == parameter.id)
                 .map_or(parameter.default, |value| parameter.clamp(value.value));
-            set_sd(&mut slot, index, value);
+            set_sd(&mut built, index, lanes.initial(slot, index).unwrap_or(value));
             values.push(value);
         }
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);
-        Some(Built { slot, id: format!("sd:{}:{:016x}", graph.id, hasher.finish()), values, latency: 0 })
+        Some(Built {
+            slot: built,
+            id: format!("sd:{}:{:016x}", graph.id, hasher.finish()),
+            values,
+            latency: 0,
+            slices: None,
+        })
     }
 
     /// A group of the stored `group` at `path` on the channel, with its branches built; `depth`
@@ -258,6 +293,8 @@ impl Builder<'_> {
                 slots: Vec::new(),
                 values: Vec::new(),
                 ids: Vec::new(),
+                sample_slices: Vec::new(),
+                lanes: DeviceLanes::none(),
                 buffer: vec![0.0; MAX_BLOCK * 2],
                 left: Smoothed::new(0.0, self.sample_rate),
                 right: Smoothed::new(0.0, self.sample_rate),
@@ -267,11 +304,13 @@ impl Builder<'_> {
             for (i, device) in branch.devices.iter().enumerate() {
                 let mut inner = path.to_vec();
                 inner.extend([b, i]);
-                if let Some(built) = self.device(device, depth + 1, &inner) {
+                let slot = run.slots.len();
+                if let Some(built) = self.device(device, depth + 1, &inner, (&mut run.lanes, slot)) {
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.ids.push(built.id);
                     run.values.push(built.values);
+                    run.sample_slices.push(built.slices);
                 }
             }
             let (left, right) = heard_gains(branch, any_solo);
@@ -300,9 +339,14 @@ impl Builder<'_> {
             events: Vec::with_capacity(MAX_EVENTS),
             span_events: Vec::with_capacity(MAX_EVENTS),
             midi_scratch: Vec::with_capacity(MAX_EVENTS),
-            lanes: DeviceLanes::none(),
         };
-        Some(Built { slot: Slot::Group(Box::new(slot)), id: format!("group[{}]", ids.join("|")), values, latency })
+        Some(Built {
+            slot: Slot::Group(Box::new(slot)),
+            id: format!("group[{}]", ids.join("|")),
+            values,
+            latency,
+            slices: None,
+        })
     }
 }
 
@@ -325,10 +369,9 @@ fn heard_gains(branch: &suhina_model::Branch, any_solo: bool) -> (f32, f32) {
 /// centred at unity.
 fn branch_gains(volume: f64, pan: f64) -> (f32, f32) {
     let volume = if volume.is_finite() { volume.max(0.0) } else { 0.0 };
-    let pan = if pan.is_finite() { pan.clamp(-1.0, 1.0) } else { 0.0 };
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2;
-    ((angle.cos() * scale) as f32, (angle.sin() * scale) as f32)
+    ((left * scale) as f32, (right * scale) as f32)
 }
 
 pub(crate) fn is_instrument(slot: &Slot) -> bool {
@@ -367,6 +410,19 @@ impl GroupSlot {
         }
     }
 
+    /// Plans the changes of its devices' lanes, in every branch and group inside it, for a block
+    /// of `frames` frames from arrangement frame `time` (`None` while stopped). Never allocates.
+    pub(crate) fn plan(&mut self, time: Option<u64>, frames: usize) {
+        for branch in &mut self.branches {
+            branch.lanes.plan(time, frames);
+            for slot in &mut branch.slots {
+                if let Slot::Group(group) = slot {
+                    group.plan(time, frames);
+                }
+            }
+        }
+    }
+
     /// Its parameter values, in [`GROUP_PARAMS`] order.
     pub(crate) fn values(&self) -> &[f64] {
         &self.values
@@ -390,15 +446,27 @@ impl GroupSlot {
             // with what the old one holds when it is as long.
             std::mem::swap(&mut running.delay, &mut new.delay);
             running.delay.adopt(&mut new.delay);
-            for ((slot, values), new_slot) in running.slots.iter_mut().zip(&new.values).zip(new.slots.iter_mut()) {
+            let lanes = &new.lanes;
+            for (position, ((slot, values), new_slot)) in
+                running.slots.iter_mut().zip(&new.values).zip(new.slots.iter_mut()).enumerate()
+            {
                 match (slot, new_slot) {
-                    (Slot::Device(device), _) => {
-                        for (index, &value) in values.iter().enumerate() {
+                    (Slot::Device(device) | Slot::MidiDevice(device), _) => {
+                        if let Some(points) = new.sample_slices.get_mut(position) {
+                            device.swap_sample_slices(points);
+                        }
+                        // A parameter that follows a lane keeps its running value until the lane
+                        // sets it in the next block.
+                        for (index, &value) in
+                            values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
+                        {
                             device.set_param(index, value);
                         }
                     }
                     (slot @ (Slot::Sd(_) | Slot::InstrumentSd(_) | Slot::MidiSd(_)), _) => {
-                        for (index, &value) in values.iter().enumerate() {
+                        for (index, &value) in
+                            values.iter().enumerate().filter(|&(index, _)| !lanes.covers(position, index))
+                        {
                             set_sd(slot, index, value);
                         }
                     }
@@ -407,6 +475,7 @@ impl GroupSlot {
                     _ => {}
                 }
             }
+            std::mem::swap(&mut running.lanes, &mut new.lanes);
             for (values, new_values) in running.values.iter_mut().zip(&new.values) {
                 for (value, &new) in values.iter_mut().zip(new_values) {
                     *value = new;
@@ -432,7 +501,7 @@ impl GroupSlot {
         if to <= from {
             return;
         }
-        let Self { branches, events, span_events, midi_scratch, lanes, mix, gain, dry, dry_delay, .. } = self;
+        let Self { branches, events, span_events, midi_scratch, mix, gain, dry, dry_delay, .. } = self;
         let Some(input) = buffer.get(from * 2..to * 2) else { return };
         let Some(dry) = dry.get_mut(from * 2..to * 2) else { return };
         dry.copy_from_slice(input);
@@ -443,7 +512,7 @@ impl GroupSlot {
             events.clear();
             events.extend_from_slice(pending.get(..pending.len().min(MAX_EVENTS)).unwrap_or_default());
             let run = Span { from, to, context, sample_rate, deadline };
-            run_slots(&mut branch.slots, &mut branch.buffer, events, span_events, midi_scratch, lanes, run);
+            run_slots(&mut branch.slots, &mut branch.buffer, events, span_events, midi_scratch, &branch.lanes, run);
             if let Some(span) = branch.buffer.get_mut(from * 2..to * 2) {
                 branch.delay.run(span);
             }

@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 suhina-engine.workspace = true
 suhina-project-file.workspace = true
+suhina-mp3.workspace = true  # GPL-3.0-or-later: the vendored LAME 3.100 encoder behind a safe API
 serde_json.workspace = true
 base64.workspace = true
 hound.workspace = true  # Apache-2.0: WAV (PCM and float) writing for export and previews

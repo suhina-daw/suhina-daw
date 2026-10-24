@@ -209,6 +209,85 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
     }
 }
 
+/// A plug-in instrument on an armed track gets what a MIDI controller plays besides notes: its
+/// controllers, pitch bend and channel pressure (#812).
+#[test]
+fn a_plug_in_instrument_on_an_armed_track_gets_live_controllers() {
+    use crate::{LaunchCommand, LiveEvent};
+    let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer =
+        Renderer::stopped_with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut controller = renderer.controller();
+    let mut live = controller.take_live_input().unwrap();
+    controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+    blocks(&mut renderer, 1, 256);
+    live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+    live.send(LiveEvent::PitchBend(0.5));
+    live.send(LiveEvent::Controller { number: 1, value: 1.0 });
+    live.send(LiveEvent::Pressure(0.25));
+    blocks(&mut renderer, 4, 256);
+    let got: Vec<NoteEvent> = seen.lock().unwrap().iter().map(|(_, e)| *e).collect();
+    for wanted in [
+        NoteEvent::On { key: 60, velocity: 1.0 },
+        NoteEvent::PitchBend(0.5),
+        NoteEvent::Controller { number: 1, value: 1.0 },
+        NoteEvent::Pressure(0.25),
+    ] {
+        assert!(got.contains(&wanted), "{wanted:?} missing from {got:?}");
+    }
+}
+
+/// A track that stops hearing a controller, disarmed or its port closed, has the pitch bend
+/// and pressure it was given set back, so its instrument is not left bent or pressed (#812); a
+/// source that never moved them sends nothing.
+#[test]
+fn letting_go_of_a_controller_sets_its_pitch_bend_and_pressure_back() {
+    use crate::{LaunchCommand, LiveEvent};
+    let bent_after = |let_go: &dyn Fn(&mut crate::Controller, &mut crate::LiveSender), moved: bool| {
+        let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
+        let stand = Stand::new(Behaviour::Instrument);
+        let seen = Arc::clone(&stand.seen);
+        let mut renderer =
+            Renderer::stopped_with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+        blocks(&mut renderer, 1, 256);
+        live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
+        if moved {
+            live.send(LiveEvent::PitchBend(0.5));
+            live.send(LiveEvent::Pressure(0.25));
+        }
+        blocks(&mut renderer, 2, 256);
+        seen.lock().unwrap().clear();
+        let_go(&mut controller, &mut live);
+        blocks(&mut renderer, 2, 256);
+        let got: Vec<NoteEvent> = seen.lock().unwrap().iter().map(|(_, e)| *e).collect();
+        got
+    };
+    let disarm = |controller: &mut crate::Controller, _: &mut crate::LiveSender| {
+        controller
+            .send(LaunchCommand::SetArmed { track: TrackId(1), armed: false, input: Default::default() })
+            .unwrap();
+    };
+    let close = |_: &mut crate::Controller, live: &mut crate::LiveSender| {
+        live.send(LiveEvent::AllNotesOff);
+    };
+    for (what, let_go) in [("disarmed", &disarm as &dyn Fn(&mut _, &mut _)), ("port closed", &close)] {
+        let got = bent_after(let_go, true);
+        for wanted in [NoteEvent::PitchBend(0.0), NoteEvent::Pressure(0.0)] {
+            assert!(got.contains(&wanted), "{what}: {wanted:?} missing from {got:?}");
+        }
+        let got = bent_after(let_go, false);
+        assert!(
+            !got.iter().any(|e| matches!(e, NoteEvent::PitchBend(_) | NoteEvent::Pressure(_))),
+            "{what}, never moved: {got:?}"
+        );
+    }
+}
+
 /// Splits blocks, and refuses one unless it may wait (an offline render), as a host still
 /// busy with an earlier block does; a block let through plays as an effect that silences the
 /// sound, or an instrument that plays 0.5.

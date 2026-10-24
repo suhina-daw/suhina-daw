@@ -235,8 +235,8 @@ impl Reader {
                 .map(|t| (t.id, t.name.clone(), t.channel, t.parent));
             let Some((id, name, channel, parent)) = tangled else { return };
             let deep = project.group_depth(id).is_some();
-            let group_channel = parent.and_then(|p| project.tracks.iter().find(|t| t.id == p)).and_then(|t| t.channel);
-            if let Some(track) = project.tracks.iter_mut().find(|t| t.id == id) {
+            let group_channel = parent.and_then(|p| project.track(p)).and_then(|t| t.channel);
+            if let Some(track) = project.track_mut(id) {
                 track.parent = None;
             }
             if let Some(c) = project.channels.iter_mut().find(|c| Some(c.id) == channel)

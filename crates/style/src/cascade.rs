@@ -19,6 +19,8 @@ use std::{
 pub enum Layer {
     Default,
     Theme,
+    /// A theme variant's chosen values, above the theme's own rules.
+    Variant,
     Device,
     User,
 }
@@ -34,6 +36,8 @@ pub struct ComputedStyle {
     values: BTreeMap<Property, Value>,
     variables: Arc<BTreeMap<String, String>>,
     authored: BTreeSet<Property>,
+    /// The element's `animation` items with their keyframes resolved for it.
+    keyframes: Vec<(crate::motion::Animation, Arc<crate::motion::Frames>)>,
 }
 
 impl Default for ComputedStyle {
@@ -42,6 +46,7 @@ impl Default for ComputedStyle {
             values: Property::ALL.iter().map(|p| (*p, p.initial())).collect(),
             variables: Arc::default(),
             authored: BTreeSet::new(),
+            keyframes: Vec::new(),
         }
     }
 }
@@ -50,6 +55,11 @@ impl ComputedStyle {
     pub fn get(&self, property: Property) -> Value {
         self.values.get(&property).cloned().unwrap_or_else(|| property.initial())
     }
+    /// Every custom property the element sees, resolved.
+    pub fn variables(&self) -> &BTreeMap<String, String> {
+        &self.variables
+    }
+
     pub fn variable(&self, name: &str) -> Option<&str> {
         self.variables.get(name).map(String::as_str)
     }
@@ -58,16 +68,20 @@ impl ComputedStyle {
     pub fn authored(&self, property: Property) -> bool {
         self.authored.contains(&property)
     }
+    /// Keyframe animations that apply, each with its frames resolved for this element.
+    pub fn animations(&self) -> &[(crate::motion::Animation, Arc<crate::motion::Frames>)] {
+        &self.keyframes
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Priority(u8, u8, Specificity, usize);
+struct Priority(u8, u8, u16, Specificity, usize);
 
-fn priority(layer: Layer, important: bool, specificity: Specificity, order: usize) -> Priority {
+fn priority(layer: Layer, important: bool, cascade: Option<u16>, specificity: Specificity, order: usize) -> Priority {
     // Native layers deliberately guarantee that a user's override wins over
     // device/theme sheets, including author !important. Within a layer normal
-    // CSS importance, specificity and source order apply.
-    Priority(layer as u8, u8::from(important), specificity, order)
+    // CSS importance, `@layer` order, specificity and source order apply.
+    Priority(layer as u8, u8::from(important), Sheet::layer_rank(cascade, important), specificity, order)
 }
 
 /// Compute a bounded immutable snapshot. The host calls this on relevant changes,
@@ -112,6 +126,24 @@ fn compute_inner(
                 }
             }
             computed.variables = Arc::clone(&parent.variables);
+        } else {
+            // A registered property's initial value is what the root sees until a rule sets it.
+            let initial: BTreeMap<String, String> = sheets
+                .iter()
+                .flat_map(|applied| applied.sheet.properties.iter())
+                .filter_map(|registered| Some((registered.name.clone(), registered.initial.clone()?)))
+                .collect();
+            if !initial.is_empty() {
+                computed.variables = Arc::new(initial);
+            }
+        }
+        // The host's own values come first, so any rule may replace them.
+        if !element.variables.is_empty() {
+            let mut variables = (*computed.variables).clone();
+            for (name, value) in element.variables.iter().filter(|(name, _)| name.starts_with("--")).take(16) {
+                variables.insert(name.clone(), value.clone());
+            }
+            computed.variables = Arc::new(variables);
         }
         let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
         let mut order = 0usize;
@@ -141,7 +173,7 @@ fn compute_inner(
                     continue;
                 };
                 for declaration in &rule.declarations {
-                    let priority = priority(applied.layer, declaration.important, specificity, order);
+                    let priority = priority(applied.layer, declaration.important, rule.layer, specificity, order);
                     if winners.get(declaration.name.as_str()).is_none_or(|(previous, _)| *previous <= priority) {
                         winners.insert(&declaration.name, (priority, declaration));
                     }
@@ -153,7 +185,16 @@ fn compute_inner(
             for (name, (_, declaration)) in winners.iter().filter(|(name, _)| name.starts_with("--")) {
                 match declaration.value.trim() {
                     "initial" => {
-                        variables.remove(*name);
+                        match sheets
+                            .iter()
+                            .rev()
+                            .flat_map(|applied| applied.sheet.properties.iter())
+                            .find(|registered| registered.name == *name)
+                            .and_then(|registered| registered.initial.clone())
+                        {
+                            Some(initial) => variables.insert((*name).into(), initial),
+                            None => variables.remove(*name),
+                        };
                     }
                     "inherit" | "unset" => {}
                     _ => {
@@ -161,7 +202,19 @@ fn compute_inner(
                     }
                 }
             }
-            let resolved = crate::variables::resolve(&variables)?;
+            let mut resolved = crate::variables::resolve(&variables)?;
+            // A registered property's value that does not match its syntax is invalid at
+            // computed-value time: the property takes its initial value.
+            for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
+                if let Some(value) = resolved.get(&registered.name)
+                    && !registered.syntax.accepts(value)
+                {
+                    match &registered.initial {
+                        Some(initial) => resolved.insert(registered.name.clone(), initial.clone()),
+                        None => resolved.remove(&registered.name),
+                    };
+                }
+            }
             variable_bytes = variable_bytes
                 .checked_add(resolved.values().map(String::len).sum::<usize>())
                 .filter(|bytes| *bytes <= 16 * 1024 * 1024)
@@ -172,7 +225,12 @@ fn compute_inner(
             let Some(property) = Property::from_name(name) else {
                 continue;
             };
-            let value = match crate::variables::substitute(&declaration.value, &computed.variables) {
+            let value = match crate::variables::substitute(&declaration.value, &computed.variables).and_then(|value| {
+                match declaration.shorthand {
+                    Some(shorthand) => shorthand.part(property, &value),
+                    None => Ok(value),
+                }
+            }) {
                 Ok(value) => value,
                 Err(error) if checked => return Err(error),
                 Err(_) => continue,
@@ -184,7 +242,7 @@ fn compute_inner(
                     parent.map_or_else(|| property.initial(), |parent| parent.get(property))
                 }
                 "unset" => property.initial(),
-                other => match property.parse(other) {
+                other => match property.parse(&crate::value::viewport_units(other, viewport.width, viewport.height)) {
                     Ok(value) => value,
                     Err(error) if checked => return Err(error),
                     Err(_) => continue,
@@ -193,6 +251,45 @@ fn compute_inner(
             computed.values.insert(property, value);
             if priority.0 > Layer::Default as u8 {
                 computed.authored.insert(property);
+            }
+        }
+        if let Value::Animations(animations) = computed.get(Property::Animation) {
+            for animation in animations {
+                // The last keyframes rule of that name in the sheets that reach this element.
+                let rule = sheets
+                    .iter()
+                    .rev()
+                    .filter(|applied| applied.root.is_none_or(|root| tree.contains(node, root)))
+                    .find_map(|applied| applied.sheet.keyframes.iter().rev().find(|(name, _)| *name == animation.name));
+                let Some((_, frames)) = rule else { continue };
+                let mut resolved: crate::motion::Frames = Vec::with_capacity(frames.len());
+                for (offset, declarations) in frames {
+                    let mut values = Vec::new();
+                    for declaration in declarations.iter().filter(|d| !d.important) {
+                        work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
+                        let Some(property) = Property::from_name(&declaration.name) else { continue };
+                        let value = crate::variables::substitute(&declaration.value, &computed.variables)
+                            .and_then(|value| match declaration.shorthand {
+                                Some(shorthand) => shorthand.part(property, &value),
+                                None => Ok(value),
+                            })
+                            .and_then(|value| {
+                                property.parse(&crate::value::viewport_units(&value, viewport.width, viewport.height))
+                            });
+                        match value {
+                            Ok(value) => values.push((property, value)),
+                            Err(error) if checked => return Err(error),
+                            Err(_) => {}
+                        }
+                    }
+                    resolved.push((*offset, values));
+                }
+                for (_, values) in &resolved {
+                    for (property, _) in values {
+                        computed.authored.insert(*property);
+                    }
+                }
+                computed.keyframes.push((animation, Arc::new(resolved)));
             }
         }
         // Inherited font size is a computed size, not an em expression to apply
@@ -249,79 +346,5 @@ fn compute_inner(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{selector::Element, value::Length};
-
-    fn viewport(width: f32) -> Viewport {
-        Viewport { width, height: 700.0, dark: true, reduced_motion: false }
-    }
-    fn tree() -> Tree {
-        Tree::new(vec![
-            Element::new("window", None),
-            Element::new("device-panel", Some(0)),
-            Element::new("knob", Some(1)).with_id("cutoff"),
-            Element::new("device-panel", Some(0)),
-            Element::new("knob", Some(3)).with_id("cutoff"),
-        ])
-        .unwrap()
-    }
-
-    #[test]
-    fn device_styles_inherit_app_defaults_and_user_overrides_stay_scoped() {
-        let app = Sheet::parse("window { --accent: #79e2bd; color: #eeeeee; } knob { radius: 4px; }").unwrap();
-        let device = Sheet::parse("knob#cutoff { color: var(--accent); radius: 8px !important; }").unwrap();
-        let user = Sheet::parse("#cutoff { radius: 12px; }").unwrap();
-        let styles = compute(
-            &tree(),
-            viewport(1138.0),
-            &[
-                AppliedSheet { sheet: &app, layer: Layer::Theme, root: None },
-                AppliedSheet { sheet: &device, layer: Layer::Device, root: Some(1) },
-                AppliedSheet { sheet: &user, layer: Layer::User, root: Some(1) },
-            ],
-        )
-        .unwrap();
-        assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([121, 226, 189, 255])));
-        assert_eq!(styles[2].get(Property::Radius), Value::Length(Length::Px(12.0)));
-        assert_eq!(styles[4].get(Property::Color), Value::Color(Color::Rgba([238, 238, 238, 255])));
-        assert_eq!(styles[4].get(Property::Radius), Value::Length(Length::Px(4.0)));
-    }
-
-    #[test]
-    fn viewport_changes_and_inherited_variables_recompute_without_stale_values() {
-        let sheet = Sheet::parse("window { --ink: #123456; --inherited: var(--ink); } device-panel { --ink: #abcdef; } knob { color: var(--inherited); width: 50%; } @media (max-width: 900px) { knob { color: var(--ink); } }").unwrap();
-        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
-        let applied = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
-        let wide = compute(&tree(), viewport(1138.0), &applied).unwrap();
-        let narrow = compute(&tree(), viewport(800.0), &applied).unwrap();
-        assert_eq!(wide[2].get(Property::Color), Value::Color(Color::Rgba([18, 52, 86, 255])));
-        assert_eq!(narrow[2].get(Property::Color), Value::Color(Color::Rgba([171, 205, 239, 255])));
-        assert_eq!(wide[2].get(Property::Width), Value::Length(Length::Percent(0.5)));
-    }
-
-    #[test]
-    fn malformed_declarations_report_locations_and_do_not_erase_valid_ones() {
-        let sheet =
-            Sheet::parse("knob { color: red; radius: NaNpx; opacity: 0.5; }\nknob { imaginary: 1; color: wat; }")
-                .unwrap();
-        assert_eq!(sheet.notices.len(), 3);
-        assert_eq!(sheet.notices[1].line, 2);
-        let values =
-            compute(&tree(), viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
-                .unwrap();
-        assert_eq!(values[2].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
-        assert_eq!(values[2].get(Property::Opacity), Value::Number(0.5));
-        assert!(compute(&tree(), viewport(f32::NAN), &[]).is_err());
-    }
-
-    #[test]
-    fn relative_font_size_is_computed_once_before_inheritance() {
-        let sheet = Sheet::parse("window { font-size: 10px; } device-panel { font-size: 2em; }").unwrap();
-        let styles =
-            compute(&tree(), viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }])
-                .unwrap();
-        assert_eq!(styles[1].get(Property::FontSize), Value::Length(Length::Px(20.0)));
-        assert_eq!(styles[2].get(Property::FontSize), Value::Length(Length::Px(20.0)));
-    }
-}
+#[path = "cascade_tests.rs"]
+mod tests;

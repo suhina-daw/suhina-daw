@@ -1,5 +1,5 @@
 ---
-description: Version 5 of the data-only Suhina device graph format, SDK, track loading, and device revision migrations
+description: Version 6 of the data-only Suhina device graph format, SDK, track loading, and device revision migrations
 read_when: .sd, Suhina device, device graph, device SDK, community effect, visual node, device UI
 type: spec
 status: current
@@ -40,9 +40,10 @@ supported graph for audio processing.
 
 The top-level object contains `format: "suhina-device"`, `version`, a `device` object,
 `nodes`, `connections` and optional `editor` metadata. The reader accepts file versions 1 through
-5. Writing canonical JSON gives version 5 when the device has an expanded panel
-(`device.expanded`) and version 4 otherwise, without changing its sound; a version 4 or older file
-with `device.expanded` is rejected. Older readers reject the version they do not know, preventing
+6. Writing canonical JSON gives version 6 when a panel has a style sheet (`style`), version 5 when
+the device has an expanded panel (`device.expanded`) and version 4 otherwise, without changing its
+sound; a version 4 or older file with `device.expanded`, or a version 5 or older file with a panel
+`style`, is rejected. Older readers reject the version they do not know, preventing
 silent loss of authoring metadata when saving. File version describes
 the JSON schema; `device.version` describes revisions of a device's identity and parameter
 contract. Files without `device.version` are revision 1. Device `id` remains stable across
@@ -284,6 +285,30 @@ gesture and resource limit. Graphics are evaluated on the UI thread and are stor
 (version 5) is a second, larger canvas with the same fields and limits, validated against the same
 parameters; the device's header then has a button that opens it over the main area
 ([sdk-custom-ui.md](sdk-custom-ui.md) › Compact and expanded panels).
+
+## Panel style sheets (version 6)
+
+`device.ui.style` and `device.expanded.style` are optional CSS text (at most 64 KiB, no NUL) that
+style that panel, and only that panel: presentation, never the graph, parameters or bindings. The
+host applies style tiers in order (ADR 0031 › Device panels use the same style engine):
+
+1. **Default:** Suhina's own appearance.
+2. **Theme:** the application theme's style sheet, which can reach device panels through
+   `.device-panel`, `.device-control` and the widget classes (`.knob`, `.button`, …).
+3. **Device:** this sheet, bounded to its panel: its selectors match only elements inside the panel,
+   so `.browser { … }` here changes nothing outside it.
+4. **User:** `user.css` in the themes folder, over everything, and kept when the theme changes.
+
+A higher tier wins over a lower one even against `!important`; within a tier importance,
+`@layer`, specificity and source order apply. Each control is a `.device-control` element whose id
+is the control's `id`, so `#cutoff { color: #ffd27f; accent-color: #ff8a00; }` styles the control
+`cutoff`. Built-in widgets take `color` (text and ink), `background-color` (body), `border-color`
+and `accent-color` (arc, switched-on fill) from it; what a sheet leaves out keeps the theme. A
+sheet that does not parse is ignored and the panel keeps the theme.
+
+```json
+"ui": { "size": [260, 120], "style": "#cutoff { accent-color: #ff8a00; }\n.device-control:hover { color: #ffffff; }", "controls": [ … ] }
+```
 
 ## Linked parameter edits
 

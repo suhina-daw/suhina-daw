@@ -529,7 +529,7 @@ fn reads_groups_inside_groups() {
     let id = |name: &str| p.tracks.iter().find(|t| t.name == name).unwrap().id;
     let output = |name: &str| {
         let channel = p.tracks.iter().find(|t| t.name == name).unwrap().channel.unwrap();
-        let out = p.channels.iter().find(|c| c.id == channel).unwrap().output?;
+        let out = p.channel(channel).unwrap().output?;
         p.tracks.iter().find(|t| t.channel == Some(out)).map(|t| t.name.clone())
     };
     assert_eq!(p.ancestors(id("Kick")), [id("Drums"), id("Band")]);

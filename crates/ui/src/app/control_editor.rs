@@ -21,6 +21,36 @@ fn id() -> Id {
 }
 
 /// Grid placement with optional peer edge/centre alignment; Shift refines the grid; Alt+Shift bypasses snapping.
+/// Whether an anchor holds the control on the horizontal and on the vertical axis.
+fn anchored_axes(layout: &control_layout::Placement) -> (bool, bool) {
+    use suhina_style::anchor::Edge;
+    let held = |edges: [Edge; 2]| edges.iter().any(|edge| layout.anchors.get(*edge).is_some());
+    (held([Edge::Left, Edge::Right]), held([Edge::Top, Edge::Bottom]))
+}
+
+/// `start` dragged by `moved`: each anchor's gap grows or shrinks by the move along its axis (a
+/// left or top anchor's gap is the distance past its target, a right or bottom one's before it).
+fn anchored_drag(start: control_layout::Placement, moved: egui::Vec2) -> control_layout::Placement {
+    use suhina_style::anchor::Edge;
+    let mut layout = start;
+    for edge in Edge::ALL {
+        if let Some(mut anchor) = start.anchors.get(edge) {
+            let by = match edge {
+                Edge::Left => moved.x,
+                Edge::Right => -moved.x,
+                Edge::Top => moved.y,
+                Edge::Bottom => -moved.y,
+            };
+            anchor.gap = anchor
+                .gap
+                .saturating_add(by.round() as i32)
+                .clamp(-suhina_style::anchor::MAX_GAP, suhina_style::anchor::MAX_GAP);
+            layout.anchors.set(edge, Some(anchor));
+        }
+    }
+    layout
+}
+
 fn drag_position(
     desired: egui::Pos2,
     entry: &Entry,
@@ -50,6 +80,59 @@ fn drag_position(
         }
     }
     (position, guides)
+}
+
+/// The fields that make one edge of `selected` follow an edge of another element in the same
+/// container, with a gap: a persistent anchor written to the theme, unlike alignment while dragging.
+fn anchor_fields(ui: &mut egui::Ui, selected: &str, layout: &mut control_layout::Placement, entries: &[Entry]) {
+    use suhina_style::anchor::{Anchor, Edge, Name};
+    let containers: Vec<egui::Rect> = entries.iter().filter(|e| e.name == selected).map(|e| e.bounds).collect();
+    let peers: std::collections::BTreeSet<String> = entries
+        .iter()
+        .filter(|e| e.name != selected && containers.iter().any(|b| b.intersects(e.bounds)))
+        .map(|e| e.name.clone())
+        .chain(layout.anchors.iter().map(|(_, a)| a.target.as_str().to_owned()))
+        .collect();
+    ui.label("Follow another element (kept in the theme):");
+    for own in Edge::ALL {
+        let mut anchor = layout.anchors.get(own);
+        ui.horizontal(|ui| {
+            ui.label(format!("{} edge", own.name()));
+            let current = anchor.map_or_else(|| "none".to_owned(), |a| a.target.as_str().to_owned());
+            egui::ComboBox::from_id_salt(("interface-anchor-target", own.name())).selected_text(&current).show_ui(
+                ui,
+                |ui| {
+                    if ui.selectable_label(anchor.is_none(), "none").clicked() {
+                        anchor = None;
+                    }
+                    for peer in &peers {
+                        let chosen = anchor.is_some_and(|a| a.target.as_str() == peer);
+                        if ui.selectable_label(chosen, peer).clicked()
+                            && let Some(target) = Name::new(peer)
+                        {
+                            // A new target starts at the opposite edge: next to it, not over it.
+                            let edge = match own {
+                                Edge::Left => Edge::Right,
+                                Edge::Right => Edge::Left,
+                                Edge::Top => Edge::Bottom,
+                                Edge::Bottom => Edge::Top,
+                            };
+                            anchor = Some(Anchor { target, edge, gap: anchor.map_or(0, |a| a.gap) });
+                        }
+                    }
+                },
+            );
+            if let Some(a) = &mut anchor {
+                let options = if own.axis() == 0 { [Edge::Left, Edge::Right] } else { [Edge::Top, Edge::Bottom] };
+                for edge in options {
+                    ui.selectable_value(&mut a.edge, edge, edge.name());
+                }
+                ui.label("gap");
+                ui.add(egui::DragValue::new(&mut a.gap).range(-16384..=16384).suffix(" px"));
+            }
+        });
+        layout.anchors.set(own, anchor);
+    }
 }
 
 impl App {
@@ -138,7 +221,11 @@ impl App {
                         draft.selected = entry.name.clone();
                     }
                     if response.drag_started() {
-                        overlay.ctx().data_mut(|data| data.insert_temp(response.id.with("origin"), entry.at.min));
+                        let start = draft.controls.get(&entry.name).copied().unwrap_or_default();
+                        overlay.ctx().data_mut(|data| {
+                            data.insert_temp(response.id.with("origin"), entry.at.min);
+                            data.insert_temp(response.id.with("start"), start);
+                        });
                     }
                     if response.dragged()
                         && (draft.controls.contains_key(&entry.name)
@@ -156,12 +243,31 @@ impl App {
                         if let Some(y) = guides[1] {
                             overlay.painter().hline(entry.bounds.x_range(), y, egui::Stroke::new(1.0, ink));
                         }
+                        let start = overlay
+                            .ctx()
+                            .data(|data| data.get_temp::<control_layout::Placement>(response.id.with("start")))
+                            .unwrap_or_default();
+                        let moved = snapped - origin;
                         let layout = draft.controls.entry(entry.name.clone()).or_default();
-                        layout.bottom = None;
-                        layout.full_height = false;
-                        layout.full_width = false;
-                        layout.right = None;
-                        layout.set_offset(snapped - entry.native.min);
+                        let mut offset = snapped - entry.native.min;
+                        // On an axis an anchor holds, the drag changes the anchor's gap, not an
+                        // offset the anchor would override.
+                        let (horizontal, vertical) = anchored_axes(&start);
+                        if horizontal || vertical {
+                            *layout = anchored_drag(start, moved);
+                            if horizontal {
+                                offset.x = start.offset().x;
+                            }
+                            if vertical {
+                                offset.y = start.offset().y;
+                            }
+                        } else {
+                            layout.bottom = None;
+                            layout.full_height = false;
+                            layout.full_width = false;
+                            layout.right = None;
+                        }
+                        layout.set_offset(offset);
                         overlay.ctx().request_repaint();
                     }
                     response.on_hover_text(format!("{} · drag to move · Shift: 1 px · Alt+Shift: free", entry.name));
@@ -249,6 +355,7 @@ impl App {
                             egui::Checkbox::new(&mut layout.hidden, "Hidden"),
                         );
                     });
+                    anchor_fields(tools, &draft.selected, &mut layout, entries);
                     if matches!(draft.selected.as_str(), "mixer-volume" | "arrangement-volume") {
                         tools.horizontal(|tools| {
                             tools.selectable_value(&mut layout.direction, Direction::Vertical, "Vertical");
@@ -256,7 +363,28 @@ impl App {
                         });
                     }
                     if layout != before {
-                        draft.controls.insert(draft.selected.clone(), layout);
+                        let mut next = draft.controls.clone();
+                        next.insert(draft.selected.clone(), layout);
+                        let mut problems = Vec::new();
+                        control_layout::validate_anchors(&mut next, &mut problems);
+                        if problems.is_empty() {
+                            draft.controls = next;
+                            tools
+                                .ctx()
+                                .data_mut(|data| data.remove::<Vec<String>>(Id::new("interface-anchor-problem")));
+                        } else {
+                            // A cycle or an overlong chain is never drafted: the change is refused.
+                            tools
+                                .ctx()
+                                .data_mut(|data| data.insert_temp(Id::new("interface-anchor-problem"), problems));
+                        }
+                    }
+                    if let Some(problems) =
+                        tools.ctx().data(|data| data.get_temp::<Vec<String>>(Id::new("interface-anchor-problem")))
+                    {
+                        for problem in problems {
+                            tools.colored_label(theme::recording(), problem);
+                        }
                     }
                     if tools.button("Reset selected element").clicked() {
                         draft.controls.remove(&draft.selected);
@@ -312,6 +440,20 @@ mod tests {
     fn start(harness: &mut Harness<'static, App>) {
         harness.state().start_control_editor(&harness.ctx);
         harness.run_steps(4);
+    }
+
+    #[test]
+    fn a_drag_along_an_anchored_axis_changes_the_gap() {
+        use suhina_style::anchor::{Anchor, Edge};
+        let mut start = control_layout::Placement::default();
+        start.anchors.set(Edge::Bottom, Anchor::parse(Edge::Bottom, "mixer-toggles top 6px").ok());
+        start.anchors.set(Edge::Left, Anchor::parse(Edge::Left, "mixer-name right 2px").ok());
+        assert_eq!(anchored_axes(&start), (true, true));
+        let moved = anchored_drag(start, egui::vec2(10.0, -24.0));
+        // Up by 24 leaves 24 more below the bottom edge; right by 10 adds 10 past the target.
+        assert_eq!(moved.anchors.get(Edge::Bottom).map(|a| a.gap), Some(30));
+        assert_eq!(moved.anchors.get(Edge::Left).map(|a| a.gap), Some(12));
+        assert_eq!(anchored_axes(&control_layout::Placement::default()), (false, false));
     }
 
     #[test]

@@ -18,14 +18,33 @@ use crate::kit::widgets::{self, button};
 
 /// The formats the dialog offers, in its order; `From the file name` leaves `format` out, so
 /// the file name's extension decides, as the command does.
-const FORMATS: [(&str, Option<&str>); 4] =
-    [("From the file name", None), ("WAV", Some("wav")), ("FLAC", Some("flac")), ("Ogg Vorbis", Some("ogg"))];
+const FORMATS: [(&str, Option<&str>); 5] = [
+    ("From the file name", None),
+    ("WAV", Some("wav")),
+    ("FLAC", Some("flac")),
+    ("Ogg Vorbis", Some("ogg")),
+    ("MP3", Some("mp3")),
+];
 
 /// The sample rates the dialog offers, in hertz.
 const SAMPLE_RATES: [u64; 4] = [44_100, 48_000, 88_200, 96_000];
 
+/// The rates the MP3 encoder writes: MPEG 1's 32, 44.1 and 48 kHz.
+const MP3_SAMPLE_RATES: [u64; 3] = [32_000, 44_100, 48_000];
+
 /// The depths the dialog offers, with the words the command knows.
 const DEPTHS: [(&str, &str); 3] = [("32-bit float", "32f"), ("24-bit PCM", "24"), ("16-bit PCM", "16")];
+
+/// The MP3 rates the dialog offers, with the words the command knows: the constant ones in
+/// kbps and the two variable qualities, V0 the best and V2 the well-used middle.
+const MP3_RATES: [(&str, &str); 6] = [
+    ("320 kbps", "320"),
+    ("256 kbps", "256"),
+    ("192 kbps", "192"),
+    ("128 kbps", "128"),
+    ("VBR V0", "v0"),
+    ("VBR V2", "v2"),
+];
 
 /// What the export dialog keeps between frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,8 +53,11 @@ pub struct ExportDialog {
     pub path: String,
     /// An index into [`FORMATS`].
     pub format: usize,
-    /// An index into [`SAMPLE_RATES`].
-    pub rate: usize,
+    /// The sample rate chosen, in hertz. Kept as the rate, not as a place in a list, so a
+    /// format whose list is another (mp3's) keeps it where it can and comes back to it after.
+    pub rate: u64,
+    /// An index into [`MP3_RATES`].
+    pub mp3_rate: usize,
     /// An index into [`DEPTHS`].
     pub depth: usize,
     pub normalize: bool,
@@ -57,7 +79,8 @@ impl ExportDialog {
         Self {
             path: path.display().to_string(),
             format: 0,
-            rate: SAMPLE_RATES.iter().position(|rate| *rate == 48_000).unwrap_or(0),
+            rate: 48_000,
+            mp3_rate: 0,
             depth: 0,
             normalize: false,
             // The command's and the spec's default: dither is on for a reduced depth, and the
@@ -77,12 +100,31 @@ impl ExportDialog {
             return Some(name);
         }
         let ext = Path::new(self.path.trim()).extension()?.to_str()?.to_ascii_lowercase();
-        ["wav", "flac", "ogg"].into_iter().find(|known| *known == ext.as_str())
+        ["wav", "flac", "ogg", "mp3"].into_iter().find(|known| *known == ext.as_str())
     }
 
-    /// The depth the export will run at, when the format takes one: ogg does not.
+    /// The sample rates offered for the format: MP3 takes the rates its encoder writes, the
+    /// others the dialog's own list.
+    fn rates(&self) -> &'static [u64] {
+        if self.resolved_format() == Some("mp3") { &MP3_SAMPLE_RATES } else { &SAMPLE_RATES }
+    }
+
+    /// The rate the export runs at: the one chosen when the format's list has it, else the
+    /// list's nearest (the lower on a tie), so 96 000 becomes mp3's 48 000.
+    fn sample_rate(&self) -> u64 {
+        let rates = self.rates();
+        if rates.contains(&self.rate) {
+            return self.rate;
+        }
+        rates.iter().copied().min_by_key(|hz| hz.abs_diff(self.rate)).unwrap_or(48_000)
+    }
+
+    /// The depth the export will run at, when the format takes one: ogg and mp3 do not.
     fn resolved_depth(&self) -> Option<&'static str> {
-        if self.resolved_format() == Some("ogg") { None } else { Some(DEPTHS[self.depth].1) }
+        match self.resolved_format() {
+            Some("ogg") | Some("mp3") => None,
+            _ => Some(DEPTHS[self.depth].1),
+        }
     }
 
     /// Whether the depth reduces the mix to PCM, so dither applies and is asked for.
@@ -123,8 +165,9 @@ impl ExportDialog {
         (!path.as_os_str().is_empty()).then(|| ExportJob {
             path: path.to_path_buf(),
             format: FORMATS[self.format].1,
-            sample_rate: SAMPLE_RATES[self.rate],
+            sample_rate: self.sample_rate(),
             bit_depth: self.resolved_depth(),
+            mp3_rate: (self.resolved_format() == Some("mp3")).then(|| MP3_RATES[self.mp3_rate].1),
             normalize: self.normalize,
             // Asked for only when the depth takes it; left out, the command's default is the
             // same: on for a reduced depth, off at 32f.
@@ -142,6 +185,8 @@ pub struct ExportJob {
     pub format: Option<&'static str>,
     pub sample_rate: u64,
     pub bit_depth: Option<&'static str>,
+    /// The MP3 rate, asked for only with mp3.
+    pub mp3_rate: Option<&'static str>,
     pub normalize: bool,
     /// `Some(checked)` when the depth takes dither, `None` where the command takes no `dither`.
     pub dither: Option<bool>,
@@ -157,6 +202,9 @@ impl ExportJob {
         });
         if let Some(format) = self.format {
             params["format"] = json!(format);
+        }
+        if let Some(rate) = self.mp3_rate {
+            params["mp3_rate"] = json!(rate);
         }
         if let Some(depth) = self.bit_depth {
             params["bit_depth"] = json!(depth);
@@ -197,6 +245,9 @@ pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
+            // The sheet's generic `.button` and `.text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = crate::kit::style_class::ui(ui);
+            let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             draw_export(ui, area, state)
         })
@@ -205,9 +256,11 @@ pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
 
 fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<ExportChoice> {
     let mut closed: Option<ExportChoice> = None;
-    // Title row, then file, format, rate, depth, the checkboxes, the note, and the buttons.
-    let panel =
-        panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + 7.0 * LINE + BUTTON.y + 3.0 * PAD), "Export audio", &mut closed);
+    // Title row, then file, format, rate, depth, the mp3 rate when the format is mp3, the
+    // checkboxes, the note, and the buttons.
+    let mp3 = state.resolved_format() == Some("mp3");
+    let rows = if mp3 { 7.0 * LINE + LINE + 4.0 } else { 7.0 * LINE };
+    let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, ROW + rows + BUTTON.y + 3.0 * PAD), "Export audio", &mut closed);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 76.0;
@@ -272,18 +325,20 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("Format {shown}")));
     });
 
-    // The sample rate.
+    // The sample rate; mp3 offers the rates its encoder writes.
     let rate_at = label_row(&mut y, "Sample rate");
-    let rate_shown = format!("{} Hz", SAMPLE_RATES[state.rate]);
+    let rates = state.rates();
+    let rate = state.sample_rate();
+    let rate_shown = format!("{rate} Hz");
     let mut chosen_rate = state.rate;
     ui.scope_builder(egui::UiBuilder::new().max_rect(rate_at), |ui| {
         let response = egui::ComboBox::from_id_salt("export-rate")
             .selected_text(egui::RichText::new(&rate_shown).font(small.clone()))
             .width(170.0)
             .show_ui(ui, |ui| {
-                for (index, hz) in SAMPLE_RATES.iter().enumerate() {
-                    if ui.selectable_label(state.rate == index, format!("{hz} Hz")).clicked() {
-                        chosen_rate = index;
+                for hz in rates {
+                    if ui.selectable_label(rate == *hz, format!("{hz} Hz")).clicked() {
+                        chosen_rate = *hz;
                     }
                 }
             })
@@ -294,18 +349,14 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
     });
     state.rate = chosen_rate;
 
-    // The depth; ogg takes none, so its row says why and holds nothing.
+    // The depth; ogg and mp3 take none, so their row says why and holds nothing.
     let depth_at = label_row(&mut y, "Bit depth");
     let depth = DEPTHS[state.depth];
-    if state.resolved_format() == Some("ogg") {
-        widgets::text_in(
-            &painter,
-            depth_at,
-            Align2::LEFT_CENTER,
-            "ogg takes no bit depth",
-            small.clone(),
-            theme::text_hint(),
-        );
+    if let Some(format) = state.resolved_format()
+        && matches!(format, "ogg" | "mp3")
+    {
+        let why = if format == "mp3" { "mp3 takes no bit depth" } else { "ogg takes no bit depth" };
+        widgets::text_in(&painter, depth_at, Align2::LEFT_CENTER, why, small.clone(), theme::text_hint());
     } else {
         let depth_shown = depth.0;
         let mut chosen_depth = state.depth;
@@ -326,6 +377,30 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
             });
         });
         state.depth = chosen_depth;
+    }
+
+    // The mp3 rate: the constant bitrates and the two variable qualities, only with mp3.
+    if mp3 {
+        let mp3_at = label_row(&mut y, "MP3 rate");
+        let mp3_shown = MP3_RATES[state.mp3_rate.min(MP3_RATES.len() - 1)].0;
+        let mut chosen_mp3 = state.mp3_rate;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(mp3_at), |ui| {
+            let response = egui::ComboBox::from_id_salt("export-mp3-rate")
+                .selected_text(egui::RichText::new(mp3_shown).font(small.clone()))
+                .width(170.0)
+                .show_ui(ui, |ui| {
+                    for (index, (name, _)) in MP3_RATES.iter().enumerate() {
+                        if ui.selectable_label(state.mp3_rate == index, *name).clicked() {
+                            chosen_mp3 = index;
+                        }
+                    }
+                })
+                .response;
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, format!("MP3 rate {mp3_shown}"))
+            });
+        });
+        state.mp3_rate = chosen_mp3;
     }
 
     // Normalise, dither and overwrite on one row; dither greys out where the depth takes none.
@@ -363,14 +438,19 @@ fn draw_export(ui: &mut Ui, area: Rect, state: &mut ExportDialog) -> Option<Expo
     } else if empty {
         ("Name the file to write".to_string(), theme::text_hint())
     } else if state.resolved_format().is_none() {
-        ("The file name decides: .wav, .flac or .ogg".to_string(), theme::text_hint())
+        ("The file name decides: .wav, .flac, .ogg or .mp3".to_string(), theme::text_hint())
     } else if path.exists() && !state.overwrite {
         (format!("{} is there already; overwrite replaces it", path.display()), theme::recording())
     } else {
         let format = state.resolved_format().unwrap_or_default();
-        let rate = SAMPLE_RATES[state.rate];
-        let what =
-            if state.resolved_depth().is_some() { format!(", {}", DEPTHS[state.depth].0) } else { String::new() };
+        let rate = state.sample_rate();
+        let what = if state.resolved_depth().is_some() {
+            format!(", {}", DEPTHS[state.depth].0)
+        } else if format == "mp3" {
+            format!(", {}", MP3_RATES[state.mp3_rate].0)
+        } else {
+            String::new()
+        };
         (format!("{} at {} Hz{}", format.to_uppercase(), rate, what), theme::text_hint())
     };
     widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, colour);
@@ -420,126 +500,5 @@ fn with_extension(path: &str, ext: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn a_picked_file_reconciles_the_format_and_the_depth() {
-        // A format the user chose explicitly follows the picked file's extension, so the job's
-        // format and the file name agree — the command refuses the mismatch the other way.
-        let mut wav = ExportDialog::new(PathBuf::from("/mixes/Song.wav"));
-        wav.format = 1; // WAV, chosen explicitly; the depth is its default 32f.
-        wav.accept_pick(Path::new("/mixes/Song.flac"));
-        assert_eq!(wav.format, 2, "the picked flac turns the format row");
-        assert_eq!(wav.resolved_depth(), Some("24"), "flac takes no float depth");
-        let job = wav.job().unwrap();
-        assert_eq!(job.format, Some("flac"));
-        assert_eq!(job.bit_depth, Some("24"));
-        assert_eq!(job.path, PathBuf::from("/mixes/Song.flac"));
-
-        // With the automatic format, browsing to a flac moves the float depth out the same way.
-        let mut auto = ExportDialog::new(PathBuf::from("/mixes/Song.wav"));
-        auto.format = 0; // From the file name; the depth is 32f.
-        auto.accept_pick(Path::new("/mixes/Song.flac"));
-        assert_eq!(auto.format, 2);
-        assert_eq!(auto.resolved_depth(), Some("24"), "{:?}", auto.job());
-
-        // Ogg takes no depth, whatever the row held; a wav pick leaves a wav choice alone.
-        let mut ogg = ExportDialog::new(PathBuf::from("/mixes/Song.wav"));
-        ogg.format = 1;
-        ogg.accept_pick(Path::new("/mixes/Song.ogg"));
-        assert_eq!(ogg.format, 3);
-        assert_eq!(ogg.resolved_depth(), None);
-        let (_, name) = FORMATS[ogg.format];
-        assert_eq!(name, Some("ogg"));
-
-        // A file without one of the format's extensions reads as it did before the pick.
-        let mut unknown = ExportDialog::new(PathBuf::from("/mixes/Song.wav"));
-        unknown.format = 1;
-        unknown.accept_pick(Path::new("/mixes/Song.aif"));
-        assert_eq!(unknown.format, 1, "an unknown extension is the command's own refusal");
-        assert_eq!(unknown.resolved_depth(), Some("32f"));
-    }
-
-    #[test]
-    fn choosing_the_format_swaps_the_file_names_extension() {
-        assert_eq!(with_extension("/mixes/Song.wav", "ogg"), "/mixes/Song.ogg");
-        assert_eq!(with_extension("Song", "flac"), "Song.flac");
-        assert_eq!(with_extension("  /a/b/night.drive.WAV ", "ogg"), "/a/b/night.drive.ogg");
-        assert_eq!(with_extension("", "wav"), "");
-        // The separators the user typed stay as they typed them, a Windows path included.
-        assert_eq!(with_extension(r"C:\mixes\Song.wav", "ogg"), r"C:\mixes\Song.ogg");
-        // A folder's own path has no file to rename, and neither has "." or "..".
-        assert_eq!(with_extension("/mixes/", "ogg"), "/mixes/");
-        assert_eq!(with_extension(".", "ogg"), ".");
-        assert_eq!(with_extension("..", "ogg"), "..");
-    }
-
-    #[test]
-    fn the_jobs_params_carry_what_the_command_takes() {
-        let job = ExportJob {
-            path: "/mixes/Song.wav".into(),
-            format: None,
-            sample_rate: 48_000,
-            bit_depth: Some("32f"),
-            normalize: false,
-            dither: Some(false),
-            overwrite: false,
-        };
-        // The depth's dither is asked for even when it is off, or the command would turn it on;
-        // the bools that are false by default are left out.
-        assert_eq!(
-            job.params(),
-            json!({ "path": "/mixes/Song.wav", "sample_rate": 48_000, "bit_depth": "32f", "dither": false })
-        );
-        let off = ExportJob {
-            path: "/mixes/Song.wav".into(),
-            format: Some("ogg"),
-            sample_rate: 44_100,
-            bit_depth: None,
-            normalize: true,
-            dither: None,
-            overwrite: true,
-        };
-        assert_eq!(
-            off.params(),
-            json!({ "path": "/mixes/Song.wav", "format": "ogg", "sample_rate": 44_100, "normalize": true, "overwrite": true })
-        );
-    }
-
-    #[test]
-    fn ogg_takes_no_depth_and_32f_takes_no_dither() {
-        let mut state = ExportDialog::new("/mixes/Song.wav".into());
-        assert_eq!(state.resolved_format(), Some("wav"));
-        assert_eq!(state.resolved_depth(), Some("32f"));
-        assert!(!state.dither_applies(), "32f needs no dither");
-        state.depth = 2;
-        assert_eq!(state.resolved_depth(), Some("16"));
-        assert!(state.dither_applies(), "16-bit takes dither");
-        state.format = 3; // Ogg Vorbis
-        assert_eq!(state.resolved_format(), Some("ogg"));
-        assert_eq!(state.resolved_depth(), None);
-        assert!(!state.dither_applies());
-        assert_eq!(state.job().map(|job| job.bit_depth), Some(None), "the job leaves the depth out for ogg");
-    }
-
-    #[test]
-    fn flac_warns_at_the_float_depth_and_24_is_its_default() {
-        let mut state = ExportDialog::new("/mixes/Song.wav".into());
-        assert_eq!(state.refusal(), None, "wav at 32f is fine");
-        state.format = 2; // FLAC, still at 32-bit float
-        assert_eq!(state.refusal(), Some("flac is written at 24 or 16 bits, not 32f"));
-        state.depth = 1; // 24-bit PCM
-        assert_eq!(state.refusal(), None);
-        assert!(state.dither_applies(), "24-bit flac takes dither");
-        let job = state.job().unwrap();
-        assert_eq!(job.bit_depth, Some("24"));
-        // Dither starts on, as the command's and the spec's default do, and is asked for
-        // explicitly so the command does not guess.
-        assert_eq!(job.dither, Some(true));
-        state.depth = 2; // 16-bit PCM
-        assert_eq!(state.refusal(), None);
-        assert_eq!(state.job().unwrap().bit_depth, Some("16"));
-    }
-}
+#[path = "export_dialog_tests.rs"]
+mod tests;

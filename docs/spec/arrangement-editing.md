@@ -3,11 +3,13 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-10-20
+last_verified: 2026-10-23
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
+  - crates/ui/src/arrangement/automation_lanes.rs
+  - crates/ui/src/interaction/timeline_grid.rs
   - crates/model/src/lib.rs
   - crates/model/src/overlap.rs
   - crates/engine/src/audio.rs
@@ -88,8 +90,16 @@ in, a beat has four lines; zoomed out, lines fall on beats, then on bars.
 at that zoom (never before the start): a clip moved by dragging ([moving a clip](#moving-a-clip)),
 samples and MIDI files dragged from the browser onto a lane or the empty space below the tracks
 ([browser](browser.md) › Dragging into the project), fade handles ([fades](#fades)) and ruler
-clicks ([play position](#play-position)). With **Alt** held, each of them goes exactly where the
-pointer is instead (off the grid).
+clicks ([play position](#play-position)), and automation points added or dragged in an
+automation lane. With **Alt** held, each of them goes exactly where the pointer is instead (off the
+grid). So in 3/4 with a `1/2` grid, whose lines are at beats 0, 2, 3, 5, 6 …, an automation point
+goes to beat 3, not 4.
+
+**One grid for every timeline.** The arrangement, its automation lanes and the piano roll
+([clip editor](ui-clip-editor.md) › Grid and snapping) draw and snap with the same code,
+`TimelineGrid` in `crates/ui/src/interaction/timeline_grid.rs` (#734). Each view keeps its own grid
+value (the control bar's here, the piano roll's grid menu there) and its own least spacing between
+lines; only the arithmetic is shared.
 
 **`none`** launches clips at once, and in the Arrangement view nothing snaps (as if Alt were held);
 lines show beats and bars by the zoom alone.
@@ -554,7 +564,9 @@ between beats it waits for the next one. The launcher's beat is the playhead's, 
 launches land on the arrangement's bars.
 
 **A jump while playing** ends the notes that sound (with their release) and the audio clips that
-play, and plays on from the new beat as a start would. Launches and a scene tempo that were
+play, and plays on from the new beat as a start would: a note that sounds there is chased, whether
+the jump moves the marker (a click on the ruler, `transport.setPosition`) or only the playhead
+(`Locate`, when the audio output is opened again); a loop's wrap is not a jump and chases nothing. Launches and a scene tempo that were
 waiting are queued again for the next boundary from the new beat. Time-stretched clips are
 silent until the stretch worker has caught up with the new place (about one block in practice).
 
@@ -904,3 +916,24 @@ their strength by 12 percentage points (capped at 100); selected headers retain 
 brightness lift. Header names, fold indicators, routing and send labels maintain contrast on
 the resulting surface. Explicit clip colours continue to override track colours. Changes
 apply live and persist as application settings without modifying project data.
+
+## MIDI input monitoring
+
+A note-playing track has one small Auto / On / Off control immediately after its record-arm
+button, before its name or volume controls. A click opens the three choices, with a tooltip
+explaining the current state; it is not a second record-arm button or headphone cue. The same
+choices appear in the MIDI input menu, beside port and channel selection. Auto (the default)
+hears the input while armed; On hears it independently of arming; Off never hears the live
+input. Recording still depends on arm and record, including when monitoring is Off; On alone
+never records. Monitoring does not suppress clip playback. The selected mode is project data,
+set through `track.setMidiInput` with `monitor: auto | in | off`, and supports undo and redo.
+Changing mode releases notes that are no longer monitored, without retriggering held keys.
+Old projects without this field retain Auto. Compact and expanded headers reserve space for the monitor control before names and level controls.
+
+The popup is titled Hear your MIDI keyboard and offers three single-line choices: Automatic,
+Always on and Off. A fixed-height footer explains the hovered or keyboard-focused choice,
+or the current mode when none is hovered. Automatic says when the input is heard, Always on
+says recording need not be enabled, and Off says live input is silent but can still be
+recorded. Tooltips explain the selected mode and the separate record-ready
+button, without requiring knowledge of "armed" or "play-through". The file/API value `in`
+remains unchanged.

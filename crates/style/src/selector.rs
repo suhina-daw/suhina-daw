@@ -38,6 +38,12 @@ pub struct Element {
     pub classes: Vec<String>,
     pub states: Vec<String>,
     pub parent: Option<usize>,
+    /// The project object this element shows (a track's stable name), matched by
+    /// `[data-object]` and `[data-object=name]`.
+    pub object: Option<String>,
+    /// Custom properties the host gives this element (a track's colour as `--track-colour`):
+    /// inherited by its descendants, below every rule of every sheet.
+    pub variables: Vec<(String, String)>,
 }
 
 impl Element {
@@ -71,6 +77,7 @@ impl Tree {
             let name_ok = |name: &str| !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control);
             if !name_ok(&element.kind)
                 || element.id.as_deref().is_some_and(|id| !name_ok(id))
+                || element.object.as_deref().is_some_and(|object| !name_ok(object))
                 || element.classes.len() > 32
                 || element.classes.iter().any(|name| !name_ok(name))
                 || element.states.len() > STATES.len()
@@ -151,9 +158,15 @@ enum Test {
     State(String),
     Root,
     Empty,
-    Nth { a: i32, b: i32, reverse: bool },
+    Nth {
+        a: i32,
+        b: i32,
+        reverse: bool,
+    },
     Only,
     Any(Vec<Selector>, bool),
+    /// `[data-object]` (any object) or `[data-object=name]`.
+    Object(Option<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -213,6 +226,8 @@ impl Selector {
                 Test::Kind(kind) => &element.kind == kind,
                 Test::Id(id) => element.id.as_ref() == Some(id),
                 Test::Class(class) => element.classes.contains(class),
+                Test::Object(None) => element.object.is_some(),
+                Test::Object(Some(name)) => element.object.as_ref() == Some(name),
                 Test::State(state) => element.states.contains(state),
                 Test::Root => tree.parent(node, root).is_none(),
                 Test::Empty => tree.children.get(node).is_none_or(Vec::is_empty),
@@ -330,6 +345,16 @@ fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>
                 (Test::Kind(kind.to_string()), Specificity(0, 0, 1))
             }
             Token::IDHash(id) => (Test::Id(id.to_string()), Specificity(1, 0, 0)),
+            Token::SquareBracketBlock => {
+                let mut attribute = None;
+                parser
+                    .parse_nested_block(|parser| {
+                        attribute = Some(object_attribute(parser));
+                        Ok::<(), cssparser::ParseError<'_, ()>>(())
+                    })
+                    .map_err(|e| format!("Attribute: {e:?}"))?;
+                (Test::Object(attribute.ok_or("Missing attribute")??), Specificity(0, 1, 0))
+            }
             Token::Delim('.') => (
                 Test::Class(parser.expect_ident_cloned().map_err(|e| format!("Class: {e:?}"))?.to_string()),
                 Specificity(0, 1, 0),
@@ -384,6 +409,27 @@ fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>
     finish_part(&mut parts, &mut tests, relation, &mut universal)?;
     result.push(Selector { parts, specificity });
     Ok(result)
+}
+
+/// The inside of `[...]`: only `data-object`, the host's stable object name, exists.
+fn object_attribute(parser: &mut Parser<'_, '_>) -> Result<Option<String>, String> {
+    let name = parser.expect_ident_cloned().map_err(|_| "Expected an attribute name")?;
+    if !name.eq_ignore_ascii_case("data-object") {
+        return Err("Only [data-object] is a native attribute".into());
+    }
+    if parser.is_exhausted() {
+        return Ok(None);
+    }
+    parser.expect_delim('=').map_err(|_| "Only [data-object=name] compares an attribute")?;
+    let value = match parser.next().map_err(|_| "Expected an attribute value")?.clone() {
+        Token::Ident(value) | Token::QuotedString(value) => value.to_string(),
+        _ => return Err("Expected an attribute value".into()),
+    };
+    parser.expect_exhausted().map_err(|_| "Unexpected attribute suffix")?;
+    if value.is_empty() || value.len() > 128 {
+        return Err("Invalid attribute value".into());
+    }
+    Ok(Some(value))
 }
 
 fn finish_part(
@@ -451,6 +497,26 @@ mod tests {
             Selector::parse_list(":where(#filter-a) > knob:is(.small, #cutoff)").unwrap()[0].specificity,
             Specificity(1, 0, 1)
         );
+    }
+
+    #[test]
+    fn object_attribute_selects_a_named_project_object() {
+        let mut first = Element::new("mixer", Some(0));
+        first.object = Some("track-1".into());
+        let mut second = Element::new("mixer", Some(0));
+        second.object = Some("track-2".into());
+        let tree =
+            Tree::new(vec![Element::new("window", None), first, second, Element::new("mixer", Some(0))]).unwrap();
+        let named = &Selector::parse_list("mixer[data-object=track-2]").unwrap()[0];
+        let quoted = &Selector::parse_list("[data-object='track-1']").unwrap()[0];
+        let any = &Selector::parse_list("[data-object]").unwrap()[0];
+        assert!(!named.matches(&tree, 1, None) && named.matches(&tree, 2, None));
+        assert!(quoted.matches(&tree, 1, None));
+        assert!(any.matches(&tree, 1, None) && !any.matches(&tree, 3, None));
+        assert_eq!(named.specificity, Specificity(0, 1, 1));
+        for bad in ["[href]", "[data-object~=a]", "[data-object=]", "[data-object=a b]"] {
+            assert!(Selector::parse_list(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

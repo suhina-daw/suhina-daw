@@ -278,15 +278,22 @@ fn take_carried(carried: &mut Vec<Event>, params: &mut Vec<Event>, notes: &mut V
     });
 }
 
-/// Keeps the releases among `events` in `carried`, and the latest value of each parameter,
-/// within its capacity. Never allocates.
+/// Keeps the releases among `events` in `carried`, and the latest value of each parameter and
+/// of each channel's pitch bend and pressure, within its capacity: a wheel let go in a block
+/// that was not sent still comes back to rest. Never allocates.
 fn carry_releases(events: &[Event], carried: &mut Vec<Event>) {
     let room = carried.capacity();
-    for event in events.iter().filter(|e| releases(e) || matches!(e.kind, EventKind::Param { .. })) {
-        if let EventKind::Param { id, .. } = event.kind
-            && let Some(older) =
-                carried.iter_mut().find(|c| matches!(c.kind, EventKind::Param { id: other, .. } if other == id))
-        {
+    let latest = |e: &Event| {
+        matches!(e.kind, EventKind::Param { .. } | EventKind::PitchBend { .. } | EventKind::Pressure { .. })
+    };
+    for event in events.iter().filter(|e| releases(e) || latest(e)) {
+        let same = |c: &Event| match (c.kind, event.kind) {
+            (EventKind::Param { id: a, .. }, EventKind::Param { id: b, .. }) => a == b,
+            (EventKind::PitchBend { channel: a, .. }, EventKind::PitchBend { channel: b, .. }) => a == b,
+            (EventKind::Pressure { channel: a, .. }, EventKind::Pressure { channel: b, .. }) => a == b,
+            _ => false,
+        };
+        if let Some(older) = carried.iter_mut().find(|c| same(c)) {
             *older = *event;
             continue;
         }
@@ -343,16 +350,13 @@ fn push_event(out: &mut Vec<Event>, frame: u32, event: DeviceEvent) {
             push(EventKind::Controller { channel: 0, number, value: value.clamp(0.0, 1.0) });
         }
         DeviceEvent::PitchBend(value) => push(EventKind::PitchBend { channel: 0, value: value.clamp(-1.0, 1.0) }),
+        DeviceEvent::Pressure(value) => push(EventKind::Pressure { channel: 0, value: value.clamp(0.0, 1.0) }),
         DeviceEvent::AllNotesOff => {
             push(EventKind::Controller { channel: 0, number: SUSTAIN, value: 0.0 });
             push(EventKind::Controller { channel: 0, number: ALL_NOTES_OFF, value: 0.0 });
         }
         // A plug-in has no use for the scale the notes are in.
-        DeviceEvent::On { .. }
-        | DeviceEvent::Off { .. }
-        | DeviceEvent::Controller { .. }
-        | DeviceEvent::Pressure(_)
-        | DeviceEvent::Scale(_) => {}
+        DeviceEvent::On { .. } | DeviceEvent::Off { .. } | DeviceEvent::Controller { .. } | DeviceEvent::Scale(_) => {}
     }
 }
 
@@ -913,6 +917,8 @@ pub struct Rack {
     /// Deadline and read rounds left for a nonblocking quit check.
     edit_check: Option<(Instant, u8)>,
     saved: Instant,
+    /// How often running plug-ins' states are read: [`SAVE_EVERY`], shorter in tests.
+    save_every: Duration,
     /// The window editors open over (owned by it), when the session runs in one.
     owner: Option<u64>,
     /// Editors open embedded in that window's device panel rather than in windows of their own.
@@ -971,6 +977,7 @@ impl Default for Rack {
             checked: Instant::now(),
             edit_check: None,
             saved: Instant::now(),
+            save_every: SAVE_EVERY,
             owner: None,
             embed: false,
             edits: PluginEdits::default(),
@@ -1974,7 +1981,7 @@ impl Rack {
             return;
         }
         self.checked = Instant::now();
-        let save = self.saved.elapsed() >= SAVE_EVERY;
+        let save = self.saved.elapsed() >= self.save_every;
         if save {
             self.saved = Instant::now();
         }
@@ -2045,6 +2052,12 @@ impl Rack {
             let _gone = sender.send(Started { key, generation, result, first_state: None });
         });
         spawned.map(|_| ()).map_err(|e| CommandError(format!("could not restart the plug-in: {e}")))
+    }
+
+    /// How often each running plug-in's state is read from now on (every [`SAVE_EVERY`] unless
+    /// set), so a test of those reads need not wait half a minute.
+    pub fn set_save_every(&mut self, every: Duration) {
+        self.save_every = every;
     }
 
     /// The window editors open over from now on: a Win32 `HWND` or an X11 window id.
@@ -2638,6 +2651,17 @@ mod tests {
     }
 
     #[test]
+    fn a_bend_and_pressure_of_a_block_not_sent_are_kept_the_latest_of_each_channel() {
+        let bend = |frame, channel, value| Event { frame, note: -1, kind: EventKind::PitchBend { channel, value } };
+        let pressure = |frame, channel, value| Event { frame, note: -1, kind: EventKind::Pressure { channel, value } };
+        // The wheel let go (back to 0) and the key's pressure released, in the block not sent.
+        let events = [bend(0, 0, 0.8), pressure(1, 0, 0.6), bend(2, 1, -0.5), bend(3, 0, 0.0), pressure(4, 0, 0.0)];
+        let mut carried = Vec::with_capacity(8);
+        carry_releases(&events, &mut carried);
+        assert_eq!(carried, [bend(3, 0, 0.0), pressure(4, 0, 0.0), bend(2, 1, -0.5)]);
+    }
+
+    #[test]
     fn parameter_values_and_notes_merge_in_frame_order() {
         let params = [Event::param(0, 1, 0.5), Event::param(4, 1, 0.75)];
         let notes = [Event::note_on(0, 0, 60, 1.0), Event::note_off(2, 0, 60, 0.5), Event::note_on(4, 0, 62, 1.0)];
@@ -2663,6 +2687,7 @@ mod tests {
             [
                 Event { frame: 3, note: -1, kind: EventKind::NoteOn { channel: 0, key: 60, velocity: 1.0 } },
                 Event { frame: 5, note: -1, kind: EventKind::PitchBend { channel: 0, value: -1.0 } },
+                Event { frame: 6, note: -1, kind: EventKind::Pressure { channel: 0, value: 0.5 } },
                 Event { frame: 7, note: -1, kind: EventKind::Controller { channel: 0, number: 64, value: 0.0 } },
                 Event { frame: 7, note: -1, kind: EventKind::Controller { channel: 0, number: 123, value: 0.0 } },
             ]

@@ -24,6 +24,9 @@ pub const CLASSES: &[&str] = &[
     "track-header",
     "track-name",
     "clip",
+    "clip-name",
+    "clip-waveform",
+    "clip-notes",
     "scene",
     "scene-column",
     "track-column",
@@ -32,6 +35,12 @@ pub const CLASSES: &[&str] = &[
     "clip-editor",
     "piano-roll",
     "device-panel",
+    "device",
+    "device-header",
+    "slider",
+    "slider-rail",
+    "slider-fill",
+    "slider-handle",
     "device-control",
     "device-section",
     "envelope",
@@ -46,11 +55,39 @@ pub const CLASSES: &[&str] = &[
     "fader",
     "fader-scale",
     "pan",
+    "send",
+    "add-track",
+    "ruler",
+    "loop-region",
+    "playhead",
+    "divider",
+    "clip-gain",
+    "clip-fade-handle",
+    "piano-roll",
+    "piano-grid",
+    "piano-row",
+    "piano-row-black",
+    "piano-key",
+    "piano-key-black",
+    "piano-note",
+    "velocity",
+    "piano-tool",
+    "midi-tools",
+    "editor-tab",
+    "start-page",
+    "plugin-manager",
+    "export",
+    "clip-info",
     "fader-cap",
+    "fader-rail",
     "knob",
     "meter",
     "meter-level",
     "value",
+    "value-fill",
+    "value-handle",
+    "menu",
+    "popup",
     "dropdown",
     "text-input",
 ];
@@ -66,6 +103,12 @@ pub fn valid_property(key: &str, value: &str) -> bool {
     match key {
         "--suhina-track-artwork" => matches!(value, "on" | "off"),
         "--suhina-appearance" => matches!(value, "native" | "knob" | "field"),
+        "--suhina-track-headers" => matches!(value, "left" | "right"),
+        "--suhina-header-tint" => value.trim().parse::<u8>().is_ok_and(|v| v <= 100),
+        "--suhina-header-min-width" => value
+            .strip_suffix("px")
+            .and_then(|v| v.trim().parse::<u16>().ok())
+            .is_some_and(|v| (160..=520).contains(&v)),
         "color" | "background-color" | "border-color" => theme::parse_hex(value).is_some(),
         "border-radius" => value.strip_suffix("px").and_then(|v| v.parse::<u8>().ok()).is_some_and(|v| v <= 32),
         "font-size" => {
@@ -153,9 +196,7 @@ fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response
         set_foreground(&mut palette, color, class);
     }
     if let Some(color) = property("background-color").as_deref().and_then(theme::parse_hex) {
-        palette.window_background = color;
-        palette.panel_background = color;
-        palette.control_background = color;
+        set_background(&mut palette, color, class);
     }
     if let Some(color) = property("border-color").as_deref().and_then(theme::parse_hex) {
         palette.border = color;
@@ -170,14 +211,44 @@ fn enter_inner(class: &str, name: Option<&str>, response: Option<&egui::Response
             palette.border_strong = values.border;
         }
         if values.authored.background {
-            palette.window_background = values.background;
-            palette.panel_background = values.background;
-            palette.control_background = values.background;
+            set_background(&mut palette, values.background, class);
         }
     }
     theme::local_palette(palette);
     Scope { palette: saved, revision: theme::palette_revision(), native }
 }
+/// Views and bars: their background is the surface behind their controls, not the controls' own.
+const SURFACES: &[&str] = &[
+    "window",
+    "workspace",
+    "workspace-panel",
+    "application-bar",
+    "menu-bar",
+    "project-tabs",
+    "toolbar",
+    "status-bar",
+    "browser",
+    "session",
+    "arrangement",
+    "mixer",
+    "detail",
+    "clip-editor",
+    "piano-roll",
+    "settings",
+    "dialog",
+    "sample-map",
+];
+
+/// A background for `class`: a view's sets the surfaces inside it, and a control's its own fill
+/// too. So a view's background never repaints the buttons drawn on it.
+fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
+    palette.window_background = color;
+    palette.panel_background = color;
+    if !SURFACES.contains(&class) {
+        palette.control_background = color;
+    }
+}
+
 fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: &str) {
     palette.text_primary = color;
     palette.text_inverse = color;
@@ -203,6 +274,35 @@ pub fn foreground(fallback: egui::Color32) -> egui::Color32 {
 }
 
 /// Native widget presentation is portable theme data; absence preserves the user's preference.
+/// The side the theme puts the Arrangement view's track headers on (`.arrangement {
+/// --suhina-track-headers: left }`), when it says one: `Some(true)` for the left.
+pub fn theme_track_headers_left() -> Option<bool> {
+    let skin = skin::current();
+    skin.styles.iter().filter(|(selector, _)| selector.as_str() == ".arrangement").find_map(|(_, properties)| {
+        match properties.get("--suhina-track-headers").map(String::as_str) {
+            Some("left") => Some(true),
+            Some("right") => Some(false),
+            _ => None,
+        }
+    })
+}
+
+/// The narrowest the theme lets the Arrangement view's header column be (`.arrangement {
+/// --suhina-header-min-width: 330px }`): the width its placements were made for, which the
+/// header's narrower layouts would break.
+/// How strongly the theme lets the track's colour tint its Arrangement header (`.arrangement {
+/// --suhina-header-tint: 0 }` for none, up to 100), over the user's header colour strength; a
+/// see-through theme takes the native tint away with 0.
+pub fn theme_header_tint() -> Option<u8> {
+    let skin = skin::current();
+    skin.styles.get(".arrangement")?.get("--suhina-header-tint")?.trim().parse::<u8>().ok().map(|v| v.min(100))
+}
+
+pub fn theme_header_min_width() -> Option<f32> {
+    let skin = skin::current();
+    skin.styles.get(".arrangement")?.get("--suhina-header-min-width")?.strip_suffix("px")?.trim().parse::<f32>().ok()
+}
+
 pub fn knob_preference(fallback: bool) -> bool {
     match property("--suhina-appearance").as_deref() {
         Some("knob") => true,
@@ -210,6 +310,15 @@ pub fn knob_preference(fallback: bool) -> bool {
         _ => fallback,
     }
 }
+/// The view being drawn, for artwork of one view: `mixer` (a strip, in any view), `session` or
+/// `arrangement`.
+pub fn view() -> Option<&'static str> {
+    STACK.with(|stack| {
+        let stack = stack.borrow();
+        ["mixer", "session", "arrangement"].into_iter().find(|view| stack.iter().any(|class| class == view))
+    })
+}
+
 pub fn computed() -> Option<super::native_css::Computed> {
     STACK.with(|stack| super::native_css::scoped(&stack.borrow()))
 }
@@ -300,9 +409,134 @@ pub fn ui(ui: &mut egui::Ui) -> UiStyle<'_> {
         .filter(|style| style.authored.radius)
         .map(|style| style.radius)
         .or_else(|| property("border-radius").map(|_| self::radius(0.0)));
-    let previous = if color.is_some() || font.is_some() || radius.is_some() {
+    // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
+    // every state: without it they keep egui's own.
+    let border = values
+        .as_ref()
+        .filter(|style| style.authored.border_width)
+        .map(|style| egui::Stroke::new(style.border_width, style.border));
+    // A panel's or view's background is the surface behind its widgets, not their fill: a
+    // device panel's colour would otherwise hide its sliders' rails.
+    let container = STACK.with(|stack| {
+        stack.borrow().last().is_some_and(|class| {
+            matches!(
+                class.as_str(),
+                "device"
+                    | "device-panel"
+                    | "settings"
+                    | "dialog"
+                    | "browser"
+                    | "sample-map"
+                    | "start-page"
+                    | "plugin-manager"
+                    | "popup"
+                    | "piano-roll"
+                    | "detail"
+                    | "clip-editor"
+                    | "midi-tools"
+                    | "clip-info"
+                    | "arrangement"
+                    | "session"
+                    | "mixer"
+                    | "window"
+                    | "workspace"
+            )
+        })
+    });
+    let fill = values.as_ref().filter(|style| style.authored.background && !container).map(|style| style.background);
+    // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
+    // sheet's generic control rules: `.button`, `.button:hover`, `.button:active`,
+    // `.button:disabled` for buttons, check boxes and drop-downs, `.button:checked` for a
+    // chosen row, and `.text-input` for text fields.
+    let control = |hovered: bool, pressed: bool, disabled: bool| {
+        let _button = enter("button");
+        super::native_css::mark_pointer(hovered, pressed, disabled);
+        computed().filter(|c| c.authored.background || c.authored.border || c.authored.color || c.authored.radius)
+    };
+    let controls = [
+        control(false, false, false),
+        control(true, false, false),
+        control(true, true, false),
+        control(false, false, true),
+    ];
+    // `.button:checked`: a chosen item in a list or a menu (egui's selection).
+    let chosen = {
+        let _button = enter("button");
+        super::native_css::mark(super::native_css::HostState::Checked, true);
+        computed().filter(|c| c.authored.background || c.authored.color)
+    };
+    let input = {
+        let _input = enter("text-input");
+        computed().filter(|c| c.authored.background || c.authored.border || c.authored.color)
+    };
+    let has_controls = controls.iter().any(Option::is_some) || input.is_some() || chosen.is_some();
+    let previous = if color.is_some()
+        || font.is_some()
+        || radius.is_some()
+        || border.is_some()
+        || fill.is_some()
+        || has_controls
+    {
         let previous = ui.style().clone();
         let style = ui.style_mut();
+        let [idle, hovered, pressed, disabled] = &controls;
+        for (widget, own) in [
+            (&mut style.visuals.widgets.inactive, idle.as_ref()),
+            (&mut style.visuals.widgets.hovered, hovered.as_ref()),
+            (&mut style.visuals.widgets.active, pressed.as_ref()),
+            (&mut style.visuals.widgets.open, pressed.as_ref()),
+            (&mut style.visuals.widgets.noninteractive, disabled.as_ref()),
+        ] {
+            let Some(own) = own else { continue };
+            if own.authored.background {
+                widget.bg_fill = own.background;
+                widget.weak_bg_fill = own.background;
+            }
+            if own.authored.border || own.authored.border_width {
+                widget.bg_stroke = egui::Stroke::new(own.border_width, own.border);
+            }
+            if own.authored.color {
+                widget.fg_stroke.color = own.color;
+            }
+            if own.authored.radius {
+                widget.corner_radius = egui::CornerRadius::same(own.radius.clamp(0.0, 128.0) as u8);
+            }
+        }
+        if let Some(chosen) = &chosen {
+            if chosen.authored.background {
+                style.visuals.selection.bg_fill = chosen.background;
+            }
+            if chosen.authored.color {
+                style.visuals.selection.stroke.color = chosen.color;
+            }
+        }
+        if let Some(input) = &input {
+            if input.authored.background {
+                style.visuals.extreme_bg_color = input.background;
+                style.visuals.text_edit_bg_color = Some(input.background);
+            }
+            if input.authored.color {
+                style.visuals.widgets.inactive.fg_stroke.color = input.color;
+            }
+        }
+        if let Some(stroke) = border {
+            for widget in [
+                &mut style.visuals.widgets.noninteractive,
+                &mut style.visuals.widgets.inactive,
+                &mut style.visuals.widgets.hovered,
+                &mut style.visuals.widgets.active,
+                &mut style.visuals.widgets.open,
+            ] {
+                widget.bg_stroke = stroke;
+            }
+            style.visuals.selection.stroke.width = style.visuals.selection.stroke.width.min(stroke.width.max(1.0));
+        }
+        if let Some(fill) = fill {
+            for widget in [&mut style.visuals.widgets.inactive, &mut style.visuals.widgets.open] {
+                widget.bg_fill = fill;
+                widget.weak_bg_fill = fill;
+            }
+        }
         if let Some(color) = color {
             style.visuals.override_text_color = Some(color);
         }

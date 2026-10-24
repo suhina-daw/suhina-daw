@@ -8,7 +8,7 @@
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-use suhina_ipc::{Link, Outcome};
+use suhina_ipc::{Link, Outcome, Served};
 
 const FRAMES: usize = 128;
 /// A block's budget at 128 frames and 48 kHz is 2.7 ms; the deadline for the peer is less.
@@ -85,6 +85,13 @@ fn survives(mode: &str) {
     assert!(started.elapsed() < Duration::from_millis(200), "{mode}: {:?}", started.elapsed());
     let _ = child.kill();
     let _ = child.wait();
+    // The failed peer leaves nothing behind: the region goes with the link. (On Linux the
+    // address is a descriptor number, which another test may take next.)
+    let address = link.address();
+    drop(link);
+    if !cfg!(target_os = "linux") {
+        assert!(Served::open(&address).is_err(), "{mode}: {address}");
+    }
 }
 
 #[test]

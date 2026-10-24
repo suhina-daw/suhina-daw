@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -50,11 +50,7 @@ fn level(signal: &[f32], side: usize, hz: f64) -> f64 {
     2.0 * re.hypot(im) / frames.len().max(1) as f64
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(VinylDistortion::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(VinylDistortion::new());
 
 #[test]
 fn with_every_effect_off_the_input_comes_out_delayed_exactly() {

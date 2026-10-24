@@ -6,7 +6,7 @@ use cssparser::{Parser, ParserInput, Token};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_EXPANSION: usize = 16 * 1024;
-const MAX_VARIABLES: usize = 128;
+const MAX_VARIABLES: usize = 512;
 const MAX_WORK: usize = 131072;
 
 pub(crate) fn resolve(raw: &BTreeMap<String, String>) -> Result<BTreeMap<String, String>, String> {

@@ -1735,10 +1735,10 @@ pub(crate) fn track_gains(project: &Project, track: TrackId) -> Option<(f32, f32
         }
         volume *= gain(master);
     }
-    let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;
+    let (left, right) = suhina_dsp::pan::gains(pan);
     // Scaled so a centred note has unity gain on each side, and quieter overall to leave headroom.
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
-    Some(((angle.cos() * scale) as f32, (angle.sin() * scale) as f32))
+    Some(((left * scale) as f32, (right * scale) as f32))
 }
 
 /// Whether a track whose output passes through `chain` is heard while channels are soloed.
@@ -2779,6 +2779,24 @@ mod tests {
         let monitor = renderer.monitor();
         assert!(monitor.running());
         assert_eq!(monitor.start_beat(), 2.0);
+    }
+
+    /// A jump into a note while playing plays it, whether the marker moves with it
+    /// (`SetPosition`, a click on the ruler) or not (`Locate`).
+    #[test]
+    fn a_jump_into_a_sounding_note_plays_it_either_way() {
+        let beat = SR as usize / 2;
+        let project = notes_around_beat_two();
+        let jumped = |command: LaunchCommand| {
+            let mut renderer = Renderer::new(&project, SR).unwrap();
+            frames(&mut renderer, beat / 2);
+            renderer.handle(command);
+            // A quarter of a beat: the note from beat 2 to 2.5, nothing else.
+            frames(&mut renderer, beat / 4)
+        };
+        let set = jumped(LaunchCommand::SetPosition { beat: 2.25 });
+        assert!(set.iter().any(|s| s.abs() > 0.1), "the note from beat 2 sounds");
+        assert_eq!(max_diff(&set, &jumped(LaunchCommand::Locate { beat: 2.25 })), 0.0);
     }
 
     #[test]

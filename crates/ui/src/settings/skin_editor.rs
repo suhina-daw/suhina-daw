@@ -11,9 +11,101 @@ pub struct State {
     role: String,
     svg: String,
     css: String,
+    /// The sheet the notices below were found in.
     advanced: String,
     notices: Vec<String>,
     error: String,
+    /// Text typed into a declared setting's field, by property, until it is applied.
+    drafts: std::collections::BTreeMap<String, String>,
+}
+
+/// The settings the theme declares itself (`@property` with a label), each with a control for its
+/// type: a colour, a number in its range, a choice of keywords, or text checked against its type.
+pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
+    use suhina_style::registered::{Component, Syntax};
+    if themes.declared.is_empty() {
+        return None;
+    }
+    let mut request = None;
+    ui.label(egui::RichText::new("Theme settings").strong());
+    ui.label(
+        egui::RichText::new("Settings this theme offers. They are saved in the variant in use.")
+            .small()
+            .color(crate::kit::theme::text_secondary()),
+    );
+    let mut group: Option<&str> = None;
+    for property in &themes.declared {
+        if property.group.as_deref() != group {
+            group = property.group.as_deref();
+            if let Some(group) = group {
+                ui.label(egui::RichText::new(group).small().strong());
+            }
+        }
+        let label = property.label.as_deref().unwrap_or(&property.name);
+        let value = themes.values.get(&property.name).cloned().or_else(|| property.initial.clone()).unwrap_or_default();
+        let only = match &property.syntax {
+            Syntax::Alternatives(parts) if parts.len() == 1 && !parts[0].1 => Some(&parts[0].0),
+            _ => None,
+        };
+        let mut next = None;
+        ui.horizontal(|ui| {
+            ui.label(label);
+            match (only, property.syntax.keywords(), property.range) {
+                (Some(Component::Color), _, _) => {
+                    let rgba = match suhina_style::value::Color::parse(&value) {
+                        Ok(suhina_style::value::Color::Rgba(rgba)) => rgba,
+                        _ => [0, 0, 0, 255],
+                    };
+                    let mut color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+                    if ui.color_edit_button_srgba(&mut color).changed() {
+                        next = Some(crate::kit::theme::hex(color));
+                    }
+                }
+                (Some(Component::Number | Component::Integer), _, Some((min, max))) => {
+                    let integer = matches!(only, Some(Component::Integer));
+                    let mut number = value.trim().parse::<f32>().unwrap_or(min).clamp(min, max);
+                    let mut slider = egui::Slider::new(&mut number, min..=max);
+                    if let Some(step) = property.step {
+                        slider = slider.step_by(f64::from(step));
+                    } else if integer {
+                        slider = slider.step_by(1.0);
+                    }
+                    if ui.add(slider).changed() {
+                        next = Some(if integer { format!("{}", number.round() as i64) } else { format!("{number}") });
+                    }
+                }
+                (_, Some(keywords), _) => {
+                    egui::ComboBox::from_id_salt(("theme-setting", &property.name))
+                        .selected_text(value.as_str())
+                        .show_ui(ui, |ui| {
+                            for keyword in keywords {
+                                if ui.selectable_label(value == keyword, keyword).clicked() {
+                                    next = Some(keyword.to_string());
+                                }
+                            }
+                        });
+                }
+                _ => {
+                    let draft = state.drafts.entry(property.name.clone()).or_insert_with(|| value.clone());
+                    let edit = ui.add(egui::TextEdit::singleline(draft).desired_width(200.0));
+                    if edit.lost_focus() {
+                        let typed = draft.trim().to_string();
+                        if property.accepts(&typed) {
+                            next = Some(typed);
+                        } else {
+                            *draft = value.clone();
+                            state.error = format!("{label}: {typed} is not a value of this setting");
+                        }
+                    }
+                }
+            }
+        });
+        if let Some(next) = next.filter(|next| *next != value) {
+            state.drafts.remove(&property.name);
+            request = Some(ThemeRequest::EditValue { name: property.name.clone(), value: next });
+        }
+    }
+    request
 }
 
 pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option<ThemeRequest> {
@@ -21,7 +113,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
         state.current = themes.current.clone();
         state.role.clear();
         state.css.clear();
-        state.advanced = themes.skin.css.as_deref().unwrap_or_default().into();
+        state.drafts.clear();
         state.error.clear();
     }
     let mut request = None;
@@ -94,7 +186,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             }
         });
         ui.collapsing("Native CSS", |ui| {
-            ui.label("Supported: :root colours, Session density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate and image URLs. Right-click the toolbar > Edit interface to move connected elements. Export a theme package for editable artwork and style.css.");
+            ui.label("Settings and layout in the form of earlier versions: :root colours, Session density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in layout.css. Right-click the toolbar > Edit interface to move connected elements.");
             if ui.button("Load compact Session geometry").clicked() { state.css = crate::kit::theme::COMPACT_SESSION_EXAMPLE.into(); }
             if ui.button("Load current style as CSS").clicked() {
                 let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
@@ -112,27 +204,18 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
                 else { state.error = warnings.join("\n"); }
             }
         });
-        ui.collapsing("Advanced CSS (Stylo and Taffy)", |ui| {
-            ui.label("Modern cascade, variables, CSS colours, calc() and viewport media queries style native classes. Flex/Grid lays out toolbar modules (#tempo, #transport, #views) and workspace panels (#panel-browser, #panel-main, #panel-detail). Source is kept in JSON and advanced.css.");
-            ui.label("Connected surfaces paint linear, radial and conic gradients, including repeating forms, and bounded inset/outset box shadows with approximate blur. Shared native text supports bounded text shadows with approximate blur; ordinary egui text still needs integration. Transitions and keyframes animate connected paint properties; turning off animations suppresses them. Transforms and filters are not painted. Registered scopes support siblings, named project objects and native response states; some raw controls still need integration. Toolbar height remains the host's height. Unsupported-effect notices appear when applying CSS.");
-            if ui.button("Load current advanced CSS").clicked() { state.advanced = themes.skin.css.as_deref().unwrap_or_default().into(); }
-            if ui.button("Load dark gloss example").clicked() { state.advanced = crate::kit::theme::GLOSS_EXAMPLE.into(); }
-            if ui.button("Load Flex/Grid example").clicked() {
-                state.advanced = ":root { --ink: rgb(180 220 240); }\n.browser { color: var(--ink); font-size: clamp(10px, 1vw, 14px); }\n.toolbar { display: flex; gap: 8px; }\n#transport { order: -1; }\n@media (max-width: 1000px) { #performance { display: none; } }\n".into();
-            }
-            if ui.button("Load workspace Grid example").clicked() {
-                state.advanced = crate::kit::theme::WORKSPACE_GRID_EXAMPLE.into();
-            }
-            ui.add(egui::TextEdit::multiline(&mut state.advanced).code_editor().desired_rows(10).desired_width(f32::INFINITY));
-            if ui.button("Apply advanced CSS").clicked() {
-                if let Err(error) = crate::kit::native_css::inspect(&state.advanced) { state.error=error; }
-                else {
-                    let mut skin = themes.skin.clone();
-                    skin.css = (!state.advanced.is_empty()).then(|| std::sync::Arc::from(state.advanced.as_str()));
-                    request = Some(ThemeRequest::EditSkin(skin)); state.error.clear();
-                    state.notices=crate::kit::native_css::inspect(&state.advanced).unwrap_or_default().into_iter().map(|notice| format!("Line {}: {} is preserved, but this native painter does not render it yet.",notice.line,notice.property)).collect();
-                }
-            }
+        // The notices are worked out before the heading, so a closed section still says it has some.
+        let sheet = themes.skin.css.as_deref().unwrap_or_default();
+        if state.advanced != sheet {
+            state.advanced = sheet.into();
+            state.notices = crate::kit::native_css::inspect(sheet).unwrap_or_default().into_iter().map(|notice| format!("Line {}, column {}: {}. The rest of the sheet still applies.", notice.line, notice.column, notice.message)).collect();
+        }
+        let heading = match state.notices.len() { 0 => "Theme style sheet".to_string(), 1 => "Theme style sheet (1 notice)".to_string(), n => format!("Theme style sheet ({n} notices)") };
+        egui::CollapsingHeader::new(heading).id_salt("theme-style-sheet").show(ui, |ui| {
+            ui.label("The theme's look is its style sheet, theme.css, in the theme's folder: variables, selectors, @media, gradients, shadows, transitions, Flex and Grid. Edit it in any text editor; Suhina reads it again within a second and never writes it. Settings changed here are saved in a variant (variants/NAME.json), and moved controls in layout.css. A built-in theme's sheet is read-only: Duplicate it to change its CSS.");
+            ui.label("A theme offers its own settings with @property, for example: @property --glow { syntax: \"<number>\"; initial-value: 0.6; label: \"Glow\"; range: 0 1; }. They appear under Theme settings.");
+            if ui.button("Open the themes folder").clicked() { request = Some(ThemeRequest::OpenFolder); }
+            if state.notices.is_empty() { ui.label("The sheet reads without notices."); }
             for notice in &state.notices { ui.label(notice); }
         });
         if !state.error.is_empty() { ui.colored_label(crate::kit::theme::recording(), &state.error); }

@@ -18,7 +18,8 @@
 //! volume. The delay lengths, tap pattern and constants are this device's own.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::{Allpass, Biquad, Coefficients, DelayLine, FirstOrder, FirstOrderCoefficients, Smoother};
@@ -314,9 +315,6 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 /// What the reverb is and the parameters it has.
 pub const INFO: DeviceInfo = DeviceInfo { id: "reverb", name: "Reverb", role: Role::Effect, params: &PARAMS };
 
-/// Sample rate assumed until [`Device::prepare`] gives one.
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 /// What the control-rate update works out for the taps and lines.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Tuning {
@@ -570,7 +568,7 @@ pub struct Reverb {
     /// The sample rate it was prepared for.
     sample_rate: f64,
     /// Every parameter's value, in [`param`] order.
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// Values that ramp to their settings.
     ramps: Ramps<Smoother>,
     /// Low Cut, a first-order low shelf.
@@ -699,7 +697,7 @@ impl Reverb {
         let sr = DEFAULT_SAMPLE_RATE;
         let mut reverb = Self {
             sample_rate: sr,
-            values: PARAMS.map(|p| p.default),
+            params: ParamBank::new(&PARAMS),
             ramps: Ramps::splat(Smoother::new(0.0, 1)),
             low_cut: FirstOrder::default(),
             rumble: FirstOrder::default(),
@@ -737,12 +735,12 @@ impl Reverb {
 
     /// The value of parameter `index`, 0.0 for an unknown one.
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     /// Whether switch `index` is on.
     fn on(&self, index: usize) -> bool {
-        self.value(index) >= 0.5
+        self.params.on(index)
     }
 
     /// Whether Freeze is on.
@@ -959,9 +957,9 @@ impl Device for Reverb {
 
     /// Sets parameter `index`, clamped to its range; the ramped values move to it.
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        if self.params.set(index, value).is_none() {
+            return;
+        }
         let targets = self.targets();
         self.ramps.each(&targets, |smoother, target| smoother.set_target(target));
         self.dirty = true;
@@ -969,7 +967,7 @@ impl Device for Reverb {
 
     /// The value of parameter `index`, or `None` for an unknown one.
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     /// Runs interleaved stereo `buffer` through the reverb in place.

@@ -1,8 +1,6 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance;
-
 use super::*;
 
 const SR: f64 = 48_000.0;
@@ -33,11 +31,7 @@ fn gain_at(eq: &mut DjEq, hz: f64) -> f64 {
     (tail.iter().map(|&s| f64::from(s) * f64::from(s)).sum::<f64>() / tail.len() as f64 * 2.0).sqrt()
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(DjEq::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(DjEq::new());
 
 #[test]
 fn defaults_have_a_flat_response() {

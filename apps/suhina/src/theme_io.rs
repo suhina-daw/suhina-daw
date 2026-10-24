@@ -24,6 +24,8 @@ pub struct Reply {
     pub folder: Option<String>,
     pub select: Option<String>,
     pub notices: Vec<Result<String, String>>,
+    /// The user's style sheet when it changed: `Some(None)` once it is removed.
+    pub user_css: Option<Option<std::sync::Arc<str>>>,
 }
 
 pub struct ThemeIo {
@@ -197,6 +199,9 @@ fn execute(files: &mut ThemeFiles, actions: Vec<FileAction>) -> Reply {
             }
             FileAction::OpenFolder => files.open_folder().map(|()| None),
             FileAction::Backup => files.backup().map(|path| Some(crate::saved(&path, "Backed up the themes to"))),
+            FileAction::ExportPackage { id, theme } => files
+                .export_package(&id, &theme)
+                .map(|path| Some(crate::saved(&path, &format!("Exported {} to", theme.name)))),
             FileAction::ExportTemplate => {
                 files.export_template().map(|path| Some(crate::saved(&path, "Saved the theme template to")))
             }
@@ -220,12 +225,27 @@ fn execute(files: &mut ThemeFiles, actions: Vec<FileAction>) -> Reply {
             Err(error) => reply.notices.push(Err(error)),
         }
     }
-    let (entries, warnings) = if reply.replace { files.read_all() } else { files.changed() };
+    // A theme deleted or renamed on disk leaves the list only when it is read again whole.
+    if !reply.replace && files.gone() {
+        reply.replace = true;
+    }
+    let (mut entries, mut warnings) = if reply.replace { files.read_all() } else { files.changed() };
+    // A theme read again may have lost a variant (its file deleted): the list is read whole, so
+    // the variant's card goes with it rather than staying in use.
+    if !reply.replace && !entries.is_empty() {
+        reply.replace = true;
+        (entries, warnings) = files.read_all();
+    }
     if reload && warnings.is_empty() {
         reply.notices.push(Ok(format!("Read {} theme files", entries.len())));
     }
     reply.entries = entries;
     reply.notices.extend(warnings.into_iter().map(Err));
+    match files.user_css(reply.replace) {
+        Some(Ok(css)) => reply.user_css = Some(css.map(std::sync::Arc::from)),
+        Some(Err(error)) => reply.notices.push(Err(error)),
+        None => {}
+    }
     reply
 }
 
@@ -326,7 +346,7 @@ mod tests {
         assert_eq!(io.pending.len(), 1);
         assert!(!root.exists(), "queueing must not do file I/O on the caller");
         io.finish();
-        assert!(std::fs::read_to_string(root.join("test.json")).unwrap().contains("sample-100"));
+        assert!(std::fs::read_to_string(root.join("test/theme.css")).unwrap().contains("sample-100"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

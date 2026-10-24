@@ -371,21 +371,10 @@ fn fits(found: &Found, category: Category) -> bool {
     }
 }
 
-/// Searches as `library.search` does; the window's results come from here too.
-pub fn search_items(
-    projects: &mut Projects,
-    text: &str,
-    category: Category,
-    place: Option<&str>,
-    tags: &[String],
-    limit: usize,
-) -> Result<Vec<Found>, CommandError> {
-    let limit = if limit == 0 { suhina_library::MAX_RESULTS } else { limit.min(suhina_library::MAX_RESULTS) };
-    let words = suhina_library::words(text);
-    let tagged =
-        |library: &mut Library, key: &str| tags.is_empty() || library.item_tags(key).iter().any(|t| tags.contains(t));
-    // Pins and recent items are lists of keys, kept in their order.
-    let listed: Option<Vec<String>> = match place {
+/// The keys a place that is a list holds, in its order: `pinned`, `recent:all` or
+/// `recent:<group>`; `None` for every other place (a folder, or everything).
+pub(crate) fn listed_keys(projects: &mut Projects, place: Option<&str>) -> Result<Option<Vec<String>>, CommandError> {
+    Ok(match place {
         Some("pinned") => Some(projects.file_library_mut().pinned()),
         // Every group's recent items, each group in its own order, an item once (#711).
         Some("recent:all") => {
@@ -405,8 +394,23 @@ pub fn search_items(
             Some(projects.file_library_mut().recent(group))
         }
         _ => None,
-    };
-    if let Some(keys) = listed {
+    })
+}
+
+/// Searches as `library.search` does; the window's results come from here too.
+pub fn search_items(
+    projects: &mut Projects,
+    text: &str,
+    category: Category,
+    place: Option<&str>,
+    tags: &[String],
+    limit: usize,
+) -> Result<Vec<Found>, CommandError> {
+    let limit = if limit == 0 { suhina_library::MAX_RESULTS } else { limit.min(suhina_library::MAX_RESULTS) };
+    let words = suhina_library::words(text);
+    let tagged =
+        |library: &mut Library, key: &str| tags.is_empty() || library.item_tags(key).iter().any(|t| tags.contains(t));
+    if let Some(keys) = listed_keys(projects, place)? {
         let mut out = Vec::new();
         for key in keys {
             let Some(item) = Item::parse(&key) else { continue };

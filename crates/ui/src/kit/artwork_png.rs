@@ -28,6 +28,46 @@ pub fn decode(source: &str) -> Result<image::RgbaImage, String> {
     reader(&bytes).decode().map(|image| image.to_rgba8()).map_err(|error| format!("invalid artwork PNG: {error}"))
 }
 
+/// A background PNG brought within the theme's limits: one larger than 8 MiB or 4 megapixels (a
+/// 4K wallpaper) is scaled down to fit 2560 by 1600 and written again; one already within them is
+/// kept as it is. Up to 64 MiB and 8192 pixels a side are read.
+pub fn fit_background(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    const MAX_FILE: usize = 64 * 1024 * 1024;
+    if bytes.len() > MAX_FILE || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("the background must be a PNG of at most 64 MiB".into());
+    }
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(300 * 1024 * 1024);
+    reader.limits(limits.clone());
+    let within = bytes.len() <= super::skin::MAX_PNG;
+    let (width, height) = match reader.into_dimensions() {
+        Ok(size) => size,
+        // Within the limits it is kept as it was; drawing it says when it does not read.
+        Err(_) if within => return Ok(bytes.to_vec()),
+        Err(error) => return Err(format!("the background PNG does not read: {error}")),
+    };
+    if within && u64::from(width) * u64::from(height) <= 4 * 1024 * 1024 {
+        return Ok(bytes.to_vec());
+    }
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+    reader.limits(limits);
+    let image = reader.decode().map_err(|error| format!("the background PNG does not read: {error}"))?;
+    let scale = (2560.0 / f64::from(width)).min(1600.0 / f64::from(height)).min(1.0);
+    let (w, h) =
+        (((f64::from(width) * scale).round() as u32).max(1), ((f64::from(height) * scale).round() as u32).max(1));
+    let small = image.resize(w, h, image::imageops::FilterType::Triangle).to_rgb8();
+    let mut out = Cursor::new(Vec::new());
+    small.write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+    let out = out.into_inner();
+    if out.len() > super::skin::MAX_PNG {
+        return Err("the background is too large even when scaled down".into());
+    }
+    Ok(out)
+}
+
 pub fn raster(source: &str, width: u32, height: u32) -> Option<egui::ColorImage> {
     let image = decode(source).ok()?;
     let pixels = image::imageops::resize(

@@ -66,6 +66,18 @@ impl ManagerState {
     }
 }
 
+/// The plug-ins a right-click on the row of `spec` turns off or on: the picked ones the list
+/// shows (`order`), when that row is one of them, in the order they were picked; else that row
+/// alone. A picked row the search hides, or a rescan removed, is left alone.
+fn batch(picked: &[String], spec: &str, order: &[String]) -> Vec<String> {
+    if picked.iter().any(|s| s == spec) {
+        let shown: std::collections::HashSet<&str> = order.iter().map(String::as_str).collect();
+        picked.iter().filter(|s| shown.contains(s.as_str())).cloned().collect()
+    } else {
+        vec![spec.to_string()]
+    }
+}
+
 /// What a row stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -173,9 +185,13 @@ pub struct ManagerOut {
 
 /// Draws the manager over `area`.
 pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
+    // `.plugin-manager` styles it; its buttons and fields take the sheet's `.button` and `.text-input`.
+    let _style = crate::kit::style_class::enter("plugin-manager");
+    let mut styled_ui = crate::kit::style_class::ui(ui);
+    let ui = &mut *styled_ui;
     let mut out = ManagerOut::default();
     let painter = ui.painter_at(area);
-    painter.fill_background(area, 0.0, theme::window_background());
+    crate::kit::native_css::surface(&painter, area, 0.0, theme::window_background());
     let inner = area.shrink(2.0 * PAD);
     let small = theme::ui_font(theme::TEXT_SMALL);
 
@@ -324,8 +340,9 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                     if row.secondary_clicked() && !picked.contains(spec) {
                         pick = Some((spec.clone(), false, false));
                     }
-                    let these: Vec<String> = if picked.contains(spec) { picked.clone() } else { vec![spec.clone()] };
+                    // Worked out only while the menu is open, not for every row every frame.
                     row.context_menu(|ui| {
+                        let these = batch(&picked, spec, &order);
                         let what =
                             if these.len() > 1 { format!("{} plug-ins", these.len()) } else { "the plug-in".into() };
                         if ui.add_enabled(!scanning, egui::Button::new(format!("Turn off {what}"))).clicked() {
@@ -427,6 +444,16 @@ mod tests {
         assert_eq!(state.picked, ["a", "b"], "Shift takes the run from the row clicked last");
         state.pick("c", false, false, &order);
         assert_eq!(state.picked, ["c"], "a plain click picks that row only");
+    }
+
+    #[test]
+    fn a_right_click_turns_the_picked_rows_in_view_on_or_off() {
+        let strings = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let picked = strings(&["b", "gone", "d", "hidden"]);
+        // The search shows a to d; "hidden" is out of it, "gone" went in a rescan.
+        let order = strings(&["a", "b", "c", "d"]);
+        assert_eq!(batch(&picked, "d", &order), ["b", "d"]);
+        assert_eq!(batch(&picked, "c", &order), ["c"], "a row not picked: that one alone");
     }
     use crate::settings::settings_view::PluginRow;
 

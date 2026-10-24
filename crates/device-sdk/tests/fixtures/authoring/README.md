@@ -1,6 +1,7 @@
 # Authoring compatibility fixtures
 
-These are Suhina's own filter, auto-pan and Delay example outputs, captured at
+These are the SDK's filter, auto-pan and Delay example outputs (`crates/device-sdk/examples/`;
+not the built-in Auto Pan of `devices/auto-pan` or the built-in Delay of `devices/delay`), captured at
 642da86 before migrating their authoring APIs for #675. JSON whitespace is compacted;
 all graph, parameter and panel fields are retained. They are not stock definitions.
 

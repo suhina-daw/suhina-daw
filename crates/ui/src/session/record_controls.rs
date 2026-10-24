@@ -28,6 +28,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
     let response = widgets::button_area(ui, rect, Id::new("record"), label);
     let _style = crate::kit::style_class::enter_named_response("button", "record", &response);
+    crate::kit::native_css::mark(crate::kit::native_css::HostState::Recording, recording);
     if response.clicked() {
         actions.push(Action::new("transport.record", json!({ "on": !recording })));
     }
@@ -80,11 +81,10 @@ pub fn metronome_button(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-    let _style = crate::kit::style_class::enter_named_response("button", "metronome-toggle", &response);
+    let style = crate::kit::style_class::enter_named_response("button", "metronome-toggle", &response);
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    metronome_level(ui, &response, rect, (on, db), actions);
     response.context_menu(|ui| {
         for choice in suhina_engine::ClickSound::ALL {
             let name = match choice {
@@ -106,6 +106,10 @@ pub fn metronome_button(
         rect,
         crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), lit)),
     );
+    drop(style);
+    // The level's slider is a popup of its own (`#metronome-level`), not part of the button.
+    let _popup = crate::kit::style_class::enter_named("popup", "metronome-level");
+    metronome_level(ui, &response, rect, (on, db), actions);
 }
 
 /// While the metronome's button (`response`, in `button`) is held: its level's slider beside it,

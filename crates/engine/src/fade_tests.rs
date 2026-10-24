@@ -115,6 +115,12 @@ fn golden_dir() -> PathBuf {
 /// Compares `render` with the golden file `name`, little-endian f32. With `SUHINA_BLESS=1` the
 /// file is written instead (see tests/golden/README.md).
 pub(crate) fn assert_golden(name: &str, render: &[f32]) {
+    assert_golden_within(name, render, 1e-6);
+}
+
+/// [`assert_golden`] with a tolerance of `tolerance`, for renders whose DSP is not bit-exact across
+/// platforms (the time-stretcher's floating-point maths).
+pub(crate) fn assert_golden_within(name: &str, render: &[f32], tolerance: f32) {
     let path = golden_dir().join(format!("{name}.f32"));
     if std::env::var_os("SUHINA_BLESS").is_some() {
         let bytes: Vec<u8> = render.iter().flat_map(|s| s.to_le_bytes()).collect();
@@ -125,7 +131,7 @@ pub(crate) fn assert_golden(name: &str, render: &[f32]) {
     let golden: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
     assert_eq!(golden.len(), render.len(), "{name}: length differs from the golden file");
     let worst = max_diff(&golden, render);
-    assert!(worst < 1e-6, "{name}: differs from the golden file by {worst}");
+    assert!(worst < tolerance, "{name}: differs from the golden file by {worst}");
 }
 
 /// A 2-beat clip (1 s) with `fade_in` and `fade_out` beats, rendered offline: the left channel.

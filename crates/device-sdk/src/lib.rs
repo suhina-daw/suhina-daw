@@ -4,8 +4,9 @@
 //! Build, validate, save, and run data-only Suhina device graphs (`.sd`).
 //!
 //! Version 4 separates device revisions from the file format version; version 5 adds an
-//! optional expanded panel. A validated graph compiles off the audio thread into a processor
-//! whose `process` method performs no allocation. File versions 1 through 5 remain readable.
+//! optional expanded panel; version 6 a panel style sheet. A validated graph compiles off the
+//! audio thread into a processor whose `process` method performs no allocation. File versions
+//! 1 through 6 remain readable.
 
 use std::fmt;
 use std::io::Read;
@@ -29,9 +30,11 @@ pub use suhina_device_api::ProcessContext;
 
 pub const EXTENSION: &str = "sd";
 pub const FORMAT: &str = "suhina-device";
-/// The newest file version this crate reads. A file is written as version 4 unless it needs
-/// version 5 (an expanded panel), so an older Suhina still opens it.
-pub const VERSION: u32 = 5;
+/// The newest file version this crate reads. A file is written as the oldest version that holds
+/// it: 4, 5 with an expanded panel, 6 with a panel style sheet, so an older Suhina still opens it.
+pub const VERSION: u32 = 6;
+/// The version a file with an expanded panel and no panel style sheet is written as.
+const EXPANDED_VERSION: u32 = 5;
 /// The version a file without an expanded panel is written as.
 const COMPACT_VERSION: u32 = 4;
 pub const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
@@ -417,6 +420,9 @@ impl DeviceGraph {
         if file.version < 5 && file.device.expanded.is_some() {
             return Err(DeviceSdkError("an expanded panel requires .sd version 5".into()));
         }
+        if file.version < 6 && file.device.ui.iter().chain(file.device.expanded.iter()).any(|ui| ui.style.is_some()) {
+            return Err(DeviceSdkError("a panel style sheet requires .sd version 6".into()));
+        }
         if file.version == 1
             && (file
                 .nodes
@@ -649,7 +655,13 @@ impl From<&DeviceGraph> for FileV1 {
             .collect();
         Self {
             format: FORMAT.into(),
-            version: if graph.expanded.is_some() { VERSION } else { COMPACT_VERSION },
+            version: if graph.ui.iter().chain(graph.expanded.iter()).any(|ui| ui.style.is_some()) {
+                VERSION
+            } else if graph.expanded.is_some() {
+                EXPANDED_VERSION
+            } else {
+                COMPACT_VERSION
+            },
             device: DeviceV1 {
                 ui: graph.ui.clone(),
                 expanded: graph.expanded.clone(),
@@ -849,6 +861,25 @@ mod tests {
         assert_eq!(json["version"], 4, "a file without an expanded panel stays version 4");
         assert_eq!(json["device"]["version"], 1);
         assert_eq!(DeviceGraph::from_sd(&encoded), Ok(old));
+    }
+
+    #[test]
+    fn a_panel_style_sheet_round_trips_as_version_6_and_older_versions_refuse_it() {
+        let mut graph = gain_graph();
+        let style = "#gain { color: #ff8800; }\n";
+        graph.ui = Some(ui::DeviceUi { style: Some(style.into()), ..ui::DeviceUi::default() });
+        let encoded = graph.to_sd().unwrap();
+        let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(json["version"], 6);
+        assert_eq!(json["device"]["ui"]["style"], style);
+        assert_eq!(DeviceGraph::from_sd(&encoded), Ok(graph.clone()));
+        assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 6", "\"version\": 5")).is_err());
+        // Without a style sheet the file stays version 4, and the key is not written.
+        let plain = gain_graph().to_sd().unwrap();
+        assert!(!plain.contains("\"style\""));
+        let mut huge = graph;
+        huge.ui = Some(ui::DeviceUi { style: Some("a".repeat(ui::MAX_STYLE_BYTES + 1)), ..ui::DeviceUi::default() });
+        assert!(huge.validate().is_err());
     }
 
     #[test]

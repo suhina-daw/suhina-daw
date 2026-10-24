@@ -1,5 +1,7 @@
-# The labels .github/workflows/pr-labels.yml adds to a pull request (actions/labeler). It only
-# adds them: a label taken off by hand stays off until the files or the branch name match again.
+# The labels .github/workflows/pr-labels.yml keeps on a pull request (actions/labeler): at every
+# push it adds the ones that match and takes off the ones listed here that no longer match, so a
+# pull request whose files changed (a rebase, a stack moved) does not keep the areas of its past.
+# Labels not listed here (test-build, ready to merge, ...) are left alone.
 
 # The kind of change, from the branch name (AGENTS.md › Tasks › Branch names).
 enhancement:

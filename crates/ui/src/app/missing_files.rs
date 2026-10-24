@@ -484,6 +484,22 @@ mod tests {
         assert!(!missing.bar_shows());
     }
 
+    /// A sampler inside a device group names its file as one on the track does: changing it
+    /// changes the key the list is rebuilt by.
+    #[test]
+    fn a_grouped_sampler_s_file_is_in_the_key() {
+        use suhina_engine::model::{Branch, Device, DeviceGroup, DeviceKind};
+        let mut project = crate::demo::demo_project();
+        let sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+        let mut branch = Branch::new("Branch 1");
+        branch.devices.push(sampler);
+        project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(vec![branch])));
+        let before = super::audio_files_key(&project);
+        let group = project.channels[0].devices.last_mut().and_then(Device::as_group_mut).unwrap();
+        group.branches[0].devices[0].set_sample_file("samples/Kick.wav");
+        assert_ne!(super::audio_files_key(&project), before);
+    }
+
     #[test]
     fn a_folder_walk_runs_in_the_background() {
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
@@ -565,7 +581,8 @@ mod look {
 fn audio_files_key(project: &suhina_engine::model::Project) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for device in project.channels.iter().flat_map(|c| &c.devices) {
+    // Inside device groups too: a grouped sampler's file is one the project names.
+    for (_, device) in project.channels.iter().flat_map(|c| suhina_engine::model::walk_devices(&c.devices)) {
         device.sample_file().hash(&mut hasher);
         device.sample_absolute_file().hash(&mut hasher);
     }

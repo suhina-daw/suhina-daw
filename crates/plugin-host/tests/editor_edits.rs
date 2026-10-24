@@ -168,8 +168,10 @@ fn the_nonblocking_quit_check_notices_a_processor_change_without_an_editor() {
 #[test]
 fn periodic_reads_notice_a_processor_change_without_an_editor() {
     let (mut session, _renderer) = processor_change("clap");
-    // The production cadence is 30 seconds; neither a save nor a quit check may help here.
-    let deadline = Instant::now() + Duration::from_secs(70);
+    // The production cadence is 30 seconds; a shorter one tests the same reads. Neither a save
+    // nor a quit check may help here.
+    session.set_plugin_read_interval(Duration::from_millis(200));
+    let deadline = Instant::now() + PATIENT;
     while !session.has_unsaved_changes() {
         session.sync_plugins();
         assert!(Instant::now() < deadline, "periodic reads must notice the changed state");

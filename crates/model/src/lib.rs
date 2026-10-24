@@ -163,7 +163,7 @@ pub enum InputChannels {
     Stereo(u16),
 }
 
-/// When a track's audio input is heard through it.
+/// When a track's live input is heard through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Monitor {
     /// While the track is armed.
@@ -178,13 +178,14 @@ pub enum Monitor {
 /// The highest audio input channel a track can name.
 pub const MAX_INPUT_CHANNEL: u16 = 256;
 
-/// Which MIDI controllers a track hears while it is armed: a port, or every one, or none, and
-/// one channel or every one.
+/// Which MIDI controllers a track records and monitors: a port, or every one, or none,
+/// one channel or every one, and when the live input is heard.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MidiInput {
     pub port: MidiPort,
     /// 1 to 16, or `None` for every channel.
     pub channel: Option<u8>,
+    pub monitor: Monitor,
 }
 
 /// The MIDI input port a track hears.
@@ -1183,13 +1184,13 @@ impl Project {
     /// left out), so it always ends.
     pub fn ancestors(&self, track: TrackId) -> Vec<TrackId> {
         let mut out = Vec::new();
-        let mut next = self.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+        let mut next = self.track(track).and_then(|t| t.parent);
         while let Some(id) = next {
             if id == track || out.contains(&id) || out.len() > self.tracks.len() {
                 break;
             }
             out.push(id);
-            next = self.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+            next = self.track(id).and_then(|t| t.parent);
         }
         out
     }
@@ -1198,13 +1199,13 @@ impl Project {
     /// back to a track already passed, a cycle a valid project never has.
     pub fn group_depth(&self, track: TrackId) -> Option<usize> {
         let mut seen = vec![track];
-        let mut next = self.tracks.iter().find(|t| t.id == track).and_then(|t| t.parent);
+        let mut next = self.track(track).and_then(|t| t.parent);
         while let Some(id) = next {
             if seen.contains(&id) {
                 return None;
             }
             seen.push(id);
-            next = self.tracks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+            next = self.track(id).and_then(|t| t.parent);
         }
         Some(seen.len() - 1)
     }

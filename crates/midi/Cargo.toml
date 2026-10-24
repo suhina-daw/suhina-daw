@@ -9,6 +9,8 @@ rust-version.workspace = true
 [dependencies]
 suhina-engine.workspace = true
 suhina-session.workspace = true
+# The trace log (`suhina --trace`, docs/debugging.md).
+suhina-plugins.workspace = true
 # MIDI input ports: ALSA sequencer on Linux, WinMM on Windows, CoreMIDI on macOS.
 midir.workspace = true
 

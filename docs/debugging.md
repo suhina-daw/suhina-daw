@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-10-23
 covers:
   - apps/suhina/src/liquid.rs
   - apps/suhina/src/main.rs
@@ -62,13 +62,17 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 
 | Line starts with | Written by | When |
 |---|---|---|
-| `action <command> <params>` | app (`App::run`) | every command the window runs, with its parameters |
+| `action <command> <params>` | app (`App::run`) | every command the window runs, with its parameters; the `projects.*` ones (switching and closing tabs) too |
+| `project opened <id> "<name>" in a new tab` / `… in place of <id>` | app (`App::open_project`) | a project opened, created or recovered, in a tab of its own or in place of the one it closed; opening is no command (ADR 0007), so it has no `action` line |
 | `detail: …` | app | the detail area's state when it changes: the ARA editor shown, pulled to the top, focus |
 | `rack starts / started / stops / rebinds key …` | app (`session/src/rack.rs`) | a plug-in starting, its result, stopping, loaded again with an ARA document |
 | `host process started / connected after …` | app (`plugins/src/lib.rs`) | a host process starting and how long until it answers |
 | `placement sent …` / `placement waits` | app | an embedded editor's placement going to its host |
 | `app gets ara notes for clip-N: count` | app | notes an ARA plug-in found, taken in |
 | `app: ara position S -> beat B` | app | an ARA plug-in's click in its timeline, as the transport takes it |
+| `midi in <port>: [bytes] read as …` | app (`crates/midi`) | every MIDI message from a controller but notes (wheels, knobs, pedals, pressure), and what it was read as (`None`: ignored) |
+| `vst3 midi mapping: …` | host (`vst3_events.rs`) | a VST3 plug-in starting: how many controllers its `IMidiMapping` maps and to which parameter the mod wheel, aftertouch and pitch bend go, or that it has none (then it cannot be sent controllers at all) |
+| `vst3 events N: notes …, controllers …, bends …, pressure …; mapped …, last …` | host (`vst3.rs`) | once a second of audio, when instance N was given any: how many notes, controllers, pitch bends and pressure messages reached it, how many its `IMidiMapping` turned into parameter changes, and the last of those (id, value) |
 | `host up, connecting` / `host connected` | host | the host process starting |
 | `host gets <message>` / `host sends <message>` | host (`plugin-host/src/main.rs`) | every control message in and out, cut to 300–400 characters |
 | `host unloads N` / `host unloaded N in …` | host | an instance let go of, and how long it took |
@@ -221,8 +225,10 @@ screen (OBS, ShareX or the like) while you reproduce the bug, then:
 python scripts/video_frames.py extract bug.mp4 frames --fps 6
 python scripts/video_frames.py extract bug.mp4 full --fps 24 --from 21 --to 30
 
-# A contact sheet: a run of frames in one image, each with its number and second.
+# A contact sheet: a run of frames in one image, each with its number and second. Frames
+# extracted with --from (and --fps) are given the same, so the seconds are the video's.
 python scripts/video_frames.py sheet frames overview.jpg --every 3 --cols 10 --size 320x180
+python scripts/video_frames.py sheet full detail.jpg --first 1 --last 12 --fps 24 --from 21
 
 # The same part of each frame at full size: the clip, the plug-in's timeline.
 python scripts/video_frames.py sheet frames clip.jpg --first 130 --last 150 --cols 3 --size 640x210 --crop 760,520,1920,900
@@ -230,7 +236,7 @@ python scripts/video_frames.py sheet frames clip.jpg --first 130 --last 150 --co
 # Where thin vertical lines are in a strip of each frame, printed when they change: a playhead,
 # an insert marker. --scale turns pixels into bars (pixels a bar, a pixel x and the bar there),
 # --pointer follows the mouse in a band (the ruler).
-python scripts/video_frames.py track full --strip 800,1700,740,746 --fps 24 --scale 99.5,806,4 --pointer 528,550
+python scripts/video_frames.py track full --strip 800,1700,740,746 --fps 24 --from 21 --scale 99.5,806,4 --pointer 528,550
 ```
 
 `track` printed this for the Melodyne playhead bug: after each click the line went to the new
@@ -239,7 +245,7 @@ DAW never went back.
 
 ```text
   23.04s frame   50  lines=[7.05]  pointer=7.09
-  23.09s frame   51  lines=[7.57]  pointer=7.09
+  23.08s frame   51  lines=[7.57]  pointer=7.09
   23.21s frame   54  lines=[7.05]  pointer=7.09
 ```
 

@@ -3,7 +3,7 @@ description: How third-party plug-ins are hosted out of process (process model, 
 read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC, shared memory, unsafe, plug-in crash, scanning, plug-in editor
 type: decision
 status: current
-last_verified: 2026-10-22
+last_verified: 2026-10-23
 covers:
   - crates/ipc/**
   - crates/plugins/**
@@ -128,19 +128,22 @@ workspace forbids.
      a sequence number), the audio buffers sized for the largest block, and lock-free rings of
      note and parameter events with sample offsets, so automation stays sample-accurate.
      *Built:* each block carries up to 1024 events (note on and off, MIDI controller, pitch
-     bend, parameter value) as fixed 16-byte records with their frame (`crates/ipc/src/events.rs`, region
-     version 2; version 3 adds the block's followers, decision 2); the host reads them into a
-     list made beforehand, so neither side allocates. Two more kinds carry the song: `Transport`
-     (playing, position in samples) and `Tempo`, sent with every block to a plug-in that follows
-     the song (one loaded with an ARA document, [ADR 0028](0028-ara-hosting.md)), which a VST3
-     host puts in the block's process context.
-     A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers
-     and pitch bend as parameter changes at their frame through the plug-in's `IMidiMapping`
-     (asked for the first MIDI channel only: some plug-ins crash when asked about the second); a
-     CLAP host sends note events to note port 0 and controllers and bend as MIDI messages, and
-     gives a plug-in without audio inputs (an instrument) no input port. A parameter event
-     (automation) reaches a VST3 processor as a parameter change at its frame and a CLAP plug-in
-     as a parameter event at its frame.
+     bend, channel pressure, parameter value) as fixed 16-byte records with their frame
+     (`crates/ipc/src/events.rs`, region version 2; version 3 adds the block's followers,
+     decision 2); the host reads them into a list made beforehand, so neither side allocates.
+     Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
+     with every block to a plug-in that follows the song (one loaded with an ARA document,
+     [ADR 0028](0028-ara-hosting.md)), which a VST3 host puts in the block's process context.
+     A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
+     pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
+     through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
+     crash when asked about the second), and gives the latest value of each to the edit
+     controller as well (`setParamNormalized`, on the main thread between messages), so the
+     plug-in's editor shows a wheel moved on the hardware; a CLAP host sends note events to note port 0 and
+     controllers, bend and channel pressure as MIDI messages, and gives a plug-in without audio
+     inputs (an instrument) no input port. A parameter event (automation) reaches a VST3
+     processor as a parameter change at its frame and a CLAP plug-in as a parameter event at its
+     frame.
      *Built (#109):* the engine sends them. A plug-in slot plans each block's parameter events
      before any of the block runs (`crates/engine/src/plugin_params.rs`): the values the project
      sets on the device (`Device::params`, by parameter id, in the plug-in's own range) at the
@@ -155,6 +158,37 @@ workspace forbids.
      parameter to the next. Nothing allocates on the audio thread: each slot has room for 512
      events a block. Values go to the processor only, so a VST3 plug-in's editor does not move
      with its automation yet.
+   - **Where the shared memory lives, and who frees it.** The engine's side makes each region
+     (a link's, or an ARA audio source's, ADR 0028) and the host opens it by an address; the
+     operating system frees it when both have let go of it, however they end, so a crash or a
+     kill leaves nothing (`crates/ipc/src/shm.rs`, #805):
+     - *Windows:* a mapping backed by the page file, named `Local\suhina-ipc-<pid>-<n>-<nanos>`
+       (`suhina-ara-…` for a source) in the session's namespace, like the doorbells. The address
+       is the name; the host opens it with `OpenFileMappingW`. Nothing is written to `%TEMP%`.
+     - *Linux:* a `memfd` (`memfd_create`, closed on exec). The address is
+       `/proc/<engine pid>/fd/<n>#<token>`, which the host opens as a path while the engine holds
+       it; the token is part of the memfd's name, and the host checks that the path is exactly
+       the memfd `/memfd:suhina-<kind>-<token>`, so a descriptor number the engine closed and
+       reused for another region never opens as the old one. Nothing is written to `/dev/shm`.
+     - *macOS (and other Unix systems):* a file in the temporary folder,
+       `suhina-ipc-<pid>@<start>-<n>`, where `<start>` is the process's start time. A link's file
+       loses its name as soon as the host has answered the load that named it (the host never
+       opens a link twice); a source's keeps it until the engine drops the source, because a
+       restarted host opens the same sources again. The file of a process that crashed before
+       then is removed by the first region the next Suhina process makes (`crates/ipc/src/sweep.rs`):
+       a pid and a start time name one process for good, so a file goes when no process has that
+       pid with that start time, with no lock files, and a live process's files are never taken
+       for a gone one's.
+
+     The same sweep removes files that earlier versions left on every system
+     (`suhina-ipc-<pid>-<n>-<nanos>` in `/dev/shm` or the temporary folder, and the
+     `suhina-ipc-<pid>.lock` files of a first fix's test builds) once no process has their pid. It never errors and never runs on the audio thread; a file it cannot remove is
+     left for the next start. *Limits:* on Windows a region counts against the commit limit (RAM
+     and page file) while it lives, as a source of several hours does; on macOS an ARA source's file
+     stays in the temporary folder for as long as the engine holds the source, by design, so a
+     restarted host can open it again, and a crash between making a link and the host's answer,
+     or while a source lives, leaves a file until the next Suhina process starts; an earlier version's file whose pid another process has taken stays
+     until that process ends.
    - **Messages** over a local socket or pipe, with a versioned protocol: load and unload,
      state save and load, latency changes, editor open and close, ping. *Built:* protocol
      version 12 (`ara_playback` comes unasked when an ARA plug-in asks the transport to play,
@@ -303,7 +337,12 @@ workspace forbids.
    the instance stays on the host's main thread (with the plug-in's main-thread callbacks), the
    started audio processor on its audio thread. Every audio port the plug-in declares gets a
    buffer with the channels it declared (a plug-in may read them all, and one given fewer can
-   crash, #327); the link's stereo goes through the main ports and the rest get silence. A
+   crash, #327); the link goes through the main ports and the rest get silence, by one channel
+   rule for both formats (`audio::feed_main` and `audio::collect_main` in
+   `crates/plugin-host/src/audio.rs`, #767): a channel of the main input the link has none for
+   repeats the link's last channel, so a mono source reaches both sides of a stereo input; a
+   channel of the link the main output has none for repeats the output's last, so a mono output
+   reaches both sides of a stereo link. A
    plug-in is named `clap:<file>` or
    `clap:<file>#<id>`; the only `unsafe` the host needs for it is opening the file. A CLAP gain
    built into the host (`test:clap`, made with `clack-plugin`) lets the tests run the whole path
@@ -313,7 +352,7 @@ workspace forbids.
    thread (connected through their connection points, the controller given the component's
    state; the host makes the messages and attribute lists they send each other,
    `IHostApplication::createInstance` in `crates/plugin-host/src/vst3_message.rs`, without which
-   some plug-ins crash as soon as they are connected and others when given a state), `setProcessing` and `process` on the audio thread, stereo on the main buses and
+   some plug-ins crash as soon as they are connected and others when given a state), `setProcessing` and `process` on the audio thread, the link on the main buses (by the rule above) and
     silent buffers for any other bus. A plug-in is named `vst3:<bundle or file>[#<class id>]`;
     in a bundle, the executable is looked up per system: `Contents/<arch>-win/<name>` on Windows,
     `Contents/x86_64-linux/<stem>.so` on Linux, and on macOS in `Contents/MacOS` (the file named

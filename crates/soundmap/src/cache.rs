@@ -14,7 +14,8 @@
 //! `LWSJ`, the two versions, then records, each a tag (0 an entry put, as above; 1 an entry
 //! removed, its path as above). New results are appended there in a few bytes, and the whole
 //! file is written again only when the journal has grown past a share of it; a torn last record
-//! (a crash while appending) is left out.
+//! (a crash while appending) is left out, and cut off when the journal is read, so the records
+//! appended after it are read too.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -213,15 +214,16 @@ impl FolderCache {
     }
 
     /// Applies a journal's bytes: its records in order, up to a torn or malformed one. Returns
-    /// how many were applied; a journal of other versions applies none.
-    pub fn apply_journal(&mut self, bytes: &[u8]) -> usize {
+    /// how many were applied, and how many bytes they and the header take; a journal of other
+    /// versions applies none and takes none.
+    pub fn apply_journal(&mut self, bytes: &[u8]) -> (usize, usize) {
         let mut r = Reader { bytes, at: 0 };
         let header =
             (|| Some(r.take(4)? == JOURNAL_MAGIC && r.u32()? == FILE_VERSION && r.u32()? == FEATURE_VERSION))();
         if header != Some(true) {
-            return 0;
+            return (0, 0);
         }
-        let mut applied = 0;
+        let (mut applied, mut good) = (0, r.at);
         while r.at < bytes.len() {
             let record = (|| match r.take(1)?.first()? {
                 0 => read_entry(&mut r).map(|(path, entry)| Change::Put(path, entry)),
@@ -238,20 +240,31 @@ impl FolderCache {
                 }
             }
             applied += 1;
+            good = r.at;
         }
-        applied
+        (applied, good)
     }
 
     /// Reads the cache at `path` and the journal beside it; a missing or unreadable file is
-    /// empty, and the journal's changes are applied to what there is.
+    /// empty, and the journal's changes are applied to what there is. What follows the journal's
+    /// last whole record (a write cut short by a crash, or a journal of other versions) is cut
+    /// off, so that records appended later follow a whole one and are read.
     pub fn load(path: &Path) -> FolderCache {
         let read = |path: &Path| match std::fs::metadata(path) {
             Ok(m) if m.len() <= MAX_CACHE_BYTES => std::fs::read(path).ok(),
             _ => None,
         };
         let mut cache = read(path).and_then(|b| FolderCache::from_bytes(&b)).unwrap_or_default();
-        if let Some(bytes) = read(&journal_path(path)) {
-            cache.journal = cache.apply_journal(&bytes);
+        let journal = journal_path(path);
+        if let Some(bytes) = read(&journal) {
+            let (applied, good) = cache.apply_journal(&bytes);
+            cache.journal = applied;
+            if good < bytes.len() {
+                let _cut_next_time = std::fs::OpenOptions::new().write(true).open(&journal).and_then(|file| {
+                    // Unless it grew meanwhile: those bytes are not the ones read.
+                    if file.metadata()?.len() == bytes.len() as u64 { file.set_len(good as u64) } else { Ok(()) }
+                });
+            }
         }
         cache
     }
@@ -420,6 +433,12 @@ mod tests {
         bytes.extend_from_slice(&[0, 5, 0, b'a']);
         std::fs::write(journal_path(&path), &bytes).unwrap();
         assert_eq!(FolderCache::load(&path).entries, cache.entries);
+        // Reading it cut the torn bytes off: a record appended afterwards is read back.
+        let later = Entry { size: 4, modified: 8, analysis: Analysis::Failed("later".into()) };
+        append(&path, &[Change::Put(PathBuf::from("later.wav"), later.clone())]).unwrap();
+        cache.entries.insert(PathBuf::from("later.wav"), later);
+        let loaded = FolderCache::load(&path);
+        assert_eq!((&loaded.entries, loaded.journal), (&cache.entries, 3));
         // A full save takes the changes in and the journal goes.
         loaded.save(&path).unwrap();
         assert!(!journal_path(&path).exists());

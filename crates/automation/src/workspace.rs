@@ -125,6 +125,24 @@ impl Workspace {
         }
     }
 
+    /// A folder below the write root to write into, which may not exist yet: it is made if its
+    /// own folder exists inside the root. One that exists is resolved as
+    /// [`Workspace::writable_folder`] resolves it, so a symlink that leads outside is refused.
+    pub fn writable_new_folder(&self, path: &str) -> Result<PathBuf, String> {
+        let root = self.write_roots.first().ok_or(self.missing_write)?;
+        let candidate = join(root, path)?;
+        if std::fs::symlink_metadata(&candidate).is_ok() {
+            return self.writable_folder(&candidate);
+        }
+        let name = candidate.file_name().ok_or_else(|| format!("{path} has no folder name"))?.to_owned();
+        let parent = candidate.parent().ok_or_else(|| format!("{path} has no folder"))?;
+        let real_parent = parent.canonicalize().map_err(|e| format!("{path}: folder: {e}"))?;
+        if !self.write_roots.iter().any(|root| real_parent.starts_with(root)) {
+            return Err(format!("{path} is outside the write root"));
+        }
+        Ok(real_parent.join(name))
+    }
+
     /// An existing folder below the write root, resolved as [`Workspace::readable`] resolves
     /// files, for something to write into it.
     pub fn writable_folder(&self, path: &Path) -> Result<PathBuf, String> {

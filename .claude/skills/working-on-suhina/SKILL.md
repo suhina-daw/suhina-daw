@@ -85,6 +85,11 @@ it no longer does.
 
 ## Test fixtures
 
+- `crates/session/tests` and `crates/ui/tests` are one test binary each, `tests/main.rs`, with
+  a module per file (`autotests = false`). A new test file gets a `mod name;` line there; the
+  binary's `every_test_file_is_a_module` test fails until it does. Run one file's tests with
+  `cargo test -p suhina-ui --test main window::`; the filter is a substring match, so that also
+  runs `settings_window::` tests. Add `-- --skip settings_window::` to run `window.rs` alone.
 - `crates/ui/tests/window.rs`: the whole window. `demo_app()` (the demo project),
   `window(app)`, `window_with_step(app, step)`.
 - `crates/ui/tests/browser.rs`: `pack(&folder)` builds a library (drums, a loop, a MIDI file, a

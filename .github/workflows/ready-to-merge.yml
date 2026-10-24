@@ -42,8 +42,8 @@ permissions: {}
 # must be handled. A push that lands while a run approves is caught by --match-head-commit.
 
 env:
-  # The maintainers are listed here, in test-build.yml, in test-build-links.yml and in claim.yml.
-  MAINTAINERS: juhamikael
+  # All workflows read the repository variable MAINTAINERS.
+  MAINTAINERS: ${{ vars.MAINTAINERS }}
   LABEL: ready to merge
   # Shell functions the jobs source: whether the pull request has the label now (not as the event
   # saw it), and stopping a merge: auto-merge off when it is on, and out of the queue when it is in
@@ -69,19 +69,38 @@ env:
     }
 
 jobs:
+  roles:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      sender: ${{ steps.roles.outputs.sender }}
+      actor: ${{ steps.roles.outputs.actor }}
+    steps:
+      - id: roles
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+        with:
+          script: |
+            const maintainers = String(process.env.MAINTAINERS || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()).filter(Boolean);
+            const member = login => maintainers.includes(String(login || '').toLowerCase());
+            core.setOutput('sender', member(context.payload.sender?.login));
+            core.setOutput('actor', member(context.actor));
+
   queue:
+    needs: roles
     name: approve and queue
     if: >-
       (github.event.action == 'labeled' && github.event.label.name == 'ready to merge') ||
       (github.event.action == 'synchronize' &&
         contains(github.event.pull_request.labels.*.name, 'ready to merge') &&
-        contains(fromJSON('["juhamikael"]'), github.event.sender.login))
+        needs.roles.outputs.sender == 'true')
     runs-on: ubuntu-latest
     environment: docs-bot
     steps:
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
@@ -97,7 +116,9 @@ jobs:
           HAS_TEST_BUILD: ${{ contains(github.event.pull_request.labels.*.name, 'test-build') }}
         run: |
           eval "$HELPERS"
-          is_maintainer() { printf '%s\n' $MAINTAINERS | grep -Fxq -- "$1"; }
+          is_maintainer() {
+            printf '%s' "$MAINTAINERS" | tr ',[:space:]' '\n' | sed 's/^@//' | tr '[:upper:]' '[:lower:]' | grep -Fxq -- "${1,,}"
+          }
           # Dependabot's Cargo updates need no `test-build`: a new version of a crate is checked by
           # the build and the tests the queue runs, not by trying the app by hand. Its updates of
           # the Actions are not: `ci` skips the Rust jobs for a change under .github/, so nothing
@@ -161,17 +182,18 @@ jobs:
           fi
 
   unlabel:
+    needs: roles
     name: take the label off new commits
     if: >-
       github.event.action == 'synchronize' &&
       contains(github.event.pull_request.labels.*.name, 'ready to merge') &&
-      !contains(fromJSON('["juhamikael"]'), github.event.sender.login)
+      needs.roles.outputs.sender != 'true'
     runs-on: ubuntu-latest
     environment: docs-bot
     steps:
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
@@ -192,7 +214,7 @@ jobs:
     steps:
       - name: Token of the app
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}

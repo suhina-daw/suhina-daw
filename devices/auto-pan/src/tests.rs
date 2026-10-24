@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_device_api::conformance::{self, test_signal};
+use suhina_device_api::conformance::test_signal;
 
 use super::*;
 
@@ -52,11 +52,7 @@ fn assert_period(gain: &[f32], frames: usize, cycles: usize) {
     }
 }
 
-#[test]
-fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(AutoPan::new()));
-    assert!(failures.is_empty(), "{failures:#?}");
-}
+suhina_device_api::conformance_test!(AutoPan::new());
 
 #[test]
 fn no_amount_passes_the_signal_through_exactly() {

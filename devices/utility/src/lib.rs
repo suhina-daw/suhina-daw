@@ -12,7 +12,8 @@
 //! exactly.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, ParamInfo, ProcessContext, Role, Scale, Unit, check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
+    check_sample_rate,
 };
 use suhina_dsp::gain::{SILENCE_DB, db_to_gain_or_silence};
 use suhina_dsp::{DcBlocker, LinkwitzRiley, Smoother};
@@ -72,11 +73,9 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "utility", name: "Utility", role: Role::Effect, params: &PARAMS };
 
-const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
-
 pub struct Utility {
     sample_rate: f64,
-    values: [f64; param::COUNT],
+    params: ParamBank<{ param::COUNT }>,
     /// The channel, inversion, width and mono matrix: `[ll, lr, rl, rr]`.
     matrix: [Smoother; 4],
     gain_left: Smoother,
@@ -96,13 +95,13 @@ impl Default for Utility {
 
 impl Utility {
     pub fn new() -> Self {
-        let values = PARAMS.map(|p| p.default);
+        let params = ParamBank::new(&PARAMS);
         let sr = DEFAULT_SAMPLE_RATE;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
-        let frequency = values[param::BASS_MONO_FREQUENCY];
+        let frequency = params.get(param::BASS_MONO_FREQUENCY);
         let mut utility = Self {
             sample_rate: sr,
-            values,
+            params,
             matrix: [Smoother::new(0.0, ramp); 4],
             gain_left: Smoother::new(1.0, ramp),
             gain_right: Smoother::new(1.0, ramp),
@@ -118,11 +117,11 @@ impl Utility {
     }
 
     fn value(&self, index: usize) -> f64 {
-        self.values.get(index).copied().unwrap_or(0.0)
+        self.params.get(index)
     }
 
     fn on(&self, index: usize) -> bool {
-        self.value(index) >= 0.5
+        self.params.on(index)
     }
 
     fn smoothers(&mut self) -> impl Iterator<Item = &mut Smoother> {
@@ -207,18 +206,16 @@ impl Device for Utility {
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
-        let Some(info) = PARAMS.get(index) else { return };
-        let Some(slot) = self.values.get_mut(index) else { return };
-        *slot = info.clamp(value);
+        let Some(value) = self.params.set(index, value) else { return };
         if index == param::BASS_MONO_FREQUENCY {
-            let (sr, frequency) = (self.sample_rate, *slot);
+            let (sr, frequency) = (self.sample_rate, value);
             self.crossover.iter_mut().for_each(|c| c.set_frequency(sr, frequency));
         }
         self.retarget();
     }
 
     fn param(&self, index: usize) -> Option<f64> {
-        self.values.get(index).copied()
+        self.params.param(index)
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
