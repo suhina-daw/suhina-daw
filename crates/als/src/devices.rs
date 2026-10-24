@@ -24,6 +24,7 @@ pub(crate) fn builtin(
         "StereoGain" => Some(("utility", "Utility", utility(node, warn))),
         "Reverb" => Some(("reverb", "Reverb", reverb(node, warn))),
         "Delay" => Some(("delay", "Delay", delay(node, warn))),
+        "Eq8" => Some(("eq", "EQ", eq(node, warn))),
         "MidiPitcher" => Some(("pitch", "Pitch", pitch(node, warn))),
         _ => None,
     }
@@ -155,6 +156,47 @@ fn delay(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
     p.set("lfoToTime", manual(node, "Modulation_AmountTime"));
     p.set("lfoToFilter", manual(node, "Modulation_AmountFilter"));
     p.set("mix", manual(node, "DryWet"));
+    p.0
+}
+
+/// Bands of Live's EQ Eight, and the two parameter sets of each band, as Suhina's `eq` names its
+/// curves.
+const EQ_BANDS: usize = 8;
+const EQ_CURVES: [(&str, &str); 2] = [("ParameterA", "a"), ("ParameterB", "b")];
+
+/// Live's EQ Eight (`Eq8`) as Suhina's `eq` (`docs/spec/eq.md` › Import).
+fn eq(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
+    let mut p = Params::default();
+    p.set("output", manual(node, "GlobalGain"));
+    p.set("scale", manual(node, "Scale"));
+    p.set("adaptiveQ", manual_flag(node, "AdaptiveQ").map(toggle));
+    // The mode is a plain value on the device, not an automatable one.
+    if path(node, &["Mode"]).is_some() {
+        match number(node, &["Mode"]).map(f64::round) {
+            Some(mode) if (0.0..3.0).contains(&mode) => p.set("mode", Some(mode)),
+            _ => warn("EQ Eight mode is not understood; using stereo".to_string()),
+        }
+    }
+    if number(node, &["Precision"]).is_some_and(|v| v != 0.0) {
+        warn("EQ Eight oversampling is not available; the EQ runs at the project's rate".to_string());
+    }
+    for band in 0..EQ_BANDS {
+        let element = format!("Bands.{band}");
+        let Some(bands) = path(node, &[element.as_str()]) else {
+            continue;
+        };
+        for (set, curve) in EQ_CURVES {
+            let Some(values) = path(bands, &[set]) else {
+                continue;
+            };
+            let id = |field: &str| format!("{curve}{}{field}", band + 1);
+            p.set(&id("On"), manual_flag(values, "IsOn").map(toggle));
+            p.set(&id("Type"), step(values, "Mode", 8, "EQ Eight filter type", warn));
+            p.set(&id("Frequency"), manual(values, "Freq"));
+            p.set(&id("Gain"), manual(values, "Gain"));
+            p.set(&id("Q"), manual(values, "Q"));
+        }
+    }
     p.0
 }
 

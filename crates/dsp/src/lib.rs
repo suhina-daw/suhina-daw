@@ -24,6 +24,7 @@ pub mod pan;
 pub mod resampler;
 pub mod shape;
 pub mod smooth;
+pub mod svf;
 pub mod trim_delay;
 
 pub use biquad::{Biquad, Coefficients};
@@ -35,6 +36,7 @@ pub use first_order::{FirstOrder, FirstOrderCoefficients};
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{OnePole, Smoother, time_constant};
+pub use svf::{Svf, SvfCoefficients};
 pub use trim_delay::TrimDelay;
 
 /// Highest filter frequency as a fraction of the sample rate; keeps coefficients stable just

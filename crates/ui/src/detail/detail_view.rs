@@ -2930,6 +2930,7 @@ mod tests {
         project.channels[0].devices = vec![
             Device::new("Utility", DeviceKind::Builtin("utility".into())),
             Device::new("Pitch", DeviceKind::Builtin("pitch".into())),
+            Device::new("EQ", DeviceKind::Builtin("eq".into())),
         ];
         let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
         for device in &chain.devices {

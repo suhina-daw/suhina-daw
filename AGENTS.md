@@ -125,6 +125,7 @@ devices/
   utility  gain, balance, width, mono, bass mono, phase, channels, DC filter; depends on dsp, device-api
   auto-pan LFO panning and tremolo, free in Hz or synced to the song position
   dj-eq    three bands with kills, Linkwitz-Riley crossovers at 24 or 48 dB/octave
+  eq       eight bands (cuts, shelves, bells, notch) on state-variable filters, two curves: Stereo, L/R, M/S
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled
   overdrive  pedal-style: band, drive, tone, dynamics, dry/wet; oversampled
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet

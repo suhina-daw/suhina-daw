@@ -3,6 +3,80 @@
 
 use super::*;
 
+/// The device parameters a `.suhina` file stores reach the CLI's own render path: the same
+/// `Session::open` and `render_wavs` the `render` command runs. A band the file boosts makes
+/// the render louder, and Scale at 0 % puts it back. (The device's and the file format's own
+/// tests cover each half; this checks the way between them.)
+#[test]
+fn a_project_files_device_params_reach_the_render() {
+    let sine_project = |devices: Vec<Device>| {
+        let notes = vec![Note::new(0.0, 2.0, 83, 1.0)];
+        Project {
+            tracks: vec![Track {
+                content: ContentKinds { notes: true, audio: false },
+                channel: Some(ChannelId(1)),
+                ..Track::new(TrackId(1), "T")
+            }],
+            channels: vec![Channel { devices, ..Channel::new(ChannelId(1), "C") }],
+            contents: vec![ClipContent {
+                id: ContentId(1),
+                name: "c".into(),
+                length: 2.0,
+                lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes) }],
+                extensions: Extensions::default(),
+                scale: None,
+            }],
+            arrangement: Arrangement {
+                lanes: vec![ArrangementLane {
+                    id: Default::default(),
+                    name: "l".into(),
+                    track: Some(TrackId(1)),
+                    clips: vec![Clip::new(ContentId(1), 0.0, 2.0)],
+                }],
+                markers: Vec::new(),
+            },
+            ..Project::default()
+        }
+    };
+    let dir = std::env::temp_dir().join(format!("suhina-cli-params-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let write = |name: &str, devices: Vec<Device>| {
+        let path = dir.join(name);
+        suhina_project_file::write_file(&path, &sine_project(devices)).unwrap();
+        path
+    };
+    let eq = |params: &[(&str, f64)]| Device {
+        params: params.iter().map(|(p, v)| DeviceParam::new(*p, *v)).collect(),
+        ..Device::new("EQ", DeviceKind::Builtin("eq".into()))
+    };
+    let flat = write("flat.suhina", vec![eq(&[])]);
+    let boosted = write("boosted.suhina", vec![eq(&[("a3Gain", 12.0)])]);
+    let scaled = write("scaled.suhina", vec![eq(&[("a3Gain", 12.0), ("scale", 0.0)])]);
+
+    let peak_of = |path: &std::path::Path| {
+        let (session, warnings) = suhina_session::Session::open(path).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut library = suhina_plugins::library::Library::default();
+        let env = suhina_session::PluginEnv::from_library(&mut library);
+        let out = dir.join("out.wav");
+        render_wavs(session.project(), &AudioPool::new(), session.device_assets(), &out, None, 48_000, Some(&env))
+            .unwrap()
+            .peak
+    };
+    let flat_peak = peak_of(&flat);
+    let boosted_peak = peak_of(&boosted);
+    let scaled_peak = peak_of(&scaled);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(flat_peak > 0.05, "the note plays: {flat_peak}");
+    let lift_db = 20.0 * f64::from(boosted_peak / flat_peak).log10();
+    assert!((lift_db - 12.0).abs() < 0.5, "the stored band lifts its note: {lift_db} dB");
+    assert!(
+        20.0 * f64::from(scaled_peak / flat_peak).log10().abs() < 0.1,
+        "Scale at 0 % puts it back: {}",
+        20.0 * f64::from(scaled_peak / flat_peak).log10()
+    );
+}
+
 #[test]
 fn demo_project_is_valid_and_renders_two_bars() {
     let project = demo_project();

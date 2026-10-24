@@ -300,8 +300,65 @@ fn pitch_modes_and_bad_values() {
     assert!(params.is_empty(), "{params:?}");
 }
 
+/// One band's two parameter sets as a saved set stores them.
+fn eq_band(band: usize, a: [&str; 5], b: [&str; 5]) -> String {
+    let set = |name: &str, v: [&str; 5]| {
+        let fields: String =
+            ["IsOn", "Mode", "Freq", "Gain", "Q"].iter().zip(v).map(|(f, v)| manual_xml(f, v)).collect();
+        format!("<{name}>{fields}</{name}>")
+    };
+    format!("<Bands.{band}>{}{}</Bands.{band}>", set("ParameterA", a), set("ParameterB", b))
+}
+
+#[test]
+fn eq_eight_takes_both_parameter_sets_of_every_band() {
+    // Plain values may come with spaces or as 0.0; they read as numbers.
+    let mut xml = String::from(r#"<Precision Value="0.0" /><Mode Value=" 2" /><EditMode Value="false" />"#);
+    xml += &manual_xml("GlobalGain", "-3.5");
+    xml += &manual_xml("Scale", "-0.5");
+    xml += &manual_xml("AdaptiveQ", "false");
+    for band in 0..8 {
+        let freq = format!("{}", 100 * (band + 1));
+        xml += &eq_band(band, ["true", "3", &freq, "4.5", "2"], ["false", "7", "18000", "0", "0.7071067095"]);
+    }
+    let (id, params, warnings) = mapped("Eq8", &xml);
+    assert_eq!(id, "eq");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 84);
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-9, "{id}: {got} against {expected}");
+    };
+    near("output", -3.5);
+    near("scale", -0.5);
+    near("adaptiveQ", 0.0);
+    near("mode", 2.0);
+    near("a1On", 1.0);
+    near("a1Type", 3.0);
+    near("a8Frequency", 800.0);
+    near("a3Gain", 4.5);
+    near("a5Q", 2.0);
+    near("b2On", 0.0);
+    near("b7Type", 7.0);
+    near("b8Q", 0.7071067095);
+}
+
+#[test]
+fn eq_eight_odd_values_are_noted() {
+    let xml = format!(
+        r#"<Precision Value="1" /><Mode Value="5" />{}"#,
+        eq_band(0, ["true", "9", "100", "0", "1"], ["true", "1", "x", "0", "1"])
+    );
+    let (_, params, warnings) = mapped("Eq8", &xml);
+    // Oversampling, the mode and band 1's type are noted; the type and the unreadable
+    // frequency are left out.
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(params.iter().all(|p| p.id != "mode" && p.id != "a1Type" && p.id != "b1Frequency"), "{params:?}");
+    assert_eq!(param(&params, "b1Type"), 1.0);
+}
+
 #[test]
 fn other_devices_are_not_mapped() {
-    let doc = roxmltree::Document::parse("<Eq8/>").unwrap_or_else(|e| panic!("{e}"));
+    let doc = roxmltree::Document::parse("<Compressor2/>").unwrap_or_else(|e| panic!("{e}"));
     assert!(builtin(doc.root_element(), &mut |_| {}).is_none());
 }

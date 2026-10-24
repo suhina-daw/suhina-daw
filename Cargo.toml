@@ -28,6 +28,7 @@ suhina-plugins = { path = "crates/plugins" }
 suhina-device-utility = { path = "devices/utility" }
 suhina-device-auto-pan = { path = "devices/auto-pan" }
 suhina-device-dj-eq = { path = "devices/dj-eq" }
+suhina-device-eq = { path = "devices/eq" }
 suhina-device-vinyl-distortion = { path = "devices/vinyl-distortion" }
 suhina-device-overdrive = { path = "devices/overdrive" }
 suhina-device-fm-synth = { path = "devices/fm-synth" }

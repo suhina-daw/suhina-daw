@@ -30,6 +30,9 @@ suhina-device-fm-synth.workspace = true
 suhina-plugins.workspace = true
 hound.workspace = true
 
+[dev-dependencies]
+suhina-project-file.workspace = true
+
 [build-dependencies]
 winresource.workspace = true
 

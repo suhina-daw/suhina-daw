@@ -180,7 +180,9 @@ fn live_devices_become_placeholders() {
     let d = devices("40-midi-track-instrument", "1-Simpler");
     assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [foreign("OriginalSimpler")]);
     let d = devices("42-device-param", "1-Simpler");
-    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [foreign("OriginalSimpler"), foreign("Eq8")]);
+    // The EQ Eight after it comes in as Suhina's EQ (docs/spec/eq.md › Import).
+    let eq = DeviceKind::Builtin("eq".into());
+    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [foreign("OriginalSimpler"), eq]);
     assert!(d[1].enabled);
     assert!(!devices("43-device-off", "1-Simpler")[1].enabled);
 }
@@ -190,7 +192,7 @@ fn plugins_keep_id_and_state() {
     use suhina_model::DeviceKind;
     let d = devices("44-plugin-add-sylenth1-vst3", "1-Sylenth1");
     let names: Vec<&str> = d.iter().map(|d| d.name.as_str()).collect();
-    assert_eq!(names, ["Sylenth1", "Eq8", "ShaperBox 3", "ShaperBox 3"]);
+    assert_eq!(names, ["Sylenth1", "EQ", "ShaperBox 3", "ShaperBox 3"]);
 
     let DeviceKind::Vst3 { id } = &d[0].kind else { panic!("Sylenth1 should be VST3: {:?}", d[0].kind) };
     assert_eq!(id.len(), 32);

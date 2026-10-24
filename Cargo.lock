@@ -4614,6 +4614,7 @@ dependencies = [
  "suhina-midi",
  "suhina-output",
  "suhina-plugins",
+ "suhina-project-file",
  "suhina-session",
  "tokio",
  "winresource",
@@ -4649,6 +4650,14 @@ dependencies = [
 
 [[package]]
 name = "suhina-device-dj-eq"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-dsp",
+]
+
+[[package]]
+name = "suhina-device-eq"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
@@ -4713,6 +4722,7 @@ dependencies = [
  "suhina-device-compressor",
  "suhina-device-delay",
  "suhina-device-dj-eq",
+ "suhina-device-eq",
  "suhina-device-fm-synth",
  "suhina-device-limiter",
  "suhina-device-nam-amp-modeler",

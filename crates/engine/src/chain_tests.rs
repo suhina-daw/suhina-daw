@@ -118,6 +118,26 @@ fn an_effect_on_a_track_processes_its_sound_before_the_fader() {
     assert!(peak(&l) < 1e-6 && peak(&r) > 0.1);
 }
 
+/// The sine tones a note track without an instrument plays, through the EQ: its bell at 1 kHz
+/// lifts the note it sits on (key 83 is B5, 987.8 Hz, inside the bell), and Scale at 0 % puts
+/// it back. The device's own tests cover the response; this checks the chain's wiring of it.
+#[test]
+fn an_eq_bell_lifts_its_note_in_the_track_chain() {
+    let notes = vec![note(0.0, 2.0, 83)];
+    let steady = |out: &[f32]| peak(&left(out)[BEAT..2 * BEAT]);
+    let plain = steady(&render_offline(&project(notes.clone(), 2.0, vec![]), SR, 512).unwrap());
+    let lifted = steady(
+        &render_offline(&project(notes.clone(), 2.0, vec![device("eq", &[("a3Gain", 12.0)])]), SR, 512).unwrap(),
+    );
+    let in_db = 20.0 * f64::from(lifted / plain).log10();
+    assert!((in_db - 12.0).abs() < 0.5, "{in_db}");
+    let scaled = steady(
+        &render_offline(&project(notes, 2.0, vec![device("eq", &[("a3Gain", 12.0), ("scale", 0.0)])]), SR, 512)
+            .unwrap(),
+    );
+    assert!(20.0 * f64::from(scaled / plain).log10().abs() < 0.1, "{}", 20.0 * f64::from(scaled / plain).log10());
+}
+
 #[test]
 fn an_sd_effect_plays_its_stored_parameter_value() {
     let mut graph =
