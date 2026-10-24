@@ -269,6 +269,11 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         if let Some(path) = sd {
             device_params["path"] = json!(path);
         }
+        if sd.is_some()
+            && let Some(sample) = text(params, "sample")?
+        {
+            device_params["sample"] = json!(sample);
+        }
         added = match (device, sd) {
             (_, Some(_)) => crate::devices::add_sd(session, &device_params)?,
             (Some(id), None) if suhina_device_registry::info(id).is_some() => {

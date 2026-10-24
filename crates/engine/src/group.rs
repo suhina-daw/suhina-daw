@@ -243,11 +243,25 @@ impl Builder<'_> {
         let bytes = stored.state.as_deref()?;
         let text = std::str::from_utf8(bytes).ok()?;
         let graph = suhina_device_sdk::DeviceGraph::from_sd(text).ok()?;
+        let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
+        if let Some(source) = stored.sample_file().and_then(|file| self.audio.files.get(file)) {
+            let asset = suhina_device_sdk::sample_resource::SampleAsset::new(
+                source.clone(),
+                source.sample_rate,
+                source.channels,
+            )
+            .ok()?;
+            samples.insert("sample", std::sync::Arc::new(asset)).ok()?;
+        }
         let rate = f64::from(self.sample_rate);
         let mut built = match graph.role {
-            suhina_device_sdk::DeviceRole::Effect => Slot::Sd(graph.compile_at(rate).ok()?),
+            suhina_device_sdk::DeviceRole::Effect => {
+                Slot::Sd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
+            }
             suhina_device_sdk::DeviceRole::MidiEffect => Slot::MidiSd(graph.compile_midi().ok()?),
-            suhina_device_sdk::DeviceRole::Instrument => Slot::InstrumentSd(graph.compile_instrument_at(rate).ok()?),
+            suhina_device_sdk::DeviceRole::Instrument => {
+                Slot::InstrumentSd(suhina_device_registry::compile_graph_with_samples(&graph, rate, &samples).ok()?)
+            }
         };
         lanes.add_sd(slot, &graph.parameters, &stored.automation, self.frames_per_beat);
         let mut values = Vec::with_capacity(graph.parameters.len());
@@ -263,6 +277,8 @@ impl Builder<'_> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);
+        stored.sample_file().hash(&mut hasher);
+        stored.sample_file().and_then(|file| self.audio.files.get(file)).map(std::sync::Arc::as_ptr).hash(&mut hasher);
         Some(Built {
             slot: built,
             id: format!("sd:{}:{:016x}", graph.id, hasher.finish()),

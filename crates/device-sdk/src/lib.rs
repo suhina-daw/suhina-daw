@@ -18,12 +18,19 @@ pub mod builtin;
 pub mod editor;
 mod graph;
 mod midi;
+mod modulation;
+pub mod native_node;
 mod nodes;
 mod runtime;
+pub mod sample_resource;
 pub mod sampler;
 pub mod ui;
 pub use midi::PreparedMidiEffect;
-pub use nodes::{FilterMode, NODE_CATALOG, NodeInfo, NodeKind, PortInfo, Waveform, node_reference_markdown};
+pub use nodes::granular::{grain_template, template as granular_template};
+pub use nodes::templates::sampler_template;
+pub use nodes::{
+    FilterMode, NODE_CATALOG, NodeInfo, NodeKind, PortInfo, SampleInfoField, Waveform, node_reference_markdown,
+};
 pub use runtime::PreparedEffect;
 pub use suhina_device_api::ProcessContext;
 
@@ -200,9 +207,17 @@ fn default_smoothing_ms() -> f64 {
     20.0
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParameterBinding {
+    pub parameter: String,
+    pub target: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub id: String,
+    pub bindings: Vec<ParameterBinding>,
     pub kind: NodeKind,
     pub visible: bool,
 }
@@ -547,17 +562,27 @@ impl Parameter {
 }
 
 impl Node {
+    pub fn bind(mut self, parameter: impl Into<String>, target: impl Into<String>) -> Self {
+        self.bindings.push(ParameterBinding { parameter: parameter.into(), target: target.into() });
+        self
+    }
+
     pub fn new(id: impl Into<String>, kind: NodeKind) -> Self {
-        Self { id: id.into(), kind, visible: true }
+        Self { id: id.into(), kind, visible: true, bindings: Vec::new() }
     }
     pub fn audio_input(id: impl Into<String>) -> Self {
-        Self { id: id.into(), kind: NodeKind::AudioInput, visible: true }
+        Self { id: id.into(), kind: NodeKind::AudioInput, visible: true, bindings: Vec::new() }
     }
     pub fn gain(id: impl Into<String>, parameter: impl Into<String>) -> Self {
-        Self { id: id.into(), kind: NodeKind::Gain { parameter: parameter.into() }, visible: true }
+        Self {
+            id: id.into(),
+            kind: NodeKind::Gain { parameter: parameter.into() },
+            visible: true,
+            bindings: Vec::new(),
+        }
     }
     pub fn audio_output(id: impl Into<String>) -> Self {
-        Self { id: id.into(), kind: NodeKind::AudioOutput, visible: true }
+        Self { id: id.into(), kind: NodeKind::AudioOutput, visible: true, bindings: Vec::new() }
     }
 }
 
@@ -626,6 +651,8 @@ struct ParameterV1 {
 #[derive(Serialize, Deserialize)]
 struct NodeV1 {
     id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    bindings: Vec<ParameterBinding>,
     #[serde(default = "default_visible", skip_serializing_if = "is_visible")]
     visible: bool,
     #[serde(flatten)]
@@ -645,7 +672,12 @@ impl From<&DeviceGraph> for FileV1 {
         let nodes = graph
             .nodes
             .iter()
-            .map(|node| NodeV1 { id: node.id.clone(), visible: node.visible, kind: node.kind.clone() })
+            .map(|node| NodeV1 {
+                id: node.id.clone(),
+                visible: node.visible,
+                kind: node.kind.clone(),
+                bindings: node.bindings.clone(),
+            })
             .collect();
         Self {
             format: FORMAT.into(),
@@ -711,7 +743,7 @@ impl From<FileV1> for DeviceGraph {
             nodes: file
                 .nodes
                 .into_iter()
-                .map(|node| Node { id: node.id, visible: node.visible, kind: node.kind })
+                .map(|node| Node { id: node.id, visible: node.visible, kind: node.kind, bindings: node.bindings })
                 .collect(),
             connections: file.connections,
         }

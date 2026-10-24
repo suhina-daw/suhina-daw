@@ -120,3 +120,198 @@ pub const DELAY: NodeInfo = NodeInfo {
     example: "{\"kind\":\"delay\",\"max_seconds\":0.01}",
     rust_variant: "Delay",
 };
+
+pub(crate) const RANGE_MAP: NodeInfo = NodeInfo {
+    kind: "range_map",
+    name: "RangeMap",
+    rust_variant: "RangeMap",
+    inputs: &[
+        PortInfo { name: "value", default: Some(0.0), unit: "signal" },
+        PortInfo { name: "in_min", default: Some(0.0), unit: "signal" },
+        PortInfo { name: "in_max", default: Some(1.0), unit: "signal" },
+        PortInfo { name: "out_min", default: Some(0.0), unit: "signal" },
+        PortInfo { name: "out_max", default: Some(1.0), unit: "signal" },
+    ],
+    outputs: &["out", "left", "right"],
+    description: "Affine range conversion with safe zero input span.",
+    configuration: "none",
+    example: r#"{"kind":"range_map"}"#,
+};
+fn range_map(x: [f64; 5]) -> f64 {
+    if x[2] == x[1] { x[3] } else { x[3] + (x[0] - x[1]) / (x[2] - x[1]) * (x[4] - x[3]) }
+}
+
+pub(crate) const CURVE: NodeInfo = NodeInfo {
+    kind: "curve",
+    name: "Curve",
+    rust_variant: "Curve",
+    inputs: &[
+        PortInfo { name: "value", default: Some(0.0), unit: "signal" },
+        PortInfo { name: "exponent", default: Some(1.0), unit: "signal" },
+    ],
+    outputs: &["out", "left", "right"],
+    description: "Normalized power curve for controls and velocity.",
+    configuration: "none",
+    example: r#"{"kind":"curve"}"#,
+};
+fn curve(x: [f64; 5]) -> f64 {
+    x[0].clamp(0., 1.).powf(x[1].clamp(0.001, 1000.))
+}
+
+pub(crate) fn prepare(kind: &super::NodeKind) -> Option<Box<dyn crate::native_node::NativeNode>> {
+    match kind {
+        super::NodeKind::RangeMap => Some(super::processor::boxed(range_map)),
+        super::NodeKind::Curve | super::NodeKind::VelocityCurve => Some(super::processor::boxed(curve)),
+        super::NodeKind::KeyTracking => Some(super::processor::boxed(key_tracking)),
+        _ => None,
+    }
+}
+
+pub(crate) const GLIDE: NodeInfo = NodeInfo {
+    kind: "glide",
+    name: "Glide",
+    rust_variant: "Glide",
+    inputs: &[
+        PortInfo { name: "target", default: Some(0.), unit: "signal" },
+        PortInfo { name: "time", default: Some(0.1), unit: "seconds" },
+        PortInfo { name: "gate", default: Some(1.), unit: "signal" },
+        PortInfo { name: "legato", default: Some(1.), unit: "signal" },
+    ],
+    outputs: &["out", "left", "right"],
+    description: "Exponential pitch glide; gate rise starts at target in legato mode.",
+    configuration: "none",
+    example: r#"{"kind":"glide"}"#,
+};
+struct Glide {
+    rate: f64,
+    value: [f64; 2],
+    gate: [bool; 2],
+}
+pub(crate) fn prepare_glide(kind: &super::NodeKind, rate: f64) -> Option<Box<dyn crate::native_node::NativeNode>> {
+    matches!(kind, super::NodeKind::Glide)
+        .then(|| Box::new(Glide { rate, value: [0.; 2], gate: [false; 2] }) as Box<dyn crate::native_node::NativeNode>)
+}
+impl crate::native_node::NativeNode for Glide {
+    fn prepare_block(&mut self, _: &crate::ProcessContext) {}
+    fn process(&mut self, inputs: [&[f32]; 5], output: &mut [f32]) {
+        for (frame, pair) in output.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+            for (c, sample) in pair.iter_mut().enumerate() {
+                let x: [f64; 4] = std::array::from_fn(|p| {
+                    let v = inputs[p].get(frame * 2 + c).copied().unwrap_or(0.);
+                    if v.is_finite() { f64::from(v) } else { 0. }
+                });
+                let gate = x[2] > 0.;
+                if gate {
+                    if x[3] > 0. && !self.gate[c] {
+                        self.value[c] = x[0];
+                    } else {
+                        let a = crate::modulation::coefficient(x[1], self.rate);
+                        self.value[c] = x[0] + a * (self.value[c] - x[0]);
+                    }
+                }
+                self.gate[c] = gate;
+                *sample = self.value[c] as f32;
+            }
+        }
+    }
+    fn event(&mut self, _: suhina_device_api::NoteEvent) {}
+    fn reset(&mut self) {
+        self.value = [0.; 2];
+        self.gate = [false; 2];
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+pub(crate) const VELOCITY_CURVE: NodeInfo = NodeInfo {
+    kind: "velocity_curve",
+    name: "VelocityCurve",
+    rust_variant: "VelocityCurve",
+    example: r#"{"kind":"velocity_curve"}"#,
+    ..CURVE
+};
+pub(crate) const KEY_TRACKING: NodeInfo = NodeInfo {
+    kind: "key_tracking",
+    name: "KeyTracking",
+    rust_variant: "KeyTracking",
+    inputs: &[
+        PortInfo { name: "key", default: Some(60.), unit: "key" },
+        PortInfo { name: "root", default: Some(60.), unit: "key" },
+        PortInfo { name: "amount", default: Some(1.), unit: "signal/key" },
+        PortInfo { name: "offset", default: Some(0.), unit: "signal" },
+    ],
+    outputs: &["out", "left", "right"],
+    description: "Linear key-distance modulation relative to a root.",
+    configuration: "none",
+    example: r#"{"kind":"key_tracking"}"#,
+};
+fn key_tracking(x: [f64; 5]) -> f64 {
+    x[3] + (x[0] - x[1]) * x[2]
+}
+pub(crate) const LFO: NodeInfo = NodeInfo {
+    kind: "lfo",
+    name: "LFO",
+    rust_variant: "Lfo",
+    inputs: &[
+        PortInfo { name: "frequency", default: Some(1.), unit: "Hz" },
+        PortInfo { name: "reset", default: Some(0.), unit: "signal" },
+        PortInfo { name: "phase", default: Some(0.), unit: "cycles" },
+        PortInfo { name: "events", default: Some(0.), unit: "midi" },
+    ],
+    outputs: &["out", "left", "right"],
+    description: "Free LFO with phase offset, rising reset and event retrigger using shared waveforms.",
+    configuration: "shape",
+    example: r#"{"kind":"lfo","shape":"sine"}"#,
+};
+struct Lfo {
+    shape: crate::Waveform,
+    rate: f64,
+    phase: [f64; 2],
+    reset: [bool; 2],
+    note: bool,
+}
+pub(crate) fn prepare_lfo(kind: &super::NodeKind, rate: f64) -> Option<Box<dyn crate::native_node::NativeNode>> {
+    if let super::NodeKind::Lfo { shape } = kind {
+        Some(Box::new(Lfo { shape: *shape, rate, phase: [0.; 2], reset: [false; 2], note: false }))
+    } else {
+        None
+    }
+}
+impl crate::native_node::NativeNode for Lfo {
+    fn prepare_block(&mut self, _: &crate::ProcessContext) {}
+    fn process(&mut self, inputs: [&[f32]; 5], output: &mut [f32]) {
+        for (frame, pair) in output.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+            for (c, sample) in pair.iter_mut().enumerate() {
+                let x: [f64; 3] = std::array::from_fn(|p| {
+                    let v = inputs[p].get(frame * 2 + c).copied().unwrap_or(0.);
+                    if v.is_finite() { f64::from(v) } else { 0. }
+                });
+                let reset = x[1] > 0.;
+                if self.note || (reset && !self.reset[c]) {
+                    self.phase[c] = 0.;
+                }
+                self.reset[c] = reset;
+                *sample = suhina_dsp::lfo::wave(self.shape.dsp(), self.phase[c] + x[2]) as f32;
+                self.phase[c] += x[0].clamp(-self.rate * 0.49, self.rate * 0.49) / self.rate;
+                if self.phase[c].abs() > 4294967296. {
+                    self.phase[c] = self.phase[c].rem_euclid(4294967296.);
+                }
+            }
+            self.note = false;
+        }
+    }
+    fn event(&mut self, event: suhina_device_api::NoteEvent) {
+        if matches!(super::events::normalized(event), Some(suhina_device_api::NoteEvent::On { .. })) {
+            self.note = true;
+        }
+    }
+    fn reset(&mut self) {
+        self.phase = [0.; 2];
+        self.reset = [false; 2];
+        self.note = false;
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

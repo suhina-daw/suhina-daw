@@ -13,6 +13,7 @@ covers:
   - crates/device-sdk/examples/distortion.rs
   - crates/device-sdk/examples/delay.rs
   - crates/device-sdk/examples/compressor.rs
+  - crates/device-sdk/examples/sampler_composition.rs
   - crates/device-sdk/examples/catalog.rs
   - crates/device-sdk/examples/validate.rs
   - crates/device-sdk/examples/ui_controls.rs
@@ -108,7 +109,7 @@ cargo run -p suhina-device-sdk --example validate -- target/sdk-examples/wire-la
 ```
 An author writes Rust that assembles a graph from supported nodes; Suhina runs the graph as data.
 Use [the format specification](spec/sd-device-format.md) and [node reference](spec/sdk-nodes.md).
-Audio effects, MIDI effects and monophonic instruments execute. Parameters, nodes and device ids
+Audio effects, MIDI effects, monophonic MIDI-value instruments and polyphonic sampler and voice graphs execute. Parameters, nodes and device ids
 are stable saved identifiers.
 
 Generate the MIDI examples with:
@@ -382,3 +383,54 @@ parameter; pressing the active tab returns to zero. Sampler uses this to switch
 between its normal controls, envelopes and LFO without changing audio parameters.
 
 `Widget::Envelope` provides a theme-aware point editor for cumulative ADSR or bipolar Attack/Decay envelopes; the sampler demonstrates both, with separate numeric readouts.
+
+## Compose a sample source
+
+Run `cargo run -p suhina-device-sdk --example sample_source` from the repository
+root. The example constructs a Sampler source, multiplies its stereo output by
+a graph parameter, binds a generated one-second sine sample off the audio thread,
+and renders timestamped note events. It prints 48000 frames and a nonzero peak.
+See [Sampler](spec/sampler.md#composable-sample-source-first-stage) for the
+source-binding contract. The built-in Sampler remains native code with an SDK panel.
+
+## Trusted native graph effects
+
+Use `NodeKind::NativeEffect { effect }` to wire a trusted host effect into a graph.
+Connect audio to `in`; the four optional `control1` through `control4` inputs carry
+additional stereo signals and default to zero. Prepare with `compile_with_native_at`
+and a host resolver that returns a fresh `NativeNode` prepared for the supplied sample rate.
+The kernel receives five read-only interleaved stereo input buffers and a separate output
+buffer of equal length. It must overwrite output without allocating, locking or doing I/O.
+This host API does not load third-party plug-ins, and ordinary `compile_at` rejects
+unresolved effects. MIDI events and reset use the same lifecycle as native sources.
+
+Registered built-in audio effects resolve automatically when a `.sd` graph is added and
+when track or group chains are prepared. The registry adapter supplies the `in` audio
+signal at the effect defaults; additional control connections are rejected by this
+adapter; named `Node::bind(parent, target)` parameter bindings are supported. Custom Rust hosts can still supply their own input-aware kernels. Unknown ids,
+non-effect devices and effects reporting nonzero latency are rejected before insertion;
+latency compensation between graph paths is not implemented. This never loads plug-in code.
+
+
+## Compose editable samplers
+
+Run from the repository root:
+
+```sh
+cargo run -p suhina-device-sdk --example sampler_composition -- target/sampler-composition
+```
+
+The example writes five `.sd` files and five audible `.wav` renders: loops, reverse, slices,
+granular and tempo. Each definition round-trips and runs with the same deterministic source bound
+as `sample`. `sampler_template` and `granular_template` return editable DeviceGraph values with
+standard parameter panels; their private voices use the same public node catalogue. To use real
+samples, decode them off-thread in your host, make SampleAsset values, insert stable binding names
+into PreparedSamples, and call `compile_with_samples_at`. For registered/custom native effects,
+use `compile_with_samples_and_native_at` with a trusted resolver. A missing binding is an error;
+a prepared graph retains its original resource after replacing the host map. Retire it off-thread.
+The desktop `device.addSd` path does not yet provide a resource-map editor for these compositions.
+
+`NodeInfo::output_type` and the JSON catalogue's `output_types` describe event/resource/signal
+ports identically to validation. Named outputs include per-voice gate/trigger/release, envelope
+completion, read positions and grain overflow. Components store their name, version, child graph,
+parameters and optional panel as data, with independent state for every prepared instance.

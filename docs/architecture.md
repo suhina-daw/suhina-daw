@@ -112,7 +112,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `dsp` | Signal-processing blocks for devices: dB conversions, parameter smoothing, biquad filters, a DC blocker, Linkwitz-Riley crossovers (24 and 48 dB/octave), LFO waveforms (with a smoothly wandering random one), waveshapers, a 2× oversampler, first-order filters and shelves, delay lines with linear and cubic interpolation and a Schroeder allpass, a trim delay that moves smoothly while running, a windowed-sinc polyphase resampler and IR convolution (uniform-partitioned, `fft-convolver`) with its `Ir`. Real-time safe, panic-free on any input. | nothing |
 | `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, lists them, and gives its panel (`panel`: its parameters from `DeviceInfo` and its layout, or the generated list; ADR 0021 › Amendment: device panels). | device-api, device-sdk, devices/* |
 | `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect) and `ParamInfo` (plain values in their unit, conversion to knob travel), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
-| `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` audio-effect, MIDI-effect and instrument graphs; stereo DSP graphs support branching, modulation and delayed feedback, MIDI effects preserve event frame offsets, and monophonic instruments turn MIDI controls into audio, with a shared node catalog, generated parameter UI and embedded custom canvases. It contains no executable Rust in `.sd` files. | dsp, device-api, serde, serde_json, base64, image (PNG/JPEG) |
+| `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` audio-effect, MIDI-effect and instrument graphs; stereo DSP graphs support branching, modulation and delayed feedback, MIDI effects preserve event frame offsets, and private polyphonic voice/grain graphs turn routed MIDI controls into audio, with a shared node catalog, generated parameter UI and embedded custom canvases. Audio graphs execute acyclic regions node by node over bounded 64-frame buffers allocated at preparation. Feedback components preserve frame-by-frame evaluation and delayed commits; graphs whose only acyclic nodes are input and output retain the original frame schedule to avoid unnecessary buffer copies. Parameter timelines and MIDI span boundaries preserve sample timing. It contains no executable Rust in `.sd` files. | dsp, stretch, device-api, serde, serde_json, base64, image (PNG/JPEG) |
 | `ipc` | Audio blocks between the engine and a plug-in host process ([ADR 0006](decisions/0006-plug-in-hosting.md)): a shared-memory region with each block's notes and controllers (`Event`, up to 1024 a block) and the instances of the host process that run the block after the link's own (up to 63, `Link::send_joint`), one block in flight, a doorbell per direction (a futex on Linux, events with a high-resolution timer on Windows, yielding elsewhere for now) and a deadline; a crashed or hung host costs missed blocks, never a stall. `AudioSource`: a file's decoded samples in a region of their own, written once and mapped read only by the host, for an ARA plug-in to read ([ADR 0028](decisions/0028-ara-hosting.md)). Both are memory the operating system frees when the last process holding it ends, however it ends (`shm`): a page-file mapping named `Local\suhina-…` on Windows, a `memfd` opened through `/proc/<pid>/fd/<n>` on Linux, and on macOS a file in the temporary folder whose name goes once the host has opened a link or the engine drops a source; the first one a process makes removes the macOS files of processes that crashed before that, and earlier versions' leftover files on every system (`sweep`, ADR 0006 › The boundary). One of the two crates allowed `unsafe`. Linked into the engine's process through `plugins`. | nothing |
 | `realtime` | Real-time priority for the threads that make sound, the render thread and the plug-in hosts' audio threads (`RealTime::join`): MMCSS "Pro Audio" on Windows; on Linux `SCHED_FIFO` where the user has real-time rights, otherwise rtkit over the system D-Bus (`zbus`, pure Rust, so no libdbus), otherwise the highest normal priority; the highest priority elsewhere. Says what it got, and why real-time scheduling was refused; never fails. Under rtkit, whose grant ends the process when a thread runs `RLIMIT_RTTIME` without waiting, it paces a rendering thread (`waited`, `worked`): a short rest before the limit, and normal priority after a block that takes a quarter of it. No `unsafe`. | nothing |
 | `plugins` | The engine's side of plug-in hosting: `Plugin::start` loads an instance into a `suhina-plugin-host` process (the one its group shares, `Launch::group`, or one of its own) and returns a control half (health, ping, state, parameters, restart) and an audio half (`PluginAudio::process`, real-time safe). Control messages are JSON lines over a local socket (`protocol`; the host also reports its process's resident memory once a second, unasked, and `host_memory` reads the running hosts' reports for the control bar). A host that exits is *crashed*; one that leaves 32 blocks in a row unanswered is *hung*; `restart` brings it back with its last saved state. `scan` and `scan_pool` find installed CLAP and VST3 plug-ins (standard folders, `CLAP_PATH`, folders the user adds), read VST3 bundles' `moduleinfo.json` without loading them and load the rest in a few long-lived `--scan-worker` processes with per-file timeouts, into a catalog that can be saved. `PluginAudio::process_with_events` sends an instrument its notes. `offline::render` runs audio (and `render_with_events` notes) through a plug-in without a deadline (`suhina-cli plugin run`, `plugin run-device`). The session starts a project's plug-ins with it and hands their audio halves to the engine. | ipc |
@@ -166,6 +166,12 @@ file (`arrangement.rs` for `arrangement/`), and code names it by its full path
 (`crate::arrangement::timeline::Timeline`).
 
 ## From a file to the speakers
+
+Native stereo sources and effects use the device-neutral `NativeNode` contract. The graph
+interpreter stores prepared trait objects; a separate factory and implementation adapters
+own concrete kernel selection and off-thread resource binding. Rendering, span preparation,
+note events and reset remain allocation-free. Shared modulation math lives outside concrete
+instruments.
 
 The SDK also preserves optional editor geometry (node rectangles, wire bends and port
 anchors). This remains authoring data in the embedded JSON; it is validated off the audio thread
@@ -399,3 +405,28 @@ do not add DSP graph nodes or run on the audio thread.
 Sampler read-head positions travel through the engine meter monitor as atomic values. The UI reads them without accessing audio-thread device state.
 
 Host-owned AudioData implements AsRef<[f32]> so sample instruments share decoded PCM through Device::load_shared_sample without a copy. SDK transient analyses are shared by source identity and format in an off-thread weak cache, which retains no unused source or analysis. Device::set_context receives each block context before its MIDI events, including events at frame zero.
+
+Registered zero-latency audio effects used as `native_effect` graph kernels resolve in
+`device-registry::compile_graph`. Track chains and nested device groups use this same factory;
+the session validates it before insertion. The SDK interpreter knows only `NativeNode`.
+Prepared sample PCM and checked read regions are independent SDK resource data; file loading,
+decoding, binding and retirement remain host responsibilities outside the render thread.
+
+
+### Prepared sample and component nodes
+
+SDK implementations are grouped by type under `device-sdk/src/nodes/`; the scheduler owns only
+generic NativeNode input/output, event, parameter and completion interfaces. Sample resources are
+immutable Arc-backed PCM supplied by the host off-thread. Resource keys persist in .sd and resolve
+through PreparedSamples; the SDK does no file decoding. Missing keys fail preparation. Replacing a
+binding prepares a new graph; existing voices retain their old Arc until graph retirement off-thread.
+VoiceGroup, GrainPool and versioned Component definitions contain private precompiled graphs, bounded
+by nesting and aggregate state budgets. Their states are never constructed or freed during rendering.
+Shared envelope stages, RNG, grain windows/scheduling, source analysis and stretch processing serve
+both the existing sampler and graph nodes. Existing Delay and Reverb implementations are unchanged.
+
+SDK sampler graphs receive decoded immutable `SampleAsset` resources from the host while
+track chains are prepared. The engine maps an SDK device's model sample reference to binding
+`sample`; it does not decode files. Graph state and source references persist independently,
+so relocation and relinking do not rewrite graph definitions. `device.addSd` checks the same
+resources before insertion, and MCP confines both graph and source paths.

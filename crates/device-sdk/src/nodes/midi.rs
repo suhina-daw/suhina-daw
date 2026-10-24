@@ -8,7 +8,7 @@ pub const MIDI_INPUT: NodeInfo = NodeInfo {
     name: "MIDI Input",
     inputs: &[],
     outputs: &["out"],
-    description: "Incoming MIDI events for a MIDI-effect graph.",
+    description: "Incoming MIDI events with their frame offsets.",
     configuration: "none",
     example: "{\"kind\":\"midi_input\"}",
     rust_variant: "MidiInput",

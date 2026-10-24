@@ -332,10 +332,14 @@ impl Device {
     }
     /// A sampler's source path, versioned independently of parameter values.
     pub fn sample_file(&self) -> Option<&str> {
-        if !matches!(&self.kind, DeviceKind::Builtin(id) if id == "sampler") {
+        let bytes = if self.kind == DeviceKind::Sd {
+            &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_reference")?.data
+        } else if matches!(&self.kind, DeviceKind::Builtin(id) if id == "sampler") {
+            self.state.as_deref()?
+        } else {
             return None;
-        }
-        std::str::from_utf8(self.state.as_deref()?).ok()?.strip_prefix("suhina-sample-v1\n")?.split('\0').next()
+        };
+        std::str::from_utf8(bytes).ok()?.strip_prefix("suhina-sample-v1\n")?.split('\0').next()
     }
 
     pub fn set_sample_file(&mut self, path: &str) {
@@ -344,11 +348,22 @@ impl Device {
 
     pub fn sample_absolute_file(&self) -> Option<&str> {
         self.sample_file()?;
-        std::str::from_utf8(self.state.as_deref()?).ok()?.split_once('\0').map(|(_, absolute)| absolute)
+        let bytes = if self.kind == DeviceKind::Sd {
+            &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_reference")?.data
+        } else {
+            self.state.as_deref()?
+        };
+        std::str::from_utf8(bytes).ok()?.split_once('\0').map(|(_, absolute)| absolute)
     }
 
     pub fn set_sample_reference(&mut self, file: &str, absolute: &str) {
-        self.state = Some(format!("suhina-sample-v1\n{file}\0{absolute}").into_bytes());
+        let data = format!("suhina-sample-v1\n{file}\0{absolute}").into_bytes();
+        if self.kind == DeviceKind::Sd {
+            self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_reference"));
+            self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_reference".into(), data });
+        } else {
+            self.state = Some(data);
+        }
     }
 }
 

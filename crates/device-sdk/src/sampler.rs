@@ -6,8 +6,7 @@ use std::sync::Arc;
 use suhina_device_api::{Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, Scale, Unit};
 use suhina_dsp::{Biquad, Coefficients};
 
-#[path = "sampler_warp.rs"]
-mod warp;
+use crate::nodes::stretch as warp;
 
 const fn continuous(id: &'static str, name: &'static str, min: f64, max: f64, default: f64, unit: Unit) -> ParamInfo {
     ParamInfo::continuous(id, name, (min, max), default, unit, Scale::Linear)
@@ -104,18 +103,8 @@ pub const PARAMS: &[ParamInfo] = &[
     ParamInfo::integer("lfo_division", "LFO division", (1, 64), 4, Unit::None),
     continuous("source_bpm", "Source BPM", 0., 999., 0., Unit::None),
 ];
-pub(crate) fn lfo_hz(rate: f64, time: f64, division: f64, mode: f64, tempo: f64) -> f64 {
-    let division = division.round().clamp(1., 64.);
-    let bpm = tempo.clamp(1., 1000.);
-    match mode.round().clamp(0., 5.) as u8 {
-        0 => rate.clamp(0.01, 20.),
-        1 => 1000. / time.clamp(1., 20000.),
-        2 => bpm * division / 240.,
-        3 => bpm * division / 160.,
-        4 => bpm * division / 360.,
-        _ => bpm / (15. * division),
-    }
-}
+use crate::modulation::lfo_hz;
+
 pub const INFO: DeviceInfo = DeviceInfo { id: "sampler", name: "Sampler", role: Role::Instrument, params: PARAMS };
 
 #[derive(Clone, Copy, Default)]
@@ -199,6 +188,9 @@ pub struct Sampler {
     bend: f64,
     gain: f64,
     grain_gain: f64,
+    block_grain_limit: usize,
+    block_grain_gain: f64,
+    block_gain: f64,
     pan: f64,
 }
 impl Default for Sampler {
@@ -209,7 +201,7 @@ impl Default for Sampler {
 impl Sampler {
     pub fn new() -> Self {
         Self {
-            window: std::array::from_fn(|i| 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / 2048.).cos()),
+            window: std::array::from_fn(|i| crate::nodes::granular::hann(i as f64 / 2048.)),
             values: std::array::from_fn(|i| PARAMS[i].default),
             analysis: Arc::new(SliceAnalysis::default()),
             manual_slices: None,
@@ -227,6 +219,9 @@ impl Sampler {
             bend: 0.,
             gain: 1.,
             grain_gain: 1.,
+            block_grain_limit: 32,
+            block_grain_gain: 1.,
+            block_gain: 1.,
             pan: 0.,
         }
     }
@@ -255,8 +250,7 @@ fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64,
     fade(position - start, fade_in) * fade(end - 1. - position, fade_out)
 }
 fn random(seed: &mut u32) -> f64 {
-    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-    f64::from(*seed) / f64::from(u32::MAX) * 2. - 1.
+    crate::nodes::random::bipolar(seed)
 }
 impl Device for Sampler {
     fn sample_position(&self) -> Option<f32> {
@@ -476,232 +470,8 @@ impl Device for Sampler {
         }
     }
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        self.set_context(context);
-        let p = self.values;
-        let total = self.frames() as f64;
-        let start = p[1] * total;
-        let end = p[2] * total;
-        let lo = (p[3] * total).max(start);
-        let hi = (p[4] * total).min(end);
-        let looping = p[8] == 2. && hi > lo + 1.;
-        let grain_limit = (256 / self.voices.iter().filter(|v| v.active).count().max(1)).min(32);
-        for voice in &mut self.voices {
-            for grain in voice.grains.iter_mut().skip(grain_limit) {
-                grain.length = 0;
-            }
-        }
-        let target_grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
-        let target_gain = 10f64.powf(p[18] / 20.);
-        for frame in buffer.as_chunks_mut::<2>().0 {
-            let mut out = [0.; 2];
-            let phase = self.phase + lfo_hz(p[37], p[81], p[82], p[80], self.tempo) / self.rate;
-            if phase >= 1. {
-                self.lfo_cycle = self.lfo_cycle.wrapping_add(1);
-            }
-            self.phase = phase.fract();
-            let shape =
-                suhina_dsp::lfo::Shape::ALL.get(p[56] as usize).copied().unwrap_or(suhina_dsp::lfo::Shape::Sine);
-            let modulation =
-                suhina_dsp::lfo::wave(shape, if p[56] == 5. { f64::from(self.lfo_cycle) } else { self.phase });
-            let lfo = modulation * p[38];
-            let volume = 1. - p[54] * (modulation + 1.) * 0.5;
-            self.gain += (target_gain - self.gain) * (1. / (0.005 * self.rate));
-            self.grain_gain += (target_grain_gain - self.grain_gain) * (1. / (0.005 * self.rate));
-            self.pan += (p[19] - self.pan) * (1. / (0.005 * self.rate));
-            for (index, v) in self.voices.iter_mut().enumerate() {
-                if !v.active {
-                    continue;
-                }
-                if index >= (if p[40] > 0. { 1 } else { p[7] as usize }) || end <= start + 1. || total < 2. {
-                    v.active = false;
-                    continue;
-                }
-                let slices = p[0] == 0. && p[8] == 3.;
-                let (start, end) = if slices { (v.slice_start * total, v.slice_end * total) } else { (start, end) };
-                match v.stage {
-                    0 => {
-                        v.env = (v.env + 1. / (p[11] * self.rate).max(1.)).min(1.);
-                        if v.env >= 1. {
-                            v.stage = 1;
-                        }
-                    }
-                    1 => {
-                        v.env = (v.env - (1. - p[13]) / (p[12] * self.rate).max(1.)).max(p[13]);
-                        if v.env <= p[13] {
-                            v.stage = 2;
-                        }
-                    }
-                    3 => {
-                        v.env = (v.env - v.released.max(1e-12) / (p[14] * self.rate).max(1.)).max(0.);
-                        if v.env <= 0. {
-                            v.active = false;
-                            continue;
-                        }
-                    }
-                    _ => {}
-                }
-                let pitch_env = if v.age < p[42] {
-                    v.age / p[42]
-                } else {
-                    (1. - (v.age - p[42]) / p[43].max(1. / self.rate)).max(0.)
-                };
-                v.age += 1. / self.rate;
-                let target_step = 2f64.powf(
-                    ((if slices { 0. } else { f64::from(v.key) - p[30] })
-                        + p[5]
-                        + p[6] / 100.
-                        + self.bend
-                        + lfo
-                        + pitch_env * p[41])
-                        / 12.,
-                ) * self.source_rate
-                    / self.rate;
-                v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
-                let mut signal = [0.; 2];
-                if p[0] == 0. {
-                    if v.position < start || v.position >= end {
-                        v.active = false;
-                        continue;
-                    }
-                    let speed = if p[83] > 0. {
-                        self.tempo / p[83]
-                    } else {
-                        (p[2] - p[1]) * total / self.source_rate * self.tempo / (60. * p[79])
-                    }
-                    .clamp(1e-6, 1e6);
-                    let warped = p[77] > 0.;
-                    let stretched = warped && p[78] > 0. && (0.25..=4.).contains(&speed);
-                    signal = if stretched {
-                        self.warp.get_mut(index).map_or([0.; 2], |warp| {
-                            warp.next(speed, v.step * self.rate / self.source_rate, |ahead| {
-                                let mut position = v.position + ahead * self.source_rate / self.rate * v.direction;
-                                if looping
-                                    && ((v.direction > 0. && position >= hi) || (v.direction < 0. && position < lo))
-                                {
-                                    let span = hi - lo;
-                                    if p[9] > 0. {
-                                        let phase = (position - lo).rem_euclid(2. * (span - 1.));
-                                        position =
-                                            lo + if phase < span - 1. { phase } else { 2. * (span - 1.) - phase };
-                                    } else if position >= hi || position < lo {
-                                        position = lo + (position - lo).rem_euclid(span);
-                                    }
-                                }
-                                if position < start || position >= end {
-                                    [0.; 2]
-                                } else {
-                                    read(self.source.as_ref().as_ref(), self.channels, position)
-                                }
-                            })
-                        })
-                    } else {
-                        read(self.source.as_ref().as_ref(), self.channels, v.position)
-                    };
-                    let (fade_start, fade_end) =
-                        if looping && v.position >= lo && v.position < hi { (lo, hi) } else { (start, end) };
-                    let fade = source_fade(v.position, fade_start, fade_end, p[57], p[58], self.source_rate);
-                    signal.iter_mut().for_each(|sample| *sample *= fade);
-                    v.position +=
-                        if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
-                    let boundary = if p[9] > 0. { hi - 1. } else { hi };
-                    if looping
-                        && ((v.direction > 0. && v.position >= boundary) || (v.direction < 0. && v.position < lo))
-                    {
-                        let length = boundary - lo;
-                        if p[9] > 0. {
-                            let phase = (v.position - lo).rem_euclid(2. * length);
-                            v.position = lo + if phase < length { phase } else { 2. * length - phase };
-                            v.position = v.position.min(boundary);
-                            v.direction *= if phase < length { 1. } else { -1. };
-                        } else {
-                            v.position = lo + (v.position - lo).rem_euclid(length);
-                        }
-                    }
-                } else {
-                    if p[26] == 0. {
-                        v.scan += p[21] * self.source_rate / self.rate;
-                    }
-                    v.next_grain -= 1.;
-                    if v.next_grain <= 0. {
-                        v.next_grain += self.rate / p[23];
-                        if let Some(g) = v.grains.iter_mut().take(grain_limit).find(|g| g.age >= g.length) {
-                            let length = (p[22] * self.rate / 1000.).max(2.) as usize;
-                            *g = Grain {
-                                window_step: 2048. / (length - 1) as f64,
-                                position: start
-                                    + ((p[20] * (end - start)
-                                        + v.scan
-                                        + random(&mut self.seed) * p[24] * (end - start) * 0.5)
-                                        .rem_euclid(end - start)),
-                                age: 0,
-                                length,
-                                step: v.step * v.direction,
-                                pan: random(&mut self.seed) * p[25],
-                            };
-                        }
-                    }
-                    for g in v.grains.iter_mut().take(grain_limit) {
-                        if g.age >= g.length {
-                            continue;
-                        }
-                        let window = grain_window(&self.window, g.age as f64 * g.window_step);
-                        let position = start + (g.position - start).rem_euclid(end - start);
-                        let data = read(self.source.as_ref().as_ref(), self.channels, position);
-                        let window = window * source_fade(position, start, end, p[57], p[58], self.source_rate);
-                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) * self.grain_gain;
-                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) * self.grain_gain;
-                        g.age += 1;
-                        g.position += g.step;
-                    }
-                }
-                v.filter_env = if v.stage == 3 {
-                    (v.filter_env - v.filter_released / (p[51] * self.rate).max(1.)).max(0.)
-                } else if v.age < p[48] {
-                    v.age / p[48].max(1. / self.rate)
-                } else {
-                    (1. - (v.age - p[48]) / p[49].max(1. / self.rate) * (1. - p[50])).max(p[50])
-                };
-                if p[15] > 0. {
-                    let freq = (p[16]
-                        * 2f64.powf(
-                            v.filter_env * p[35]
-                                + v.velocity * p[36]
-                                + (f64::from(v.key) - p[30]) / 12. * p[46]
-                                + modulation * p[53],
-                        ))
-                    .clamp(20., (self.rate * 0.49).min(20000.));
-                    let c = match p[15] as u8 {
-                        1 => Coefficients::lowpass(self.rate, freq, p[17]),
-                        2 => Coefficients::highpass(self.rate, freq, p[17]),
-                        3 => Coefficients::bandpass(self.rate, freq, p[17]),
-                        _ => {
-                            let bp = Coefficients::bandpass(self.rate, freq, p[17]);
-                            Coefficients { b0: 1. - bp.b0, b1: bp.a1 - bp.b1, b2: bp.a2 - bp.b2, ..bp }
-                        }
-                    };
-                    for (ch, sample) in signal.iter_mut().enumerate() {
-                        if let (Some(filter), Some(second)) = (v.filters.get_mut(ch), v.filters_24.get_mut(ch)) {
-                            filter.set(c);
-                            second.set(c);
-                            *sample = filter.process(*sample);
-                            if p[45] > 0. {
-                                *sample = second.process(*sample);
-                            }
-                        }
-                    }
-                }
-                for ch in 0..2 {
-                    let next = signal[ch] * v.env * (1. - p[28] + p[28] * v.velocity);
-                    v.last[ch] = next * (1. - v.fade) + v.fade_from[ch] * v.fade;
-                    out[ch] += v.last[ch];
-                }
-                v.fade = (v.fade - 1. / (0.005 * self.rate)).max(0.);
-            }
-            let pan = (self.pan + modulation * p[55]).clamp(-1., 1.);
-            let limit = f64::from(f32::MAX);
-            frame[0] = (out[0] * self.gain * volume * (1. - pan.max(0.))).clamp(-limit, limit) as f32;
-            frame[1] = (out[1] * self.gain * volume * (1. + pan.min(0.))).clamp(-limit, limit) as f32;
-        }
+        self.prepare_block(context);
+        self.process_prepared(buffer);
     }
 }
 
@@ -724,93 +494,7 @@ fn shared_analysis(source: &SharedPcm, channels: u16, rate: u32) -> Arc<SliceAna
     analysis
 }
 
-/// Source analysis happens on loading, never on the audio thread.
-#[derive(Clone)]
-pub struct SliceAnalysis {
-    attacks: [(f64, f64); 127],
-}
-impl Default for SliceAnalysis {
-    fn default() -> Self {
-        Self { attacks: [(1., 0.); 127] }
-    }
-}
-impl SliceAnalysis {
-    pub fn new(source: &[f32], channels: usize, rate: f64) -> Self {
-        let mut result = Self::default();
-        let channels = channels.max(1);
-        let frames = source.len() / channels;
-        let window = (rate * 0.005).max(1.) as usize;
-        let mut previous = 0.;
-        for (i, block) in source.chunks(window.saturating_mul(channels).max(1)).enumerate() {
-            let peak = block.iter().filter(|v| v.is_finite()).fold(0f64, |p, v| p.max(f64::from(v.abs())));
-            let rise = (peak - previous).max(0.);
-            previous = peak;
-            if i == 0 || rise <= 0. {
-                continue;
-            }
-            if let Some(slot) = result.attacks.iter_mut().min_by(|a, b| a.1.total_cmp(&b.1))
-                && rise > slot.1
-            {
-                *slot = ((i.saturating_mul(window)) as f64 / frames.max(1) as f64, rise);
-            }
-        }
-        result
-    }
-    pub fn points(&self, p: &[f64], frames: usize, rate: f64, tempo: f64) -> [f64; 129] {
-        let value = |i: usize, default| p.get(i).copied().unwrap_or(default);
-        let start = value(1, 0.);
-        let end = value(2, 1.);
-        let sensitivity = value(59, 0.5).clamp(0., 1.);
-        let mut points = [end; 129];
-        points[0] = start;
-        let mut n = 1;
-        let mut add = |point: f64| {
-            if point > start && point < end && n < 128 {
-                points[n] = point;
-                n += 1;
-            }
-        };
-        match value(60, 0.) as u8 {
-            0 => {
-                let maximum = self.attacks.iter().fold(0f64, |v, a| v.max(a.1));
-                for &(point, strength) in &self.attacks {
-                    if strength > maximum * (1. - sensitivity) && strength > 0. {
-                        add(point);
-                    }
-                }
-            }
-            1 => {
-                let beats = [4., 2., 1., 0.5, 0.25, 0.125];
-                let beat = beats.get((sensitivity * 5.).round() as usize).copied().unwrap_or(1.);
-                let step = beat * 60. / tempo.max(1.) * rate / frames.max(1) as f64;
-                for i in 1..128 {
-                    add(start + i as f64 * step);
-                }
-            }
-            2 => {
-                let count = 1 + (sensitivity * 31.).round() as usize;
-                for i in 1..count {
-                    add(start + (end - start) * i as f64 / count as f64);
-                }
-            }
-            _ => {
-                for i in 61..77 {
-                    add(value(i, 1.));
-                }
-            }
-        }
-        points.sort_unstable_by(f64::total_cmp);
-        let mut unique = [end; 129];
-        let mut count = 0;
-        for point in points {
-            if count == 0 || unique[count - 1] != point {
-                unique[count] = point;
-                count += 1;
-            }
-        }
-        unique
-    }
-}
+pub use crate::nodes::slicing::SliceAnalysis;
 
 fn manual_slice(points: &[f64], start: f64, end: f64, index: usize) -> Option<(f64, f64)> {
     if end <= start {
@@ -966,6 +650,233 @@ mod grain_window_tests {
                 let expected = 0.5 - 0.5 * (std::f64::consts::TAU * phase).cos();
                 assert!((super::grain_window(&sampler.window, phase * 2048.) - expected).abs() < 1e-6);
             }
+        }
+    }
+}
+
+impl Sampler {
+    pub(crate) fn prepare_block(&mut self, context: &ProcessContext) {
+        self.set_context(context);
+        let p = self.values;
+        let grain_limit = (256 / self.voices.iter().filter(|v| v.active).count().max(1)).min(32);
+        for voice in &mut self.voices {
+            for grain in voice.grains.iter_mut().skip(grain_limit) {
+                grain.length = 0;
+            }
+        }
+        let target_grain_gain = 1. / (p[23] * p[22] / 1000. * 0.5).min(grain_limit as f64 * 0.5).max(1.);
+        let target_gain = 10f64.powf(p[18] / 20.);
+        self.block_grain_limit = grain_limit;
+        self.block_grain_gain = target_grain_gain;
+        self.block_gain = target_gain;
+    }
+
+    pub(crate) fn process_prepared(&mut self, buffer: &mut [f32]) {
+        let p = self.values;
+        let total = self.frames() as f64;
+        let start = p[1] * total;
+        let end = p[2] * total;
+        let lo = (p[3] * total).max(start);
+        let hi = (p[4] * total).min(end);
+        let looping = p[8] == 2. && hi > lo + 1.;
+        let grain_limit = self.block_grain_limit;
+        let target_grain_gain = self.block_grain_gain;
+        let target_gain = self.block_gain;
+        for frame in buffer.as_chunks_mut::<2>().0 {
+            let mut out = [0.; 2];
+            let phase = self.phase + lfo_hz(p[37], p[81], p[82], p[80], self.tempo) / self.rate;
+            if phase >= 1. {
+                self.lfo_cycle = self.lfo_cycle.wrapping_add(1);
+            }
+            self.phase = phase.fract();
+            let shape =
+                suhina_dsp::lfo::Shape::ALL.get(p[56] as usize).copied().unwrap_or(suhina_dsp::lfo::Shape::Sine);
+            let modulation =
+                suhina_dsp::lfo::wave(shape, if p[56] == 5. { f64::from(self.lfo_cycle) } else { self.phase });
+            let lfo = modulation * p[38];
+            let volume = 1. - p[54] * (modulation + 1.) * 0.5;
+            self.gain += (target_gain - self.gain) * (1. / (0.005 * self.rate));
+            self.grain_gain += (target_grain_gain - self.grain_gain) * (1. / (0.005 * self.rate));
+            self.pan += (p[19] - self.pan) * (1. / (0.005 * self.rate));
+            for (index, v) in self.voices.iter_mut().enumerate() {
+                if !v.active {
+                    continue;
+                }
+                if index >= (if p[40] > 0. { 1 } else { p[7] as usize }) || end <= start + 1. || total < 2. {
+                    v.active = false;
+                    continue;
+                }
+                let slices = p[0] == 0. && p[8] == 3.;
+                let (start, end) = if slices { (v.slice_start * total, v.slice_end * total) } else { (start, end) };
+                if !crate::nodes::envelopes::step(
+                    &mut v.env,
+                    &mut v.stage,
+                    v.released,
+                    [p[11], p[12], p[13], p[14]],
+                    self.rate,
+                ) {
+                    v.active = false;
+                    continue;
+                }
+                let pitch_env = if v.age < p[42] {
+                    v.age / p[42]
+                } else {
+                    (1. - (v.age - p[42]) / p[43].max(1. / self.rate)).max(0.)
+                };
+                v.age += 1. / self.rate;
+                let target_step = 2f64.powf(
+                    ((if slices { 0. } else { f64::from(v.key) - p[30] })
+                        + p[5]
+                        + p[6] / 100.
+                        + self.bend
+                        + lfo
+                        + pitch_env * p[41])
+                        / 12.,
+                ) * self.source_rate
+                    / self.rate;
+                v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
+                let mut signal = [0.; 2];
+                if p[0] == 0. {
+                    if v.position < start || v.position >= end {
+                        v.active = false;
+                        continue;
+                    }
+                    let speed = if p[83] > 0. {
+                        self.tempo / p[83]
+                    } else {
+                        (p[2] - p[1]) * total / self.source_rate * self.tempo / (60. * p[79])
+                    }
+                    .clamp(1e-6, 1e6);
+                    let warped = p[77] > 0.;
+                    let stretched = warped && p[78] > 0. && (0.25..=4.).contains(&speed);
+                    signal = if stretched {
+                        self.warp.get_mut(index).map_or([0.; 2], |warp| {
+                            warp.next(speed, v.step * self.rate / self.source_rate, |ahead| {
+                                let mut position = v.position + ahead * self.source_rate / self.rate * v.direction;
+                                if looping
+                                    && ((v.direction > 0. && position >= hi) || (v.direction < 0. && position < lo))
+                                {
+                                    let span = hi - lo;
+                                    if p[9] > 0. {
+                                        let phase = (position - lo).rem_euclid(2. * (span - 1.));
+                                        position =
+                                            lo + if phase < span - 1. { phase } else { 2. * (span - 1.) - phase };
+                                    } else if position >= hi || position < lo {
+                                        position = lo + (position - lo).rem_euclid(span);
+                                    }
+                                }
+                                if position < start || position >= end {
+                                    [0.; 2]
+                                } else {
+                                    read(self.source.as_ref().as_ref(), self.channels, position)
+                                }
+                            })
+                        })
+                    } else {
+                        read(self.source.as_ref().as_ref(), self.channels, v.position)
+                    };
+                    let (fade_start, fade_end) =
+                        if looping && v.position >= lo && v.position < hi { (lo, hi) } else { (start, end) };
+                    let fade = source_fade(v.position, fade_start, fade_end, p[57], p[58], self.source_rate);
+                    signal.iter_mut().for_each(|sample| *sample *= fade);
+                    v.position +=
+                        if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
+                    let boundary = if p[9] > 0. { hi - 1. } else { hi };
+                    if looping
+                        && ((v.direction > 0. && v.position >= boundary) || (v.direction < 0. && v.position < lo))
+                    {
+                        let length = boundary - lo;
+                        if p[9] > 0. {
+                            let phase = (v.position - lo).rem_euclid(2. * length);
+                            v.position = lo + if phase < length { phase } else { 2. * length - phase };
+                            v.position = v.position.min(boundary);
+                            v.direction *= if phase < length { 1. } else { -1. };
+                        } else {
+                            v.position = lo + (v.position - lo).rem_euclid(length);
+                        }
+                    }
+                } else {
+                    if p[26] == 0. {
+                        v.scan += p[21] * self.source_rate / self.rate;
+                    }
+                    if crate::nodes::granular::tick(&mut v.next_grain, self.rate / p[23])
+                        && let Some(g) = v.grains.iter_mut().take(grain_limit).find(|g| g.age >= g.length)
+                    {
+                        let length = (p[22] * self.rate / 1000.).max(2.) as usize;
+                        *g = Grain {
+                            window_step: 2048. / (length - 1) as f64,
+                            position: start
+                                + ((p[20] * (end - start)
+                                    + v.scan
+                                    + random(&mut self.seed) * p[24] * (end - start) * 0.5)
+                                    .rem_euclid(end - start)),
+                            age: 0,
+                            length,
+                            step: v.step * v.direction,
+                            pan: random(&mut self.seed) * p[25],
+                        };
+                    }
+                    for g in v.grains.iter_mut().take(grain_limit) {
+                        if g.age >= g.length {
+                            continue;
+                        }
+                        let window = grain_window(&self.window, g.age as f64 * g.window_step);
+                        let position = start + (g.position - start).rem_euclid(end - start);
+                        let data = read(self.source.as_ref().as_ref(), self.channels, position);
+                        let window = window * source_fade(position, start, end, p[57], p[58], self.source_rate);
+                        signal[0] += data[0] * window * (1. - g.pan.max(0.)) * self.grain_gain;
+                        signal[1] += data[1] * window * (1. + g.pan.min(0.)) * self.grain_gain;
+                        g.age += 1;
+                        g.position += g.step;
+                    }
+                }
+                v.filter_env = if v.stage == 3 {
+                    (v.filter_env - v.filter_released / (p[51] * self.rate).max(1.)).max(0.)
+                } else if v.age < p[48] {
+                    v.age / p[48].max(1. / self.rate)
+                } else {
+                    (1. - (v.age - p[48]) / p[49].max(1. / self.rate) * (1. - p[50])).max(p[50])
+                };
+                if p[15] > 0. {
+                    let freq = (p[16]
+                        * 2f64.powf(
+                            v.filter_env * p[35]
+                                + v.velocity * p[36]
+                                + (f64::from(v.key) - p[30]) / 12. * p[46]
+                                + modulation * p[53],
+                        ))
+                    .clamp(20., (self.rate * 0.49).min(20000.));
+                    let c = match p[15] as u8 {
+                        1 => Coefficients::lowpass(self.rate, freq, p[17]),
+                        2 => Coefficients::highpass(self.rate, freq, p[17]),
+                        3 => Coefficients::bandpass(self.rate, freq, p[17]),
+                        _ => {
+                            let bp = Coefficients::bandpass(self.rate, freq, p[17]);
+                            Coefficients { b0: 1. - bp.b0, b1: bp.a1 - bp.b1, b2: bp.a2 - bp.b2, ..bp }
+                        }
+                    };
+                    for (ch, sample) in signal.iter_mut().enumerate() {
+                        if let (Some(filter), Some(second)) = (v.filters.get_mut(ch), v.filters_24.get_mut(ch)) {
+                            filter.set(c);
+                            second.set(c);
+                            *sample = filter.process(*sample);
+                            if p[45] > 0. {
+                                *sample = second.process(*sample);
+                            }
+                        }
+                    }
+                }
+                for ch in 0..2 {
+                    let next = signal[ch] * v.env * (1. - p[28] + p[28] * v.velocity);
+                    v.last[ch] = next * (1. - v.fade) + v.fade_from[ch] * v.fade;
+                    out[ch] += v.last[ch];
+                }
+                v.fade = (v.fade - 1. / (0.005 * self.rate)).max(0.);
+            }
+            let pan = (self.pan + modulation * p[55]).clamp(-1., 1.);
+            let limit = f64::from(f32::MAX);
+            frame[0] = (out[0] * self.gain * volume * (1. - pan.max(0.))).clamp(-limit, limit) as f32;
+            frame[1] = (out[1] * self.gain * volume * (1. + pan.min(0.))).clamp(-limit, limit) as f32;
         }
     }
 }

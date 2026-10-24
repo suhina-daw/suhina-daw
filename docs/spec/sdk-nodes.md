@@ -5,10 +5,34 @@ type: spec
 status: current
 last_verified: 2026-10-21
 covers:
+  - crates/device-sdk/src/sample_resource.rs
+  - crates/device-sdk/src/nodes/audio.rs
+  - crates/device-sdk/src/nodes/native.rs
+  - crates/device-sdk/src/nodes/factory.rs
+  - crates/device-sdk/src/nodes/events.rs
+  - crates/device-sdk/src/nodes/component.rs
+  - crates/device-sdk/src/nodes/templates.rs
+  - crates/device-sdk/src/nodes/voice.rs
+  - crates/device-sdk/src/nodes/envelopes.rs
+  - crates/device-sdk/src/nodes/resources.rs
+  - crates/device-sdk/src/nodes/sample.rs
+  - crates/device-sdk/src/nodes/playback.rs
+  - crates/device-sdk/src/nodes/processor.rs
+  - crates/device-sdk/src/nodes/modulation.rs
+  - crates/device-sdk/src/nodes/transport.rs
+  - crates/device-sdk/src/nodes/random.rs
+  - crates/device-sdk/src/nodes/slicing.rs
+  - crates/device-sdk/src/nodes/stretch.rs
+  - crates/device-sdk/src/nodes/granular.rs
   - crates/device-sdk/src/nodes.rs
   - crates/device-sdk/src/midi.rs
   - crates/device-sdk/src/runtime.rs
   - crates/device-sdk/examples/catalog.rs
+  - crates/device-sdk/tests/resource_nodes.rs
+  - crates/device-sdk/tests/voice_nodes.rs
+  - crates/device-sdk/tests/composed_templates.rs
+  - crates/device-sdk/tests/prepared_players.rs
+  - crates/device-sdk/examples/sampler_composition.rs
   - crates/device-sdk/tests/graphs.rs
   - crates/device-sdk/tests/golden/feedback.f32
 ---
@@ -19,12 +43,16 @@ Audio and control ports carry one stereo pair per sample frame, in f64 internall
 control signals share this representation: a constant or parameter broadcasts its value to both channels.
 Frequency, Q, filter gain, delay time, oscillator rate and balance read the left control channel.
 Arithmetic, comparisons, smoothing and envelope controls operate independently per channel.
-Every node has `out` (stereo), `left` (left broadcast) and `right` (right broadcast) outputs.
+Signal nodes have `out` (stereo), `left` (left broadcast) and `right` (right broadcast) outputs.
+Resource and event nodes expose their typed catalogue outputs instead.
 Connections select one of these source ports and one of the inputs below. Each input accepts
 at most one connection; use add/mix to sum signals. Required inputs have no default.
 Values are finite and limited to the f32 range after each node; non-finite results become zero.
-MIDI event ports carry timestamped `NoteEvent` values and are only used in MIDI-effect graphs.
+MIDI event ports carry timestamped `NoteEvent` values in MIDI-effect chains and instrument event routes.
 An odd final sample in a stereo buffer is cleared. No node allocates or performs I/O while processing.
+The runtime schedules strongly connected feedback components frame by frame, committing their
+delays after all component nodes have evaluated. Acyclic nodes use bounded 64-frame chunks;
+feed-forward delays read and commit per frame within their chunk.
 
 The Rust API is `Node::new(id, NodeKind::Variant { configuration })` and
 `Connection::ports(source, source_port, destination, destination_port)`.
@@ -63,6 +91,61 @@ The JSON catalog uses the same records and includes a minimal configuration exam
 <!-- sdk-nodes:begin -->
 | JSON kind / Rust variant | Inputs (default, unit) | Behaviour |
 |---|---|---|
+| `native_effect` / `NativeEffect` | `in` (0, signal), `control1` (0, signal), `control2` (0, signal), `control3` (0, signal), `control4` (0, signal) | Trusted native graph kernel, resolved off-thread by the host. Supports graph wiring and delayed feedback; never loads third-party code. |
+| `sampler` / `Sampler` | `pitch` (0, semitones), `cutoff` (20000, Hz), `pan` (0, balance), `position` (0.5, normalized), `events` (0, midi) | Polyphonic sample source using the shared Sampler kernel. Receives timestamped instrument events; bind sample data and parameters by node id before processing. Audio can feed any signal node. |
+| `sampler_asset` / `SamplerAsset` | `pitch` (0, semitones), `cutoff` (20000, Hz), `pan` (0, balance), `position` (0.5, normalized), `events` (0, midi) | Polyphonic sample source using the shared Sampler kernel. Receives timestamped instrument events; bind sample data and parameters by node id before processing. Audio can feed any signal node. |
+| `key_range` / `KeyRange` | `in` (required, midi) | Filter note keys in an inclusive range. |
+| `velocity_range` / `VelocityRange` | `in` (required, midi) | Filter note-on velocities while preserving accepted releases. |
+| `sustain` / `Sustain` | `in` (required, midi) | Defer note releases while controller 64 is held. |
+| `voice_group` / `VoiceGroup` | `events` (0, midi), `control1` (0, signal), `control2` (0, signal), `control3` (0, signal), `control4` (0, signal) | Bounded private voice graphs with sustain, retrigger, stealing and explicit completion. |
+| `component` / `Component` | `in` (0, signal), `control1` (0, signal), `control2` (0, signal), `control3` (0, signal), `events` (0, midi) | Versioned embedded graph with private state and five named public inputs. |
+| `component_input` / `ComponentInput` | None | One public component or voice-group input by stable index. |
+| `voice_input` / `VoiceInput` | `events` (0, midi) | Per-voice key, gate, event pulses and channel controls. |
+| `voice_output` / `VoiceOutput` | `in` (required, signal), `finished` (required, signal) | Voice audio output with explicit completion and tail silence. |
+| `midi_controller` / `MidiController` | `events` (0, midi) | Selected normalized MIDI controller. |
+| `pitch_bend` / `PitchBend` | `events` (0, midi) | Normalized channel pitch bend. |
+| `pressure` / `Pressure` | `events` (0, midi) | Normalized channel pressure. |
+| `adsr` / `Adsr` | `gate` (0, signal), `attack` (0.005, seconds), `decay` (0.2, seconds), `sustain` (0.8, signal), `release` (0.2, seconds) | Linear ADSR with timed stages and explicit completion. |
+| `ad` / `Ad` | `trigger` (0, signal), `attack` (0.005, seconds), `decay` (0.2, seconds) | Linear AD with timed stages and explicit completion. |
+| `sample_asset` / `SampleAsset` | None | Prepared immutable sample binding. |
+| `sample_info` / `SampleInfo` | `asset` (required, sample) | Prepared sample metadata selected by field. |
+| `sample_region` / `SampleRegion` | `asset` (required, sample), `start` (0, frames), `end` (-1, frames) | Checked half-open frame region, negative end means full sample. |
+| `sample_read` / `SampleRead` | `asset` (required, sample), `position` (0, frames), `region` (required, region) | Linear sample read within a checked region. |
+| `sample_tempo` / `SampleTempo` | `asset` (required, sample) | Source BPM or duration in beats; unknown tempo is zero. |
+| `slice_map` / `SliceMap` | None | Prepared immutable manual slice boundaries. |
+| `slice_select` / `SliceSelect` | `map` (required, slice_map), `index` (0, index) | Select a half-open slice region, or empty for invalid indices. |
+| `playback_position` / `PlaybackPosition` | `rate` (1, signal), `start` (0, signal), `reset` (0, signal), `gate` (1, signal) | Signed frame position with rising-edge retrigger and gate. |
+| `playback_bounds` / `PlaybackBounds` | `position` (0, signal), `start` (0, signal), `end` (1, signal), `gate` (1, signal) | Half-open position bounds; -1 means inactive. |
+| `loop_position` / `LoopPosition` | `position` (0, signal), `start` (0, signal), `end` (1, signal), `ping_pong` (0, signal) | Forward or ping-pong position wrapping for signed positions. |
+| `playback_rate` / `PlaybackRate` | `key` (60, signal), `root` (60, signal), `fine` (0, signal), `bend` (0, signal), `ratio` (1, signal) | Pitch and sample-rate ratio to signed frame advancement. |
+| `region_fade` / `RegionFade` | `position` (0, signal), `length` (1, signal), `fade` (0, signal) | Linear source-region edge gain. |
+| `range_map` / `RangeMap` | `value` (0, signal), `in_min` (0, signal), `in_max` (1, signal), `out_min` (0, signal), `out_max` (1, signal) | Affine range conversion with safe zero input span. |
+| `curve` / `Curve` | `value` (0, signal), `exponent` (1, signal) | Normalized power curve for controls and velocity. |
+| `beat_to_position` / `BeatToPosition` | `beat` (0, signal), `bpm` (120, signal), `sample_rate` (48000, signal) | Source beat position to sample frames. |
+| `tempo_ratio` / `TempoRatio` | `source_bpm` (120, signal), `target_bpm` (120, signal) | Target tempo divided by positive source tempo. |
+| `key_to_slice` / `KeyToSlice` | `key` (60, signal), `root` (60, signal), `count` (16, signal), `wrap` (0, signal) | Key-to-index mapping with optional wrap. |
+| `slice_sequence` / `SliceSequence` | `count` (16, signal), `trigger` (0, signal), `step` (1, signal), `start` (0, signal), `events` (0, midi) | Signed slice sequence advanced by triggers or note-ons. |
+| `random_slice` / `RandomSlice` | `count` (16, signal), `trigger` (0, signal), `events` (0, midi) | Seeded random slice index, bounded by count. |
+| `random_hold` / `RandomHold` | `trigger` (0, signal), `min` (-1, signal), `max` (1, signal), `events` (0, midi) | Seeded random value held between triggers or note-ons. |
+| `random_spread` / `RandomSpread` | `value` (0, signal), `spread` (1, signal), `trigger` (0, signal), `min` (-340282346638528860000000000000000000000, signal), `max` (340282346638528860000000000000000000000, signal) | Seeded held bipolar offset added to a live control. |
+| `dc_block` / `DcBlock` | `in` (required, signal) | Stereo DC removal through the shared 5 Hz DSP blocker. |
+| `lfo` / `Lfo` | `frequency` (1, Hz), `reset` (0, signal), `phase` (0, cycles), `events` (0, midi) | Free LFO with phase offset, rising reset and event retrigger using shared waveforms. |
+| `scan_position` / `ScanPosition` | `rate` (1, signal), `start` (0, signal), `reset` (0, signal), `gate` (1, signal) | Signed frame position with rising-edge retrigger and gate. |
+| `position_reset` / `PositionReset` | `position` (0, frames), `trigger` (0, signal), `target` (0, frames), `events` (0, midi) | Event-timed or rising-trigger position replacement. |
+| `playback_finished` / `PlaybackFinished` | `position` (0, signal), `start` (0, signal), `end` (1, signal), `gate` (1, signal) | One-frame completion pulse and inactive level when leaving playback bounds. |
+| `key_tracking` / `KeyTracking` | `key` (60, key), `root` (60, key), `amount` (1, signal/key), `offset` (0, signal) | Linear key-distance modulation relative to a root. |
+| `velocity_curve` / `VelocityCurve` | `value` (0, signal), `exponent` (1, signal) | Normalized power curve for controls and velocity. |
+| `jitter` / `Jitter` | `value` (0, signal), `spread` (1, signal), `trigger` (0, signal), `min` (-340282346638528860000000000000000000000, signal), `max` (340282346638528860000000000000000000000, signal) | Seeded held bipolar offset added to a live control. |
+| `sample_rate` / `SampleRate` | None | Current graph processing sample rate in Hz. |
+| `glide` / `Glide` | `target` (0, signal), `time` (0.1, seconds), `gate` (1, signal), `legato` (1, signal) | Exponential pitch glide; gate rise starts at target in legato mode. |
+| `grain_scheduler` / `GrainScheduler` | `density` (8, Hz), `gate` (1, signal), `trigger` (0, signal), `events` (0, midi) | Bounded periodic grain starts with event-timed retrigger. |
+| `grain_pool` / `GrainPool` | `trigger` (0, signal), `position` (0, frames), `rate` (1, frames/sample), `duration` (0.12, seconds), `pan` (0, balance) | Prepared private grain graphs, bounded lifetime and drop-new overflow. |
+| `granular_player` / `GranularPlayer` | `position` (0.5, normalized), `size` (0.12, seconds), `density` (8, Hz), `pitch` (1, ratio), `events` (0, midi) | Granular instrument compiled from the same editable grain and voice graphs. |
+| `grain_read` / `GrainRead` | `asset` (required, sample), `position` (0, frames), `rate` (1, frames/sample), `duration` (0.12, seconds), `events` (0, midi) | Triggered one-shot grain read with age and completion. |
+| `slice_playback` / `SlicePlayback` | `region` (required, region), `rate` (1, frames/sample), `gate` (0, signal), `events` (0, midi) | Triggered selected-region playback in gate or one-shot mode. |
+| `loop_crossfade` / `LoopCrossfade` | `asset` (required, sample), `position` (0, frames), `region` (required, region), `fade` (0, frames) | Periodic two-head loop reader with a linear overlap crossfade. |
+| `time_stretch_player` / `TimeStretchPlayer` | `speed` (1, ratio), `pitch` (1, ratio), `start` (0, frames), `end` (-1, frames), `events` (0, midi) | Triggered resident-sample playback through the shared native stretch voice. |
+| `grain_window` / `GrainWindow` | `position` (0, signal), `duration` (1, signal) | Hann grain lifetime window, zero outside duration. |
 | `audio_input` / `AudioInput` | None | Stereo input of the track; no state. |
 | `audio_output` / `AudioOutput` | `in` (required, signal) | Final stereo output; no state. |
 | `gain` / `Gain` | `in` (required, signal) | Multiplies by the declared parameter in linear amplitude; legacy gain node. |
@@ -110,7 +193,7 @@ The JSON catalog uses the same records and includes a minimal configuration exam
 | `tempo` / `Tempo` | None | Broadcasts current transport tempo in beats/minute, limited to 1..1000. |
 | `beat` / `Beat` | None | Broadcasts transport beat, advanced each frame while playing. |
 | `playing` / `Playing` | None | Broadcasts transport running flag as 0 or 1. |
-| `midi_input` / `MidiInput` | None | Incoming MIDI events for a MIDI-effect graph. |
+| `midi_input` / `MidiInput` | None | Incoming MIDI events with their frame offsets. |
 | `midi_output` / `MidiOutput` | `in` (required, midi) | Emits processed MIDI events from a MIDI-effect graph. |
 | `midi_transpose` / `MidiTranspose` | `in` (required, midi) | Transposes note-on and note-off events by semitones; keys outside 0..127 are dropped. |
 | `midi_transpose_parameter` / `MidiTransposeParameter` | `in` (required, midi) | Transposes note events by an integer parameter; keys outside 0..127 are dropped. |
@@ -136,3 +219,203 @@ prefix without the appended LFO destinations, shape, source fades, warp controls
 LFO timing selectors and Source BPM; the oldest may also omit
 `panel_view`. New depths and fades default to zero; shape defaults to Sine. All declared audio parameter contracts
 still match exactly; other omissions or changed native parameters remain errors.
+
+## Composable sample source
+
+An instrument graph may contain `{"kind":"sampler"}` sources. Each owns the
+shared polyphonic Sampler kernel and exposes `out`, `left` and `right` audio
+outputs, so filtering, gain, mixing and feedback can use ordinary SDK nodes.
+Sources receive their routed timestamped events, or the graph events when unconnected.
+Signal pitch/cutoff/pan/position ports support modulation. Effect and MIDI-effect graphs reject them.
+
+Compile with `compile_instrument_at`, then bind PCM and configure each source
+through `PreparedEffect::sampler_mut(node_id)` and the existing `Device` API.
+Do this off the audio thread: replacement may allocate and release resources.
+Missing ids return `None`. Unbound sources are silent; reset clears voices while
+retaining PCM and controls. Processing uses fixed stack stereo buffers and
+preallocated voices, and passes the advancing transport beat to each source.
+
+The stock Sampler definition retains its existing DSP and parameter contract. Typed resources,
+private voice graphs and smaller playback/envelope/granular nodes compose separate instruments.
+
+Native kernels receive five bounded stereo input spans, in the same order as their declared ports. Unconnected ports carry their declared defaults. Source kernels ignore these spans. Block and feedback scheduling use the same input contract; kernels never retain borrowed input spans.
+
+## Prepared sample resources
+
+The Rust `sample_resource` API describes host-prepared immutable PCM, independently of any
+instrument. Construction validates an integer rate of 8000..384000 Hz, 1..32 interleaved
+channels and complete frames. PCM stays shared through `Arc`; no decoding, analysis or copying
+occurs during reads. The host owns preparation, binding, replacement and retirement off-thread.
+`SampleRegion` is a half-open frame interval within one asset; empty regions are valid and silent.
+Reads use a region-relative fractional position, linear interpolation and a clamped last frame.
+Negative, nonfinite or out-of-region positions are silent. Mono duplicates to stereo; for
+multichannel data the first two channels are read. Nonfinite PCM values become zero.
+This API supplies serialized resource ports without embedding PCM in `.sd`; it is not a replacement for existing Sampler playback, looping, grain or stretch algorithms.
+
+## Playback and mapping primitives
+
+Positions and lengths are sample frames; region ends are exclusive. PlaybackPosition emits
+its current position and then advances by signed rate while gate is positive. A rising reset
+or note-on restarts at the start input. LoopPosition maps arbitrary positions into a checked
+forward or ping-pong interval; invalid/empty intervals return the start. PlaybackBounds returns
+-1 outside a half-open interval or with a closed gate. PlaybackRate converts key/root, cents,
+bend semitones and source/output rate ratio to frame advancement (pitch capped to 20 octaves).
+RegionFade is a linear gain at both edges with fade length capped to half the region.
+RangeMap is an unclamped affine conversion; zero input span returns output minimum.
+Curve maps clamped 0..1 values through a bounded positive exponent and also serves velocity
+curves. BeatToPosition uses source BPM and sample rate; TempoRatio is target/source BPM.
+GrainWindow is a Hann lifetime window, silent outside its positive duration.
+All nodes preserve stereo independence, clear private state on reset, and do no I/O or allocation.
+These primitives do not yet implement voice graphs, serialized assets or grain allocation.
+
+## Resource-port execution
+
+SampleAsset emits a bounded prepared asset handle; SampleInfo converts it to frame count,
+duration, rate or channels. SampleRegion emits checked half-open frame bounds; SampleRead
+consumes an asset, relative position and region bounds with linear interpolation. SampleTempo
+reads optional source BPM or duration in beats; unknown tempo is zero. SliceMap stores sorted
+integer frame boundaries in .sd with a stable sample binding; SliceSelect emits the indexed
+half-open region or an empty region for an invalid index. Sample, region and slice-map ports
+are distinct from signal ports and cannot feed arithmetic or audio output directly.
+`PreparedSamples` binds immutable assets by stable names off-thread. Compilation with resources
+fails for missing names or invalid maps. Handles are private to a prepared graph, never paths,
+and are not serialized. Replacement builds a new prepared graph; active graphs retain old Arcs.
+
+Resource graphs cap assets at 128, exact frame indices at 16777216 per asset, referenced PCM
+at 256 MiB and manual slice boundaries at 4096 per map. These limits are checked off-thread.
+
+## Named signal outputs
+
+In addition to out/left/right aliases, native kernels may expose up to eight named stereo
+signal outputs. The interpreter snapshots them at every rendered frame, so trigger/release
+pulses, envelope completion and per-voice controls keep exact timing across block boundaries.
+`NativeNode::output` reads one auxiliary output from the most recent process call, whose length
+is at most 64 frames. Storage is prepared off-thread; reads never allocate or mutate a kernel.
+
+## Timed envelopes
+
+ADSR and AD use linear stages with times in seconds, clamped to 0..60, and a minimum one
+sample per stage. ADSR retriggers from zero on a rising gate, holds sustain, and releases
+from the level present at the falling gate. AD triggers on a rising signal and completes
+its attack/decay without requiring gate hold. Each exposes `finished`, one while idle or
+complete and zero while active. Stereo gates have private state. The ADSR step is shared
+with the existing sample instrument; this does not change its parameters or render behavior.
+
+## Instrument event routing and voice controls
+
+Instrument graphs may route MIDI Input through KeyRange, VelocityRange, Transpose and Sustain
+into instruments or VoiceInput via midi-typed ports. Events retain input order at the same
+frame; event edges are acyclic. Unconnected native event inputs retain the legacy global
+stream. MIDI value nodes remain legacy global controls. VoiceInput emits key, velocity, gate,
+trigger/release one-frame pulses, bend, pressure and selected controller values. Explicit
+MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
+note-offs until controller 64 falls below 0.5; note-on zero means note-off. VelocityRange remembers
+accepted keys so rejected notes cannot lose their corresponding releases. Fixed transpose reuses
+the existing MIDI processor. Event batches are bounded at 256; overflow increments a counter,
+never allocates or panics. Reset clears event/filter/controller and pedal state.
+VoiceOutput passes audio until its finished control becomes positive, then emits silence and
+reports completion to its owner. Event outputs cannot connect to signal/resource ports.
+
+## Private voice graphs and components
+
+VoiceGroup contains an embedded instrument graph and 1..32 private instances, sums their
+outputs, and requires one VoiceOutput in that graph. Note identity is MIDI key: a repeated
+note-on retriggers that key's voice; otherwise allocation uses a free voice, then the oldest
+voice (ties use slot order). A stolen voice fades from its last output over 64 samples.
+Controller 64 defers releases; retrigger cancels a deferred release. Controllers, pitch bend
+and pressure are inherited by newly allocated voices. Completion frees a slot; no graph is
+created or retired on the audio thread. Nested preparation caps depth at four, expanded nodes
+at 4096, expanded voice capacity at 128 and total delay storage at the existing delay budget.
+A coarse Sampler consumes 32 of that capacity; a TimeStretchPlayer consumes one. Private graphs cannot contain another VoiceGroup.
+
+Component embeds a named, positive-version graph snapshot including its parameters and optional
+panel. Its stable public ports are in/control1/control2/control3 signals, optional MIDI events and stereo out;
+ComponentInput index 0..3 reads component signal ports; voice groups additionally supply index 4. Events forward with exact
+span timing. Each component owns private state. No external component dependencies are looked up,
+so a saved graph never silently changes behavior. Effect graphs cannot embed instrument components.
+MIDI-effect components use their existing MIDI chain API rather than this audio Component.
+
+## Slice and random controls
+
+KeyToSlice subtracts a root key and either wraps into count or returns -1 outside it.
+SliceSequence emits start at the first trigger then advances by signed integer step modulo
+count. RandomSlice draws a deterministic index 0..count-1. Invalid/zero counts emit -1.
+Sequence and random slice triggers are rising edges or timestamped note-ons. SliceMap also
+exposes count as a signal output, distinct from its slice-map handle.
+RandomHold uses a seeded LCG and updates on rising trigger or note-on; min/max bound its output.
+RandomSpread holds a seeded bipolar offset, updated by rising trigger, and adds spread times
+that offset to a live value with min/max clamping. It also supplies the Jitter operation;
+use Curve for VelocityCurve and RangeMap/PlaybackRate for KeyTracking. Reset restores seeds.
+The LCG and Hann window are shared with the existing sample instrument.
+
+## Granular execution and stretch
+
+GrainScheduler emits one start on gate rise or trigger, then periodic starts using the same
+bounded countdown as the sample instrument. Density is capped at one grain per sample.
+GrainPool owns 1..128 prepared grain graphs (256 total across an expanded graph), snapshots
+position/rate/duration/pan at each positive start sample, and drops new starts when full.
+Its private inputs are position, rate, duration seconds, pan and age seconds. Every grain body
+has one VoiceOutput; it completes explicitly or at its duration limit. No grain allocation
+occurs during processing. GrainRead is a triggered, signed-rate one-shot sample reader with
+age/finished/position outputs; GrainWindow supplies its lifetime window. GranularPlayer is an
+editable composition of these same nodes, private voices and seeded spread, not a second DSP.
+ScanPosition reuses signed PlaybackPosition; Jitter reuses RandomSpread.
+
+SlicePlayback reads a selected region in gate or one-shot mode, with signed speed and explicit
+position/finished outputs. LoopCrossfade is a periodic two-head sample reader: with span L and
+fade F<=L/2 its period is L-F, primary=start+F+phase and the secondary starts at region start
+in the last F frames. A linear blend joins the heads continuously at wrap, including reverse
+phase traversal. Zero fade is a normal loop; invalid/empty regions are silent.
+TimeStretchPlayer uses the existing preallocated native stretch voice. Its speed is 0.25..4,
+pitch is a ratio, start/end are frames; note-on restarts and note-off leaves the source tail
+for an external envelope. AllNotesOff stops it. Prefetch reads immutable resident PCM, with no
+worker, file I/O or allocation. Short one-frame regions use direct reads. Speed changes restart
+the shared stretch state, as in the existing sampler. No coarse/composed audio equivalence is claimed.
+
+PositionReset passes position except on a rising trigger/note-on, when it emits target.
+PlaybackFinished emits a pulse on leaving a gated half-open region and exposes an inactive
+finished level. ScanPosition shares signed position integration. VelocityCurve shares Curve,
+KeyTracking is offset+(key-root)*amount, and Jitter shares RandomSpread. DCBlock uses the shared
+5 Hz stereo blocker. Free LFO adds offset and event/rising-edge reset to shared DSP waveforms;
+SyncedLFO retains absolute transport phase (relative reset can be authored with held beat offset).
+Glide uses the shared smoothing coefficient; in legato mode gate rise starts at target and
+subsequent held target changes glide with a seconds time constant. Gate-off holds the last value.
+
+## Parameter bindings
+
+A node may declare bindings from parent parameter ids to native kernel parameter ids. Binding
+names are validated off-thread; unknown parameters and duplicate targets fail compilation.
+Initial values are installed during preparation and updates use the same set-parameter path
+as ordinary graphs. Components and voice/grain pools forward bound updates into their private
+graphs; each private graph retains its own smoothing state and range checks. Binding a sampler
+control already connected as a signal is rejected. Bindings are data, not executable callbacks.
+
+## Editable sampler template
+
+`sampler_template` returns a data-only private-voice graph using prepared sample reads,
+signed position/rate, gated and one-shot bounds, forward/ping-pong loops, ADSR, velocity
+tracking, per-voice filtering, gain and pan. Its panel uses standard parameter descriptions.
+Parameter ids reuse the corresponding sampler names; the existing built-in sampler is not
+replaced. `SamplerAsset` binds the ready-made sampler to an immutable resource by name.
+The ready-made Sampler also exposes signal pitch/cutoff/pan/position and generic named parameter
+bindings; unconnected controls retain their existing values. No expansion/equivalence claim is
+made: the editable template deliberately has its own documented behavior and supported controls.
+
+`PreparedSamples::slice_map` performs manual, transient, seconds-grid or beat-grid preparation
+off-thread. It reuses the sample instrument's source analysis, rejects oversized grids and
+stores only checked frame boundaries in SliceMap. Beat grids require explicit or source BPM.
+
+The JSON node catalogue includes `output_types`, and `NodeInfo::output_type` exposes the same
+contract in Rust. Event and resource connections must have matching types; numeric audio and
+control signals share stereo signal wires with units specified at their destination.
+RandomSpread/Jitter sample a new offset at every positive trigger sample, including consecutive
+grain starts; RandomHold retains rising-edge semantics.
+
+The `sampler_composition` example writes editable loop/reverse, slice, granular and tempo/stretch
+.sd definitions and renders each from a deterministic resident source. Its WAV files demonstrate
+execution without a file decoder in the SDK; a host supplies that same immutable source under the
+stable `sample` binding. Moving the graphs does not change that binding; absent bindings are errors.
+
+KeyRange, VelocityRange and Sustain also run in MIDI-effect chains, preserving their order relative
+to transposes. A caller output too small for a pedal release receives AllNotesOff in its last slot
+and the chain clears held state, so overflow cannot leave a newly sustained note stuck.

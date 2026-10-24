@@ -55,12 +55,32 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
     let path = crate::files::absolute(std::path::Path::new(path));
     let channel = channel_param(session, params)?;
     let index = device_index(channel.devices.len(), params)?;
-    if !channel.devices.get(index).is_some_and(|d| matches!(&d.kind, DeviceKind::Builtin(id) if id == "sampler")) {
-        return Err("loadSample needs a Sampler instrument".into());
+    let sdk = channel.devices.get(index).is_some_and(|d| d.kind == DeviceKind::Sd && d.sample_file().is_some());
+    if !sdk
+        && !channel.devices.get(index).is_some_and(|d| matches!(&d.kind, DeviceKind::Builtin(id) if id == "sampler"))
+    {
+        return Err("loadSample needs a Sampler instrument or an SDK graph with a sample binding".into());
     }
     let audio = session.decoded_audio(&path)?;
     if audio.frames() < 2 || !(1..=32).contains(&audio.channels) || !(1000..=384000).contains(&audio.sample_rate) {
         return Err("sample needs at least two frames, 1..32 channels and a sample rate of 1000..384000 Hz".into());
+    }
+    if sdk {
+        let asset =
+            suhina_device_sdk::sample_resource::SampleAsset::new(audio.clone(), audio.sample_rate, audio.channels)
+                .map_err(|e| e.to_string())?;
+        let graph = sd_graph(channel_param(session, params)?.devices.get(index).ok_or("device is missing")?)?;
+        if graph.role != suhina_device_sdk::DeviceRole::MidiEffect {
+            let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
+            samples.insert("sample", std::sync::Arc::new(asset)).map_err(|e| e.to_string())?;
+            suhina_device_registry::compile_graph_with_samples(&graph, 48000., &samples).map_err(|e| e.to_string())?;
+        }
+        channel_param(session, params)?
+            .devices
+            .get_mut(index)
+            .ok_or("device is missing")?
+            .set_sample_file(&path.display().to_string());
+        return Ok(json!({"device":index,"path":path.display().to_string(),"frames":audio.frames()}));
     }
     let file = path.display().to_string();
     let fallback = session.player().map_or(session.project().transport.tempo_bpm, |p| p.monitor().tempo_bpm());
@@ -493,10 +513,27 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let path = params.get("path").and_then(Value::as_str).ok_or("path must be a .sd file path")?;
     let graph = suhina_device_sdk::DeviceGraph::read_file(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
+    let sample_path =
+        params.get("sample").and_then(Value::as_str).map(|path| crate::files::absolute(std::path::Path::new(path)));
+    if let Some(path) = &sample_path {
+        let audio = session.decoded_audio(path)?;
+        let asset =
+            suhina_device_sdk::sample_resource::SampleAsset::new(audio.clone(), audio.sample_rate, audio.channels)
+                .map_err(|e| e.to_string())?;
+        samples.insert("sample", std::sync::Arc::new(asset)).map_err(|e| e.to_string())?;
+    }
+    if graph.role != suhina_device_sdk::DeviceRole::MidiEffect {
+        let _prepared =
+            suhina_device_registry::compile_graph_with_samples(&graph, 48000., &samples).map_err(|e| e.to_string())?;
+    }
     let values: Vec<DeviceParam> =
         graph.parameters.iter().map(|parameter| DeviceParam::new(parameter.id.clone(), parameter.default)).collect();
     let state = graph.to_sd().map_err(|e| e.to_string())?.into_bytes();
-    let device = Device { state: Some(state), params: values, ..Device::new(graph.name.clone(), DeviceKind::Sd) };
+    let mut device = Device { state: Some(state), params: values, ..Device::new(graph.name.clone(), DeviceKind::Sd) };
+    if let Some(path) = sample_path {
+        device.set_sample_file(&path.display().to_string());
+    }
     if let Some(value) = crate::device_groups::insert_into_group(session, params, device.clone())? {
         return Ok(json!({ "device": value, "id": graph.id, "name": graph.name, "kind": "sd" }));
     }

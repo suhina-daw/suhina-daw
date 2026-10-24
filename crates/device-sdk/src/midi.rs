@@ -10,6 +10,11 @@ enum Op {
     Transpose { semitones: i8, parameter: Option<usize> },
 }
 
+enum Stage {
+    Transpose(Box<PreparedMidiEffect>),
+    Events(Box<dyn crate::native_node::NativeNode>),
+}
+
 /// What a MIDI effect knows of one input key.
 #[derive(Clone, Copy, PartialEq)]
 enum Key {
@@ -26,6 +31,7 @@ enum Key {
 /// pass it to [`process`](Self::process); event offsets are preserved exactly.
 pub struct PreparedMidiEffect {
     ops: Vec<Op>,
+    stages: Vec<Stage>,
     parameters: Vec<Parameter>,
     values: Vec<f64>,
     keys: [Key; 128],
@@ -40,8 +46,35 @@ impl PreparedMidiEffect {
         let mut ops = Vec::with_capacity(graph.nodes.len());
         let parameters = graph.parameters.clone();
         let values = parameters.iter().map(|parameter| parameter.default).collect();
+        let routed = graph
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::KeyRange { .. } | NodeKind::VelocityRange { .. } | NodeKind::Sustain));
+        let mut stages = Vec::new();
         for index in order {
             let Some(node) = graph.nodes.get(index) else { continue };
+            if routed {
+                match &node.kind {
+                    NodeKind::MidiTranspose { .. } | NodeKind::MidiTransposeParameter { .. } => {
+                        let mut child = DeviceGraph::new("org.suhina.midi-stage", "Transpose", DeviceRole::MidiEffect);
+                        child.parameters = parameters.clone();
+                        child.nodes = vec![
+                            crate::Node::new("in", NodeKind::MidiInput),
+                            crate::Node::new("stage", node.kind.clone()),
+                            crate::Node::new("out", NodeKind::MidiOutput),
+                        ];
+                        child.connections =
+                            vec![crate::Connection::new("in", "stage"), crate::Connection::new("stage", "out")];
+                        stages.push(Stage::Transpose(Box::new(Self::new(&child)?)));
+                    }
+                    _ => {
+                        if let Some(kernel) = crate::nodes::events::prepare(&node.kind, 48000.)? {
+                            stages.push(Stage::Events(kernel));
+                        }
+                    }
+                }
+                continue;
+            }
             match &node.kind {
                 NodeKind::MidiTranspose { semitones } => {
                     ops.push(Op::Transpose { semitones: *semitones, parameter: None });
@@ -55,13 +88,18 @@ impl PreparedMidiEffect {
                 _ => {}
             }
         }
-        Ok(Self { ops, parameters, values, keys: [Key::Unseen; 128] })
+        Ok(Self { ops, stages, parameters, values, keys: [Key::Unseen; 128] })
     }
 
     /// Update a prepared transpose control without allocating or rebuilding the graph.
     pub fn set_parameter(&mut self, index: usize, value: f64) {
         if let (Some(parameter), Some(current)) = (self.parameters.get(index), self.values.get_mut(index)) {
             *current = parameter.clamp(value);
+            for stage in &mut self.stages {
+                if let Stage::Transpose(child) = stage {
+                    child.set_parameter(index, value);
+                }
+            }
         }
     }
 
@@ -70,6 +108,12 @@ impl PreparedMidiEffect {
     /// sounds; with room for only one event the release goes out and the press is dropped, so no
     /// note is left hanging. Caller should size for twice the input event cap.
     pub fn process(&mut self, input: &[(usize, NoteEvent)], output: &mut [(usize, NoteEvent)]) -> usize {
+        if !self.stages.is_empty() {
+            return self.process_stages(input, output);
+        }
+        if output.is_empty() {
+            return 0;
+        }
         let mut written = 0;
         for &(frame, event) in input {
             let Some(slot) = output.get_mut(written) else { break };
@@ -107,6 +151,57 @@ impl PreparedMidiEffect {
                     *slot = (frame, event);
                     written += 1;
                 }
+            }
+        }
+        written
+    }
+
+    fn process_stages(&mut self, input: &[(usize, NoteEvent)], output: &mut [(usize, NoteEvent)]) -> usize {
+        if output.is_empty() {
+            return 0;
+        }
+        let mut written = 0;
+        for &(frame, event) in input {
+            let mut batch = [(frame, NoteEvent::AllNotesOff); 256];
+            batch[0] = (frame, event);
+            let mut count = 1;
+            for stage in &mut self.stages {
+                let mut next = [(frame, NoteEvent::AllNotesOff); 256];
+                count = match stage {
+                    Stage::Transpose(child) => child.process(&batch[..count], &mut next),
+                    Stage::Events(kernel) => {
+                        let mut total = 0;
+                        for &(at, event) in &batch[..count] {
+                            let mut events = [NoteEvent::AllNotesOff; 256];
+                            let n = kernel.route_event(event, &mut events).min(256 - total);
+                            for (slot, event) in next[total..].iter_mut().zip(events).take(n) {
+                                *slot = (at, event);
+                            }
+                            total += n;
+                        }
+                        total
+                    }
+                };
+                batch = next;
+            }
+            let available = output.len().saturating_sub(written);
+            let n = count.min(available);
+            output[written..written + n].copy_from_slice(&batch[..n]);
+            written += n;
+            if count > available {
+                if let Some(last) = output.get_mut(written.saturating_sub(1)) {
+                    *last = (frame, NoteEvent::AllNotesOff);
+                }
+                for stage in &mut self.stages {
+                    match stage {
+                        Stage::Transpose(child) => {
+                            let mut sink = [(0, NoteEvent::AllNotesOff); 1];
+                            child.process(&[(0, NoteEvent::AllNotesOff)], &mut sink);
+                        }
+                        Stage::Events(kernel) => kernel.reset(),
+                    }
+                }
+                break;
             }
         }
         written

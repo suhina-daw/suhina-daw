@@ -1092,3 +1092,115 @@ fn a_wrapper_file_is_no_longer_a_device_to_add() {
     assert!(refused.is_err(), "{refused:?}");
     assert!(session.project().channels[0].devices.is_empty());
 }
+
+#[test]
+fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
+    let root = std::env::temp_dir().join(format!("suhina-composed-project-{}", std::process::id()));
+    let original = root.join("original");
+    let moved = root.join("moved");
+    std::fs::create_dir_all(&original).unwrap();
+    std::fs::create_dir_all(&moved).unwrap();
+    let wav = original.join("tone.wav");
+    let mut writer = hound::WavWriter::create(
+        &wav,
+        hound::WavSpec {
+            channels: 1,
+            sample_rate: 48000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        },
+    )
+    .unwrap();
+    for i in 0..4800 {
+        writer.write_sample((i as f32 * 0.07).sin() * 0.2).unwrap();
+    }
+    writer.finalize().unwrap();
+    let graph = suhina_device_sdk::sampler_template("sample", 2).unwrap();
+    let sd = original.join("sampler.sd");
+    std::fs::write(&sd, graph.to_sd().unwrap()).unwrap();
+    let mut new_track_session = Session::new(project());
+    let added = run(&mut new_track_session, "track.add", json!({"sd":sd,"sample":wav})).unwrap();
+    assert_eq!(added["device"]["kind"], "sd");
+    let mut session = Session::new(project());
+    let before = session.project().clone();
+    assert!(run(&mut session, "device.addSd", json!({"track":1,"path":sd})).is_err());
+    assert_eq!(session.project(), &before);
+    run(&mut session, "device.addSd", json!({"track":1,"path":sd,"sample":wav})).unwrap();
+    let old_graph = session.project().channels[0].devices[0].state.clone();
+    let replacement = original.join("replacement.wav");
+    std::fs::copy(&wav, &replacement).unwrap();
+    run(&mut session, "device.loadSample", json!({"track":1,"device":0,"path":replacement})).unwrap();
+    assert_eq!(session.project().channels[0].devices[0].state, old_graph);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let mut saved = session.project().clone();
+    let state = saved.channels[0].devices[0].state.clone();
+    saved.channels[0].devices[0].set_sample_reference("tone.wav", &wav.display().to_string());
+    assert_eq!(saved.channels[0].devices[0].state, state, "asset reference must not replace graph data");
+    saved.contents.push(ClipContent {
+        id: ContentId(1),
+        name: "Note".into(),
+        length: 1.,
+        scale: None,
+        extensions: Default::default(),
+        lanes: vec![ContentLane {
+            target: None,
+            data: LaneData::Notes(vec![Note {
+                time: 0.,
+                duration: 0.5,
+                key: 60,
+                velocity: 1.,
+                release_velocity: 0.,
+                channel: 0,
+                muted: false,
+            }]),
+        }],
+    });
+    saved.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
+        name: "Notes".into(),
+        track: Some(TrackId(1)),
+        clips: vec![Clip {
+            id: Default::default(),
+            content: ContentId(1),
+            start: 0.,
+            length: 1.,
+            offset: 0.,
+            loop_range: None,
+            enabled: true,
+            fade_in: 0.,
+            fade_out: 0.,
+            fade_in_curve: Default::default(),
+            fade_out_curve: Default::default(),
+            follow_action: Default::default(),
+            launch: Default::default(),
+            color: None,
+            extensions: Default::default(),
+        }],
+    });
+    saved.assign_ids().unwrap();
+    let json = suhina_project_file::to_json(&saved);
+    // Keep a reproducible fixture only when a manual QA run requests one.
+    if let Some(directory) = std::env::var_os("SUHINA_SAMPLER_QA_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::copy(&wav, directory.join("tone.wav")).unwrap();
+        std::fs::write(directory.join("sampler.suhina"), &json).unwrap();
+        std::fs::write(directory.join("sampler.sd"), graph.to_sd().unwrap()).unwrap();
+    }
+    let restored = suhina_project_file::from_json(&json).unwrap();
+    assert_eq!(restored, saved);
+    std::fs::copy(&wav, moved.join("tone.wav")).unwrap();
+    std::fs::remove_file(&wav).unwrap();
+    let (audio, warnings) = suhina_media::decode_project_audio(&restored, &moved);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let expected = suhina_engine::render_offline_with_audio(&restored, &audio, 48000, 64).unwrap();
+    assert!(expected.iter().any(|v| v.abs() > 0.01));
+    let actual = suhina_engine::render_offline_with_audio(&restored, &audio, 48000, 257).unwrap();
+    assert_eq!(expected, actual);
+    std::fs::remove_file(moved.join("tone.wav")).unwrap();
+    let (_, warnings) = suhina_media::decode_project_audio(&restored, &moved);
+    assert!(!warnings.is_empty(), "missing resource must be reported");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+    let _ = std::fs::remove_dir_all(root);
+}

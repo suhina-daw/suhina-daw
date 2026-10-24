@@ -1568,6 +1568,7 @@ static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             param("path", ParamType::Text, "path to a validated .sd AudioEffect graph"),
+            optional("sample", ParamType::Text, "audio file for the graph resource named sample"),
             optional(
                 "position",
                 ParamType::DevicePath,
@@ -1610,6 +1611,7 @@ static COMMANDS: &[CommandSpec] = &[
             ),
             optional("preset", ParamType::Text, "a preset file for the device (DX7 voice data for the FM synth)"),
             optional("sd", ParamType::Text, "a data-only .sd AudioEffect graph to add to the new audio track"),
+            optional("sample", ParamType::Text, "audio file for the SDK graph resource named sample"),
             optional("voice", ParamType::Integer, "which voice of a preset bank, from 1"),
         ],
         kind: CommandKind::Edit,

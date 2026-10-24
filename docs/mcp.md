@@ -344,7 +344,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Devices.** `devices.list` lists the built-in effects and instruments with every parameter (id, range,
   default, unit, options); `track.devices` lists a track's devices with their values;
-  `device.add`, `device.addSd {track, path, position?}`, `device.remove`, `device.setEnabled` and `device.setParam` (through
+  `device.add`, `device.addSd {track, path, sample?, position?}`, `device.remove`, `device.setEnabled` and `device.setParam` (through
   `command_run`) edit a track's chain, one undo step each ([ADR 0004](decisions/0004-built-in-devices.md)).
   `device.setParam` sets a plug-in device's parameter too, by the id `device.pluginParams` lists
   (a running plug-in's parameters with their ranges, default, value and the plug-in's own
@@ -523,6 +523,18 @@ empty list clears the map. Optional `continue` groups consecutive drag edits.
 
 `device.updateSd` applies the same read-root confinement as `device.addSd` and
 `device.loadSample`, including symlink resolution.
+
+The optional `sample` path on `device.addSd` and `track.add {sd, sample}` binds one audio
+file to the SDK resource key `sample`. Both paths are checked against the caller's read roots,
+including symbolic links. Missing required bindings fail insertion before a project edit.
+The graph remains embedded as device state; its sample reference is a separate model extension,
+so saving, project relocation and missing-file relinking preserve both. Custom Rust hosts can
+supply several named resources through `PreparedSamples`; the desktop command currently binds
+one source. Graphs needing other keys fail clearly rather than loading an arbitrary path.
+
+`device.loadSample` can replace the `sample` source of an SDK graph that already has
+that binding, preserving embedded graph state and parameter values. The replacement
+uses the same read-root confinement and undo path as the built-in sampler.
 
 `device.setNamFile` reads its `path` (a `.nam` model or an impulse response) under the same
 read-root confinement. `project.collect` writes below the write root: its `folder` (made if it

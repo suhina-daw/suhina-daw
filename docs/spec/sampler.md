@@ -7,7 +7,7 @@ last_verified: 2026-10-21
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sampler.rs
-  - crates/device-sdk/src/sampler_warp.rs
+  - crates/device-sdk/src/nodes/stretch.rs
   - crates/ui/src/detail/device_canvas.rs
   - crates/ui/src/detail/detail_view.rs
 ---
@@ -19,6 +19,9 @@ determined by MIDI key (root 60), transpose and cents. Grain schedules bounded,
 Hann-windowed grains from the same source. Both use the same amplitude envelope,
 filter and output controls. All voices and grains are allocated before processing.
 Sample decoding, replacement and disposal occur outside the audio callback.
+The graph source prepares the shared kernel once per processing span (split at
+timestamped note events), retaining the native block grain budget when voices
+finish during the span.
 
 The SDK panel uses a 900 by 168 logical-pixel canvas (200 pixels including the
 host header and padding). Sample and Grain buttons at the upper left select the
@@ -296,3 +299,34 @@ are ended rather than resumed later. Normalization follows the active grain limi
 
 Grain normalization follows a separate 5 ms ramp when density, grain size or the
 voice budget changes; it does not share the master gain ramp.
+
+## Composable sample source (first stage)
+
+An instrument graph may contain `{"kind":"sampler"}` sources. Each owns the
+shared polyphonic Sampler kernel and exposes `out`, `left` and `right` audio
+outputs, so filtering, gain, mixing and feedback can use ordinary SDK nodes.
+Sources receive routed timestamped note events, or global events when unconnected.
+Signal inputs expose pitch/cutoff/pan/position modulation. Effect and MIDI-effect graphs reject them.
+
+Compile with `compile_instrument_at`, then bind PCM and configure each source
+through `PreparedEffect::sampler_mut(node_id)` and the existing `Device` API.
+Do this off the audio thread: replacement may allocate and release resources.
+Missing ids return `None`. Unbound sources are silent; reset clears voices while
+retaining PCM and controls. Processing uses fixed stack stereo buffers and
+preallocated voices, and passes the advancing transport beat to each source.
+
+The stock Sampler definition retains its implementation. Prepared SampleAsset resources,
+private voice graphs and smaller playback/envelope/granular nodes are specified in the
+[SDK node reference](sdk-nodes.md); they do not imply an equivalent expansion of the stock device.
+
+## SDK graphs in projects
+
+`device.addSd` accepts an optional `sample` audio path for the stable resource key `sample`.
+`track.add` forwards the same option when `sd` is given. The host decodes off-thread and
+prepares immutable shared PCM before insertion. The graph JSON stays in device state; an SDK
+device's sample reference uses the `suhina/sample_reference` extension with the existing
+`suhina-sample-v1` reference encoding. Built-in sampler state and parameter ids are unchanged.
+Save/open, relative-path rebasing, missing-file warnings and relinking use the same reference
+accessors for both device kinds. A prepared graph keeps its source alive when a replacement
+is prepared; the host swaps and retires whole graphs off-thread. The project command binds
+one source named `sample`; Rust hosts may bind several named sources.

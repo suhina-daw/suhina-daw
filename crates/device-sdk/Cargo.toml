@@ -28,3 +28,6 @@ path = "examples/gated_instrument.rs"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+allocation-counter = "0.8.1" # MIT OR Apache-2.0; callback allocation/deallocation checks only

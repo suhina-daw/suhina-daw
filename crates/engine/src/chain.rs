@@ -237,9 +237,28 @@ impl Chain {
                     if !stored.enabled {
                         continue;
                     }
+                    let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
+                    if let Some(source) = stored.sample_file().and_then(|file| audio.files.get(file)) {
+                        let Ok(asset) = suhina_device_sdk::sample_resource::SampleAsset::new(
+                            source.clone(),
+                            source.sample_rate,
+                            source.channels,
+                        ) else {
+                            continue;
+                        };
+                        if samples.insert("sample", std::sync::Arc::new(asset)).is_err() {
+                            continue;
+                        }
+                    }
                     let mut slot = match graph.role {
                         suhina_device_sdk::DeviceRole::Effect => {
-                            let Ok(effect) = graph.compile_at(f64::from(sample_rate)) else { continue };
+                            let Ok(effect) = suhina_device_registry::compile_graph_with_samples(
+                                &graph,
+                                f64::from(sample_rate),
+                                &samples,
+                            ) else {
+                                continue;
+                            };
                             Slot::Sd(effect)
                         }
                         suhina_device_sdk::DeviceRole::MidiEffect => {
@@ -247,7 +266,11 @@ impl Chain {
                             Slot::MidiSd(effect)
                         }
                         suhina_device_sdk::DeviceRole::Instrument => {
-                            let Ok(instrument) = graph.compile_instrument_at(f64::from(sample_rate)) else {
+                            let Ok(instrument) = suhina_device_registry::compile_graph_with_samples(
+                                &graph,
+                                f64::from(sample_rate),
+                                &samples,
+                            ) else {
                                 continue;
                             };
                             Slot::InstrumentSd(instrument)
@@ -270,6 +293,12 @@ impl Chain {
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     use std::hash::{Hash, Hasher};
                     bytes.hash(&mut hasher);
+                    stored.sample_file().hash(&mut hasher);
+                    stored
+                        .sample_file()
+                        .and_then(|file| audio.files.get(file))
+                        .map(std::sync::Arc::as_ptr)
+                        .hash(&mut hasher);
                     slots.push(slot);
                     positions.push(position);
                     ids.push(format!("sd:{}:{:016x}", graph.id, hasher.finish()));

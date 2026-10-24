@@ -242,3 +242,120 @@ mod tests {
         assert!(info("").is_none());
     }
 }
+
+/// Prepare a data-only graph using only registered, zero-latency built-in effects.
+/// Unknown ids fail before the graph reaches the audio thread.
+pub fn compile_graph(
+    graph: &suhina_device_sdk::DeviceGraph,
+    rate: f64,
+) -> Result<suhina_device_sdk::PreparedEffect, suhina_device_sdk::DeviceSdkError> {
+    compile_graph_with_samples(graph, rate, &Default::default())
+}
+
+/// Prepare graph resources supplied by the host; decoding and retirement stay off-thread.
+pub fn compile_graph_with_samples(
+    graph: &suhina_device_sdk::DeviceGraph,
+    rate: f64,
+    samples: &suhina_device_sdk::sample_resource::PreparedSamples,
+) -> Result<suhina_device_sdk::PreparedEffect, suhina_device_sdk::DeviceSdkError> {
+    graph.compile_with_samples_and_native_at(rate, samples, |id, rate| {
+        let mut device =
+            create(id).ok_or_else(|| suhina_device_sdk::DeviceSdkError(format!("unknown graph effect {id:?}")))?;
+        if device.info().role != suhina_device_api::Role::Effect {
+            return Err(suhina_device_sdk::DeviceSdkError(format!("graph kernel {id:?} is not an audio effect")));
+        }
+        device.prepare(rate).map_err(|e| suhina_device_sdk::DeviceSdkError(e.to_string()))?;
+        if device.latency() != 0 {
+            return Err(suhina_device_sdk::DeviceSdkError(
+                "graph kernels with latency require path compensation".into(),
+            ));
+        }
+        Ok(Box::new(GraphEffect { device, context: Default::default(), rate }))
+    })
+}
+
+struct GraphEffect {
+    device: Box<dyn Device>,
+    context: suhina_device_api::ProcessContext,
+    rate: f64,
+}
+impl suhina_device_sdk::native_node::NativeNode for GraphEffect {
+    fn prepare_block(&mut self, context: &suhina_device_api::ProcessContext) {
+        self.context = *context;
+        self.device.set_context(context);
+    }
+    fn process(&mut self, inputs: [&[f32]; 5], output: &mut [f32]) {
+        output.copy_from_slice(inputs[0]);
+        self.device.process(&self.context, output);
+        if self.context.playing {
+            self.context.beat += (output.len() / 2) as f64 * self.context.tempo / (60.0 * self.rate);
+        }
+    }
+    fn connected_inputs(&mut self, mask: [bool; 5]) -> Result<(), suhina_device_sdk::DeviceSdkError> {
+        if mask[1..].iter().any(|&v| v) {
+            return Err(suhina_device_sdk::DeviceSdkError(
+                "registered effect control bindings are not implemented".into(),
+            ));
+        }
+        Ok(())
+    }
+    fn parameter_range(&self, id: &str) -> Option<(f64, f64)> {
+        self.device.info().params.iter().find(|p| p.id == id).map(|p| (p.min, p.max))
+    }
+    fn set_parameter(&mut self, id: &str, value: f64) {
+        if let Some(index) = self.device.info().param_index(id) {
+            self.device.set_param(index, value);
+        }
+    }
+    fn event(&mut self, event: suhina_device_api::NoteEvent) {
+        self.device.event(event);
+    }
+    fn reset(&mut self) {
+        self.device.reset();
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[cfg(test)]
+mod graph_kernel_tests {
+    use super::*;
+    use suhina_device_sdk::{Connection, DeviceGraph, DeviceRole, Node, NodeKind};
+    #[test]
+    fn stored_graph_resolves_registered_effect_and_rejects_unknown() {
+        let mut graph = DeviceGraph::new("org.test.registry", "Registry", DeviceRole::Effect);
+        graph.nodes = vec![
+            Node::audio_input("in"),
+            Node::new("fx", NodeKind::NativeEffect { effect: "utility".into() }),
+            Node::audio_output("out"),
+        ];
+        graph.connections = vec![Connection::new("in", "fx"), Connection::new("fx", "out")];
+        let graph = DeviceGraph::from_sd(&graph.to_sd().unwrap()).unwrap();
+        let mut prepared = compile_graph(&graph, 48000.).unwrap();
+        let mut audio = [0.25, -0.5, 0.125, 0.75];
+        prepared.process(&mut audio);
+        assert!(audio.iter().all(|v| v.is_finite()));
+        assert!(audio.iter().any(|v| v.abs() > 0.01));
+        let mut controlled = graph.clone();
+        controlled.connections.push(Connection::ports("in", "out", "fx", "control1"));
+        assert!(compile_graph(&controlled, 48000.).is_err());
+        let mut nested = DeviceGraph::new("org.test.nested", "Nested", DeviceRole::Effect);
+        nested.nodes = vec![
+            Node::audio_input("in"),
+            Node::new(
+                "child",
+                NodeKind::Component { name: "Hidden effect".into(), version: 1, graph: controlled.to_sd().unwrap() },
+            ),
+            Node::audio_output("out"),
+        ];
+        nested.connections = vec![Connection::new("in", "child"), Connection::new("child", "out")];
+        assert!(compile_graph(&nested, 48000.).is_err());
+
+        for id in ["missing", "sampler", "limiter"] {
+            let mut invalid = graph.clone();
+            invalid.nodes[1].kind = NodeKind::NativeEffect { effect: id.into() };
+            assert!(compile_graph(&invalid, 48000.).is_err(), "{id}");
+        }
+    }
+}
