@@ -300,6 +300,53 @@ fn pitch_modes_and_bad_values() {
     assert!(params.is_empty(), "{params:?}");
 }
 
+/// Live's EQ Three (`FilterEQ3`) as a freshly loaded preset stores it: the gains as linear
+/// gains, the band switches as bools, the slope as an index where 1 is the steeper setting.
+#[test]
+fn eq_three_takes_every_stored_value() {
+    let xml = [
+        manual_xml("GainLo", "1"),
+        manual_xml("GainMid", "1.99526238"),
+        manual_xml("GainHi", "0.5011872"),
+        manual_xml("LowOn", "false"),
+        manual_xml("MidOn", "true"),
+        manual_xml("HighOn", "true"),
+        manual_xml("FreqLo", "250"),
+        manual_xml("FreqHi", "2500"),
+        manual_xml("Slope", "1"),
+    ]
+    .concat();
+    let (id, params, warnings) = mapped("FilterEQ3", &xml);
+    assert_eq!(id, "dj-eq");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 9);
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-3, "{id}: {got} against {expected}");
+    };
+    near("low", 0.0);
+    near("mid", 6.0);
+    near("high", -6.0);
+    near("lowKill", 1.0);
+    near("midKill", 0.0);
+    near("highKill", 0.0);
+    near("lowFrequency", 250.0);
+    near("highFrequency", 2500.0);
+    near("slope", 1.0);
+    let ids: Vec<&str> = suhina_device_dj_eq::INFO.params.iter().map(|p| p.id).collect();
+    assert!(params.iter().all(|p| ids.contains(&p.id.as_str())), "{params:?}");
+}
+
+/// A stored gain of 0 is silence, and a slope outside its two settings is noted and left out.
+#[test]
+fn eq_three_zero_gains_and_odd_slopes() {
+    let xml = manual_xml("GainLo", "0") + &manual_xml("Slope", "7");
+    let (_, params, warnings) = mapped("FilterEQ3", &xml);
+    assert_eq!(param(&params, "low"), SILENCE_DB);
+    assert!(params.iter().all(|p| p.id != "slope"), "{params:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
 #[test]
 fn other_devices_are_not_mapped() {
     let doc = roxmltree::Document::parse("<Eq8/>").unwrap_or_else(|e| panic!("{e}"));

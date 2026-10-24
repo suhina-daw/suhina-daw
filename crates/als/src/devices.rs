@@ -24,6 +24,7 @@ pub(crate) fn builtin(
         "StereoGain" => Some(("utility", "Utility", utility(node, warn))),
         "Reverb" => Some(("reverb", "Reverb", reverb(node, warn))),
         "Delay" => Some(("delay", "Delay", delay(node, warn))),
+        "FilterEQ3" => Some(("dj-eq", "DJ EQ", eq3(node, warn))),
         "MidiPitcher" => Some(("pitch", "Pitch", pitch(node, warn))),
         _ => None,
     }
@@ -203,6 +204,27 @@ fn utility(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
     set("dcFilter", manual_flag(node, "DcFilter").map(toggle));
     set("mute", manual_flag(node, "Mute").map(toggle));
     params
+}
+
+/// Live's EQ Three (`FilterEQ3`) as Suhina's `dj-eq` (`docs/spec/dj-eq.md` › Import).
+fn eq3(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
+    let mut p = Params::default();
+    // The band gains are stored as linear gains; ours are decibels, with silence at the bottom.
+    let gain =
+        |name: &str| manual(node, name).map(|g| if g > 0.0 { (20.0 * g.log10()).max(SILENCE_DB) } else { SILENCE_DB });
+    p.set("low", gain("GainLo"));
+    p.set("mid", gain("GainMid"));
+    p.set("high", gain("GainHi"));
+    // A stored band switch says the band is on; ours is its kill.
+    let kill = |name: &str| manual_flag(node, name).map(|on| toggle(!on));
+    p.set("lowKill", kill("LowOn"));
+    p.set("midKill", kill("MidOn"));
+    p.set("highKill", kill("HighOn"));
+    p.set("lowFrequency", manual(node, "FreqLo"));
+    p.set("highFrequency", manual(node, "FreqHi"));
+    // Stored 0 is 24 dB/octave and 1 is 48 dB, the same order as ours.
+    p.set("slope", step(node, "Slope", 2, "EQ Three slope", warn));
+    p.0
 }
 
 /// Live's Pitch (`MidiPitcher`) as Suhina's `pitch`. Every value is stored in the unit ours
