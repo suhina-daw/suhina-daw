@@ -9,5 +9,9 @@ rust-version.workspace = true
 # The uniform partitioned FFT convolution (a port of HiFi-LoFi FFTConvolver).
 fft-convolver = "0.4"  # MIT
 
+[dev-dependencies]
+hound.workspace = true
+serde_json.workspace = true
+
 [lints]
 workspace = true

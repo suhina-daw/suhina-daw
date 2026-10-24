@@ -4777,6 +4777,8 @@ name = "suhina-dsp"
 version = "0.0.1"
 dependencies = [
  "fft-convolver",
+ "hound",
+ "serde_json",
 ]
 
 [[package]]

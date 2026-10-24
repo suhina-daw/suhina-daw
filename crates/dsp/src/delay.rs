@@ -127,6 +127,11 @@ pub struct Allpass {
 }
 
 impl Allpass {
+    /// Allocated delay history, excluding fixed state and allocator metadata.
+    pub fn history_bytes(&self) -> usize {
+        (self.line.capacity() as usize + 3) * std::mem::size_of::<f32>()
+    }
+
     /// An allpass for delays up to `seconds` at `sample_rate` (allocates).
     pub fn for_seconds(seconds: f64, sample_rate: f64) -> Self {
         Self { line: DelayLine::for_seconds(seconds, sample_rate) }
