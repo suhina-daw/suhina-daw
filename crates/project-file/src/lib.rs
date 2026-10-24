@@ -1049,8 +1049,9 @@ fn read_audio_input(value: Option<&Value>, at: &str) -> Result<AudioInput, Proje
     Ok(AudioInput { channels, monitor })
 }
 
-/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null }`,
-/// every port and channel when it is left out.
+/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null,
+/// "monitor": "auto" | "in" | "off" }`, every port and channel when it is left out, and monitored
+/// automatically when `monitor` is (files written before it).
 fn read_midi_input(value: Option<&Value>, at: &str) -> Result<MidiInput, ProjectFileError> {
     let at = format!("{at}.midi_input");
     let Some(value) = value.filter(|v| !v.is_null()) else { return Ok(MidiInput::default()) };

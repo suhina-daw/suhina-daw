@@ -42,16 +42,23 @@ fn the_volume_follows_its_lane() {
     let plain = render_offline(&automated(vec![], vec![]), SR, 512).unwrap();
     let p = automated(vec![lane("volume", &[(0.0, 0.0), (4.0, 1.0)])], vec![]);
     let out = render_offline(&p, SR, 512).unwrap();
-    // The sine peaks at a quarter: within half a percent of it everywhere.
-    let worst = off_by(&out[..plain.len()], &plain, |beat| (f64::min(beat / 4.0, 1.0), f64::min(beat / 4.0, 1.0)));
+    // Evenly along the fader, from its bottom to 0 dB at 0.85 of it. The sine peaks at a
+    // quarter: within half a percent of it everywhere.
+    use suhina_model::automation::{Taper, VolumeTaper, shape};
+    let fader = |share: f64| VolumeTaper.value(0.85 * share.clamp(0.0, 1.0));
+    let worst = off_by(&out[..plain.len()], &plain, |beat| (fader(beat / 4.0), fader(beat / 4.0)));
     assert!(worst < 0.25 * 0.005, "{worst}");
-    // A curve bends the rise: a quarter of the way in, well under a quarter of the volume.
+    // Not evenly in gain: a quarter of the way in, the gain is well under a quarter.
+    assert!(fader(0.25) < 0.05);
+    // A curve bends the rise, in the fader's position.
     let mut bent = p.clone();
     bent.channels[0].automation[0].points[0].curve = -1.0;
     let bent = render_offline(&bent, SR, 512).unwrap();
+    // Leaving out the last tenth of a beat, where a full bend rises almost straight up and the
+    // gains' steps cut across it.
     let worst = off_by(&bent[..plain.len()], &plain, |beat| {
-        let v = suhina_model::automation::shape(beat / 4.0, -1.0);
-        (v, v)
+        let v = fader(shape(beat / 4.0, -1.0));
+        if (3.9..4.0).contains(&beat) { (f64::NAN, f64::NAN) } else { (v, v) }
     });
     assert!(worst < 0.25 * 0.01, "{worst}");
 }
@@ -153,7 +160,9 @@ fn a_groups_volume_lane_scales_the_tracks_routed_into_it() {
     let out = render_offline(&p, SR, 512).unwrap();
     let mut worst = 0.0f32;
     for (frame, ([l, _], [pl, _])) in out.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate() {
-        if frame.abs_diff(BEAT * 2) > crate::automation::STEP {
+        // The jump is smoothed over a few milliseconds around it.
+        let ramp = (crate::automation::VOLUME_SMOOTHING * f64::from(SR)) as usize / 2 + crate::automation::MIX_STEP;
+        if frame.abs_diff(BEAT * 2) > ramp {
             let gain = if frame < BEAT * 2 { 1.0 } else { 0.5 };
             worst = worst.max((l - pl * gain).abs());
         }

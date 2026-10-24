@@ -576,6 +576,18 @@ fn midi_monitoring_round_trips_and_bad_modes_are_rejected() {
     }
 }
 
+/// A file written before MIDI monitoring has a `midi_input` without `monitor`: it reads as Auto
+/// and keeps its port and channel through a round trip.
+#[test]
+fn a_midi_input_from_before_monitoring_is_monitored_automatically() {
+    let older = r#"{ "format": "suhina", "version": 1, "project": { "tracks": [ { "id": 1, "midi_input": { "port": { "name": "Keys" }, "channel": 3 } } ] } }"#;
+    let project = from_json(older).unwrap();
+    let wanted = MidiInput { port: MidiPort::Named("Keys".into()), channel: Some(3), monitor: Monitor::Auto };
+    assert_eq!(project.tracks[0].midi_input, wanted);
+    let again = from_json(&to_json(&project)).unwrap();
+    assert_eq!(again.tracks[0].midi_input, wanted);
+}
+
 /// A clip written before fade shapes existed has linear, unbent fades, so it sounds the same.
 #[test]
 fn a_clip_without_fade_shapes_has_linear_fades() {

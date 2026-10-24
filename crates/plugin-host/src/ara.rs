@@ -208,9 +208,10 @@ struct Host {
     /// changed, or the host changed the regions: each track's notes are read again after the
     /// next model update when it moved on (#720).
     notes_changed: AtomicU64,
-    /// The sources being analysed (by their host ref, the boxed `Source`) and how far each has
-    /// come, 0 to 1; one is taken out when its analysis completes.
-    analysis: Mutex<Vec<(usize, f32)>>,
+    /// The sources being analysed (by their host ref, the boxed `Source`), how far each has
+    /// come, 0 to 1, and when the plug-in last reported it; one is taken out when its analysis
+    /// completes.
+    analysis: Mutex<Vec<(usize, f32, Instant)>>,
     /// The song's tempo map and time signatures, which the plug-in reads through the musical
     /// context's content readers, so its timeline counts bars as the song does. Changed only
     /// inside an edit, on the model thread, so what a reader handed out stays put.
@@ -280,6 +281,12 @@ const MODEL_UPDATES_EVERY: Duration = Duration::from_millis(250);
 /// finish its analysis without saying the content changed.
 const NOTES_AGAIN_EVERY: Duration = Duration::from_secs(1);
 
+/// How long after its last progress report a source whose notes are analysed is taken as done
+/// when the plug-in still says another of its content types is incomplete: one progress covers
+/// all of a source's analyses, but a type the host did not ask for may stay incomplete for
+/// good (#816).
+const ANALYSIS_QUIET: Duration = Duration::from_secs(3);
+
 thread_local! {
     /// The documents this process holds, by the plug-in's factory and the engine's document
     /// key ([`AraDocument::document`]): the instances of one plug-in in one project share one
@@ -310,6 +317,10 @@ struct Shared {
     factory: *const ARAFactory,
     /// The sources whose notes the host asked the plug-in to find (once each).
     analysis_asked: RefCell<Vec<ARAAudioSourceRef>>,
+    /// The persistent id of each source a bound track's clips play, once per track that plays it
+    /// (each [`Document::owned_sources`]): a source leaves the analysis shown only with the last
+    /// track that plays it.
+    source_owners: Vec<String>,
     /// The texts handed to the plug-in, kept for as long as the document.
     texts: Vec<CString>,
 }
@@ -387,6 +398,7 @@ impl Shared {
             modification_ids: Vec::new(),
             factory,
             analysis_asked: RefCell::new(Vec::new()),
+            source_owners: Vec::new(),
             texts: Vec::new(),
         };
         let properties =
@@ -610,18 +622,22 @@ impl Shared {
         slow_call("asking for notes", started);
     }
 
+    /// The content types the plug-in's factory says it can analyse; empty when it lists none.
+    fn analysable_types(&self) -> &[ARAContentType] {
+        // SAFETY: the plug-in's factory, valid while its module is loaded.
+        let Some(factory) = (unsafe { self.factory.as_ref() }) else { return &[] };
+        let types = factory.analyzeableContentTypes;
+        if types.is_null() {
+            return &[];
+        }
+        let count = factory.analyzeableContentTypesCount.min(64);
+        // SAFETY: the factory's list of `count` content types, valid while its module is loaded.
+        unsafe { std::slice::from_raw_parts(types, count) }
+    }
+
     fn ask_for_notes_now(&self, dc: &Controller) {
         let notes_type = kARAContentTypeNotes as ARAContentType;
-        // SAFETY: the plug-in's factory, valid while its module is loaded.
-        let Some(factory) = (unsafe { self.factory.as_ref() }) else { return };
-        let types = factory.analyzeableContentTypes;
-        let count = factory.analyzeableContentTypesCount.min(64);
-        if types.is_null() {
-            return;
-        }
-        // SAFETY: the factory's list of `count` content types, valid while its module is loaded.
-        let listed = unsafe { std::slice::from_raw_parts(types, count) };
-        if !listed.contains(&notes_type) {
+        if !self.analysable_types().contains(&notes_type) {
             return;
         }
         let (Some(incomplete), Some(request)) =
@@ -641,6 +657,32 @@ impl Shared {
                 unsafe { request(dc.reference, *source, 1, &notes_type) };
             }
         }
+    }
+
+    /// Each source with its key in `host.analysis` (its boxed `Source`) and the plug-in's ref.
+    fn source_keys(&self) -> Vec<(usize, ARAAudioSourceRef)> {
+        self.host
+            .sources
+            .iter()
+            .map(|source| std::ptr::from_ref::<Source>(source) as usize)
+            .zip(self.sources.iter().copied())
+            .collect()
+    }
+
+    /// Takes out of the analyses going on those the plug-in says are complete (#816): a plug-in
+    /// that finds a source's analysis done, restored from an archive, says it *started* and
+    /// never that it *completed*. True when one was taken out.
+    fn settle_analysis(&self, dc: &Controller) -> bool {
+        let Some(incomplete) = dc.interface.isAudioSourceContentAnalysisIncomplete else { return false };
+        let settled =
+            settle_analysis(&self.host.analysis, &self.source_keys(), self.analysable_types(), |source, kind| {
+                // SAFETY: a live controller, not being edited, for a source of this document.
+                unsafe { incomplete(dc.reference, source, kind) != 0 }
+            });
+        if settled {
+            self.host.notes_may_have_changed();
+        }
+        settled
     }
 
     /// The plug-in's document archive id.
@@ -806,6 +848,8 @@ pub(crate) struct Document {
     stored: RefCell<Option<(u64, Stored)>>,
     /// The analysis progress last sent, in whole percents; `None` while none was going on.
     analysis_sent: Cell<Option<u32>>,
+    /// When the plug-in was last asked whether the analyses going on are complete.
+    last_settled: Cell<Instant>,
     _entry: Interface,
 }
 
@@ -846,6 +890,7 @@ impl Document {
             notes_out: RefCell::new(Vec::new()),
             stored: RefCell::new(None),
             analysis_sent: Cell::new(None),
+            last_settled: Cell::new(Instant::now()),
             _entry: entry,
         };
         let new_sources = made.shared.borrow().open_new_sources(document)?;
@@ -965,6 +1010,7 @@ impl Document {
         if let Some(id) = s.source_ids.get(region.source)
             && !self.owned_sources.contains(id)
         {
+            s.source_owners.push(id.clone());
             self.owned_sources.push(id.clone());
         }
         if !self.owned_modifications.contains(&region.modification) {
@@ -1039,6 +1085,15 @@ impl Document {
             self.last_notes_read.set(Instant::now());
             self.read_notes();
         }
+        // While this track shows an analysis, the plug-in is asked now and then whether it is
+        // done, in case it never says so (#816).
+        if self.analysis_sent.get().is_some() && self.last_settled.get().elapsed() >= NOTES_AGAIN_EVERY {
+            self.last_settled.set(Instant::now());
+            let shared = self.shared.borrow();
+            if let Some(dc) = shared.controller() {
+                shared.settle_analysis(&dc);
+            }
+        }
     }
 
     /// Reads every region's notes and keeps for [`Document::take_notes`] those that differ from
@@ -1047,6 +1102,7 @@ impl Document {
         let shared = self.shared.borrow();
         let Some(dc) = shared.controller() else { return };
         shared.ask_for_notes(&dc);
+        shared.settle_analysis(&dc);
         let mut sent = self.notes_sent.borrow_mut();
         sent.retain(|(id, _)| self.region_described.iter().any(|r| r.id == *id));
         let mut out = self.notes_out.borrow_mut();
@@ -1092,7 +1148,7 @@ impl Document {
             .collect();
         let least = {
             let analysis = shared.host.analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            analysis.iter().filter(|(s, _)| mine.contains(s)).map(|(_, p)| *p).reduce(f32::min)
+            analysis.iter().filter(|(s, _, _)| mine.contains(s)).map(|(_, p, _)| *p).reduce(f32::min)
         };
         let percent = least.map(|p| (p * 100.0) as u32);
         if percent == self.analysis_sent.get() {
@@ -1360,6 +1416,8 @@ impl Drop for Document {
     fn drop(&mut self) {
         let all = Edited { added: Vec::new(), removed: self.regions.clone() };
         self.renderers(&all);
+        // The sources no other track plays any more; the others' analysis stays shown on them.
+        let gone = leave_sources(&mut self.shared.borrow_mut().source_owners, &self.owned_sources);
         let shared = self.shared.borrow();
         let Some(dc) = shared.controller() else { return };
         let i = &dc.interface;
@@ -1384,6 +1442,14 @@ impl Drop for Document {
         }
         // The other tracks' plug-ins hear and show the change.
         shared.notify_model_updates();
+        let mine: Vec<(usize, ARAAudioSourceRef)> = shared
+            .source_ids
+            .iter()
+            .zip(shared.source_keys())
+            .filter(|(id, _)| gone.contains(id))
+            .map(|(_, keys)| keys)
+            .collect();
+        forget_analysis(&shared.host.analysis, &shared.analysis_asked, &mine);
     }
 }
 
@@ -1692,9 +1758,9 @@ unsafe extern "C" fn analysis_progress(
     if let Some(host) = unsafe { host.cast::<Host>().as_ref() } {
         let key = source as usize;
         let mut analysis = host.analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        analysis.retain(|(s, _)| *s != key);
+        analysis.retain(|(s, _, _)| *s != key);
         if state != kARAAnalysisProgressCompleted as ARAAnalysisProgressState {
-            analysis.push((key, if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.0 }));
+            analysis.push((key, if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.0 }, Instant::now()));
         }
     }
     // An analysis done: its notes are there to read, whether or not the plug-in also says the
@@ -1722,6 +1788,70 @@ unsafe extern "C" fn source_changed(
     // An analysis done, say: the regions of the source have notes to read.
     // SAFETY: as in `modification_changed`.
     notes_may_have_changed(unsafe { host.cast::<Host>().as_ref() }, flags);
+}
+
+/// Takes out of `analysis` (source key, progress, last report) each source of `sources` (key,
+/// plug-in ref) that `incomplete` (source, content type) says is analysed; true when one was
+/// taken out. A key not in `sources` stays. A source is analysed when its notes are and so is
+/// every one of `types` (the plug-in's analysable content types), since one progress covers
+/// all of a source's analyses; or when its notes are and the plug-in has not reported for
+/// [`ANALYSIS_QUIET`], for a type it never analyses unasked.
+fn settle_analysis(
+    analysis: &Mutex<Vec<(usize, f32, Instant)>>,
+    sources: &[(usize, ARAAudioSourceRef)],
+    types: &[ARAContentType],
+    incomplete: impl Fn(ARAAudioSourceRef, ARAContentType) -> bool,
+) -> bool {
+    let notes_type = kARAContentTypeNotes as ARAContentType;
+    let listed: Vec<(usize, ARAAudioSourceRef, bool)> = {
+        let analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        sources
+            .iter()
+            .filter_map(|&(key, source)| {
+                let (_, _, reported) = analysis.iter().find(|(s, _, _)| *s == key)?;
+                Some((key, source, reported.elapsed() >= ANALYSIS_QUIET))
+            })
+            .collect()
+    };
+    // Asked outside the lock: the plug-in may report progress from another thread meanwhile.
+    let done: Vec<usize> = listed
+        .into_iter()
+        .filter(|&(_, source, quiet)| {
+            !incomplete(source, notes_type) && (quiet || types.iter().all(|&kind| !incomplete(source, kind)))
+        })
+        .map(|(key, _, _)| key)
+        .collect();
+    if done.is_empty() {
+        return false;
+    }
+    let mut analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    analysis.retain(|(s, _, _)| !done.contains(s));
+    true
+}
+
+/// Takes one owner of each of `mine` (a leaving track's sources) out of `owners` (each source
+/// once per track that plays it) and returns those no track plays any more.
+fn leave_sources(owners: &mut Vec<String>, mine: &[String]) -> Vec<String> {
+    for id in mine {
+        if let Some(at) = owners.iter().position(|o| o == id) {
+            owners.remove(at);
+        }
+    }
+    mine.iter().filter(|id| !owners.contains(id)).cloned().collect()
+}
+
+/// Forgets what was asked and reported of the analysis of `sources` (key, plug-in ref), the
+/// sources of a track that leaves the document and that no other track plays
+/// ([`leave_sources`], #816): the next track that plays one asks the plug-in again, which sends
+/// progress again if it still analyses it.
+fn forget_analysis(
+    analysis: &Mutex<Vec<(usize, f32, Instant)>>,
+    asked: &RefCell<Vec<ARAAudioSourceRef>>,
+    sources: &[(usize, ARAAudioSourceRef)],
+) {
+    asked.borrow_mut().retain(|source| !sources.iter().any(|(_, s)| s == source));
+    let mut analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    analysis.retain(|(key, _, _)| !sources.iter().any(|(k, _)| k == key));
 }
 
 /// Marks the notes to be read again, unless the plug-in says they stayed as they were.
@@ -1935,99 +2065,5 @@ unsafe extern "C" fn no_cycle_request(
 unsafe extern "C" fn no_cycle_switch(_host: ARAPlaybackControllerHostRef, _enable: ARABool) {}
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_position_asked_for_is_shown_until_the_engine_is_there() {
-        let rate = 48_000.0;
-        // Nothing asked for: the engine's position.
-        assert_eq!(shown_position(1000, rate, false), 1000);
-        // Asked for 2 s while the engine is still at its old place: 2 s is shown.
-        hold_position(2.0);
-        assert_eq!(shown_position(1000, rate, false), 96_000);
-        assert_eq!(shown_position(1512, rate, false), 96_000);
-        // The engine gets there: its own from then on, the hold let go of.
-        assert_eq!(shown_position(96_010, rate, false), 96_010);
-        assert_eq!(shown_position(1000, rate, false), 1000);
-        // Playing, the engine's position always.
-        hold_position(3.0);
-        assert_eq!(shown_position(1000, rate, true), 1000);
-        assert_eq!(shown_position(1000, rate, false), 1000);
-    }
-
-    #[test]
-    fn reading_fills_each_channel_with_silence_outside() {
-        let audio = AudioSource::from_interleaved(&[1.0, -1.0, 2.0, -2.0], 2, 48_000.0).unwrap();
-        let source = Box::new(Source { audio: AudioSource::open(&audio.address()).unwrap() });
-        let source_ref: *const Source = &*source;
-        // SAFETY: a reader of a live source, used and destroyed here.
-        let reader = unsafe { create_reader(std::ptr::null_mut(), source_ref.cast_mut().cast(), 0) };
-        let (mut left, mut right) = ([9.0f32; 4], [9.0f32; 4]);
-        let buffers = [left.as_mut_ptr().cast::<c_void>(), right.as_mut_ptr().cast()];
-        // SAFETY: two buffers of four floats for a stereo source.
-        let ok = unsafe { read_samples(std::ptr::null_mut(), reader, -1, 4, buffers.as_ptr()) };
-        assert_eq!(ok, 1);
-        assert_eq!((left, right), ([0.0, 1.0, 2.0, 0.0], [0.0, -1.0, -2.0, 0.0]));
-        // A negative count and a missing buffer list are refused.
-        // SAFETY: as above.
-        assert_eq!(unsafe { read_samples(std::ptr::null_mut(), reader, 0, -1, buffers.as_ptr()) }, 0);
-        // SAFETY: as above.
-        assert_eq!(unsafe { read_samples(std::ptr::null_mut(), reader, 0, 4, std::ptr::null()) }, 0);
-        // SAFETY: the reader made above, destroyed once.
-        unsafe { destroy_reader(std::ptr::null_mut(), reader) };
-
-        // Doubles, for a plug-in that asks for 64-bit samples.
-        // SAFETY: as above.
-        let wide = unsafe { create_reader(std::ptr::null_mut(), source_ref.cast_mut().cast(), 1) };
-        let (mut l64, mut r64) = ([9.0f64; 2], [9.0f64; 2]);
-        let buffers = [l64.as_mut_ptr().cast::<c_void>(), r64.as_mut_ptr().cast()];
-        // SAFETY: two buffers of two doubles.
-        assert_eq!(unsafe { read_samples(std::ptr::null_mut(), wide, 1, 2, buffers.as_ptr()) }, 1);
-        assert_eq!((l64, r64), ([2.0, 0.0], [-2.0, 0.0]));
-        // SAFETY: as above.
-        unsafe { destroy_reader(std::ptr::null_mut(), wide) };
-    }
-
-    #[test]
-    fn a_state_carries_the_archive_and_reads_back() {
-        let wrapped = wrap_state(vec![1, 2, 3], Some(("com.example.doc".into(), vec![9; 5])));
-        let (component, archive) = unwrap_state(&wrapped);
-        assert_eq!(component, [1, 2, 3]);
-        assert_eq!(archive, Some(("com.example.doc".to_string(), [9u8; 5].as_slice())));
-        // Without an archive, and any state of the plug-in's own, it is the component's.
-        assert_eq!(wrap_state(vec![4, 5], None), [4, 5]);
-        assert_eq!(unwrap_state(&[4, 5]), ([4u8, 5].as_slice(), None));
-        // Cut short, it is not split.
-        let cut = &wrapped[..wrapped.len() - 1];
-        assert_eq!(unwrap_state(cut), (cut, None));
-        let mut huge = wrapped.clone();
-        huge[20..28].copy_from_slice(&u64::MAX.to_le_bytes());
-        assert_eq!(unwrap_state(&huge).1, None);
-    }
-
-    #[test]
-    fn archives_are_read_and_written_within_bounds() {
-        let mut archive = Archive { bytes: Vec::new(), id: CString::new("com.example.doc").unwrap() };
-        let writer: ARAArchiveWriterHostRef = std::ptr::from_mut(&mut archive).cast();
-        // SAFETY: an archive live for the calls; buffers of the lengths given.
-        let write = |at: usize, bytes: &[u8], len: usize| unsafe {
-            write_archive(std::ptr::null_mut(), writer, at, len, bytes.as_ptr())
-        };
-        assert_eq!(write(2, b"abc", 3), 1);
-        assert_eq!(write(usize::MAX, b"ab", 2), 0);
-        assert_eq!(write(0, b"a", MAX_ARCHIVE + 1), 0);
-        assert_eq!(archive.bytes, [0, 0, b'a', b'b', b'c']);
-        let reader: ARAArchiveReaderHostRef = std::ptr::from_mut(&mut archive).cast();
-        let mut out = [0u8; 3];
-        // SAFETY: as above.
-        assert_eq!(unsafe { archive_size(std::ptr::null_mut(), reader) }, 5);
-        // SAFETY: as above.
-        assert_eq!(unsafe { read_archive(std::ptr::null_mut(), reader, 2, 3, out.as_mut_ptr()) }, 1);
-        // SAFETY: as above.
-        assert_eq!(unsafe { read_archive(std::ptr::null_mut(), reader, 4, 3, out.as_mut_ptr()) }, 0);
-        // SAFETY: as above.
-        assert!(!unsafe { archive_id(std::ptr::null_mut(), reader) }.is_null());
-        assert_eq!(&out, b"abc");
-    }
-}
+#[path = "ara_tests.rs"]
+mod tests;

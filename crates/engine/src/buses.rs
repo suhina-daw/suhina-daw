@@ -177,7 +177,7 @@ pub(crate) fn build(
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
         let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
         chain.mix = automation::channel_of(project, chain.track)
-            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus));
+            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
         // unless mix lanes carry it; a group's pan does not apply (as for a group without devices).
         let live_pan = automation::channel_of(project, chain.track)

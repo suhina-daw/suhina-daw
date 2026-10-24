@@ -459,14 +459,16 @@ impl Chain {
         }
     }
 
-    /// Takes a fader move to `volume` (the channel's linear volume) from the next block, smoothed;
-    /// ignored without a [`Chain::built_volume`]. Never allocates.
+    /// Takes a fader move to `volume` (the channel's linear volume, at most +6 dB) from the next
+    /// block, smoothed; ignored without a [`Chain::built_volume`], and for a volume whose ratio to
+    /// the built one is not a finite `f32`. Never allocates.
     pub(crate) fn set_live_volume(&mut self, volume: f64) {
         if let Some(built) = self.built_volume
             && volume.is_finite()
             && volume >= 0.0
+            && let Some(ratio) = live_ratio(volume, built)
         {
-            self.live.target = (volume / built) as f32;
+            self.live.target = ratio;
         }
     }
 
@@ -1537,6 +1539,14 @@ impl Default for LiveVolume {
 
 /// The equal-power factors of pan `pan` (-1 to 1) on centred gains: 1 and 1 centred, √2 and 0 at
 /// the left end.
+/// A live level's factor against the level a graph was built at: `level` clamped to the most a
+/// fader or a send can be (+6 dB), or `None` when the ratio is not a finite `f32` (a built level
+/// so small that the division overflows), so a hostile value never reaches the mix.
+pub(crate) fn live_ratio(level: f64, built: f64) -> Option<f32> {
+    let ratio = (level.min(suhina_model::automation::MAX_VOLUME) / built) as f32;
+    ratio.is_finite().then_some(ratio)
+}
+
 pub(crate) fn pan_factors(pan: f64) -> (f32, f32) {
     let (left, right) = suhina_dsp::pan::gains(pan);
     ((left * std::f64::consts::SQRT_2) as f32, (right * std::f64::consts::SQRT_2) as f32)
@@ -1590,7 +1600,7 @@ mod live_volume_tests {
                 points: vec![AutomationPoint::new(0.0, 0.0)],
                 enabled: true,
             });
-            chain.mix = MixLanes::new(&channel, 24_000.0, true);
+            chain.mix = MixLanes::new(&channel, 24_000.0, true, 48_000.0);
             assert!(chain.mix.is_some());
         }
         chain.built_volume = Some(1.0);

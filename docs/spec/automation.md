@@ -1,6 +1,6 @@
 ---
-description: Automation envelopes - lanes of points over the arrangement for a track's volume, pan and mute and every built-in, .sd and plug-in parameter, curves and jumps, how the engine plays them, a manual change turning a lane off, and the automation.* commands
-read_when: automation, envelope, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
+description: Automation envelopes - lanes of points over the arrangement for a track's volume, pan and mute and every built-in, .sd and plug-in parameter, segments that move evenly along the parameter's control, the one-handle curve, the volume fader's law, jumps and their smoothing, how the engine plays them, a manual change turning a lane off, and the automation.* commands
+read_when: automation, envelope, curve family, Bezier, volume fader, fader law, volume taper, volume smoothing, Taper, VolumeTaper, curve_through, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
 type: spec
 status: current
 last_verified: 2026-10-23
@@ -16,6 +16,7 @@ covers:
   - crates/session/tests/automation.rs
   - crates/ui/src/arrangement/automation_lanes.rs
   - crates/ui/tests/automation_lanes.rs
+  - crates/ui/src/kit/widgets.rs
   - crates/project-file/src/lib.rs
 ---
 
@@ -23,7 +24,10 @@ covers:
 
 A parameter can follow an **envelope** over the arrangement: a lane of points, each a beat and a
 value, that the parameter moves along while the transport plays. This is Suhina's own design
-(#395); it extends the plug-in lanes of #109 to every parameter. Lanes are set by command (CLI,
+(#395); it extends the plug-in lanes of #109 to every parameter. How a segment moves, the shape
+of its curve, the volume fader's law and the smoothing of a volume jump follow how Live 12.4.6
+plays its lanes, measured from renders of automated parameters (`live-12/automation.md` and
+`measurements/automation/` in the device-specs repository, #906). Lanes are set by command (CLI,
 MCP) and drawn and edited in the Arrangement view (#420, [below](#in-the-arrangement-view)).
 
 ## What can be automated
@@ -47,10 +51,23 @@ and is deleted with its device. One lane per parameter.
 
 - Points are kept in beat order. Before the first point the lane holds the first point's value;
   after the last, the last's.
-- Between two points the value moves along the first point's **curve**, -1 to 1: 0 is a straight
-  line; otherwise the share of the way covered at `t` (0 to 1) of the segment is `t` to the power
-  4^-curve, so 1 rises fast and settles, -1 starts slowly and rises late. The same shape goes up
-  and down.
+- Between two points the value moves **evenly along the parameter's control**: its position,
+  0 to 1 over the travel of the fader or knob that sets it, not its stored value
+  (`automation::Taper`). The volume moves along the volume fader ([below](#the-volume-fader)), a
+  built-in device's parameter along its knob (`ParamInfo::to_normalized`: linear, logarithmic,
+  or Utility's gain law, [utility.md](utility.md#the-gain-knob)), a data-only device's along its
+  control (logarithmic for a log slider or knob), pan and plug-in parameters in their value. What
+  a lane draws straight is what plays: half-way from 50 Hz to 500 Hz on a logarithmic knob is
+  158 Hz. A whole-number parameter moves along the line between its points and the device rounds.
+- The movement follows the first point's **curve**, -1 to 1: 0 is a straight line. A curve is a
+  cubic Bezier from (0, 0) to (1, 1) in (share of the segment's time, share of the way in
+  position) with **one handle**: its first inner control point (x1, y1) and the second its
+  mirror, (1 - y1, 1 - x1). The handle runs along two lines that meet at (1/4, 1/4), where the
+  segment is straight: for a curve c above 0 it is ((1 - c)/4, (1 + 3c)/4), on to (0, 1) at 1,
+  which moves fast first and settles; below 0 it is ((1 - 3c)/4, (1 + c)/4), on to (1, 0) at -1,
+  which waits and moves late (`automation::shape`). The same curve has the same shape going up
+  and down. This is the family Live's lanes store and play (their mirrored handles were seen in
+  every saved set); how far a value of c bends is Suhina's own scale.
 - **Two points at one beat make a jump**: the value reaches the first, then leaves from the second.
   A new point at a beat that has points goes after them.
 - On/off and choice parameters, and the mute, are **steps**: each point's value holds until the
@@ -58,6 +75,21 @@ and is deleted with its device. One lane per parameter.
   rounds.
 - A lane is **enabled** or not. One that is off does not play: the parameter keeps the value set on
   it (the channel's volume, the device's `params`).
+
+## The volume fader
+
+The volume lane, the mixer's volume field and fader, the Arrangement's volume field and the
+volume knob all place a volume on one law (`automation::volume_db`, `volume_position`), measured
+from Live 12.4.6's track volume (and the same on Operator's Volume):
+
+- **From 0.4 of the travel to the top**, dB = 40 p - 34: even in decibels, 40 dB per travel,
+  0 dB at 0.85, +6 dB at the top, -18 dB at 0.4.
+- **Below 0.4**, dB = 40 p - 34 - 207 (0.4 - p)^2: it falls faster, -34 dB at 0.2, -49 dB at
+  0.1, -67 dB just above the bottom (within 0.25 dB of the measured fader above 0.05).
+- **The bottom** is silence; a volume below the law's lowest level sits there.
+
+The mixer's volume field still steps by decibels when dragged; the law is where it draws the
+level and where a lane moves.
 
 ## A manual change turns the lane off
 
@@ -85,9 +117,14 @@ audio thread.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
   and the enabled flag apply too.
-- **Mixer lanes**: the track's gains are computed at every 64th frame of the arrangement and move
+- **Mixer lanes**: the track's gains are computed at every 16th frame of the arrangement and move
   in a straight line between, frame by frame, so a frame's gain depends on its time only (not on the
-  block size) and a fader move or mute never clicks: a mute switches over 64 frames. A track whose
+  block size) and a fader move or mute never clicks: a mute switches over 16 frames. A **jump of
+  the volume** (two points at one beat) becomes an S-shaped ramp (smootherstep) along the fader,
+  4.4 ms long and centred on the jump (`VOLUME_SMOOTHING`): it starts 2.2 ms early, which the
+  engine can do because it reads the lane ahead. A straight or bent segment plays as drawn. This
+  is what Live 12.4.6's track volume does with a jump (a fixed 4.4 ms at any sample rate, an S in
+  the fader's position, centred); pan and mute jumps are not smoothed further. A track whose
   mixer has a lane that plays runs through a device chain (one without devices when it has none),
   and its gains apply after its devices, as for any track with devices. A group track with mixer
   lanes becomes a bus (ADR 0004 › 10), so its lanes scale the sum of the tracks routed into it.
@@ -96,9 +133,10 @@ audio thread.
 - **Mute and solo**: a mute lane decides the channel's mute while it plays (a muted channel with a
   mute lane sounds where the lane says 0). Solo is not automated.
 
-A corner of a lane that falls between two 64-frame steps is cut across that step (at most 1.3 ms
-early or late in shape, not in time: a jump's own frame is exact for device and plug-in
-parameters).
+A corner of a lane that falls between two steps (64 frames for device and plug-in parameters,
+16 for the mixer) is cut across that step (at most 1.3 ms early or late in shape, not in time: a
+jump's own frame is exact for device and plug-in parameters). A built-in device smooths a jump
+itself (Utility's gain glides along its knob, [utility.md](utility.md#smoothing)).
 
 ## Commands
 
@@ -167,15 +205,16 @@ A lane is 40 px tall across the timeline, with a header under the track's:
 
 The envelope is drawn in the track's colour through every point, holding before the first and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
-as the parameter's control places them: the volume as the mixer's volume field (0 dB at 85 % of
-the height), a device's parameter as its knob turns. A lane without points draws a faint line at
+as the parameter's control places them, and a segment is drawn evenly in that placement, as it
+plays: the volume on the fader's law ([above](#the-volume-fader), 0 dB at 85 % of the height), a
+device's parameter as its knob turns. A lane without points draws a faint line at
 the value set on the mixer or the device. Editing (every edit is one undo step):
 
 | Gesture | Command |
 |---|---|
 | Click the lane | `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height |
-| Click on or near the line (within 6 points), or a lane's faint line | `automation.addPoint` on the envelope: its value at that beat, so the envelope keeps its shape (a level or straight segment stays exactly so). The segment before the new point keeps its curve; the one after gets the curve that passes through the old segment's middle |
-| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer; points dragged past others keep beat order |
+| Click on or near the line (within 6 points), or a lane's faint line | `automation.addPoint` on the envelope: its value at that beat, so the envelope keeps its shape (a level or straight segment stays exactly so). The segment before the new point keeps its curve; the one after gets the curve that passes through the old segment's middle. On a bent segment the envelope stays close but not exact: a curve cut short draws more steeply, by up to a sixth of the lane near the new point at the strongest bends |
+| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer; points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
 | Click a point | selects it; Shift or Ctrl adds it to the selection or takes it out. Selecting a clip ends a selection of points |
 | Drag on the lane away from the line | draws a box that selects the points in it |
 | Drag a selected point | `automation.movePoints`: the whole selection moves by the same beats (none before beat 0) and the same change of value |
@@ -186,7 +225,12 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 ## In the project file
 
 `automation` on a channel and on a device: `[{ param, points: [{ beat, value, curve? }],
-enabled? }]`. `curve` is written only when it is not 0 and `enabled` only when it is false, so a
+enabled? }]`. Values are stored as before (a linear gain for the volume), so the file is
+unchanged; what changed (#906) is how they play. A project saved earlier plays its volume
+lanes, and its device lanes on logarithmic knobs, evenly along the control instead of in the
+stored value, and its curves on the one-handle family instead of a power curve with the same
+sign (a bent segment bends the same way, by a slightly different amount); its points are where
+they were. `curve` is written only when it is not 0 and `enabled` only when it is false, so a
 file without automation, or with straight lanes that play, keeps its shape
 ([suhina-format.md](suhina-format.md)). A curve outside -1 to 1 is refused, as is a lane of more
 than 65,536 points; points are read in beat order.

@@ -971,16 +971,8 @@ fn toggles(
     let small = if column.armable { (toggle.width() - 6.0) / 5.0 } else { (toggle.width() - 4.0) / 4.0 };
     let toggle = if column.armable {
         let arm = Rect::from_min_max(Pos2::new(toggle.right() - small, toggle.top()), toggle.max);
-        if let Some(action) = widgets::arm_button(
-            ui,
-            painter,
-            arm,
-            id.with("arm"),
-            track.0,
-            &column.name,
-            column.armed,
-            column.plays_notes,
-        ) {
+        if let Some(action) = widgets::arm_button(ui, painter, arm, id.with("arm"), track.0, &column.name, column.armed)
+        {
             actions.push(action);
         }
         Rect::from_min_max(toggle.min, Pos2::new(arm.left() - 2.0, toggle.bottom()))

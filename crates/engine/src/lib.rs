@@ -915,6 +915,9 @@ impl Renderer {
         let at = self.running.then(|| self.time());
         let time = self.time();
         let (bar, bar_start, signature) = self.graph.launcher.bar();
+        // The loop is an active cycle only while playback repeats it: a render that plays
+        // straight through it tells the plug-ins of no cycle.
+        let cycle = self.graph.loop_beats.filter(|_| self.follow_loop);
         let song = plugin::SongPosition {
             playing: self.running,
             position: time,
@@ -924,8 +927,8 @@ impl Renderer {
             bar_start,
             numerator: signature.numerator,
             denominator: signature.denominator,
-            cycle: self.graph.loop_beats,
-            cycle_seconds: self.graph.loop_beats.map(|(start, end)| {
+            cycle,
+            cycle_seconds: cycle.map(|(start, end)| {
                 let seconds = |beat| self.frame_of_beat(beat) as f64 / f64::from(self.sample_rate.max(1));
                 (seconds(start), seconds(end))
             }),

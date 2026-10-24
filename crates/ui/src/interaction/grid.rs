@@ -140,8 +140,10 @@ pub struct SendKnob {
 pub fn played_mixer(channel: &suhina_engine::model::Channel, beat: f64) -> (Option<f64>, Option<f64>) {
     let lane = |param: &str| channel.automation.iter().find(|l| l.param == param && l.enabled && !l.points.is_empty());
     (
-        lane("volume").and_then(|l| l.value_at(beat, false)).map(gain_to_db),
-        lane("pan").and_then(|l| l.value_at(beat, false)),
+        lane("volume")
+            .and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::VolumeTaper))
+            .map(gain_to_db),
+        lane("pan").and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::Plain)),
     )
 }
 

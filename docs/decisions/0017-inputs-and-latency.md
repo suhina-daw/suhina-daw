@@ -18,16 +18,6 @@ covers:
 
 # 0017: Inputs, arming and live latency
 
-MIDI monitoring amendment: MIDI input now has the same Auto / In / Off choice as audio input.
-Auto follows record arm, In monitors without requiring arm, and Off allows armed recording
-without live instrument sound. Clip playback is unaffected. `track.setMidiInput` persists and
-undoes this choice; files without `midi_input.monitor` retain Auto. The engine receives an
-atomic `SetMidiInput` with independent recording-arm and monitoring flags. It keeps bounded,
-preallocated recording and monitoring target lists, routes notes only to monitoring targets,
-and records only armed targets. Turning monitoring off releases held voices. The low-latency
-queue stays active for monitored inputs as well as armed tracks. The existing `SetArmed`
-command retains Auto behavior for callers that do not choose a monitor mode.
-
 - **Status:** accepted (MIDI input; the shallower queue while armed, #265; a MIDI input per track, #278; audio input and monitoring, #267; notes placed by the driver's timestamps, #269; MIDI and audio recording with a count-in, #266 and #268; controllers, pitch bend and aftertouch reaching the instrument, #812)
 - **Date:** 2026-10-14
 
@@ -60,6 +50,7 @@ engine code.
    bend and channel pressure (aftertouch), on every channel (amendment, #812); program change,
    polyphonic key pressure, system exclusive and other system messages are ignored, as are short
    or malformed messages.
+   *Amended 2026-10-23, see Amendment: controllers, pitch bend and aftertouch.*
 2. **Live notes reach the engine over their own queue.** The renderer has a live-note queue
    (`rtrb`, 1024 events) beside the controller's command queue (`crates/engine/src/live.rs`).
    Its sending end goes to the MIDI driver's callback thread, which may lock and allocate: it is
@@ -69,7 +60,7 @@ engine code.
    events at the start of each block, after the controller's commands, and plays them at the
    block's first frame through `Chain::note_on` and `Chain::release_key`, the way the preview
    voice plays its notes ([ADR 0011](0011-preview-and-added-audio.md)). A controller, pitch bend
-   or channel pressure message goes to the same armed tracks' instruments the same way, through
+   or channel pressure message goes to the same monitored tracks' instruments the same way, through
    `Chain::live_control`, as a `NoteEvent` the device already takes (#812). A track that stops
    hearing a source (disarmed, given another input, or the port closed) has the pitch bend and
    pressure that source moved set back to the centre and to none, so its instrument is not left
@@ -77,9 +68,14 @@ engine code.
    wheel moves smoothly, but controls take at most half of the waiting places: past that, a new
    value takes the place of the one before it that moves the same control, at that one's frame,
    so a stream never leaves a note-off playing ahead of its note-on. Nothing on the render
-   thread allocates, locks or frees.
-3. **Arming is playing state, not an edit.** An armed track's instrument plays the live notes,
-   whether the transport runs or not. Which tracks are armed is kept by the `Session` beside the
+   thread allocates, locks or frees. The tracks that hear the live notes are the monitored ones
+   (decision 3).
+   *Amended 2026-10-23, see Amendment: controllers, pitch bend and aftertouch, and Amendment: MIDI
+   monitoring.*
+3. **Arming is playing state, not an edit.** A track's instrument plays the live notes, whether
+   the transport runs or not, as its MIDI monitoring says (decision 8): **Auto**, the default,
+   while the track is armed; **In** always, armed or not; **Off** never, though an armed track
+   still records. Clip playback is never held back by it. Which tracks are armed is kept by the `Session` beside the
    project, not in it: `track.setArm` is a transport command, is not undone and is not saved
    (a project opens with nothing armed). It reaches the engine as `LaunchCommand::SetArmed`,
    without a new graph, and the renderer keeps the armed tracks (up to 64) across graph swaps; a
@@ -97,6 +93,7 @@ engine code.
    does not move the arm (a take asked to end still records until it is a clip: a slot's, to its
    launch boundary); once the take ends, the track selected then is armed. Turning the
    setting off leaves the arm as it is. The window remembers which track it armed, per project.
+   *Amended 2026-10-23, see Amendment: MIDI monitoring, and Amendment: Auto-arm.*
 4. **Every port is on until turned off.** `midi.inputs` lists the ports, `midi.setInput` turns
    one on or off; the window keeps the ports turned off in its settings. The ports are looked at
    again every two seconds (every thirty when they cannot be listed at all), so a controller
@@ -108,7 +105,7 @@ engine code.
    WASAPI exclusive mode on Windows); the default 1024 frames is too slow to play.
 6. **While a track is armed, the output keeps one block queued instead of two** (amendment,
    [#265](https://github.com/suhina-daw/suhina-daw/issues/265)). The render thread reads
-   `Renderer::live_armed` before each block and aims for one block or one device buffer,
+   `Renderer::live_armed` (a track is armed or monitors MIDI with In) before each block and aims for one block or one device buffer,
    whichever is more, instead of two blocks or a device buffer and a block. It is automatic, not
    a setting: an armed track is the one sign that someone may be playing, and playback alone
    keeps the safer depth. Arming lets the device drain the queue to the new depth and disarming
@@ -126,7 +123,8 @@ engine code.
    [#278](https://github.com/suhina-daw/suhina-daw/issues/278)), so two players, or a keyboard
    and a pad controller, each play their own armed track. A track's `midi_input` is part of the
    project (model, `.suhina`, undone like any edit): a port (every port, the default; one by
-   name; or none) and a channel (every one, or 1 to 16). `track.setMidiInput` sets it; the
+   name; or none), a channel (every one, or 1 to 16) and its monitoring (Auto, In or Off, decision
+   3). `track.setMidiInput` sets it; the
    track's menu in both views and, at 90 px, a dropdown in the Arrangement header show it. Each
    live note carries its source, a port and a channel: the MIDI layer tags it with a hash of the
    port's name (`port_id`, FNV-1a), which the session computes the same way from the track's
@@ -136,6 +134,7 @@ engine code.
    once, silent ones reused), so one controller's pedal does not hold another's notes. A track
    that stops hearing a source lets go of that source's keys. A Live Set's track input routing
    is not read yet; imported tracks hear every port.
+   *Amended 2026-10-23, see Amendment: MIDI monitoring.*
 9. **Audio input** (amendment, [#267](https://github.com/suhina-daw/suhina-daw/issues/267)).
    - *The device.* An input device is chosen beside the output (`audio.setOutput`'s `input`,
      Settings › Audio › Input): off by default, so nothing opens a microphone unasked; the host's
@@ -204,9 +203,41 @@ engine code.
     output fed back into the input offline, with a known delay) checks that a recorded frame
     lands on the frame it was played at.
 
+## Amendment: MIDI monitoring (2026-10-23)
+
+[#808](https://github.com/suhina-daw/suhina-daw/issues/808),
+[#810](https://github.com/suhina-daw/suhina-daw/pull/810). MIDI input has the same Auto / In / Off
+choice as audio input, in the track's `midi_input` (decision 8): Auto follows the record arm, In
+monitors without it, and Off records an armed track without its live sound. `track.setMidiInput`
+sets, saves and undoes it; a file without `midi_input.monitor` reads as Auto. The engine gets one
+`SetMidiInput` with the arm and the monitoring apart, keeps bounded, preallocated lists of the
+tracks that record and of those that monitor, plays notes only on the second and records only
+the first. Turning monitoring off lets go of the voices it held. The shallower queue of decision
+6 stays on while a track monitors as well as while one is armed. `SetArmed` keeps Auto for
+callers that choose no mode. Decisions 2, 3 and 8 say so.
+
+## Amendment: controllers, pitch bend and aftertouch (2026-10-23)
+
+[#812](https://github.com/suhina-daw/suhina-daw/issues/812),
+[#837](https://github.com/suhina-daw/suhina-daw/pull/837). Every control change, pitch bend and
+channel pressure is read, not only the sustain pedal and all-notes-off (decision 1), and reaches
+the monitored tracks' instruments through `Chain::live_control` (decision 2). A track that stops
+hearing a source has the bend and pressure it moved set back; stamped controls wait for their
+frame as notes do, but take at most half the waiting places, a newer value replacing the one
+before it for the same control.
+
+## Amendment: Auto-arm (2026-10-23)
+
+[#834](https://github.com/suhina-daw/suhina-daw/issues/834),
+[#840](https://github.com/suhina-daw/suhina-daw/pull/840). With Settings › MIDI › Auto-arm on, the
+selected track is armed through `track.setArm` as well as the tracks armed by hand, which it never
+disarms; the track it armed before is disarmed. While a take records the selection does not move
+the arm. Decision 3 has the rules.
+
 ## Consequences
 
-- A MIDI keyboard plays any instrument, built in or a plug-in, on armed tracks, with the sustain
+- A MIDI keyboard plays any instrument, built in or a plug-in, on the tracks that monitor it
+  (armed ones with Auto, any with In), with the sustain
   pedal, every other controller, pitch bend and channel pressure (#812); the latency follows the
   buffer size chosen.
 - Live notes keep the spacing they were played with, a fixed delay after they were played
@@ -214,8 +245,8 @@ engine code.
   same times.
 - A clip note and a live note on the same key of the same track share that key: the later one
   restarts it, and either's release ends it.
-- Arming is lost when the project closes. Saving it with the project can be added later as a
-  project field without changing the engine side.
+- Arming is lost when the project closes; the MIDI monitoring choice is part of the project and
+  is kept.
 - The last queued block is the one left between the engine and the device; rendering inside the
   device's callback would remove it, but would put plug-in round trips and graph swaps on the
   driver's thread, so it is not done. Lower latency from here comes from real-time priority

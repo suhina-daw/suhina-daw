@@ -281,15 +281,17 @@ impl Chain {
         }
     }
 
-    /// Takes a turn of the send to return `target` to `level` (linear) from the next block,
-    /// smoothed; ignored for a send the graph does not have. Never allocates.
+    /// Takes a turn of the send to return `target` to `level` (linear, at most +6 dB) from the
+    /// next block, smoothed; ignored for a send the graph does not have, and for a level whose
+    /// ratio to the built one is not a finite `f32`. Never allocates.
     pub(crate) fn set_live_send(&mut self, target: TrackId, level: f64) {
         if let Some(send) = self.sends.iter_mut().find(|s| s.track == target)
             && send.level > 0.0
             && level.is_finite()
             && level >= 0.0
+            && let Some(ratio) = crate::chain::live_ratio(level, send.level)
         {
-            send.live.target = (level / send.level) as f32;
+            send.live.target = ratio;
         }
     }
 

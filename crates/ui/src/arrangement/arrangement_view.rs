@@ -3724,16 +3724,8 @@ fn track_header(
         actions.push(action);
     }
     if let Some(arm) = arm.filter(|a| a.intersects(clip))
-        && let Some(action) = widgets::arm_button(
-            ui,
-            painter,
-            arm,
-            id.with("arm"),
-            lane.track.0,
-            &lane.name,
-            lane.armed,
-            lane.plays_notes,
-        )
+        && let Some(action) =
+            widgets::arm_button(ui, painter, arm, id.with("arm"), lane.track.0, &lane.name, lane.armed)
     {
         actions.push(action);
     }
@@ -3762,10 +3754,7 @@ fn track_header(
             id.with("midi-monitor"),
             format!("MIDI monitoring of {}: {text}", lane.name),
         )
-        .on_hover_text(format!(
-            "Input monitoring · {text}\n{}\nClick to choose when you hear your MIDI keyboard.",
-            menus::midi_monitor_explanation(mode)
-        ));
+        .on_hover_text("Choose when you hear the MIDI input");
         let active = mode == suhina_engine::model::Monitor::In;
         let (fill, ink) = widgets::toggle_colors(ui, &response, active);
         painter.rect_filled(at, 0.0, fill);

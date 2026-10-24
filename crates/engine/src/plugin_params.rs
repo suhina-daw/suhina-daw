@@ -22,7 +22,7 @@
 
 use suhina_model::{Device, DeviceParam};
 
-use crate::automation::Envelope;
+use crate::automation::{Envelope, Position};
 
 /// A parameter value for a plug-in at a frame of the block it goes with, in the plug-in's own
 /// range (a VST3 plug-in's normalized, a CLAP plug-in's plain): automation, or a value set.
@@ -92,7 +92,7 @@ impl SlotParams {
                 continue;
             }
             // A lane that is off (#395) or has no points is left out.
-            if let Some(envelope) = Envelope::new(lane, frames_per_beat, false) {
+            if let Some(envelope) = Envelope::new(lane, frames_per_beat, false, Position::Value) {
                 lanes.push(Lane { id, envelope });
             }
         }

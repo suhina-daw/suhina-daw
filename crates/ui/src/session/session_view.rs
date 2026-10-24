@@ -238,7 +238,10 @@ pub fn show(
             state.scroll -= delta;
         }
     }
-    state.scroll.x = state.scroll.x.clamp(0.0, (content_width - tracks_clip.width()).max(0.0));
+    // Past the last track, room for the buttons that add one, so they keep their width (and
+    // their text) however many tracks there are.
+    let room = crate::interaction::empty_space::empty_space_width(ui);
+    state.scroll.x = state.scroll.x.clamp(0.0, (content_width + room - tracks_clip.width()).max(0.0));
     state.scroll.y = state.scroll.y.clamp(0.0, (content_height - body.height()).max(0.0));
 
     // Lines between the bands.

@@ -216,8 +216,8 @@ fader and toggles stay in line across the mixer.
 
 | Part | Spec |
 |---|---|
-| Compact volume | 12 px across the strip, as the Arrangement's volume field: `control.background` (`control.hoverBackground` hovered), filled up to the level in `control.playingBackground` with 0 dB at 85 %, the value right in 10 px mono `text.primary`. With Mixer controls on Knob, a 12 px knob at the left and the value right of it. Dragged up or down, the wheel, double-click for 0 dB |
-| Fader | A 22 px column at the strip's left: a 4 px `control.background` track centred in it, filled from the bottom up to the level in `control.playingBackground` (0 dB at 85 % of the travel, as the volume field), a 1 px `text.hint` tick 5 px either side of the track at 0 dB, and an 18 × 7 px cap in `text.value` (`text.primary` hovered or dragged) centred on the level, a 1 px `window.background` line across its middle. The column, readout included, takes the drag, the wheel and the double-click |
+| Compact volume | 12 px across the strip, as the Arrangement's volume field: `control.background` (`control.hoverBackground` hovered), filled up to the level in `control.playingBackground` on the volume fader's law (0 dB at 85 %), the value right in 10 px mono `text.primary`. With Mixer controls on Knob, a 12 px knob at the left and the value right of it. Dragged up or down, the wheel, double-click for 0 dB |
+| Fader | A 22 px column at the strip's left: a 4 px `control.background` track centred in it, filled from the bottom up to the level in `control.playingBackground` (the volume fader's law, 0 dB at 85 % of the travel, as the volume field), a 1 px `text.hint` tick 5 px either side of the track at 0 dB, and an 18 × 7 px cap in `text.value` (`text.primary` hovered or dragged) centred on the level, a 1 px `window.background` line across its middle. The column, readout included, takes the drag, the wheel and the double-click |
 | Readout | Over the fader, 12 px across the strip: the volume in 10 px mono `text.value` (`text.primary` hovered), "-inf" below −70 dB, starting at the fader column's left edge |
 | Meter | Two 4 px bars, as below, standing 6 px right of the fader column, from the top of the fader to its bottom; at the least height, where there is no fader, it is not drawn |
 | Pan row | The pan knob (22 px) at the left, its value right of it, 6 px apart, 10 px mono `text.secondary` ("C", "15L"). While a send is dragged, its letter and level stand there instead ("A -12.0") |
@@ -291,7 +291,7 @@ dragging, and a drag is one undo step.
 | Value shown as | Fill from the left, `#4A4843`, full height | 2 px bar along the bottom from the centre, `#C9C4BB` | Fill `#3E3C38` |
 | Marker | 1 px tick in `#C9C4BB`, only the top and bottom 2 px | 1 px centre tick `#55524C`, top and bottom 2 px | none |
 | Text | Value right-aligned, 10 px mono | Centred | Label left (sans), value right (mono) |
-| Mapping | 0 dB at 85 % of the travel | 50L … C … 50R | as volume |
+| Mapping | the volume fader's law: 0 dB at 85 % of the travel, 40 dB per travel down to -18 dB at 40 %, faster below ([automation](../spec/automation.md#the-volume-fader)) | 50L … C … 50R | as volume |
 
 ### Dropdown and segmented control
 

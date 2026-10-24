@@ -50,7 +50,21 @@ pub enum Scale {
     /// Equal steps of travel multiply the value by the same factor (frequencies). Needs a
     /// positive range; otherwise the parameter behaves as linear.
     Logarithmic,
+    /// A gain in decibels on a knob that is even in decibels over the top three quarters of its
+    /// travel, 70 dB per whole travel, from `max` down to 52.5 dB below it; under that the gain
+    /// is a power of the travel (the one that keeps the slope in decibels unbroken), to silence
+    /// at the bottom, where the value is `min`. Utility's Gain: 0 dB in the middle for a top of
+    /// +35 dB. `docs/spec/utility.md`.
+    Gain,
 }
+
+/// Decibels per whole travel over a [`Scale::Gain`] knob's top three quarters.
+const GAIN_SLOPE: f64 = 70.0;
+/// Where a [`Scale::Gain`] knob stops being even in decibels.
+const GAIN_KNEE: f64 = 0.25;
+/// The power of the travel under the knee: `GAIN_SLOPE * GAIN_KNEE * ln 10 / 20`, so the slope in
+/// decibels does not break at the knee.
+const GAIN_POWER: f64 = GAIN_SLOPE * GAIN_KNEE * std::f64::consts::LN_10 / 20.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamKind {
@@ -152,11 +166,24 @@ impl ParamInfo {
         matches!(self.kind, ParamKind::Continuous(Scale::Logarithmic)) && self.min > 0.0 && self.max > self.min
     }
 
+    fn gain(&self) -> bool {
+        matches!(self.kind, ParamKind::Continuous(Scale::Gain)) && self.min < self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE)
+    }
+
     /// Where `value` sits on the knob, from 0.0 to 1.0.
     pub fn to_normalized(&self, value: f64) -> f64 {
         let value = self.clamp(value);
         let n = if self.max <= self.min {
             0.0
+        } else if self.gain() {
+            let knee = self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE);
+            if value <= self.min {
+                0.0
+            } else if value >= knee {
+                1.0 - (self.max - value) / GAIN_SLOPE
+            } else {
+                GAIN_KNEE * 10f64.powf((value - knee) / (20.0 * GAIN_POWER))
+            }
         } else if self.logarithmic() {
             (value / self.min).ln() / (self.max / self.min).ln()
         } else {
@@ -168,7 +195,16 @@ impl ParamInfo {
     /// The value at knob position `normalized` (0.0 to 1.0).
     pub fn from_normalized(&self, normalized: f64) -> f64 {
         let n = if normalized.is_finite() { normalized.clamp(0.0, 1.0) } else { self.to_normalized(self.default) };
-        let value = if self.logarithmic() {
+        let value = if self.gain() {
+            let knee = self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE);
+            if n <= 0.0 {
+                self.min
+            } else if n >= GAIN_KNEE {
+                self.max - GAIN_SLOPE * (1.0 - n)
+            } else {
+                (knee + 20.0 * GAIN_POWER * (n / GAIN_KNEE).log10()).max(self.min)
+            }
+        } else if self.logarithmic() {
             self.min * (self.max / self.min).powf(n)
         } else {
             self.min + n * (self.max - self.min)
@@ -579,6 +615,14 @@ mod tests {
         let empty = ParamInfo::choice("x", "X", &[], 0);
         assert_eq!(empty.to_normalized(0.0), 0.0);
         assert_eq!(empty.from_normalized(0.5), 0.0);
+    }
+
+    #[test]
+    fn a_gain_scale_over_a_range_that_does_not_reach_below_its_knee_is_linear() {
+        let narrow = ParamInfo::continuous("x", "X", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Gain);
+        assert_eq!(narrow.from_normalized(0.5), 0.0);
+        assert_eq!(narrow.to_normalized(-12.0), 0.0);
+        assert_eq!(narrow.to_normalized(0.0), 0.5);
     }
 
     /// A scale knows its keys in every octave, snaps a key outside it to the nearest one (a tie going

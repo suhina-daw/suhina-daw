@@ -302,6 +302,69 @@ fn dragging_a_segment_up_bends_its_curve() {
     assert_eq!(pan(&harness).0[0].curve, 0.0);
 }
 
+/// The height of the envelope line painted last frame at `x`, from the longest line inside `lane`.
+fn envelope_y_at(harness: &Harness<'static, App>, lane: egui::Rect, x: f32) -> Option<f32> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<Vec<Pos2>>) {
+        match shape {
+            egui::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, out)),
+            egui::Shape::Path(path) => out.push(path.points.clone()),
+            _ => {}
+        }
+    }
+    let mut lines = Vec::new();
+    for clipped in &harness.output().shapes {
+        if clipped.clip_rect.intersects(lane) {
+            walk(&clipped.shape, &mut lines);
+        }
+    }
+    let inside = |line: &Vec<Pos2>| line.iter().all(|p| lane.expand(1.0).contains(*p));
+    let line = lines.into_iter().filter(inside).max_by_key(Vec::len)?;
+    line.iter().min_by(|a, b| (a.x - x).abs().total_cmp(&(b.x - x).abs())).map(|p| p.y)
+}
+
+/// The frame the mouse is let go in already draws the new bend: the lane no longer goes back to
+/// the segment's old shape for a frame until the command has run.
+#[test]
+fn a_bent_segment_keeps_its_new_shape_when_the_mouse_is_let_go() {
+    let mut harness = with_lanes();
+    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.run();
+    let rect = harness.get_by_label("Pan automation on Drums").rect();
+    click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
+    click_at(&mut harness, Pos2::new(rect.left() + 228.0, rect.top() + 8.0));
+    let a = harness.get_by_label("Pan point 1 on Drums").rect().center();
+    let b = harness.get_by_label("Pan point 2 on Drums").rect().center();
+    let middle = Pos2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+    let straight = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    // Drag the middle up, as `drag` does, but look at the frame the button is let go in.
+    let by = vec2(0.0, -60.0);
+    harness.hover_at(middle);
+    harness.run();
+    harness.drag_at(middle);
+    harness.run();
+    harness.hover_at(middle + by * 0.5);
+    harness.run();
+    harness.hover_at(middle + by);
+    harness.run();
+    let dragging = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!(dragging < straight - 3.0, "bent while dragging: {dragging} against {straight}");
+    // The release alone, so this step is the one frame it is handled in (`drop_at` queues more
+    // events, and the frame of the last one would be the one looked at).
+    harness.event(egui::Event::PointerButton {
+        pos: middle + by,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    let released = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!((released - dragging).abs() < 0.5, "on release: {released}, while dragging: {dragging}");
+    harness.run();
+    let after = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!((after - dragging).abs() < 0.5, "after: {after}, while dragging: {dragging}");
+    assert!(pan(&harness).0[0].curve > 0.1);
+}
+
 /// The demo project with the FM synth, which has over a hundred parameters, on the Drums
 /// channel and its lanes shown; the volume lane's parameter menu is open.
 fn with_the_menu_open() -> (Harness<'static, App>, String) {

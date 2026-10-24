@@ -246,6 +246,14 @@ the list below, in a first form). Where it differs from the decisions above it i
   so (dimmed, "<plug-in> loading"); while it analyses them, how far (the least done of the
   track's sources, from the plug-in's analysis progress, sent as `ara_analysis` when it moves by
   a percent), with a bar filling along the bottom. The clips cannot be edited in it until then.
+  An analysis ends when the plug-in reports it completed, or when, asked whether the source's
+  notes are still incomplete (each time the notes are read, and every second while a clip shows
+  the analysis), it says they are not: a plug-in that restores its analysis from an archive
+  reports only that it started (#816). One progress covers all of a source's analyses, so
+  while the plug-in says another content type it lists as analysable is incomplete, the
+  analysis shows until that one is done too, or until it has not reported for 3 s (a type it
+  never analyses unasked). A track that leaves the document forgets its sources'
+  analysis, so the next track that plays one asks for it again.
 - **Notes on the clips** (#720). After a model update in which the plug-in said a region's,
   modification's or source's notes may have changed (not with "note scope remains unchanged"),
   and after the host's own edits, the host reads every region's notes with a playback-region
@@ -254,7 +262,7 @@ the list below, in a first form). Where it differs from the decisions above it i
   session keeps them by clip while the plug-in runs; the arrangement draws them as bars over
   the clip's waveform, which dims under them, placed through the tempo map. A bypassed
   plug-in's notes are kept and not shown. When the factory lists notes among what it analyses, the host asks it once
-  for each source whose notes are not found yet, so they show without the editor being opened. A
+  for each source whose notes are not found yet (again after the tracks that played it left), so they show without the editor being opened. A
   finished analysis (its progress Completed) has the notes read too, and while a region has none
   yet they are looked for again every second, as a plug-in may finish without saying the content
   changed.

@@ -1271,7 +1271,7 @@ static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setAudio",
-        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows",
+        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); every clip that plays the same audio follows, unless warp turned on would fit its markers to another tempo than theirs",
         params: &[
             CLIP_TRACK,
             CLIP,

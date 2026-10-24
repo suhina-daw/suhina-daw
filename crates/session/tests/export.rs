@@ -18,16 +18,29 @@ fn run(session: &mut Session, params: Value) -> Result<Value, String> {
     session.execute("project.export", &params).map_err(|e| e.0)
 }
 
-fn temp_file(name: &str, extension: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("suhina-export-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(format!("{name}-{}.{extension}", std::process::id()))
+/// A file to export to, in a folder of its own that goes when the file does.
+struct TempFile {
+    path: PathBuf,
+    _dir: crate::temp_dir::TempDir,
 }
 
-fn cleanup(paths: &[&Path]) {
-    for path in paths {
-        let _ = std::fs::remove_file(path);
+impl std::ops::Deref for TempFile {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.path
     }
+}
+
+impl AsRef<Path> for TempFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn temp_file(name: &str, extension: &str) -> TempFile {
+    let dir = crate::temp_dir::TempDir::new(&format!("export-{name}"));
+    TempFile { path: dir.join(format!("{name}.{extension}")), _dir: dir }
 }
 
 fn samples_of(path: &Path) -> Vec<f32> {
@@ -77,7 +90,6 @@ fn the_whole_arrangement_export_round_trips_the_float_render() {
     let written = samples_of(&path);
     let rendered = suhina_engine::render_offline(&project, SR, 512).unwrap();
     assert_eq!(written, rendered);
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -88,7 +100,6 @@ fn an_empty_arrangement_refuses_to_export() {
     let path = temp_file("empty", "wav");
     let error = run(&mut session, json!({ "path": path.display().to_string() })).unwrap_err();
     assert_eq!(error, "the arrangement is empty; add a clip before exporting");
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -100,7 +111,6 @@ fn preparation_warnings_reach_the_finished_export() {
     let result = suhina_session::export_from(&data, &json!({"path": path.display().to_string()})).unwrap();
     assert_eq!(result["warnings"], json!(data.warnings));
     assert!(samples_of(&path).iter().any(|sample| sample.abs() > 0.01));
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -124,7 +134,6 @@ fn an_existing_file_is_never_replaced_without_overwrite() {
     let error = run(&mut session, json!({ "path": path.display().to_string() })).unwrap_err();
     assert_eq!(error, format!("{} already exists; pass overwrite: true to replace it", path.display()));
     run(&mut session, json!({ "path": path.display().to_string(), "overwrite": true })).unwrap();
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -145,7 +154,6 @@ fn a_flac_export_decodes_to_the_source() {
         let lsb = if depth == "24" { 1.0 / 8_388_608.0 } else { 1.0 / 32_768.0 };
         let worst = source.iter().zip(&decoded.samples).fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
         assert!(worst <= 2.01 * lsb, "{depth}: worst {worst} against {lsb}");
-        cleanup(&[&path]);
     }
     // The float depth is refused, with the text the dialog's note shows before the click.
     let refused = temp_file("flac", "flac");
@@ -167,7 +175,6 @@ fn tail_goes_with_a_range() {
     )
     .unwrap_err();
     assert_eq!(error, "tail must be at least 0 beats");
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -186,7 +193,6 @@ fn a_range_over_the_sample_budget_is_refused_by_bytes() {
     let ok = run(&mut session, json!({ "path": path.display().to_string(), "range": { "start": 0.0, "end": 1500.0 } }))
         .unwrap();
     assert_eq!(ok["seconds"], 750.0);
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -206,7 +212,6 @@ fn a_node_render_names_the_returns_its_sends_go_to() {
     let whole = run(&mut session, json!({ "path": path.display().to_string(), "overwrite": true })).unwrap();
     let warnings: Vec<String> = serde_json::from_value(whole["warnings"].clone()).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
-    cleanup(&[&path]);
 }
 
 #[test]
@@ -241,7 +246,6 @@ fn an_mp3_export_decodes_to_the_signal_and_is_deterministic() {
     let second = temp_file("mp3-second", "mp3");
     run(&mut session, json!({ "path": second.display().to_string(), "mp3_rate": "320" })).unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), std::fs::read(&second).unwrap());
-    cleanup(&[&path, &second]);
 }
 
 #[test]
@@ -268,5 +272,4 @@ fn an_mp3_export_refuses_what_does_not_apply() {
     let error = run(&mut session, json!({ "path": wav.display().to_string(), "format": "MP3" })).unwrap_err();
     assert_eq!(error, "the file name says .wav, and the format says mp3");
     assert!(!wav.exists(), "a refused export wrote the file");
-    cleanup(&[&path, &wav]);
 }

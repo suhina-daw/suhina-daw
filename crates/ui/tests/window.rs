@@ -63,6 +63,37 @@ fn clicked(harness: &mut Harness<'static, SessionHarness>, label: &str) -> Vec<A
     harness.state().actions.clone()
 }
 
+/// With more tracks than the view shows, the buttons that add a track stay whole at the end of
+/// the sideways scroll instead of shrinking to nothing (reported on Discord).
+#[test]
+fn the_add_track_buttons_keep_their_width_with_many_tracks() {
+    let mut session = Session::new(demo_project());
+    for _ in 0..40 {
+        session.execute("track.add", &json!({ "kind": "midi" })).unwrap();
+    }
+    let many = SessionHarness {
+        grid: Grid::build(session.project(), None),
+        state: SessionViewState::default(),
+        actions: Vec::new(),
+    };
+    let mut harness = Harness::builder().with_size(SIZE).build_ui_state(
+        |ui, v: &mut SessionHarness| session_view::show(ui, &v.grid, &[], &mut v.state, &mut v.actions),
+        many,
+    );
+    theme::install(&harness.ctx);
+    harness.run();
+    // Scrolled as far right as it goes.
+    harness.state_mut().state.scroll.x = f32::MAX;
+    harness.run();
+    // As wide as with a few tracks.
+    let few = view();
+    for label in ["+ MIDI track", "+ Audio track", "+ Return track"] {
+        let (width, wanted) = (harness.get_by_label(label).rect().width(), few.get_by_label(label).rect().width());
+        assert!(width >= wanted - 0.5, "{label} is {width} px wide, not {wanted}");
+    }
+    assert_eq!(clicked(&mut harness, "+ MIDI track")[0].id, "track.add");
+}
+
 #[test]
 fn clicking_a_clip_launches_it() {
     let mut harness = view();
@@ -1045,8 +1076,7 @@ fn ctrl_t_adds_an_audio_track_and_ctrl_shift_t_a_midi_one() {
 
 #[test]
 fn ctrl_n_asks_for_a_new_project_and_ctrl_s_saves_one() {
-    let dir = std::env::temp_dir().join(format!("suhina-ui-save-{}", std::process::id()));
-    let _fresh = std::fs::remove_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("ui-save");
     let mut app = demo_app();
     app.set_default_folders(dir.join("Projects"), dir.join("Templates"));
     let mut harness = window(app);
@@ -1087,7 +1117,6 @@ fn ctrl_n_asks_for_a_new_project_and_ctrl_s_saves_one() {
     harness.run();
     assert!(dir.join("Templates").join("Night drive.suhina").is_file());
     assert_eq!(harness.state().session().and_then(|s| s.source()), Some(saved.as_path()));
-    let _clean = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -2172,7 +2201,7 @@ fn opening_while_a_project_is_open_asks_and_can_remember() {
 
 #[test]
 fn settings_add_and_remove_plugin_folders_and_scan_in_the_background() {
-    let base = std::env::temp_dir().join(format!("suhina-ui-plugins-{}", std::process::id()));
+    let base = crate::temp_dir::TempDir::new("ui-plugins");
     let folder = base.join("my plug-ins");
     std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("{e}"));
     let library = suhina_plugins::library::Library::new(Some(base.join("settings")), base.join("no-such-host"))
@@ -2214,7 +2243,6 @@ fn settings_add_and_remove_plugin_folders_and_scan_in_the_background() {
     harness.run();
     harness.run();
     assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 0);
-    let _cleanup = std::fs::remove_dir_all(&base);
 }
 
 #[test]
@@ -3030,8 +3058,7 @@ fn asked_to_close(harness: &Harness<'static, App>) -> bool {
 
 #[test]
 fn closing_or_quitting_with_unsaved_changes_asks_first() {
-    let dir = std::env::temp_dir().join(format!("suhina-ui-unsaved-{}", std::process::id()));
-    let _fresh = std::fs::remove_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("ui-unsaved");
     let mut app = demo_app();
     app.set_default_folders(dir.join("Projects"), dir.join("Templates"));
     app.open_project(Session::new(demo_project()), &[], OpenAs::NewTab);
@@ -3099,7 +3126,6 @@ fn closing_or_quitting_with_unsaved_changes_asks_first() {
     }
     assert!(closed, "the window closes once its projects are let go of");
     assert!(harness.state().projects().ids().is_empty());
-    let _clean = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -3659,8 +3685,7 @@ fn crashed_run(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf
 
 #[test]
 fn a_backup_a_crash_left_is_offered_on_start_and_opens_tied_to_its_file() {
-    let dir = std::env::temp_dir().join(format!("suhina-ui-recovery-{}", std::process::id()));
-    let _fresh = std::fs::remove_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("ui-recovery");
     let (file, backup) = crashed_run(&dir);
 
     let mut app = App::new();
@@ -3694,13 +3719,11 @@ fn a_backup_a_crash_left_is_offered_on_start_and_opens_tied_to_its_file() {
     next.offer_recovery();
     let harness = window(next);
     assert!(harness.query_by_label("Open the backup").is_none());
-    let _clean = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn ignoring_an_offered_backup_leaves_it_and_asks_no_more() {
-    let dir = std::env::temp_dir().join(format!("suhina-ui-recovery-ignore-{}", std::process::id()));
-    let _fresh = std::fs::remove_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("ui-recovery-ignore");
     let (_file, backup) = crashed_run(&dir);
     let mut app = App::new();
     app.projects_mut().set_backup_folder(Some(dir.join("settings")));
@@ -3717,13 +3740,11 @@ fn ignoring_an_offered_backup_leaves_it_and_asks_no_more() {
     next.projects_mut().set_backup_folder(Some(dir.join("settings")));
     next.offer_recovery();
     assert!(window(next).query_by_label("Open the backup").is_none());
-    let _clean = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_critical_command_from_the_window_is_backed_up_first() {
-    let dir = std::env::temp_dir().join(format!("suhina-ui-critical-{}", std::process::id()));
-    let _fresh = std::fs::remove_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("ui-critical");
     let file = dir.join("Song.suhina");
     Session::new(demo_project()).save(&file, false).unwrap();
     let mut app = App::new();
@@ -3743,7 +3764,6 @@ fn a_critical_command_from_the_window_is_backed_up_first() {
         .collect();
     kept.sort();
     assert_eq!(kept, [tracks, tracks + 1]);
-    let _clean = std::fs::remove_dir_all(&dir);
 }
 
 /// Picks `value` in the control bar's grid box, as a user does: open it, click the value.
@@ -3926,8 +3946,7 @@ fn at_start_the_start_panel_shows_unless_the_settings_say_otherwise() {
 #[test]
 fn at_start_a_new_project_comes_from_the_start_template_or_the_panel_says_why_not() {
     use suhina_ui::settings::AtStart;
-    let folder = std::env::temp_dir().join(format!("suhina-at-start-{}", std::process::id()));
-    std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("{e}"));
+    let folder = crate::temp_dir::TempDir::new("at-start");
     let template = folder.join("Four on the floor.suhina");
     std::fs::write(&template, b"{}").unwrap_or_else(|e| panic!("{e}"));
     let mut settings = at_start(AtStart::Template);
@@ -3953,7 +3972,6 @@ fn at_start_a_new_project_comes_from_the_start_template_or_the_panel_says_why_no
     let harness = started(settings, None);
     assert!(harness.query_by_label("New project").is_some());
     assert!(matches!(harness.state().status(), Status::Hint(h) if h.contains("No template")));
-    let _ = std::fs::remove_dir_all(&folder);
 }
 
 #[test]
@@ -4985,8 +5003,7 @@ fn ctrl_r_with_several_clips_selected_renames_them_all() {
 #[test]
 fn the_export_dialog_writes_the_wav_the_demo_names() {
     let mut harness = window(demo_app());
-    let dir = std::env::temp_dir().join(format!("suhina-export-dialog-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("export-dialog");
     let path = dir.join("Demo mix.wav");
 
     // File › Export… opens the dialog over the window.
@@ -5044,14 +5061,12 @@ fn the_export_dialog_writes_the_wav_the_demo_names() {
         "{:?}",
         harness.state().status()
     );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_file_named_mp3_shows_the_mp3_rate_and_exports_an_mp3() {
     let mut harness = window(demo_app());
-    let dir = std::env::temp_dir().join(format!("suhina-export-mp3-dialog-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("export-mp3-dialog");
     let path = dir.join("Demo mix.mp3");
 
     harness.get_by_label("File").click();
@@ -5084,7 +5099,6 @@ fn a_file_named_mp3_shows_the_mp3_rate_and_exports_an_mp3() {
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(bytes[0], 0xFF);
     assert_eq!(bytes[1] & 0xE0, 0xE0);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Runs frames until the export's result is in the status (the export renders on a real
@@ -5153,8 +5167,7 @@ fn wav_frames(path: &std::path::Path) -> u64 {
 #[test]
 fn a_closed_export_dialogs_worker_still_runs_and_the_reopened_dialog_shows_it() {
     let mut harness = window(long_demo_app());
-    let dir = std::env::temp_dir().join(format!("suhina-export-running-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("export-running");
     let path = dir.join("Demo mix.wav");
 
     // File › Export…, the file typed, Export clicked: the dialog turns into Exporting….
@@ -5203,7 +5216,6 @@ fn a_closed_export_dialogs_worker_still_runs_and_the_reopened_dialog_shows_it() 
         "{:?}",
         harness.state().status()
     );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Switching to another project while the export renders changes nothing about it: the
@@ -5224,8 +5236,7 @@ fn switching_projects_while_the_export_renders_keeps_the_export_and_names_it() {
     // The export belongs to the project active when Export was clicked (the second tab); its
     // name is what the feedback carries.
     let export_name = harness.state().projects().name(ids.get(1).copied().unwrap_or(ids[0])).unwrap_or("").to_string();
-    let dir = std::env::temp_dir().join(format!("suhina-export-switch-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = crate::temp_dir::TempDir::new("export-switch");
     let path = dir.join("Long mix.wav");
 
     // File › Export…, the file typed, Export clicked: Exporting…, and the name is the long
@@ -5277,7 +5288,6 @@ fn switching_projects_while_the_export_renders_keeps_the_export_and_names_it() {
         .length();
     let frames = wav_frames(&path);
     assert_eq!(frames, expected, "the exported file is the second project's render");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// A slot's right-click menu deletes its clip, MIDI or audio, as the Delete key does, in one
