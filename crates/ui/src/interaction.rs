@@ -6,6 +6,7 @@
 //! grid.
 
 pub mod colour_picker;
+pub mod commands;
 pub mod drop;
 pub mod empty_space;
 pub mod grid;

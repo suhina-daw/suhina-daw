@@ -198,16 +198,16 @@ impl ExportJob {
     pub fn params(&self) -> Value {
         let mut params = json!({
             "path": self.path.display().to_string(),
-            "sample_rate": self.sample_rate,
+            "sampleRate": self.sample_rate,
         });
         if let Some(format) = self.format {
             params["format"] = json!(format);
         }
         if let Some(rate) = self.mp3_rate {
-            params["mp3_rate"] = json!(rate);
+            params["mp3Rate"] = json!(rate);
         }
         if let Some(depth) = self.bit_depth {
-            params["bit_depth"] = json!(depth);
+            params["bitDepth"] = json!(depth);
         }
         if let Some(dither) = self.dither {
             params["dither"] = json!(dither);

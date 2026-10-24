@@ -33,6 +33,7 @@ suhina-device-fm-synth.workspace = true
 suhina-library.workspace = true
 suhina-plugins.workspace = true
 rtrb.workspace = true
+suhina-test-support.workspace = true
 
 [[test]]
 name = "main"

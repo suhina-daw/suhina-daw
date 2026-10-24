@@ -643,6 +643,32 @@ impl Shared {
         }
     }
 
+    /// Each source with its key in `host.analysis` (its boxed `Source`) and the plug-in's ref.
+    fn source_keys(&self) -> Vec<(usize, ARAAudioSourceRef)> {
+        self.host
+            .sources
+            .iter()
+            .map(|source| std::ptr::from_ref::<Source>(source) as usize)
+            .zip(self.sources.iter().copied())
+            .collect()
+    }
+
+    /// Takes out of the analyses going on those the plug-in says are complete (#816): a plug-in
+    /// that finds a source's analysis done, restored from an archive, says it *started* and
+    /// never that it *completed*. True when one was taken out.
+    fn settle_analysis(&self, dc: &Controller) -> bool {
+        let Some(incomplete) = dc.interface.isAudioSourceContentAnalysisIncomplete else { return false };
+        let notes_type = kARAContentTypeNotes as ARAContentType;
+        let settled = settle_analysis(&self.host.analysis, &self.source_keys(), |source| {
+            // SAFETY: a live controller, not being edited, for a source of this document.
+            unsafe { incomplete(dc.reference, source, notes_type) != 0 }
+        });
+        if settled {
+            self.host.notes_may_have_changed();
+        }
+        settled
+    }
+
     /// The plug-in's document archive id.
     fn archive_id(&self) -> Option<String> {
         // SAFETY: the factory the document was made with, valid while its module is loaded.
@@ -806,6 +832,8 @@ pub(crate) struct Document {
     stored: RefCell<Option<(u64, Stored)>>,
     /// The analysis progress last sent, in whole percents; `None` while none was going on.
     analysis_sent: Cell<Option<u32>>,
+    /// When the plug-in was last asked whether the analyses going on are complete.
+    last_settled: Cell<Instant>,
     _entry: Interface,
 }
 
@@ -846,6 +874,7 @@ impl Document {
             notes_out: RefCell::new(Vec::new()),
             stored: RefCell::new(None),
             analysis_sent: Cell::new(None),
+            last_settled: Cell::new(Instant::now()),
             _entry: entry,
         };
         let new_sources = made.shared.borrow().open_new_sources(document)?;
@@ -1039,6 +1068,15 @@ impl Document {
             self.last_notes_read.set(Instant::now());
             self.read_notes();
         }
+        // While this track shows an analysis, the plug-in is asked now and then whether it is
+        // done, in case it never says so (#816).
+        if self.analysis_sent.get().is_some() && self.last_settled.get().elapsed() >= NOTES_AGAIN_EVERY {
+            self.last_settled.set(Instant::now());
+            let shared = self.shared.borrow();
+            if let Some(dc) = shared.controller() {
+                shared.settle_analysis(&dc);
+            }
+        }
     }
 
     /// Reads every region's notes and keeps for [`Document::take_notes`] those that differ from
@@ -1047,6 +1085,7 @@ impl Document {
         let shared = self.shared.borrow();
         let Some(dc) = shared.controller() else { return };
         shared.ask_for_notes(&dc);
+        shared.settle_analysis(&dc);
         let mut sent = self.notes_sent.borrow_mut();
         sent.retain(|(id, _)| self.region_described.iter().any(|r| r.id == *id));
         let mut out = self.notes_out.borrow_mut();
@@ -1384,6 +1423,14 @@ impl Drop for Document {
         }
         // The other tracks' plug-ins hear and show the change.
         shared.notify_model_updates();
+        let mine: Vec<(usize, ARAAudioSourceRef)> = shared
+            .source_ids
+            .iter()
+            .zip(shared.source_keys())
+            .filter(|(id, _)| self.owned_sources.contains(id))
+            .map(|(_, keys)| keys)
+            .collect();
+        forget_analysis(&shared.host.analysis, &shared.analysis_asked, &mine);
     }
 }
 
@@ -1724,6 +1771,42 @@ unsafe extern "C" fn source_changed(
     notes_may_have_changed(unsafe { host.cast::<Host>().as_ref() }, flags);
 }
 
+/// Takes out of `analysis` (source key, progress) each source of `sources` (key, plug-in ref)
+/// that `incomplete` says is analysed; true when one was taken out. A key not in `sources`
+/// stays.
+fn settle_analysis(
+    analysis: &Mutex<Vec<(usize, f32)>>,
+    sources: &[(usize, ARAAudioSourceRef)],
+    incomplete: impl Fn(ARAAudioSourceRef) -> bool,
+) -> bool {
+    let listed: Vec<(usize, ARAAudioSourceRef)> = {
+        let analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        sources.iter().copied().filter(|(key, _)| analysis.iter().any(|(s, _)| s == key)).collect()
+    };
+    // Asked outside the lock: the plug-in may report progress from another thread meanwhile.
+    let done: Vec<usize> = listed.into_iter().filter(|(_, source)| !incomplete(*source)).map(|(key, _)| key).collect();
+    if done.is_empty() {
+        return false;
+    }
+    let mut analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    analysis.retain(|(s, _)| !done.contains(s));
+    true
+}
+
+/// Forgets what was asked and reported of the analysis of `sources` (key, plug-in ref), the
+/// sources of a track that leaves the document (#816): the next track that plays one asks the
+/// plug-in again, which sends progress again if it still analyses it. An analysis another
+/// track still waits on shows again with the plug-in's next report.
+fn forget_analysis(
+    analysis: &Mutex<Vec<(usize, f32)>>,
+    asked: &RefCell<Vec<ARAAudioSourceRef>>,
+    sources: &[(usize, ARAAudioSourceRef)],
+) {
+    asked.borrow_mut().retain(|source| !sources.iter().any(|(_, s)| s == source));
+    let mut analysis = analysis.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    analysis.retain(|(key, _)| !sources.iter().any(|(k, _)| k == key));
+}
+
 /// Marks the notes to be read again, unless the plug-in says they stayed as they were.
 fn notes_may_have_changed(host: Option<&Host>, flags: ARAContentUpdateFlags) {
     suhina_plugins::trace!("ara content changed flags {flags:#x}");
@@ -1937,6 +2020,39 @@ unsafe extern "C" fn no_cycle_switch(_host: ARAPlaybackControllerHostRef, _enabl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plug-in's source ref for the tests, never read.
+    fn source_ref(n: usize) -> ARAAudioSourceRef {
+        std::ptr::without_provenance_mut(n)
+    }
+
+    /// A plug-in that said an analysis *started* and then found it done (restored from an
+    /// archive) never says *completed*: asking it takes the source out, while one it still
+    /// analyses stays (#816).
+    #[test]
+    fn an_analysis_the_plug_in_says_is_complete_stops_showing() {
+        let analysis = Mutex::new(vec![(1, 0.0), (2, 0.4), (9, 0.5)]);
+        let sources = [(1, source_ref(11)), (2, source_ref(12)), (3, source_ref(13))];
+        // Source 12 is still being analysed; 11 is done; 9 is not this document's.
+        assert!(settle_analysis(&analysis, &sources, |source| source == source_ref(12)));
+        assert_eq!(*analysis.lock().unwrap(), vec![(2, 0.4), (9, 0.5)]);
+        // Nothing more to take out: false, and the list stays.
+        assert!(!settle_analysis(&analysis, &sources, |source| source == source_ref(12)));
+        assert_eq!(*analysis.lock().unwrap(), vec![(2, 0.4), (9, 0.5)]);
+        // Source 3 is done but was never listed: nothing changes.
+        assert!(!settle_analysis(&Mutex::new(Vec::new()), &sources, |_| false));
+    }
+
+    /// A track removed while its source is analysed leaves nothing behind: a plug-in added again
+    /// for that source is asked for its analysis again and starts with no stale progress (#816).
+    #[test]
+    fn a_track_that_leaves_forgets_its_sources_analysis() {
+        let analysis = Mutex::new(vec![(1, 0.0), (2, 0.3)]);
+        let asked = RefCell::new(vec![source_ref(11), source_ref(12)]);
+        forget_analysis(&analysis, &asked, &[(1, source_ref(11))]);
+        assert_eq!(*analysis.lock().unwrap(), vec![(2, 0.3)]);
+        assert_eq!(*asked.borrow(), vec![source_ref(12)]);
+    }
 
     #[test]
     fn a_position_asked_for_is_shown_until_the_engine_is_there() {

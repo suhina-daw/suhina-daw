@@ -53,7 +53,7 @@ impl Action {
             .map(|c| c.id)
             .chain(suhina_session::project_commands().iter().map(|c| c.id))
             .find(|known| *known == id)
-            .unwrap_or("commands.list");
+            .unwrap_or("command.list");
         Self { id: known, params }
     }
 }
@@ -174,7 +174,6 @@ pub fn headphones(painter: &Painter, rect: Rect, color: Color32) {
 /// background when armed. Returns the command a click asks for: a click arms the track alone;
 /// with Ctrl (Cmd) held it is added to the tracks armed already. Arming a track that plays
 /// notes enables recording and, in Auto monitoring, hears its MIDI input.
-#[allow(clippy::too_many_arguments)]
 pub fn arm_button(
     ui: &Ui,
     painter: &Painter,
@@ -183,14 +182,9 @@ pub fn arm_button(
     track: u32,
     name: &str,
     armed: bool,
-    notes: bool,
 ) -> Option<Action> {
     let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
-    let response = button_area(ui, rect, id, label).on_hover_text(if notes {
-        "Play this track. Recording starts separately."
-    } else {
-        "Make this track ready to record. Recording starts separately. With Automatic input monitoring, you hear the audio input while this button is on."
-    });
+    let response = button_area(ui, rect, id, label).on_hover_text("Make this track ready to record");
     let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
     let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
     painter.rect_filled(rect, 0.0, motion::mix(off, theme::recording_background(), lit));
@@ -497,16 +491,11 @@ pub fn format_pan(pan: f64) -> String {
 
 pub(crate) const VOLUME_RANGE: (f64, f64) = (-70.0, 6.0);
 
-/// Where a volume sits on a field, 0 … 1, with 0 dB at 85 % (components › Value field).
+/// Where a volume sits on a field, 0 … 1, as the volume fader places it: 0 dB at 85 %, 40 dB
+/// per travel down to -18 dB, faster below (components › Value field;
+/// `suhina_model::automation::volume_position`).
 pub fn volume_position(db: f64) -> f32 {
-    if !db.is_finite() || db <= VOLUME_RANGE.0 {
-        0.0
-    } else if db <= 0.0 {
-        let x = (db - VOLUME_RANGE.0) / -VOLUME_RANGE.0;
-        (0.85 * x * x) as f32
-    } else {
-        (0.85 + 0.15 * (db / VOLUME_RANGE.1).min(1.0)) as f32
-    }
+    suhina_engine::model::automation::volume_position(db) as f32
 }
 
 pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, color: Color32, size: f32) {

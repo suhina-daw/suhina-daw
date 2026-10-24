@@ -46,7 +46,7 @@ This was not designed for collaboration and almost all of it is what you would a
 | Edits while playing | A new graph is swapped in at a block boundary (ADR 0005). A remote edit is architecturally the same thing as a local one |
 | Per-caller undo | Undo is a snapshot of the project (`Session::undo: Vec<Project>`) — a command log is enough |
 | "What is the other person playing" | `launcher.state` is already a read command |
-| Per-caller command permissions | `NOT_FOR_AGENTS` + `refused(id)` already refuse commands to a caller with a reason (`crates/automation/src/server.rs`) |
+| Per-caller command permissions | each command's `Policy::agents` and `refused(id)` already refuse commands to a caller with a reason (`crates/automation/src/server.rs`) |
 | A local protocol with health, deadline and restart | `crates/plugins/src/protocol.rs` (JSON lines over a local socket, `interprocess` already a dependency) |
 | A symbolic object reference as a command parameter | `ParamType::Track` already accepts `["integer", "string"]` — "id or name" (`crates/session/src/commands.rs`) |
 
@@ -142,7 +142,7 @@ does: A sends a package, B works, B sends it back, merge. No branches, no remote
 - **We run no infrastructure.** The invitation carries the addresses and a key, so the first
   connection needs no third party at all; a self-hostable `suhina-relay` covers the rest and is
   shipped as a binary the *user* runs.
-- Guests are callers with a permission set, extending the `NOT_FOR_AGENTS` pattern. Path parameters
+- Guests are callers with a permission set, extending the `Policy::agents` pattern. Path parameters
   are confined as MCP's read roots already are.
 - **Not in this epic:** sub-20 ms ensemble playing between sites. That is a separate product with a
   separate budget, and it is blocked on recording anyway.

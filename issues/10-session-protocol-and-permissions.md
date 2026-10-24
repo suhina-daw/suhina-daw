@@ -17,7 +17,7 @@ A peer is **a fourth front end over the same commands**, not a new abstraction. 
 | Needed | Already there |
 |---|---|
 | One funnel every caller uses | `Session::execute(id, &params)` / `Projects::execute` (`crates/session/src/lib.rs`, `crates/ui/src/app.rs`) — 92 commands, all with JSON parameters |
-| Refusing a command to a caller, with a reason | `NOT_FOR_AGENTS` and `refused(id)` already do exactly this for agents (`crates/automation/src/server.rs`) |
+| Refusing a command to a caller, with a reason | each command's `Policy::agents` and `refused(id)` already do exactly this for agents (`crates/automation/src/server.rs`) |
 | Confining a path a command names | MCP's read roots already check every path a command reads (`crates/automation/src/workspace.rs`) |
 | A protocol with a deadline and a restart, over a local socket | `crates/plugins/src/protocol.rs` — JSON lines, `interprocess` already a dependency, health and deadline (ADR 0006) |
 | Describing every command to a caller | `commands.list` returns every command with its parameters |

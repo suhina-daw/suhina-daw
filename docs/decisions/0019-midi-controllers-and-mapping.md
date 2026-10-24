@@ -58,7 +58,7 @@ have.
 2. **Commands say whether, and how, they can be mapped.** The registry gains a description of a
    command's **value**: which parameter carries it, its kind (a **range** with a minimum, maximum
    and curve, a **toggle**, a **choice** of options, or a **trigger** that takes no value) and,
-   for a range, its unit. `commands.list` reports it. The other parameters (the track, the
+   for a range, its unit. `command.list` reports it. The other parameters (the track, the
    device, the parameter id, the clip slot) are fixed by the mapping. A device parameter's range
    and curve come from its `ParamInfo` ([ADR 0004](0004-built-in-devices.md)); a plug-in's
    parameters join when plug-in parameters become commands. Commands without a value description

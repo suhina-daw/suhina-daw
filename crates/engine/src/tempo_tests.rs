@@ -6,14 +6,12 @@
 //! through a ramp; quantisation and the metronome follow time-signature changes; a project whose
 //! changes come after everything it plays renders exactly as without them.
 
+use crate::{RenderInputs, render_offline_from};
 use std::sync::Arc;
 
 use suhina_model::*;
 
-use crate::{
-    AudioData, AudioPool, LaunchCommand, Quantization, Renderer, render_launches, render_offline,
-    render_offline_with_audio,
-};
+use crate::{AudioData, AudioPool, LaunchCommand, Quantization, Renderer, render_launches, render_offline};
 
 const SR: u32 = 48_000;
 
@@ -172,7 +170,7 @@ fn a_repitched_warped_clip_stays_on_the_grid() {
     let (region, pool) = click_track();
     let mut p = project(LaneData::Audio(region), 16.0);
     p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)];
-    let out = render_offline_with_audio(&p, &pool, SR, 256).unwrap();
+    let out = render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 256, None).unwrap();
     assert_near(&onsets_above(&out, 0.01, 2_000), &expected(&p.transport, 16), 2);
 }
 
@@ -182,7 +180,7 @@ fn a_stretched_warped_clip_stays_on_the_grid() {
     let region = AudioRegion { stretch: StretchMode::Rhythmic, ..region };
     let mut p = project(LaneData::Audio(region), 16.0);
     p.transport.tempo_changes = vec![step(4.0, 80.0), ramp(12.0, 150.0)];
-    let out = render_offline_with_audio(&p, &pool, SR, 256).unwrap();
+    let out = render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 256, None).unwrap();
     // The stretcher smears a click over a few milliseconds; each one starts within 6 ms of its
     // beat, so none drifts.
     assert_near(&onsets_above(&out, 0.1, 4_000), &expected(&p.transport, 16), 288);
@@ -195,7 +193,7 @@ fn an_unwarped_clip_plays_at_its_own_speed_from_its_beat() {
     let mut p = project(LaneData::Audio(region), 16.0);
     p.arrangement.lanes[0].clips[0].start = 4.0;
     p.transport.tempo_changes = vec![step(2.0, 60.0)];
-    let out = render_offline_with_audio(&p, &pool, SR, 256).unwrap();
+    let out = render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 256, None).unwrap();
     // It starts at beat 4 (1 s at 120, then 2 s at 60) and clicks every half second after.
     let found = onsets_above(&out, 0.01, 2_000);
     assert!(found.first().is_some_and(|f| f.abs_diff(144_000) <= 2), "{found:?}");

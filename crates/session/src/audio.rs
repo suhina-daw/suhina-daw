@@ -5,7 +5,7 @@
 //! and buffer size, and the `audio.*` commands that list, choose and report it. The session
 //! only describes the choice; the output layer (`suhina-output`) enumerates devices and opens
 //! streams through [`AudioSystem`], which the app or the MCP server hands to [`Projects`]. Like
-//! the `plugins.*` commands they belong to Suhina, not to one project.
+//! the `plugin.*` commands they belong to Suhina, not to one project.
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use suhina_engine::{AudioPool, DeviceAssets};
 use suhina_model::Project;
 
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
-use crate::{CommandError, Player, Projects};
+use crate::{Agents, CommandError, Player, Policy, Projects};
 
 /// Smallest and largest buffer size, in frames, a choice may ask for; the engine renders in
 /// blocks of the chosen size (`docs/architecture.md` › Threads). The output layer fits the
@@ -174,13 +174,13 @@ impl OutputChoice {
         if let Some(device) = text("device")? {
             next.device = device;
         }
-        if let Some(rate) = number("sample_rate", MAX_SAMPLE_RATE)? {
+        if let Some(rate) = number("sampleRate", MAX_SAMPLE_RATE)? {
             next.sample_rate = rate;
         }
-        if let Some(frames) = number("buffer_frames", MAX_BUFFER_FRAMES)? {
+        if let Some(frames) = number("bufferFrames", MAX_BUFFER_FRAMES)? {
             if frames.is_some_and(|f| f < MIN_BUFFER_FRAMES) {
                 return Err(
-                    format!("buffer_frames must be from {MIN_BUFFER_FRAMES} to {MAX_BUFFER_FRAMES}, or 0").into()
+                    format!("bufferFrames must be from {MIN_BUFFER_FRAMES} to {MAX_BUFFER_FRAMES}, or 0").into()
                 );
             }
             next.buffer_frames = frames;
@@ -441,6 +441,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Audio,
         run: devices,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "audio.setOutput",
@@ -448,9 +449,9 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[
             optional("host", ParamType::Text, "a host from audio.devices, \"\" for the default"),
             optional("device", ParamType::Text, "an output device of that host, \"\" for its default"),
-            optional("sample_rate", ParamType::Integer, "Hz, one the device lists; 0 for its default"),
+            optional("sampleRate", ParamType::Integer, "Hz, one the device lists; 0 for its default"),
             optional(
-                "buffer_frames",
+                "bufferFrames",
                 ParamType::Integer,
                 "frames per buffer, 64 to 4096, fitted to the sizes the device allows; 0 for the default",
             ),
@@ -463,6 +464,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Audio,
         run: set_output,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "output.setCuePair",
@@ -470,13 +472,15 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[param("pair", ParamType::Integer, "1 for channels 3/4, 2 for 5/6 … up to 31; 0 for the main output")],
         kind: CommandKind::Audio,
         run: set_cue_pair,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "output.setCueVolume",
         label: "Set the cue volume: the level of previews and cued tracks on the cue, from silence to +12 dB. The main output does not change, except for previews while the cue plays with it",
-        params: &[param("db", ParamType::Number, "dB, -inf (or below -150) for silence, at most +12; 0 is unity")],
+        params: &[param("db", ParamType::Decibels, "dB, -inf (or below -150) for silence, at most +12; 0 is unity")],
         kind: CommandKind::Audio,
         run: set_cue_volume,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "audio.info",
@@ -484,6 +488,7 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Audio,
         run: info,
+        policy: Policy::DEFAULT,
     },
 ];
 
@@ -699,7 +704,7 @@ mod tests {
         let same = start.with_params(&json!({})).unwrap();
         assert_eq!(same, start);
 
-        let buffer = start.with_params(&json!({ "buffer_frames": 512 })).unwrap();
+        let buffer = start.with_params(&json!({ "bufferFrames": 512 })).unwrap();
         assert_eq!(buffer.buffer_frames, Some(512));
         assert_eq!(buffer.device.as_deref(), Some("Speakers"));
 
@@ -708,7 +713,7 @@ mod tests {
         assert_eq!((asio.host.as_deref(), asio.device), (Some("ASIO"), None));
         let same_host = start.with_params(&json!({ "host": "WASAPI" })).unwrap();
         assert_eq!(same_host.device.as_deref(), Some("Speakers"));
-        let reset = start.with_params(&json!({ "device": "", "sample_rate": 0, "buffer_frames": 0 })).unwrap();
+        let reset = start.with_params(&json!({ "device": "", "sampleRate": 0, "bufferFrames": 0 })).unwrap();
         assert_eq!((reset.device, reset.sample_rate, reset.buffer_frames), (None, None, None));
         let both = start.with_params(&json!({ "host": "ASIO", "device": "Interface", "exclusive": true })).unwrap();
         assert_eq!((both.device.as_deref(), both.exclusive), (Some("Interface"), true));
@@ -720,7 +725,7 @@ mod tests {
         assert_eq!(named.input, InputChoice::Named("Line In (Interface)".into()));
         assert_eq!(named.with_params(&json!({ "input": "off" })).unwrap().input, InputChoice::Off);
         assert_eq!(named.with_params(&json!({ "input": "" })).unwrap().input, InputChoice::Off);
-        assert_eq!(named.with_params(&json!({ "buffer_frames": 128 })).unwrap().input, named.input, "kept");
+        assert_eq!(named.with_params(&json!({ "bufferFrames": 128 })).unwrap().input, named.input, "kept");
         for choice in [InputChoice::Off, InputChoice::Default, InputChoice::Named("Mic".into())] {
             assert_eq!(InputChoice::from_text(choice.as_text()), choice);
         }
@@ -730,11 +735,11 @@ mod tests {
     fn a_choice_refuses_nonsense() {
         let start = OutputChoice::default();
         for bad in [
-            json!({ "buffer_frames": 32 }),
-            json!({ "buffer_frames": 8192 }),
-            json!({ "buffer_frames": -1 }),
-            json!({ "buffer_frames": 1.5 }),
-            json!({ "sample_rate": 10_000_000 }),
+            json!({ "bufferFrames": 32 }),
+            json!({ "bufferFrames": 8192 }),
+            json!({ "bufferFrames": -1 }),
+            json!({ "bufferFrames": 1.5 }),
+            json!({ "sampleRate": 10_000_000 }),
             json!({ "host": 5 }),
             json!({ "exclusive": "yes" }),
             json!({ "input": 3 }),

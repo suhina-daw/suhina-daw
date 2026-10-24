@@ -8,16 +8,15 @@
 use serde_json::{Value, json};
 use suhina_engine::{AudioPool, Quantization, Renderer};
 use suhina_model::*;
-use suhina_session::{CommandKind, Player, Session, commands, parse_quantization};
+use suhina_session::{CommandKind, ParamType, Player, Session, commands, parse_quantization};
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 const BEAT: usize = SR as usize / 2;
 
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
@@ -108,10 +107,6 @@ fn project_built() -> Project {
     }
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
-
 /// A session with an offline renderer attached as its player.
 fn playing() -> (Session, Renderer) {
     let project = project();
@@ -140,14 +135,25 @@ fn transport_commands_need_a_player() {
     let without = ["launcher.setQuantization", "track.setArm", "transport.setCountIn", "record.state"];
     for spec in commands().iter().filter(|c| c.kind == CommandKind::Transport && !without.contains(&c.id)) {
         let params = json!({ "track": "Drums", "scene": 1, "value": "1 bar", "on": true, "beats": 4.0, "key": 60 });
-        let params: Value = params
+        let mut params = params
             .as_object()
             .unwrap()
             .iter()
             .filter(|(k, _)| spec.params.iter().any(|p| p.name == k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<serde_json::Map<_, _>>()
-            .into();
+            .collect::<serde_json::Map<_, _>>();
+        // Any other parameter it needs, of its type, so that what refuses it is the missing engine.
+        let missing: Vec<_> = spec.params.iter().filter(|p| p.required && !params.contains_key(p.name)).collect();
+        for p in missing {
+            let value = match p.ty {
+                ParamType::Integer | ParamType::DevicePath => json!(0),
+                ParamType::Number | ParamType::Decibels => json!(1.0),
+                ParamType::Bool => json!(true),
+                _ => json!("x"),
+            };
+            params.insert(p.name.into(), value);
+        }
+        let params = Value::from(params);
         let err = run(&mut session, spec.id, params).unwrap_err();
         assert!(err.contains("no audio engine"), "{}: {err}", spec.id);
     }
@@ -800,7 +806,7 @@ fn a_slot_clip_moves_to_another_slot_and_swaps_an_occupied_one() {
 
     // Moved to an occupied slot: the two swap, nothing lost.
     let moved =
-        run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "to_track": 2, "to_scene": 2 })).unwrap();
+        run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "toTrack": 2, "toScene": 2 })).unwrap();
     assert_eq!((moved["moved"].clone(), moved["swapped"].clone()), (json!(true), json!(true)));
     assert_eq!(clip(&session, 2, 1), Some(first), "the first's clip is in the target now");
     assert_eq!(clip(&session, 1, 0), Some(second), "the target's clip came back to the source's slot");
@@ -811,7 +817,7 @@ fn a_slot_clip_moves_to_another_slot_and_swaps_an_occupied_one() {
 
     // Moved to an empty slot: the source empties.
     let moved =
-        run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "to_track": 2, "to_scene": 1 })).unwrap();
+        run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "toTrack": 2, "toScene": 1 })).unwrap();
     assert_eq!((moved["moved"].clone(), moved["swapped"].clone()), (json!(true), json!(false)));
     assert_eq!(clip(&session, 1, 0), None, "the source slot is empty");
     assert_eq!(clip(&session, 2, 0), Some(first), "the clip is in the target now");
@@ -819,17 +825,17 @@ fn a_slot_clip_moves_to_another_slot_and_swaps_an_occupied_one() {
     assert_eq!(clip(&session, 1, 0), Some(first));
 
     // The same slot: nothing.
-    let moved = run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "to_scene": 1 })).unwrap();
+    let moved = run(&mut session, "clip.moveSlot", json!({ "track": 1, "scene": 1, "toScene": 1 })).unwrap();
     assert_eq!(moved["moved"], json!(false));
 
     // An empty source is refused.
-    assert!(run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 1, "to_scene": 2 })).is_err());
+    assert!(run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 1, "toScene": 2 })).is_err());
 
     // The target's kind must take the clip's: an audio track takes no MIDI clips.
     let mut p = project();
     p.tracks[0].content = ContentKinds { notes: false, audio: true };
     let mut session = Session::new(p);
-    let moved = run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 2, "to_track": 1, "to_scene": 2 }));
+    let moved = run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 2, "toTrack": 1, "toScene": 2 }));
     assert!(moved.is_err(), "an audio track takes no MIDI clips");
 }
 

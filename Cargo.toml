@@ -21,6 +21,7 @@ suhina-media = { path = "crates/media" }
 suhina-mp3 = { path = "crates/mp3" }
 suhina-library = { path = "crates/library" }
 suhina-dsp = { path = "crates/dsp" }
+suhina-test-support = { path = "crates/test-support" }
 suhina-device-api = { path = "crates/device-api" }
 suhina-device-sdk = { path = "crates/device-sdk" }
 suhina-ipc = { path = "crates/ipc" }

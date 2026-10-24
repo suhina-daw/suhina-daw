@@ -702,7 +702,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
     Re-pitch, Rhythmic, Tonal, Texture, Smooth and High quality) and **Transpose** (dragged by
     semitones, -48 to +48, a double-click puts it at 0), all through `clip.setAudio`. Warp turned
     on for audio without warp markers gives it two, at its start and its end, so it plays as it did
-    and then follows the tempo.
+    and then follows the tempo. Those markers fit the tempo where the clip plays, so a clip whose
+    audio another clip plays where the tempo differs gets its own copy of it first, and the other
+    clip plays as it did ([#874](https://github.com/suhina-daw/suhina-daw/issues/874)).
   - A drag shows its value as it goes and sends one command when it is let go.
 - **Built ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** the **Notes** row reads
   **"N of M"** while notes are selected, where N is how many are selected and M how many the clip

@@ -145,16 +145,17 @@ already lists this open item to observe:
    document is ambiguous asks rather than guesses. Refusing outright would fight a convention users
    already have (the measured folder held sets from two songs); guessing would open the wrong song
    silently.
-10. **The document format gains a version, and this is where that is decided.** ADR 0010 decision 3
-    already fixes the rules: a reader refuses a version newer than it knows, and a later version
-    keeps reading the earlier ones. **Version 2 carries explicitly what version 1 could only imply:
-    the object ids of [ADR 0025](0025-object-identity.md).** A version 1 file is still read, with
-    those ids **derived in document order**; version 2 writes them, so a later reader never has to
-    derive them and an id survives the object being moved. This is the bump that ADR 0025's steps C
-    and D wait for, and it is the only change to the document's layout this ADR makes. Everything
-    that reads or writes the model gets its line here and in the round-trip test (ADR 0010), and the
-    existing test that asserts a version-2 document is refused
-    (`crates/project-file/src/tests.rs`) moves up one.
+10. **The document format gains a version for ids.** [ADR 0010](0010-project-files.md) decision 3
+    fixes the rules: one version, written in every file, that rises with every change to what a
+    file holds; a reader refuses a newer version and reads every older one. **The next version
+    carries explicitly what earlier versions could only imply: the object ids of
+    [ADR 0025](0025-object-identity.md).** Version 2 already means "may hold a device group" and
+    version 3 is the first written always, so ids take the next number free when they land. A file
+    of an earlier version is still read, with those ids **derived in document order**; the new
+    version writes them, so a later reader never has to derive them and an id survives the object
+    being moved. This is the bump that ADR 0025's steps C and D wait for, and it is the only change
+    to the document's layout this ADR makes. Everything that reads or writes the model gets its
+    line here, in the round-trip test and in the version test's project (ADR 0010).
 
 ## Consequences
 

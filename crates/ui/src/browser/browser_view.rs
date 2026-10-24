@@ -154,7 +154,7 @@ fn run(projects: &mut Projects, id: &str, params: serde_json::Value, out: &mut B
     match projects.execute(id, &params) {
         Ok(_) => true,
         Err(e) => {
-            out.status = Some(Status::Error(e.0));
+            out.status = Some(Status::Error(e.message().to_owned()));
             false
         }
     }
@@ -303,7 +303,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         let params = json!({ "path": path.display().to_string(), "from": from, "gain": settings.preview_volume });
         match provided.and_then(|()| projects.execute("preview.play", &params)) {
             Ok(_) => state.previewing = Some(path.display().to_string()),
-            Err(e) => out.status = Some(Status::Error(format!("Cannot preview: {}", e.0))),
+            Err(e) => out.status = Some(Status::Error(format!("Cannot preview: {}", e.message().to_owned()))),
         }
     }
     if let Some(e) = state.take_preview_error() {

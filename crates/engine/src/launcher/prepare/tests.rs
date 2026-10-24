@@ -4,6 +4,7 @@
 //! Launched stretched clips: a golden render of launches, a legato take-over and a relaunch, and
 //! the voices' preparation off the audio thread (ADR 0003, decision 7).
 
+use crate::{RenderInputs, RenderOptions};
 use std::sync::Arc;
 
 use suhina_model::*;
@@ -129,7 +130,9 @@ fn second_slot_edited(p: &Project) -> Project {
 #[test]
 fn building_or_rebuilding_a_graph_prepares_no_launcher_voice() {
     let (p, pool) = two_stretched();
-    let mut renderer = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
     assert_eq!(prepared(&renderer), [false, false], "nothing is built for slots that do not play");
     // An edit builds a new graph; it builds no stretcher either, on any thread, until a launch.
     let mut controller = renderer.controller();
@@ -142,7 +145,9 @@ fn building_or_rebuilding_a_graph_prepares_no_launcher_voice() {
 #[test]
 fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
     let (p, pool) = two_stretched();
-    let mut renderer = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     assert!(!renderer.graph.launcher.voices.inline(), "the thread took the preparer");
@@ -161,7 +166,9 @@ fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
 #[test]
 fn a_launch_before_its_voice_is_ready_starts_on_time_and_its_stretched_audio_joins_where_the_clip_is() {
     let (p, pool) = two_stretched();
-    let mut renderer = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
     // A worker that has not got round to it yet: nothing builds the voice on the audio side.
     let mut preparer = renderer.graph.launcher.take_preparer().unwrap();
     let quarter = SR as usize / 4;
@@ -188,8 +195,16 @@ fn a_launch_before_its_voice_is_ready_starts_on_time_and_its_stretched_audio_joi
 #[test]
 fn a_swap_takes_over_the_voices_of_unchanged_slots_and_the_worker_builds_only_the_changed_one() {
     let (p, pool) = two_stretched();
-    let mut old = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
-    let mut new = Renderer::stopped_with_plugins(&second_slot_edited(&p), &pool, SR, Plugins::new()).unwrap();
+    let mut old =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
+    let mut new = Renderer::build(
+        &second_slot_edited(&p),
+        RenderInputs::from_audio(&pool).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let (mut before, mut after) =
         (old.graph.launcher.take_preparer().unwrap(), new.graph.launcher.take_preparer().unwrap());
     while before.work(false) {}
@@ -212,8 +227,12 @@ fn a_swap_takes_over_the_voices_of_unchanged_slots_and_the_worker_builds_only_th
 #[test]
 fn a_voice_the_worker_claimed_first_is_not_taken_over_and_arrives_from_the_worker() {
     let (p, pool) = two_stretched();
-    let mut old = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
-    let mut new = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
+    let mut old =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
+    let mut new =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
     let (mut before, mut after) =
         (old.graph.launcher.take_preparer().unwrap(), new.graph.launcher.take_preparer().unwrap());
     while before.work(false) {}
@@ -235,8 +254,16 @@ fn a_scene_inserted_above_keeps_the_voices_with_their_clips() {
     shifted.launcher.columns[0].slots.insert(0, Slot { clip: None, has_stop: true });
     let shift = crate::SceneShift::between(&p.launcher, &shifted.launcher);
     assert_eq!(shift, Some(crate::SceneShift::Inserted(0)));
-    let mut old = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
-    let mut new = Renderer::stopped_with_plugins(&shifted, &pool, SR, Plugins::new()).unwrap();
+    let mut old =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
+    let mut new = Renderer::build(
+        &shifted,
+        RenderInputs::from_audio(&pool).with_plugins(Plugins::new()),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let mut before = old.graph.launcher.take_preparer().unwrap();
     while before.work(false) {}
     old.graph.launcher.receive_voices();
@@ -249,7 +276,9 @@ fn a_playing_clip_plays_on_through_its_own_voice_across_an_edit_of_another_slot(
     let (p, pool) = two_stretched();
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
     let reference = left(&render_launches(&p, &pool, SR, &launch, 1.0).unwrap());
-    let mut renderer = Renderer::stopped_with_plugins(&p, &pool, SR, Plugins::new()).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&pool).with_plugins(Plugins::new()), SR, RenderOptions::STOPPED)
+            .unwrap();
     renderer.set_offline(true);
     let mut controller = renderer.controller();
     let mut out = play(&mut renderer, &launch, 0.5);

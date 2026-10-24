@@ -91,7 +91,7 @@ pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, C
     // A send that plays neither before nor after (a muted track's, one at silence): nothing the
     // engine plays changes, so no new graph (each step of a muted track's knob built one).
     if !heard_before && !track.is_some_and(|t| suhina_engine::send_heard(&session.project, t, ret)) {
-        session.unheard_edit = true;
+        session.sync.unheard = true;
     }
     // A turn of a send that plays: a playing engine takes it as a message, smoothed, instead of
     // a new graph (one a step held the window up 60 to 80 ms in a large project). One that
@@ -99,7 +99,7 @@ pub(crate) fn set_send(session: &mut Session, params: &Value) -> Result<Value, C
     if was > 0.0
         && let Some(track) = track
     {
-        session.mixer_edits =
+        session.sync.mixer_edits =
             vec![crate::ParamEdit { track, device: suhina_engine::MIXER_SEND, param: ret.0 as usize, value: gain }];
     }
     let level = (gain > 0.0).then(|| (20.0 * gain.log10() * 100.0).round() / 100.0);

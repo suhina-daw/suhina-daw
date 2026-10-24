@@ -98,7 +98,7 @@ An attached agent works on the projects open as tabs, not on files of its choosi
 - **It reads that folder and the library folders the browser shows**, so it can add the samples the
   person sees. Nothing else.
 - **It cannot open other projects from disk**: `project_open` is refused over an attached
-  connection. `projects.list`, `projects.switch` and the `project` argument act on the window's tabs.
+  connection. `project.list`, `project.switch` and the `project` argument act on the window's tabs.
 - **It cannot change the person's preferences**: the commands that ADR 0002 already keeps from
   agents (the browser's and the plug-in scan's folders) stay refused, and so do commands that change
   the app's settings rather than a project (the audio and MIDI devices it opens).
@@ -117,7 +117,7 @@ window's own audio output, as the window's transport buttons do.
 ### 7. The agent never closes a tab
 
 Closing a tab loses its unsaved changes and its undo history and cannot be undone, so
-`projects.close`, and anything else that closes a project, is refused over an attached connection.
+`project.close`, and anything else that closes a project, is refused over an attached connection.
 Only the person closes tabs. When the person closes a tab, commands aimed at it return an error and
 the connection stays open.
 

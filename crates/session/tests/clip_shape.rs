@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::Session;
 
+use crate::support::run;
+
 fn clip(content: u32, start: f64) -> Clip {
     Clip {
         id: Default::default(),
@@ -34,10 +36,7 @@ fn clip(content: u32, start: f64) -> Clip {
 /// Track 1 "Keys": arrangement clips at beat 0 (index 0) and beat 8 (index 1), both 4 beats long
 /// and not looping; a clip in the slot of scene 1, and an empty slot in scene 2.
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
@@ -84,10 +83,6 @@ fn project_built() -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 fn arranged(session: &Session, index: usize) -> Clip {

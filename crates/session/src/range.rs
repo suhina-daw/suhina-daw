@@ -268,8 +268,8 @@ pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value,
         return Err("nothing plays in the selection".into());
     }
     let count = parts.len();
-    session.clipboard_tracks = parts.iter().map(|(track, _, _)| *track).collect();
-    session.clipboard = parts.into_iter().map(|(_, clip, content)| (clip, content)).collect();
+    session.clipboards.tracks = parts.iter().map(|(track, _, _)| *track).collect();
+    session.clipboards.clips = parts.into_iter().map(|(_, clip, content)| (clip, content)).collect();
     Ok(json!({ "copied": count, "start": start, "end": end }))
 }
 
@@ -296,15 +296,16 @@ pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<V
 /// `clip.paste {start, stack?}` with no track, after a copy that knows its tracks: each copied
 /// clip goes back to the track it came from, the earliest at `start`.
 pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -> Result<Value, CommandError> {
-    if session.clipboard_tracks.len() != session.clipboard.len() || session.clipboard.is_empty() {
+    if session.clipboards.tracks.len() != session.clipboards.clips.len() || session.clipboards.clips.is_empty() {
         return Err("give a track: the copied clips do not know their tracks".into());
     }
-    let earliest = session.clipboard.iter().map(|(clip, _)| clip.start).fold(f64::INFINITY, f64::min);
+    let earliest = session.clipboards.clips.iter().map(|(clip, _)| clip.start).fold(f64::INFINITY, f64::min);
     let offset = if earliest.is_finite() { start - earliest } else { 0.0 };
     let parts: Vec<(TrackId, Clip, ClipContent)> = session
-        .clipboard_tracks
+        .clipboards
+        .tracks
         .iter()
-        .zip(session.clipboard.iter())
+        .zip(session.clipboards.clips.iter())
         .map(|(track, (clip, content))| (*track, clip.clone(), content.clone()))
         .collect();
     let placed = place(&mut session.project, parts, offset, stack)?;
@@ -315,29 +316,29 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
 /// track, its content and its audio (the pool key); `None` for a clip no plug-in edits.
 type Edited = Option<(u64, usize, suhina_model::ContentId, String)>;
 
-/// `clip.moveMany {clips, beats, to_track?, tracks_by?, to_new_track?, stack?}`: moves several
+/// `clip.moveMany {clips, beats, toTrack?, tracksBy?, toNewTrack?, stack?}`: moves several
 /// arrangement clips by the same number of beats at once, so none replaces another on the way;
-/// `to_track` takes them to another track when they are all on one, `tracks_by` takes each that
-/// many tracks down (up when negative) from its own, and `to_new_track` to a new track after the
+/// `toTrack` takes them to another track when they are all on one, `tracksBy` takes each that
+/// many tracks down (up when negative) from its own, and `toNewTrack` to a new track after the
 /// last, of the clips' kind, made in the same step.
 pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let chosen = clip_list(&session.project, params)?;
     let beats = number(params, "beats")?;
     let stack = params.get("stack").and_then(Value::as_bool).unwrap_or(false);
     let copy = params.get("copy").and_then(Value::as_bool).unwrap_or(false);
-    let by = match params.get("tracks_by") {
+    let by = match params.get("tracksBy") {
         None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_i64().ok_or("tracks_by must be a whole number of tracks")?),
+        Some(v) => Some(v.as_i64().ok_or("tracksBy must be a whole number of tracks")?),
     };
-    let new_track = params.get("to_new_track").and_then(Value::as_bool).unwrap_or(false);
+    let new_track = params.get("toNewTrack").and_then(Value::as_bool).unwrap_or(false);
     // A clip a plug-in edits (ADR 0028), going to another track: its edits go along, the
     // plug-in added there when it has none (`keep`), or it starts there without them (`new`).
-    let keep_edits = match params.get("ara_edits") {
+    let keep_edits = match params.get("araEdits") {
         None | Some(Value::Null) => false,
         Some(v) => match v.as_str() {
             Some("keep") => true,
             Some("new") => false,
-            _ => return Err("ara_edits must be keep or new".into()),
+            _ => return Err("araEdits must be keep or new".into()),
         },
     };
     // Each chosen clip's plug-in that edits it (its key and device), content and audio (the
@@ -360,10 +361,9 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             Some((key, device, clip.content, source))
         })
         .collect();
-    if [params.get("to_track").is_some_and(|v| !v.is_null()), by.is_some(), new_track].iter().filter(|b| **b).count()
-        > 1
+    if [params.get("toTrack").is_some_and(|v| !v.is_null()), by.is_some(), new_track].iter().filter(|b| **b).count() > 1
     {
-        return Err("give one of to_track, tracks_by and to_new_track".into());
+        return Err("give one of toTrack, tracksBy and toNewTrack".into());
     }
     // Each clip's track after the move, by its own: the tracks that hold clips, in the order the
     // tracks are shown (a track added after another has its lane at the end of the lanes).
@@ -399,8 +399,8 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         let id = added["track"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("the new track has no id")?;
         Some(TrackId(id))
     } else {
-        match params.get("to_track") {
-            Some(v) if !v.is_null() => Some(track_at(&session.project, params, "to_track")?),
+        match params.get("toTrack") {
+            Some(v) if !v.is_null() => Some(track_at(&session.project, params, "toTrack")?),
             _ => None,
         }
     };
@@ -409,7 +409,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
     if to.is_some() && !new_track && chosen.iter().any(|(track, _)| *track != chosen[0].0) {
-        return Err("to_track moves clips of one track; these are on several".into());
+        return Err("toTrack moves clips of one track; these are on several".into());
     }
     let p = &mut session.project;
     // Taken out first, the highest index of each lane first so the others keep theirs.

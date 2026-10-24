@@ -9,9 +9,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use suhina_engine::{RenderInputs, render_offline_from};
 
 use serde_json::json;
-use suhina_engine::{AudioPool, Renderer, render_offline, render_offline_with_plugins};
+use suhina_engine::{AudioPool, Renderer, render_offline};
 use suhina_model::*;
 use suhina_plugins::scan::{Catalog, PluginInfo};
 use suhina_session::{Player, PluginEnv, Session, start_offline};
@@ -103,7 +104,14 @@ fn render(project: &Project) -> f32 {
     let peak = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
     let started = start_offline(project, &AudioPool::new(), &env(), SR);
     assert_eq!(started.running(), 1, "{:?}", started.notices);
-    let wet = render_offline_with_plugins(project, &AudioPool::new(), SR, 256, started.plugins).unwrap();
+    let wet = render_offline_from(
+        project,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        SR,
+        256,
+        None,
+    )
+    .unwrap();
     let dry = render_offline(project, SR, 256).unwrap();
     assert!(peak(&dry) > 0.1);
     peak(&wet) / peak(&dry)

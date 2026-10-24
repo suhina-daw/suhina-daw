@@ -4,6 +4,7 @@
 //! Device groups in the chain (`docs/spec/device-groups.md`): branches summed at their volume
 //! and pan, mute and solo, the mix and the gain, instruments layered, nesting, block sizes.
 
+use crate::{RenderInputs, RenderOptions};
 use suhina_model::*;
 
 use crate::chain_tests::{SR, blocks, device, max_diff, note, peak, project};
@@ -184,12 +185,16 @@ fn an_edit_to_a_branch_keeps_the_group_playing() {
     if let Some(g) = edited.channels[0].devices[0].as_group_mut() {
         g.branches[0].volume = 0.5;
     }
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap_or_else(|e| panic!("{e:?}"));
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut untouched =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap_or_else(|e| panic!("{e:?}"));
     let reference = blocks(&mut untouched, 150, 480);
     // The note carries on through the swap (no new attack), and after the 20 ms ramp the branch
     // plays at half its level.
@@ -284,7 +289,7 @@ fn a_sampler_in_a_group_plays_its_sample() {
     let pool = noise_pool();
     let play = |devices: Vec<Device>| {
         let project = project(vec![note(0.0, 1.0, 60)], 1.0, devices);
-        crate::render_offline_with_audio(&project, &pool, SR, 512).unwrap_or_default()
+        crate::render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap_or_default()
     };
     let plain = play(vec![sampler()]);
     assert!(peak(&plain) > 0.01, "the sampler sounds at all");
@@ -309,7 +314,7 @@ fn a_sampler_in_a_group_plays_its_manual_slices() {
     let pool = noise_pool();
     let play = |devices: Vec<Device>| {
         let project = project(vec![note(0.0, 1.0, 61)], 1.0, devices);
-        crate::render_offline_with_audio(&project, &pool, SR, 512).unwrap_or_default()
+        crate::render_offline_from(&project, RenderInputs::from_audio(&pool), SR, 512, None).unwrap_or_default()
     };
     let slices = [0.25, 0.5, 0.75];
     let plain = play(vec![sliced_sampler(&slices)]);
@@ -364,12 +369,16 @@ fn a_lane_in_a_group_keeps_playing_through_a_graph_swap() {
         device.params = vec![DeviceParam::new("gain", -40.0)];
         device.automation = vec![lane("gain", &[(0.0, 0.0), (2.0, 0.0), (2.0, -12.0412), (3.0, -12.0412)])];
     }
-    let mut renderer = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap_or_else(|e| panic!("{e:?}"));
     let mut controller = renderer.controller();
     let mut out = blocks(&mut renderer, 50, 480);
     controller.update(&edited).unwrap_or_else(|e| panic!("{e}"));
     out.extend(blocks(&mut renderer, 100, 480));
-    let mut untouched = Renderer::with_audio(&p, &crate::AudioPool::new(), SR).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut untouched =
+        Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap_or_else(|e| panic!("{e:?}"));
     let reference = blocks(&mut untouched, 150, 480);
     // The swap comes before the jump at beat 2 (frame 48 000): until then the lane's unity is
     // heard, not the edited value; after it, a quarter of the untouched project's half.

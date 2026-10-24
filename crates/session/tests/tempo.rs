@@ -5,13 +5,11 @@
 //! time-signature changes, kept in order, undone in one step each, and malformed params that
 //! change nothing.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+use crate::support::run;
 
 fn beats(session: &Session) -> Vec<(f64, f64, bool)> {
     session.project().transport.tempo_changes.iter().map(|p| (p.beat, p.bpm, p.ramp)).collect()

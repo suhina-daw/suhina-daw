@@ -126,7 +126,7 @@ fn processor_change(id: &str) -> (Session, Renderer) {
     device.state = Some(0.25f32.to_le_bytes().to_vec());
     device.automation.push(AutomationLane {
         param: "0".into(),
-        points: vec![AutomationPoint { beat: 0.0, value: 0.75, curve: 0.0 }],
+        points: vec![AutomationPoint { beat: 0.0, value: 0.75, curve: Default::default() }],
         enabled: true,
     });
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();

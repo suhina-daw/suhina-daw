@@ -14,6 +14,8 @@ use suhina_model::Project;
 use suhina_session::audio::{DeviceInfo, HostInfo, Opened, cue_channels};
 use suhina_session::{AudioSystem, LiveOutput, OutputChoice, OutputInfo, Player, Projects, Session};
 
+use crate::support::run;
+
 const SR: u32 = 48_000;
 
 /// An eight-channel interface: it opens players on renderers it keeps and records each choice.
@@ -74,10 +76,6 @@ impl AudioSystem for Interface {
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice: None, plugins_kept: true })
     }
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn playing() -> (Projects, Arc<Interface>) {

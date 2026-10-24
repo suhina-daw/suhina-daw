@@ -314,6 +314,31 @@ fn a_send_turned_while_playing_reaches_its_level_without_a_new_graph() {
 }
 
 #[test]
+fn a_send_or_volume_turned_past_the_maximum_plays_at_the_maximum_and_stays_finite() {
+    // A level past +6 dB, up to one whose ratio to the built level overflows an f32 (#872): the
+    // send or the fader stops at +6 dB, as a graph built there plays.
+    let max = suhina_model::automation::MAX_VOLUME;
+    let at_max_send = sending(max, false, vec![]);
+    let mut at_max_volume = sending(1.0, false, vec![]);
+    at_max_volume.channels[0].volume = max;
+    for level in [f64::MAX, 1e300, max] {
+        let (live, built) = turned(&sending(1.0, false, vec![]), crate::MIXER_SEND, 2, level, &at_max_send);
+        assert!(live.iter().all(|s| s.is_finite()), "send at {level}");
+        assert!(max_diff(&live, &built) < 1e-3, "send at {level}: {}", max_diff(&live, &built));
+        let (live, built) = turned(&sending(1.0, false, vec![]), crate::MIXER_VOLUME, 0, level, &at_max_volume);
+        assert!(live.iter().all(|s| s.is_finite()), "volume at {level}");
+        assert!(max_diff(&live, &built) < 1e-3, "volume at {level}: {}", max_diff(&live, &built));
+    }
+}
+
+#[test]
+fn a_live_ratio_that_overflows_an_f32_is_refused() {
+    assert_eq!(crate::chain::live_ratio(1.0, 1e-300), None);
+    assert_eq!(crate::chain::live_ratio(0.5, 1.0), Some(0.5));
+    assert_eq!(crate::chain::live_ratio(f64::MAX, 1.0), Some(suhina_model::automation::MAX_VOLUME as f32));
+}
+
+#[test]
 fn a_pan_turned_while_playing_moves_the_track_and_its_post_fader_send() {
     let mut panned = sending(1.0, false, vec![]);
     panned.channels[0].pan = -0.5;

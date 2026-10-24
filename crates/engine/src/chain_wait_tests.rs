@@ -6,6 +6,7 @@
 //! out, and a slow or hung plug-in holds up only its own chain, and that only until the block's
 //! deadline. Stand-in plug-ins answer after a set time, measured on the clock.
 
+use crate::{RenderInputs, RenderOptions};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -182,7 +183,13 @@ fn one_block_with_slow_plug_ins_at_different_places() -> Result<(), String> {
         Timed::new("b2", 0.5, QUICK, &log),
         Timed::new("b3", 0.5, SLOW, &log),
     ];
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, stands)).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let (out, longest) = play(&mut renderer, 1);
     let log = log.lock().unwrap().clone();
     assert_eq!(log.len(), 6, "every plug-in had the block: {log:?}");
@@ -218,7 +225,13 @@ fn a_hung_plug_in_holds_up_only_its_own_chain_and_only_until_the_deadline() {
         Timed::new("slow", 0.5, SLOW, &log),
         Timed::new("c2", 0.5, QUICK, &log),
     ];
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, stands)).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * crate::plugin::DEADLINE_SHARE);
     let started = Instant::now();
     let (_, longest) = play(&mut renderer, 1);
@@ -271,7 +284,14 @@ fn offline_the_order_plug_ins_answer_in_changes_nothing() {
         let gains = [0.5, 0.8, 0.7, 0.9, 0.6];
         let names = ["a1", "a2", "b1", "b2", "b3"];
         let stands = (0..5).map(|i| Timed::new(names[i], gains[i], delays[i], &log)).collect();
-        crate::render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins(&p, stands)).unwrap()
+        crate::render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, stands)),
+            SR,
+            512,
+            None,
+        )
+        .unwrap()
     };
     let at_once = render([Duration::ZERO; 5]);
     let first_slow = render([QUICK * 3, Duration::ZERO, Duration::ZERO, QUICK, Duration::ZERO]);

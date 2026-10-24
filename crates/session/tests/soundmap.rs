@@ -7,9 +7,12 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_library::Library;
 use suhina_session::{Projects, Session, blank_project};
+
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
 
 fn temp(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
@@ -19,18 +22,8 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path, samples: &[f32]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 22_050,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for s in samples {
-        writer.write_sample((s.clamp(-1.0, 1.0) * 30_000.0) as i16).unwrap();
-    }
-    writer.finalize().unwrap();
+    let scaled: Vec<f32> = samples.iter().map(|s| s.clamp(-1.0, 1.0) * 30_000.0 / 32767.0).collect();
+    write_wav(path, 22_050, 1, WavFormat::Int16, &scaled);
 }
 
 fn kick(variant: usize) -> Vec<f32> {
@@ -62,10 +55,6 @@ fn projects(settings: &Path) -> Projects {
     projects.set_file_library(Library::new(Some(settings.to_path_buf())));
     projects.add(Session::new(blank_project()), None).unwrap();
     projects
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 #[test]
@@ -187,7 +176,7 @@ fn the_sample_map_takes_every_recent_item_as_a_place() {
     run(&mut p, "library.addFolder", json!({ "folder": samples.display().to_string() })).unwrap();
     run(&mut p, "clip.addFiles", json!({ "paths": [used.display().to_string()], "track": 3, "start": 0.0 })).unwrap();
     for place in ["recent:all", "recent:samples"] {
-        let files = suhina_session::scope_files(&mut p, Some(place)).map_err(|e| e.0).unwrap();
+        let files = suhina_session::scope_files(&mut p, Some(place)).map_err(String::from).unwrap();
         let names: Vec<_> = files.iter().filter_map(|f| f.path.file_name()).collect();
         assert_eq!(names, ["kick 0.wav"], "{place}");
     }

@@ -135,8 +135,8 @@ fn an_allowed_agent_works_on_the_windows_projects_and_never_closes_a_tab() {
     endpoints.set_enabled(true);
     let mut projects = Projects::new();
     let calls = vec![
-        json!({"name": "command_run", "arguments": {"id": "projects.list"}}),
-        json!({"name": "command_run", "arguments": {"id": "projects.close", "params": {"project": 1}}}),
+        json!({"name": "command_run", "arguments": {"id": "project.list"}}),
+        json!({"name": "command_run", "arguments": {"id": "project.close", "params": {"project": 1}}}),
         json!({"name": "project_open", "arguments": {"path": "song.suhina"}}),
     ];
     let answers = agent(&endpoints, &folder, calls);
@@ -182,8 +182,7 @@ fn a_denied_agent_is_disconnected_and_nothing_listens_while_agents_are_off() {
     assert!(absent.is_err_and(|e| endpoint::is_absent(&e)));
     endpoints.set_enabled(true);
     let mut projects = Projects::new();
-    let answers =
-        agent(&endpoints, &folder, vec![json!({"name": "command_run", "arguments": {"id": "projects.list"}})]);
+    let answers = agent(&endpoints, &folder, vec![json!({"name": "command_run", "arguments": {"id": "project.list"}})]);
     let connection = frames(|| {
         endpoints.take_events().into_iter().find_map(|e| match e {
             AppEvent::Ask { connection, .. } => Some(connection),

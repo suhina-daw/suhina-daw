@@ -5,53 +5,27 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::{CommandKind, Session, commands};
 
+use crate::support::run;
+use suhina_test_support::ProjectBuilder;
+
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
-    let track = |id: u32, name: &str| Track {
-        content: ContentKinds { notes: true, audio: false },
-        channel: Some(ChannelId(id)),
-        ..Track::new(TrackId(id), name)
-    };
-    let channel = |id: u32| Channel::new(ChannelId(id), format!("C{id}"));
-    let clip = |start: f64| Clip::new(ContentId(1), start, 4.0);
-    Project {
-        tracks: vec![track(1, "Bass"), track(2, "Lead")],
-        channels: vec![channel(1), channel(2)],
-        contents: vec![ClipContent {
-            id: ContentId(1),
-            name: "Riff".into(),
-            length: 4.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 36, 1.0)]) }],
-            extensions: Extensions::default(),
-            scale: None,
-        }],
-        arrangement: Arrangement {
-            lanes: vec![ArrangementLane {
-                id: Default::default(),
-                name: "Bass".into(),
-                track: Some(TrackId(1)),
-                clips: vec![clip(0.0), clip(8.0)],
-            }],
-            markers: Vec::new(),
-        },
-        ..Project::default()
-    }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
+    ProjectBuilder::new()
+        .midi_track(1, "Bass")
+        .midi_track(2, "Lead")
+        .notes(1, "Riff", 4.0, vec![Note::new(0.0, 1.0, 36, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .clip(1, Clip::new(ContentId(1), 8.0, 4.0))
+        .build_without_ids()
 }
 
 #[test]
 fn every_command_is_listed_with_a_unique_id() {
     let mut session = Session::new(project());
-    let listed = run(&mut session, "commands.list", json!({})).unwrap();
+    let listed = run(&mut session, "command.list", json!({})).unwrap();
     let ids: Vec<&str> = listed.as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
     assert_eq!(ids.len(), commands().len());
     let mut unique = ids.clone();
@@ -232,7 +206,7 @@ fn bad_parameters_never_change_the_project() {
             let mut session = Session::new(project());
             let result = session.execute(spec.id, &params);
             if let Err(e) = result {
-                assert!(!e.0.is_empty());
+                assert!(!e.message().to_owned().is_empty());
                 assert_eq!(session.project(), &project(), "{} with {params} changed the project", spec.id);
             }
         }
@@ -255,7 +229,7 @@ fn unknown_commands_and_non_object_params_are_errors() {
 fn a_clip_moves_to_another_track_that_takes_its_kind() {
     let mut session = Session::new(project());
     let moved =
-        run(&mut session, "clip.move", json!({ "track": "Bass", "index": 1, "start": 2, "to_track": "Lead" })).unwrap();
+        run(&mut session, "clip.move", json!({ "track": "Bass", "index": 1, "start": 2, "toTrack": "Lead" })).unwrap();
     assert_eq!(moved["track"], 2);
     let p = session.project();
     assert_eq!(p.arrangement.lanes[0].clips.len(), 1);
@@ -267,10 +241,10 @@ fn a_clip_moves_to_another_track_that_takes_its_kind() {
     // Undo takes the edit back; the id counter stays where it got to (ADR 0025).
     assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
     assert!(
-        run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 0, "to_track": "Nobody" }))
+        run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 0, "toTrack": "Nobody" }))
             .is_err()
     );
-    assert!(run(&mut session, "clip.move", json!({ "track": "Bass", "index": 9, "start": 0, "to_track": 2 })).is_err());
+    assert!(run(&mut session, "clip.move", json!({ "track": "Bass", "index": 9, "start": 0, "toTrack": 2 })).is_err());
 }
 
 #[test]
@@ -1325,7 +1299,7 @@ fn an_empty_midi_clip_is_refused_where_it_cannot_go_and_changes_nothing() {
         (json!({ "track": "Bass", "scene": 3 }), "from 1 to 2"),
         (json!({ "track": "Bass", "scene": 0 }), "from 1"),
         (json!({ "track": "Bass", "scene": -1 }), "from 1"),
-        (json!({ "track": "Bass", "scene": "one" }), "from 1"),
+        (json!({ "track": "Bass", "scene": "one" }), "scene must be a whole number"),
         (json!({ "track": "Bass" }), "either start"),
         (json!({ "track": "Bass", "scene": 1, "start": 0 }), "either start"),
         (json!({ "track": "Bass", "start": -1 }), "start must be"),
@@ -1442,4 +1416,25 @@ fn audio_overlaps_follow_stacking_and_undo() {
     assert_eq!(run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap()["overlaps"], json!([]));
     run(&mut session, "clip.move", json!({ "track": "Bass", "index": 0, "start": 6 })).unwrap();
     assert_eq!(run(&mut session, "arrangement.audioOverlaps", json!({})).unwrap()["overlaps"], json!([]));
+}
+
+/// Command ids and parameters follow one convention (#764 › 13): a namespace per kind of object,
+/// singular, and parameters in camelCase like the ids.
+#[test]
+fn command_ids_and_parameters_follow_one_convention() {
+    let all = suhina_session::all_commands();
+    let mut wrong = Vec::new();
+    for command in all.as_array().unwrap() {
+        let id = command["id"].as_str().unwrap();
+        let namespace = id.split('.').next().unwrap();
+        if namespace.ends_with('s') {
+            wrong.push(format!("{id}: the namespace is plural"));
+        }
+        for name in command["params"]["properties"].as_object().unwrap().keys() {
+            if name.contains('_') || name.starts_with(|c: char| c.is_uppercase()) {
+                wrong.push(format!("{id}: {name} is not camelCase"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }

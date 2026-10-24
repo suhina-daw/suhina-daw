@@ -5,6 +5,7 @@
 //! a plug-in that misses its deadline or is gone, latency compensation, processors arriving
 //! while playing and carried through edits.
 
+use crate::{RenderInputs, RenderOptions, render_offline_from};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -15,7 +16,7 @@ use suhina_model::*;
 use crate::chain_tests::{BEAT, SR, blocks, device, left, max_diff, note, peak, project};
 use crate::{
     AudioPool, OFFLINE_TIMEOUT, PluginProcessor, PluginSlotInfo, Plugins, Renderer, Sent, SongPosition, plugin_devices,
-    render_offline, render_offline_with_plugins,
+    render_offline,
 };
 
 /// What a stand-in plug-in does with a block.
@@ -143,12 +144,13 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
     let notes = vec![note(0.0, 2.0, 69)];
     let p = project(notes.clone(), 2.0, vec![plug(vst3())]);
     let dry = render_offline(&project(notes, 2.0, vec![device("utility", &[])]), SR, 512).unwrap();
-    let wet = render_offline_with_plugins(
+    let wet = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+        None,
     )
     .unwrap();
     assert_eq!(wet.len(), dry.len());
@@ -157,12 +159,13 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
 
     // A plug-in with built-in effects and instruments around it: one after the other.
     let p = project(vec![note(0.0, 2.0, 69)], 2.0, vec![device("utility", &[("gain", -6.0206)]), plug(vst3())]);
-    let both = render_offline_with_plugins(
+    let both = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
         SR,
         333,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+        None,
     )
     .unwrap();
     let quarter: Vec<f32> = dry.iter().map(|s| s * 0.25).collect();
@@ -178,11 +181,39 @@ fn a_plug_in_is_told_the_loop_in_beats_and_in_seconds_through_the_tempo_map() {
     p.transport.loop_enabled = true;
     let stand = Stand::new(Behaviour::Gain(1.0));
     let songs = Arc::clone(&stand.songs);
-    render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins(&p, vec![(stand, EFFECT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 1, 512);
     let song = *songs.lock().unwrap().first().expect("told of the song");
     assert_eq!(song.cycle, Some((2.0, 8.0)));
     let (start, end) = song.cycle_seconds.expect("in seconds too");
     assert!((start - 1.0).abs() < 1e-3 && (end - 6.0).abs() < 1e-3, "{start} to {end}");
+}
+
+#[test]
+fn an_offline_render_plays_through_the_loop_and_tells_plug_ins_of_no_cycle() {
+    // A render does not repeat the loop (#873): the plug-ins see a song that plays straight on.
+    let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
+    p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
+    p.transport.loop_enabled = true;
+    let stand = Stand::new(Behaviour::Gain(1.0));
+    let songs = Arc::clone(&stand.songs);
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let songs = songs.lock().unwrap();
+    assert!(!songs.is_empty(), "told of the song");
+    assert!(songs.iter().all(|song| song.cycle.is_none() && song.cycle_seconds.is_none()));
 }
 
 #[test]
@@ -192,8 +223,14 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
     for block in [64, 512, 1_000] {
         let mut stand = Stand::new(Behaviour::Instrument);
         stand.seen = Arc::clone(&seen);
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, block, plugins(&p, vec![(stand, INSTRUMENT)]))
-            .unwrap();
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            block,
+            None,
+        )
+        .unwrap();
         let out = left(&out);
         let second = BEAT * 3 / 2;
         // No sine voices: the plug-in plays the notes, at the track's unity gain.
@@ -217,8 +254,13 @@ fn a_plug_in_instrument_on_an_armed_track_gets_live_controllers() {
     let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
     let stand = Stand::new(Behaviour::Instrument);
     let seen = Arc::clone(&stand.seen);
-    let mut renderer =
-        Renderer::stopped_with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     let mut live = controller.take_live_input().unwrap();
     controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
@@ -249,8 +291,13 @@ fn letting_go_of_a_controller_sets_its_pitch_bend_and_pressure_back() {
         let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
         let stand = Stand::new(Behaviour::Instrument);
         let seen = Arc::clone(&stand.seen);
-        let mut renderer =
-            Renderer::stopped_with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let mut live = controller.take_live_input().unwrap();
         controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
@@ -327,7 +374,8 @@ impl PluginProcessor for Busy {
 fn a_block_a_plug_in_refuses_is_one_miss_and_is_not_run_again() {
     let notes = vec![note(0.0, 4.0, 69)];
     let dry_project = project(notes.clone(), 4.0, vec![device("utility", &[])]);
-    let mut dry = Renderer::with_audio(&dry_project, &AudioPool::new(), SR).unwrap();
+    let mut dry =
+        Renderer::build(&dry_project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let dry = blocks(&mut dry, 20, 480);
     let p = project(notes, 4.0, vec![plug(vst3())]);
     let busy = Busy::new(false);
@@ -335,7 +383,13 @@ fn a_block_a_plug_in_refuses_is_one_miss_and_is_not_run_again() {
         (Arc::clone(&busy.sends), Arc::clone(&busy.processes), Arc::clone(&busy.patience));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(busy));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 20, 480);
     assert_eq!(sends.load(Ordering::SeqCst), 20, "one hand-over a block");
     assert!(patience.lock().unwrap().iter().all(|p| p.is_zero()), "in real time nothing waits for a busy host");
@@ -353,7 +407,13 @@ fn an_instrument_that_refuses_a_block_is_silent_for_it() {
     let busy = Busy::new(true);
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, INSTRUMENT, Box::new(busy));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 10, 480);
     assert_eq!(peak(&out), 0.0, "no sine voice, no plug-in sound: silence");
     assert_eq!(renderer.graph.chains[0].missed(), 10);
@@ -371,7 +431,9 @@ fn an_offline_render_waits_for_a_busy_plug_in_and_loses_no_block() {
         let (processes, patience) = (Arc::clone(&busy.processes), Arc::clone(&busy.patience));
         let mut plugins = Plugins::new();
         plugins.insert(plugin_devices(&p)[0].key, info, Box::new(busy));
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 480, plugins).unwrap();
+        let out =
+            render_offline_from(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 480, None)
+                .unwrap();
         let patience = patience.lock().unwrap().clone();
         assert!(!patience.is_empty());
         assert!(patience.iter().all(|p| *p == OFFLINE_TIMEOUT), "offline every block may wait");
@@ -404,7 +466,13 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
     let processes = Arc::new(AtomicUsize::new(0));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(Whole { processes: Arc::clone(&processes) }));
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let out = blocks(&mut renderer, 10, 480);
     assert_eq!(processes.load(Ordering::SeqCst), 10, "one process a block");
     assert_eq!(peak(&out), 0.0);
@@ -413,7 +481,8 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
     let processes = Arc::new(AtomicUsize::new(0));
     let mut plugins = Plugins::new();
     plugins.insert(plugin_devices(&p)[0].key, EFFECT, Box::new(Whole { processes: Arc::clone(&processes) }));
-    let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 480, plugins).unwrap();
+    let out = render_offline_from(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 480, None)
+        .unwrap();
     assert!(processes.load(Ordering::SeqCst) > 0);
     assert_eq!(peak(&out), 0.0);
 }
@@ -422,13 +491,20 @@ fn a_processor_that_cannot_split_blocks_runs_them_whole() {
 fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_on() {
     let notes = vec![note(0.0, 4.0, 69)];
     let dry_project = project(notes.clone(), 4.0, vec![device("utility", &[])]);
-    let mut dry = Renderer::with_audio(&dry_project, &AudioPool::new(), SR).unwrap();
+    let mut dry =
+        Renderer::build(&dry_project, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let dry = blocks(&mut dry, 40, 480);
 
     let p = project(notes.clone(), 4.0, vec![plug(vst3())]);
     let effect = Stand::new(Behaviour::Gain(0.5));
     let answering = Arc::clone(&effect.answering);
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(effect, EFFECT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(effect, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut out = blocks(&mut renderer, 20, 480);
     answering.store(false, Ordering::SeqCst);
     out.extend(blocks(&mut renderer, 20, 480));
@@ -441,9 +517,14 @@ fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_o
 
     // An instrument that is gone is silent; a track without one still plays.
     let p = project(notes, 4.0, vec![plug(vst3())]);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(Stand::new(Behaviour::Gone), INSTRUMENT)]))
-            .unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gone), INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut renderer, 20, 480)), 0.0);
 }
 
@@ -454,12 +535,13 @@ fn a_disabled_or_missing_plug_in_passes_the_sound_through() {
     let mut off = plug(vst3());
     off.enabled = false;
     let p = project(notes.clone(), 1.0, vec![off]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.0)), EFFECT)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.0)), EFFECT)]),
+        None,
     )
     .unwrap();
     assert!(max_diff(&out, &plain) < 1e-6);
@@ -491,15 +573,15 @@ fn two_tracks(notes: Vec<Note>, devices: Vec<Device>) -> Project {
 fn latency_compensation_lines_every_track_up_with_the_slowest() {
     const LATENCY: usize = 300;
     let p = two_tracks(vec![note(0.0, 1.0, 69)], vec![plug(vst3())]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
-        SR,
-        256,
-        plugins(
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
             &p,
             vec![(Stand::new(Behaviour::Delay(LATENCY)), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
-        ),
+        )),
+        SR,
+        256,
+        None,
     )
     .unwrap();
     // Both tracks play the same note: lined up, the sum is twice one track, delayed by the
@@ -510,11 +592,14 @@ fn latency_compensation_lines_every_track_up_with_the_slowest() {
     assert!(peak(&out[..LATENCY]) == 0.0, "everything waits for the slowest track");
     let doubled: Vec<f32> = one[..BEAT].iter().map(|s| s * 2.0).collect();
     assert!(max_diff(&out[LATENCY..LATENCY + BEAT], &doubled) < 1e-5);
-    let renderer = Renderer::with_plugins(
+    let renderer = Renderer::build(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
+        )),
         SR,
-        plugins(&p, vec![(Stand::new(Behaviour::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })]),
+        RenderOptions::PLAYING,
     )
     .unwrap();
     assert_eq!(renderer.latency(), LATENCY as u32);
@@ -525,7 +610,8 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
     let notes = vec![note(0.0, 8.0, 69)];
     let p = project(notes.clone(), 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let mut controller = renderer.controller();
     let mut info = std::collections::HashMap::new();
     info.insert(key, EFFECT);
@@ -584,8 +670,13 @@ fn a_plug_in_on_a_muted_track_keeps_running_and_sounds_again() {
     let key = plugin_devices(&p)[0].key;
     let stand = Stand::new(Behaviour::Instrument);
     let dropped = Arc::clone(&stand.dropped);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     let mut controller = renderer.controller();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
     let mut muted = p.clone();
@@ -609,8 +700,13 @@ fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
         let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
         let stand = Stand::new(Behaviour::Instrument);
         let seen = Arc::clone(&stand.seen);
-        let mut renderer =
-            Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
         let mut controller = renderer.controller();
         let notes = crate::preview_notes([(0.0, 64.0, 60, 1.0)], 120.0, SR, Some(TrackId(1)), None);
         controller.preview_notes(notes, 1.0).unwrap();
@@ -628,8 +724,13 @@ fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3())]);
     let stand = Stand::new(Behaviour::Instrument);
     let seen = Arc::clone(&stand.seen);
-    let mut renderer =
-        Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(stand, INSTRUMENT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert!(peak(&blocks(&mut renderer, 10, 480)) > 0.1);
     renderer.handle(crate::LaunchCommand::Stop);
     assert_eq!(peak(&blocks(&mut renderer, 10, 480)[960..]), 0.0);
@@ -651,13 +752,25 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
     let key = plugin_devices(&p)[0].key;
     let first = Stand::new(Behaviour::Gain(0.0));
     let dropped = Arc::clone(&first.dropped);
-    let mut renderer = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins(&p, vec![(first, EFFECT)])).unwrap();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(first, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut renderer, 4, 480)), 0.0, "the plug-in silences the track");
 
     let plugins = renderer.into_plugins();
     assert_eq!(dropped.load(Ordering::SeqCst), 0, "handed over, not dropped");
     assert_eq!(plugins.info().get(&key), Some(&EFFECT));
-    let mut next = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut next = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut next, 4, 256)), 0.0, "the same plug-in plays in the new renderer");
 
     // One sent but not placed yet comes back too.
@@ -668,7 +781,9 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
     let back = next.into_plugins();
     assert_eq!(queued_dropped.load(Ordering::SeqCst), 0);
     assert_eq!(dropped.load(Ordering::SeqCst), 1, "the queued one, newer, replaced it");
-    let mut third = Renderer::with_plugins(&p, &AudioPool::new(), SR, back).unwrap();
+    let mut third =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(back), SR, RenderOptions::PLAYING)
+            .unwrap();
     assert!(peak(&blocks(&mut third, 4, 256)) > 0.1, "the queued plug-in plays");
 }
 
@@ -678,7 +793,8 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
 fn a_plug_in_that_arrived_while_playing_is_handed_over_with_its_slot() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let mut controller = renderer.controller();
     let mut info = std::collections::HashMap::new();
     let latency = PluginSlotInfo { instrument: false, latency: 32 };
@@ -695,7 +811,13 @@ fn a_plug_in_that_arrived_while_playing_is_handed_over_with_its_slot() {
     let plugins = renderer.into_plugins();
     assert_eq!(dropped.load(Ordering::SeqCst), 0);
     assert_eq!(plugins.info().get(&key), Some(&latency));
-    let mut next = Renderer::with_plugins(&p, &AudioPool::new(), SR, plugins).unwrap();
+    let mut next = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     assert_eq!(peak(&blocks(&mut next, 40, 256)), 0.0, "and plays on in the next renderer");
     drop(controller);
 }
@@ -808,7 +930,9 @@ fn consecutive_plug_ins_of_one_process_share_a_round_trip_and_sound_the_same() {
             followed.push(Arc::clone(&member.followed));
             plugins.insert(found.key, EFFECT, Box::new(member));
         }
-        let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+        let out =
+            render_offline_from(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
+                .unwrap();
         let hows: Vec<Vec<crate::Followed>> = followed.iter().map(|f| f.lock().unwrap().clone()).collect();
         (out, trips.load(Ordering::SeqCst), hows)
     };
@@ -847,7 +971,8 @@ fn a_joint_block_that_misses_is_a_miss_for_every_plug_in_in_it() {
     plugins.insert(found[0].key, EFFECT, Box::new(first));
     // The second is an instrument: a miss leaves it silent, as when it misses on its own.
     plugins.insert(found[1].key, INSTRUMENT, Box::new(second));
-    let out = render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+    let out = render_offline_from(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None)
+        .unwrap();
     assert_eq!(peak(&out), 0.0);
     let hows = followed.lock().unwrap();
     assert!(!hows.is_empty());
@@ -870,7 +995,7 @@ fn a_plug_in_with_parameter_events_runs_on_its_own_and_gets_them() {
     let mut plugins = Plugins::new();
     plugins.insert(found[0].key, EFFECT, Box::new(first));
     plugins.insert(found[1].key, EFFECT, Box::new(second));
-    render_offline_with_plugins(&p, &AudioPool::new(), SR, 512, plugins).unwrap();
+    render_offline_from(&p, RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins), SR, 512, None).unwrap();
     assert_eq!(*automated.lock().unwrap(), [7], "the value reached b, once");
     // The first block runs a and b in a round trip each, as the joint block's events are a's;
     // every later block runs them in one.
@@ -889,12 +1014,13 @@ fn a_plug_in_runs_in_a_group_branch_beside_a_dry_one() {
     let notes = vec![note(0.0, 2.0, 69)];
     let dry = render_offline(&project(notes.clone(), 2.0, vec![device("utility", &[])]), SR, 512).unwrap();
     let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)]),
+        None,
     )
     .unwrap();
     let len = dry.len().min(out.len());
@@ -907,21 +1033,23 @@ fn a_plug_ins_latency_is_compensated_inside_its_group() {
     let notes = vec![note(0.0, 2.0, 69)];
     let delayed = PluginSlotInfo { instrument: false, latency: 64 };
     let single = project(notes.clone(), 2.0, vec![device("utility", &[]), plug(vst3())]);
-    let reference = render_offline_with_plugins(
+    let reference = render_offline_from(
         &single,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&single, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
         SR,
         512,
-        plugins(&single, vec![(Stand::new(Behaviour::Delay(64)), delayed)]),
+        None,
     )
     .unwrap();
     let p = project(notes, 2.0, vec![device("utility", &[]), grouped(vec![vec![plug(vst3())], vec![]])]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Delay(64)), delayed)]),
+        None,
     )
     .unwrap();
     let len = reference.len().min(out.len());
@@ -934,27 +1062,27 @@ fn a_plug_ins_latency_is_compensated_inside_its_group() {
 fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
     let notes = vec![note(0.0, 1.0, 60)];
     let p = project(notes, 2.0, vec![grouped(vec![vec![plug(vst3())], vec![plug(vst3())]])]);
-    let out = render_offline_with_plugins(
+    let out = render_offline_from(
         &p,
-        &AudioPool::new(),
-        SR,
-        512,
-        plugins(
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
             &p,
             vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Instrument), INSTRUMENT)],
-        ),
+        )),
+        SR,
+        512,
+        None,
     )
     .unwrap();
     // Each plays 0.5 while the note sounds; the track's gains scale the sum the same for both.
-    let one = render_offline_with_plugins(
+    let one = render_offline_from(
         &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
-        &AudioPool::new(),
-        SR,
-        512,
-        plugins(
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
             &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
             vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)],
-        ),
+        )),
+        SR,
+        512,
+        None,
     )
     .unwrap();
     let len = one.len().min(out.len());
@@ -962,12 +1090,15 @@ fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
     assert!(peak(&one) > 0.1);
     assert!(max_diff(&out[..len], &doubled) < 1e-5);
     // One of them gone: the other plays alone, the gone one is silent and the render goes on.
-    let half = render_offline_with_plugins(
+    let half = render_offline_from(
         &p,
-        &AudioPool::new(),
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
+            &p,
+            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Gone), INSTRUMENT)],
+        )),
         SR,
         512,
-        plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Gone), INSTRUMENT)]),
+        None,
     )
     .unwrap();
     assert!(max_diff(&half[..len], &one[..len]) < 1e-5, "{}", max_diff(&half[..len], &one[..len]));
@@ -978,7 +1109,8 @@ fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
     let notes = vec![note(0.0, 8.0, 69)];
     let p = project(notes, 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let mut renderer = Renderer::with_audio(&p, &AudioPool::new(), SR).unwrap();
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
     let mut controller = renderer.controller();
     let mut info = std::collections::HashMap::new();
     info.insert(key, EFFECT);

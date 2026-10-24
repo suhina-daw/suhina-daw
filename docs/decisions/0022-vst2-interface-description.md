@@ -86,7 +86,7 @@ the rule, not about the interface.
      that established it.
 4. **Every field and op-code enters the spec with two things**: the observation that established it,
    and the test that keeps it true — a mock assertion, an `offset_of!` assertion, or an ignored test
-   against a real plug-in. A fact without a test is marked as a guess, and `plugins.*`'s status for
+   against a real plug-in. A fact without a test is marked as a guess, and `plugin.*`'s status for
    a VST2 file says so while it is one.
 5. **The name.** No VST logo, and no "VST" in Suhina's own name, branding, crate, binary or feature
    name (`suhina-plugin-host`, feature `vst2`, `DeviceKind::Vst2`). The format is named only where a

@@ -9,13 +9,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_engine::{AudioPool, LiveEvent, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::Opened;
 use suhina_session::{
     AudioSystem, CommandKind, LiveInput, MidiSystem, OutputChoice, Player, Projects, Session, midi_commands,
 };
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 
@@ -95,10 +97,6 @@ impl Stand {
         }
         peak
     }
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn ports(names: &[&str], broken: Option<&str>) -> Arc<Ports> {
@@ -272,7 +270,7 @@ fn a_note_from_a_port_plays_the_armed_tracks_instrument_also_on_a_new_output() {
     input.send(LiveEvent::NoteOff { key: 64 });
 
     // A new output is a new engine: the notes follow it, and it knows the armed track.
-    run(&mut projects, "audio.setOutput", json!({ "buffer_frames": 256 })).unwrap();
+    run(&mut projects, "audio.setOutput", json!({ "bufferFrames": 256 })).unwrap();
     projects.poll_plugins();
     assert!(input.is_connected());
     stand.run_latest();

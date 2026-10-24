@@ -379,7 +379,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 ### M6 Plug-ins (in progress)
 - CLAP and VST3 plug-ins run in `suhina-plugin-host` processes, never in Suhina's: by
   default one process per plug-in file, or per vendor, or one per instance
-  (`plugins.setHosting`); a crash or hang costs that plug-in's sound, not the project
+  (`plugin.setHosting`); a crash or hang costs that plug-in's sound, not the project
   ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)). The host runs on Linux, Windows and
   macOS (editors on macOS still to come).
 - An opened Live Set's plug-ins play in the app: each is found among the installed ones (a VST3
@@ -542,7 +542,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   and a failed file is read again with its **Scan again**
   ([spec](docs/spec/plugin-manager.md)).
 - Plug-in **folders per format**: each added folder for CLAP, VST3 or both, any folder switched
-  off without removing it (`plugins.setFolderEnabled`); VST2 folders are ready for when VST2
+  off without removing it (`plugin.setFolderEnabled`); VST2 folders are ready for when VST2
   plug-ins are hosted.
 - Plug-in **scans try failures again**: a file that failed is read once more, one at a time, in
   the same scan, and later scans try it again (one that hung at most once a day); a file that
@@ -643,7 +643,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
-- A plug-in scan notes which VST3 plug-ins support ARA (`plugins.list` shows `ara`), and such a
+- A plug-in scan notes which VST3 plug-ins support ARA (`plugin.list` shows `ara`), and such a
   plug-in is never given a host process of its own, since its document and every instance
   editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
 - A plug-in that edits clips (ARA, such as a pitch editor) on an audio track is loaded with the

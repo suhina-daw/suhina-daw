@@ -5,6 +5,7 @@
 //! together.
 
 use super::*;
+use suhina_model::automation::Curve;
 
 /// A project with every kind of thing the model holds: a group, an audio and a note track, a
 /// return, sends, built-in and plug-in devices with state, shared and audio contents, loops,
@@ -45,7 +46,10 @@ fn everything() -> Project {
     keys.automation = vec![
         AutomationLane {
             param: "volume".into(),
-            points: vec![AutomationPoint { beat: 0.0, value: 0.0, curve: 0.5 }, AutomationPoint::new(8.0, 1.25)],
+            points: vec![
+                AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
+                AutomationPoint::new(8.0, 1.25),
+            ],
             enabled: true,
         },
         AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)], enabled: false },
@@ -55,7 +59,10 @@ fn everything() -> Project {
             params: vec![DeviceParam::new("volume", -6.0)],
             automation: vec![AutomationLane {
                 param: "volume".into(),
-                points: vec![AutomationPoint { beat: 1.0, value: -12.0, curve: -0.75 }, AutomationPoint::new(3.5, 0.0)],
+                points: vec![
+                    AutomationPoint { beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
+                    AutomationPoint::new(3.5, 0.0),
+                ],
                 enabled: false,
             }],
             ..Device::new("FM", DeviceKind::Builtin("fm-synth".into()))
@@ -92,9 +99,10 @@ fn everything() -> Project {
             automation: vec![AutomationLane {
                 param: "3".into(),
                 points: vec![
-                    AutomationPoint { beat: 0.0, value: 0.0, curve: 0.0 },
-                    AutomationPoint { beat: 4.0, value: 1.0, curve: 0.0 },
-                    AutomationPoint { beat: 4.0, value: 0.5, curve: 0.0 },
+                    // Two control points outside the mirrored family: from version 4.
+                    AutomationPoint { beat: 0.0, value: 0.0, curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 } },
+                    AutomationPoint::new(4.0, 1.0),
+                    AutomationPoint::new(4.0, 0.5),
                 ],
                 enabled: true,
             }],
@@ -359,7 +367,7 @@ fn a_file_names_the_suhina_format() {
     let text = to_json(&Project::default());
     let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
     assert_eq!(root.get("format").and_then(Value::as_str), Some("suhina"));
-    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION_WITHOUT_GROUPS));
+    assert_eq!(root.get("version").and_then(Value::as_u64), Some(VERSION));
 }
 
 #[test]
@@ -394,7 +402,12 @@ fn what_is_not_a_project_is_refused() {
     assert!(refused(r#"{ "version": 1, "project": {} }"#), "no format");
     assert!(refused(r#"{ "format": "als", "version": 1, "project": {} }"#));
     assert!(refused(r#"{ "format": "suhina", "project": {} }"#), "no version");
-    assert!(refused(r#"{ "format": "suhina", "version": 3, "project": {} }"#), "a newer version");
+    let newer = format!(r#"{{ "format": "suhina", "version": {}, "project": {{}} }}"#, VERSION + 1);
+    assert!(refused(&newer), "a newer version");
+    assert!(
+        from_json(&newer).unwrap_err().to_string().contains(&format!("reads up to version {VERSION}")),
+        "the message names the newest version this Suhina reads"
+    );
     assert!(refused(r#"{ "format": "suhina", "version": 1 }"#), "no project");
     assert_eq!(from_json(r#"{ "format": "suhina", "version": 1, "project": {} }"#), Ok(Project::default()));
     assert!(refused(r#"{ "format": "locr", "version": 1, "project": {} }"#), "the format from before the rename");
@@ -574,6 +587,18 @@ fn midi_monitoring_round_trips_and_bad_modes_are_rejected() {
         let text = serde_json::json!({"format": "suhina", "version": 1, "project": {"tracks": [{"id": 1, "midi_input": {"monitor": mode}}]}}).to_string();
         assert!(from_json(&text).is_err());
     }
+}
+
+/// A file written before MIDI monitoring has a `midi_input` without `monitor`: it reads as Auto
+/// and keeps its port and channel through a round trip.
+#[test]
+fn a_midi_input_from_before_monitoring_is_monitored_automatically() {
+    let older = r#"{ "format": "suhina", "version": 1, "project": { "tracks": [ { "id": 1, "midi_input": { "port": { "name": "Keys" }, "channel": 3 } } ] } }"#;
+    let project = from_json(older).unwrap();
+    let wanted = MidiInput { port: MidiPort::Named("Keys".into()), channel: Some(3), monitor: Monitor::Auto };
+    assert_eq!(project.tracks[0].midi_input, wanted);
+    let again = from_json(&to_json(&project)).unwrap();
+    assert_eq!(again.tracks[0].midi_input, wanted);
 }
 
 /// A clip written before fade shapes existed has linear, unbent fades, so it sounds the same.
@@ -1014,20 +1039,74 @@ fn with_a_group() -> Project {
 }
 
 #[test]
-fn a_device_group_survives_a_round_trip_as_version_2() {
+fn a_device_group_survives_a_round_trip() {
     let project = with_a_group();
-    let text = to_json(&project);
-    let root = serde_json::from_str::<Value>(&text).unwrap_or_default();
-    assert_eq!(root.get("version").and_then(Value::as_u64), Some(2));
-    assert_eq!(from_json(&text), Ok(project));
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
+/// Every feature at once: [`everything`] with [`with_a_group`]'s device group on its first
+/// channel. A field added to the model is added here too, so the shape test below sees it.
+fn every_feature() -> Project {
+    let mut project = everything();
+    project.channels[0].devices.extend(with_a_group().channels[0].devices.clone());
+    project
+}
+
+fn version_file(version: u64) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/versions/v{version}.suhina"))
+}
+
+/// One file per version, as that version wrote it, and every one of them still reads: version 1
+/// without the device group it could not hold.
 #[test]
-fn a_project_without_groups_is_written_as_version_1() {
-    let mut project = with_a_group();
-    project.channels[0].devices.truncate(1);
-    assert_eq!(version_of(&project), VERSION_WITHOUT_GROUPS);
-    assert_eq!(version_of(&with_a_group()), VERSION);
+fn a_file_of_every_version_reads() {
+    for version in 1..=VERSION {
+        let path = version_file(version);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let mut expected = every_feature();
+        if version == 1 {
+            expected.channels[0].devices.retain(|d| d.as_group().is_none());
+        }
+        if version < 4 {
+            // A curve outside the mirrored family needs two control points.
+            for point in expected
+                .channels
+                .iter_mut()
+                .flat_map(|c| &mut c.devices)
+                .flat_map(|d| &mut d.automation)
+                .flat_map(|l| &mut l.points)
+            {
+                if point.curve.bend_of().is_none() {
+                    point.curve = Curve::STRAIGHT;
+                }
+            }
+        }
+        assert_eq!(from_json(&text), Ok(expected), "version {version}");
+    }
+    assert!(!version_file(VERSION + 1).exists(), "a file for a version this Suhina does not write");
+}
+
+/// What a file holds is pinned to its version: a change to what is written fails here until
+/// [`VERSION`] is raised and the new version's file added (`SUHINA_BLESS=1` writes it, never
+/// over the file of a version that shipped), with a migration for the files before it.
+#[test]
+fn what_is_written_is_the_current_versions_file() {
+    let path = version_file(VERSION);
+    let written = to_json(&every_feature());
+    if suhina_test_support::blessing() && !path.exists() {
+        std::fs::write(&path, &written).unwrap();
+        return;
+    }
+    let pinned = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}; write it with SUHINA_BLESS=1", path.display()))
+        .replace("\r\n", "\n");
+    assert!(
+        written == pinned,
+        "what a .suhina file holds changed, and version {VERSION}'s file is what that version shipped: \
+         raise VERSION, add tests/versions/v{}.suhina (SUHINA_BLESS=1 writes it) and say what changed \
+         in docs/spec/suhina-format.md › Versions",
+        VERSION + 1
+    );
 }
 
 #[test]

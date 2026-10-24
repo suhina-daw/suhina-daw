@@ -1,6 +1,6 @@
 ---
 description: Several projects open at once like tabs, one active; where commands go, which project plays, and what is left for later
-read_when: tabs, several projects, open projects, switch project, Ctrl+Tab, projects.list, projects.switch, Projects, ProjectId
+read_when: tabs, several projects, open projects, switch project, Ctrl+Tab, project.list, project.switch, Projects, ProjectId
 type: decision
 status: current
 last_verified: 2026-10-13
@@ -35,8 +35,8 @@ the layer that owns sessions.
    (`Projects::execute_in`, the MCP tools' `project` argument). Naming a project does not switch
    to it.
 3. **Managing projects is a command too** (AGENTS.md rule 6), of the new kind `projects`:
-   `projects.list`, `projects.switch`, `projects.next`, `projects.previous` (wrapping around,
-   for Ctrl+Tab and Ctrl+Shift+Tab) and `projects.close`. Closing the active project activates
+   `project.list`, `project.switch`, `project.next`, `project.previous` (wrapping around,
+   for Ctrl+Tab and Ctrl+Shift+Tab) and `project.close`. Closing the active project activates
    the tab to its right, or to its left when it was the last. Opening stays outside the
    registry for now, since it needs file access that each front end grants differently (the
    MCP server's read root).
@@ -61,7 +61,7 @@ the layer that owns sessions.
   and a project that stops playing (another tab made active) stops them, each keeping its last
   state for when the project plays again ([ADR 0006](0006-plug-in-hosting.md)).
 - `Projects` is where Suhina-wide state lives too: it also holds the plug-in library that the
-  `plugins.*` commands run on ([ADR 0006](0006-plug-in-hosting.md)) and the browser's library that
+  `plugin.*` commands run on ([ADR 0006](0006-plug-in-hosting.md)) and the browser's library that
   the `library.*` commands run on ([ADR 0012](0012-file-library.md)), shared by every open
   project. Each session keeps its own decoded audio ([ADR 0011](0011-preview-and-added-audio.md)),
   so a project made active again plays without decoding anything.

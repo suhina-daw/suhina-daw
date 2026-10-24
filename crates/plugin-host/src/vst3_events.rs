@@ -55,6 +55,15 @@ impl Shown {
         }
     }
 
+    /// Notes `value` as the latest of parameter `id` when a controller is mapped to it: a
+    /// parameter event after a controller's in the same block is what the processor ends at, so
+    /// the editor is given it, not the controller's older value (#886). Real-time safe.
+    fn set_param(&self, id: ParamID, value: ParamValue) {
+        if let Some(number) = self.table.iter().position(|mapped| *mapped == Some(id)) {
+            self.set(number, value);
+        }
+    }
+
     /// The parameters whose controller moved since the last call, each with its latest value.
     pub(crate) fn take(&self) -> impl Iterator<Item = (ParamID, ParamValue)> + '_ {
         self.values.iter().zip(self.table.iter()).filter_map(|(slot, id)| {
@@ -115,11 +124,14 @@ impl MidiMapping {
 
     /// The parameter change a controller, pitch bend, channel pressure or parameter event
     /// makes: id, frame, normalized value. A controller's is noted for the editor too
-    /// ([`Shown`]). Real-time safe.
+    /// ([`Shown`]), and so is a parameter event's for a parameter a controller moves, so the
+    /// editor ends at the value the processor does. Real-time safe.
     pub(crate) fn change(&self, event: &LinkEvent) -> Option<(ParamID, i32, ParamValue)> {
         if let EventKind::Param { id, value } = event.kind {
             // A parameter's own value, kept within VST3's normalized range.
-            return Some((id, event.frame as i32, f64::from(value).clamp(0.0, 1.0)));
+            let value = f64::from(value).clamp(0.0, 1.0);
+            self.shown.set_param(id, value);
+            return Some((id, event.frame as i32, value));
         }
         let (number, id, value) = self.controller(event)?;
         self.shown.set(number, value);
@@ -290,6 +302,22 @@ mod tests {
         assert!(taken.contains(&(5, f64::from(0.9f32))), "{taken:?}");
         assert!(taken.contains(&(9, 0.5)), "{taken:?}");
         // Taken once: nothing is left for the next look.
+        assert_eq!(shown.take().count(), 0);
+    }
+
+    #[test]
+    fn a_parameter_event_after_a_controller_in_one_block_is_the_value_shown() {
+        // The mod wheel (1) moves parameter 9; automation then sets 9 later in the same block.
+        let mut table = Box::new([None; CONTROLLERS]);
+        table[1] = Some(9);
+        let mapping = MidiMapping::with(table);
+        let shown = mapping.shown();
+        mapping.change(&event(EventKind::Controller { channel: 0, number: 1, value: 0.5 }));
+        let last = mapping.change(&event(EventKind::Param { id: 9, value: 0.25 }));
+        assert_eq!(last.map(|(id, _, value)| (id, value)), Some((9, 0.25)), "what the processor gets");
+        assert_eq!(shown.take().collect::<Vec<_>>(), [(9, 0.25)], "the editor gets the same");
+        // A parameter no controller moves is not the mapping's to show.
+        mapping.change(&event(EventKind::Param { id: 4, value: 0.75 }));
         assert_eq!(shown.take().count(), 0);
     }
 }

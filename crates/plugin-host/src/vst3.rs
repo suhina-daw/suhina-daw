@@ -1009,15 +1009,7 @@ impl Vst3Plugin {
             ara.tick();
             self.trace_output();
         }
-        // What a MIDI controller moved goes to the controller as well, which the editor draws
-        // from: the processor alone has it otherwise.
-        if let (Some(shown), Some(controller)) = (&self.shown, &self.controller) {
-            for (id, value) in shown.take() {
-                // SAFETY: a live controller, on the main thread, for a parameter its own
-                // `IMidiMapping` named.
-                let _ = unsafe { controller.setParamNormalized(id, value) };
-            }
-        }
+        self.show_controllers();
         if let Some(watch) = &self.midi_watch {
             watch.write(self.instance);
         }
@@ -1137,8 +1129,23 @@ impl Vst3Plugin {
         self.editor.as_mut().and_then(crate::vst3_editor::Editor::take_resized)
     }
 
-    /// The controller's parameters, values normalized (0 to 1).
+    /// What a MIDI controller moved goes to the controller as well, which the editor draws
+    /// from: the processor alone has it otherwise. On the main thread.
+    fn show_controllers(&self) {
+        if let (Some(shown), Some(controller)) = (&self.shown, &self.controller) {
+            for (id, value) in shown.take() {
+                // SAFETY: a live controller, on the main thread, for a parameter its own
+                // `IMidiMapping` named.
+                let _ = unsafe { controller.setParamNormalized(id, value) };
+            }
+        }
+    }
+
+    /// The controller's parameters, values normalized (0 to 1). What MIDI controllers moved in
+    /// the blocks played so far is handed to the controller first, so a read right after a block
+    /// does not wait for the next turn of the host's loop (#887).
     pub(crate) fn params(&self) -> Vec<ParamInfo> {
+        self.show_controllers();
         let Some(controller) = &self.controller else { return Vec::new() };
         // SAFETY: a live controller.
         let count = unsafe { controller.getParameterCount() }.clamp(0, 1 << 16);

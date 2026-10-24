@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session};
 
+use crate::support::run;
+
 fn note(time: f64, key: u8) -> Note {
     Note::new(time, 1.0, key, 100.0 / 127.0)
 }
@@ -33,10 +35,7 @@ fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
 /// clip (index 1), an audio clip (index 2) and a pattern for another track (index 3); in scene 1
 /// a slot with a MIDI clip and in scene 2 an empty slot.
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
@@ -74,10 +73,6 @@ fn project_built() -> Project {
         },
         ..Project::default()
     }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 fn notes(session: &Session, content: u32) -> Vec<Note> {
@@ -655,7 +650,7 @@ fn malformed_splits_are_refused_and_change_nothing() {
     let mut session = Session::new(project());
     let before = session.project().clone();
     let cases = [
-        ("note.split", json!({ "track": 1, "index": 0, "notes": [0] }), "give at"),
+        ("note.split", json!({ "track": 1, "index": 0, "notes": [0] }), "at must be given"),
         ("note.split", json!({ "track": 1, "index": 0, "notes": [0], "at": -1.0 }), "at must be"),
         ("note.split", json!({ "track": 1, "index": 0, "notes": [0], "at": 1e12 }), "at must be"),
         ("note.split", json!({ "track": 1, "index": 0, "notes": [0], "at": "halfway" }), "at must be"),

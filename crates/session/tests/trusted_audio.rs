@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use suhina_library::Library;
 use suhina_model::*;
 use suhina_session::{Projects, Session};
+use suhina_test_support::{WavFormat, write_wav};
 
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-trusted-{name}-{}", std::process::id()));
@@ -21,18 +22,11 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn wav(path: &Path) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: 8000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
-    for _ in 0..4000 {
-        writer.write_sample(8000i16).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(path, 8000, 1, WavFormat::Int16, &[8000.0 / 32767.0; 4000]);
 }
 
 fn run(projects: &mut Projects, id: &str, params: Value) -> Value {
-    projects.execute(id, &params).map_err(|e| e.0).unwrap()
+    projects.execute(id, &params).map_err(String::from).unwrap()
 }
 
 #[test]

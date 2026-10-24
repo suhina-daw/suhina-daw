@@ -3,7 +3,7 @@
 
 //! The Session view: tracks as columns, scenes as rows, scene launch on the right, the mixer
 //! along the bottom (`docs/spec/ui-session-view.md`, sizes in `docs/design/components.md`).
-//! It draws a [`Grid`] and turns clicks into [`Action`]s; it never changes the project itself.
+//! It draws a [`TrackGrid`] and turns clicks into [`Action`]s; it never changes the project itself.
 
 use std::collections::BTreeSet;
 
@@ -14,7 +14,7 @@ use suhina_engine::model::{MappingTarget, TrackId};
 use crate::interaction::colour_picker;
 use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::empty_space::empty_space;
-use crate::interaction::grid::{Column, ColumnKind, Grid, SlotState};
+use crate::interaction::grid::{Column, ColumnKind, SlotState, TrackGrid};
 use crate::interaction::menus::{self, TrackMenu};
 use crate::interaction::nesting::{self, Place};
 use crate::kit::meter::{self, Meters};
@@ -151,7 +151,7 @@ pub enum Step {
 /// The slot one `step` from `from` (a track and a scene from 0): up and down within the track,
 /// left and right to the next track with clip slots in the same scene. `None` at the edge of the
 /// grid, or when `from` is not in it.
-pub fn step_slot(grid: &Grid, from: (TrackId, usize), step: Step) -> Option<(TrackId, usize)> {
+pub fn step_slot(grid: &TrackGrid, from: (TrackId, usize), step: Step) -> Option<(TrackId, usize)> {
     let (track, scene) = from;
     let slotted: Vec<&Column> = grid.columns.iter().filter(|c| c.kind == ColumnKind::Track).collect();
     let at = slotted.iter().position(|c| c.track == track)?;
@@ -188,7 +188,7 @@ const EMPTY_TINT: f32 = 0.12;
 /// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
 pub fn show(
     ui: &mut Ui,
-    grid: &Grid,
+    grid: &TrackGrid,
     progress: &[Option<f32>],
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
@@ -238,7 +238,10 @@ pub fn show(
             state.scroll -= delta;
         }
     }
-    state.scroll.x = state.scroll.x.clamp(0.0, (content_width - tracks_clip.width()).max(0.0));
+    // Past the last track, room for the buttons that add one, so they keep their width (and
+    // their text) however many tracks there are.
+    let room = crate::interaction::empty_space::empty_space_width(ui);
+    state.scroll.x = state.scroll.x.clamp(0.0, (content_width + room - tracks_clip.width()).max(0.0));
     state.scroll.y = state.scroll.y.clamp(0.0, (content_height - body.height()).max(0.0));
 
     // Lines between the bands.
@@ -985,7 +988,7 @@ fn scene_column(
     painter: &egui::Painter,
     span: egui::Rangef,
     top: f32,
-    grid: &Grid,
+    grid: &TrackGrid,
     keys: &mut crate::session::launch_keys::LaunchKeys,
     actions: &mut Vec<Action>,
 ) {

@@ -4,13 +4,11 @@
 //! Clips' colours and names as their track's (`docs/spec/arrangement-editing.md` › Clip colours).
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::{Session, blank_project};
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+use crate::support::run;
 
 /// The blank project with two notes clips on track 1 and none on track 2.
 fn project() -> Project {
@@ -40,7 +38,7 @@ fn a_new_clip_shows_its_tracks_colour_and_a_moved_one_keeps_what_it_showed() {
     let mut session = Session::new(project());
     assert!(clips(&session, 1).iter().all(|c| c.color.is_none()), "a new clip follows its track");
     // Moved to track 2, it keeps the colour it showed on track 1.
-    run(&mut session, "clip.move", json!({ "track": 1, "index": 0, "start": 0.0, "to_track": 2, "color": "#3366CC" }))
+    run(&mut session, "clip.move", json!({ "track": 1, "index": 0, "start": 0.0, "toTrack": 2, "color": "#3366CC" }))
         .unwrap();
     assert_eq!(clips(&session, 2)[0].color, Some(Rgb(0x33, 0x66, 0xCC)));
     // Moved along its own track, the colour is not taken.
@@ -57,7 +55,7 @@ fn a_tracks_clips_take_its_colour_and_name_again() {
     run(&mut session, "clip.setColor", json!({ "track": 1, "color": "none" })).unwrap();
     assert!(clips(&session, 1).iter().all(|c| c.color.is_none()));
     // "Rename all clips": the track's name.
-    let track = session.project().tracks.iter().find(|t| t.id == TrackId(1)).unwrap().name.clone();
+    let track = session.project().track(TrackId(1)).unwrap().name.clone();
     run(&mut session, "track.renameClips", json!({ "track": 1 })).unwrap();
     for content in [ContentId(1), ContentId(2)] {
         assert_eq!(session.project().content(content).unwrap().name, track);

@@ -6,7 +6,7 @@
 //! A plug-in is switched on or off by its checkbox; a file that failed, or that is built for
 //! another processor, is read again with its **Scan again**. Opened from Settings › Plug-ins and
 //! drawn in the Settings dialog's place until it is closed; what it changes goes through the
-//! `plugins.*` commands, as [`PluginRequest`]s the app runs.
+//! `plugin.*` commands, as [`PluginRequest`]s the app runs.
 
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 

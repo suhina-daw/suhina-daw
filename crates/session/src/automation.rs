@@ -9,7 +9,7 @@
 
 use serde_json::{Value, json};
 use suhina_engine::{MAX_START_BEAT, param_id};
-use suhina_model::automation::{MAX_POINTS, MAX_VOLUME, MUTE, VOLUME, mixer_range};
+use suhina_model::automation::{Curve, MAX_POINTS, MAX_VOLUME, MUTE, Taper, VOLUME, VolumeTaper, mixer_range};
 use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, TrackId};
 
 use crate::commands::{channel_param, number, to_db, track_id};
@@ -72,7 +72,7 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
                     let spec = info
                         .param_index(param)
                         .and_then(|i| info.params.get(i))
-                        .ok_or_else(|| format!("{} has no parameter {param:?}; devices.list lists them", info.name))?;
+                        .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
                     Kind::Builtin(spec)
                 }
                 DeviceKind::Sd => {
@@ -163,15 +163,68 @@ fn beat(params: &Value) -> Result<f64, CommandError> {
     Ok(beat)
 }
 
-fn curve(params: &Value) -> Result<Option<f64>, CommandError> {
+/// `params["curve"]`: four numbers from 0 to 1 (the two control points), or one bend from -1 to
+/// 1 for the mirrored curve.
+fn curve(params: &Value) -> Result<Option<Curve>, CommandError> {
+    let bad = || "curve must be [x1, y1, x2, y2], each from 0 to 1, or a bend from -1 to 1".into();
     match params.get("curve") {
         None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(list)) => {
+            let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
+            let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
+            Curve::from_array(values).map(Some).ok_or_else(bad)
+        }
         Some(_) => {
-            let curve = number(params, "curve")?;
-            if !(-1.0..=1.0).contains(&curve) {
-                return Err(format!("curve must be from -1 to 1, got {curve}").into());
+            let bend = number(params, "curve")?;
+            if !(-1.0..=1.0).contains(&bend) {
+                return Err(bad());
             }
-            Ok(Some(curve))
+            Ok(Some(Curve::bend(bend)))
+        }
+    }
+}
+
+/// A segment moves evenly along the parameter's control, as the engine plays it
+/// (`docs/spec/automation.md` › Lanes and points).
+impl Taper for Kind {
+    fn position(&self, value: f64) -> f64 {
+        match self {
+            Kind::Volume => VolumeTaper.position(value),
+            Kind::Builtin(info) => info.to_normalized(value),
+            Kind::Sd(p) if log_control(p) => (value.clamp(p.min, p.max) / p.min).ln() / (p.max / p.min).ln(),
+            _ => value,
+        }
+    }
+    fn value(&self, position: f64) -> f64 {
+        match self {
+            Kind::Volume => VolumeTaper.value(position),
+            // A whole-number parameter moves along the line and the device rounds.
+            Kind::Builtin(info) if matches!(info.kind, suhina_device_api::ParamKind::Integer) => {
+                info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
+            }
+            Kind::Builtin(info) => info.from_normalized(position),
+            Kind::Sd(p) if log_control(p) => p.min * (p.max / p.min).powf(position.clamp(0.0, 1.0)),
+            _ => position,
+        }
+    }
+}
+
+/// Whether a data-only parameter moves on a logarithmic control.
+fn log_control(p: &suhina_device_sdk::Parameter) -> bool {
+    use suhina_device_sdk::ParameterControl::{LogKnob, LogSlider};
+    matches!(p.control, LogKnob | LogSlider) && p.min > 0.0 && p.max > p.min
+}
+
+impl Kind {
+    /// Whether each point's value holds until the next (on/off and choices, the mute).
+    fn stepped(&self, param: &str) -> bool {
+        match self {
+            Kind::Plain => param == MUTE,
+            Kind::Builtin(info) => {
+                matches!(info.kind, suhina_device_api::ParamKind::Toggle | suhina_device_api::ParamKind::Choice(_))
+            }
+            Kind::Sd(p) => p.control.is_stepped(),
+            Kind::Volume | Kind::Plugin(_) => false,
         }
     }
 }
@@ -201,11 +254,15 @@ fn point_index(params: &Value, count: usize) -> Result<usize, CommandError> {
 pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let beat = beat(params)?;
-    let value = target.store(session, value(params, "value")?)?;
-    let curve = curve(params)?.unwrap_or(0.0);
+    let given = match params.get("value") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(target.store(session, value(params, "value")?)?),
+    };
+    let curve = curve(params)?;
     let lanes = target.lanes(session)?;
     let lane = match lanes.iter().position(|l| target.matches(l)) {
         Some(index) => lanes.get_mut(index).ok_or("the lane is missing")?,
+        None if given.is_none() => return Err("the lane has no envelope yet; give a value".into()),
         None => {
             lanes.push(AutomationLane::new(target.param.clone()));
             lanes.last_mut().ok_or("the lane is missing")?
@@ -214,8 +271,37 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
     if lane.points.len() >= MAX_POINTS {
         return Err(format!("a lane holds at most {MAX_POINTS} points").into());
     }
-    let index = lane.insert(AutomationPoint { beat, value, curve });
+    let point = match given {
+        Some(value) => AutomationPoint { beat, value, curve: curve.unwrap_or_default() },
+        None => {
+            let mut point = on_envelope(lane, beat, &target)?;
+            point.curve = curve.unwrap_or(point.curve);
+            point
+        }
+    };
+    let index = lane.insert(point);
     Ok(json!({ "param": target.param, "point": index, "points": lane.points.len(), "enabled": lane.enabled }))
+}
+
+/// A point at `beat` on `lane`'s envelope, so it plays as before: the envelope's value there, and
+/// on a bent segment the curve's second half, the segment's first point taking the first half
+/// (`docs/spec/automation.md` › Splitting a segment).
+fn on_envelope(lane: &mut AutomationLane, beat: f64, target: &Target) -> Result<AutomationPoint, CommandError> {
+    let stepped = target.kind.stepped(&target.param);
+    let value = lane.value_at(beat, stepped, &target.kind).ok_or("the lane has no envelope yet; give a value")?;
+    let index = lane.points.partition_point(|p| p.beat <= beat).checked_sub(1);
+    let segment = index.and_then(|i| Some((i, *lane.points.get(i)?, *lane.points.get(i + 1)?)));
+    let Some((i, a, b)) = segment.filter(|(_, a, b)| !stepped && b.beat > a.beat && a.value != b.value) else {
+        return Ok(AutomationPoint::new(beat, value));
+    };
+    let Some(cut) = a.curve.split((beat - a.beat) / (b.beat - a.beat)) else {
+        return Ok(AutomationPoint::new(beat, value));
+    };
+    let (from, to) = (target.kind.position(a.value), target.kind.position(b.value));
+    if let Some(first) = lane.points.get_mut(i) {
+        first.curve = cut.before;
+    }
+    Ok(AutomationPoint { beat, value: target.kind.value(from + (to - from) * cut.share), curve: cut.after })
 }
 
 pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -235,9 +321,9 @@ pub(crate) fn move_point(session: &mut Session, params: &Value) -> Result<Value,
     point.beat = new_beat.unwrap_or(point.beat);
     point.value = new_value.unwrap_or(point.value);
     point.curve = new_curve.unwrap_or(point.curve);
-    let index = lane.insert(point);
+    let index = lane.insert_near(point, index);
     Ok(
-        json!({ "param": target.param, "point": index, "beat": point.beat, "value": target.show(point.value), "curve": point.curve }),
+        json!({ "param": target.param, "point": index, "beat": point.beat, "value": target.show(point.value), "curve": point.curve.to_array() }),
     )
 }
 
@@ -331,8 +417,19 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
         point.curve = curve.unwrap_or(point.curve);
         moved.push(point);
     }
-    // The points left in place, then the moved ones in the order given, each after any point
-    // already at its beat; `None` marks a point that stayed.
+    // The points left in place, then the moved ones in the order given. Moved later, they go
+    // before the points that stayed at their beat (they come from before them); moved earlier,
+    // after them; moved only in value, each stays where it was. `None` marks a point that
+    // stayed.
+    if beats == 0.0 {
+        let lane = target.lane(session)?;
+        for (&index, point) in indices.iter().zip(moved) {
+            if let Some(slot) = lane.points.get_mut(index) {
+                *slot = point;
+            }
+        }
+        return Ok(json!({ "param": target.param, "points": indices }));
+    }
     let mut sorted = indices.clone();
     sorted.sort_unstable();
     for index in sorted.into_iter().rev() {
@@ -340,7 +437,11 @@ pub(crate) fn move_points(session: &mut Session, params: &Value) -> Result<Value
     }
     let mut tagged: Vec<(AutomationPoint, Option<usize>)> = points.into_iter().map(|p| (p, None)).collect();
     for (order, point) in moved.into_iter().enumerate() {
-        let at = tagged.partition_point(|(p, _)| p.beat <= point.beat);
+        let at = if beats > 0.0 {
+            tagged.partition_point(|(p, tag)| p.beat < point.beat || (p.beat == point.beat && tag.is_some()))
+        } else {
+            tagged.partition_point(|(p, _)| p.beat <= point.beat)
+        };
         tagged.insert(at, (point, Some(order)));
     }
     let mut now = vec![0; indices.len()];
@@ -416,7 +517,7 @@ pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, Comma
                 json!({
                     "param": lane.param,
                     "enabled": lane.enabled,
-                    "points": lane.points.iter().map(|p| json!({ "beat": p.beat, "value": show(p.value), "curve": p.curve })).collect::<Vec<_>>(),
+                    "points": lane.points.iter().map(|p| json!({ "beat": p.beat, "value": show(p.value), "curve": p.curve.to_array() })).collect::<Vec<_>>(),
                 })
             })
             .collect()

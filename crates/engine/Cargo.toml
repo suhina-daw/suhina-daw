@@ -16,3 +16,6 @@ rtrb.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+suhina-test-support.workspace = true

@@ -8,11 +8,13 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::Project;
 use suhina_session::audio::Opened;
 use suhina_session::{AudioSystem, OutputChoice, Player, Projects, Session};
+
+use crate::support::run;
 
 const SR: u32 = 48_000;
 const BLOCK: usize = 256;
@@ -63,10 +65,6 @@ impl Stand {
         }
         block.iter().fold(0.0, |m, s| m.max(s.abs()))
     }
-}
-
-fn run(projects: &mut Projects, id: &str, params: Value) -> Result<Value, String> {
-    projects.execute(id, &params).map_err(|e| e.0)
 }
 
 fn track_ids(projects: &mut Projects) -> Vec<u64> {

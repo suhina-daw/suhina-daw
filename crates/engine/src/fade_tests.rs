@@ -5,12 +5,13 @@
 //! fade-in and a fade-out, the same envelope on stretched clips, block-size independence, and
 //! launched clips (`docs/spec/clip-launching.md` › Fades).
 
+use crate::{RenderInputs, render_offline_from};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use suhina_model::*;
 
-use crate::{AudioData, AudioPool, LaunchCommand, render_launches, render_offline_with_audio};
+use crate::{AudioData, AudioPool, LaunchCommand, render_launches};
 
 /// A low rate keeps the golden files small.
 const SR: u32 = 8_000;
@@ -121,23 +122,22 @@ pub(crate) fn assert_golden(name: &str, render: &[f32]) {
 /// [`assert_golden`] with a tolerance of `tolerance`, for renders whose DSP is not bit-exact across
 /// platforms (the time-stretcher's floating-point maths).
 pub(crate) fn assert_golden_within(name: &str, render: &[f32], tolerance: f32) {
-    let path = golden_dir().join(format!("{name}.f32"));
-    if std::env::var_os("SUHINA_BLESS").is_some() {
-        let bytes: Vec<u8> = render.iter().flat_map(|s| s.to_le_bytes()).collect();
-        std::fs::write(&path, bytes).unwrap();
-        return;
-    }
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}; run with SUHINA_BLESS=1", path.display()));
-    let golden: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
-    assert_eq!(golden.len(), render.len(), "{name}: length differs from the golden file");
-    let worst = max_diff(&golden, render);
-    assert!(worst < tolerance, "{name}: differs from the golden file by {worst}");
+    suhina_test_support::assert_golden_f32(&golden_dir().join(format!("{name}.f32")), render, tolerance);
 }
 
 /// A 2-beat clip (1 s) with `fade_in` and `fade_out` beats, rendered offline: the left channel.
 fn render_constant(fade_in: f64, fade_out: f64, block: usize) -> Vec<f32> {
     let (region, pool) = constant();
-    left(&render_offline_with_audio(&project(region, 2.0, fade_in, fade_out), &pool, SR, block).unwrap())
+    left(
+        &render_offline_from(
+            &project(region, 2.0, fade_in, fade_out),
+            RenderInputs::from_audio(&pool),
+            SR,
+            block,
+            None,
+        )
+        .unwrap(),
+    )
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn every_fade_shape_and_curve_renders_as_the_spec_says() {
             let mut p = project(region.clone(), 2.0, 1.0, 1.0);
             let clip = &mut p.arrangement.lanes[0].clips[0];
             (clip.fade_in_curve, clip.fade_out_curve) = (fade, fade);
-            let out = left(&render_offline_with_audio(&p, &pool, SR, 512).unwrap());
+            let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
             assert_eq!(out.len(), 2 * BEAT);
             // The fade-in's t is the frames before a frame over the fade's frames, the
             // fade-out's the frames after it; the two meet in the middle of the clip.
@@ -226,7 +226,7 @@ fn fades_render_the_specs_numbers_half_way() {
     ] {
         let mut p = project(region.clone(), 2.0, 1.0, 0.0);
         p.arrangement.lanes[0].clips[0].fade_in_curve = FadeCurve { shape, curve };
-        let out = left(&render_offline_with_audio(&p, &pool, SR, 512).unwrap());
+        let out = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
         let got = f64::from(out[BEAT / 2]) / full;
         assert!((got - half).abs() < 1e-6, "{shape:?} at curve {curve}: {got}, the spec says {half}");
     }
@@ -238,9 +238,9 @@ fn the_default_fade_is_the_linear_one() {
     assert_eq!(FadeCurve::default(), FadeCurve { shape: FadeShape::Linear, curve: 0.0 });
     let (region, pool) = constant();
     let mut p = project(region, 2.0, 1.0, 0.5);
-    let plain = left(&render_offline_with_audio(&p, &pool, SR, 512).unwrap());
+    let plain = left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap());
     p.arrangement.lanes[0].clips[0].fade_in_curve = FadeCurve { shape: FadeShape::Linear, curve: 0.0 };
-    assert_eq!(left(&render_offline_with_audio(&p, &pool, SR, 512).unwrap()), plain);
+    assert_eq!(left(&render_offline_from(&p, RenderInputs::from_audio(&pool), SR, 512, None).unwrap()), plain);
     assert_eq!(plain, render_constant(1.0, 0.5, 512));
 }
 
@@ -256,7 +256,13 @@ fn fades_do_not_depend_on_the_block_size() {
 fn bad_fades_are_an_error_not_a_crash() {
     let (region, pool) = constant();
     for (fade_in, fade_out) in [(3.0, 1.0), (-1.0, 0.0), (0.0, f64::NAN)] {
-        let result = render_offline_with_audio(&project(region.clone(), 2.0, fade_in, fade_out), &pool, SR, 512);
+        let result = render_offline_from(
+            &project(region.clone(), 2.0, fade_in, fade_out),
+            RenderInputs::from_audio(&pool),
+            SR,
+            512,
+            None,
+        );
         assert_eq!(
             result.err(),
             Some(crate::RenderError::InvalidProject(vec![ValidationError::BadFades {
@@ -273,7 +279,16 @@ fn stretched_clips_have_the_same_fades() {
     let pool = sine();
     let warped = region("sine.wav", true, StretchMode::Smooth, 2.0);
     let render = |fade_in, fade_out| {
-        left(&render_offline_with_audio(&project(warped.clone(), 4.0, fade_in, fade_out), &pool, SR, 512).unwrap())
+        left(
+            &render_offline_from(
+                &project(warped.clone(), 4.0, fade_in, fade_out),
+                RenderInputs::from_audio(&pool),
+                SR,
+                512,
+                None,
+            )
+            .unwrap(),
+        )
     };
     let plain = render(0.0, 0.0);
     let faded = render(1.0, 1.5);
@@ -303,7 +318,9 @@ fn a_clip_ends_on_silence_like_it_starts() {
 
     let sines = sine();
     let warped = region_for_stretch();
-    let stretched = left(&render_offline_with_audio(&project(warped, 4.0, 0.0, 0.0), &sines, SR, 512).unwrap());
+    let stretched = left(
+        &render_offline_from(&project(warped, 4.0, 0.0, 0.0), RenderInputs::from_audio(&sines), SR, 512, None).unwrap(),
+    );
     assert_eq!(stretched.last().copied(), Some(0.0));
     assert!(stretched[stretched.len() - 2].abs() < 0.5 / GUARD as f32 + 1e-6);
 

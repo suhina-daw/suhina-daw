@@ -34,7 +34,7 @@ pub use delay::{Allpass, DelayLine};
 pub use first_order::{FirstOrder, FirstOrderCoefficients};
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
-pub use smooth::{OnePole, Smoother, time_constant};
+pub use smooth::{Glide, OnePole, Smoother, time_constant};
 pub use trim_delay::TrimDelay;
 
 /// Highest filter frequency as a fraction of the sample rate; keeps coefficients stable just

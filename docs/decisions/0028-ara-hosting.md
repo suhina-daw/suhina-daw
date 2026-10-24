@@ -92,11 +92,11 @@ protocol (`crates/plugins/src/protocol.rs`).
    controller. ADR 0006's default, one process per plug-in file, already does this; the
    *own process per instance* choice is refused for an ARA plug-in, with the reason.
    *Built (#589):* the scan marks each VST3 plug-in that supports ARA (`PluginInfo::ara`, shown
-   by `plugins.list`): its module declares a class in the category `ARA Main Factory Class`
+   by `plugin.list`): its module declares a class in the category `ARA Main Factory Class`
    with the plug-in's class name, as `ARAVST3.h` pairs them, or the module has one of each. It
    is read from `moduleinfo.json` without loading anything, or from the factory's class list in
    the scan worker without making any object. The catalog keeps it (version 4; an older
-   catalog's VST3 files are read again so installed ARA plug-ins are found). `plugins.setHosting
+   catalog's VST3 files are read again so installed ARA plug-ins are found). `plugin.setHosting
    ... instance` is refused for such a plug-in, and an `instance` choice saved before its
    support was known starts it in its file's process. The factory's API generations are checked
    when an instance is bound (below, *Built so far*).
@@ -232,7 +232,7 @@ the list below, in a first form). Where it differs from the decisions above it i
   one, as before.
 - **Edits taken to another track** (stage 6 in part, #722). A clip an ARA plug-in edits that is
   moved or copied to another track asks first: **Keep edits** or **Copy as new** (or Cancel).
-  `clip.moveMany` takes it as `ara_edits` (`keep`, or `new`, the default). With keep, the track it
+  `clip.moveMany` takes it as `araEdits` (`keep`, or `new`, the default). With keep, the track it
   goes to gets the same plug-in first in its chain when it has none (with no state of its own),
   and the clip's edits go along: the first track's plug-in stores the clip's modification and its
   source on their own (`storeObjectsToArchive` with a filter, a partial archive: `ara_export`),
@@ -246,6 +246,11 @@ the list below, in a first form). Where it differs from the decisions above it i
   so (dimmed, "<plug-in> loading"); while it analyses them, how far (the least done of the
   track's sources, from the plug-in's analysis progress, sent as `ara_analysis` when it moves by
   a percent), with a bar filling along the bottom. The clips cannot be edited in it until then.
+  An analysis ends when the plug-in reports it completed, or when, asked whether the source's
+  notes are still incomplete (each time the notes are read, and every second while a clip shows
+  the analysis), it says they are not: a plug-in that restores its analysis from an archive
+  reports only that it started (#816). A track that leaves the document forgets its sources'
+  analysis, so the next track that plays one asks for it again.
 - **Notes on the clips** (#720). After a model update in which the plug-in said a region's,
   modification's or source's notes may have changed (not with "note scope remains unchanged"),
   and after the host's own edits, the host reads every region's notes with a playback-region
@@ -254,7 +259,7 @@ the list below, in a first form). Where it differs from the decisions above it i
   session keeps them by clip while the plug-in runs; the arrangement draws them as bars over
   the clip's waveform, which dims under them, placed through the tempo map. A bypassed
   plug-in's notes are kept and not shown. When the factory lists notes among what it analyses, the host asks it once
-  for each source whose notes are not found yet, so they show without the editor being opened. A
+  for each source whose notes are not found yet (again after the tracks that played it left), so they show without the editor being opened. A
   finished analysis (its progress Completed) has the notes read too, and while a region has none
   yet they are looked for again every second, as a plug-in may finish without saying the content
   changed.

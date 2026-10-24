@@ -295,11 +295,74 @@ fn dragging_a_segment_up_bends_its_curve() {
     let middle = Pos2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
     drag(&mut harness, middle, vec2(0.0, -20.0));
     let (points, _) = pan(&harness);
-    assert!(points[0].curve > 0.1, "{points:?}");
-    assert_eq!(points[1].curve, 0.0);
+    assert!(points[0].curve.shape(0.5) > 0.55, "{points:?}");
+    assert!(points[1].curve.is_straight());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
-    assert_eq!(pan(&harness).0[0].curve, 0.0);
+    assert!(pan(&harness).0[0].curve.is_straight());
+}
+
+/// The height of the envelope line painted last frame at `x`, from the longest line inside `lane`.
+fn envelope_y_at(harness: &Harness<'static, App>, lane: egui::Rect, x: f32) -> Option<f32> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<Vec<Pos2>>) {
+        match shape {
+            egui::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, out)),
+            egui::Shape::Path(path) => out.push(path.points.clone()),
+            _ => {}
+        }
+    }
+    let mut lines = Vec::new();
+    for clipped in &harness.output().shapes {
+        if clipped.clip_rect.intersects(lane) {
+            walk(&clipped.shape, &mut lines);
+        }
+    }
+    let inside = |line: &Vec<Pos2>| line.iter().all(|p| lane.expand(1.0).contains(*p));
+    let line = lines.into_iter().filter(inside).max_by_key(Vec::len)?;
+    line.iter().min_by(|a, b| (a.x - x).abs().total_cmp(&(b.x - x).abs())).map(|p| p.y)
+}
+
+/// The frame the mouse is let go in already draws the new bend: the lane no longer goes back to
+/// the segment's old shape for a frame until the command has run.
+#[test]
+fn a_bent_segment_keeps_its_new_shape_when_the_mouse_is_let_go() {
+    let mut harness = with_lanes();
+    harness.get_by_label("Add an automation lane to Drums").click();
+    harness.run();
+    let rect = harness.get_by_label("Pan automation on Drums").rect();
+    click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 8.0));
+    click_at(&mut harness, Pos2::new(rect.left() + 228.0, rect.top() + 8.0));
+    let a = harness.get_by_label("Pan point 1 on Drums").rect().center();
+    let b = harness.get_by_label("Pan point 2 on Drums").rect().center();
+    let middle = Pos2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+    let straight = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    // Drag the middle up, as `drag` does, but look at the frame the button is let go in.
+    let by = vec2(0.0, -60.0);
+    harness.hover_at(middle);
+    harness.run();
+    harness.drag_at(middle);
+    harness.run();
+    harness.hover_at(middle + by * 0.5);
+    harness.run();
+    harness.hover_at(middle + by);
+    harness.run();
+    let dragging = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!(dragging < straight - 3.0, "bent while dragging: {dragging} against {straight}");
+    // The release alone, so this step is the one frame it is handled in (`drop_at` queues more
+    // events, and the frame of the last one would be the one looked at).
+    harness.event(egui::Event::PointerButton {
+        pos: middle + by,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    let released = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!((released - dragging).abs() < 0.5, "on release: {released}, while dragging: {dragging}");
+    harness.run();
+    let after = envelope_y_at(&harness, rect, middle.x).expect("the envelope is drawn");
+    assert!((after - dragging).abs() < 0.5, "after: {after}, while dragging: {dragging}");
+    assert!(pan(&harness).0[0].curve.shape(0.5) > 0.55);
 }
 
 /// The demo project with the FM synth, which has over a hundred parameters, on the Drums
@@ -632,7 +695,7 @@ fn with_automation() -> Harness<'static, App> {
 fn with_automation_of(fm: &[&str]) -> Harness<'static, App> {
     let mut project = demo_project();
     let channel = project.tracks.iter().find(|t| t.name == "Drums").and_then(|t| t.channel);
-    let channel = project.channels.iter_mut().find(|c| c.id == channel.expect("Drums has a channel"));
+    let channel = project.channel_mut(channel.expect("Drums has a channel"));
     let channel = channel.expect("the Drums channel");
     let points = |id: &str, values: [f64; 2]| {
         let mut lane = suhina_engine::model::AutomationLane::new(id);
@@ -793,7 +856,7 @@ fn render_the_lanes() {
     if let Some(channel) = project.channels.iter_mut().find(|c| Some(c.id) == channel) {
         let mut volume = suhina_engine::model::AutomationLane::new("volume");
         for (beat, value, curve) in [(0.0, 0.3, 0.0), (16.0, 1.0, 0.6), (48.0, 0.5, -0.5), (64.0, 0.9, 0.0)] {
-            volume.insert(AutomationPoint { beat, value, curve });
+            volume.insert(AutomationPoint { beat, value, curve: suhina_engine::model::automation::Curve::bend(curve) });
         }
         let mut pan = suhina_engine::model::AutomationLane::new("pan");
         pan.insert(AutomationPoint::new(8.0, -0.6));

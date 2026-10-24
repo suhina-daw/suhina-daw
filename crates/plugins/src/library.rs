@@ -30,7 +30,7 @@ const MAX_HOSTING_BYTES: u64 = 1 << 20;
 /// Longest plug-in name (its spec) a hosting choice is kept for.
 const MAX_SPEC: usize = 4096;
 
-/// A folder scans look in, as the Settings page and `plugins.folders` list it.
+/// A folder scans look in, as the Settings page and `plugin.folders` list it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Folder {
     pub path: PathBuf,

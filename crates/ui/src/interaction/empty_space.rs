@@ -17,12 +17,23 @@ pub(crate) fn empty_space_menu(space: &egui::Response, actions: &mut Vec<Action>
     space.context_menu(|ui| crate::interaction::menus::insert_items(ui, None, actions));
 }
 
+/// The labels of the buttons that add a track, by the kind each adds.
+const BUTTONS: [(&str, &str); 3] = [("midi", "+ MIDI track"), ("audio", "+ Audio track"), ("return", "+ Return track")];
+
+/// The width the empty space needs for its buttons to show whole: a view that scrolls sideways
+/// leaves this much after its last track, so the buttons never shrink however many tracks
+/// there are.
+pub(crate) fn empty_space_width(ui: &Ui) -> f32 {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    BUTTONS.iter().map(|(_, label)| widgets::text_width(ui, label, font.clone())).fold(0.0, f32::max) + PAD * 4.0
+}
+
 /// The buttons that add an empty track or a return track, at the top of the empty space after
 /// the tracks; the space below takes drops (`docs/spec/browser.md` › Files).
 pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions: &mut Vec<Action>) {
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut y = area.top() + PAD;
-    for (kind, label) in [("midi", "+ MIDI track"), ("audio", "+ Audio track"), ("return", "+ Return track")] {
+    for (kind, label) in BUTTONS {
         let width = (widgets::text_width(ui, label, font.clone()) + PAD * 2.0).min(area.width() - PAD * 2.0);
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, y), Vec2::new(width, ROW));
         y = rect.bottom() + 2.0;

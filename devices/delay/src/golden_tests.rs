@@ -259,19 +259,13 @@ fn golden_dir() -> PathBuf {
 
 #[test]
 fn renders_like_the_golden_files() {
-    let bless = std::env::var_os("SUHINA_BLESS").is_some();
     let mut failures = Vec::new();
     for s in SCENARIOS {
         let ours = render(s);
         assert!(ours.iter().all(|v| v.is_finite()), "{}: not finite", s.name);
         assert!(ours.iter().any(|v| v.abs() > 0.01), "{} is silent", s.name);
         let path = golden_dir().join(format!("{}.f32", s.name));
-        if bless {
-            std::fs::write(&path, ours.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()).unwrap();
-            continue;
-        }
-        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}; run with SUHINA_BLESS=1", path.display()));
-        let theirs: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
+        let Some(theirs) = suhina_test_support::golden_f32(&path, &ours) else { continue };
         if theirs.len() != ours.len() {
             failures.push(format!("{}: {} samples, the golden file has {}", s.name, ours.len(), theirs.len()));
             continue;

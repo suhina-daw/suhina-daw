@@ -99,7 +99,8 @@ Version 4 also preserves visual connection authoring through `graph.editor`:
 routes referencing existing `Connection` endpoints. Optional anchors are node-local pixel
 offsets; bend points are graph coordinates. See the [format contract](spec/sd-device-format.md#visual-connection-layout).
 This stores a future editor's layout; the current app still shows the read-only node list.
-File versions 1 through 3 remain readable, and serialization writes version 4. Older device files
+File versions 1 through 4 remain readable, and serialization writes version 5
+([format contract](spec/sd-device-format.md#versions)). Older device files
 without `device.version` load as revision 1.
 
 ```sh
@@ -175,16 +176,16 @@ this never removes their processing. The examples expose only their main process
 ## Workflow for AI agents
 
 1. Read the format and node reference. Obtain the current catalog with the read command
-   `devices.sdNodes {}` via MCP `command_run`.
+   `device.sdNodes {}` via MCP `command_run`.
    Offline, `cargo run -p suhina-device-sdk --example catalog` prints the same node records as JSON.
    Each record gives its kind, Rust variant, ports, units, optional defaults, processing rules
    and a minimal JSON node-kind example. Waveform/filter choices and graph limits are returned
-   by `devices.sdNodes` alongside the records. Do not invent unsupported node kinds or ports.
+   by `device.sdNodes` alongside the records. Do not invent unsupported node kinds or ports.
 2. Assemble an effect graph. Give every node and parameter a unique stable id. Declare a
    parameter for each user control. Prefer an existing example with similar signal flow.
    Every node must reach the output, including the audio input. For an unconnected optional
    input the catalog default applies; a required input must have exactly one connection.
-3. Save with `write_file` or author equivalent version 4 JSON. Call `validate` or run the
+3. Save with `write_file` or author equivalent version 5 JSON. Call `validate` or run the
    validation example before adding the effect. Errors identify missing ids/ports, undelayed
    cycles and memory requests; fix those directly. A minimal catalog example describes
    `NodeKind`; wrap it with `id` when placing it in the JSON nodes array.
@@ -233,7 +234,7 @@ use the existing control behaviour, including keyboard edits and default reset. 
 local to a parameter and do not modify the global theme. The `ui_controls` example generates
 a single-column canvas with styled controls sized for a narrow device panel. Existing project devices embed their graph; import
 the new file as a new device to use its changed layout. Agents can obtain defaults and enum
-choices from `devices.sdNodes`.
+choices from `device.sdNodes`.
 
 `background` colours widget bodies; `panel_color` colours the entire cell independently.
 
@@ -290,7 +291,7 @@ normal parameter command, smoothing and undo; a two-axis gesture has one undo en
 ### Information for agents
 
 Read [the complete custom UI contract](spec/sdk-custom-ui.md), then the example source and public
-Rust types in `crates/device-sdk/src/ui.rs`. `devices.sdNodes` includes primitive/gesture names,
+Rust types in `crates/device-sdk/src/ui.rs`. `device.sdNodes` includes primitive/gesture names,
 default canvas values and image budgets. Create artwork yourself or use user-supplied licensed assets.
 Do not attach external paths or executable code to the device. Keep parameter ids stable, validate
 with the `validate` example, and rebuild the `.sd` after editing the Rust authoring source.

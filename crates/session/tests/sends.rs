@@ -4,75 +4,40 @@
 //! Sends and returns: `track.setSend`, `track.setSendMode`, `return.add`, `return.remove`,
 //! `return.rename`.
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
+
+use crate::support::run;
+use suhina_test_support::ProjectBuilder;
 
 /// Bass (notes, one clip) and Lead, Group (a group Lead plays into) and two returns, all into
 /// Main.
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
-    let track = |id: u32, name: &str, notes: bool| Track {
-        content: ContentKinds { notes, audio: false },
-        channel: Some(ChannelId(id)),
-        ..Track::new(TrackId(id), name)
-    };
-    let channel = |id: u32, role: ChannelRole, output: Option<u32>| Channel {
-        role,
-        output: output.map(ChannelId),
-        ..Channel::new(ChannelId(id), format!("C{id}"))
-    };
-    let mut lead = track(2, "Lead", true);
-    lead.parent = Some(TrackId(5));
-    Project {
-        tracks: vec![
-            track(1, "Bass", true),
-            track(5, "Group", false),
-            lead,
-            track(3, "A Return", false),
-            track(4, "B Return", false),
-        ],
-        channels: vec![
-            channel(1, ChannelRole::Regular, Some(100)),
-            channel(2, ChannelRole::Regular, Some(5)),
-            channel(5, ChannelRole::Submix, Some(100)),
-            channel(3, ChannelRole::Effect, Some(100)),
-            channel(4, ChannelRole::Effect, Some(100)),
-            channel(100, ChannelRole::Master, None),
-        ],
-        contents: vec![ClipContent {
-            id: ContentId(1),
-            name: "Riff".into(),
-            length: 1.0,
-            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 1.0, 69, 1.0)]) }],
-            extensions: Extensions::default(),
-            scale: None,
-        }],
-        arrangement: Arrangement {
-            lanes: vec![ArrangementLane {
-                id: Default::default(),
-                name: "Bass".into(),
-                track: Some(TrackId(1)),
-                clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
-            }],
-            markers: Vec::new(),
-        },
-        ..Project::default()
-    }
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
+    ProjectBuilder::new()
+        .midi_track(1, "Bass")
+        .bus_track(5, "Group", ChannelRole::Submix)
+        .midi_track(2, "Lead")
+        .bus_track(3, "A Return", ChannelRole::Effect)
+        .bus_track(4, "B Return", ChannelRole::Effect)
+        .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "C100") })
+        .parent(2, 5)
+        .output(1, 100)
+        .output(2, 5)
+        .output(5, 100)
+        .output(3, 100)
+        .output(4, 100)
+        .notes(1, "Riff", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+        .build_without_ids()
 }
 
 fn sends(session: &Session, channel: u32) -> Vec<Send> {
-    session.project().channels.iter().find(|c| c.id == ChannelId(channel)).map(|c| c.sends.clone()).unwrap_or_default()
+    session.project().channel(ChannelId(channel)).map(|c| c.sends.clone()).unwrap_or_default()
 }
 
 #[test]

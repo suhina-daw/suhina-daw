@@ -6,7 +6,7 @@
 //! (ADR 0010, `docs/spec/suhina-format.md`).
 //!
 //! ```json
-//! { "format": "suhina", "version": 1, "project": { "transport": { … }, "tracks": [ … ], … } }
+//! { "format": "suhina", "version": 3, "project": { "transport": { … }, "tracks": [ … ], … } }
 //! ```
 //!
 //! Binary data (plug-in state, extensions) is base64. Audio files are referred to by path,
@@ -28,19 +28,18 @@ use suhina_model::{
     MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
     MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
     SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
-    WarpMarker, automation, has_groups, valid_bpm,
+    WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = "suhina";
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
-/// The newest version this crate reads, and the one it writes for a project that holds a device
-/// group. A project without one is written as [`VERSION_WITHOUT_GROUPS`], so a Suhina from before
-/// device groups still opens it (`docs/spec/device-groups.md` › Project file).
-pub const VERSION: u64 = 2;
-/// The version a project without device groups is written as.
-pub const VERSION_WITHOUT_GROUPS: u64 = 1;
+/// The version every file is written as, and the newest this crate reads. It rises with every
+/// change to what a file holds, so a Suhina that reads up to an older version refuses the file
+/// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
+/// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
+pub const VERSION: u64 = 4;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -103,14 +102,8 @@ pub fn write_file(path: &Path, project: &Project) -> Result<(), ProjectFileError
 
 /// The project as the text of a `.suhina` file.
 pub fn to_json(project: &Project) -> String {
-    let file = json!({ "format": FORMAT, "version": version_of(project), "project": project_value(project) });
+    let file = json!({ "format": FORMAT, "version": VERSION, "project": project_value(project) });
     serde_json::to_string_pretty(&file).unwrap_or_default()
-}
-
-/// The version `project` is written as: [`VERSION`] when a channel holds a device group, else
-/// [`VERSION_WITHOUT_GROUPS`].
-pub fn version_of(project: &Project) -> u64 {
-    if project.channels.iter().any(|c| has_groups(&c.devices)) { VERSION } else { VERSION_WITHOUT_GROUPS }
 }
 
 /// Reads the text of a `.suhina` file. The project must validate (ids unique, references
@@ -413,10 +406,10 @@ fn lanes_value(lanes: &[AutomationLane]) -> Value {
                 .iter()
                 .map(|p| {
                     let mut point = json!({ "beat": number(p.beat), "value": number(p.value) });
-                    if p.curve != 0.0
+                    if !p.curve.is_straight()
                         && let Some(map) = point.as_object_mut()
                     {
-                        map.insert("curve".into(), json!(number(p.curve)));
+                        map.insert("curve".into(), json!(p.curve.to_array().map(number)));
                     }
                     point
                 })
@@ -1049,8 +1042,9 @@ fn read_audio_input(value: Option<&Value>, at: &str) -> Result<AudioInput, Proje
     Ok(AudioInput { channels, monitor })
 }
 
-/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null }`,
-/// every port and channel when it is left out.
+/// A track's `midi_input`: `{ "port": "all" | "none" | { "name" }, "channel": 1–16 or null,
+/// "monitor": "auto" | "in" | "off" }`, every port and channel when it is left out, and monitored
+/// automatically when `monitor` is (files written before it).
 fn read_midi_input(value: Option<&Value>, at: &str) -> Result<MidiInput, ProjectFileError> {
     let at = format!("{at}.midi_input");
     let Some(value) = value.filter(|v| !v.is_null()) else { return Ok(MidiInput::default()) };
@@ -1132,7 +1126,8 @@ fn read_channel(value: &Value, at: &str) -> Result<Channel, ProjectFileError> {
 }
 
 /// The `automation` lanes of a device or channel: points in beat order (those at one beat keep
-/// their order), a curve from -1 to 1, at most `MAX_POINTS` points a lane.
+/// their order), a curve as its two control points (from version 4) or one bend from -1 to 1 (the
+/// mirrored curve, as earlier versions wrote it), at most `MAX_POINTS` points a lane.
 fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileError> {
     let mut automation = Vec::new();
     for (i, v) in list(map, "automation", at)?.iter().enumerate() {
@@ -1146,10 +1141,7 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
         for (j, p) in listed.iter().enumerate() {
             let at = format!("{at}.points[{j}]");
             let p = object(p, &at)?;
-            let curve = float_or(p, "curve", 0.0, &at)?;
-            if !(-1.0..=1.0).contains(&curve) {
-                return Err(format!("{at}.curve: must be from -1 to 1, got {curve}").into());
-            }
+            let curve = read_curve(p, &at)?;
             points.push(AutomationPoint { beat: float(p, "beat", &at)?, value: float(p, "value", &at)?, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
@@ -1161,6 +1153,27 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
         });
     }
     Ok(automation)
+}
+
+/// A point's `curve`: four numbers from 0 to 1 (x1, y1, x2, y2), or before version 4 one bend
+/// from -1 to 1; straight when left out.
+fn read_curve(p: &Obj, at: &str) -> Result<automation::Curve, ProjectFileError> {
+    let bad = || ProjectFileError(format!("{at}.curve: expected four numbers from 0 to 1, or a number from -1 to 1"));
+    match p.get("curve") {
+        None | Some(Value::Null) => Ok(automation::Curve::STRAIGHT),
+        Some(Value::Array(list)) => {
+            let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
+            let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
+            automation::Curve::from_array(values).ok_or_else(bad)
+        }
+        Some(_) => {
+            let bend = float(p, "curve", at)?;
+            if !(-1.0..=1.0).contains(&bend) {
+                return Err(bad());
+            }
+            Ok(automation::Curve::bend(bend))
+        }
+    }
 }
 
 fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {

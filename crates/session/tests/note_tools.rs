@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use suhina_model::*;
 use suhina_session::{MAX_NOTES_PER_COMMAND, Session, midi_velocity};
 
+use crate::support::run;
+
 fn note(time: f64, duration: f64, key: u8) -> Note {
     Note::new(time, duration, key, 100.0 / 127.0)
 }
@@ -23,10 +25,7 @@ fn clip(content: u32) -> Clip {
 /// Track 1 "Keys" has, on the arrangement, a MIDI clip with `notes` (index 0), an empty MIDI clip
 /// (index 1) and an audio clip (index 2).
 fn project(notes: Vec<Note>) -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built(notes);
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built(notes))
 }
 
 fn project_built(notes: Vec<Note>) -> Project {
@@ -63,10 +62,6 @@ fn project_built(notes: Vec<Note>) -> Project {
 /// The four notes most tests start from: C4, E4, G4 and a short B4, one beat apart.
 fn scale_notes() -> Vec<Note> {
     vec![note(0.0, 1.0, 60), note(1.0, 1.0, 64), note(2.0, 1.0, 67), note(3.0, 0.5, 71)]
-}
-
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
 }
 
 fn notes_of(session: &Session, content: u32) -> Vec<Note> {
@@ -476,7 +471,7 @@ fn malformed_tool_params_are_refused_and_change_nothing() {
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": 0 }), "factor must be"),
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": -1 }), "factor must be"),
         ("note.stretch", json!({ "track": 1, "index": 0, "factor": 200 }), "factor must be"),
-        ("note.stretch", json!({ "track": 1, "index": 0 }), "give factor"),
+        ("note.stretch", json!({ "track": 1, "index": 0 }), "factor must be given"),
         ("note.randomizeVelocity", json!({ "track": 1, "index": 0, "amount": 128 }), "amount must be"),
         ("note.randomizeVelocity", json!({ "track": 1, "index": 0, "amount": -1 }), "amount must be"),
         ("note.rampVelocity", json!({ "track": 1, "index": 0, "from": 0, "to": 127 }), "from must be"),

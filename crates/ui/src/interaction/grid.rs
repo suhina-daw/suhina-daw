@@ -85,7 +85,7 @@ pub struct Column {
     /// Also heard on the cue output (`track.setCue`).
     pub cue: bool,
     /// The track plays notes, so it can be armed to play a MIDI controller (ADR 0017), and
-    /// whether it is: the session knows, not the project, so [`Grid::build`] leaves it false.
+    /// whether it is: the session knows, not the project, so [`TrackGrid::build`] leaves it false.
     pub armable: bool,
     pub armed: bool,
     /// The scene whose slot records a take now (`docs/spec/recording.md`); set by the app.
@@ -140,8 +140,10 @@ pub struct SendKnob {
 pub fn played_mixer(channel: &suhina_engine::model::Channel, beat: f64) -> (Option<f64>, Option<f64>) {
     let lane = |param: &str| channel.automation.iter().find(|l| l.param == param && l.enabled && !l.points.is_empty());
     (
-        lane("volume").and_then(|l| l.value_at(beat, false)).map(gain_to_db),
-        lane("pan").and_then(|l| l.value_at(beat, false)),
+        lane("volume")
+            .and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::VolumeTaper))
+            .map(gain_to_db),
+        lane("pan").and_then(|l| l.value_at(beat, false, &suhina_engine::model::automation::Plain)),
     )
 }
 
@@ -203,7 +205,7 @@ impl Scene {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Grid {
+pub struct TrackGrid {
     pub columns: Vec<Column>,
     /// The MIDI input ports there are, for the tracks' MIDI input menus; set by the app.
     pub midi_ports: Vec<String>,
@@ -231,7 +233,7 @@ pub struct Grid {
     pub metronome: (bool, f64, suhina_engine::ClickSound),
 }
 
-impl Grid {
+impl TrackGrid {
     /// The grid for `project`; with a monitor, slots show what the engine plays and has queued.
     pub fn build(project: &Project, monitor: Option<&LauncherMonitor>) -> Self {
         let scene_count = project.launcher.scenes.len();
@@ -480,7 +482,7 @@ mod tests {
 
     #[test]
     fn tracks_come_first_then_returns() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         let kinds: Vec<ColumnKind> = grid.columns.iter().map(|c| c.kind).collect();
         assert_eq!(
             kinds,
@@ -499,7 +501,7 @@ mod tests {
 
     #[test]
     fn slots_without_an_engine_are_stopped_or_empty() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         let drums = &grid.columns[0];
         assert_eq!(drums.slots[0].state, SlotState::Stopped);
         assert_eq!(drums.slots[0].name, "Beat A");
@@ -515,7 +517,7 @@ mod tests {
 
     #[test]
     fn mixer_values_are_in_db() {
-        let grid = Grid::build(&demo_project(), None);
+        let grid = TrackGrid::build(&demo_project(), None);
         assert!((grid.columns[0].volume_db - 0.0).abs() < 1e-9);
         assert!((gain_to_db(0.5) - -6.0206).abs() < 1e-3);
         assert_eq!(gain_to_db(0.0), f64::NEG_INFINITY);
@@ -523,15 +525,15 @@ mod tests {
 
     #[test]
     fn position_counts_bars_beats_and_sixteenths_from_one() {
-        let grid = Grid { beat: 5.5, ..Grid::default() };
+        let grid = TrackGrid { beat: 5.5, ..TrackGrid::default() };
         assert_eq!(grid.position(), "2.2.3");
-        let start = Grid::default();
+        let start = TrackGrid::default();
         assert_eq!(start.position(), "1.1.1");
         // 4/4 for bar 1, then 3/4: beat 8.5 is in bar 3, on its second beat.
         use suhina_engine::model::{TimeSignature, TimeSignatureChange};
         let changes = [TimeSignatureChange { bar: 1, time_signature: TimeSignature { numerator: 3, denominator: 4 } }];
         let meter = Meter::new(TimeSignature { numerator: 4, denominator: 4 }, &changes);
-        let changing = Grid { beat: 8.5, project_meter: meter, ..Grid::default() };
+        let changing = TrackGrid { beat: 8.5, project_meter: meter, ..TrackGrid::default() };
         assert_eq!(changing.position(), "3.2.3");
         assert_eq!(changing.time_signature(), TimeSignature { numerator: 3, denominator: 4 });
     }

@@ -8,18 +8,22 @@
 //! inversion, width, mid/side and mono at once, then bass mono, then gain and balance (mute
 //! included). Bass mono listen plays only the band below the bass mono frequency, as bass mono
 //! leaves it, so the crossover can be set by ear. Every control is smoothed over [`RAMP_SECONDS`], toggles too, so automating any
-//! of them does not click. With every parameter at its default the output equals the input
-//! exactly.
+//! of them does not click; the gain glides instead along its knob ([`GAIN_GLIDE_SECONDS`]), so a
+//! jump in it takes a few milliseconds whatever its size. With every parameter at its default the
+//! output equals the input exactly.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
     check_sample_rate,
 };
 use suhina_dsp::gain::{SILENCE_DB, db_to_gain_or_silence};
-use suhina_dsp::{DcBlocker, LinkwitzRiley, Smoother};
+use suhina_dsp::{DcBlocker, Glide, LinkwitzRiley, Smoother};
 
 /// How long a parameter change takes to arrive.
 pub const RAMP_SECONDS: f64 = 0.02;
+/// The time constant of the gain's glide along its knob: two of them in a row make a jump an
+/// S-shaped move whose middle 80 % takes 2.2 ms, about 6 ms in all (`docs/spec/utility.md`).
+pub const GAIN_GLIDE_SECONDS: f64 = 0.000_664;
 
 /// Parameter indices, in [`INFO`] order.
 pub mod param {
@@ -48,7 +52,7 @@ pub mod channel {
 }
 
 const PARAMS: [ParamInfo; param::COUNT] = [
-    ParamInfo::continuous("gain", "Gain", (SILENCE_DB as f64, 36.0), 0.0, Unit::Decibels, Scale::Linear),
+    ParamInfo::continuous("gain", "Gain", (SILENCE_DB as f64, 35.0), 0.0, Unit::Decibels, Scale::Gain),
     ParamInfo::continuous("balance", "Balance", (-1.0, 1.0), 0.0, Unit::Balance, Scale::Linear),
     ParamInfo::continuous("width", "Width", (0.0, 4.0), 1.0, Unit::Percent, Scale::Linear),
     // -1 keeps only the mid signal, 1 only the side signal.
@@ -78,8 +82,13 @@ pub struct Utility {
     params: ParamBank<{ param::COUNT }>,
     /// The channel, inversion, width and mono matrix: `[ll, lr, rl, rr]`.
     matrix: [Smoother; 4],
-    gain_left: Smoother,
-    gain_right: Smoother,
+    /// Where the gain's knob is, gliding to where it is set (0 to 1, `Scale::Gain`).
+    gain: Glide,
+    /// The gain at the glide's last value, kept while it rests.
+    gain_factor: f32,
+    /// Balance and mute, per side.
+    balance_left: Smoother,
+    balance_right: Smoother,
     dc_mix: Smoother,
     bass_mix: Smoother,
     listen_mix: Smoother,
@@ -103,8 +112,10 @@ impl Utility {
             sample_rate: sr,
             params,
             matrix: [Smoother::new(0.0, ramp); 4],
-            gain_left: Smoother::new(1.0, ramp),
-            gain_right: Smoother::new(1.0, ramp),
+            gain: Glide::new(PARAMS[param::GAIN].to_normalized(0.0), GAIN_GLIDE_SECONDS, sr),
+            gain_factor: 1.0,
+            balance_left: Smoother::new(1.0, ramp),
+            balance_right: Smoother::new(1.0, ramp),
             dc_mix: Smoother::new(0.0, ramp),
             bass_mix: Smoother::new(0.0, ramp),
             listen_mix: Smoother::new(0.0, ramp),
@@ -125,15 +136,21 @@ impl Utility {
     }
 
     fn smoothers(&mut self) -> impl Iterator<Item = &mut Smoother> {
-        let rest =
-            [&mut self.gain_left, &mut self.gain_right, &mut self.dc_mix, &mut self.bass_mix, &mut self.listen_mix];
+        let rest = [
+            &mut self.balance_left,
+            &mut self.balance_right,
+            &mut self.dc_mix,
+            &mut self.bass_mix,
+            &mut self.listen_mix,
+        ];
         self.matrix.iter_mut().chain(rest)
     }
 
     /// Sets every smoother's target from the parameter values.
     fn retarget(&mut self) {
         let [ll, lr, rl, rr] = self.target_matrix();
-        let (left, right) = self.target_gains();
+        let (left, right) = self.target_balance();
+        self.gain.set_target(PARAMS[param::GAIN].to_normalized(self.value(param::GAIN)));
         let dc = if self.on(param::DC_FILTER) { 1.0 } else { 0.0 };
         let bass = if self.on(param::BASS_MONO) { 1.0 } else { 0.0 };
         let listen = if self.on(param::BASS_MONO_LISTEN) { 1.0 } else { 0.0 };
@@ -174,11 +191,21 @@ impl Utility {
         [same * a + cross * c, same * b + cross * d, cross * a + same * c, cross * b + same * d]
     }
 
-    /// Output gain of each side: gain, balance and mute.
-    fn target_gains(&self) -> (f32, f32) {
-        let gain = if self.on(param::MUTE) { 0.0 } else { db_to_gain_or_silence(self.value(param::GAIN) as f32) };
+    /// The factor of each side for balance and mute (the gain glides apart).
+    fn target_balance(&self) -> (f32, f32) {
+        let on = if self.on(param::MUTE) { 0.0 } else { 1.0 };
         let balance = self.value(param::BALANCE) as f32;
-        (gain * (1.0 - balance).min(1.0), gain * (1.0 + balance).min(1.0))
+        (on * (1.0 - balance).min(1.0), on * (1.0 + balance).min(1.0))
+    }
+
+    /// The gain for this sample: the glide's knob position through the knob's law.
+    #[inline]
+    fn next_gain(&mut self) -> f32 {
+        if !self.gain.is_settled() || self.gain_factor.is_nan() {
+            let position = self.gain.next_value();
+            self.gain_factor = db_to_gain_or_silence(PARAMS[param::GAIN].from_normalized(position) as f32);
+        }
+        self.gain_factor
     }
 }
 
@@ -192,6 +219,7 @@ impl Device for Utility {
         self.sample_rate = sr;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         self.smoothers().for_each(|s| s.set_ramp(ramp));
+        self.gain.set_time(GAIN_GLIDE_SECONDS, sr);
         self.dc = [DcBlocker::new(sr); 2];
         let frequency = self.value(param::BASS_MONO_FREQUENCY);
         self.crossover = [LinkwitzRiley::new(sr, frequency); 2];
@@ -203,6 +231,9 @@ impl Device for Utility {
         self.dc.iter_mut().for_each(DcBlocker::reset);
         self.crossover.iter_mut().for_each(LinkwitzRiley::reset);
         self.smoothers().for_each(|s| s.reset(s.target()));
+        self.gain.reset(self.gain.target());
+        self.gain_factor = f32::NAN;
+        self.next_gain();
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
@@ -248,8 +279,9 @@ impl Device for Utility {
                 r += (only_r as f32 - r) * listen_mix;
             }
 
-            *left = l * self.gain_left.next_value();
-            *right = r * self.gain_right.next_value();
+            let gain = self.next_gain();
+            *left = l * gain * self.balance_left.next_value();
+            *right = r * gain * self.balance_right.next_value();
         }
     }
 }

@@ -15,7 +15,7 @@ use suhina_soundmap::kinds::Kind;
 use suhina_soundmap::{DEFAULT_MAX_SECONDS, MAX_SECONDS_RANGE, MAX_SIMILAR, Map, SoundMap, SourceFile};
 
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
-use crate::{CommandError, Projects};
+use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
 const PLACE: &str = "pinned, recent:all, recent:samples, or a folder (default: every folder)";
 
@@ -26,23 +26,25 @@ static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[],
         kind: CommandKind::Library,
         run: status,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.analyse",
         label: "Analyse a folder's samples, or every folder's, again for the sample map, ignoring what was kept",
         params: &[optional(
             "folder",
-            ParamType::Text,
+            ParamType::Path(PathKind::Folder),
             "a folder, as library.folders lists them (default: every folder)",
         )],
         kind: CommandKind::Library,
         run: analyse,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.layout",
         label: "Lay out samples by how they sound and their kind: each analysed sample's position (0–1), kind (kick, snare, hat…, whether it was guessed from the sound and whether it was set by hand) and whether it matches the text and tags; and how many are not analysed yet, too long or unreadable",
         params: &[
-            optional("place", ParamType::Text, PLACE),
+            optional("place", ParamType::Path(PathKind::Place), PLACE),
             optional("text", ParamType::Text, "words a matching sample's name or path holds"),
             optional("tags", ParamType::Texts, "a matching sample carries any of these tags"),
             optional("grid", ParamType::Bool, "also give each sample's cell in a grid (column, row)"),
@@ -51,37 +53,44 @@ static SOUND_MAP_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Library,
         run: layout,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.similar",
         label: "The samples that sound most like a sample, nearest first, with their distance",
         params: &[
-            param("item", ParamType::Text, "a sample's path"),
+            param("item", ParamType::Path(PathKind::File), "a sample's path"),
             optional("count", ParamType::Integer, "how many, 1 to 100 (default 16)"),
-            optional("place", ParamType::Text, PLACE),
+            optional("place", ParamType::Path(PathKind::Place), PLACE),
         ],
         kind: CommandKind::Library,
         run: similar,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.info",
         label: "What the sample map knows of a sample: its kind and where it comes from (set by hand, its name, or a guess from its sound), its length and its features",
-        params: &[param("item", ParamType::Text, "a sample's path")],
+        params: &[param("item", ParamType::Path(PathKind::File), "a sample's path")],
         kind: CommandKind::Library,
         run: info,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "soundmap.setKind",
         label: "Set a sample's kind by hand, over its name and its sound, or give it back to them (auto); kept with the library and through new analyses and layouts",
-        params: &[param("item", ParamType::Text, "a sample's path"), param("kind", ParamType::Text, KIND_PARAM)],
+        params: &[
+            param("item", ParamType::Path(PathKind::File), "a sample's path"),
+            param("kind", ParamType::Text, KIND_PARAM),
+        ],
         kind: CommandKind::Library,
         run: set_kind,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
 ];
 
 const KIND_PARAM: &str = "kick, snare, clap, closedHat, openHat, hat, rim, tom, crash, ride, cymbal, percussion, bass, tonal, vocal, effect or other; auto to let the name and the sound decide again";
 
-/// The sample map commands, as `commands.list` shows them.
+/// The sample map commands, as `command.list` shows them.
 pub fn sound_map_commands() -> &'static [CommandSpec<Projects>] {
     SOUND_MAP_COMMANDS
 }
@@ -90,14 +99,14 @@ impl Projects {
     /// The sample map's analysis, kept beside the library's indexes.
     pub fn sound_map_mut(&mut self) -> &mut SoundMap {
         let folder = self.file_library_mut().data_folder();
-        self.sound_map.get_or_insert_with(|| SoundMap::new(folder, SoundMap::default_threads()))
+        self.browser.sound_map.get_or_insert_with(|| SoundMap::new(folder, SoundMap::default_threads()))
     }
 
     /// Starts analysing the library's samples in the background, and keeps doing so as files
     /// come and go. The desktop app and the MCP server start it, as they start the library;
     /// tests and the CLI never analyse a user's folders unasked.
     pub fn start_sound_map(&mut self) {
-        self.sound_map_started = true;
+        self.browser.sound_map_started = true;
         // A large cache is read off the caller's thread (the window's).
         self.sound_map_mut().read_in_background(true);
         self.poll_sound_map();
@@ -106,7 +115,7 @@ impl Projects {
     /// Waits until every queued sample is analysed (tests, the CLI).
     pub fn wait_sound_map(&mut self) {
         self.poll_sound_map();
-        if let Some(map) = &mut self.sound_map {
+        if let Some(map) = &mut self.browser.sound_map {
             map.wait();
         }
     }
@@ -116,13 +125,13 @@ impl Projects {
     /// anything changed.
     pub fn poll_sound_map(&mut self) -> bool {
         let mut changed = false;
-        if self.sound_map_started {
+        if self.browser.sound_map_started {
             let library = self.file_library_mut();
             library.poll();
             let revision = library.revision();
             // While the update before is worked out, the index is not copied for the next: that
             // would be refused, and copied again every frame until it was not.
-            if self.sound_map_revision != Some(revision) && !self.sound_map_mut().updating() {
+            if self.browser.sound_map_revision != Some(revision) && !self.sound_map_mut().updating() {
                 if self.sound_map_mut().reads_in_background() {
                     // Listed and compared on a thread of its own: a large library held the
                     // window up for a second here.
@@ -133,17 +142,17 @@ impl Projects {
                             .collect()
                     });
                     if started {
-                        self.sound_map_revision = Some(revision);
+                        self.browser.sound_map_revision = Some(revision);
                     }
                 } else {
                     let files = sample_files(self);
                     self.sound_map_mut().update(&files);
-                    self.sound_map_revision = Some(revision);
+                    self.browser.sound_map_revision = Some(revision);
                 }
                 changed = true;
             }
         }
-        if let Some(map) = &mut self.sound_map {
+        if let Some(map) = &mut self.browser.sound_map {
             changed |= suhina_plugins::trace::timed("sound map: results", || map.poll());
         }
         changed
@@ -204,7 +213,7 @@ fn optional_text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, C
 fn status(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     projects.poll_sound_map();
     let files = sample_files(projects);
-    let started = projects.sound_map_started;
+    let started = projects.browser.sound_map_started;
     let folders: Vec<Value> = projects
         .sound_map_mut()
         .status(&files)

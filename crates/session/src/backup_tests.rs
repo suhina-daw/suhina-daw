@@ -52,7 +52,7 @@ fn plug_in_changes_make_a_backup_due_without_project_commands_and_again_after_a_
     read(&mut projects, 2);
     read(&mut projects, 2);
     assert!(projects.backup_due(id), "a later plug-in change needs another backup");
-    assert_eq!(projects.get(id).unwrap().changes, 0, "no project command helped");
+    assert_eq!(projects.get(id).unwrap().history.changes, 0, "no project command helped");
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn closing_and_quitting_normally_leave_nothing_to_offer() {
     let (mut projects, id) = changed_projects(&settings);
     projects.set_backup_settings(Interval::Critical, true);
     // Closing is critical: the changes are backed up, then the entry goes.
-    projects.execute("projects.close", &json!({ "project": id.0 })).unwrap();
+    projects.execute("project.close", &json!({ "project": id.0 })).unwrap();
     assert!(projects.backups.flush(Duration::from_secs(10)));
     assert_eq!(files_in(&settings).iter().filter(|n| n.ends_with(".suhina")).count(), 1);
     assert!(read_journal(&settings.join(JOURNAL)).is_empty());
@@ -216,14 +216,14 @@ fn closing_and_quitting_normally_leave_nothing_to_offer() {
 #[test]
 fn autosave_checks_its_parameters_and_reports_without_a_project() {
     let mut projects = Projects::new();
-    let info = projects.execute("project.autosave", &json!({ "interval": "4h", "clean_up": false })).unwrap();
+    let info = projects.execute("project.autosave", &json!({ "interval": "4h", "cleanUp": false })).unwrap();
     assert_eq!(
         (info["interval"].clone(), info["clean_up"].clone(), info["due"].clone()),
         (json!("4h"), json!(false), json!(false))
     );
     assert_eq!(info["last_backup"], Value::Null);
     assert!(projects.execute("project.autosave", &json!({ "interval": "2m" })).is_err());
-    assert!(projects.execute("project.autosave", &json!({ "clean_up": "yes" })).is_err());
+    assert!(projects.execute("project.autosave", &json!({ "cleanUp": "yes" })).is_err());
     assert!(projects.execute("project.autosave", &json!({ "now": true })).is_err(), "no project is open");
     // Untitled with no settings folder: nowhere to go, said so.
     projects.add(Session::new(blank_project()), None).unwrap();

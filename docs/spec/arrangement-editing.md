@@ -47,8 +47,8 @@ there were more. ARA's first version refuses such overlaps for the clips it edit
 
 ## Moving a clip
 
-`clip.move {track, index, start, to_track?, stack?}` moves one arrangement clip to `start` (beats,
-at least 0), on its own track or on `to_track`, which must take the clip's kind: a MIDI clip goes
+`clip.move {track, index, start, toTrack?, stack?}` moves one arrangement clip to `start` (beats,
+at least 0), on its own track or on `toTrack`, which must take the clip's kind: a MIDI clip goes
 to a track that plays notes, an audio clip to an audio track. A clip that moves to another track
 plays through that track's instrument and effects. The move is one undo step.
 
@@ -101,15 +101,15 @@ as the view draws them, by the time from the earlier start to the later end, eve
 touches it (#694). Ctrl+A selects every clip
 in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
 start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
-moves all of it by the same beats, at once (`clip.moveMany {clips, beats, to_track?, tracks_by?,
-to_new_track?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
+moves all of it by the same beats, at once (`clip.moveMany {clips, beats, toTrack?, tracksBy?,
+toNewTrack?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
 or down, a selection on one track goes to the track under the pointer, and a selection on several
-tracks moves each clip by as many tracks from its own (`tracks_by`), refused where a clip would
+tracks moves each clip by as many tracks from its own (`tracksBy`), refused where a clip would
 land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
 track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
-has none, **Copy as new** starts it there without them (`ara_edits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
+has none, **Copy as new** starts it there without them (`araEdits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
-after the last (`to_new_track`), in the same undo step.
+after the last (`toNewTrack`), in the same undo step.
 
 A click on an empty spot of a lane, or on the empty space under the tracks, clears the clip
 selection (a double-click there still makes a clip, › Making an empty clip). The track
@@ -182,7 +182,7 @@ Return tracks, along the bottom, have a track's header: volume and pan, the on s
 the menu, automation lanes under them (shown with the header's button), a click to select them
 (the detail area shows their devices) and a top edge that sets their height (tall enough for
 volume and pan by default): the fixed rows sit along the bottom, so they grow upward, as the
-pointer goes. The main track's row has a volume bar that a drag sets (`main.setVolume`, heard
+pointer goes. The main track's row has a volume bar that a drag sets (`mixer.setMainVolume`, heard
 while dragging, one undo step), and its top edge sets its height the same way.
 
 ## Clip edges
@@ -840,12 +840,12 @@ them is drawn.
 
 ## MIDI input monitoring
 
-A note-playing track has one small Auto / On / Off control immediately after its record-arm
-button, before its name or volume controls. A click opens the three choices, with a tooltip
+A note-playing track has one small control immediately after its record-arm button that reads
+the track's monitoring mode, Auto, In or Off (the chip shows In as **On**), before its name or volume controls. A click opens the three choices, with a tooltip
 explaining the current state; it is not a second record-arm button or headphone cue. The same
 choices appear in the MIDI input menu, beside port and channel selection. Auto (the default)
-hears the input while armed; On hears it independently of arming; Off never hears the live
-input. Recording still depends on arm and record, including when monitoring is Off; On alone
+hears the input while armed; In hears it independently of arming; Off never hears the live
+input. Recording still depends on arm and record, including when monitoring is Off; In alone
 never records. Monitoring does not suppress clip playback. The selected mode is project data,
 set through `track.setMidiInput` with `monitor: auto | in | off`, and supports undo and redo.
 Changing mode releases notes that are no longer monitored, without retriggering held keys.

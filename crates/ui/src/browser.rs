@@ -444,7 +444,7 @@ impl BrowserState {
         let place = self.place.as_ref().map(Place::param);
         let found =
             suhina_session::search_items(projects, &self.search, self.category, place.as_deref(), &self.tag_filter, 0)
-                .map_err(|e| e.0)?;
+                .map_err(String::from)?;
         Ok(found
             .into_iter()
             .map(|f| {

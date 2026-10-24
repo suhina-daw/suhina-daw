@@ -48,27 +48,8 @@ HEADER = "// Copyright (C) 2026 The Suhina contributors\n// SPDX-License-Identif
 # Files whose tests wait for the open pull requests that change them (see the docstring).
 WAITING = {
     "crates/automation/src/confine.rs",
-    "crates/automation/src/render.rs",
     "crates/device-sdk/src/lib.rs",
-    "crates/engine/src/launcher.rs",
-    "crates/engine/src/lib.rs",
-    "crates/engine/src/stretch.rs",
-    "crates/media/src/lib.rs",
     "crates/model/src/lib.rs",
-    "crates/plugins/src/protocol.rs",
-    "crates/session/src/rack.rs",
-    "crates/ui/src/app.rs",
-    "crates/ui/src/app/splash.rs",
-    "crates/ui/src/arrangement/arrangement_view.rs",
-    "crates/ui/src/arrangement/automation_lanes.rs",
-    "crates/ui/src/arrangement/timeline.rs",
-    "crates/ui/src/browser/sample_map.rs",
-    "crates/ui/src/detail/detail_view.rs",
-    "crates/ui/src/detail/device_canvas.rs",
-    "crates/ui/src/detail/piano_roll.rs",
-    "crates/ui/src/detail/piano_roll_ghosts.rs",
-    "crates/ui/src/kit/theme.rs",
-    "crates/ui/src/settings.rs",
 }
 
 OPENING = re.compile(r"^(\s*)((?:pub(?:\([\w:]+\))? )?)mod (\w+) \{\s*$")

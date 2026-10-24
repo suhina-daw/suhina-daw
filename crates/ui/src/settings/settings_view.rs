@@ -97,7 +97,7 @@ pub struct MidiPort {
 }
 
 /// The plug-in library as the page and the plug-in manager show it, read through the
-/// `plugins.*` commands.
+/// `plugin.*` commands.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginsView {
     /// The folders scans may look in: the system's standard ones, then the ones added.
@@ -138,7 +138,7 @@ pub struct PluginRow {
     pub format: String,
     pub version: String,
     pub file: String,
-    /// How the commands name it (`plugins.setEnabled`).
+    /// How the commands name it (`plugin.setEnabled`).
     pub spec: String,
     pub enabled: bool,
 }
@@ -1424,7 +1424,7 @@ fn output_rows(
         options.extend(device.sample_rates.iter().map(|r| (format!("{r} Hz"), Some(*r))));
     }
     if let Some(rate) = choice_dropdown(ui, painter, r, "Sample rate", &options, &choice.sample_rate) {
-        picked = choice.with_params(&serde_json::json!({ "sample_rate": rate.unwrap_or(0) })).ok();
+        picked = choice.with_params(&serde_json::json!({ "sampleRate": rate.unwrap_or(0) })).ok();
     }
     // The buffer row says what the number is, and it is the device's own buffer only where it is
     // asked of the driver: ASIO (when its driver declared a size the engine can render in) and
@@ -1470,7 +1470,7 @@ fn output_rows(
     let mut options: Vec<(String, Option<u32>)> = vec![("Default (1024 frames)".to_string(), None)];
     options.extend(sizes.iter().map(|n| (format!("{n} frames ({:.1} ms)", f64::from(*n) * 1000.0 / rate), Some(*n))));
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
-        picked = choice.with_params(&serde_json::json!({ "buffer_frames": frames.unwrap_or(0) })).ok();
+        picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
     }
     // Exclusive mode, WASAPI only.
     let r = row(y);

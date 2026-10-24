@@ -237,7 +237,8 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
     let gain_bytes = DEFAULT_GAIN.to_le_bytes().to_vec();
     opened.channels[0].devices[0].state = Some(gain_bytes);
     let mut projects = suhina_session::Projects::new();
-    let id = projects.add(Session::new(opened.clone()), Some("gain".into())).map_err(|e| e.0.to_string()).unwrap();
+    let id =
+        projects.add(Session::new(opened.clone()), Some("gain".into())).map_err(|e| e.message().to_string()).unwrap();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     projects.get_mut(id).unwrap().attach_player(Player::new(renderer.controller(), None));
@@ -289,7 +290,7 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
 fn projects_add_other(projects: &mut suhina_session::Projects) -> suhina_session::ProjectId {
     projects
         .add(Session::new(suhina_session::blank_project()), Some("gain".into()))
-        .map_err(|e| e.0.to_string())
+        .map_err(|e| e.message().to_string())
         .unwrap()
 }
 

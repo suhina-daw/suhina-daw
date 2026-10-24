@@ -121,7 +121,7 @@ fn what_cannot_be_saved_or_opened_is_an_error() {
     session.save(&dir.join("good.suhina"), true).unwrap_or_else(|e| panic!("{e}"));
     let old = dir.join("good.locr");
     std::fs::copy(dir.join("good.suhina"), &old).unwrap_or_default();
-    let error = Session::open(&old).err().map(|e| e.0).unwrap_or_default();
+    let error = Session::open(&old).err().map(String::from).unwrap_or_default();
     assert!(error.contains("Suhina opens a Suhina project (.suhina) or a Live Set (.als)"), "{error}");
     assert!(Session::from_template(&old).is_err());
     let _clean = std::fs::remove_dir_all(&dir);

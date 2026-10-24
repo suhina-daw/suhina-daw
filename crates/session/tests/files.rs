@@ -8,17 +8,17 @@
 #![allow(clippy::unwrap_used, clippy::panic)] // test helpers outside #[test] functions
 
 use std::path::{Path, PathBuf};
+use suhina_engine::{RenderInputs, RenderOptions};
 
 use serde_json::{Value, json};
 use suhina_engine::{AudioPool, Renderer};
 use suhina_model::*;
 use suhina_session::{Player, Session, blank_project};
 
-const SR: u32 = 48_000;
+use crate::support::run;
+use suhina_test_support::{WavFormat, write_wav};
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
+const SR: u32 = 48_000;
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("suhina-files-{name}-{}", std::process::id()));
@@ -30,13 +30,7 @@ fn temp_dir(name: &str) -> PathBuf {
 /// A mono WAV file of `seconds` at a steady `level`.
 fn wav(dir: &Path, name: &str, seconds: f64, level: f32) -> PathBuf {
     let path = dir.join(name);
-    let spec =
-        hound::WavSpec { channels: 1, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
-    let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-    for _ in 0..(seconds * f64::from(SR)) as usize {
-        writer.write_sample(level).unwrap();
-    }
-    writer.finalize().unwrap();
+    write_wav(&path, SR, 1, WavFormat::Float32, &vec![level; (seconds * f64::from(SR)) as usize]);
     path
 }
 
@@ -205,9 +199,13 @@ fn samples_go_one_after_another_on_a_track_at_their_length() {
     assert!(session.audio().files.contains_key(&region.file), "decoded into the session's pool");
 
     // The offline render plays them: the oracle for what was placed.
-    let renderer = Renderer::with_audio(session.project(), session.audio(), SR).unwrap();
+    let renderer =
+        Renderer::build(session.project(), RenderInputs::from_audio(session.audio()), SR, RenderOptions::PLAYING)
+            .unwrap();
     drop(renderer);
-    let out = suhina_engine::render_offline_with_audio(session.project(), session.audio(), SR, 512).unwrap();
+    let out =
+        suhina_engine::render_offline_from(session.project(), RenderInputs::from_audio(session.audio()), SR, 512, None)
+            .unwrap();
     let at = |beat: f64| out[((beat * 0.5 + 0.05) * f64::from(SR)) as usize * 2].abs();
     assert!(at(4.0) > 0.1 && at(5.0) > 0.05, "{} {}", at(4.0), at(5.0));
     assert!(at(2.0) < 1e-6, "nothing before the clips");
@@ -512,7 +510,7 @@ fn a_preset_adds_the_fm_synth_with_its_voice() {
     let mut session = Session::new(blank_project());
     let out = run(&mut session, "device.add", json!({ "track": 1, "preset": text(&bank), "voice": 32 })).unwrap();
     assert_eq!(out["preset"], "TUBULAR");
-    let channel = session.project().channels.iter().find(|c| c.id == ChannelId(1)).unwrap();
+    let channel = session.project().channel(ChannelId(1)).unwrap();
     let device = &channel.devices[0];
     assert_eq!(device.kind, DeviceKind::Builtin("fm-synth".into()));
     assert!(!device.params.is_empty());

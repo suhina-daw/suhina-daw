@@ -11,6 +11,7 @@ use serde_json::json;
 use suhina_engine::model::{InputChannels, Monitor, TrackId};
 
 use crate::interaction::colour_picker;
+use crate::interaction::commands;
 use crate::interaction::grid::{Column, ColumnKind};
 use crate::interaction::menus;
 use crate::kit::meter;
@@ -615,18 +616,10 @@ fn shown(state: &SessionViewState, column: &Column, control: Control, value: f64
     }
 }
 
-/// A finished or moving send drag as its command; every frame of a drag but the first continues
-/// its undo step.
-pub(crate) fn set_send(track: TrackId, target: TrackId, v: f64, continued: bool) -> Action {
-    let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-    Action::new("track.setSend", json!({ "track": track.0, "return": target.0, "level": db, "continue": continued }))
-}
-
 /// A finished or moving volume drag as its command; every frame of a drag but the first
 /// continues its undo step, so the drag is one step.
 fn set_volume(track: u32, v: f64, continued: bool) -> Action {
-    let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-    Action::new("track.setVolume", json!({ "tracks": [track], "db": db, "continue": continued }))
+    commands::set_volume(&[track], v, Some(continued))
 }
 
 /// Runs a volume drag on `response`; returns the value to draw this frame.
@@ -689,7 +682,7 @@ fn fader_column(
     paint_fader(ui, painter, readout, fader, db, &response);
 }
 
-/// The main output's fader in the main column: as a track's, running `main.setVolume`.
+/// The main output's fader in the main column: as a track's, running `mixer.setMainVolume`.
 pub fn main_fader(
     ui: &Ui,
     painter: &egui::Painter,
@@ -710,8 +703,10 @@ pub fn main_fader(
         widgets::value_area(ui, area.intersect(painter.clip_rect()), Id::new("main-volume"), "Main volume", label);
     let continued = preview.is_some();
     let send = |v: f64, continued: bool| {
-        let db = if v <= VOLUME_RANGE.0 { json!("-inf") } else { json!((v * 10.0).round() / 10.0) };
-        Action::new("main.setVolume", json!({ "db": db, "continue": continued }))
+        Action::new(
+            "mixer.setMainVolume",
+            json!({ "db": commands::db_param(v, VOLUME_RANGE.0), "continue": continued }),
+        )
     };
     let mut db = volume_db;
     match widgets::drag_value(ui, &response, &mut preview, volume_db, 0.25, 1.0, VOLUME_RANGE, 0.0) {
@@ -912,12 +907,12 @@ fn send_knobs(
         match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
             Drag::Moving(v) => {
                 state.drag = Some((track, control, v));
-                actions.push(set_send(track, send.target, v, continued));
+                actions.push(commands::set_send(track, send.target, v, continued));
             }
             Drag::Done(v) => {
                 state.drag = None;
                 committed = Some(v);
-                actions.push(set_send(track, send.target, v, continued));
+                actions.push(commands::set_send(track, send.target, v, continued));
             }
             Drag::None => {}
         }
@@ -971,16 +966,8 @@ fn toggles(
     let small = if column.armable { (toggle.width() - 6.0) / 5.0 } else { (toggle.width() - 4.0) / 4.0 };
     let toggle = if column.armable {
         let arm = Rect::from_min_max(Pos2::new(toggle.right() - small, toggle.top()), toggle.max);
-        if let Some(action) = widgets::arm_button(
-            ui,
-            painter,
-            arm,
-            id.with("arm"),
-            track.0,
-            &column.name,
-            column.armed,
-            column.plays_notes,
-        ) {
+        if let Some(action) = widgets::arm_button(ui, painter, arm, id.with("arm"), track.0, &column.name, column.armed)
+        {
             actions.push(action);
         }
         Rect::from_min_max(toggle.min, Pos2::new(arm.left() - 2.0, toggle.bottom()))

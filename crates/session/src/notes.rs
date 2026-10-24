@@ -638,7 +638,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
     let chosen = indices(params, notes.len())?;
     let clipboard = clipboard_of(notes, &chosen)?;
     let result = json!({ "copied": clipboard.len(), "span": clipboard.span });
-    session.note_clipboard = Some(clipboard);
+    session.clipboards.notes = Some(clipboard);
     Ok(result)
 }
 
@@ -647,12 +647,12 @@ pub(crate) fn cut(session: &mut Session, params: &Value) -> Result<Value, Comman
     let chosen = indices(params, notes.len())?;
     let clipboard = clipboard_of(notes, &chosen)?;
     let result = delete(session, params)?;
-    session.note_clipboard = Some(clipboard);
+    session.clipboards.notes = Some(clipboard);
     Ok(result)
 }
 
 pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let clipboard = session.note_clipboard.as_ref().ok_or("no notes have been copied; run note.copy first")?;
+    let clipboard = session.clipboards.notes.as_ref().ok_or("no notes have been copied; run note.copy first")?;
     let time = match optional_number(params, "time")? {
         Some(time) if !(0.0..=MAX_BEAT).contains(&time) => {
             return Err(format!("time must be 0 to {MAX_BEAT} beats, got {time}").into());

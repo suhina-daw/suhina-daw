@@ -105,27 +105,14 @@ pub(crate) fn build(
     }
 
     // A bus: a track with a chain that some other channel plays into.
-    let channel_of = |track: TrackId| project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
+    let channel_of = |track: TrackId| project.track(track).and_then(|t| t.channel);
     let feeds = |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
     let buses: Vec<(TrackId, ChannelId)> =
         chains.iter().filter_map(|c| channel_of(c.track).filter(|&ch| feeds(ch)).map(|ch| (c.track, ch))).collect();
     // The buses a track's sound passes through after its own channel, nearest first.
     let buses_after = |track: TrackId| -> Vec<(TrackId, ChannelId)> {
-        let mut out = Vec::new();
-        let mut visited = Vec::new();
-        let mut next =
-            channel_of(track).and_then(|ch| project.channels.iter().find(|c| c.id == ch)).and_then(|c| c.output);
-        while let Some(id) = next.take() {
-            if visited.len() > MAX_HOPS || visited.contains(&id) {
-                break;
-            }
-            visited.push(id);
-            if let Some(&bus) = buses.iter().find(|(_, ch)| *ch == id) {
-                out.push(bus);
-            }
-            next = project.channels.iter().find(|c| c.id == id).and_then(|c| c.output);
-        }
-        out
+        let Some(own) = channel_of(track) else { return Vec::new() };
+        project.output_chain(own).filter_map(|id| buses.iter().find(|(_, ch)| *ch == id).copied()).collect()
     };
 
     if !buses.is_empty() {
@@ -177,7 +164,7 @@ pub(crate) fn build(
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
         let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
         chain.mix = automation::channel_of(project, chain.track)
-            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus));
+            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
         // unless mix lanes carry it; a group's pan does not apply (as for a group without devices).
         let live_pan = automation::channel_of(project, chain.track)
@@ -282,11 +269,10 @@ pub(crate) fn build(
 /// a return channel that plays into the node's bus is not, its role says so, because a node
 /// render leaves the returns out.
 pub(crate) fn in_source(project: &Project, track: TrackId, source_channel: ChannelId) -> bool {
-    let Some(channel) = project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel) else {
+    let Some(channel) = project.track(track).and_then(|t| t.channel) else {
         return false;
     };
-    let output_of = |id: ChannelId| project.channels.iter().find(|c| c.id == id).and_then(|c| c.output);
-    let role_of = |id: ChannelId| project.channels.iter().find(|c| c.id == id).map(|c| c.role);
+    let role_of = |id: ChannelId| project.channel(id).map(|c| c.role);
     // A return is not inside a node's subtree even when it plays into the node's bus.
     if role_of(channel) == Some(ChannelRole::Effect) && channel != source_channel {
         return false;
@@ -294,25 +280,12 @@ pub(crate) fn in_source(project: &Project, track: TrackId, source_channel: Chann
     if channel == source_channel {
         return true;
     }
-    // Bounded, so a routing cycle in a malformed project cannot loop forever.
-    let mut visited = Vec::new();
-    let mut next = output_of(channel);
-    while let Some(id) = next.take() {
-        if id == source_channel {
-            return true;
-        }
-        if visited.len() > MAX_HOPS || visited.contains(&id) {
-            return false;
-        }
-        visited.push(id);
-        next = output_of(id);
-    }
-    false
+    project.output_chain(channel).any(|id| id == source_channel)
 }
 
 /// Whether `track`'s channel has its cue on.
 fn cued(project: &Project, track: TrackId) -> bool {
-    let channel = project.tracks.iter().find(|t| t.id == track).and_then(|t| t.channel);
+    let channel = project.track(track).and_then(|t| t.channel);
     project.channels.iter().any(|c| Some(c.id) == channel && c.cue)
 }
 
@@ -322,8 +295,8 @@ fn cued(project: &Project, track: TrackId) -> bool {
 /// Scaled like `track_gains`.
 pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<(f32, f32)> {
     track_gains(project, track)?;
-    let channel_id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    let channel = project.channels.iter().find(|c| c.id == channel_id)?;
+    let channel_id = project.track(track)?.channel?;
+    let channel = project.channel(channel_id)?;
     let volume = if channel.volume.is_finite() { channel.volume.max(0.0) } else { 0.0 };
     let pan = if pan && channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 };
     let (left, right) = suhina_dsp::pan::gains(pan);
@@ -341,8 +314,8 @@ pub(crate) fn gains_until(
     pan: bool,
 ) -> Option<(f32, f32)> {
     track_gains(project, track)?;
-    let channel_id = project.tracks.iter().find(|t| t.id == track)?.channel?;
-    let channel = project.channels.iter().find(|c| c.id == channel_id)?;
+    let channel_id = project.track(track)?.channel?;
+    let channel = project.channel(channel_id)?;
     let gain = |c: &suhina_model::Channel| if c.volume.is_finite() { c.volume.max(0.0) } else { 0.0 };
     let mut volume = 1.0;
     let mut visited = Vec::new();
@@ -353,7 +326,7 @@ pub(crate) fn gains_until(
         }
         visited.push(c.id);
         volume *= gain(c);
-        next = c.output.and_then(|id| project.channels.iter().find(|o| o.id == id));
+        next = c.output.and_then(|id| project.channel(id));
     }
     if until.is_none()
         && let Some(master) =

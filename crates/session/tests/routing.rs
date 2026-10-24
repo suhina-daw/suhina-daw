@@ -7,16 +7,15 @@
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
-use serde_json::{Value, json};
+use serde_json::json;
 use suhina_model::*;
 use suhina_session::Session;
 
+use crate::support::run;
+
 /// Bass (notes, one clip) into Main; two groups, Group and Outer, both into Main; and a return.
 fn project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(project_built())
 }
 
 fn project_built() -> Project {
@@ -107,12 +106,8 @@ fn project_built() -> Project {
     }
 }
 
-fn run(session: &mut Session, id: &str, params: Value) -> Result<Value, String> {
-    session.execute(id, &params).map_err(|e| e.0)
-}
-
 fn output(session: &Session, channel: u32) -> Option<ChannelId> {
-    session.project().channels.iter().find(|c| c.id == ChannelId(channel)).and_then(|c| c.output)
+    session.project().channel(ChannelId(channel)).and_then(|c| c.output)
 }
 
 /// The loudest sample of the left and of the right channel (both the same here: nothing is panned).

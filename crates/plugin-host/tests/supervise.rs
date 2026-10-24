@@ -377,12 +377,9 @@ fn a_mapped_controller_reaches_a_vst3_plugins_edit_controller() {
     let volume = [Event { frame: 0, note: -1, kind: EventKind::Controller { channel: 0, number: 7, value: 0.25 } }];
     assert_eq!(audio.process_with_events(&[1.0; FRAMES * 2], &volume, &mut output, PATIENT), Outcome::Done);
     assert_eq!(output[0], 0.25);
-    // The host's main thread hands it over between messages.
-    let deadline = Instant::now() + PATIENT;
-    while gain(&mut plugin) != 0.25 {
-        assert!(Instant::now() < deadline, "the controller still shows {}", gain(&mut plugin));
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    // Reading the parameters hands over what the block moved first, so the read right after the
+    // block shows it, however long the host takes to turn its loop (#887).
+    assert_eq!(gain(&mut plugin), 0.25);
 }
 
 #[test]

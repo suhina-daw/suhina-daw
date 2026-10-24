@@ -76,7 +76,7 @@ fn direct_and_batch_exports_leave_the_window_available_while_the_worker_waits() 
                     .command_batch(Parameters(BatchParams {
                         steps: vec![
                             StepParams { id: "project.export".into(), params: Some(json!({"path": output})) },
-                            StepParams { id: "projects.list".into(), params: None },
+                            StepParams { id: "project.list".into(), params: None },
                         ],
                         stop_on_error: Some(true),
                         project: None,
