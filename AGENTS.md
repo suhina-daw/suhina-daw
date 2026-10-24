@@ -345,6 +345,10 @@ its layout, or the generated parameter list. Report the app's path. Do this auto
 waiting for a separate rebuild request.
 
 
+**A new or moved setting follows [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md) › Adding a setting**
+(page by task, groups of at most seven outside Advanced, no status or commands among settings, one
+sentence of description, one control per kind of choice, the stored key unchanged).
+
 **A change in what Suhina does comes with steps to check it.** When a pull request changes
 anything a user sees, hears or does, in the app or outside it (a view, a menu, a dialog, a
 shortcut, a setting, drag and drop, playback and sound, a file it opens, imports or writes, a
@@ -399,6 +403,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
 | What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and [`README.md`](README.md) if it shows it |
 | What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |
+| A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in this file | this file, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if it repeats it |
 
 A limit or a planned part that a change resolves is removed from the docs in the same change.

@@ -108,7 +108,7 @@ Export changes no project state; it does not appear in undo.
 
 Attached MCP runs `project.export` through the same snapshot and render path, including inside
 `command_batch`. Preparation advances over window frames; rendering and encoding hold neither
-the window thread nor project access. Settings › Export lists MCP write grants, including the
+the window thread nor project access. Settings › Agents and updates lists MCP write grants, including the
 default project-folder grant, and lets the person add and revoke folders. Subfolders are
 included. These permissions do not restrict the desktop user's chosen export destination.
 

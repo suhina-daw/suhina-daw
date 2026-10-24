@@ -26,7 +26,7 @@ the serial number, the registered account and, in some releases, whether the bui
 
 Suhina's menu bar is drawn inside the window on every platform, so the item is in one place
 everywhere: **Help › About Suhina**, the last menu. It can also be bound to a key
-(`help.about`, Settings › Shortcuts). It opens a dialog over the window, drawn like the other
+(`help.about`, Settings › Keys). It opens a dialog over the window, drawn like the other
 dialogs:
 
 | Row | Shows |

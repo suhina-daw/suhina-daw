@@ -44,7 +44,7 @@ anything listens, so the rules are decided here, before the code.
 ### 1. The app serves MCP for its open tabs, off by default
 
 The desktop app can serve the same MCP tools as `suhina-cli mcp` (one `SuhinaMcp`, not a second
-server) for the projects it has open. It is off until the person turns on **Settings › General ›
+server) for the projects it has open. It is off until the person turns on **Settings › Projects and backups ›
 Agents › Let agents work on open projects**; with it off, nothing listens.
 
 The tools run on the app's own `Projects`, on the thread that runs the window's commands: the
@@ -88,7 +88,7 @@ stdout to it and back, so a client changes only its arguments.
 
 An attached agent works on the projects open as tabs, not on files of its choosing.
 
-- **It writes inside the folders the person allows in Settings › Export**, including their
+- **It writes inside the folders the person allows in Settings › Agents and updates**, including their
   subfolders. The saved project's folder is allowed by default, shown on that page, and can be
   switched off. Additional folders are added through a folder picker and can be removed. An
   unsaved project can write only when the person has granted an additional folder. With no

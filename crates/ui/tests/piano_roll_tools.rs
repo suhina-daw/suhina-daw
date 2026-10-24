@@ -639,7 +639,7 @@ fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
     assert!(h.state().settings_open());
-    h.get_by_label("Settings page: Shortcuts").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
     h.get_by_label("Preset: Draw-first").click();
     h.run();

@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "entries": [
     {
-      "id": "General/Projects/open_projects",
-      "page": "General",
+      "id": "Projects/Projects/open_projects",
+      "page": "Projects",
       "section": "Projects",
       "name": "When opening a project",
       "note": "Choose whether another project opens in a new tab or replaces the active project.",
       "keys": [
         "open_projects"
       ],
-      "sourceFingerprint": "292e92b33430d82691d445c15bebc3c5cec97bd9578722c3672f36b9573b3539",
+      "sourceFingerprint": "45b0cc805c1f2bee2801926cf85d465dd064e66c809250ef788d94c53f4d6cac",
       "helpStatus": "reviewed",
       "description": "Choose what happens when you open another project while one is already open. This controls whether Suhina asks you each time, keeps both projects open in separate tabs, or replaces the active project. It does not choose what opens when you start Suhina; use At start for that.",
       "options": [
@@ -31,15 +31,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/Projects/at_start",
-      "page": "General",
+      "id": "Projects/Projects/at_start",
+      "page": "Projects",
       "section": "Projects",
       "name": "At start",
       "note": "Choose what opens when Suhina starts without a project file.",
       "keys": [
         "at_start"
       ],
-      "sourceFingerprint": "8f15d25e1ff719094e8b15d4c859c9e5f8532b3112d47426de8803ee6bc1c033",
+      "sourceFingerprint": "6334c491911f54d6a852f986d849fc556c57d92ca7e86da6f6ec4f8e61e853c7",
       "helpStatus": "reviewed",
       "description": "This controls the first screen when no project is supplied at launch. A template is a saved starting project that Suhina copies into a new, unsaved project. If no start template is chosen or its file is missing, Suhina shows the start panel with an explanation; if there is no last project recorded, it also leaves you on the panel.",
       "options": [
@@ -64,15 +64,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/Projects/projects_folder",
-      "page": "General",
+      "id": "Projects/Projects/projects_folder",
+      "page": "Projects",
       "section": "Projects",
       "name": "Projects folder",
       "note": "Choose the initial save folder for new projects.",
       "keys": [
         "projects_folder"
       ],
-      "sourceFingerprint": "7be9cba79db04586e12f13d7d3237992897d04af68f1aaf4b774d66674362a89",
+      "sourceFingerprint": "0c9fd2a4749735231bc59a00282c790c9da1bfd7150395ed1f9d405a6acaa309",
       "helpStatus": "reviewed",
       "description": "The save dialog starts in this folder for a project that has no file yet. Type a folder path or use Browse. An empty field uses the default folder shown by Suhina. Existing projects keep their files and use their current folder when saving; changing this field does not move them.",
       "options": [],
@@ -80,15 +80,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/Projects/templates_folder",
-      "page": "General",
+      "id": "Projects/Projects/templates_folder",
+      "page": "Projects",
       "section": "Projects",
       "name": "Templates folder",
       "note": "Choose where Suhina finds and saves project templates.",
       "keys": [
         "templates_folder"
       ],
-      "sourceFingerprint": "30e0fc61a41330b604796a373d5cca1aaa5af0d363d5c927cbb6d280ea425bc9",
+      "sourceFingerprint": "2ce59bc17d6b38407f891025105065faad61baf3c9f7107e3d54dadf18011489",
       "helpStatus": "reviewed",
       "description": "Templates are projects used as reusable starting points. This folder supplies the templates listed under New → From a template and is the destination used by Save as template. Type a path or use Browse; leave the field empty to use the default shown by Suhina. Changing the folder does not move existing templates.",
       "options": [],
@@ -96,15 +96,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/Projects/start_template",
-      "page": "General",
+      "id": "Projects/Projects/start_template",
+      "page": "Projects",
       "section": "Projects",
       "name": "Start template",
       "note": "Choose the template used by the Template startup option.",
       "keys": [
         "start_template"
       ],
-      "sourceFingerprint": "00702ecf22693c66656a55e5346f7cd895471fe2ba564f0e806f90fc1216ad50",
+      "sourceFingerprint": "504ccc0f30488bad66209c6bcedc973364de07c338c6718f8d1172ff3c7bf3c9",
       "helpStatus": "reviewed",
       "description": "Enter a template file name from Templates folder, or an absolute path to a template, or use Browse to select the file. Suhina creates a new project from it at startup only when At start is Template. This control is hidden for the other startup choices. An empty or missing template leaves the start panel visible with an explanation.",
       "options": [],
@@ -112,47 +112,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/NAM/nam_models_folder",
-      "page": "General",
-      "section": "NAM",
-      "name": "NAM models folder",
-      "note": "Choose the folder supplying the NAM Amp Modeler model list.",
-      "keys": [
-        "nam_models_folder"
-      ],
-      "sourceFingerprint": "39a121455d11cf524eef90e54fbd2ab176097bb1aada5ca7eecc7f746b4e95cd",
-      "helpStatus": "reviewed",
-      "description": "A NAM model is a .nam file containing a captured amplifier, preamp or pedal response. The NAM Amp Modeler uses this folder to list available models in its device panel. Type a folder or use Browse; an empty field uses the default shown in Suhina. Choosing a folder does not itself select or replace the model loaded in an effect.",
-      "options": [],
-      "whenToChange": "Point this at the folder where you store your .nam captures so you can choose them from the Amp Modeler panel.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/NAM/irs_folder",
-      "page": "General",
-      "section": "NAM",
-      "name": "IR folder",
-      "note": "Choose the folder supplying the NAM Cab Loader response list.",
-      "keys": [
-        "irs_folder"
-      ],
-      "sourceFingerprint": "1547e9ade8ade7a6e23437b8ac933fbe64d3b02fcaf2cd029912d8618a2ea689",
-      "helpStatus": "reviewed",
-      "description": "An impulse response, or IR, is a short audio recording of how a speaker cabinet and microphone respond to a brief signal. The NAM Cab Loader lists .wav response files from this folder. Type a folder or use Browse; an empty field uses the default shown in Suhina. Changing the folder does not itself replace the response loaded in an effect.",
-      "options": [],
-      "whenToChange": "Choose your cabinet-response folder when the Cab Loader list does not show the .wav responses you want.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Backups/backup",
-      "page": "General",
+      "id": "Projects/Backups/backup",
+      "page": "Projects",
       "section": "Backups",
       "name": "Backups",
       "note": "Choose when changed projects receive recovery copies.",
       "keys": [
         "backup"
       ],
-      "sourceFingerprint": "b02f12cd92604d38cda943cadedc75fe25f3903744078116ebe4e171ad5b8749",
+      "sourceFingerprint": "f82ca343dcd6baa7f63c917638dc3b2347a60e0ade0429493c4f09a8a40ed007",
       "helpStatus": "reviewed",
       "description": "A backup is a separate project copy, not a replacement for saving your project. Suhina backs up open projects only when they have unsaved changes that are newer than their last backup. Saved projects keep copies in a .backup folder alongside their project file; projects never saved use Suhina’s settings backup folder. After an interrupted session, recovery can offer these copies.",
       "options": [
@@ -197,15 +165,15 @@
       "workInProgress": false
     },
     {
-      "id": "General/Backups/backup_clean_up",
-      "page": "General",
+      "id": "Projects/Backups/backup_clean_up",
+      "page": "Projects",
       "section": "Backups",
       "name": "Clean up backups",
       "note": "Keep the newest 20 backup copies of each project.",
       "keys": [
         "backup_clean_up"
       ],
-      "sourceFingerprint": "4801332ecee36afcc98fac427c30b578948cbae9d548ccfa9c6ef194a51a5a0a",
+      "sourceFingerprint": "3eefe8b45af4e3e97c346dbe0b03bfcb18cd937730cf9f95c337708765b94a33",
       "helpStatus": "reviewed",
       "description": "Clean-up removes older recovery copies when backups are written, keeping the newest 20 for each project. It does not delete the main project file. It only has new backups to clean up when the Backups setting permits them.",
       "options": [
@@ -222,224 +190,17 @@
       "workInProgress": false
     },
     {
-      "id": "General/Backups/Last backup",
-      "page": "General",
-      "section": "Backups",
-      "name": "Last backup",
-      "note": "See when and where the active project was last backed up.",
+      "id": "Audio/Status/Now",
+      "page": "Audio",
+      "section": "Status",
+      "name": "Now",
+      "note": "Inspect the audio device actually running and its timing reports.",
       "keys": [],
-      "sourceFingerprint": "24078aae0d406654ce614dcea5ebfa91a84816c84a38f0cb4f4be87650747a7e",
+      "sourceFingerprint": "0533ee321c25fb774ac9630e4b33ffc7e6de65e35b114df327cb9c790598a095",
       "helpStatus": "reviewed",
-      "description": "This is a read-only report of the active project’s newest backup, including its time and file location when one exists. It is not a button that saves the project and does not set the backup interval. Use Backups to choose when recovery copies are made.",
+      "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Latency reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Key to sound estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Input now reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty.",
       "options": [],
-      "whenToChange": "Check this after editing when you want to confirm that a recovery copy exists and locate its file.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Agents/agents",
-      "page": "General",
-      "section": "Agents",
-      "name": "Let agents work on open projects",
-      "note": "Allow an attached AI agent to request access to open projects.",
-      "keys": [
-        "agents"
-      ],
-      "sourceFingerprint": "f52268824cfe015c5eda92e54e4ea4e1c7d25aeec30e6b395c999d5daf781626",
-      "helpStatus": "reviewed",
-      "description": "An agent is an external tool that can inspect and edit a project through Suhina’s command interface. Turning this on enables attachment with suhina-cli mcp --attach. Each connection still requires your approval in Suhina. Approved changes appear in the open projects and project edits can be undone. Turning the setting off disconnects attached agents.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Allow agents to request a connection; this does not approve a connection automatically."
-        },
-        {
-          "name": "Off",
-          "description": "Refuse agent attachment and disconnect existing agents. This is the default."
-        }
-      ],
-      "whenToChange": "Turn this on when you want an assistant to work in the project you are viewing, then approve the intended connection in Suhina.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Dropping files/drop_files",
-      "page": "General",
-      "section": "Dropping files",
-      "name": "Several files",
-      "note": "Choose how several dropped files are distributed across tracks.",
-      "keys": [
-        "drop_files"
-      ],
-      "sourceFingerprint": "47df8a98ec3daf3d20c60293c872dcbc5614309337bb77df69a01f1b21d50978",
-      "helpStatus": "reviewed",
-      "description": "When importing several files together, choose whether they share one track or each gets a track. Holding Ctrl while dropping reverses the selected behavior for that drop. This concerns multi-file placement; it does not rearrange files already in the project. On macOS the command modifier is Cmd.",
-      "options": [
-        {
-          "name": "One track",
-          "description": "Place the files on one track; Ctrl while dropping uses separate tracks. This is the default."
-        },
-        {
-          "name": "One each",
-          "description": "Give the files separate tracks; Ctrl while dropping places them on one track."
-        }
-      ],
-      "whenToChange": "Choose One each when importing separate song parts that should have their own mixer channels.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Dropping files/warp_mode",
-      "page": "General",
-      "section": "Dropping files",
-      "name": "Warp mode",
-      "note": "Choose how newly imported samples follow the project tempo.",
-      "keys": [
-        "warp_mode"
-      ],
-      "sourceFingerprint": "19fd79c6236bcbe31825e2e91a6186db5cdd71e0c6d3fe355cd0cfc06c85cd39",
-      "helpStatus": "reviewed",
-      "description": "Warping maps a sample’s recorded timing to musical beats so it can follow the project tempo. This setting supplies the stretch mode for dropped samples whose tempo is known. A sample without a known tempo is not automatically warped. It does not change the modes of existing clips. Currently Rhythmic, Tonal, Texture, Smooth and High quality all use the same pitch-preserving stretch algorithm; their names do not give different sound quality yet. Unsupported files or extreme stretch ratios can fall back to Re-pitch.",
-      "options": [
-        {
-          "name": "Rhythmic",
-          "description": "Keep pitch while fitting the sample to the project tempo. This is the default."
-        },
-        {
-          "name": "Tonal",
-          "description": "Use the same current pitch-preserving algorithm as Rhythmic, while storing Tonal as the clip’s intended mode."
-        },
-        {
-          "name": "Texture",
-          "description": "Use the same current pitch-preserving algorithm, while storing Texture as the intended mode."
-        },
-        {
-          "name": "Smooth",
-          "description": "Use the same current pitch-preserving algorithm, while storing Smooth as the intended mode."
-        },
-        {
-          "name": "High quality",
-          "description": "Use the same current pitch-preserving algorithm; this choice does not currently enable a different quality level."
-        },
-        {
-          "name": "Re-pitch",
-          "description": "Read audio faster or slower to fit the tempo: faster is higher in pitch, slower is lower. Clip transpose does not apply in this mode."
-        }
-      ],
-      "whenToChange": "Choose Re-pitch if you want speed and pitch to change together. Keep a pitch-preserving choice when a loop should follow your song tempo without changing its key.",
-      "workInProgress": true
-    },
-    {
-      "id": "General/Updates/check_updates",
-      "page": "General",
-      "section": "Updates",
-      "name": "Check for updates",
-      "note": "Check once at startup whether a newer build is available.",
-      "keys": [
-        "check_updates"
-      ],
-      "sourceFingerprint": "15f60b9678d146ee771d274a3cf5e620b4f1e5609b8f0c4b47b0379b91b8026f",
-      "helpStatus": "reviewed",
-      "description": "Suhina asks GitHub about the selected update channel once after starting. A newer build can be offered for you to download; enabling the check does not install or restart anything automatically. Help → Check for updates can still check manually when this is off.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Make the startup update check. This is the default."
-        },
-        {
-          "name": "Off",
-          "description": "Skip the automatic startup check; manual checking remains available."
-        }
-      ],
-      "whenToChange": "Turn this off if you prefer to check for updates manually, for example when working offline.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Updates/update_channel",
-      "page": "General",
-      "section": "Updates",
-      "name": "Channel",
-      "note": "Choose the builds offered by the update checker.",
-      "keys": [
-        "update_channel"
-      ],
-      "sourceFingerprint": "8e7651184988cb78e6001c1549664463fb2cdcd6d6d641b0de161a6b6581d0b9",
-      "helpStatus": "reviewed",
-      "description": "An update channel chooses which Suhina builds the checker looks for. Nightly builds follow ongoing development. Test builds are produced for proposed changes and appear as a choice only in Developer mode or when Suhina itself is a test build. Without either condition, the effective channel is Nightly. Checking and installation are separate actions.",
-      "options": [
-        {
-          "name": "Nightly",
-          "description": "Look for the nightly build. This is the default channel."
-        },
-        {
-          "name": "Test builds",
-          "description": "List pull-request test builds for your platform when this channel is available. Downloading one requires signing in through the GitHub CLI."
-        }
-      ],
-      "whenToChange": "Use Test builds when testing a particular proposed change, and return to Nightly for the regular development builds.",
-      "workInProgress": false
-    },
-    {
-      "id": "General/Updates/developer_mode",
-      "page": "General",
-      "section": "Updates",
-      "name": "Developer mode",
-      "note": "Expose test builds in the update channel choices.",
-      "keys": [
-        "developer_mode"
-      ],
-      "sourceFingerprint": "09b657ceed60247a2662f8e45b433a96140560b1730764bb68680a3011e7d9fd",
-      "helpStatus": "reviewed",
-      "description": "Developer mode makes the Test builds update channel available. It does not select that channel or download a build on its own. Downloading a test build requires the GitHub CLI and an explicit connection from the update dialog. A running test build already exposes Test builds even with Developer mode off.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Add Test builds to the channel choices."
-        },
-        {
-          "name": "Off",
-          "description": "Keep the usual channel choices unless the running app is itself a test build. This is the default."
-        }
-      ],
-      "whenToChange": "Enable this when you have been asked to try a test build for a fix or feature.",
-      "workInProgress": false
-    },
-    {
-      "id": "Export/MCP write permissions/mcp_project_folder",
-      "page": "Export",
-      "section": "MCP write permissions",
-      "name": "Allow the project's folder",
-      "note": "Includes subfolders; turn off to revoke this default permission",
-      "keys": [
-        "mcp_project_folder"
-      ],
-      "sourceFingerprint": "30c921230b0703d21dfd0b270f2a1d20be0509af39997d58f693e0edde8b9e3a",
-      "helpStatus": "reviewed",
-      "description": "Allow attached agents to write in the folder of the project they act on, including its subfolders. This is on by default. Turn it off to require an explicitly added folder for writes. An unsaved project has no project folder. This does not restrict exports you choose yourself in File > Export.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Allow writes in the project's folder and its subfolders."
-        },
-        {
-          "name": "Off",
-          "description": "Allow writes only in explicitly added folders."
-        }
-      ],
-      "whenToChange": "Turn this off when agents should write only to a separate export folder.",
-      "workInProgress": false
-    },
-    {
-      "id": "Export/MCP write permissions/mcp_write_folders",
-      "page": "Export",
-      "section": "MCP write permissions",
-      "name": "MCP allowed write folders",
-      "note": "Add or remove folders; includes subfolders. Applies to MCP writes, not File > Export.",
-      "keys": [
-        "mcp_write_folders"
-      ],
-      "sourceFingerprint": "45a8a72936ca1d790f8f8401e7783728baeed19cb5501dc650db86e4fc3d732b",
-      "helpStatus": "reviewed",
-      "description": "Choose the folders where attached agents may save projects and export audio. Add folder opens the system folder picker; Remove revokes that folder's grant. Each grant includes subfolders and is saved across restarts. Missing folders grant no access. Agents cannot change these permissions. Revocation applies to new operations and exports still gathering plug-in state, but does not cancel a render already running.",
-      "options": [],
-      "whenToChange": "Add a destination before asking an agent to export outside your project folder, or to export an unsaved project. Remove folders when access is no longer needed.",
+      "whenToChange": "Check this when the selected interface is unplugged, live notes feel late, or playback breaks up. Compare the reports after changing Output settings.",
       "workInProgress": false
     },
     {
@@ -519,20 +280,6 @@
       "workInProgress": false
     },
     {
-      "id": "Audio/Now/Now",
-      "page": "Audio",
-      "section": "Now",
-      "name": "Now",
-      "note": "Inspect the audio device actually running and its timing reports.",
-      "keys": [],
-      "sourceFingerprint": "8e51f5d3deafba19d9520b5f7de8d815334343b15b62d3266724640748165d5d",
-      "helpStatus": "reviewed",
-      "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Latency reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Key to sound estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Input now reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty.",
-      "options": [],
-      "whenToChange": "Check this when the selected interface is unplugged, live notes feel late, or playback breaks up. Compare the reports after changing Output settings.",
-      "workInProgress": false
-    },
-    {
       "id": "Midi/MIDI inputs/midi_input_off",
       "page": "Midi",
       "section": "MIDI inputs",
@@ -583,6 +330,64 @@
       "workInProgress": false
     },
     {
+      "id": "Plugins/Actions/Plug-in actions",
+      "page": "Plugins",
+      "section": "Actions",
+      "name": "Plug-in actions",
+      "note": "Scan the plug-in folders again or open the plug-in manager.",
+      "keys": [],
+      "sourceFingerprint": "990d4c8a8375472ac6040b46dee8dee7aebe2bbf3c3f67a4161982fdda9051e6",
+      "helpStatus": "reviewed",
+      "description": "Scan checks new or changed plug-in files in the folders that are switched on; Rescan all checks every file again. Manage plug-ins opens a searchable table of found, disabled, failed and incompatible files. The buttons sit above the folder list because they act on it. They do nothing while a scan is already running.",
+      "options": [
+        {
+          "name": "Scan / Rescan all",
+          "description": "Scan new and changed files, or request a full rescan."
+        },
+        {
+          "name": "Manage plug-ins",
+          "description": "Open the catalog, toggle individual plug-ins and use Scan again on a failed or incompatible file."
+        }
+      ],
+      "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",
+      "workInProgress": true
+    },
+    {
+      "id": "Plugins/Folders/Plug-in library",
+      "page": "Plugins",
+      "section": "Folders",
+      "name": "Plug-in library",
+      "note": "Manage the folders plug-ins are looked for in.",
+      "keys": [],
+      "sourceFingerprint": "6e1018643a79060c37994bf63c66c65f58f142e14790dbec4f8424c80479ad83",
+      "helpStatus": "reviewed",
+      "description": "Plug-ins are separately installed instruments and effects. Each folder has a switch controlling whether scans include it, and a format describing which plug-in files to look for. Standard folders can be disabled; added folders can also be removed from the list without deleting files. Enter a path, choose a format and press Add. Disabling a plug-in keeps it in the catalog but removes it from the browser and prevents newly opened projects from loading it. Folder and plug-in changes wait while scanning runs.",
+      "options": [
+        {
+          "name": "Folder checkbox: On / Off",
+          "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
+        },
+        {
+          "name": "Both",
+          "description": "Look for CLAP and VST3 files in an added folder."
+        },
+        {
+          "name": "VST3",
+          "description": "Look for VST3 files only in that folder."
+        },
+        {
+          "name": "CLAP",
+          "description": "Look for CLAP files only in that folder."
+        },
+        {
+          "name": "VST2",
+          "description": "Shown as unavailable: VST2 hosting is not implemented yet."
+        }
+      ],
+      "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",
+      "workInProgress": true
+    },
+    {
       "id": "Plugins/Editors/plugin_editors",
       "page": "Plugins",
       "section": "Editors",
@@ -608,58 +413,163 @@
       "workInProgress": false
     },
     {
-      "id": "Plugins/Library/Plug-in library",
-      "page": "Plugins",
-      "section": "Library",
-      "name": "Plug-in library",
-      "note": "Manage plug-in search folders, scans and the catalog of available plug-ins.",
-      "keys": [],
-      "sourceFingerprint": "dd7082df5031b4d578e1a4e6009a27399223248e09a9aad2e4a8b0870fe63950",
+      "id": "Devices/NAM/nam_models_folder",
+      "page": "Devices",
+      "section": "NAM",
+      "name": "NAM models folder",
+      "note": "Choose the folder supplying the NAM Amp Modeler model list.",
+      "keys": [
+        "nam_models_folder"
+      ],
+      "sourceFingerprint": "e53a8861fe4161c4e12020630f50d7b900d891d53c94cc35ba74ea3413987f6d",
       "helpStatus": "reviewed",
-      "description": "Plug-ins are separately installed instruments and effects. Each folder has a switch controlling whether scans include it, and a format describing which plug-in files to look for. Standard folders can be disabled; added folders can also be removed from the list without deleting files. Enter a path, choose a format and press Add. Scan checks new or changed files; Rescan all checks the library again. Manage plug-ins opens a searchable table of found, disabled, failed and incompatible files. Disabling a plug-in keeps it in the catalog but removes it from the browser and prevents newly opened projects from loading it. Folder and plug-in changes wait while scanning runs.",
+      "description": "A NAM model is a .nam file containing a captured amplifier, preamp or pedal response. The NAM Amp Modeler uses this folder to list available models in its device panel. Type a folder or use Browse; an empty field uses the default shown in Suhina. Choosing a folder does not itself select or replace the model loaded in an effect.",
+      "options": [],
+      "whenToChange": "Point this at the folder where you store your .nam captures so you can choose them from the Amp Modeler panel.",
+      "workInProgress": false
+    },
+    {
+      "id": "Devices/NAM/irs_folder",
+      "page": "Devices",
+      "section": "NAM",
+      "name": "IR folder",
+      "note": "Choose the folder supplying the NAM Cab Loader response list.",
+      "keys": [
+        "irs_folder"
+      ],
+      "sourceFingerprint": "d03b65c48460d67c33451575c883adf4bec5791ad0098ea618cad1d31e36e268",
+      "helpStatus": "reviewed",
+      "description": "An impulse response, or IR, is a short audio recording of how a speaker cabinet and microphone respond to a brief signal. The NAM Cab Loader lists .wav response files from this folder. Type a folder or use Browse; an empty field uses the default shown in Suhina. Changing the folder does not itself replace the response loaded in an effect.",
+      "options": [],
+      "whenToChange": "Choose your cabinet-response folder when the Cab Loader list does not show the .wav responses you want.",
+      "workInProgress": false
+    },
+    {
+      "id": "Devices/Device panels/device_chain",
+      "page": "Devices",
+      "section": "Device panels",
+      "name": "Device chain",
+      "note": "Show a track's instruments and effects side by side below the tracks, or stacked in a side panel.",
+      "keys": [
+        "device_chain"
+      ],
+      "sourceFingerprint": "eee32cfa6dee4519eeaad804a0f74029019856fcd06cf0390db448be934785ad",
+      "helpStatus": "reviewed",
+      "description": "A device chain is the collection of instruments and effects on a track. Select a track to see these controls in the detail area, the panel used for devices and clip editing. This setting changes how that panel and its device controls are arranged; it does not reorder the effects or change the sound.",
       "options": [
         {
-          "name": "Folder checkbox: On / Off",
-          "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
+          "name": "Row (default)",
+          "description": "Place the detail area below the Session or Arrangement view, with device controls arranged side by side. Use Detail area layout to choose whether this bottom panel also extends underneath the browser."
         },
         {
-          "name": "Both",
-          "description": "Look for CLAP and VST3 files in an added folder."
-        },
-        {
-          "name": "VST3",
-          "description": "Look for VST3 files only in that folder."
-        },
-        {
-          "name": "CLAP",
-          "description": "Look for CLAP files only in that folder."
-        },
-        {
-          "name": "VST2",
-          "description": "Shown as unavailable: VST2 hosting is not implemented yet."
-        },
-        {
-          "name": "Scan / Rescan all",
-          "description": "Scan new and changed files, or request a full rescan."
-        },
-        {
-          "name": "Manage plug-ins",
-          "description": "Open the catalog, toggle individual plug-ins and use Scan again on a failed or incompatible file."
+          "name": "Stack",
+          "description": "Place the detail area in a column beside the Session or Arrangement view, with device controls arranged vertically. Detail area layout does not affect this side-panel arrangement."
         }
       ],
-      "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",
+      "whenToChange": "Choose Row when you want to see several effects side by side along the bottom. Choose Stack when you prefer a vertical column of controls beside the tracks.",
+      "workInProgress": false
+    },
+    {
+      "id": "Devices/Device panels/detail_layout",
+      "page": "Devices",
+      "section": "Device panels",
+      "name": "Detail area layout",
+      "note": "Let the bottom editing panel extend underneath the browser, or keep the browser full height beside it.",
+      "keys": [
+        "detail_layout"
+      ],
+      "sourceFingerprint": "e9998446c78723ac7b298feedf3c84a010555e1f6f5192b237113cbb94d756d6",
+      "helpStatus": "reviewed",
+      "description": "The detail area shows the selected track's instruments and effects, or the selected clip's editor. When Device chain is set to Row, this panel sits at the bottom of the window. This setting decides how the bottom panel shares space with the browser, the panel where you find samples, instruments and files. It has no effect while Device chain is set to Stack.",
+      "options": [
+        {
+          "name": "Beside (default)",
+          "description": "Keep the browser running down to the bottom of the window. The detail area uses the remaining width beside the browser, so it does not extend underneath it."
+        },
+        {
+          "name": "Full width",
+          "description": "Extend the detail area across the bottom of the whole window, including the space underneath the browser. The browser becomes shorter to leave room for this wider editing panel."
+        }
+      ],
+      "whenToChange": "Choose Full width if the piano roll or a long row of effects needs more horizontal room. Choose Beside if you want to keep a taller browser visible while editing. Set Device chain to Row first if you currently use Stack.",
+      "workInProgress": false
+    },
+    {
+      "id": "Importing/Dropping files/drop_files",
+      "page": "Importing",
+      "section": "Dropping files",
+      "name": "Several files",
+      "note": "Choose how several dropped files are distributed across tracks.",
+      "keys": [
+        "drop_files"
+      ],
+      "sourceFingerprint": "107679473ea1d995ad73e793164c7c7e54d127fb02aabb49197d8c0a14f17771",
+      "helpStatus": "reviewed",
+      "description": "When importing several files together, choose whether they share one track or each gets a track. Holding Ctrl while dropping reverses the selected behavior for that drop. This concerns multi-file placement; it does not rearrange files already in the project. On macOS the command modifier is Cmd.",
+      "options": [
+        {
+          "name": "One track",
+          "description": "Place the files on one track; Ctrl while dropping uses separate tracks. This is the default."
+        },
+        {
+          "name": "One each",
+          "description": "Give the files separate tracks; Ctrl while dropping places them on one track."
+        }
+      ],
+      "whenToChange": "Choose One each when importing separate song parts that should have their own mixer channels.",
+      "workInProgress": false
+    },
+    {
+      "id": "Importing/Dropping files/warp_mode",
+      "page": "Importing",
+      "section": "Dropping files",
+      "name": "Warp mode",
+      "note": "Choose how newly imported samples follow the project tempo.",
+      "keys": [
+        "warp_mode"
+      ],
+      "sourceFingerprint": "6781fcaae654eec0c1ee906c73cd42692ceed9cb73d4d5a691a85423156ed437",
+      "helpStatus": "reviewed",
+      "description": "Warping maps a sample’s recorded timing to musical beats so it can follow the project tempo. This setting supplies the stretch mode for dropped samples whose tempo is known. A sample without a known tempo is not automatically warped. It does not change the modes of existing clips. Currently Rhythmic, Tonal, Texture, Smooth and High quality all use the same pitch-preserving stretch algorithm; their names do not give different sound quality yet. Unsupported files or extreme stretch ratios can fall back to Re-pitch.",
+      "options": [
+        {
+          "name": "Rhythmic",
+          "description": "Keep pitch while fitting the sample to the project tempo. This is the default."
+        },
+        {
+          "name": "Tonal",
+          "description": "Use the same current pitch-preserving algorithm as Rhythmic, while storing Tonal as the clip’s intended mode."
+        },
+        {
+          "name": "Texture",
+          "description": "Use the same current pitch-preserving algorithm, while storing Texture as the intended mode."
+        },
+        {
+          "name": "Smooth",
+          "description": "Use the same current pitch-preserving algorithm, while storing Smooth as the intended mode."
+        },
+        {
+          "name": "High quality",
+          "description": "Use the same current pitch-preserving algorithm; this choice does not currently enable a different quality level."
+        },
+        {
+          "name": "Re-pitch",
+          "description": "Read audio faster or slower to fit the tempo: faster is higher in pitch, slower is lower. Clip transpose does not apply in this mode."
+        }
+      ],
+      "whenToChange": "Choose Re-pitch if you want speed and pitch to change together. Keep a pitch-preserving choice when a loop should follow your song tempo without changing its key.",
       "workInProgress": true
     },
     {
-      "id": "Arrangement/Clips/sample_stacking",
+      "id": "Arrangement/Clip editing/sample_stacking",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "Clip editing",
       "name": "Allow sample stacking",
       "note": "Choose whether overlapping audio clips play together or replace covered material.",
       "keys": [
         "sample_stacking"
       ],
-      "sourceFingerprint": "640c178e6621afe85fcd96190e288bd7fc7a647bdb7e675d5a6fa2c0e64e5eaa",
+      "sourceFingerprint": "d32b0841f13cd7dfb34c950f603f9c732958389eba1a592e3a357fbe77983910",
       "helpStatus": "reviewed",
       "description": "Stacking keeps overlapping audio clips on one Arrangement track and lets them all play. With stacking off, placing a clip over another removes the covered part: a fully covered clip is removed, and a partly covered clip is shortened or split. Overlapping clips are shown in sub-rows so they remain reachable. This preference is used for moves and related clip placement actions, not as a command to remove existing overlaps. For a file drop, the current implementation requests stacking if either audio or MIDI stacking is enabled.",
       "options": [
@@ -676,15 +586,15 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/midi_stacking",
+      "id": "Arrangement/Clip editing/midi_stacking",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "Clip editing",
       "name": "Allow MIDI stacking",
       "note": "Choose whether overlapping MIDI clips play together or replace covered material.",
       "keys": [
         "midi_stacking"
       ],
-      "sourceFingerprint": "05f51ba151928c4f078b1cbef61d2bf696ceeb85932a54c1f1b32f34e0cc3a46",
+      "sourceFingerprint": "fbab53ed14792d99146de8f62181299a0789f614f0ed5b436f671e668aa5be67",
       "helpStatus": "reviewed",
       "description": "Stacking keeps overlapping MIDI clips on one Arrangement track and lets them all play. With stacking off, placing a clip over another removes the covered part: a fully covered clip is removed, and a partly covered clip is shortened or split. Overlapping clips are shown in sub-rows so they remain reachable. This preference is used for moves and related clip placement actions, not as a command to remove existing overlaps. For a file drop, the current implementation requests stacking if either audio or MIDI stacking is enabled.",
       "options": [
@@ -701,15 +611,15 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/double_click_clip",
+      "id": "Arrangement/Clip editing/double_click_clip",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "Clip editing",
       "name": "Double-click makes a clip",
       "note": "Create an empty clip by double-clicking an empty slot or lane.",
       "keys": [
         "double_click_clip"
       ],
-      "sourceFingerprint": "57bc6dfa9eb0c79e44bb27fef914a276883111b5b21d6f64fae9c982b321b237",
+      "sourceFingerprint": "ef93c8e1fcf95bfa82da500c1ba0ead74110ff4f1d72abed0c8ba7b3187c14ed",
       "helpStatus": "reviewed",
       "description": "This enables double-click creation on an empty Session slot or empty Arrangement lane position of a track that can hold clips. The clip matches the track’s kind: MIDI on a note-playing track, audio on an audio track. An empty audio clip is silent until it has audio content. This is separate from the piano roll’s double-click settings for creating notes.",
       "options": [
@@ -726,15 +636,15 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/menu_name_field",
+      "id": "Arrangement/Clip editing/menu_name_field",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "Clip editing",
       "name": "Name field in clip menus",
       "note": "Choose whether a clip’s context menu includes an editable name field.",
       "keys": [
         "menu_name_field"
       ],
-      "sourceFingerprint": "cec8cfb256df703e1779fed86971408c34a1e4942e03f1d516a4d5cd1f0abecb",
+      "sourceFingerprint": "e30a87e5da911d23a10b73aa1d3499a7bf046d552aa1dfafc2ee3b5a3e988e68",
       "helpStatus": "reviewed",
       "description": "The clip context menu is the menu opened by right-clicking a clip. With this enabled, it contains a name field for editing the clip name. With it disabled, Rename opens name editing on the clip instead. This changes where you type a name, not the clip’s audio or notes.",
       "options": [
@@ -751,65 +661,15 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/notes_replace",
+      "id": "Arrangement/Clip editing/clip_drag",
       "page": "Arrangement",
-      "section": "Clips",
-      "name": "Moved notes replace the notes under them",
-      "note": "Replace a note only when a moved note lands on the same pitch and start.",
-      "keys": [
-        "notes_replace"
-      ],
-      "sourceFingerprint": "a3ec32b7bc9a8c26e71c802645a0d215dc59779d74932d64e76d5099d8f549f1",
-      "helpStatus": "reviewed",
-      "description": "In the piano roll, the grid where MIDI notes are edited, moving a note can land it on an existing note with the same pitch and start time. With replacement on, the existing note is removed. Merely overlapping part of another note does not meet that condition. This preference applies to moves; copying by dragging uses the separate duplicate action.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Replace the existing note at the same pitch and start. This is the default."
-        },
-        {
-          "name": "Off",
-          "description": "Keep both notes when a move lands them at the same pitch and start."
-        }
-      ],
-      "whenToChange": "Keep this on when rearranging a melody and you want one note at each start and pitch. Turn it off to retain coincident notes.",
-      "workInProgress": false
-    },
-    {
-      "id": "Arrangement/Clips/time_select",
-      "page": "Arrangement",
-      "section": "Clips",
-      "name": "Ctrl+drag selects time over clips",
-      "note": "Use Ctrl-drag for time selection instead of dividing clips into drag regions.",
-      "keys": [
-        "time_select"
-      ],
-      "sourceFingerprint": "1abd054777916bf8dba5b3085bed17493df965507f64a065366923d13f25f2bc",
-      "helpStatus": "reviewed",
-      "description": "A time selection is a span of the timeline across one or more tracks; editing can act on material inside that span. This setting changes how you paint that selection over Arrangement clips and lanes. When enabled, an ordinary clip drag moves it and Ctrl-drag selects time; Shift-drag is then the copy gesture. When disabled, Moving a clip determines the clip’s move and selection regions, and Ctrl-drag copies clips. A ruler drag selects time in either mode. Ctrl is Cmd on macOS.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Ctrl-drag selects time over clips; plain clip dragging moves, and Shift-drag copies."
-        },
-        {
-          "name": "Off",
-          "description": "Use clip regions for time selection and movement, as set by Moving a clip. This is the default."
-        }
-      ],
-      "whenToChange": "Enable this when you prefer using the whole clip as a move handle and holding a modifier to select time.",
-      "workInProgress": false
-    },
-    {
-      "id": "Arrangement/Clips/clip_drag",
-      "page": "Arrangement",
-      "section": "Clips",
+      "section": "Clip editing",
       "name": "Moving a clip",
       "note": "Choose which part of an Arrangement clip moves it and which selects time.",
       "keys": [
         "clip_drag"
       ],
-      "sourceFingerprint": "25f6381fe36f445ad746df2d185ca6dc41af5048441abad4957c4c3b219fbf80",
+      "sourceFingerprint": "b740dbe31622b46a95c1cd87d74ecc2e2d9bd72d61ed5cc94af8adf31c079178",
       "helpStatus": "reviewed",
       "description": "A clip can have a name bar above its waveform or note preview. This preference divides the clip into movement and time-selection regions. Ctrl+drag selects time over clips overrides that division when enabled. Very short clip rows without room for a name bar use upper and lower regions. Clicking a clip body can set the play start at the clicked position instead of choosing the whole clip’s span.",
       "options": [
@@ -826,15 +686,115 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/clip_grid",
+      "id": "Arrangement/Time and play/time_select",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "Time and play",
+      "name": "Ctrl+drag selects time over clips",
+      "note": "Use Ctrl-drag for time selection instead of dividing clips into drag regions.",
+      "keys": [
+        "time_select"
+      ],
+      "sourceFingerprint": "f1fd5b9fb64d77c556a3dad8e51ca31f859b80b64dfe97fa952df0b4f2530bd6",
+      "helpStatus": "reviewed",
+      "description": "A time selection is a span of the timeline across one or more tracks; editing can act on material inside that span. This setting changes how you paint that selection over Arrangement clips and lanes. When enabled, an ordinary clip drag moves it and Ctrl-drag selects time; Shift-drag is then the copy gesture. When disabled, Moving a clip determines the clip’s move and selection regions, and Ctrl-drag copies clips. A ruler drag selects time in either mode. Ctrl is Cmd on macOS.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Ctrl-drag selects time over clips; plain clip dragging moves, and Shift-drag copies."
+        },
+        {
+          "name": "Off",
+          "description": "Use clip regions for time selection and movement, as set by Moving a clip. This is the default."
+        }
+      ],
+      "whenToChange": "Enable this when you prefer using the whole clip as a move handle and holding a modifier to select time.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Time and play/play_from_selected_clip",
+      "page": "Arrangement",
+      "section": "Time and play",
+      "name": "Play from the selected clip",
+      "note": "Move the play start marker to newly selected whole clips while stopped.",
+      "keys": [
+        "play_from_selected_clip"
+      ],
+      "sourceFingerprint": "62a6b2d1d49e1f27540e11f49dd25e879acacccae8fc0a56a521f091b9592a37",
+      "helpStatus": "reviewed",
+      "description": "The play start marker is the timeline position used by marker-based playback. With this enabled, changing the whole-clip selection while stopped moves that marker to the earliest selected clip’s start. It does not move the marker during playback. A click in a clip body still sets the position where you clicked; clips on a track edited by an ARA audio editor also keep their own position behavior. Transport → Play from separately chooses whether Play uses the marker or the selected clip.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Move the marker to the first selected whole clip when the selection changes while stopped. This is the default."
+        },
+        {
+          "name": "Off",
+          "description": "Do not move the marker merely because whole clips were selected."
+        }
+      ],
+      "whenToChange": "Turn this off if whole-clip selection should leave a carefully placed play start marker alone, and set Transport → Play from to Marker when that is the position Play should use.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Time and play/play_start",
+      "page": "Arrangement",
+      "section": "Time and play",
+      "name": "Play from",
+      "note": "Choose the starting position used by Play and the play/stop shortcut.",
+      "keys": [
+        "play_start"
+      ],
+      "sourceFingerprint": "87a02bc7af593d5582ffb5e4f59cab2959fd79ff51c52d61240b8408bee482a3",
+      "helpStatus": "reviewed",
+      "description": "The play start marker marks the timeline position from which playback can begin. Selected clip instead starts from a whole clip selected in the Arrangement. With no suitable whole-clip selection, Play uses the marker. Clicking a clip body uses the clicked position, and clips on an ARA audio-editor track also use the position set by that editor or a click. Arrangement → Play from the selected clip separately controls whether changing selection moves the marker.",
+      "options": [
+        {
+          "name": "Marker",
+          "description": "Start from the current play start marker."
+        },
+        {
+          "name": "Selected clip",
+          "description": "Start at the selected whole Arrangement clip where applicable, otherwise use the marker. This is the default."
+        }
+      ],
+      "whenToChange": "Choose Marker to audition from a fixed point while changing the clip selection. Also turn off Arrangement → Play from the selected clip if selection should leave that marker in place.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Time and play/stop",
+      "page": "Arrangement",
+      "section": "Time and play",
+      "name": "Stop",
+      "note": "Choose whether Stop returns to the play start marker or stays at the stopped position.",
+      "keys": [
+        "stop"
+      ],
+      "sourceFingerprint": "4a20bb42913c7b5da77d12894ae958028a38329fb7cb94bd109c62ff14abd0f2",
+      "helpStatus": "reviewed",
+      "description": "The playhead shows the current playback position. Marker returns it to the play start marker when you stop. Stay stops at the current position and moves the start marker there. Pressing Stop again while already stopped returns to the song’s beginning. This sets stop behavior; Play from separately determines how the next Play action chooses its start.",
+      "options": [
+        {
+          "name": "Marker",
+          "description": "Return to the play start marker on stopping. This is the default."
+        },
+        {
+          "name": "Stay",
+          "description": "Keep the stopped position and move the start marker there."
+        }
+      ],
+      "whenToChange": "Choose Marker to rehear a phrase from the same point. Choose Stay when you want to continue from where you stopped.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/View/clip_grid",
+      "page": "Arrangement",
+      "section": "View",
       "name": "Grid in clips",
       "note": "Show the Arrangement beat grid through clip bodies.",
       "keys": [
         "clip_grid"
       ],
-      "sourceFingerprint": "d8dd475138d620c40b95f112ea049ab0e183cb90c8a41cc10f947230fe50f1e4",
+      "sourceFingerprint": "614c4ea108c26792303472275abf74827375040197cc13b8269856689ccc917e",
       "helpStatus": "reviewed",
       "description": "The grid marks musical time with vertical beat and bar lines. Enabling this draws faint lines through clip bodies as well as the empty timeline, making timing easier to compare with waveforms and notes. It changes drawing only; disabling the lines inside clips does not disable snapping.",
       "options": [
@@ -851,15 +811,15 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/waveform_zoom",
+      "id": "Arrangement/View/waveform_zoom",
       "page": "Arrangement",
-      "section": "Clips",
+      "section": "View",
       "name": "Waveform zoom",
       "note": "Enlarge the drawn waveforms in Arrangement audio clips without changing volume.",
       "keys": [
         "waveform_zoom"
       ],
-      "sourceFingerprint": "993858044d3d01891c8a5101c07a7362b987063839b144b986e8b21c49ce48ce",
+      "sourceFingerprint": "cce731657295de8388ca5ed839100efc447c98ce17786d3de3181276ef9a0666",
       "helpStatus": "reviewed",
       "description": "A waveform shows audio level over time. Waveform zoom magnifies its vertical drawing across the Arrangement’s audio clips, helping quiet detail show up. It does not change the audio, gain or time scale. The waveform slider near the Arrangement ruler and Ctrl+Alt+Up/Down adjust the same preference and can provide values beyond the four buttons here.",
       "options": [
@@ -884,81 +844,6 @@
       "workInProgress": false
     },
     {
-      "id": "Arrangement/Clips/stretch_alt_drag",
-      "page": "Arrangement",
-      "section": "Clips",
-      "name": "Ctrl+Alt-drag on an edge stretches audio",
-      "note": "Enable pitch-preserving audio stretching with Ctrl+Alt at a clip edge.",
-      "keys": [
-        "stretch_alt_drag"
-      ],
-      "sourceFingerprint": "464f35094f035650894ea877d91bd8e6fec95a803c6db97b3eb57d7ddb953e2e",
-      "helpStatus": "reviewed",
-      "description": "Time-stretching changes an audio clip’s duration while aiming to retain its pitch. With this enabled, hold Ctrl+Alt while dragging an Arrangement audio clip’s left or right edge to stretch its content to the new span. Suhina adjusts the timing markers and gives shared content a separate copy where necessary. With it disabled, the edge uses normal trimming behavior. Alt alone allows free edge positioning; it is not the stretch gesture. On macOS use Cmd+Option. MIDI clip edges are not affected.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Ctrl+Alt-drag an audio edge to stretch the content. This is the default."
-        },
-        {
-          "name": "Off",
-          "description": "Do not use the edge gesture to stretch audio; edge dragging trims the clip."
-        }
-      ],
-      "whenToChange": "Enable it to fit a recorded phrase to a different duration by dragging its edge.",
-      "workInProgress": false
-    },
-    {
-      "id": "Arrangement/Clips/rename_selected_clips",
-      "page": "Arrangement",
-      "section": "Clips",
-      "name": "Ctrl+R renames every selected clip",
-      "note": "Apply the name typed after Ctrl+R to every selected Arrangement clip.",
-      "keys": [
-        "rename_selected_clips"
-      ],
-      "sourceFingerprint": "08bb665b6c616a1c982934c7af1aa64bc4bac02867b41e3a7a5ae8fde836213c",
-      "helpStatus": "reviewed",
-      "description": "With multiple Arrangement clips selected, this makes the rename action apply the same typed name to all of them as one undoable edit. With it off, renaming targets the last clicked clip. On macOS the default shortcut uses Cmd+R. This is about clip names, not track names.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Rename all selected Arrangement clips together. This is the default."
-        },
-        {
-          "name": "Off",
-          "description": "Rename only the clip clicked last."
-        }
-      ],
-      "whenToChange": "Keep this on when naming several parts of one phrase together. Turn it off if a multi-selection should not rename the other clips.",
-      "workInProgress": false
-    },
-    {
-      "id": "Arrangement/Clips/play_from_selected_clip",
-      "page": "Arrangement",
-      "section": "Clips",
-      "name": "Play from the selected clip",
-      "note": "Move the play start marker to newly selected whole clips while stopped.",
-      "keys": [
-        "play_from_selected_clip"
-      ],
-      "sourceFingerprint": "bba612869a69ff34c8c3868dda8a0ce2ebe09dc9cb27df2a39fbf2bbf5353b91",
-      "helpStatus": "reviewed",
-      "description": "The play start marker is the timeline position used by marker-based playback. With this enabled, changing the whole-clip selection while stopped moves that marker to the earliest selected clip’s start. It does not move the marker during playback. A click in a clip body still sets the position where you clicked; clips on a track edited by an ARA audio editor also keep their own position behavior. Transport → Play from separately chooses whether Play uses the marker or the selected clip.",
-      "options": [
-        {
-          "name": "On",
-          "description": "Move the marker to the first selected whole clip when the selection changes while stopped. This is the default."
-        },
-        {
-          "name": "Off",
-          "description": "Do not move the marker merely because whole clips were selected."
-        }
-      ],
-      "whenToChange": "Turn this off if whole-clip selection should leave a carefully placed play start marker alone, and set Transport → Play from to Marker when that is the position Play should use.",
-      "workInProgress": false
-    },
-    {
       "id": "Arrangement/Tracks/new_track_colour",
       "page": "Arrangement",
       "section": "Tracks",
@@ -967,7 +852,7 @@
       "keys": [
         "new_track_colour"
       ],
-      "sourceFingerprint": "8d2cb6d9efde9d5984130eaa6afd94184f0df991b710c278d321a3061b70e6c8",
+      "sourceFingerprint": "073ef32592774024d542d56c8fbe5bf167c16a7e79206dd9f5fb1222c63c266e",
       "helpStatus": "reviewed",
       "description": "The palette is the theme’s set of track colors. This chooses how a new track gets its initial color. Existing tracks retain their stored colors when the preference changes or tracks are reordered. You can still set a track’s color individually.",
       "options": [
@@ -1031,6 +916,56 @@
         }
       ],
       "whenToChange": "Hide returns to make more room for ordinary tracks when you are not editing return effects or automation.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Advanced/stretch_alt_drag",
+      "page": "Arrangement",
+      "section": "Advanced",
+      "name": "Ctrl+Alt-drag on an edge stretches audio",
+      "note": "Enable pitch-preserving audio stretching with Ctrl+Alt at a clip edge.",
+      "keys": [
+        "stretch_alt_drag"
+      ],
+      "sourceFingerprint": "93457fe14882fd900cebcd025bf89f04ba902680f8dbbb047aa3cfc9648b895b",
+      "helpStatus": "reviewed",
+      "description": "Time-stretching changes an audio clip’s duration while aiming to retain its pitch. With this enabled, hold Ctrl+Alt while dragging an Arrangement audio clip’s left or right edge to stretch its content to the new span. Suhina adjusts the timing markers and gives shared content a separate copy where necessary. With it disabled, the edge uses normal trimming behavior. Alt alone allows free edge positioning; it is not the stretch gesture. On macOS use Cmd+Option. MIDI clip edges are not affected.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Ctrl+Alt-drag an audio edge to stretch the content. This is the default."
+        },
+        {
+          "name": "Off",
+          "description": "Do not use the edge gesture to stretch audio; edge dragging trims the clip."
+        }
+      ],
+      "whenToChange": "Enable it to fit a recorded phrase to a different duration by dragging its edge.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Advanced/rename_selected_clips",
+      "page": "Arrangement",
+      "section": "Advanced",
+      "name": "Ctrl+R renames every selected clip",
+      "note": "Apply the name typed after Ctrl+R to every selected Arrangement clip.",
+      "keys": [
+        "rename_selected_clips"
+      ],
+      "sourceFingerprint": "f0daa252851ad95df449dcacb0b7614f0180ee1f879614cf98a4d72ef2d06713",
+      "helpStatus": "reviewed",
+      "description": "With multiple Arrangement clips selected, this makes the rename action apply the same typed name to all of them as one undoable edit. With it off, renaming targets the last clicked clip. On macOS the default shortcut uses Cmd+R. This is about clip names, not track names.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Rename all selected Arrangement clips together. This is the default."
+        },
+        {
+          "name": "Off",
+          "description": "Rename only the clip clicked last."
+        }
+      ],
+      "whenToChange": "Keep this on when naming several parts of one phrase together. Turn it off if a multi-selection should not rename the other clips.",
       "workInProgress": false
     },
     {
@@ -1163,148 +1098,28 @@
       "workInProgress": false
     },
     {
-      "id": "ClipEditor/Workflow/keymap.json",
+      "id": "ClipEditor/Piano roll/notes_replace",
       "page": "ClipEditor",
-      "section": "Workflow",
-      "name": "Workflow settings",
-      "note": "Customize the piano roll’s click gestures and duplicate key.",
+      "section": "Piano roll",
+      "name": "Moved notes replace the notes under them",
+      "note": "Replace a note only when a moved note lands on the same pitch and start.",
       "keys": [
-        "keymap.json"
+        "notes_replace"
       ],
-      "sourceFingerprint": "2613e9c65f112a645142a53c0b941a8d89ca11d303d32bdf443da70bfadce764",
+      "sourceFingerprint": "9b412d8107dd59d660ef5f1638a2f6cbe13260242027c04e540047b83f572a86",
       "helpStatus": "reviewed",
-      "description": "These seven controls define how you edit notes, independently of the selected musical clip. Changing an individual choice makes the workflow Custom and keeps the other choices. Choosing Select-first, Draw-first or Mouse-first again in the workflow menu or Shortcuts preset fills in that preset’s gestures and keys. Empty-grid click and double-click choices apply in the Select tool; they do not redefine every drawing tool. On macOS Ctrl in shortcut choices means Cmd and Alt means Option.",
+      "description": "In the piano roll, the grid where MIDI notes are edited, moving a note can land it on an existing note with the same pitch and start time. With replacement on, the existing note is removed. Merely overlapping part of another note does not meet that condition. This preference applies to moves; copying by dragging uses the separate duplicate action.",
       "options": [
         {
-          "name": "Click on empty grid: Selects / Draws",
-          "description": "In the Select tool, an empty-grid click either clears the selection or adds a note."
+          "name": "On",
+          "description": "Replace the existing note at the same pitch and start. This is the default."
         },
         {
-          "name": "Right click on a note: Nothing / Draw, Paint / Every tool",
-          "description": "Do not delete on right-click, delete only in Draw and Paint, or delete in every tool; the last also supports dragging across notes to erase them."
-        },
-        {
-          "name": "Shift+right drag: Off / Splits",
-          "description": "Disable the shortcut gesture or split each note crossed by the right-button drag while Shift is held."
-        },
-        {
-          "name": "Alt+right button: Off / Plays",
-          "description": "Disable the gesture or play the clip from the pointer while holding Alt and the right button."
-        },
-        {
-          "name": "Duplicate key: Ctrl+D / Ctrl+B",
-          "description": "Choose the duplicate shortcut for notes and clips. Choosing Ctrl+B moves the browser shortcut to Ctrl+Shift+B."
-        },
-        {
-          "name": "Double-click on empty grid: Adds / Nothing",
-          "description": "In Select, add a note with a double-click or leave it as selection clearing. If the first click already drew a note, the second selects it rather than deleting it."
-        },
-        {
-          "name": "Double-click on a note: Deletes / Nothing",
-          "description": "In Select, delete a double-clicked note, including its edge, or disable that double-click deletion."
+          "name": "Off",
+          "description": "Keep both notes when a move lands them at the same pitch and start."
         }
       ],
-      "whenToChange": "Mix individual choices when you want, for example, click-to-draw notes but no right-click deletion.",
-      "workInProgress": false
-    },
-    {
-      "id": "Transport/Play and stop/play_start",
-      "page": "Transport",
-      "section": "Play and stop",
-      "name": "Play from",
-      "note": "Choose the starting position used by Play and the play/stop shortcut.",
-      "keys": [
-        "play_start"
-      ],
-      "sourceFingerprint": "7c502f142c0c7a1fb4954676620d9f5523cc9a3316f962749477f9a0db8b323a",
-      "helpStatus": "reviewed",
-      "description": "The play start marker marks the timeline position from which playback can begin. Selected clip instead starts from a whole clip selected in the Arrangement. With no suitable whole-clip selection, Play uses the marker. Clicking a clip body uses the clicked position, and clips on an ARA audio-editor track also use the position set by that editor or a click. Arrangement → Play from the selected clip separately controls whether changing selection moves the marker.",
-      "options": [
-        {
-          "name": "Marker",
-          "description": "Start from the current play start marker."
-        },
-        {
-          "name": "Selected clip",
-          "description": "Start at the selected whole Arrangement clip where applicable, otherwise use the marker. This is the default."
-        }
-      ],
-      "whenToChange": "Choose Marker to audition from a fixed point while changing the clip selection. Also turn off Arrangement → Play from the selected clip if selection should leave that marker in place.",
-      "workInProgress": false
-    },
-    {
-      "id": "Transport/Play and stop/stop",
-      "page": "Transport",
-      "section": "Play and stop",
-      "name": "Stop",
-      "note": "Choose whether Stop returns to the play start marker or stays at the stopped position.",
-      "keys": [
-        "stop"
-      ],
-      "sourceFingerprint": "9052a5b58bd51584bb1f58157af820a7ac0620139a2a867cc403f65a5bc93e8d",
-      "helpStatus": "reviewed",
-      "description": "The playhead shows the current playback position. Marker returns it to the play start marker when you stop. Stay stops at the current position and moves the start marker there. Pressing Stop again while already stopped returns to the song’s beginning. This sets stop behavior; Play from separately determines how the next Play action chooses its start.",
-      "options": [
-        {
-          "name": "Marker",
-          "description": "Return to the play start marker on stopping. This is the default."
-        },
-        {
-          "name": "Stay",
-          "description": "Keep the stopped position and move the start marker there."
-        }
-      ],
-      "whenToChange": "Choose Marker to rehear a phrase from the same point. Choose Stay when you want to continue from where you stopped.",
-      "workInProgress": false
-    },
-    {
-      "id": "DetailArea/Devices/device_chain",
-      "page": "DetailArea",
-      "section": "Devices",
-      "name": "Device chain",
-      "note": "Show a track's instruments and effects side by side below the tracks, or stacked in a side panel.",
-      "keys": [
-        "device_chain"
-      ],
-      "sourceFingerprint": "d6e7493c3c3d85a3ffe237b656cd8509fde460754b12e66f39a80d155fe4cf2b",
-      "helpStatus": "reviewed",
-      "description": "A device chain is the collection of instruments and effects on a track. Select a track to see these controls in the detail area, the panel used for devices and clip editing. This setting changes how that panel and its device controls are arranged; it does not reorder the effects or change the sound.",
-      "options": [
-        {
-          "name": "Row (default)",
-          "description": "Place the detail area below the Session or Arrangement view, with device controls arranged side by side. Use Detail area layout to choose whether this bottom panel also extends underneath the browser."
-        },
-        {
-          "name": "Stack",
-          "description": "Place the detail area in a column beside the Session or Arrangement view, with device controls arranged vertically. Detail area layout does not affect this side-panel arrangement."
-        }
-      ],
-      "whenToChange": "Choose Row when you want to see several effects side by side along the bottom. Choose Stack when you prefer a vertical column of controls beside the tracks.",
-      "workInProgress": false
-    },
-    {
-      "id": "DetailArea/Devices/detail_layout",
-      "page": "DetailArea",
-      "section": "Devices",
-      "name": "Detail area layout",
-      "note": "Let the bottom editing panel extend underneath the browser, or keep the browser full height beside it.",
-      "keys": [
-        "detail_layout"
-      ],
-      "sourceFingerprint": "b065b900b042bd50de2f7c7d70a7d3779a043823a877078ba3e2dfc8ffe6766d",
-      "helpStatus": "reviewed",
-      "description": "The detail area shows the selected track's instruments and effects, or the selected clip's editor. When Device chain is set to Row, this panel sits at the bottom of the window. This setting decides how the bottom panel shares space with the browser, the panel where you find samples, instruments and files. It has no effect while Device chain is set to Stack.",
-      "options": [
-        {
-          "name": "Beside (default)",
-          "description": "Keep the browser running down to the bottom of the window. The detail area uses the remaining width beside the browser, so it does not extend underneath it."
-        },
-        {
-          "name": "Full width",
-          "description": "Extend the detail area across the bottom of the whole window, including the space underneath the browser. The browser becomes shorter to leave room for this wider editing panel."
-        }
-      ],
-      "whenToChange": "Choose Full width if the piano roll or a long row of effects needs more horizontal room. Choose Beside if you want to keep a taller browser visible while editing. Set Device chain to Row first if you currently use Stack.",
+      "whenToChange": "Keep this on when rearranging a melody and you want one note at each start and pitch. Turn it off to retain coincident notes.",
       "workInProgress": false
     },
     {
@@ -1530,6 +1345,72 @@
       "workInProgress": false
     },
     {
+      "id": "Keys/Mouse and key behaviour/keymap.json",
+      "page": "Keys",
+      "section": "Mouse and key behaviour",
+      "name": "Workflow settings",
+      "note": "Choose a keyboard preset or rebind individual actions.",
+      "keys": [
+        "keymap.json"
+      ],
+      "sourceFingerprint": "76b9052340c0f5d14e62fa404cdb6f7a40120f919ab842e6ebf81a7eb9771e81",
+      "helpStatus": "reviewed",
+      "description": "This panel lists actions, their assigned keys and controls to Change or Clear them. Change captures the next key with its modifiers; Escape cancels capture. Clear removes an action’s binding. Filter shortcuts searches action names, groups and keys, and conflicts are displayed when one key triggers several actions. Choosing a preset resets keyboard bindings to defaults and applies that preset’s piano-roll workflow behaviors. Editing a workflow choice makes the mode Custom. Reset all currently resets the entire keymap to its default Select-first state. Keys and workflow preferences are saved in keymap.json. Ctrl means Cmd on macOS; Alt means Option.",
+      "options": [
+        {
+          "name": "Select-first",
+          "description": "Use selection-oriented gestures and Ctrl+D to duplicate. This is the default preset."
+        },
+        {
+          "name": "Draw-first",
+          "description": "Use Ctrl+B to duplicate and Ctrl+Shift+B for the browser; right-click deletes notes in Draw and Paint."
+        },
+        {
+          "name": "Mouse-first",
+          "description": "Click to draw in Select, right-click to delete, Shift+right-drag to split, and Alt+right to play from the pointer; duplicate remains Ctrl+D."
+        },
+        {
+          "name": "Custom",
+          "description": "Keep a mixture of individual workflow choices rather than fill in a preset’s behaviors."
+        }
+      ],
+      "whenToChange": "Rebind an action when its default key is awkward on your keyboard, then check for conflicts. Choose a preset when you want a consistent set of note-editing habits.",
+      "workInProgress": false
+    },
+    {
+      "id": "Keys/Shortcuts/keymap.json",
+      "page": "Keys",
+      "section": "Shortcuts",
+      "name": "Shortcuts",
+      "note": "Choose a keyboard preset or rebind individual actions.",
+      "keys": [
+        "keymap.json"
+      ],
+      "sourceFingerprint": "d4decb17be3d7a48cf6a86498905d8cec95a23fe426787c63dbb88314c1bc5f9",
+      "helpStatus": "reviewed",
+      "description": "This panel lists actions, their assigned keys and controls to Change or Clear them. Change captures the next key with its modifiers; Escape cancels capture. Clear removes an action’s binding. Filter shortcuts searches action names, groups and keys, and conflicts are displayed when one key triggers several actions. Choosing a preset resets keyboard bindings to defaults and applies that preset’s piano-roll workflow behaviors. Editing a workflow choice makes the mode Custom. Reset all currently resets the entire keymap to its default Select-first state. Keys and workflow preferences are saved in keymap.json. Ctrl means Cmd on macOS; Alt means Option.",
+      "options": [
+        {
+          "name": "Select-first",
+          "description": "Use selection-oriented gestures and Ctrl+D to duplicate. This is the default preset."
+        },
+        {
+          "name": "Draw-first",
+          "description": "Use Ctrl+B to duplicate and Ctrl+Shift+B for the browser; right-click deletes notes in Draw and Paint."
+        },
+        {
+          "name": "Mouse-first",
+          "description": "Click to draw in Select, right-click to delete, Shift+right-drag to split, and Alt+right to play from the pointer; duplicate remains Ctrl+D."
+        },
+        {
+          "name": "Custom",
+          "description": "Keep a mixture of individual workflow choices rather than fill in a preset’s behaviors."
+        }
+      ],
+      "whenToChange": "Rebind an action when its default key is awkward on your keyboard, then check for conflicts. Choose a preset when you want a consistent set of note-editing habits.",
+      "workInProgress": false
+    },
+    {
       "id": "Appearance/Window/zoom",
       "page": "Appearance",
       "section": "Window",
@@ -1596,15 +1477,15 @@
       "workInProgress": false
     },
     {
-      "id": "Appearance/Graphics/renderer",
+      "id": "Appearance/Advanced/renderer",
       "page": "Appearance",
-      "section": "Graphics",
+      "section": "Advanced",
       "name": "Renderer",
       "note": "Choose the graphics system used to draw Suhina after its next start.",
       "keys": [
         "renderer"
       ],
-      "sourceFingerprint": "687151760314aff00f9d905668f468790a57c21eb8bf30fb220a1cc381a1139e",
+      "sourceFingerprint": "5c35d9f33871a3e72b4841198e612615e10c49751b34c76c7dbc404d7cb24537",
       "helpStatus": "reviewed",
       "description": "The renderer draws the application window and controls. GPU uses Suhina’s wgpu graphics path; OpenGL uses its OpenGL path. This preference takes effect on the next application start rather than changing the running window. It does not change the audio engine. A command-line renderer choice can override the saved preference for a launch.",
       "options": [
@@ -1637,36 +1518,144 @@
       "workInProgress": false
     },
     {
-      "id": "Shortcuts/Keys/keymap.json",
-      "page": "Shortcuts",
-      "section": "Keys",
-      "name": "Shortcuts",
-      "note": "Choose a keyboard preset or rebind individual actions.",
+      "id": "Agents/Agents/agents",
+      "page": "Agents",
+      "section": "Agents",
+      "name": "Let agents work on open projects",
+      "note": "Allow an attached AI agent to request access to open projects.",
       "keys": [
-        "keymap.json"
+        "agents"
       ],
-      "sourceFingerprint": "d3fe4af86eddb033c5cccae34096f9ce8352682038bb3b67b2538206e44c46e1",
+      "sourceFingerprint": "f39d6d5f6535e3b829724dee931f77453e9d6a1c82920670f2330630666ffb2e",
       "helpStatus": "reviewed",
-      "description": "This panel lists actions, their assigned keys and controls to Change or Clear them. Change captures the next key with its modifiers; Escape cancels capture. Clear removes an action’s binding. Filter shortcuts searches action names, groups and keys, and conflicts are displayed when one key triggers several actions. Choosing a preset resets keyboard bindings to defaults and applies that preset’s piano-roll workflow behaviors. Editing a workflow choice makes the mode Custom. Reset all currently resets the entire keymap to its default Select-first state. Keys and workflow preferences are saved in keymap.json. Ctrl means Cmd on macOS; Alt means Option.",
+      "description": "An agent is an external tool that can inspect and edit a project through Suhina’s command interface. Turning this on enables attachment with suhina-cli mcp --attach. Each connection still requires your approval in Suhina. Approved changes appear in the open projects and project edits can be undone. Turning the setting off disconnects attached agents.",
       "options": [
         {
-          "name": "Select-first",
-          "description": "Use selection-oriented gestures and Ctrl+D to duplicate. This is the default preset."
+          "name": "On",
+          "description": "Allow agents to request a connection; this does not approve a connection automatically."
         },
         {
-          "name": "Draw-first",
-          "description": "Use Ctrl+B to duplicate and Ctrl+Shift+B for the browser; right-click deletes notes in Draw and Paint."
-        },
-        {
-          "name": "Mouse-first",
-          "description": "Click to draw in Select, right-click to delete, Shift+right-drag to split, and Alt+right to play from the pointer; duplicate remains Ctrl+D."
-        },
-        {
-          "name": "Custom",
-          "description": "Keep a mixture of individual workflow choices rather than fill in a preset’s behaviors."
+          "name": "Off",
+          "description": "Refuse agent attachment and disconnect existing agents. This is the default."
         }
       ],
-      "whenToChange": "Rebind an action when its default key is awkward on your keyboard, then check for conflicts. Choose a preset when you want a consistent set of note-editing habits.",
+      "whenToChange": "Turn this on when you want an assistant to work in the project you are viewing, then approve the intended connection in Suhina.",
+      "workInProgress": false
+    },
+    {
+      "id": "Agents/MCP write permissions/mcp_project_folder",
+      "page": "Agents",
+      "section": "MCP write permissions",
+      "name": "Allow the project's folder",
+      "note": "Includes subfolders; turn off to revoke this default permission",
+      "keys": [
+        "mcp_project_folder"
+      ],
+      "sourceFingerprint": "38cfcc21207a2bf07a48b057f52f61dcb55b7ed4a42511598cad1a8f9d8f9261",
+      "helpStatus": "reviewed",
+      "description": "Allow attached agents to write in the folder of the project they act on, including its subfolders. This is on by default. Turn it off to require an explicitly added folder for writes. An unsaved project has no project folder. This does not restrict exports you choose yourself in File > Export.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Allow writes in the project's folder and its subfolders."
+        },
+        {
+          "name": "Off",
+          "description": "Allow writes only in explicitly added folders."
+        }
+      ],
+      "whenToChange": "Turn this off when agents should write only to a separate export folder.",
+      "workInProgress": false
+    },
+    {
+      "id": "Agents/MCP write permissions/mcp_write_folders",
+      "page": "Agents",
+      "section": "MCP write permissions",
+      "name": "MCP allowed write folders",
+      "note": "Folders an agent may write to through MCP, each with its subfolders; File > Export is not limited by them",
+      "keys": [
+        "mcp_write_folders"
+      ],
+      "sourceFingerprint": "b3762bd5a09607001248df22b12a227a493deac9ceafd89e260ff78186126950",
+      "helpStatus": "reviewed",
+      "description": "Choose the folders where attached agents may save projects and export audio. Add folder opens the system folder picker; Remove revokes that folder's grant. Each grant includes subfolders and is saved across restarts. Missing folders grant no access. Agents cannot change these permissions. Revocation applies to new operations and exports still gathering plug-in state, but does not cancel a render already running.",
+      "options": [],
+      "whenToChange": "Add a destination before asking an agent to export outside your project folder, or to export an unsaved project. Remove folders when access is no longer needed.",
+      "workInProgress": false
+    },
+    {
+      "id": "Agents/Updates/check_updates",
+      "page": "Agents",
+      "section": "Updates",
+      "name": "Check for updates",
+      "note": "Check once at startup whether a newer build is available.",
+      "keys": [
+        "check_updates"
+      ],
+      "sourceFingerprint": "85d8b091f9fdc4bacb3ae5dc4ccd49fd42542abac1a57d1b2fd140a24f148d5f",
+      "helpStatus": "reviewed",
+      "description": "Suhina asks GitHub about the selected update channel once after starting. A newer build can be offered for you to download; enabling the check does not install or restart anything automatically. Help → Check for updates can still check manually when this is off.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Make the startup update check. This is the default."
+        },
+        {
+          "name": "Off",
+          "description": "Skip the automatic startup check; manual checking remains available."
+        }
+      ],
+      "whenToChange": "Turn this off if you prefer to check for updates manually, for example when working offline.",
+      "workInProgress": false
+    },
+    {
+      "id": "Agents/Updates/update_channel",
+      "page": "Agents",
+      "section": "Updates",
+      "name": "Channel",
+      "note": "Choose the builds offered by the update checker.",
+      "keys": [
+        "update_channel"
+      ],
+      "sourceFingerprint": "352f423d835ef703ed6bdd800f2bf7b11334f030a552a83b67ddb6c561fe6960",
+      "helpStatus": "reviewed",
+      "description": "An update channel chooses which Suhina builds the checker looks for. Nightly builds follow ongoing development. Test builds are produced for proposed changes and appear as a choice only in Developer mode or when Suhina itself is a test build. Without either condition, the effective channel is Nightly. Checking and installation are separate actions.",
+      "options": [
+        {
+          "name": "Nightly",
+          "description": "Look for the nightly build. This is the default channel."
+        },
+        {
+          "name": "Test builds",
+          "description": "List pull-request test builds for your platform when this channel is available. Downloading one requires signing in through the GitHub CLI."
+        }
+      ],
+      "whenToChange": "Use Test builds when testing a particular proposed change, and return to Nightly for the regular development builds.",
+      "workInProgress": false
+    },
+    {
+      "id": "Agents/Advanced/developer_mode",
+      "page": "Agents",
+      "section": "Advanced",
+      "name": "Developer mode",
+      "note": "Expose test builds in the update channel choices.",
+      "keys": [
+        "developer_mode"
+      ],
+      "sourceFingerprint": "62731572cb3fc1b3a32df42d4cfe313ceb6b3e1cda4bb38f0c482726919455ac",
+      "helpStatus": "reviewed",
+      "description": "Developer mode makes the Test builds update channel available. It does not select that channel or download a build on its own. Downloading a test build requires the GitHub CLI and an explicit connection from the update dialog. A running test build already exposes Test builds even with Developer mode off.",
+      "options": [
+        {
+          "name": "On",
+          "description": "Add Test builds to the channel choices."
+        },
+        {
+          "name": "Off",
+          "description": "Keep the usual channel choices unless the running app is itself a test build. This is the default."
+        }
+      ],
+      "whenToChange": "Enable this when you have been asked to try a test build for a fix or feature.",
       "workInProgress": false
     }
   ]

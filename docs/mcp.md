@@ -461,14 +461,14 @@ suhina-cli mcp --attach
   network port. Test builds in different folders do not meet. Starting a build's `suhina` while it
   runs opens the project as a tab in the running window instead (`suhina --new-instance` starts
   another window, which serves no agents).
-- **The person lets agents in.** Nothing listens until **Settings › General › Agents › Let agents
+- **The person lets agents in.** Nothing listens until **Settings › Agents and updates › Agents › Let agents
   work on open projects** is on. Each connection then waits: the window asks whether to allow the
   client (by the name it gives at `initialize`), and tool calls wait for the answer; Deny ends the
   connection. The control bar shows each agent let in with a **Disconnect** button.
 - **Tabs.** The agent works on the window's tabs: `projects.list`, `projects.switch` and the
   `project` argument act on them. `project_open` is refused (the person opens projects), and so is
   `projects.close`: closing loses a tab's unsaved changes and its undo history.
-- **Files.** Settings › Export controls where attached agents may write (`project.save`,
+- **Files.** Settings › Agents and updates controls where attached agents may write (`project.save`,
   `project.export`, `project_render`, `project.autosave` with `now`). The project's folder is
   allowed by default; the person can turn that grant off and add or remove other folders.
   Each grant includes subfolders and persists across restarts. Relative write paths start in

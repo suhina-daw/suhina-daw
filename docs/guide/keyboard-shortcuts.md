@@ -65,7 +65,7 @@ The project you leave stops playing.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › General › **Play from** and **Stop**. |
+| Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
 | Shift+Space | `transport.playFromSelection` | Anywhere | Plays from the start of the clip selected in the Arrangement view, whatever the Play from setting says. With no clip selected it plays from the play start marker. |
 | Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
@@ -188,7 +188,7 @@ hear the track's instrument. Ctrl+click and Ctrl+drag on it select every note of
 ## Commands you can give a key
 
 Besides the actions above, every command that needs no further information can get a key. They
-are listed in Settings › Shortcuts under **Commands** and have no key until you give them one. The
+are listed in Settings › Keys under **Commands** and have no key until you give them one. The
 same commands run from `suhina-cli` and from agents through MCP ([`mcp.md`](../mcp.md)); the full
 list is [`commands.md`](../commands.md).
 
@@ -238,7 +238,7 @@ Your keys are kept in one file, `keymap.json`:
 - **To back up** your keys, copy `keymap.json` somewhere safe.
 - **To move them to another computer** or **share them**, copy the file into the same folder
   there, while Suhina is closed. Suhina reads it when it starts.
-- **To go back to the defaults**, use **Reset all** in Settings › Shortcuts, or delete the file
+- **To go back to the defaults**, use **Reset all** in Settings › Keys, or delete the file
   while Suhina is closed.
 
 Suhina writes every action and its keys into the file, by action id, with the preset and the piano

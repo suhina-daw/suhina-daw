@@ -76,7 +76,7 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    found next to the template.
 9. **The window** offers New or open (Ctrl+T): a new blank project, one from a template in the
    templates folder, or a project to open from a typed path or the recent list (kept in
-   `recent.txt`). Started without a project given, it opens what Settings › General › At start
+   `recent.txt`). Started without a project given, it opens what Settings › Projects and backups › At start
    says (`at_start` in `settings.txt`, #234): the start panel (the default, `panel`; #318),
    a new blank project, a new one from the start template (`start_template`: a name in the
    templates folder or a path), or the project opened last (the newest in `recent.txt`); a

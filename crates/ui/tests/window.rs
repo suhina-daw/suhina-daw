@@ -277,7 +277,7 @@ fn the_plugin_key_says_when_a_track_has_no_running_plug_in() {
     // (the keymap tests cover the default and the conflicts).
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     assert!(harness.query_by_label_contains("Open or close the selected track's plug-in editor").is_some());
     harness.key_press(Key::Escape);
@@ -619,7 +619,7 @@ fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
     // With Stop set to stay, the marker moves to where it stopped.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Transport").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
     harness.get_by_label("Stop: Stay").click();
     harness.run();
@@ -823,7 +823,7 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     // With Play from set to the selected clip, Space and the Play button start there too.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Transport").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
     harness.get_by_label("Play from: Marker").click();
     harness.run();
@@ -933,7 +933,7 @@ fn settings_change_right_away_and_are_handed_out_to_be_saved() {
     assert!(harness.state().settings_open());
     harness.get_by_label("Settings page: Appearance").click();
     harness.run();
-    harness.get_by_label("Animations: Off").click();
+    harness.get_by_label("Animations").click();
     harness.run();
     harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
@@ -1285,7 +1285,7 @@ fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
     for _ in 0..3 {
         harness.step();
     }
-    harness.get_by_label("MIDI input Pads In: Off").click();
+    harness.get_by_label("MIDI input Pads In").click();
     harness.step();
     harness.step();
     assert_eq!(harness.state().projects().midi_inputs_off(), ["Pads In"]);
@@ -2222,7 +2222,7 @@ fn a_key_set_in_settings_runs_its_action_and_is_saved() {
     let mut harness = window(demo_app());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     harness.get_by_label("Change keys of view.arrangement").click();
     harness.run();
@@ -2258,6 +2258,8 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         Some(suhina_ui::settings::ToolbarSize::Larger)
     );
 
+    harness.get_by_label("Settings page: Keys").click();
+    harness.run();
     // The workflow settings write to the keymap, which is handed out to be saved. They are the
     // page's last rows: the wheel scrolls them into view.
     for _ in 0..20 {
@@ -2299,7 +2301,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         assert!(harness.query_by_label(row).is_some(), "{row}");
     }
     // A preset chosen on the Shortcuts page turns all four mouse switches on.
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     harness.get_by_label("Preset: Mouse-first").click();
     harness.run();
@@ -2309,7 +2311,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         Some(suhina_ui::settings::keymap::MouseSettings::ALL_ON)
     );
     assert!(harness.query_by_label("Preset: Custom").is_some(), "Custom is one of the modes there too");
-    harness.get_by_label("Settings page: Clip editor").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     assert!(harness.query_by_label("Right click on a note: Every tool").is_some());
     harness.get_by_label("Close settings").click();
@@ -2712,13 +2714,13 @@ fn render_the_session_window() {
     harness.run();
     let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
     image.save(folder.join("settings-arrangement.png")).unwrap_or_else(|e| panic!("{e}"));
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     harness.remove_cursor();
     harness.run();
     let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
     image.save(folder.join("shortcuts.png")).unwrap_or_else(|e| panic!("{e}"));
-    harness.get_by_label("Settings page: General").click();
+    harness.get_by_label("Settings page: Projects and backups").click();
     harness.run();
 
     let mut harness = Harness::builder()
@@ -2902,7 +2904,7 @@ fn settings_audio_names_the_engine_block_on_wasapi_shared() {
     assert!(harness.query_by_label("Buffer size: Default (1024 frames)").is_none());
     // Exclusive mode takes the device for Suhina alone and asks it for the size, so the row says
     // what the number is there.
-    harness.get_by_label("Exclusive mode: On").click();
+    harness.get_by_label("Exclusive mode").click();
     for _ in 0..3 {
         harness.step();
     }

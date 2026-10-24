@@ -564,12 +564,12 @@ pointer, on [the grid](#the-grid) (Alt held, or the grid `none`: free, to a thou
 The marker is a small triangle hanging from the ruler's lower edge; the playhead is a line through
 the ruler and the lanes, at the marker while stopped (measurements in
 [components](../design/components.md) › Arrangement view). The Stop button and the play/stop key
-pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay**, saved as
+pass the setting **Stop** (Settings › Arrangement › Time and play): **Marker** (default) or **Stay**, saved as
 `stop = marker | here`.
 
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
-Play button pass the setting **Play from** (Settings › General): **Selected clip** (default) or
+Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no

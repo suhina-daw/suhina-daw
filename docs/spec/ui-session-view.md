@@ -45,8 +45,8 @@ From top to bottom:
    - key and scale
    - transport: arrangement position, play, stop, record, overdub, automation arm, loop region
      start, punch, loop, loop length. **Suhina:** play starts from the play start marker, or
-     from the selected Arrangement clip as Settings › Transport › Play from says, and stop
-     returns to it or stays, as Settings › Transport › Stop says
+     from the selected Arrangement clip as Settings › Arrangement › Time and play › Play from says, and stop
+     returns to it or stays, as Settings › Arrangement › Time and play › Stop says
      ([arrangement editing](arrangement-editing.md) › Play position)
    - **Suhina:** record, right of stop, records the armed tracks into the arrangement, and a
      Count-in menu right of the launch quantisation; an armed track's empty slots show a record
@@ -74,7 +74,7 @@ From top to bottom:
    - **Groove pool** under the browser (collapsible).
    - **Session view** (or Arrangement view; Tab switches).
 4. **Detail area** (collapsible), across the full width: the selected track's device chain, or
-   the selected clip's editor. **Suhina:** Settings › Detail area › **Detail area layout** puts it
+   the selected clip's editor. **Suhina:** Settings › Devices › **Detail area layout** puts it
    **Beside the browser** (the default: it starts right of the browser, which runs down to the
    status bar) or **Full width** (it spans the whole window, under the browser too, which ends
    above it); with the device chain stacked in a column beside the view the layout does not

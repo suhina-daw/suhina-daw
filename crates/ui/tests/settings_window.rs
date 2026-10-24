@@ -19,7 +19,9 @@ const SHORT: (f32, f32) = (1000.0, 420.0);
 fn export_permissions_are_added_by_picker_removed_and_saved() {
     use suhina_ui::interaction::pick::PickField;
     let mut harness = short_window();
-    harness.get_by_label("Settings page: Export").click();
+    harness.get_by_label("Settings page: Agents and updates").click();
+    harness.run();
+    harness.get_by_label("Add MCP write folder").scroll_to_me();
     harness.run();
     harness.get_by_label("Add MCP write folder").click();
     harness.run();
@@ -30,10 +32,14 @@ fn export_permissions_are_added_by_picker_removed_and_saved() {
     let settings = harness.state().settings().clone();
     assert_eq!(settings.mcp_write_folders, vec![folder.display().to_string()]);
     assert_eq!(suhina_ui::settings::Settings::from_text(&settings.to_text()).0, settings);
+    harness.get_by_label(&format!("Remove MCP write folder {}", folder.display())).scroll_to_me();
+    harness.run();
     harness.get_by_label(&format!("Remove MCP write folder {}", folder.display())).click();
     harness.run();
     assert!(harness.state().settings().mcp_write_folders.is_empty());
-    harness.get_by_label("Allow the project's folder: Off").click();
+    harness.get_by_label("Allow the project's folder").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Allow the project's folder").click();
     harness.run();
     assert!(!harness.state().settings().mcp_project_folder);
 }
@@ -43,7 +49,7 @@ fn export_permissions_are_added_by_picker_removed_and_saved() {
 #[ignore = "writes a settings screenshot for visual inspection; needs a GPU"]
 fn export_permissions_snapshot() {
     let mut harness = short_window();
-    harness.get_by_label("Settings page: Export").click();
+    harness.get_by_label("Settings page: Agents and updates").click();
     harness.run();
     harness.state_mut().set_picked(
         suhina_ui::interaction::pick::PickField::McpWriteFolder,
@@ -110,20 +116,20 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
     let mut harness = short_window();
     // Each page, and the control at its end (MIDI has none with no controller connected).
     let pages = [
-        ("General", Some("Warp mode: Re-pitch")),
-        ("Export", Some("Add MCP write folder")),
-        ("Audio", Some("List the audio devices again")),
+        ("Projects and backups", Some("Clean up backups")),
+        ("Audio", Some("Cue volume: +6 dB")),
         ("MIDI", None),
-        ("Plug-ins", Some("Open the plug-in manager")),
-        ("Arrangement", Some("Track headers: Right")),
+        ("Plug-ins", Some("Editors: Device view")),
+        ("Devices", Some("Detail area layout: Full width")),
+        ("Importing", Some("Warp mode: Re-pitch")),
+        ("Arrangement", Some("Show advanced settings")),
         ("Session and mixer", Some("Mixer controls: Knob")),
-        ("Clip editor", Some("Double-click on a note: Nothing")),
-        ("Transport", Some("Stop: Stay")),
-        ("Detail area", Some("Detail area layout: Full width")),
+        ("Clip editor", Some("Toolbar size: Larger")),
         ("Browser", Some("Tag limit: 1024")),
-        ("Appearance", Some("Renderer: OpenGL")),
+        ("Keys", Some("Change keys of file.new")),
+        ("Appearance", Some("Show advanced settings")),
         ("Theme", Some("Export the theme template")),
-        ("Shortcuts", Some("Change keys of file.new")),
+        ("Agents and updates", Some("Show advanced settings")),
     ];
     let names: Vec<&str> = Page::ALL.iter().map(|(_, name)| *name).collect();
     assert_eq!(pages.map(|(page, _)| page).to_vec(), names, "every page is checked");
@@ -138,33 +144,64 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
 }
 
 #[test]
-fn the_general_page_needs_the_wheel_and_another_page_opens_at_its_top() {
+fn a_long_page_needs_the_wheel_and_another_page_opens_at_its_top() {
     let mut harness = short_window();
-    harness.get_by_label("Settings page: General").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
-    let last = "Warp mode: Re-pitch";
-    assert!(!shown(&harness, last), "the short window shows the whole General page");
+    let last = "Show advanced settings";
+    assert!(!shown(&harness, last), "the short window shows the whole Arrangement page");
     assert!(wheel_to(&mut harness, last, 40) > 0);
     // Scrolled down, the page's first setting is out of view; another page starts at its top.
-    assert!(!shown(&harness, "When opening a project: Ask"));
+    assert!(!shown(&harness, "Allow sample stacking"));
     harness.get_by_label("Settings page: Browser").click();
     harness.run();
     assert!(shown(&harness, "Browser side: Left"));
-    harness.get_by_label("Settings page: General").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
-    assert!(shown(&harness, "When opening a project: Ask"));
+    assert!(shown(&harness, "Allow sample stacking"));
 }
 
 #[test]
 fn a_control_given_the_focus_is_scrolled_into_view() {
     let mut harness = short_window();
-    harness.get_by_label("Settings page: General").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
-    let last = "Warp mode: Re-pitch";
+    let last = "Show advanced settings";
     assert!(!shown(&harness, last));
     harness.get_by_label(last).focus();
     harness.run();
     assert!(shown(&harness, last), "the focused control stays out of view");
+}
+
+#[test]
+fn the_advanced_group_is_folded_until_it_is_opened_and_a_search_finds_inside_it() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Appearance").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Renderer: OpenGL").is_none(), "folded");
+    harness.get_by_label("Show advanced settings").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Renderer: OpenGL").is_some(), "unfolded");
+    harness.get_by_label("Hide advanced settings").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Renderer: OpenGL").is_none());
+    harness.get_by_label("Search settings").focus();
+    settle(&mut harness);
+    harness.get_by_label("Search settings").type_text("renderer");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Renderer: OpenGL").is_some(), "a search shows it");
+}
+
+#[test]
+fn settings_reopen_on_the_page_used_last() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Browser").click();
+    settle(&mut harness);
+    harness.get_by_label("Close settings").click();
+    settle(&mut harness);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    settle(&mut harness);
+    assert!(harness.query_by_label("Browser side: Left").is_some());
 }
 
 #[test]
@@ -175,12 +212,12 @@ fn a_search_shows_the_settings_that_match_from_every_page() {
     harness.get_by_label("Search settings").type_text("preview");
     settle(&mut harness);
     // Previews in the browser and on the map, from one page; settings that do not match are gone.
-    assert!(harness.query_by_label("Auto-play: On").is_some());
-    assert!(harness.query_by_label("Map preview on hover: On").is_some());
+    assert!(harness.query_by_label("Auto-play").is_some());
+    assert!(harness.query_by_label("Map preview on hover").is_some());
     assert!(harness.query_by_label("Browser side: Left").is_none());
     assert!(harness.query_by_label("When opening a project: Ask").is_none());
     // A change made in the results is made as on its page.
-    harness.get_by_label("Auto-play: Off").click();
+    harness.get_by_label("Auto-play").click();
     settle(&mut harness);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.preview_autoplay), Some(false));
 
@@ -188,7 +225,7 @@ fn a_search_shows_the_settings_that_match_from_every_page() {
     harness.get_by_label("Search settings").focus();
     settle(&mut harness);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
-    harness.get_by_label("Search settings").type_text("transport stay");
+    harness.get_by_label("Search settings").type_text("arrangement stay");
     settle(&mut harness);
     assert!(harness.query_by_label("Stop: Stay").is_some());
     assert!(harness.query_by_label("Play from: Marker").is_none(), "only Stop has both words (Stay is its note)");
@@ -200,7 +237,7 @@ fn a_search_shows_the_settings_that_match_from_every_page() {
     assert!(harness.query_by_label("Stop: Stay").is_none());
 
     // A page clicked empties the search and shows the page.
-    harness.get_by_label("Settings page: Transport").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Play from: Marker").is_some());
     assert_eq!(harness.get_by_label("Search settings").value().as_deref(), Some(""));
@@ -237,7 +274,7 @@ fn a_search_finds_shortcuts_and_the_shortcuts_page_filters_its_list() {
     assert!(harness.query_by_label("Change keys of file.save").is_none(), "the rest are not listed");
 
     // On the page, its own filter: by the keys too.
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Change keys of file.save").is_some(), "the whole list without a filter");
     harness.get_by_label("Filter shortcuts").focus();

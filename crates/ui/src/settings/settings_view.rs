@@ -202,40 +202,40 @@ pub enum ThemeRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
     #[default]
-    General,
-    Export,
+    Projects,
     Audio,
     Midi,
     Plugins,
+    Devices,
+    Importing,
     Arrangement,
     Session,
     ClipEditor,
-    Transport,
-    DetailArea,
     Browser,
+    Keys,
     Appearance,
     /// Appearance › Theme, a page of its own under Appearance in the list.
     Theme,
-    Shortcuts,
+    Agents,
 }
 
 impl Page {
     /// Every page with its name.
     pub const ALL: [(Page, &'static str); 14] = [
-        (Page::General, "General"),
-        (Page::Export, "Export"),
+        (Page::Projects, "Projects and backups"),
         (Page::Audio, "Audio"),
         (Page::Midi, "MIDI"),
         (Page::Plugins, "Plug-ins"),
+        (Page::Devices, "Devices"),
+        (Page::Importing, "Importing"),
         (Page::Arrangement, "Arrangement"),
         (Page::Session, "Session and mixer"),
         (Page::ClipEditor, "Clip editor"),
-        (Page::Transport, "Transport"),
-        (Page::DetailArea, "Detail area"),
         (Page::Browser, "Browser"),
+        (Page::Keys, "Keys"),
         (Page::Appearance, "Appearance"),
         (Page::Theme, "Theme"),
-        (Page::Shortcuts, "Shortcuts"),
+        (Page::Agents, "Agents and updates"),
     ];
 
     /// The page's name, as the list shows it.
@@ -265,6 +265,8 @@ pub struct PageState {
     pub focused: Option<Id>,
     /// What is typed in the Shortcuts page's own filter: only the actions it matches are listed.
     pub key_filter: String,
+    /// The pages whose Advanced group is unfolded.
+    pub advanced: Vec<Page>,
 }
 
 impl PageState {
@@ -329,7 +331,23 @@ pub struct Entry {
     pub draw: Draw,
     /// Whether it is shown with these settings (most are always).
     pub shown: fn(&Settings) -> bool,
+    /// Whether it is a setting, a status readout or a row of commands.
+    pub role: Role,
 }
+
+/// What an entry is. Only settings sit among the settings; a status or a row of commands is set
+/// off at the top of its page (`docs/spec/ui-settings.md` › Adding a setting).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Setting,
+    /// Something the program reports; drawn in a panel.
+    Status,
+    /// Buttons that do something once.
+    Actions,
+}
+
+/// The heading of a page's folded group of rarely changed settings.
+pub const ADVANCED: &str = "Advanced";
 
 /// How an entry draws itself.
 #[derive(Clone, Copy)]
@@ -353,7 +371,7 @@ pub(crate) const fn row(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, Rect),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always, role: Role::Setting }
 }
 
 /// A setting drawn as several rows or a list.
@@ -365,7 +383,7 @@ pub(crate) const fn block(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, &mut f32),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always, role: Role::Setting }
 }
 
 impl Entry {
@@ -374,11 +392,26 @@ impl Entry {
         Self { shown, ..self }
     }
 
+    /// A readout of what is happening, not a setting.
+    pub(crate) const fn status(self) -> Self {
+        Self { role: Role::Status, ..self }
+    }
+
+    /// A row of commands, not a setting.
+    pub(crate) const fn actions(self) -> Self {
+        Self { role: Role::Actions, ..self }
+    }
+
     /// Every word is in its name, note, section or page; for the shortcuts, in an action's too.
+    #[cfg(test)]
+    pub(crate) fn matches_words(&self, words: &[String]) -> bool {
+        self.matches(words)
+    }
+
     fn matches(&self, words: &[String]) -> bool {
         let text = format!("{} {} {} {}", self.name, self.note, self.section, self.page.name()).to_lowercase();
         words.iter().all(|word| text.contains(word.as_str()))
-            || (self.page == Page::Shortcuts
+            || (self.page == Page::Keys
                 && actions().iter().any(|a| action_matches(&a.label, &a.id, a.group, "", words)))
     }
 }
@@ -460,16 +493,29 @@ impl Cx<'_> {
         field: impl FnOnce(&mut Settings) -> &mut T,
     ) {
         let value = field(self.settings);
-        let rect = control_rect(row, options.len());
+        // Option buttons for up to five choices that exclude each other, a drop-down beyond that.
+        if options.len() > MAX_BUTTONS {
+            let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
+            if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
+                *value = picked;
+                self.outcome.changed = true;
+            }
+            return;
+        }
+        let rect = options_rect(self.ui, row, options);
         if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
         }
     }
 
-    /// On and Off for the setting `field` gives.
+    /// A switch for the yes/no setting `field` gives.
     pub fn on_off(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
-        self.choose(row, &[("On", true), ("Off", false)], field);
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, *value) {
+            *value = on;
+            self.outcome.changed = true;
+        }
     }
 
     /// A dropdown on the right of `row` for the setting `field` gives.
@@ -516,7 +562,7 @@ impl Cx<'_> {
 
     /// The most colour tags the browser may have, kept by the library rather than the settings.
     pub fn tag_limit(&mut self, row: Rect, options: &[(&str, usize)]) {
-        let rect = control_rect(row, options.len());
+        let rect = options_rect(self.ui, row, options);
         if let Some(limit) = segmented(self.ui, self.painter, rect, self.name, options, self.tag_limit) {
             self.outcome.tag_limit = Some(limit);
         }
@@ -526,7 +572,7 @@ impl Cx<'_> {
     pub fn zoom(&mut self, row: Rect) {
         let actual = format!("{} %", self.settings.zoom);
         let options = [("-", Some(-1)), (actual.as_str(), Some(0)), ("+", Some(1))];
-        match segmented(self.ui, self.painter, control_rect(row, 3), self.name, &options, None) {
+        match segmented(self.ui, self.painter, options_rect(self.ui, row, &options), self.name, &options, None) {
             Some(Some(0)) if self.settings.zoom != crate::settings::ZOOM => {
                 self.settings.zoom = crate::settings::ZOOM;
                 self.outcome.changed = true;
@@ -685,6 +731,11 @@ fn page_body(
         if !listed || !(entry.shown)(cx.settings) {
             continue;
         }
+        let advanced = entry.section == ADVANCED && words.is_empty();
+        let unfolded = cx.state.advanced.contains(&entry.page);
+        if advanced && !unfolded && heading == Some((entry.page, ADVANCED)) {
+            continue;
+        }
         // A section title over a hairline where the section changes; the first sits level with
         // the top of the list, and a search names the page as well.
         if heading != Some((entry.page, entry.section)) {
@@ -696,8 +747,31 @@ fn page_body(
             } else {
                 format!("{} › {}", entry.page.name(), entry.section)
             };
-            section_title(&painter, page, &mut y, &title);
+            if advanced {
+                // The group is folded until its heading is clicked.
+                let rect = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), SIDEBAR_ROW));
+                let text = if unfolded { "Hide advanced settings" } else { "Show advanced settings" };
+                let response =
+                    widgets::button_area(cx.ui, rect, Id::new(("settings-advanced", entry.page.name())), text);
+                let marker = if unfolded { "v  Advanced" } else { ">  Advanced" };
+                let color = motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(cx.ui, &response));
+                widgets::text_in(&painter, rect, Align2::LEFT_CENTER, marker, theme::ui_font(theme::TEXT_SMALL), color);
+                painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(theme::border()));
+                y = rect.bottom() + 8.0;
+                if response.clicked() {
+                    if unfolded {
+                        cx.state.advanced.retain(|p| *p != entry.page);
+                    } else {
+                        cx.state.advanced.push(entry.page);
+                    }
+                }
+            } else {
+                section_title(&painter, page, &mut y, &title);
+            }
             heading = Some((entry.page, entry.section));
+            if advanced && !unfolded {
+                continue;
+            }
         }
         cx.name = entry.name;
         cx.note = None;
@@ -707,7 +781,20 @@ fn page_body(
                 let r = setting_row(page, &mut y);
                 draw(&mut cx, r);
                 let note = cx.note.take();
-                label(&painter, cx.label.take().unwrap_or(r), entry.name, note.as_deref().unwrap_or(entry.note));
+                let name_rect = cx.label.take().unwrap_or(r);
+                let height = wrapped_label(&painter, r, name_rect, entry.name, note.as_deref().unwrap_or(entry.note));
+                y = r.top() + height;
+            }
+            Draw::Block(draw) if entry.role == Role::Status => {
+                // A readout in a panel of its own, set off from the settings below.
+                let backdrop = painter.add(egui::Shape::Noop);
+                let top = y;
+                y += 6.0;
+                draw(&mut cx, &mut y);
+                y += 6.0;
+                let panel = Rect::from_min_max(Pos2::new(page.left() - 6.0, top), Pos2::new(page.right(), y));
+                painter.set(backdrop, egui::Shape::rect_filled(panel, 0.0, theme::panel_background()));
+                y += 4.0;
             }
             Draw::Block(draw) => draw(&mut cx, &mut y),
         }
@@ -759,7 +846,16 @@ pub(crate) fn shortcuts_block(cx: &mut Cx<'_>, y: &mut f32) {
 /// Plug-ins › Library: folders, scanning and what was found.
 pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
     let bottom = cx.page.bottom();
-    cx.outcome.plugins = plugin_section(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins);
+    if let Some(request) = plugin_folders(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
+}
+
+/// Plug-ins › Actions: scanning and the plug-in manager.
+pub(crate) fn plugin_buttons(cx: &mut Cx<'_>, y: &mut f32) {
+    if let Some(request) = plugin_actions(cx.ui, cx.painter, cx.page, y, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
 }
 
 /// Clip editor › Workflow: the workflow settings (the Mouse-first switches among them), their own
@@ -767,25 +863,22 @@ pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
 pub(crate) fn mouse_switches(cx: &mut Cx<'_>, y: &mut f32) {
     for setting in Setting::ALL {
         let r = setting_row(cx.page, y);
-        label(cx.painter, r, setting.name(), setting.note());
         let options: Vec<(&str, usize)> = setting.short_choices().iter().enumerate().map(|(i, c)| (*c, i)).collect();
         let current = cx.keymap.workflow().get(setting);
-        let rect = control_rect(r, options.len());
+        let rect = options_rect(cx.ui, r, &options);
         if let Some(index) = segmented(cx.ui, cx.painter, rect, setting.name(), &options, current) {
             cx.keymap.set_workflow(setting, index);
             cx.outcome.keymap_changed = true;
         }
+        let height = wrapped_label(cx.painter, r, r, setting.name(), setting.note());
+        *y = r.top() + height;
     }
-    let note = Rect::from_min_size(Pos2::new(cx.page.left(), *y), Vec2::new(cx.page.width(), 14.0));
-    widgets::text_in(
-        cx.painter,
-        note,
-        Align2::LEFT_CENTER,
-        "Kept in keymap.json with the keys; changing one makes the workflow Custom",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
-    *y = note.bottom();
+    let color = theme::text_secondary();
+    let text = "Kept in keymap.json with the keys. Changing any of these makes the workflow Custom.";
+    let galley = cx.painter.layout(text.to_string(), theme::ui_font(theme::TEXT_SMALL), color, cx.page.width() - 8.0);
+    let height = galley.size().y;
+    cx.painter.galley(Pos2::new(cx.page.left(), *y), galley, color);
+    *y += height + 8.0;
 }
 
 /// MIDI › MIDI inputs: each port with On and Off.
@@ -1138,9 +1231,8 @@ fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[Strin
     words.iter().all(|word| text.contains(word.as_str()))
 }
 
-/// Folders, scanning, what was found in a line, and the button that opens the plug-in manager,
-/// which lists it all. Returns what the user asked for.
-fn plugin_section(
+/// The plug-in folders, each on or off, and a field to add one. Returns what the user asked for.
+fn plugin_folders(
     ui: &mut Ui,
     painter: &egui::Painter,
     page: Rect,
@@ -1271,7 +1363,25 @@ fn plugin_section(
         request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string(), plugins.new_format));
     }
     *y += 8.0;
+    request
+}
 
+/// Scan, Rescan all, and the button that opens the plug-in manager, which lists it all. Returns
+/// what the user asked for.
+fn plugin_actions(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    page: Rect,
+    y: &mut f32,
+    plugins: &mut PluginsView,
+) -> Option<PluginRequest> {
+    let mut request = None;
+    let small = theme::ui_font(theme::TEXT_SMALL);
+    let line = |y: &mut f32, height: f32| {
+        let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), height));
+        *y += height;
+        rect
+    };
     // Scanning.
     let r = line(y, SETTING_ROW);
     let summary = if plugins.scanning {
@@ -1482,8 +1592,7 @@ fn output_rows(
         "The device plays only Suhina, with less delay; other programs are not heard on it"
     };
     label(painter, r, "Exclusive mode", note);
-    let on_off = [("On", true), ("Off", false)];
-    if let Some(on) = segmented(ui, painter, control_rect(r, 2), "Exclusive mode", &on_off, choice.exclusive) {
+    if let Some(on) = switch(ui, painter, r, "Exclusive mode", choice.exclusive) {
         picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
     }
 
@@ -1693,9 +1802,8 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
             (_, false, _) => "Off".to_string(),
         };
         label(painter, r, &port.name, &note);
-        let on_off = [("On", true), ("Off", false)];
         let name = format!("MIDI input {}", port.name);
-        if let Some(on) = segmented(ui, painter, control_rect(r, 2), &name, &on_off, port.enabled) {
+        if let Some(on) = switch(ui, painter, r, &name, port.enabled) {
             picked = Some((port.name.clone(), on));
         }
     }
@@ -1746,6 +1854,19 @@ fn choice_dropdown<T: Clone + PartialEq>(
     picked
 }
 
+/// A setting's name and its whole note under it, wrapped to the row's width. The name is cut to
+/// `name_rect`, which leaves room for a field beside it. Returns the height the row needs.
+fn wrapped_label(painter: &egui::Painter, row: Rect, name_rect: Rect, name: &str, note: &str) -> f32 {
+    let top = Rect::from_min_size(name_rect.min, Vec2::new(name_rect.width(), 16.0));
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
+    let color = theme::text_secondary();
+    let galley =
+        painter.layout(note.to_string(), theme::ui_font(theme::TEXT_SMALL), color, (row.width() - 8.0).max(40.0));
+    let height = galley.size().y;
+    painter.galley(Pos2::new(row.left(), row.top() + 18.0), galley, color);
+    SETTING_ROW.max(18.0 + height + 8.0)
+}
+
 /// A setting's name and a note under it, on the left of its row.
 fn label(painter: &egui::Painter, row: Rect, name: &str, note: &str) {
     let top = Rect::from_min_size(row.min, Vec2::new(row.width(), 16.0));
@@ -1759,6 +1880,39 @@ fn label(painter: &egui::Painter, row: Rect, name: &str, note: &str) {
         theme::ui_font(theme::TEXT_SMALL),
         theme::text_secondary(),
     );
+}
+
+/// The most choices shown as option buttons; more are a drop-down.
+const MAX_BUTTONS: usize = 5;
+/// The width of a switch.
+const SWITCH_WIDTH: f32 = 34.0;
+
+/// A switch on the right of `row` for a yes/no setting: one control, labelled with the setting's
+/// name. Returns the new value when it is clicked.
+fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> Option<bool> {
+    let track =
+        Rect::from_min_size(Pos2::new(row.right() - SWITCH_WIDTH, row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
+    let response = ui.interact(track, Id::new(("setting-switch", name)), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, name));
+    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
+    let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(track, 0.0, motion::mix(idle, theme::text_value(), lit));
+    let knob_width = SEGMENT - 4.0;
+    let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
+    let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
+    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), theme::window_background(), lit));
+    response.clicked().then_some(!on)
+}
+
+/// Where a segmented control for `options` sits on the right of a row: every part wide enough
+/// for the longest text, so none is cut off.
+fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let widest = options.iter().map(|(text, _)| widgets::text_width(ui, text, font.clone())).fold(0.0_f32, f32::max);
+    let part = (widest + 16.0).max(48.0).ceil();
+    let count = options.len().max(1) as f32;
+    let width = part * count + (count - 1.0);
+    Rect::from_min_size(Pos2::new(row.right() - width, row.top() + 1.0), Vec2::new(width, SEGMENT))
 }
 
 /// Where a segmented control with `parts` parts sits on the right of a row.

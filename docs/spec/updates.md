@@ -23,7 +23,7 @@ running one and restarts Suhina.
 
 ## What is sent
 
-The check only reads. When Settings › General › Updates › *Check for updates* is on (the default),
+The check only reads. When Settings › Agents and updates › Updates › *Check for updates* is on (the default),
 Suhina asks GitHub once per start, in the background, which build is the newest in its channel:
 
 - **Nightly:** `GET https://api.github.com/repos/suhina-daw/suhina-daw/releases/tags/nightly`
@@ -88,7 +88,7 @@ download page: the checksum catches a broken download, not a replaced release.
 
 ## Channels
 
-Settings › General › Updates › *Channel*:
+Settings › Agents and updates › Updates › *Channel*:
 
 - **Nightly** (the default): the `nightly` release.
 - **Test builds:** only listed in developer mode (*Developer mode* on, or when the running build is

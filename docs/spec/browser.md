@@ -155,7 +155,7 @@ selected or under the pointer; clicking it previews the sample (a second click s
 
 **Double-click or Enter** (in the search field) on an item adds it to the selected track (see
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
-window does (Settings › General › When opening a project).
+window does (Settings › Projects and backups › When opening a project).
 
 **Right-click menu:** Pin or Unpin; Tag ▸ (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
 click anywhere on the entry sets or clears it; a *New tag…* field that
@@ -241,7 +241,7 @@ in the Arrangement each starts where the one before ends; in the Session they go
 track's slots from the slot they were dropped on. With **Ctrl** held when releasing, they go
 onto **one track each**, side by side: in the Arrangement all at the dropped beat, in the
 Session all in the dropped scene, the first on the track it was dropped on and the others on
-new tracks after it. Settings › General › Dropping files › Several files flips this (one track each
+new tracks after it. Settings › Importing › Dropping files › Several files flips this (one track each
 without Ctrl).
 
 | Dropped on | Result |
@@ -266,7 +266,7 @@ Session, at its left in the Arrangement), which add an empty track of that kind.
 either works like a drop on the empty area.
 
 **Warping.** A sample whose tempo is known (see *Tempo and key*) is warped: it plays at the
-project's tempo, stretched with the stretch mode in Settings › General › Warp mode (Rhythmic by
+project's tempo, stretched with the stretch mode in Settings › Importing › Warp mode (Rhythmic by
 default, the `rhythmic` stretch mode), and its length in beats comes from its own tempo. A
 sample without a known tempo is not warped: it plays at its own speed, and its length in beats
 is its duration at the project's tempo when it is dropped.
