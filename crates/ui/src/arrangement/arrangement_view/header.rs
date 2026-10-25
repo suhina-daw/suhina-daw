@@ -296,12 +296,17 @@ pub(super) fn track_header(
     let arm =
         lane.armable.then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(SOLO, HEADER_ROW)));
     let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
-    let monitor = lane.plays_notes.then(|| {
-        Rect::from_min_size(
-            Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
-            Vec2::new(monitor_width, HEADER_ROW),
-        )
-    });
+    // Only where it ends before the automation button at the row's end (#876); a narrower header
+    // leaves the monitoring to the MIDI input menu.
+    let monitor = lane
+        .plays_notes
+        .then(|| {
+            Rect::from_min_size(
+                Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
+                Vec2::new(monitor_width, HEADER_ROW),
+            )
+        })
+        .filter(|at| at.right() + PAD <= row.right() - SOLO - 4.0);
     let controls_end = monitor.unwrap_or(arm.unwrap_or(cue)).right();
     // A lane tall enough for two rows has its volume and pan beside the buttons, where the
     // other level controls are, and the automation button, the name and the sends on the row
