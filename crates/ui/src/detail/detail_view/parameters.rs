@@ -261,7 +261,7 @@ pub(super) fn knob(
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
     if response.dragged() {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-        let delta = f64::from(response.drag_delta().y) / widgets::PARAMETER_DRAG_PIXELS * fine;
+        let delta = f64::from(widgets::value_drag_delta(ui, &response).y) / widgets::PARAMETER_DRAG_PIXELS * fine;
         position = (position - delta).clamp(0.0, 1.0);
         *value = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
         response.mark_changed();

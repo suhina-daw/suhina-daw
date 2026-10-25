@@ -34,6 +34,40 @@ pub fn pointer_over(ui: &Ui, rect: Rect) -> Option<Pos2> {
 /// Normalized device parameter range traversed by a vertical drag.
 pub(crate) const PARAMETER_DRAG_PIXELS: f64 = 400.;
 
+/// Set while a value drag holds the pointer hidden and in place.
+fn value_drag_id() -> Id {
+    Id::new("value-drag-holds-pointer")
+}
+
+/// How far a drag on a value control (knob, value field) moved this frame, called while it is
+/// dragged. The pointer hides and is held in place while the drag lasts, and the raw mouse motion
+/// is read, so a long drag never stops at the screen's edge: Wayland and macOS lock the pointer,
+/// X11 and Windows keep sending raw motion while it is hidden. [`release_value_drag`] gives the
+/// pointer back. Only a drag's first frame takes the pointer, in a window with focus, so a drag
+/// whose release went to another window does not take it again when focus comes back.
+pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
+    let ctx = ui.ctx();
+    let held = ctx.data(|d| d.get_temp::<bool>(value_drag_id())).unwrap_or(false);
+    if !held && response.drag_started() && ctx.input(|i| i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), true));
+    }
+    ui.input(|i| i.pointer.motion()).unwrap_or_else(|| response.drag_delta())
+}
+
+/// Gives the pointer back once the button is up after a value drag, or once the window loses
+/// focus (egui keeps the button down when the release went to another window). Called once a
+/// frame, so a control that went away mid-drag (hidden, its panel closed) cannot keep the pointer.
+pub fn release_value_drag(ctx: &egui::Context) {
+    let held = ctx.data(|d| d.get_temp::<bool>(value_drag_id())).unwrap_or(false);
+    if held && !ctx.input(|i| i.pointer.primary_down() && i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        ctx.data_mut(|d| d.remove::<bool>(value_drag_id()));
+    }
+}
+
 /// A command for the session to run, made by a view: the same ids the CLI and MCP use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {
@@ -438,7 +472,7 @@ pub fn drag_value(
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
-        let next = (start - f64::from(response.drag_delta().y) * per_point * fine).clamp(range.0, range.1);
+        let next = (start - f64::from(value_drag_delta(ui, response).y) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
     }
@@ -538,5 +572,65 @@ mod tests {
         assert_eq!(format_pan(0.0), "C");
         assert_eq!(format_pan(-0.3), "15L");
         assert_eq!(format_pan(1.0), "50R");
+    }
+
+    #[test]
+    fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_focus() {
+        use egui::{Event, PointerButton, ViewportCommand, ViewportId};
+        let ctx = egui::Context::default();
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(20.0));
+        let pointer = |pos: Pos2, pressed: Option<bool>| {
+            let mut events = vec![Event::PointerMoved(pos)];
+            if let Some(pressed) = pressed {
+                events.push(Event::PointerButton {
+                    pos,
+                    button: PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                });
+            }
+            egui::RawInput { events, ..Default::default() }
+        };
+        let moved = std::cell::Cell::new(Vec2::ZERO);
+        let frame = |input| {
+            let mut output = ctx.run_ui(input, |ui| {
+                release_value_drag(ui.ctx());
+                let response = ui.interact(rect, Id::new("knob"), Sense::drag());
+                if response.dragged() {
+                    moved.set(moved.get() + value_drag_delta(ui, &response));
+                }
+            });
+            output.textures_delta.clear();
+            output.viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default()
+        };
+        let held = |ctx: &egui::Context| ctx.data(|d| d.get_temp::<bool>(value_drag_id())).unwrap_or(false);
+        // egui hits the widgets of the frame before, so the pointer is over the knob first.
+        frame(pointer(Pos2::new(20.0, 20.0), None));
+        let hidden = [
+            frame(pointer(Pos2::new(20.0, 20.0), Some(true))),
+            frame(pointer(Pos2::new(20.0, 10.0), None)),
+            frame(pointer(Pos2::new(20.0, 0.0), None)),
+        ]
+        .concat();
+        assert!(held(&ctx), "the drag holds the pointer");
+        assert!(hidden.contains(&ViewportCommand::CursorVisible(false)), "{hidden:?}");
+        assert!(moved.get().y < 0.0, "dragging up moves up: {:?}", moved.get());
+        let shown = frame(pointer(Pos2::new(20.0, 0.0), Some(false)));
+        let shown = [shown, frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
+        assert!(!held(&ctx));
+        assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+        // The release went to another window: losing focus gives the pointer back all the same.
+        frame(pointer(Pos2::new(20.0, 20.0), None));
+        frame(pointer(Pos2::new(20.0, 20.0), Some(true)));
+        frame(pointer(Pos2::new(20.0, 10.0), None));
+        assert!(held(&ctx), "a second drag holds the pointer");
+        let unfocused = || egui::RawInput { focused: false, ..pointer(Pos2::new(20.0, 10.0), None) };
+        let shown = [frame(unfocused()), frame(unfocused())].concat();
+        assert!(!held(&ctx), "an unfocused window never holds the pointer");
+        assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+        // Focus back with the drag still going (the release never came): the pointer stays shown.
+        let back = [frame(pointer(Pos2::new(20.0, 5.0), None)), frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
+        assert!(!held(&ctx), "only a new press takes the pointer again");
+        assert!(!back.contains(&ViewportCommand::CursorVisible(false)), "{back:?}");
     }
 }

@@ -1144,7 +1144,7 @@ pub(crate) fn show(
                     }
                 }
                 UiGesture::Drag if response.dragged() => {
-                    let delta = response.drag_delta();
+                    let delta = crate::kit::widgets::value_drag_delta(ui, &response);
                     next += if axis == 0 {
                         delta.x as f64 / crate::kit::widgets::PARAMETER_DRAG_PIXELS
                     } else {
