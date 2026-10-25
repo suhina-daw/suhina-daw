@@ -112,7 +112,7 @@ pub(super) fn value_control(
         return;
     }
     let rect = crate::kit::control_layout::place(name, rect, clip);
-    // Named by their placement names, so a theme selects one by id (`#arrangement-volume`).
+    // Named as Edit interface names them, so a theme selects one by id (`#arrangement-volume`).
     let _style = crate::kit::style_class::enter_named("value", name);
     let _pan_style = matches!(control, Control::Pan).then(|| crate::kit::style_class::enter("pan"));
     let track = lane.track;

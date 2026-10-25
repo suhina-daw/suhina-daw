@@ -718,15 +718,3 @@ appearance, layout and interaction split of [#623](https://github.com/suhina-daw
 [#625](https://github.com/suhina-daw/suhina-daw/issues/625) and
 [#868](https://github.com/suhina-daw/suhina-daw/issues/868); and whether a profile that bundles a
 theme, its variant, the workspace, interaction and keymap belongs here or in an ADR of its own.
-
-## Amendment: the Edit interface is removed for now (2026-10-25)
-
-The visual placement editor (section 5, **Edit interface**) is removed. It saved placements in
-`layout.css`, a format of its own beside the theme's CSS, so two systems controlled the same
-layout, and placing controls with it broke layouts in testing. Placement rules
-(`.control-NAME`) are still read from `theme.css` and from an existing `layout.css`, and are
-written by hand. The direction agreed in
-[issue #995](https://github.com/suhina-daw/suhina-daw/issues/995): one `theme.css` is the single
-source of truth for style and layout, and a future visual editor mirrors it, writing plain CSS
-through the source-preserving edits of `crates/style/src/edit.rs`. The removed editor is kept for
-reference on the branch `feature/placement-editor`. Toolbar order (**Edit toolbar**) stays.

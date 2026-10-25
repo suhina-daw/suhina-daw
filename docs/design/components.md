@@ -53,11 +53,11 @@ one module restores the previous palette/font before drawing its sibling. These
 overrides preserve native response ids, commands and layout unless CSS explicitly
 requests layout changes; see [theme skins](../spec/theme-skins.md).
 
-Supported adapters use one resolved rectangle for paint and input; theme offsets/sizes can
-place the mixer name at the bottom, turn its side colour into a top stripe, resize meters and
-render volume faders horizontally. Matching instances share a rule. The visual placement editor
-(**Edit interface**) was removed for now
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)).
+**Edit interface** overlays measured native elements with an 8-point grid, preserving the
+underlying controls. Supported adapters use one resolved rectangle for paint and input;
+theme offsets/sizes can place the mixer name at the bottom, turn its side colour into a
+top stripe, resize meters and render/drag volume faders horizontally. Done merges edited
+entries; Cancel/Escape and theme changes discard the draft. Matching instances share a rule.
 Type glyphs use replaceable `track.midi`/`track.audio` SVGs (notes and waveform). Track name
 and strip artwork can select raw-colour/state variants and bounded frame sequences.
 `.meter-level`, `.fader-cap` and `.knob` expose native CSS box shadows for level/cap/dial glow.

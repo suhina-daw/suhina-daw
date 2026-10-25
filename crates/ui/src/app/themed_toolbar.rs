@@ -91,6 +91,11 @@ impl App {
         let mut theme_skin = skin::current();
         let mut changed = false;
         response.context_menu(|ui| {
+            if ui.button("Edit interface").clicked() {
+                self.start_control_editor(ui.ctx());
+                ui.ctx().data_mut(|data| data.remove::<EditDraft>(edit_id()));
+                ui.close();
+            }
             if !editing && ui.button("Edit toolbar").clicked() {
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(

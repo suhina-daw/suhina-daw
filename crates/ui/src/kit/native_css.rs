@@ -534,7 +534,7 @@ fn element_id(node: &StyleNode) -> String {
     {
         return name.to_owned();
     }
-    // The level fields of the track headers and the mixer, by their placement names.
+    // The level fields of the track headers and the mixer, by the names Edit interface gives them.
     if matches!(node.class.as_str(), "value" | "pan" | "fader")
         && let Some(name) = node.name.as_deref().filter(|name| LEVEL_FIELDS.contains(name))
     {

@@ -273,9 +273,8 @@ impl Themes {
                 // can look out of place in a theme made from it.
                 let placed = self.get(&id).map_or(0, |t| t.skin.controls.len());
                 if placed > 0 {
-                    let controls = if placed == 1 { "control" } else { "controls" };
                     self.notice = Some(format!(
-                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its layout.css"
+                        "{name} keeps the {placed} placed controls of the theme it copies; Edit interface › Reset all takes them away"
                     ));
                 }
                 self.actions.push(Pending::Save(id.clone()));

@@ -7,6 +7,7 @@ last_verified: 2026-10-22
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
+  - crates/ui/src/app/control_editor.rs
   - crates/ui/src/kit/artwork.rs
   - crates/ui/src/kit/control_layout.rs
   - assets/themes/default/*.svg
@@ -211,7 +212,7 @@ browser CSS support or a finished appearance for every theme.
 
 - [Session, tall mixer and live vertical meters](../design/reference/theme-dark-gloss.png).
 - [Horizontal faders/meters, names at the bottom and top-only colour stripes](../design/reference/theme-dark-gloss-horizontal.png).
-- [Edit interface (removed for now, issue #995): actual controls beneath outlines and an 8-point grid](../design/reference/theme-interface-editor.png).
+- [Edit interface: actual controls beneath outlines and an 8-point grid](../design/reference/theme-interface-editor.png).
 - [Arrangement, large native track rows and replaceable note glyphs](../design/reference/theme-dark-gloss-arrangement.png).
 
 The Session meter captures use actual demo playback through a paced virtual ALSA
@@ -241,11 +242,13 @@ scroll clipping affects painting and hit testing without changing the meter scal
 Each adapter must resolve the rectangle before interaction and paint, preserve the native
 widget ID/command, and contain it in its panel. Removing an override restores native geometry.
 These are explicit native relative offsets, not a claim of general CSS positioning support.
-The visual placement editor (**Edit interface**) was removed for now: it saved placements in
-a format of its own beside the CSS, and placing controls with it broke layouts in testing.
-Placements are written by hand; a future editor will write plain CSS
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)).
+Right-click the toolbar and choose **Edit interface** for measured native outlines and
+an 8-point grid. Normal dragging also snaps to nearby edges and centres of other
+controls in the same containing rectangle, with alignment guides. Shift-drag uses
+one logical pixel steps while retaining peer alignment; Alt+Shift-drag is free
+without grid or peer snapping.
 Fractional offsets survive CSS and JSON storage at 1/1024 logical pixel resolution.
+Alt alone retains normal snapping. Dragging creates no persistent peer anchor.
 A persistent anchor is explicit: `--suhina-anchor-left|top|right|bottom:
 <control> <edge> [<gap>px]` (JSON `anchors: { "bottom": "arrangement-volume top 4px" }`)
 makes that edge follow the target's edge on the same axis. Opposite edges keep the gap
@@ -255,7 +258,7 @@ edges set both. The target is resolved in the same container: drawn earlier in t
 or the previous frame's rectangle moved as far as the container moved (scrolling), with
 one repaint when it has since changed. A hidden, absent or foreign target leaves the edge
 at the control's own placement. Cycles, self-anchors and chains of more than eight links
-are dropped with a warning when a theme loads. Gaps are whole
+are dropped with a warning when a theme loads and refused by the editor. Gaps are whole
 points within ±16384; the result stays inside the container. The toolkit-independent
 parts (names, parsing, validation, axis arithmetic) are `suhina_style::anchor`.
 Drag an outline or select a semantic element and edit offsets, size,
@@ -466,7 +469,7 @@ amendment *Theme settings and variants*):
   variables that refer to it follow, in the painted sheet and in the model. A name the sheet
   never sets is refused with a warning. At most 64 variants of
   64 KiB each, 256 values of 1 KiB each.
-- `layout.css`: written by Suhina only, for what its editors set beyond
+- `layout.css`: written by Suhina only, for what the Edit interface and editors set beyond
   settings: `.control-NAME` placements and anchors, `toolbar` order and offsets, `--suhina-*`
   styles, artwork chosen in the app and the name. Removed when the sheet says the same.
 - `assets/`, `background.png`, `README.md` and `examples/`.
@@ -888,6 +891,6 @@ of bars, and a slider id per parameter.
   `#browser-search`.
 - **Dialogs:** `.settings-nav` (`:checked` for the page shown), `.progress`, `.progress-fill`.
 - **MIDI tools:** `--suhina-gap` (0–16) and `.button { height }` inside `.midi-tools`.
-- **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
-  `layout.css`.
+- **Duplicate:** a copy keeping placed controls returns a notice; Edit interface › Reset all
+  clears the draft's placements.
 

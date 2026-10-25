@@ -1,4 +1,4 @@
-/* Control placements. */
+/* Placements made with Edit interface. */
 .control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
 .control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; --suhina-direction: vertical; }
 .control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; --suhina-direction: vertical; }

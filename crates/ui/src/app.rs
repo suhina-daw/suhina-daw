@@ -13,6 +13,7 @@ mod background;
 mod browser_panel;
 pub mod closing_dialog;
 mod control_bar;
+mod control_editor;
 mod detail_area;
 mod drops;
 pub use drops::is_theme_package;
@@ -2263,11 +2264,14 @@ impl App {
 
     /// Draws the window into `ui` and runs what the user asked for.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.control_editor_theme_changed(ui.ctx());
         // Following the theme, the headers move when the theme does.
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
+        let capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
+        self.control_editor(ui, &capture.entries());
     }
 
     fn ui_content(&mut self, ui: &mut Ui) {

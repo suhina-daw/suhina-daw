@@ -186,7 +186,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             }
         });
         ui.collapsing("Native CSS", |ui| {
-            ui.label("Settings and layout in the form of earlier versions: :root colours, Session density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in layout.css.");
+            ui.label("Settings and layout in the form of earlier versions: :root colours, Session density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in layout.css. Right-click the toolbar > Edit interface to move connected elements.");
             if ui.button("Load compact Session geometry").clicked() { state.css = crate::kit::theme::COMPACT_SESSION_EXAMPLE.into(); }
             if ui.button("Load current style as CSS").clicked() {
                 let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };

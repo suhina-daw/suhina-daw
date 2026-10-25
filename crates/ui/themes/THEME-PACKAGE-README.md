@@ -39,7 +39,7 @@ my-theme/
 
 `theme.css` is yours: Suhina reads it and never writes it. What a user changes in Suhina's
 theme editor (colours, meter, liquid, gradients and any setting your theme offers) is saved in a
-variant file, and their toolbar order and artwork choices in `layout.css`. So you edit CSS, users
+variant file, and what they move with Edit interface in `layout.css`. So you edit CSS, users
 edit variants, and no file is written by both.
 
 Installed themes are the same folders, named by their id. Relative image paths in the sheets are
@@ -196,11 +196,14 @@ artwork behind Session slots; empty cells preserve it and native clip launches r
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
 
-Controls are placed with `.control-NAME` rules; matching instances share the rule and the
-containing panel bounds each element. The visual placement editor (**Edit interface**) has been
-removed for now, while layout moves to plain CSS
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)), so write these rules by
-hand in `theme.css` (a `layout.css` from an earlier build is still read):
+Right-click the toolbar and choose **Edit interface**. The real controls remain visible
+under outlines and an 8-point grid. Drag an outline, or select its semantic name in the
+tools window to change offsets, dimensions, bottom anchoring and volume direction.
+Matching instances share the rule. **Done** saves; **Cancel** or Escape discards it.
+Entering and leaving without changes preserves the theme. The editor suppresses normal
+control commands while placing them. The containing panel bounds each element.
+
+Done saves these rules in the theme's `layout.css`; you may also write them in `theme.css`:
 
 ```css
 .control-mixer-name { bottom: 0px; }
@@ -683,7 +686,7 @@ from it to let your sheet's value show.
 
 ### Placement names
 
-Each control has a placement name; a placement rule is `.control-NAME`, and a list of
+Edit interface shows each control's name; a placement rule is `.control-NAME`, and a list of
 them (`.control-a, .control-b`) places each. The Arrangement header has `arrangement-name`,
 `arrangement-volume`, `arrangement-pan`, `arrangement-send-1`, `arrangement-send-2`,
 `arrangement-sends-previous`, `arrangement-sends-next`, `arrangement-meter`,
@@ -755,7 +758,8 @@ control with no room left is not drawn, without a notice: check narrow tracks an
 - **Settings folder:** Settings › General › Projects › Settings folder moves all of Suhina's
   data. Changing it or the themes folder asks first, backs the files up beside the old folder
   and moves them.
-- **A copy of a theme** says how many placed controls it keeps in its `layout.css`.
+- **A copy of a theme** says how many placed controls it keeps; Edit interface › **Reset all**
+  takes them away.
 - **Choosing a theme** keeps the Themes page where it was.
 
 ## What a theme cannot set
@@ -888,8 +892,8 @@ and https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0030-nativ
 
 ### Full-height controls and symbol proportions
 
-Use `height: 100%` to stretch a control with its containing panel.
-`top` is then the top inset and `bottom` the bottom inset (zero by default).
+Use **Edit interface → Full height** to stretch a control with its containing panel.
+Y becomes the top inset; **Anchor to bottom** supplies the bottom inset (zero by default).
 For example, a meter with four-point margins uses:
 
 ```css
@@ -900,10 +904,16 @@ For example, a meter with four-point margins uses:
 track, so scrolling does not rescale its level. SVG symbol roles preserve their aspect
 ratio and are centred; surface artwork such as button and track backgrounds stretches.
 
+Interface dragging uses the 8-point grid and nearby peer edges/centres by default.
+Hold **Shift** for one logical pixel steps with peer alignment; **Alt+Shift** for free
+subpixel placement without snapping. Alt alone keeps normal snapping. Guides indicate alignment;
+aligning does not create a persistent dependency on another control.
+
 ### Anchoring one control to another
 
 A persistent anchor makes one edge of a control follow an edge of another control in
-the same container, with a gap. The value is `<control> <edge> [<gap>px]`; the target's edge must lie on the
+the same container, with a gap. It is kept in the theme, unlike alignment while
+dragging. The value is `<control> <edge> [<gap>px]`; the target's edge must lie on the
 same axis (left/right, or top/bottom). For example, a meter that fills the track's
 height but ends four points above the volume control under it:
 
@@ -918,11 +928,13 @@ Opposite edges keep the gap between the two controls (a bottom edge above a top 
 matching edges inset by it (a top edge 4 points below another top edge). With one edge
 anchored, a full-width or full-height control keeps its other edge and stretches;
 otherwise it moves and keeps its size. Anchoring both edges of an axis sets both.
-`--suhina-anchor-bottom: none` removes an anchor.
+`--suhina-anchor-bottom: none` removes an anchor. In **Edit interface**, select a control
+and choose another control under **Follow another element**, its edge and the gap.
 
 When the target is hidden, absent, or in another container, the anchored edge keeps the
 control's own placement. Anchors that form a cycle (including a control anchored to
-itself) or a chain longer than eight links are ignored with a warning. A control never leaves its container, and an anchor that leaves no room
+itself) or a chain longer than eight links are ignored with a warning; the editor
+refuses them. A control never leaves its container, and an anchor that leaves no room
 draws nothing: in a mixer strip too short for the chains from its top and its bottom, the
 anchored control that would stand on another one is not drawn. A strip without an audio input
 (a MIDI track's) keeps the room its input would take, so a control anchored to `mixer-monitor`

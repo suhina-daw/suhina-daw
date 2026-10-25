@@ -217,7 +217,7 @@ fn a_copy_of_a_theme_with_placed_controls_says_so() {
     placed.theme.skin.controls.insert("arrangement-volume".into(), Default::default());
     themes.set(vec![placed], None);
     assert_eq!(themes.request("night", ThemeRequest::Duplicate), Some("night-copy".into()));
-    assert!(themes.take_notice().is_some_and(|n| n.contains("1 placed control of")), "the copy says what it keeps");
+    assert!(themes.take_notice().is_some_and(|n| n.contains("1 placed controls")), "the copy says what it keeps");
     assert_eq!(themes.take_notice(), None, "once");
     themes.set(vec![night()], None);
     themes.request("night", ThemeRequest::Duplicate);

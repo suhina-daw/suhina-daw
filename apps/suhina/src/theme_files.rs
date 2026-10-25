@@ -8,7 +8,7 @@
 //!   it again once it is there.
 //! - `variants/<id>.json`, values for the theme's properties (`theme_vars::Variant`). The settings
 //!   editors write these, and only these.
-//! - `layout.css`, what Suhina's theme editors set beyond settings: placements,
+//! - `layout.css`, what Suhina's Edit interface and theme editors set beyond settings: placements,
 //!   the toolbar, artwork and the name. Written by Suhina only.
 //! - artwork, `background.png` and the README.
 //!
