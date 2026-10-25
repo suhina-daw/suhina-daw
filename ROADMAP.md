@@ -147,7 +147,8 @@ refused or suspended, never by losing its edits.
 
 - Every built-in effect, instrument and MIDI effect has editable controls in the device panel:
   its layout (the Sampler's), or a parameter list generated from the device's own parameters,
-  260 px wide and at most 168 px high, scrolling past that. Each change is `device.setParam`, so it
+  in 260 px columns at most 168 px high, continuing in columns to the right rather than
+  scrolling. Each change is `device.setParam`, so it
   is one undo step and an automation lane takes it over. Built-ins are native code with a layout
   loaded by their id, not `.sd` files ([ADR 0021](docs/decisions/0021-device-graph-files.md) ›
   Amendment: device panels).

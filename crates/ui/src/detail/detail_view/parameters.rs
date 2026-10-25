@@ -328,17 +328,40 @@ pub(super) fn parameter_height(parameter: &GraphParameter) -> f32 {
         }
 }
 
-pub(super) fn parameter_layout(parameters: &[GraphParameter], width: f32, hidden: &[String]) -> Vec<Rect> {
-    let mut bottom = 0.0f32;
-    parameters
-        .iter()
-        .filter(|p| !hidden.contains(&p.id))
+/// Where each shown parameter's cell goes: at its own position, or under the one before in a
+/// column `width` wide. A cell that would end below `max_height` starts a new column to the
+/// right, so a long list widens the panel instead of scrolling (ADR 0021 › Amendment: device
+/// panels, 5); `f32::INFINITY` keeps one column.
+pub(super) fn parameter_layout(
+    parameters: &[GraphParameter],
+    width: f32,
+    max_height: f32,
+    hidden: &[String],
+) -> Vec<Rect> {
+    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id));
+    let size = |p: &GraphParameter| p.ui.size.unwrap_or([width, parameter_height(p)]);
+    // A placed cell pushes down the columns it reaches into, wherever it is in the list.
+    let placed: Vec<Rect> = shown()
+        .filter_map(|p| p.ui.position.map(|[x, y]| Rect::from_min_size(Pos2::new(x, y), size(p).into())))
+        .collect();
+    let floor = |column: f32| {
+        placed.iter().filter(|r| r.right() > column && r.left() < column + width).fold(0.0f32, |b, r| b.max(r.bottom()))
+    };
+    let (mut column, mut bottom) = (0.0f32, floor(0.0));
+    shown()
         .map(|parameter| {
-            let [x, y] = parameter.ui.position.unwrap_or([0.0, bottom]);
-            let [w, h] = parameter.ui.size.unwrap_or([width, parameter_height(parameter)]);
-            let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-            bottom = bottom.max(rect.bottom());
-            rect
+            let [w, h] = size(parameter);
+            let [x, y] = parameter.ui.position.unwrap_or_else(|| {
+                // Half a point of slack: heights summed in another order must not open a column.
+                if bottom > 0.0 && bottom + h > max_height + 0.5 {
+                    column += width;
+                    bottom = floor(column);
+                }
+                let start = [column, bottom];
+                bottom += h;
+                start
+            });
+            Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h))
         })
         .collect()
 }

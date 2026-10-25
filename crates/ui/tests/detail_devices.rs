@@ -123,8 +123,11 @@ fn a_midi_effect_shows_before_the_instrument_in_the_chain() {
     harness.run();
     harness.get_by_label("Show Devices").click();
     harness.run();
-    let x = |name: &str| harness.get_by_label(&format!("Device {name}")).rect().center().x;
+    // A device past the area's right edge is not drawn: the FM synth's long list widens its panel.
+    let x =
+        |name: &str| harness.query_by_label(&format!("Device {name}")).map_or(f32::INFINITY, |n| n.rect().center().x);
     assert!(x("Pitch") < x("FM Synth") && x("FM Synth") < x("Utility"), "MIDI effect, instrument, effect");
+    assert!(x("FM Synth").is_finite(), "the instrument is shown");
 }
 
 #[test]

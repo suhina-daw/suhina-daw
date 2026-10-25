@@ -123,11 +123,13 @@ generated `.sd` wrappers that the combined build (#726, from #600) had added are
    instrument and MIDI effect gets a parameter list generated from its `DeviceInfo` and
    `ParamInfo` ([ADR 0004](0004-built-in-devices.md) › 2), drawn with the stock `.sd` controls:
    a slider (logarithmic on a logarithmic scale), a toggle, a whole-number slider or a menu of a
-   choice's labels, in parameter order, scrolling inside the compact panel. A layout replaces it
+   choice's labels, in parameter order, in 260 px columns that fill the compact panel's height
+   from left to right. A layout replaces it
    when the device has one. No built-in lacks a panel for want of a layout, and the generated list
    is what shows when a layout fails to load. A plug-in gets the same list from the parameters
    its host lists (hidden and read-only ones left out), under its editor button while its editor
    is not in the panel.
+   *Amended 2026-10-25, see Amendment: a long parameter list continues to the right.*
 2. **Parameters come from the native device.** A layout refers to parameters by their stable ids
    and takes name, range, scale, unit and default from `ParamInfo`; it never declares them again.
    It may only say how one is presented (its control and the `.sd` parameter `ui` fields), and a
@@ -150,8 +152,10 @@ generated `.sd` wrappers that the combined build (#726, from #600) had added are
    the generated list is always 260 px wide. The row layout already makes a device as wide as
    its canvas plus 12 px (220 px at least, [sdk-custom-ui.md](../spec/sdk-custom-ui.md)); the
    stacked column's default width is 272 px so a 260 px panel fits it. A smaller detail area or
-   column scrolls the panel, as does a longer list. No flexible or dynamic layout and no zoom:
+   column scrolls the panel. A longer list continues in another 260 px column to the right and
+   the panel widens; stock controls a canvas leaves shown sit beside it the same way. No zoom:
    plug-in editors are fixed-size too, and ADR 0006 › 10 already lays the panel out around them.
+   *Amended 2026-10-25, see Amendment: a long parameter list continues to the right.*
 6. **An expanded panel is optional.** A device may also have one larger fixed-size panel with
    more controls and larger displays (an equaliser's curve, a sampler's waveform), opened with a
    button in the device's header; a device without one has no button. It opens over the main
@@ -176,3 +180,15 @@ generated `.sd` wrappers that the combined build (#726, from #600) had added are
 10. **Not now:** layouts by others for a built-in device (#617), pages of a fixed number of
     controls for devices with many parameters, and a mark for parameters that cannot be
     automated (#669), which show and edit like the others meanwhile.
+
+## Amendment: a long parameter list continues to the right (2026-10-25)
+
+A generated list longer than the compact panel's 168 px scrolled inside it, so a device with
+many parameters (Utility, the FM synth, most plug-ins) showed a few rows at a time and its
+controls slid away under the pointer. Items 1 and 5 of the amendment above change in place: the
+list fills columns 260 px wide, each as tall as the compact panel (less a plug-in's rows and the
+graph's node rows), from left to right, and the device's panel is as wide as its columns. Stock
+controls a canvas leaves shown go in the same columns to the canvas's right instead of under it.
+The chain already scrolls sideways, so a wide device needs nothing new; a detail area smaller
+than the panel still scrolls it, and the expanded panel is unchanged. Cells an `.sd` file places
+itself keep their position.

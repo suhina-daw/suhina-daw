@@ -190,11 +190,17 @@ fn a_built_ins_generated_list_fits_the_compact_panel() {
     for device in &chain.devices {
         let graph = device.graph.as_ref().unwrap_or_else(|| panic!("{} has a panel", device.name));
         assert!(graph.canvas.is_none() && graph.nodes.is_empty(), "the generated list, no graph");
-        let height = panel_height(device, COMPACT_WIDTH, None);
+        let height = panel_height(device, None);
         assert!(height <= ROW + PAD * 2.0 + COMPACT_HEIGHT, "{}: {height}", device.name);
     }
-    // Utility's thirteen parameters scroll inside the standard height.
-    assert_eq!(panel_height(&chain.devices[0], COMPACT_WIDTH, None), ROW + PAD * 2.0 + COMPACT_HEIGHT);
+    // Utility's thirteen parameters do not fit one column: the rest continue in a second one to
+    // its right, every cell inside the standard height, so the panel widens and never scrolls.
+    let utility = &chain.devices[0];
+    let graph = utility.graph.as_ref().unwrap();
+    let cells = parameter_layout(&graph.parameters, COMPACT_WIDTH, list_height(utility, graph), &[]);
+    assert!(cells.iter().all(|c| c.bottom() <= COMPACT_HEIGHT + 0.5), "{cells:?}");
+    assert_eq!(cells.first().unwrap().left(), 0.0);
+    assert_eq!(cells.last().unwrap().left(), COMPACT_WIDTH);
     assert_eq!(STACK_WIDTH, 272.0);
 }
 
@@ -312,11 +318,23 @@ fn authored_control_positions_and_auto_flow_have_the_expected_extent() {
     let mut next = p.clone();
     next.ui.position = None;
     next.ui.size = Some([200.0, 60.0]);
-    let cells = parameter_layout(&[p, next], 320.0, &[]);
+    let cells = parameter_layout(&[p, next.clone()], 320.0, f32::INFINITY, &[]);
     assert_eq!(cells[0].min, Pos2::new(300.0, 10.0));
     assert_eq!(cells[0].max, Pos2::new(540.0, 130.0));
     assert_eq!(cells[1].min, Pos2::new(0.0, 130.0));
     assert_eq!(cells[1].max, Pos2::new(200.0, 190.0));
+    // A cell placed in the second column, listed first: the list continues under it there.
+    let mut placed = next.clone();
+    placed.ui.position = Some([320.0, 0.0]);
+    let auto = |id: &str| GraphParameter {
+        id: id.into(),
+        ui: ParameterUi { size: Some([200.0, 60.0]), ..ParameterUi::default() },
+        ..next.clone()
+    };
+    let cells = parameter_layout(&[placed, auto("a"), auto("b"), auto("c")], 320.0, 130.0, &[]);
+    assert_eq!(cells[1].min, Pos2::new(0.0, 0.0));
+    assert_eq!(cells[2].min, Pos2::new(0.0, 60.0));
+    assert_eq!(cells[3].min, Pos2::new(320.0, 60.0), "{cells:?}");
 }
 
 #[test]
