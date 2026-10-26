@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
+use egui::{Align2, Color32, ColorImage, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use suhina_device_mix_space::{draw, muted, overlaps, point, response};
 use suhina_engine::model::{Project, TrackId};
 use suhina_engine::{MeterMonitor, TapPoint};
@@ -531,7 +531,6 @@ pub fn show(
     }
     let only = marks == overlaps::ONLY;
     if draw != draw::LINES {
-        let mut pieces = Vec::new();
         let alphas: Vec<f32> = lines
             .iter()
             .map(|line| {
@@ -541,25 +540,18 @@ pub fn show(
                 muted * faded * other
             })
             .collect();
-        field(&mut pieces, &camera, view, &lines, &alphas, bands, floor, draw == draw::MESH);
-        // Far first, so what is in front covers what is behind it.
-        pieces.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let mut mesh = egui::Mesh::default();
-        for (_, piece) in pieces {
-            match piece {
-                Piece::Quad(points, colors) => quad(&mut mesh, points, colors),
-                Piece::Wire([a, b], [ca, cb]) => {
-                    // A one-pixel strip, so the whole mesh is one shape with blended colours.
-                    let along = b - a;
-                    let length = along.length();
-                    if length > 0.01 {
-                        let side = Vec2::new(-along.y, along.x) / length * 0.45;
-                        quad(&mut mesh, [a - side, b - side, b + side, a + side], [ca, cb, cb, ca]);
-                    }
-                }
+        let scale = ui.ctx().pixels_per_point();
+        let image = landscape(&camera, view, scale, &lines, &alphas, bands, floor, draw == draw::MESH);
+        let texture_id = camera_id.with("landscape");
+        let texture = match ui.data(|d| d.get_temp::<egui::TextureHandle>(texture_id)) {
+            Some(mut texture) => {
+                texture.set(image, egui::TextureOptions::LINEAR);
+                texture
             }
-        }
-        painter.add(Shape::mesh(mesh));
+            None => ui.ctx().load_texture("mix-space-landscape", image, egui::TextureOptions::LINEAR),
+        };
+        painter.image(texture.id(), view, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        ui.data_mut(|d| d.insert_temp(texture_id, texture));
     } else {
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 }
@@ -686,33 +678,40 @@ fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp:
         .collect()
 }
 
-/// Columns of the field across the stereo field.
-const FIELD_COLUMNS: usize = 64;
+/// Columns of the landscape across the stereo field.
+const FIELD_COLUMNS: usize = 128;
+/// Columns between two grid lines across the stereo field.
+const LINE_COLUMNS: f32 = 4.0;
+/// Bands between two grid lines along the frequencies.
+const LINE_BANDS: f32 = 5.0;
 
-/// Every track blended into one landscape, like a spectrogram in three dimensions. Over a grid
-/// of the stereo field against the bands, each point is as high as all tracks' sound there
-/// together and coloured by the tracks that make it, each in proportion to its share, so where
-/// two tracks meet their colours mix. A band spreads across the stereo field as a soft bell
-/// centred on its position, as wide as the band is; quiet ground fades out towards the floor,
-/// and the loudest ground burns towards white. No lines are drawn.
+/// Every track blended into one landscape, like a spectrogram in three dimensions, drawn pixel
+/// by pixel ([`crate::detail::mix_space_raster`]). Over a grid of the stereo field against the
+/// bands, each point is as high as all tracks' sound there together and coloured by the tracks
+/// that make it, each in proportion to its share, so where two tracks meet their colours mix.
+/// A band spreads across the stereo field as a soft bell centred on its position, as wide as the
+/// band is; quiet ground fades out towards the floor and the loudest burns towards white. The
+/// surface is lit from above, the left and the front, and carries a net of fine lines: strong
+/// for `mesh`, faint otherwise.
 #[allow(clippy::too_many_arguments)]
-fn field(
-    pieces: &mut Vec<(f32, Piece)>,
+fn landscape(
     camera: &Camera,
     view: Rect,
+    scale: f32,
     lines: &[Line<'_>],
     alphas: &[f32],
     bands: usize,
     floor: f32,
-    wire: bool,
-) {
+    mesh: bool,
+) -> ColorImage {
+    use crate::detail::mix_space_raster::{Corner, Look, render};
     let span = -floor.min(-6.0);
     let column = |c: usize| c as f32 / (FIELD_COLUMNS - 1) as f32 * 2.0 - 1.0;
     // Per band and column: the summed power and the colour weighted by each track's power.
-    let mut grid: Vec<[(f32, [f32; 3]); FIELD_COLUMNS]> = Vec::with_capacity(bands);
+    let mut grid: Vec<Vec<(f32, [f32; 3])>> = Vec::with_capacity(bands);
     let mut depths = Vec::with_capacity(bands);
     for band in 0..bands {
-        let mut row = [(0.0f32, [0.0f32; 3]); FIELD_COLUMNS];
+        let mut row = vec![(0.0f32, [0.0f32; 3]); FIELD_COLUMNS];
         let mut frequency = 0.0;
         for (line, alpha) in lines.iter().zip(alphas) {
             let Some(b) = line.bands.get(band) else { continue };
@@ -722,7 +721,7 @@ fn field(
             }
             let power = 10f32.powf(b.level_db / 10.0) * alpha;
             let sigma = 0.05 + 0.9 * b.width();
-            let rgb = [line.look.color.r(), line.look.color.g(), line.look.color.b()].map(f32::from);
+            let rgb = [line.look.color.r(), line.look.color.g(), line.look.color.b()].map(|v| f32::from(v) / 255.0);
             for (c, cell) in row.iter_mut().enumerate() {
                 let distance = (column(c) - b.pan) / sigma;
                 let share = power * (-0.5 * distance * distance).exp();
@@ -753,118 +752,61 @@ fn field(
             }
         }
     }
-    // Each grid point's height in the box, and the colour of the tracks there.
-    let heights: Vec<[f32; FIELD_COLUMNS]> = grid
+    let heights: Vec<Vec<f32>> = grid
         .iter()
-        .map(|row| row.map(|(power, _)| if power > 0.0 { height(10.0 * power.log10(), floor) } else { 0.0 }))
+        .map(|row| {
+            row.iter().map(|(power, _)| if *power > 0.0 { height(10.0 * power.log10(), floor) } else { 0.0 }).collect()
+        })
         .collect();
     let at_height = |band: usize, c: usize| heights.get(band).and_then(|r| r.get(c)).copied().unwrap_or(0.0);
     let column_step = 2.0 / (FIELD_COLUMNS - 1) as f32;
-    // The light comes from above, the left and the front, so slopes facing it are bright and
-    // slopes facing away dark, which gives the ground its shape.
+    let mut corners = Vec::with_capacity(bands * FIELD_COLUMNS);
+    for band in 0..bands {
+        let z = depths.get(band).copied().unwrap_or(0.0);
+        let next = (band + 1).min(bands.saturating_sub(1));
+        let previous = band.saturating_sub(1);
+        let dz_span = (depths.get(next).copied().unwrap_or(z) - depths.get(previous).copied().unwrap_or(z)).max(1e-3);
+        for c in 0..FIELD_COLUMNS {
+            let (power, rgb) = grid.get(band).and_then(|r| r.get(c)).copied().unwrap_or((0.0, [0.0; 3]));
+            let h = at_height(band, c);
+            let dx = (at_height(band, (c + 1).min(FIELD_COLUMNS - 1)) - at_height(band, c.saturating_sub(1)))
+                / (2.0 * column_step);
+            let dz = (at_height(next, c) - at_height(previous, c)) / dz_span;
+            let db = if power > 0.0 { 10.0 * power.log10() } else { floor };
+            let loud = ((db - floor) / span).clamp(0.0, 1.2);
+            let base = if power > 0.0 { rgb.map(|v| v / power) } else { [0.0; 3] };
+            // The loudest ground burns towards white, as a spectrogram's does.
+            let hot = ((loud - 0.85) * 2.5).clamp(0.0, 0.5);
+            let color = base.map(|v| v + (1.0 - v) * hot);
+            let point = [column(c), h, z];
+            let at = camera.project(view, point);
+            corners.push(Corner {
+                at: [(at.x - view.left()) * scale, (at.y - view.top()) * scale],
+                depth: camera.distance(point),
+                normal: [-dx, 1.0, -dz],
+                color: [color[0], color[1], color[2], (loud / 0.08).clamp(0.0, 1.0)],
+                grid: [c as f32 / LINE_COLUMNS, band as f32 / LINE_BANDS],
+            });
+        }
+    }
+    let mut triangles = Vec::with_capacity(bands * FIELD_COLUMNS * 2);
+    let index = |band: usize, c: usize| u32::try_from(band * FIELD_COLUMNS + c).unwrap_or(u32::MAX);
+    for band in 0..bands.saturating_sub(1) {
+        for c in 0..FIELD_COLUMNS - 1 {
+            let (a, b, d, e) = (index(band, c), index(band, c + 1), index(band + 1, c + 1), index(band + 1, c));
+            triangles.push([a, b, d]);
+            triangles.push([a, d, e]);
+        }
+    }
     let light = {
         let [x, y, z] = [-0.45f32, 0.8, -0.4];
         let length = (x * x + y * y + z * z).sqrt();
         [x / length, y / length, z / length]
     };
-    let point = |band: usize, c: usize| -> Option<(Pos2, Color32)> {
-        let (power, rgb) = grid.get(band)?.get(c)?;
-        let z = *depths.get(band)?;
-        let h = at_height(band, c);
-        let db = if *power > 0.0 { 10.0 * power.log10() } else { floor };
-        let loud = ((db - floor) / span).clamp(0.0, 1.2);
-        if *power <= 0.0 {
-            return Some((camera.project(view, [column(c), 0.0, z]), Color32::TRANSPARENT));
-        }
-        // The slope from the neighbours: across the stereo field and along the frequencies.
-        let dx = (at_height(band, (c + 1).min(FIELD_COLUMNS - 1)) - at_height(band, c.saturating_sub(1)))
-            / (2.0 * column_step);
-        let next = (band + 1).min(bands.saturating_sub(1));
-        let previous = band.saturating_sub(1);
-        let dz_span = (depths.get(next).copied().unwrap_or(z) - depths.get(previous).copied().unwrap_or(z)).max(1e-3);
-        let dz = (at_height(next, c) - at_height(previous, c)) / dz_span;
-        let normal = {
-            let [x, y, z] = [-dx, 1.0, -dz];
-            let length = (x * x + y * y + z * z).sqrt();
-            [x / length, y / length, z / length]
-        };
-        let lit = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
-        let shade = 0.3 + 0.7 * lit.max(0.0) + 0.25 * h.min(1.0);
-        let base = [rgb[0] / power, rgb[1] / power, rgb[2] / power];
-        let channel = |v: f32| (v * shade).clamp(0.0, 255.0).round() as u8;
-        let color = Color32::from_rgb(channel(base[0]), channel(base[1]), channel(base[2]));
-        // The loudest peaks catch the light towards white; ground near the floor fades out.
-        let color = lerp(color, Color32::WHITE, ((loud - 0.85) * 2.5).clamp(0.0, 0.5));
-        let alpha = (loud / 0.08).clamp(0.0, 1.0);
-        Some((camera.project(view, [column(c), h, z]), color.gamma_multiply(alpha)))
-    };
-    if wire {
-        // The mesh: lines across the stereo field at every second band and along the bands at
-        // every column, so the ground reads as a net you can see through.
-        let step = 3;
-        let rows: Vec<usize> = (0..bands).step_by(step).collect();
-        let mut push = |a: (usize, usize), b: (usize, usize)| {
-            let (Some(pa), Some(pb)) = (point(a.0, a.1), point(b.0, b.1)) else { return };
-            if pa.1.a() < 3 && pb.1.a() < 3 {
-                return;
-            }
-            let za = depths.get(a.0).copied().unwrap_or(0.0);
-            let zb = depths.get(b.0).copied().unwrap_or(0.0);
-            let key = camera.distance([(column(a.1) + column(b.1)) / 2.0, 0.5, (za + zb) / 2.0]);
-            // Lines further away fade, so the front of the ground stays crisp.
-            let fog = 1.0 - 0.6 * ((key + 1.2) / 2.4).clamp(0.0, 1.0);
-            pieces.push((key, Piece::Wire([pa.0, pb.0], [pa.1.gamma_multiply(fog), pb.1.gamma_multiply(fog)])));
-        };
-        for (i, &band) in rows.iter().enumerate() {
-            for c in 0..FIELD_COLUMNS {
-                if c + 1 < FIELD_COLUMNS {
-                    push((band, c), (band, c + 1));
-                }
-                if let Some(&next) = rows.get(i + 1) {
-                    push((band, c), (next, c));
-                }
-            }
-        }
-        return;
-    }
-    for band in 0..bands.saturating_sub(1) {
-        for c in 0..FIELD_COLUMNS - 1 {
-            let corners = [(band, c), (band, c + 1), (band + 1, c + 1), (band + 1, c)];
-            let found: Option<Vec<(Pos2, Color32)>> = corners.iter().map(|&(b, c)| point(b, c)).collect();
-            let Some(found) = found else { continue };
-            if found.iter().all(|(_, color)| color.a() < 3) {
-                continue;
-            }
-            let (Some(&za), Some(&zb)) = (depths.get(band), depths.get(band + 1)) else { continue };
-            let key = camera.distance([(column(c) + column(c + 1)) / 2.0, 0.5, (za + zb) / 2.0]);
-            let points = [found[0].0, found[1].0, found[2].0, found[3].0];
-            let colors = [found[0].1, found[1].1, found[2].1, found[3].1];
-            pieces.push((key, Piece::Quad(points, colors)));
-        }
-    }
-}
-
-/// A piece of the field: a shaded quad of the surface, or a line of the mesh.
-enum Piece {
-    Quad([Pos2; 4], [Color32; 4]),
-    Wire([Pos2; 2], [Color32; 2]),
-}
-
-/// Two triangles from four corners, each with its own colour.
-fn quad(mesh: &mut egui::Mesh, points: [Pos2; 4], colors: [Color32; 4]) {
-    let base = u32::try_from(mesh.vertices.len()).unwrap_or(u32::MAX);
-    if base > u32::MAX - 4 {
-        return;
-    }
-    for (pos, color) in points.into_iter().zip(colors) {
-        mesh.vertices.push(egui::epaint::Vertex { pos, uv: egui::epaint::WHITE_UV, color });
-    }
-    mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-}
-
-fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
-    let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
-    Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
+    let look = Look { light, lines: if mesh { 0.85 } else { 0.18 }, line_width: 0.9 * scale.max(1.0) };
+    let width = (view.width() * scale).round().max(1.0) as usize;
+    let height = (view.height() * scale).round().max(1.0) as usize;
+    render(width, height, &corners, &triangles, &look)
 }
 
 fn hertz(frequency: f32) -> String {
@@ -963,11 +905,57 @@ mod tests {
             let (gl, gr) = suhina_dsp::pan::gains(0.5);
             (v * gl as f32, v * gr as f32)
         });
+        // A little noise generator, with one-pole filters for the noisy tracks.
+        let noise = |seed: u32| {
+            let mut state = seed;
+            move || {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as f32 / u32::MAX as f32 * 2.0 - 1.0
+            }
+        };
+        let filtered = |seed: u32, low: f32, high: f32, gain: f32, side: f32| {
+            let (mut left, mut right) = (noise(seed), noise(seed ^ 0x9e37_79b9));
+            let k = |f: f32| 1.0 - (-std::f32::consts::TAU * f / RATE).exp();
+            let (kl, kh) = (k(low), k(high));
+            let mut state = [0.0f32; 4];
+            let (mut out_l, mut out_r) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
+            for n in 0..frames {
+                let burst = if (n % 12_000) < 2_400 { (-((n % 12_000) as f32) / 600.0).exp() } else { 0.0 };
+                let (l, r) = (left(), right());
+                state[0] += (l - state[0]) * kh;
+                state[1] += (state[0] - state[1]) * kl;
+                state[2] += (r - state[2]) * kh;
+                state[3] += (state[2] - state[3]) * kl;
+                let (bl, br) = (state[0] - state[1], state[2] - state[3]);
+                let mid = (bl + br) / 2.0;
+                out_l.push((mid + (bl - mid) * side) * gain * burst.max(if gain < 0.2 { 1.0 } else { 0.0 }));
+                out_r.push((mid + (br - mid) * side) * gain * burst.max(if gain < 0.2 { 1.0 } else { 0.0 }));
+            }
+            let mut analyzer = suhina_dsp::MixSpaceAnalyzer::new(f64::from(RATE), 24);
+            analyzer.push(&out_l, &out_r);
+            analyzer.readings().to_vec()
+        };
+        let snare = filtered(7, 180.0, 6_000.0, 0.8, 0.2);
+        let hats = filtered(11, 7_000.0, 18_000.0, 0.5, 0.6);
+        let room = filtered(13, 300.0, 4_000.0, 0.08, 1.0);
+        let vocal = analyse(&|n| {
+            let f = 196.0 * (1.0 + 0.004 * (std::f32::consts::TAU * 5.0 * n as f32 / RATE).sin());
+            let v: f32 =
+                (1..12).map(|h| (std::f32::consts::TAU * f * h as f32 * n as f32 / RATE).sin() / (h * h) as f32).sum();
+            let (gl, gr) = suhina_dsp::pan::gains(-0.15);
+            (v * 0.35 * gl as f32, v * 0.35 * gr as f32)
+        });
         let tracks = [
             (1, "Kick", Color32::from_rgb(240, 200, 60), kick),
-            (2, "Bass", Color32::from_rgb(190, 110, 230), bass),
-            (3, "Pad", Color32::from_rgb(90, 190, 120), pad),
-            (4, "Lead", Color32::from_rgb(240, 120, 110), lead),
+            (2, "Snare", Color32::from_rgb(90, 170, 240), snare),
+            (3, "Hats", Color32::from_rgb(120, 230, 230), hats),
+            (4, "Bass", Color32::from_rgb(190, 110, 230), bass),
+            (5, "Pad", Color32::from_rgb(90, 190, 120), pad),
+            (6, "Lead", Color32::from_rgb(240, 120, 110), lead),
+            (7, "Vocal", Color32::from_rgb(250, 160, 60), vocal),
+            (8, "Reverb", Color32::from_rgb(150, 150, 170), room),
         ];
         Feed {
             snapshot: Arc::new(MixSpaceSnapshot {

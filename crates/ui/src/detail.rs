@@ -9,6 +9,7 @@ pub(crate) mod device_canvas;
 pub mod follow_view;
 pub mod midi_tools;
 pub(crate) mod mix_space_panel;
+pub(crate) mod mix_space_raster;
 pub(crate) mod nam_panel;
 pub mod piano_roll;
 pub mod piano_roll_ghosts;
