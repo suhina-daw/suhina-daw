@@ -32,7 +32,7 @@ pub const MIX_HEIGHT: f32 = 330.0;
 /// The parameter list's width at the panel's left.
 pub const CONTROLS_WIDTH: f32 = 150.0;
 
-/// The lowest level the box shows, at its floor.
+/// The lowest level the box shows, at its floor, when the device's Floor is not set.
 const FLOOR_DB: f32 = -72.0;
 /// How far above 0 dBFS the zone over the ceiling reaches.
 const OVER_DB: f32 = 12.0;
@@ -204,6 +204,15 @@ impl Camera {
         Self { yaw, pitch, zoom, offset: Vec2::ZERO }
     }
 
+    /// How far the box point `p` is from the camera, along its view: larger is further.
+    fn distance(&self, p: [f32; 3]) -> f32 {
+        let [x, y, z] = [p[0], p[1] - 0.58, p[2]];
+        let (sy, cy) = self.yaw.sin_cos();
+        let z = x * sy + z * cy;
+        let (sp, cp) = self.pitch.sin_cos();
+        y * sp + z * cp
+    }
+
     /// Where the box point `p` (x pan -1..1, y level 0..1.17, z frequency -1..1) lands in `area`.
     fn project(&self, area: Rect, p: [f32; 3]) -> Pos2 {
         let [x, y, z] = [p[0], p[1] - 0.58, p[2]];
@@ -216,9 +225,10 @@ impl Camera {
     }
 }
 
-/// The box height of a level.
-fn height(db: f32) -> f32 {
-    ((db.max(FLOOR_DB) - FLOOR_DB) / -FLOOR_DB).min(1.0 + OVER_DB / -FLOOR_DB)
+/// The box height of a level, with `floor` (dBFS, below 0) at the bottom and 0 dBFS at 1.
+fn height(db: f32, floor: f32) -> f32 {
+    let floor = if floor.is_finite() { floor.min(-6.0) } else { FLOOR_DB };
+    ((db.max(floor) - floor) / -floor).min(1.0 + OVER_DB / -floor)
 }
 
 /// The box depth of a frequency: 20 Hz at the front, 20 kHz at the back.
@@ -242,6 +252,32 @@ fn inside(tracks: &[TrackLook], track: &TrackLook, on: TrackId) -> bool {
         next = tracks.iter().find(|t| t.id == parent).and_then(|t| t.parent);
     }
     false
+}
+
+/// The bands with their stereo position and correlation averaged over their neighbours, two on
+/// each side, weighted by how loud each is: the levels and so the peaks stay as they are, but a
+/// sound whose position wavers from band to band (detuned voices beating) draws as one smooth
+/// sheet rather than a tangle.
+fn smooth_position(bands: Vec<suhina_dsp::BandReading>) -> Vec<suhina_dsp::BandReading> {
+    let weight = |b: &suhina_dsp::BandReading| 10f32.powf(b.level_db.max(-120.0) / 20.0);
+    (0..bands.len())
+        .map(|i| {
+            let around = bands.get(i.saturating_sub(2)..(i + 3).min(bands.len())).unwrap_or_default();
+            let total: f32 = around.iter().map(weight).sum();
+            let mut band = bands.get(i).copied().unwrap_or(suhina_dsp::BandReading {
+                frequency: 0.0,
+                level_db: -120.0,
+                peak_db: -120.0,
+                pan: 0.0,
+                correlation: 1.0,
+            });
+            if total > 0.0 {
+                band.pan = around.iter().map(|b| b.pan * weight(b)).sum::<f32>() / total;
+                band.correlation = around.iter().map(|b| b.correlation * weight(b)).sum::<f32>() / total;
+            }
+            band
+        })
+        .collect()
 }
 
 /// One drawn track: its look and its bands.
@@ -274,6 +310,7 @@ pub fn show(
     let release = value("release", 0.3) as f32;
     let draw = value("draw", draw::CLOUD);
     let tilt = value("tilt", 0.0) as f32;
+    let floor = value("floor", f64::from(FLOOR_DB)) as f32;
     let slow = value("response", response::FAST) == response::SLOW;
     let tap = if pre { TapPoint::PreFader } else { TapPoint::PostFader };
     let now = ui.input(|i| i.time);
@@ -351,7 +388,7 @@ pub fn show(
     let at = |p: [f32; 3]| camera.project(view, p);
 
     // The box, its ceiling at 0 dBFS and the zone over it.
-    let top = height(OVER_DB);
+    let top = height(OVER_DB, floor);
     let corners = |y: f32| [[-1.0, y, -1.0], [1.0, y, -1.0], [1.0, y, 1.0], [-1.0, y, 1.0]];
     let edge = Stroke::new(1.0, theme::text_hint().gamma_multiply(0.6));
     let ceiling = corners(1.0).map(at);
@@ -388,6 +425,13 @@ pub fn show(
         painter.text(at([1.0, 0.0, depth(frequency.0)]), Align2::LEFT_TOP, frequency.1, font.clone(), hint);
     }
     painter.text(at([-1.0, 1.0, -1.0]), Align2::RIGHT_CENTER, "0 dB", font.clone(), theme::recording());
+    painter.text(
+        at([-1.0, 0.0, -1.0]) + Vec2::new(-4.0, -6.0),
+        Align2::RIGHT_BOTTOM,
+        format!("{floor:.0} dB"),
+        font.clone(),
+        hint,
+    );
 
     // The tracks.
     let feed = ui.ctx().data(|d| d.get_temp::<Feed>(feed_id())).unwrap_or_default();
@@ -406,7 +450,7 @@ pub fn show(
                     suhina_dsp::BandReading { level_db: above(b.level_db), peak_db: above(b.peak_db), ..*b }
                 })
                 .collect();
-            Some((look.clone(), bands))
+            Some((look.clone(), smooth_position(bands)))
         })
         .collect();
     let lines: Vec<Line<'_>> = tilted
@@ -440,8 +484,11 @@ pub fn show(
                     }
                     let gap = (ra.level_db - rb.level_db).abs();
                     if gap <= range {
-                        let mid =
-                            [(ra.pan + rb.pan) / 2.0, height((ra.level_db + rb.level_db) / 2.0), depth(ra.frequency)];
+                        let mid = [
+                            (ra.pan + rb.pan) / 2.0,
+                            height((ra.level_db + rb.level_db) / 2.0, floor),
+                            depth(ra.frequency),
+                        ];
                         found.push(Overlap {
                             at: at(mid),
                             strength: 1.0 - gap / range.max(0.1),
@@ -467,12 +514,21 @@ pub fn show(
     }
     let only = marks == overlaps::ONLY;
     if draw == draw::CLOUD {
-        let mut mesh = egui::Mesh::default();
-        let mut ridges = Vec::new();
+        let mut pieces = Vec::new();
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
             let covered = covered.get(index).map_or(&[][..], Vec::as_slice);
-            cloud(&mut mesh, &mut ridges, &at, line, bands, alpha, covered);
+            cloud(&mut pieces, &camera, view, line, bands, alpha, covered, floor);
+        }
+        // Far first, so what is in front covers what is behind it.
+        pieces.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let mut mesh = egui::Mesh::default();
+        let mut ridges = Vec::new();
+        for (_, piece) in pieces {
+            match piece {
+                Piece::Quad(points, colors) => quad(&mut mesh, points, colors),
+                Piece::Ridge(points, stroke) => ridges.push(Shape::line_segment(points, stroke)),
+            }
         }
         painter.add(Shape::mesh(mesh));
         painter.extend(ridges);
@@ -480,14 +536,22 @@ pub fn show(
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
             let color = line.look.color.gamma_multiply(alpha);
-            let points: Vec<Pos2> =
-                line.bands.iter().take(bands).map(|b| at([b.pan, height(b.level_db), depth(b.frequency)])).collect();
-            let peaks: Vec<Pos2> =
-                line.bands.iter().take(bands).map(|b| at([b.pan, height(b.peak_db), depth(b.frequency)])).collect();
+            let points: Vec<Pos2> = line
+                .bands
+                .iter()
+                .take(bands)
+                .map(|b| at([b.pan, height(b.level_db, floor), depth(b.frequency)]))
+                .collect();
+            let peaks: Vec<Pos2> = line
+                .bands
+                .iter()
+                .take(bands)
+                .map(|b| at([b.pan, height(b.peak_db, floor), depth(b.frequency)]))
+                .collect();
             painter.add(Shape::line(peaks, Stroke::new(1.0, color.gamma_multiply(0.25))));
             for (i, pair) in points.windows(2).enumerate() {
                 let (Some(a), Some(b)) = (line.bands.get(i), line.bands.get(i + 1)) else { continue };
-                if a.level_db <= FLOOR_DB && b.level_db <= FLOOR_DB {
+                if a.level_db <= floor && b.level_db <= floor {
                     continue;
                 }
                 let over = a.level_db > 0.0 || b.level_db > 0.0;
@@ -545,28 +609,33 @@ pub fn show(
 
 /// One track as a cloud, like a spectrogram in three dimensions: its spectrum as a lit tent
 /// over the box's floor. Each band's top is as high as it is loud and as wide as the band is in
-/// the stereo field; the tent's sides fade towards the floor, its roof is a faint sheet and its
-/// ridge a bright edge, so harmonics stand as sharp peaks and a wide pad lies as a broad sheet.
-/// The loudest parts burn towards white, as a spectrogram's do; a band another track covers is
-/// dimmer.
+/// the stereo field; the tent's sides are faint and fade downwards, its roof a fainter sheet and
+/// its ridge a bright edge, so harmonics stand as sharp peaks and a wide pad lies as a broad,
+/// see-through sheet. The loudest parts burn towards white, as a spectrogram's do; a band another
+/// track covers is dimmer. Every piece is returned with its distance from the camera, so the
+/// caller draws the far ones first.
+#[allow(clippy::too_many_arguments)]
 fn cloud(
-    mesh: &mut egui::Mesh,
-    ridges: &mut Vec<Shape>,
-    at: &impl Fn([f32; 3]) -> Pos2,
+    pieces: &mut Vec<(f32, Piece)>,
+    camera: &Camera,
+    view: Rect,
     line: &Line<'_>,
     bands: usize,
     alpha: f32,
     covered: &[bool],
+    floor: f32,
 ) {
+    let at = |p: [f32; 3]| camera.project(view, p);
+    let span = -floor.min(-6.0);
     let shown: Vec<&suhina_dsp::BandReading> = line.bands.iter().take(bands).collect();
     for (index, pair) in shown.windows(2).enumerate() {
         let [a, b] = [pair[0], pair[1]];
-        if a.level_db <= FLOOR_DB && b.level_db <= FLOOR_DB {
+        if a.level_db <= floor && b.level_db <= floor {
             continue;
         }
-        let loud = ((a.level_db.max(b.level_db) - FLOOR_DB) / -FLOOR_DB).clamp(0.0, 1.2);
+        let loud = ((a.level_db.max(b.level_db) - floor) / span).clamp(0.0, 1.2);
         let intensity = loud.min(1.0).powf(1.4);
-        let hot = ((loud - 0.7) * 2.0).clamp(0.0, 0.8);
+        let hot = ((loud - 0.75) * 2.0).clamp(0.0, 0.7);
         let color = lerp(line.look.color, Color32::WHITE, hot);
         let dim = if covered.get(index).copied().unwrap_or(false) { 0.4 } else { 1.0 };
         let strength = (intensity * alpha * dim).clamp(0.0, 1.0);
@@ -574,38 +643,44 @@ fn cloud(
             continue;
         }
         let (za, zb) = (depth(a.frequency), depth(b.frequency));
-        let (ya, yb) = (height(a.level_db), height(b.level_db));
-        // The sides reach 30 dB down, a shadow under each peak rather than a wall to the floor.
-        let (fa, fb) = (height(a.level_db - 30.0), height(b.level_db - 30.0));
-        let (wa, wb) = (a.width().max(0.015), b.width().max(0.015));
-        let edges = [(-1.0f32), 1.0];
-        for side in edges {
+        let (ya, yb) = (height(a.level_db, floor), height(b.level_db, floor));
+        // The sides reach a quarter of the box down: a soft shadow under each peak.
+        let (fa, fb) = (height(a.level_db - span * 0.25, floor), height(b.level_db - span * 0.25, floor));
+        let (wa, wb) = (a.width().max(0.012), b.width().max(0.012));
+        let key = camera.distance([(a.pan + b.pan) / 2.0, (ya + yb) / 2.0, (za + zb) / 2.0]);
+        let wall = color.gamma_multiply(0.16 * strength);
+        for side in [-1.0f32, 1.0] {
             let (xa, xb) = ((a.pan + side * wa).clamp(-1.0, 1.0), (b.pan + side * wb).clamp(-1.0, 1.0));
-            quad(
-                mesh,
-                [at([xa, ya, za]), at([xb, yb, zb]), at([xb, fb, zb]), at([xa, fa, za])],
-                [
-                    color.gamma_multiply(0.5 * strength),
-                    color.gamma_multiply(0.5 * strength),
-                    Color32::TRANSPARENT,
-                    Color32::TRANSPARENT,
-                ],
-            );
+            pieces.push((
+                key,
+                Piece::Quad(
+                    [at([xa, ya, za]), at([xb, yb, zb]), at([xb, fb, zb]), at([xa, fa, za])],
+                    [wall, wall, Color32::TRANSPARENT, Color32::TRANSPARENT],
+                ),
+            ));
         }
-        let roof = color.gamma_multiply(0.25 * strength);
-        quad(
-            mesh,
-            [
-                at([(a.pan - wa).clamp(-1.0, 1.0), ya, za]),
-                at([(a.pan + wa).clamp(-1.0, 1.0), ya, za]),
-                at([(b.pan + wb).clamp(-1.0, 1.0), yb, zb]),
-                at([(b.pan - wb).clamp(-1.0, 1.0), yb, zb]),
-            ],
-            [roof; 4],
-        );
-        let ridge = Stroke::new(1.0 + loud, color.gamma_multiply((0.35 + 0.65 * intensity) * alpha * dim));
-        ridges.push(Shape::line_segment([at([a.pan, ya, za]), at([b.pan, yb, zb])], ridge));
+        let roof = color.gamma_multiply(0.1 * strength);
+        pieces.push((
+            key,
+            Piece::Quad(
+                [
+                    at([(a.pan - wa).clamp(-1.0, 1.0), ya, za]),
+                    at([(a.pan + wa).clamp(-1.0, 1.0), ya, za]),
+                    at([(b.pan + wb).clamp(-1.0, 1.0), yb, zb]),
+                    at([(b.pan - wb).clamp(-1.0, 1.0), yb, zb]),
+                ],
+                [roof; 4],
+            ),
+        ));
+        let ridge = Stroke::new(0.8 + 1.2 * loud.min(1.0), color.gamma_multiply((0.3 + 0.7 * intensity) * alpha * dim));
+        pieces.push((key - 1e-3, Piece::Ridge([at([a.pan, ya, za]), at([b.pan, yb, zb])], ridge)));
     }
+}
+
+/// A piece of a cloud: a shaded quad, or a ridge segment.
+enum Piece {
+    Quad([Pos2; 4], [Color32; 4]),
+    Ridge([Pos2; 2], Stroke),
 }
 
 /// Two triangles from four corners, each with its own colour.
@@ -667,9 +742,11 @@ mod tests {
 
     #[test]
     fn the_box_maps_levels_and_frequencies() {
-        assert_eq!(height(FLOOR_DB - 10.0), 0.0);
-        assert_eq!(height(0.0), 1.0);
-        assert!((height(OVER_DB + 30.0) - (1.0 + OVER_DB / -FLOOR_DB)).abs() < 1e-6);
+        assert_eq!(height(FLOOR_DB - 10.0, FLOOR_DB), 0.0);
+        assert_eq!(height(0.0, FLOOR_DB), 1.0);
+        assert!((height(OVER_DB + 30.0, FLOOR_DB) - (1.0 + OVER_DB / -FLOOR_DB)).abs() < 1e-6);
+        assert_eq!(height(-48.0, -48.0), 0.0, "a raised floor");
+        assert_eq!(height(-24.0, -48.0), 0.5);
         assert!((depth(20.0) + 1.0).abs() < 1e-6);
         assert!((depth(20_000.0) - 1.0).abs() < 1e-5);
         assert!(depth(1_000.0) > 0.0);
@@ -756,13 +833,13 @@ mod tests {
     fn the_view_draws_the_tracks_marks_overlaps_and_asks_for_its_point() {
         let feed = feed();
         let mut harness =
-            egui_kittest::Harness::builder().with_size((480.0, 300.0)).with_pixels_per_point(1.0).wgpu().build_ui(
+            egui_kittest::Harness::builder().with_size((720.0, 420.0)).with_pixels_per_point(1.0).wgpu().build_ui(
                 move |ui| {
                     ui.ctx().data_mut(|d| d.insert_temp(feed_id(), feed.clone()));
-                    let values = vec![("overlaps".to_string(), overlaps::MARK)];
+                    let values: Vec<(String, f64)> = Vec::new();
                     show(
                         ui,
-                        Rect::from_min_size(Pos2::ZERO, Vec2::new(480.0, 300.0)),
+                        Rect::from_min_size(Pos2::ZERO, Vec2::new(720.0, 420.0)),
                         TrackId::MAIN,
                         &crate::detail::detail_view::DeviceAt(vec![0]),
                         &values,
@@ -784,9 +861,18 @@ mod tests {
         };
         save(&mut harness, "mix-space-side.png");
         let camera_id = Id::new(("mix-space-camera", TrackId::MAIN.0, &crate::detail::detail_view::DeviceAt(vec![0])));
-        let three = Camera::view(View::ThreeD);
-        harness.ctx.data_mut(|d| d.insert_temp(camera_id, CameraState { now: three, target: three }));
-        harness.run_steps(2);
-        save(&mut harness, "mix-space-3d.png");
+        let low = Camera { yaw: -0.35, pitch: 0.15, zoom: 1.15, offset: Vec2::ZERO };
+        let behind = Camera { yaw: -2.5, pitch: 0.35, zoom: 1.0, offset: Vec2::ZERO };
+        for (name, camera) in [
+            ("mix-space-3d.png", Camera::view(View::ThreeD)),
+            ("mix-space-front.png", Camera::view(View::Front)),
+            ("mix-space-top.png", Camera::view(View::Top)),
+            ("mix-space-low.png", low),
+            ("mix-space-behind.png", behind),
+        ] {
+            harness.ctx.data_mut(|d| d.insert_temp(camera_id, CameraState { now: camera, target: camera }));
+            harness.run_steps(2);
+            save(&mut harness, name);
+        }
     }
 }
