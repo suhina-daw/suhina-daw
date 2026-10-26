@@ -526,25 +526,24 @@ pub fn show(
     let only = marks == overlaps::ONLY;
     if draw == draw::CLOUD {
         let mut pieces = Vec::new();
-        for (index, line) in lines.iter().enumerate() {
-            let alpha = if line.look.muted { 0.3 } else { 1.0 }
-                * if only { 0.15 } else { 1.0 }
-                * if focus.is_some_and(|f| f != line.look.id) { 0.2 } else { 1.0 };
-            let covered = covered.get(index).map_or(&[][..], Vec::as_slice);
-            cloud(&mut pieces, &camera, view, line, bands, alpha, covered, floor);
-        }
+        let alphas: Vec<f32> = lines
+            .iter()
+            .map(|line| {
+                let muted = if line.look.muted { 0.3 } else { 1.0 };
+                let faded = if only { 0.15 } else { 1.0 };
+                let other = if focus.is_some_and(|f| f != line.look.id) { 0.2 } else { 1.0 };
+                muted * faded * other
+            })
+            .collect();
+        field(&mut pieces, &camera, view, &lines, &alphas, bands, floor);
         // Far first, so what is in front covers what is behind it.
         pieces.sort_by(|a, b| b.0.total_cmp(&a.0));
         let mut mesh = egui::Mesh::default();
-        let mut ridges = Vec::new();
         for (_, piece) in pieces {
-            match piece {
-                Piece::Quad(points, colors) => quad(&mut mesh, points, colors),
-                Piece::Ridge(points, stroke) => ridges.push(Shape::line_segment(points, stroke)),
-            }
+            let Piece::Quad(points, colors) = piece;
+            quad(&mut mesh, points, colors);
         }
         painter.add(Shape::mesh(mesh));
-        painter.extend(ridges);
     } else {
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 }
@@ -671,80 +670,92 @@ fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp:
         .collect()
 }
 
-/// One track as a cloud, like a spectrogram in three dimensions: its spectrum as a lit tent
-/// over the box's floor. Each band's top is as high as it is loud and as wide as the band is in
-/// the stereo field; the tent's sides are faint and fade downwards, its roof a fainter sheet and
-/// its ridge a bright edge, so harmonics stand as sharp peaks and a wide pad lies as a broad,
-/// see-through sheet. The loudest parts burn towards white, as a spectrogram's do; a band another
-/// track covers is dimmer. Every piece is returned with its distance from the camera, so the
-/// caller draws the far ones first.
-#[allow(clippy::too_many_arguments)]
-fn cloud(
+/// Columns of the field across the stereo field.
+const FIELD_COLUMNS: usize = 48;
+
+/// Every track blended into one landscape, like a spectrogram in three dimensions. Over a grid
+/// of the stereo field against the bands, each point is as high as all tracks' sound there
+/// together and coloured by the tracks that make it, each in proportion to its share, so where
+/// two tracks meet their colours mix. A band spreads across the stereo field as a soft bell
+/// centred on its position, as wide as the band is; quiet ground fades out towards the floor,
+/// and the loudest ground burns towards white. No lines are drawn.
+fn field(
     pieces: &mut Vec<(f32, Piece)>,
     camera: &Camera,
     view: Rect,
-    line: &Line<'_>,
+    lines: &[Line<'_>],
+    alphas: &[f32],
     bands: usize,
-    alpha: f32,
-    covered: &[bool],
     floor: f32,
 ) {
-    let at = |p: [f32; 3]| camera.project(view, p);
     let span = -floor.min(-6.0);
-    let shown: Vec<&suhina_dsp::BandReading> = line.bands.iter().take(bands).collect();
-    for (index, pair) in shown.windows(2).enumerate() {
-        let [a, b] = [pair[0], pair[1]];
-        if a.level_db <= floor && b.level_db <= floor {
-            continue;
+    let column = |c: usize| c as f32 / (FIELD_COLUMNS - 1) as f32 * 2.0 - 1.0;
+    // Per band and column: the summed power and the colour weighted by each track's power.
+    let mut grid: Vec<[(f32, [f32; 3]); FIELD_COLUMNS]> = Vec::with_capacity(bands);
+    let mut depths = Vec::with_capacity(bands);
+    for band in 0..bands {
+        let mut row = [(0.0f32, [0.0f32; 3]); FIELD_COLUMNS];
+        let mut frequency = 0.0;
+        for (line, alpha) in lines.iter().zip(alphas) {
+            let Some(b) = line.bands.get(band) else { continue };
+            frequency = b.frequency;
+            if b.level_db <= floor {
+                continue;
+            }
+            let power = 10f32.powf(b.level_db / 10.0) * alpha;
+            let sigma = 0.05 + 0.9 * b.width();
+            let rgb = [line.look.color.r(), line.look.color.g(), line.look.color.b()].map(f32::from);
+            for (c, cell) in row.iter_mut().enumerate() {
+                let distance = (column(c) - b.pan) / sigma;
+                let share = power * (-0.5 * distance * distance).exp();
+                cell.0 += share;
+                for (sum, value) in cell.1.iter_mut().zip(rgb) {
+                    *sum += value * share;
+                }
+            }
         }
-        let loud = ((a.level_db.max(b.level_db) - floor) / span).clamp(0.0, 1.2);
-        let intensity = loud.min(1.0).powf(1.4);
-        let hot = ((loud - 0.75) * 2.0).clamp(0.0, 0.7);
-        let color = lerp(line.look.color, Color32::WHITE, hot);
-        let dim = if covered.get(index).copied().unwrap_or(false) { 0.4 } else { 1.0 };
-        let strength = (intensity * alpha * dim).clamp(0.0, 1.0);
-        if strength < 0.01 {
-            continue;
+        grid.push(row);
+        depths.push(depth(frequency));
+    }
+    // Each grid point's place, colour and opacity.
+    let point = |band: usize, c: usize| -> Option<(Pos2, Color32)> {
+        let (power, rgb) = grid.get(band)?.get(c)?;
+        let z = *depths.get(band)?;
+        let db = if *power > 0.0 { 10.0 * power.log10() } else { floor };
+        let loud = ((db - floor) / span).clamp(0.0, 1.2);
+        let base = if *power > 0.0 {
+            Color32::from_rgb(
+                (rgb[0] / power).round() as u8,
+                (rgb[1] / power).round() as u8,
+                (rgb[2] / power).round() as u8,
+            )
+        } else {
+            Color32::TRANSPARENT
+        };
+        let color = lerp(base, Color32::WHITE, ((loud - 0.8) * 2.0).clamp(0.0, 0.6));
+        let alpha = loud.min(1.0).powf(1.3) * 0.85;
+        Some((camera.project(view, [column(c), height(db, floor), z]), color.gamma_multiply(alpha)))
+    };
+    for band in 0..bands.saturating_sub(1) {
+        for c in 0..FIELD_COLUMNS - 1 {
+            let corners = [(band, c), (band, c + 1), (band + 1, c + 1), (band + 1, c)];
+            let found: Option<Vec<(Pos2, Color32)>> = corners.iter().map(|&(b, c)| point(b, c)).collect();
+            let Some(found) = found else { continue };
+            if found.iter().all(|(_, color)| color.a() < 3) {
+                continue;
+            }
+            let (Some(&za), Some(&zb)) = (depths.get(band), depths.get(band + 1)) else { continue };
+            let key = camera.distance([(column(c) + column(c + 1)) / 2.0, 0.5, (za + zb) / 2.0]);
+            let points = [found[0].0, found[1].0, found[2].0, found[3].0];
+            let colors = [found[0].1, found[1].1, found[2].1, found[3].1];
+            pieces.push((key, Piece::Quad(points, colors)));
         }
-        let (za, zb) = (depth(a.frequency), depth(b.frequency));
-        let (ya, yb) = (height(a.level_db, floor), height(b.level_db, floor));
-        // The sides reach a quarter of the box down: a soft shadow under each peak.
-        let (fa, fb) = (height(a.level_db - span * 0.25, floor), height(b.level_db - span * 0.25, floor));
-        let (wa, wb) = (a.width().max(0.012), b.width().max(0.012));
-        let key = camera.distance([(a.pan + b.pan) / 2.0, (ya + yb) / 2.0, (za + zb) / 2.0]);
-        let wall = color.gamma_multiply(0.16 * strength);
-        for side in [-1.0f32, 1.0] {
-            let (xa, xb) = ((a.pan + side * wa).clamp(-1.0, 1.0), (b.pan + side * wb).clamp(-1.0, 1.0));
-            pieces.push((
-                key,
-                Piece::Quad(
-                    [at([xa, ya, za]), at([xb, yb, zb]), at([xb, fb, zb]), at([xa, fa, za])],
-                    [wall, wall, Color32::TRANSPARENT, Color32::TRANSPARENT],
-                ),
-            ));
-        }
-        let roof = color.gamma_multiply(0.1 * strength);
-        pieces.push((
-            key,
-            Piece::Quad(
-                [
-                    at([(a.pan - wa).clamp(-1.0, 1.0), ya, za]),
-                    at([(a.pan + wa).clamp(-1.0, 1.0), ya, za]),
-                    at([(b.pan + wb).clamp(-1.0, 1.0), yb, zb]),
-                    at([(b.pan - wb).clamp(-1.0, 1.0), yb, zb]),
-                ],
-                [roof; 4],
-            ),
-        ));
-        let ridge = Stroke::new(0.8 + 1.2 * loud.min(1.0), color.gamma_multiply((0.3 + 0.7 * intensity) * alpha * dim));
-        pieces.push((key - 1e-3, Piece::Ridge([at([a.pan, ya, za]), at([b.pan, yb, zb])], ridge)));
     }
 }
 
-/// A piece of a cloud: a shaded quad, or a ridge segment.
+/// A piece of the field: a shaded quad.
 enum Piece {
     Quad([Pos2; 4], [Color32; 4]),
-    Ridge([Pos2; 2], Stroke),
 }
 
 /// Two triangles from four corners, each with its own colour.

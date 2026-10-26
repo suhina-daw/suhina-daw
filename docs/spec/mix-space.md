@@ -23,12 +23,18 @@ box:
   high above the ceiling shows what goes over it; a line's part over 0 dB is drawn red.
 - **Into the depth:** frequency, from 20 Hz at the front to 20 kHz at the back.
 
-By default each track is a **cloud**, its spectrum drawn as a lit tent over the floor: each
-band's top is as high as the band is loud and as wide as it is in the stereo field, the sides
-fade 30 dB down, the roof is a faint sheet and the ridge a bright edge, so harmonics stand as
-sharp peaks and a wide pad lies as a broad sheet. The loudest parts burn towards white. With
-**Draw** set to Lines, each track is one line through its bands' positions instead, with a
-fainter line above it for the bands' falling peaks.
+By default every track is **blended** into one landscape, like a spectrogram in three
+dimensions. Over a grid of the stereo field against the bands, each point is as high as all the
+tracks' sound there together and coloured by the tracks that make it, each in proportion to its
+share, so where two tracks meet their colours mix. A band spreads across the stereo field as a
+soft bell centred on its position, as wide as the band is; quiet ground fades out towards the
+floor and the loudest ground burns towards white. With **Draw** set to Lines, each track is one
+line through its bands' positions instead, with a fainter line above it for the bands' falling
+peaks.
+
+Each track's spectrum is drawn as its envelope at the **Detail** setting, riding over the tips
+of its harmonics so an instrument reads as one shape; pointing at a track's name in the legend
+shows that track at every band and fades the others back.
 
 The panel opens looking from the side, where the box reads as an ordinary spectrum analyser
 with every track in its own colour; turning it shows the stereo field too.
@@ -51,10 +57,12 @@ than the range, the quieter track is covered there and its line is dashed.
 |---|---|---|
 | Tap | Post-fader, Pre-fader | Post-fader shows the tracks as their meters do, after their devices, volume and pan. Pre-fader shows them after their devices but before their volume and pan, at a centred unity gain; a group shows the sum of its tracks before its own volume. |
 | Muted Tracks | Dim, Hide | How a muted track shows. Post-fader a muted track is silent either way. |
-| Overlaps | Off, Mark, Only Overlaps | Only Overlaps fades every line so the overlaps stand out. |
+| Overlaps | Off, Mark, Only Overlaps | Off by default; the blend already mixes colours where tracks meet. Only Overlaps fades every track so the overlaps stand out. |
 | Overlap Range | 1 to 12 dB, 6 | How close two levels must be to overlap. A small range (about 3 dB) suits dense mixes, where every element overlaps somewhere. |
 | Release | 0.05 to 2 s, 0.3 | How fast the levels fall. They rise in 10 ms. |
-| Draw | Cloud, Lines | How each track is drawn. |
+| Draw | Blend, Lines | How the tracks are drawn. |
+| Floor | -120 to -12 dB, -72 | The level at the box's floor; quieter sound is not drawn. |
+| Detail | 1/3, 1/6, 1/12 octave, Every Band | How finely each track's spectrum is drawn. |
 | Tilt | 0 to 6 dB per octave, 0 | Lifts each band by its octaves above 1 kHz and lowers those below, so a mix with a natural falling balance reads level; 3 or 4.5 dB is usual. |
 | Response | Fast, Slow | Slow rises and falls over about 3 s, so the view shows the tonal balance of a whole section rather than its moments. |
 
