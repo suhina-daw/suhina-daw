@@ -553,7 +553,7 @@ pub fn show(
                     let along = b - a;
                     let length = along.length();
                     if length > 0.01 {
-                        let side = Vec2::new(-along.y, along.x) / length * 0.55;
+                        let side = Vec2::new(-along.y, along.x) / length * 0.45;
                         quad(&mut mesh, [a - side, b - side, b + side, a + side], [ca, cb, cb, ca]);
                     }
                 }
@@ -687,7 +687,7 @@ fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp:
 }
 
 /// Columns of the field across the stereo field.
-const FIELD_COLUMNS: usize = 96;
+const FIELD_COLUMNS: usize = 64;
 
 /// Every track blended into one landscape, like a spectrogram in three dimensions. Over a grid
 /// of the stereo field against the bands, each point is as high as all tracks' sound there
@@ -734,6 +734,24 @@ fn field(
         }
         grid.push(row);
         depths.push(depth(frequency));
+    }
+    // Smoothed along the frequencies, twice with a 1-2-1 kernel, so a sound whose position
+    // wavers from band to band (detuned voices beating) lies as one smooth slope instead of
+    // ridged stripes; a peak keeps its place and most of its height.
+    for _ in 0..2 {
+        let before = grid.clone();
+        for (band, row) in grid.iter_mut().enumerate() {
+            let Some(here) = before.get(band) else { continue };
+            let below = before.get(band.saturating_sub(1)).unwrap_or(here);
+            let above = before.get(band + 1).unwrap_or(here);
+            for (c, cell) in row.iter_mut().enumerate() {
+                let (Some(a), Some(b), Some(h)) = (below.get(c), above.get(c), here.get(c)) else { continue };
+                cell.0 = (a.0 + 2.0 * h.0 + b.0) / 4.0;
+                for i in 0..3 {
+                    cell.1[i] = (a.1[i] + 2.0 * h.1[i] + b.1[i]) / 4.0;
+                }
+            }
+        }
     }
     // Each grid point's height in the box, and the colour of the tracks there.
     let heights: Vec<[f32; FIELD_COLUMNS]> = grid
@@ -783,7 +801,7 @@ fn field(
     if wire {
         // The mesh: lines across the stereo field at every second band and along the bands at
         // every column, so the ground reads as a net you can see through.
-        let step = 2;
+        let step = 3;
         let rows: Vec<usize> = (0..bands).step_by(step).collect();
         let mut push = |a: (usize, usize), b: (usize, usize)| {
             let (Some(pa), Some(pb)) = (point(a.0, a.1), point(b.0, b.1)) else { return };
@@ -793,7 +811,9 @@ fn field(
             let za = depths.get(a.0).copied().unwrap_or(0.0);
             let zb = depths.get(b.0).copied().unwrap_or(0.0);
             let key = camera.distance([(column(a.1) + column(b.1)) / 2.0, 0.5, (za + zb) / 2.0]);
-            pieces.push((key, Piece::Wire([pa.0, pb.0], [pa.1, pb.1])));
+            // Lines further away fade, so the front of the ground stays crisp.
+            let fog = 1.0 - 0.6 * ((key + 1.2) / 2.4).clamp(0.0, 1.0);
+            pieces.push((key, Piece::Wire([pa.0, pb.0], [pa.1.gamma_multiply(fog), pb.1.gamma_multiply(fog)])));
         };
         for (i, &band) in rows.iter().enumerate() {
             for c in 0..FIELD_COLUMNS {
@@ -980,7 +1000,7 @@ mod tests {
     fn the_view_draws_the_tracks_marks_overlaps_and_asks_for_its_point() {
         let feed = feed();
         let mut harness =
-            egui_kittest::Harness::builder().with_size((720.0, 420.0)).with_pixels_per_point(1.0).wgpu().build_ui(
+            egui_kittest::Harness::builder().with_size((720.0, 420.0)).with_pixels_per_point(2.0).wgpu().build_ui(
                 move |ui| {
                     ui.ctx().data_mut(|d| d.insert_temp(feed_id(), feed.clone()));
                     let values: Vec<(String, f64)> = Vec::new();
