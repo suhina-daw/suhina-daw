@@ -23,12 +23,14 @@ box:
   high above the ceiling shows what goes over it; a line's part over 0 dB is drawn red.
 - **Into the depth:** frequency, from 20 Hz at the front to 20 kHz at the back.
 
-By default every track is **blended** into one landscape, like a spectrogram in three
-dimensions. Over a grid of the stereo field against the bands, each point is as high as all the
+By default every track is blended into one landscape, like a spectrogram in three
+dimensions, drawn as a see-through **mesh** of lines. Over a grid of the stereo field against the bands, each point is as high as all the
 tracks' sound there together and coloured by the tracks that make it, each in proportion to its
 share, so where two tracks meet their colours mix. A band spreads across the stereo field as a
 soft bell centred on its position, as wide as the band is; quiet ground fades out towards the
-floor and the loudest ground burns towards white. With **Draw** set to Lines, each track is one
+floor and the loudest ground burns towards white. The light comes from above, the left and the front, so
+slopes facing it are brighter. **Draw** set to Surface fills the same landscape as a solid, lit
+surface; set to Lines, each track is one
 line through its bands' positions instead, with a fainter line above it for the bands' falling
 peaks.
 
@@ -60,7 +62,7 @@ than the range, the quieter track is covered there and its line is dashed.
 | Overlaps | Off, Mark, Only Overlaps | Off by default; the blend already mixes colours where tracks meet. Only Overlaps fades every track so the overlaps stand out. |
 | Overlap Range | 1 to 12 dB, 6 | How close two levels must be to overlap. A small range (about 3 dB) suits dense mixes, where every element overlaps somewhere. |
 | Release | 0.05 to 2 s, 0.3 | How fast the levels fall. They rise in 10 ms. |
-| Draw | Blend, Lines | How the tracks are drawn. |
+| Draw | Mesh, Surface, Lines | How the tracks are drawn. |
 | Floor | -120 to -12 dB, -72 | The level at the box's floor; quieter sound is not drawn. |
 | Detail | 1/3, 1/6, 1/12 octave, Every Band | How finely each track's spectrum is drawn. |
 | Tilt | 0 to 6 dB per octave, 0 | Lifts each band by its octaves above 1 kHz and lowers those below, so a mix with a natural falling balance reads level; 3 or 4.5 dB is usual. |

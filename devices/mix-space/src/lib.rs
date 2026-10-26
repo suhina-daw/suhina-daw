@@ -23,7 +23,7 @@ pub mod param {
     pub const OVERLAP_RANGE: usize = 3;
     /// How fast the lines fall, in seconds.
     pub const RELEASE: usize = 4;
-    /// How each track is drawn: [`super::draw::CLOUD`] or [`super::draw::LINES`].
+    /// How each track is drawn: [`super::draw::MESH`], [`super::draw::SURFACE`] or [`super::draw::LINES`].
     pub const DRAW: usize = 5;
     /// How much the view lifts the highs, in dB per octave above 1 kHz (and lowers the lows).
     pub const TILT: usize = 6;
@@ -52,10 +52,13 @@ pub mod muted {
 
 /// Options of the draw parameter.
 pub mod draw {
-    /// Every track blended into one landscape, coloured by the tracks that make it.
-    pub const CLOUD: f64 = 0.0;
+    /// Every track blended into one landscape drawn as a see-through net, coloured by the
+    /// tracks that make it.
+    pub const MESH: f64 = 0.0;
+    /// The same landscape as a solid, lit surface.
+    pub const SURFACE: f64 = 1.0;
     /// Each track as one line through its bands.
-    pub const LINES: f64 = 1.0;
+    pub const LINES: f64 = 2.0;
 }
 
 /// Options of the response parameter.
@@ -79,7 +82,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("overlaps", "Overlaps", &["Off", "Mark", "Only Overlaps"], 0),
     ParamInfo::continuous("overlapRange", "Overlap Range", (1.0, 12.0), 6.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("release", "Release", (0.05, 2.0), 0.3, Unit::Seconds, Scale::Logarithmic),
-    ParamInfo::choice("draw", "Draw", &["Blend", "Lines"], 0),
+    ParamInfo::choice("draw", "Draw", &["Mesh", "Surface", "Lines"], 0),
     ParamInfo::continuous("tilt", "Tilt", (0.0, 6.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("response", "Response", &["Fast", "Slow"], 0),
     ParamInfo::continuous("floor", "Floor", (-120.0, -12.0), -72.0, Unit::Decibels, Scale::Linear),

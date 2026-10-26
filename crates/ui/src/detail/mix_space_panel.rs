@@ -308,7 +308,7 @@ pub fn show(
     let marks = value("overlaps", overlaps::OFF);
     let range = value("overlapRange", 6.0) as f32;
     let release = value("release", 0.3) as f32;
-    let draw = value("draw", draw::CLOUD);
+    let draw = value("draw", draw::MESH);
     let tilt = value("tilt", 0.0) as f32;
     let floor = value("floor", f64::from(FLOOR_DB)) as f32;
     let slow = value("response", response::FAST) == response::SLOW;
@@ -530,7 +530,7 @@ pub fn show(
         }
     }
     let only = marks == overlaps::ONLY;
-    if draw == draw::CLOUD {
+    if draw != draw::LINES {
         let mut pieces = Vec::new();
         let alphas: Vec<f32> = lines
             .iter()
@@ -541,13 +541,23 @@ pub fn show(
                 muted * faded * other
             })
             .collect();
-        field(&mut pieces, &camera, view, &lines, &alphas, bands, floor);
+        field(&mut pieces, &camera, view, &lines, &alphas, bands, floor, draw == draw::MESH);
         // Far first, so what is in front covers what is behind it.
         pieces.sort_by(|a, b| b.0.total_cmp(&a.0));
         let mut mesh = egui::Mesh::default();
         for (_, piece) in pieces {
-            let Piece::Quad(points, colors) = piece;
-            quad(&mut mesh, points, colors);
+            match piece {
+                Piece::Quad(points, colors) => quad(&mut mesh, points, colors),
+                Piece::Wire([a, b], [ca, cb]) => {
+                    // A one-pixel strip, so the whole mesh is one shape with blended colours.
+                    let along = b - a;
+                    let length = along.length();
+                    if length > 0.01 {
+                        let side = Vec2::new(-along.y, along.x) / length * 0.55;
+                        quad(&mut mesh, [a - side, b - side, b + side, a + side], [ca, cb, cb, ca]);
+                    }
+                }
+            }
         }
         painter.add(Shape::mesh(mesh));
     } else {
@@ -685,6 +695,7 @@ const FIELD_COLUMNS: usize = 96;
 /// two tracks meet their colours mix. A band spreads across the stereo field as a soft bell
 /// centred on its position, as wide as the band is; quiet ground fades out towards the floor,
 /// and the loudest ground burns towards white. No lines are drawn.
+#[allow(clippy::too_many_arguments)]
 fn field(
     pieces: &mut Vec<(f32, Piece)>,
     camera: &Camera,
@@ -693,6 +704,7 @@ fn field(
     alphas: &[f32],
     bands: usize,
     floor: f32,
+    wire: bool,
 ) {
     let span = -floor.min(-6.0);
     let column = |c: usize| c as f32 / (FIELD_COLUMNS - 1) as f32 * 2.0 - 1.0;
@@ -768,6 +780,33 @@ fn field(
         let alpha = (loud / 0.08).clamp(0.0, 1.0);
         Some((camera.project(view, [column(c), h, z]), color.gamma_multiply(alpha)))
     };
+    if wire {
+        // The mesh: lines across the stereo field at every second band and along the bands at
+        // every column, so the ground reads as a net you can see through.
+        let step = 2;
+        let rows: Vec<usize> = (0..bands).step_by(step).collect();
+        let mut push = |a: (usize, usize), b: (usize, usize)| {
+            let (Some(pa), Some(pb)) = (point(a.0, a.1), point(b.0, b.1)) else { return };
+            if pa.1.a() < 3 && pb.1.a() < 3 {
+                return;
+            }
+            let za = depths.get(a.0).copied().unwrap_or(0.0);
+            let zb = depths.get(b.0).copied().unwrap_or(0.0);
+            let key = camera.distance([(column(a.1) + column(b.1)) / 2.0, 0.5, (za + zb) / 2.0]);
+            pieces.push((key, Piece::Wire([pa.0, pb.0], [pa.1, pb.1])));
+        };
+        for (i, &band) in rows.iter().enumerate() {
+            for c in 0..FIELD_COLUMNS {
+                if c + 1 < FIELD_COLUMNS {
+                    push((band, c), (band, c + 1));
+                }
+                if let Some(&next) = rows.get(i + 1) {
+                    push((band, c), (next, c));
+                }
+            }
+        }
+        return;
+    }
     for band in 0..bands.saturating_sub(1) {
         for c in 0..FIELD_COLUMNS - 1 {
             let corners = [(band, c), (band, c + 1), (band + 1, c + 1), (band + 1, c)];
@@ -785,9 +824,10 @@ fn field(
     }
 }
 
-/// A piece of the field: a shaded quad.
+/// A piece of the field: a shaded quad of the surface, or a line of the mesh.
 enum Piece {
     Quad([Pos2; 4], [Color32; 4]),
+    Wire([Pos2; 2], [Color32; 2]),
 }
 
 /// Two triangles from four corners, each with its own colour.
