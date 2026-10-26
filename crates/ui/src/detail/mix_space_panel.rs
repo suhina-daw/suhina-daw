@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
-use suhina_device_mix_space::{draw, muted, overlaps, point};
+use suhina_device_mix_space::{draw, muted, overlaps, point, response};
 use suhina_engine::model::{Project, TrackId};
 use suhina_engine::{MeterMonitor, TapPoint};
 use suhina_session::{MixSpace, MixSpaceSnapshot};
@@ -42,6 +42,11 @@ const NEAR_PAN: f32 = 0.3;
 const OVERLAP_FLOOR_DB: f32 = -60.0;
 /// The distance the camera looks from, in box units.
 const DISTANCE: f32 = 4.2;
+/// The rise and fall of the long average, in seconds: a chorus's tonal balance rather than its
+/// moments.
+const SLOW_SECONDS: f32 = 3.0;
+/// The rise of the fast response, in seconds: short, so drum hits show.
+const FAST_ATTACK: f32 = 0.01;
 /// How long a view's request keeps the analysis running, in seconds.
 const WANT_SECONDS: f64 = 0.5;
 
@@ -69,6 +74,8 @@ struct Want {
     post: f64,
     /// The release the last view drawn set, in seconds.
     release: f32,
+    /// Whether the last view drawn asked for the long average.
+    slow: bool,
 }
 
 fn feed_id() -> Id {
@@ -104,8 +111,10 @@ pub fn feed(
     let (pre, post) = (now - want.pre < WANT_SECONDS, now - want.post < WANT_SECONDS);
     if pre || post {
         running.want(pre, post);
-        if want.release > 0.0 {
-            running.set_release(want.release);
+        if want.slow {
+            running.set_times(SLOW_SECONDS, SLOW_SECONDS);
+        } else if want.release > 0.0 {
+            running.set_times(FAST_ATTACK, want.release);
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
@@ -142,8 +151,35 @@ struct Camera {
 }
 
 impl Default for Camera {
+    /// From the side, so the view opens as a familiar spectrum; 3D is one click away.
     fn default() -> Self {
-        Self::view(View::ThreeD)
+        Self::view(View::Side)
+    }
+}
+
+/// Where the camera is and where it is going: a view button turns it there over a few frames.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct CameraState {
+    now: Camera,
+    target: Camera,
+}
+
+impl CameraState {
+    /// Moves a step towards the target; true while it is still on its way.
+    fn step(&mut self) -> bool {
+        let (now, target) = (&mut self.now, self.target);
+        let ease = |a: &mut f32, b: f32| {
+            *a += (b - *a) * 0.18;
+            if (b - *a).abs() < 1e-3 {
+                *a = b;
+            }
+        };
+        ease(&mut now.yaw, target.yaw);
+        ease(&mut now.pitch, target.pitch);
+        ease(&mut now.zoom, target.zoom);
+        ease(&mut now.offset.x, target.offset.x);
+        ease(&mut now.offset.y, target.offset.y);
+        *now != target
     }
 }
 
@@ -163,7 +199,9 @@ impl Camera {
             View::Top => (0.0, 1.45),
             View::ThreeD => (-0.65, 0.42),
         };
-        Self { yaw, pitch, zoom: 1.0, offset: Vec2::ZERO }
+        // The flat views fill the panel; 3D leaves room to turn.
+        let zoom = if view == View::ThreeD { 1.0 } else { 1.35 };
+        Self { yaw, pitch, zoom, offset: Vec2::ZERO }
     }
 
     /// Where the box point `p` (x pan -1..1, y level 0..1.17, z frequency -1..1) lands in `area`.
@@ -235,6 +273,8 @@ pub fn show(
     let range = value("overlapRange", 6.0) as f32;
     let release = value("release", 0.3) as f32;
     let draw = value("draw", draw::CLOUD);
+    let tilt = value("tilt", 0.0) as f32;
+    let slow = value("response", response::FAST) == response::SLOW;
     let tap = if pre { TapPoint::PreFader } else { TapPoint::PostFader };
     let now = ui.input(|i| i.time);
     ui.ctx().data_mut(|d| {
@@ -245,13 +285,14 @@ pub fn show(
             want.post = now;
         }
         want.release = release;
+        want.slow = slow;
     });
     let painter = ui.painter().with_clip_rect(area);
     painter.rect_filled(area, 0.0, theme::control_background());
 
     // The view buttons along the top.
     let camera_id = Id::new(("mix-space-camera", track.0, device));
-    let mut camera = ui.data(|d| d.get_temp::<Camera>(camera_id)).unwrap_or_default();
+    let mut state = ui.data(|d| d.get_temp::<CameraState>(camera_id)).unwrap_or_default();
     let mut x = area.left() + 4.0;
     for (label, view) in [("Front", View::Front), ("Side", View::Side), ("Top", View::Top), ("3D", View::ThreeD)] {
         let width = widgets::text_width(ui, label, theme::ui_font(theme::TEXT_SMALL)) + 10.0;
@@ -259,7 +300,7 @@ pub fn show(
         x = rect.right() + 3.0;
         let response = widgets::button_area(ui, rect, camera_id.with(label), format!("{label} view"))
             .on_hover_text(format!("Look at the box from the {}", label.to_lowercase()));
-        let lit = camera == Camera::view(view);
+        let lit = state.target == Camera::view(view);
         painter.rect_filled(
             rect,
             2.0,
@@ -273,7 +314,7 @@ pub fn show(
             theme::text_secondary(),
         );
         if response.clicked() {
-            camera = Camera::view(view);
+            state.target = Camera::view(view);
         }
     }
     let view = Rect::from_min_max(Pos2::new(area.left(), area.top() + 22.0), area.max);
@@ -285,21 +326,28 @@ pub fn show(
     if response.dragged_by(egui::PointerButton::Secondary)
         || (response.dragged_by(egui::PointerButton::Primary) && ui.input(|i| i.modifiers.shift))
     {
-        camera.offset += delta;
+        state.now.offset += delta;
+        state.target = state.now;
     } else if response.dragged_by(egui::PointerButton::Primary) {
-        camera.yaw += delta.x * 0.01;
-        camera.pitch = (camera.pitch + delta.y * 0.01).clamp(-1.5, 1.5);
+        state.now.yaw += delta.x * 0.01;
+        state.now.pitch = (state.now.pitch + delta.y * 0.01).clamp(-1.5, 1.5);
+        state.target = state.now;
     }
     if response.hovered() {
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll != 0.0 {
-            camera.zoom = (camera.zoom * (scroll * 0.003).exp()).clamp(0.3, 6.0);
+            state.now.zoom = (state.now.zoom * (scroll * 0.003).exp()).clamp(0.3, 6.0);
+            state.target.zoom = state.now.zoom;
         }
     }
     if response.double_clicked() {
-        camera = Camera::default();
+        state.target = Camera::default();
     }
-    ui.data_mut(|d| d.insert_temp(camera_id, camera));
+    if state.step() {
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| d.insert_temp(camera_id, state));
+    let camera = state.now;
     let at = |p: [f32; 3]| camera.project(view, p);
 
     // The box, its ceiling at 0 dBFS and the zone over it.
@@ -343,11 +391,28 @@ pub fn show(
 
     // The tracks.
     let feed = ui.ctx().data(|d| d.get_temp::<Feed>(feed_id())).unwrap_or_default();
-    let lines: Vec<Line<'_>> = feed
+    // The tilt lifts each band by its octaves above 1 kHz, so a balanced mix reads level.
+    let tilted: Vec<(TrackLook, Vec<suhina_dsp::BandReading>)> = feed
         .tracks
         .iter()
-        .filter(|look| inside(&feed.tracks, look, track) && !(hide_muted && look.muted))
-        .filter_map(|look| feed.snapshot.track(look.id, tap).map(|space| Line { look, bands: &space.bands }))
+        .filter_map(|look| {
+            let space = feed.snapshot.track(look.id, tap)?;
+            let bands = space
+                .bands
+                .iter()
+                .map(|b| {
+                    let lift = tilt * (b.frequency.max(1.0) / 1_000.0).log2();
+                    let above = |db: f32| if db <= suhina_dsp::mix_space::FLOOR_DB { db } else { db + lift };
+                    suhina_dsp::BandReading { level_db: above(b.level_db), peak_db: above(b.peak_db), ..*b }
+                })
+                .collect();
+            Some((look.clone(), bands))
+        })
+        .collect();
+    let lines: Vec<Line<'_>> = tilted
+        .iter()
+        .filter(|(look, _)| inside(&feed.tracks, look, track) && !(hide_muted && look.muted))
+        .map(|(look, bands)| Line { look, bands })
         .collect();
     if lines.is_empty() {
         let text = if feed.tracks.is_empty() {
@@ -403,12 +468,14 @@ pub fn show(
     let only = marks == overlaps::ONLY;
     if draw == draw::CLOUD {
         let mut mesh = egui::Mesh::default();
+        let mut ridges = Vec::new();
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
             let covered = covered.get(index).map_or(&[][..], Vec::as_slice);
-            cloud(&mut mesh, &at, line, bands, alpha, covered);
+            cloud(&mut mesh, &mut ridges, &at, line, bands, alpha, covered);
         }
         painter.add(Shape::mesh(mesh));
+        painter.extend(ridges);
     } else {
         for (index, line) in lines.iter().enumerate() {
             let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
@@ -437,8 +504,11 @@ pub fn show(
     let mut nearest: Option<(f32, &Overlap)> = None;
     let pointer = response.hover_pos();
     for overlap in &found {
-        let glow = Color32::WHITE.gamma_multiply(0.15 + 0.6 * overlap.strength);
-        painter.circle_filled(overlap.at, 2.0 + 2.5 * overlap.strength, glow);
+        // Faint where the levels are only near, bright where they are the same.
+        if overlap.strength > 0.3 {
+            let glow = Color32::WHITE.gamma_multiply(0.1 + 0.4 * overlap.strength);
+            painter.circle_stroke(overlap.at, 1.5 + 2.0 * overlap.strength, Stroke::new(1.0, glow));
+        }
         if let Some(pointer) = pointer {
             let distance = pointer.distance(overlap.at);
             if distance < 10.0 && nearest.is_none_or(|(d, _)| distance < d) {
@@ -473,48 +543,81 @@ pub fn show(
     }
 }
 
-/// One track as a cloud, like a spectrogram in three dimensions: each band a row of soft glows
-/// as wide as the band is in the stereo field, brighter and bigger the louder it is, fading
-/// downwards so a loud band stands as a bright spire and a quiet one as a faint haze. A band
-/// another track covers is dimmer.
+/// One track as a cloud, like a spectrogram in three dimensions: its spectrum as a lit tent
+/// over the box's floor. Each band's top is as high as it is loud and as wide as the band is in
+/// the stereo field; the tent's sides fade towards the floor, its roof is a faint sheet and its
+/// ridge a bright edge, so harmonics stand as sharp peaks and a wide pad lies as a broad sheet.
+/// The loudest parts burn towards white, as a spectrogram's do; a band another track covers is
+/// dimmer.
 fn cloud(
     mesh: &mut egui::Mesh,
+    ridges: &mut Vec<Shape>,
     at: &impl Fn([f32; 3]) -> Pos2,
     line: &Line<'_>,
     bands: usize,
     alpha: f32,
     covered: &[bool],
 ) {
-    for (index, band) in line.bands.iter().take(bands).enumerate() {
-        if band.level_db <= FLOOR_DB {
+    let shown: Vec<&suhina_dsp::BandReading> = line.bands.iter().take(bands).collect();
+    for (index, pair) in shown.windows(2).enumerate() {
+        let [a, b] = [pair[0], pair[1]];
+        if a.level_db <= FLOOR_DB && b.level_db <= FLOOR_DB {
             continue;
         }
-        let loud = ((band.level_db - FLOOR_DB) / -FLOOR_DB).clamp(0.0, 1.2);
-        let intensity = loud.min(1.0).powf(1.6);
-        // The loudest parts burn towards white, as a spectrogram's do.
-        let hot = ((loud - 0.75) * 2.0).clamp(0.0, 0.7);
+        let loud = ((a.level_db.max(b.level_db) - FLOOR_DB) / -FLOOR_DB).clamp(0.0, 1.2);
+        let intensity = loud.min(1.0).powf(1.4);
+        let hot = ((loud - 0.7) * 2.0).clamp(0.0, 0.8);
         let color = lerp(line.look.color, Color32::WHITE, hot);
         let dim = if covered.get(index).copied().unwrap_or(false) { 0.4 } else { 1.0 };
-        let width = band.width().max(0.02);
-        let across = 1 + (width * 10.0).round() as usize;
-        let depth = depth(band.frequency);
-        let size = 1.2 + 3.0 * loud;
-        for step in 0..across {
-            let offset = if across == 1 { 0.0 } else { (step as f32 / (across - 1) as f32) * 2.0 - 1.0 };
-            let x = (band.pan + offset * width).clamp(-1.0, 1.0);
-            let falloff = 1.0 - offset.abs() * 0.5;
-            for layer in 0..3 {
-                let y = height(band.level_db - layer as f32 * 5.0);
-                let a = intensity * falloff * (1.0 - layer as f32 * 0.3) * alpha * dim * 0.6;
-                if a < 0.01 {
-                    continue;
-                }
-                let centre = at([x, y, depth]);
-                let rect = Rect::from_center_size(centre, Vec2::splat(size));
-                mesh.add_colored_rect(rect, color.gamma_multiply(a));
-            }
+        let strength = (intensity * alpha * dim).clamp(0.0, 1.0);
+        if strength < 0.01 {
+            continue;
         }
+        let (za, zb) = (depth(a.frequency), depth(b.frequency));
+        let (ya, yb) = (height(a.level_db), height(b.level_db));
+        // The sides reach 30 dB down, a shadow under each peak rather than a wall to the floor.
+        let (fa, fb) = (height(a.level_db - 30.0), height(b.level_db - 30.0));
+        let (wa, wb) = (a.width().max(0.015), b.width().max(0.015));
+        let edges = [(-1.0f32), 1.0];
+        for side in edges {
+            let (xa, xb) = ((a.pan + side * wa).clamp(-1.0, 1.0), (b.pan + side * wb).clamp(-1.0, 1.0));
+            quad(
+                mesh,
+                [at([xa, ya, za]), at([xb, yb, zb]), at([xb, fb, zb]), at([xa, fa, za])],
+                [
+                    color.gamma_multiply(0.5 * strength),
+                    color.gamma_multiply(0.5 * strength),
+                    Color32::TRANSPARENT,
+                    Color32::TRANSPARENT,
+                ],
+            );
+        }
+        let roof = color.gamma_multiply(0.25 * strength);
+        quad(
+            mesh,
+            [
+                at([(a.pan - wa).clamp(-1.0, 1.0), ya, za]),
+                at([(a.pan + wa).clamp(-1.0, 1.0), ya, za]),
+                at([(b.pan + wb).clamp(-1.0, 1.0), yb, zb]),
+                at([(b.pan - wb).clamp(-1.0, 1.0), yb, zb]),
+            ],
+            [roof; 4],
+        );
+        let ridge = Stroke::new(1.0 + loud, color.gamma_multiply((0.35 + 0.65 * intensity) * alpha * dim));
+        ridges.push(Shape::line_segment([at([a.pan, ya, za]), at([b.pan, yb, zb])], ridge));
     }
+}
+
+/// Two triangles from four corners, each with its own colour.
+fn quad(mesh: &mut egui::Mesh, points: [Pos2; 4], colors: [Color32; 4]) {
+    let base = u32::try_from(mesh.vertices.len()).unwrap_or(u32::MAX);
+    if base > u32::MAX - 4 {
+        return;
+    }
+    for (pos, color) in points.into_iter().zip(colors) {
+        mesh.vertices.push(egui::epaint::Vertex { pos, uv: egui::epaint::WHITE_UV, color });
+    }
+    mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
 fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -671,11 +774,19 @@ mod tests {
         let want = harness.ctx.data(|d| d.get_temp::<Want>(want_id())).expect("asked");
         assert!(want.post > 0.0 || harness.ctx.input(|i| i.time) == 0.0);
         assert_eq!(want.pre, 0.0, "the post-fader view does not ask for pre-fader");
-        let image = harness.render().expect("render");
-        if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {
-            let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
-            std::fs::create_dir_all(&output).expect("folder");
-            image.save(output.join("mix-space.png")).expect("save");
-        }
+        let save = |harness: &mut egui_kittest::Harness<'_>, name: &str| {
+            let image = harness.render().expect("render");
+            if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {
+                let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+                std::fs::create_dir_all(&output).expect("folder");
+                image.save(output.join(name)).expect("save");
+            }
+        };
+        save(&mut harness, "mix-space-side.png");
+        let camera_id = Id::new(("mix-space-camera", TrackId::MAIN.0, &crate::detail::detail_view::DeviceAt(vec![0])));
+        let three = Camera::view(View::ThreeD);
+        harness.ctx.data_mut(|d| d.insert_temp(camera_id, CameraState { now: three, target: three }));
+        harness.run_steps(2);
+        save(&mut harness, "mix-space-3d.png");
     }
 }

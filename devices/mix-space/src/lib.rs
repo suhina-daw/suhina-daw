@@ -25,7 +25,12 @@ pub mod param {
     pub const RELEASE: usize = 4;
     /// How each track is drawn: [`super::draw::CLOUD`] or [`super::draw::LINES`].
     pub const DRAW: usize = 5;
-    pub(crate) const COUNT: usize = 6;
+    /// How much the view lifts the highs, in dB per octave above 1 kHz (and lowers the lows).
+    pub const TILT: usize = 6;
+    /// How the levels move: [`super::response::FAST`] or [`super::response::SLOW`], a long
+    /// average.
+    pub const RESPONSE: usize = 7;
+    pub(crate) const COUNT: usize = 8;
 }
 
 /// Options of the point parameter.
@@ -48,6 +53,14 @@ pub mod draw {
     pub const LINES: f64 = 1.0;
 }
 
+/// Options of the response parameter.
+pub mod response {
+    /// Rises in 10 ms and falls at the release.
+    pub const FAST: f64 = 0.0;
+    /// Rises and falls over about 3 s: the tonal balance of a whole section.
+    pub const SLOW: f64 = 1.0;
+}
+
 /// Options of the overlaps parameter.
 pub mod overlaps {
     pub const OFF: f64 = 0.0;
@@ -62,6 +75,8 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("overlapRange", "Overlap Range", (1.0, 12.0), 6.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("release", "Release", (0.05, 2.0), 0.3, Unit::Seconds, Scale::Logarithmic),
     ParamInfo::choice("draw", "Draw", &["Cloud", "Lines"], 0),
+    ParamInfo::continuous("tilt", "Tilt", (0.0, 6.0), 0.0, Unit::Decibels, Scale::Linear),
+    ParamInfo::choice("response", "Response", &["Fast", "Slow"], 0),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "mix-space", name: "Mix Space", role: Role::Effect, params: &PARAMS };

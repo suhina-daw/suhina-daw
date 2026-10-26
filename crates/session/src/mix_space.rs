@@ -65,6 +65,8 @@ struct Shared {
     stop: AtomicBool,
     /// How fast levels fall, in seconds, as `f32` bits; 0 for the analyzer's own.
     release: AtomicU32,
+    /// How fast levels rise, in seconds, as `f32` bits; 0 for [`ATTACK`].
+    attack: AtomicU32,
 }
 
 /// The analysis thread of one engine's meters. Dropping it stops the thread.
@@ -110,10 +112,11 @@ impl MixSpace {
         }
     }
 
-    /// Sets how fast the levels fall, in seconds (0.05 to 2).
-    pub fn set_release(&self, seconds: f32) {
-        let seconds = if seconds.is_finite() { seconds.clamp(0.05, 2.0) } else { 0.3 };
-        self.shared.release.store(seconds.to_bits(), Ordering::Relaxed);
+    /// Sets how fast the levels rise and fall, in seconds (each 0.005 to 10).
+    pub fn set_times(&self, attack: f32, release: f32) {
+        let clean = |s: f32, default: f32| if s.is_finite() { s.clamp(0.005, 10.0) } else { default };
+        self.shared.attack.store(clean(attack, ATTACK).to_bits(), Ordering::Relaxed);
+        self.shared.release.store(clean(release, 0.3).to_bits(), Ordering::Relaxed);
     }
 
     /// The latest readings.
@@ -145,6 +148,7 @@ fn run(shared: &Shared, monitor: &MeterMonitor, mut reader: MixTapReader, start:
     let mut serial = 0u64;
     let mut on = (false, false);
     let mut release = 0u32;
+    let mut attack = ATTACK;
     while !shared.stop.load(Ordering::Relaxed) {
         let now = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
         let wanted = (shared.pre_until.load(Ordering::Relaxed) > now, shared.post_until.load(Ordering::Relaxed) > now);
@@ -159,10 +163,15 @@ fn run(shared: &Shared, monitor: &MeterMonitor, mut reader: MixTapReader, start:
             on = wanted;
         }
         let wanted_release = shared.release.load(Ordering::Relaxed);
-        if wanted_release != release {
+        let wanted_attack = match shared.attack.load(Ordering::Relaxed) {
+            0 => ATTACK,
+            bits => f32::from_bits(bits),
+        };
+        if wanted_release != release || wanted_attack != attack {
             release = wanted_release;
+            attack = wanted_attack;
             for analysis in analyses.values_mut() {
-                analysis.analyzer.set_times(ATTACK, f32::from_bits(release));
+                analysis.analyzer.set_times(attack, f32::from_bits(release));
             }
         }
         reader.read(|point, slot, block| {
@@ -170,7 +179,7 @@ fn run(shared: &Shared, monitor: &MeterMonitor, mut reader: MixTapReader, start:
             let analysis = analyses.entry((point, slot)).or_insert_with(|| {
                 let mut analyzer = MixSpaceAnalyzer::new(sample_rate, DEFAULT_BANDS_PER_OCTAVE);
                 if release != 0 {
-                    analyzer.set_times(ATTACK, f32::from_bits(release));
+                    analyzer.set_times(attack, f32::from_bits(release));
                 }
                 Analysis { track, analyzer }
             });
