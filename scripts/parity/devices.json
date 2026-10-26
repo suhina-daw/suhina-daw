@@ -38,7 +38,7 @@
     ["Shifter", "29.35", "pitch and frequency shifter", "none", ""],
     ["Spectral Resonator", "29.36", "spectral resonator", "none", ""],
     ["Spectral Time", "29.37", "spectral delay", "none", ""],
-    ["Spectrum", "29.38", "spectrum analyser", "close", "Mix Space: every track's spectrum, stereo position and level at once in a 3D box, 1/24 octave; no single-signal spectrum display or its own block size settings"],
+    ["Spectrum", "29.38", "spectrum analyser", "close", "Mix Space: a spectrum of every track at once in its own colour (Side view), 1/24 octave, tilt and a slow average, turning into 3D with the stereo field; no block size settings of its own"],
     ["Tuner", "29.39", "tuner", "none", ""],
     ["Utility", "29.40", "gain, width, mono, DC", "equivalent", "Suhina utility is a superset"],
     ["Vinyl Distortion", "29.41", "vinyl and crackle", "equivalent", "Suhina vinyl distortion"],
@@ -71,7 +71,7 @@
   ],
   "suhina_devices": [
     ["utility", "effect", "gain, balance, width, mono, bass mono, phase, channels, DC filter (13 parameters)"],
-    ["mix-space", "effect", "view of every track inside the device's track: stereo position, level and frequency in a 3D box, overlaps marked, pre- or post-fader (5 parameters)"],
+    ["mix-space", "effect", "view of every track inside the device's track: stereo position, level and frequency in a 3D box, overlaps marked, pre- or post-fader, tilt, slow average (8 parameters)"],
     ["auto-pan", "effect", "LFO panning and tremolo, free Hz or synced (9 parameters)"],
     ["dj-eq", "effect", "three bands with kills, Linkwitz-Riley crossovers at 24 or 48 dB/octave (9 parameters)"],
     ["vinyl-distortion", "effect", "tracing, pinch, crackle, oversampled (12 parameters)"],

@@ -15,14 +15,23 @@ covers:
 # Mix Space
 
 Mix Space is a built-in device that changes nothing in the sound. Its panel shows where every
-track that plays through the device's track sits in the mix, as one line per track in a box:
+track that plays through the device's track sits in the mix, each track in its own colour in a
+box:
 
 - **Across, left to right:** where the track's sound sits in the stereo field, band by band.
 - **Up:** how loud it is, from -72 dBFS at the floor to 0 dBFS at the ceiling. A zone 12 dB
   high above the ceiling shows what goes over it; a line's part over 0 dB is drawn red.
 - **Into the depth:** frequency, from 20 Hz at the front to 20 kHz at the back.
 
-Each line has its track's colour. A fainter line above it is the band's falling peak.
+By default each track is a **cloud**, its spectrum drawn as a lit tent over the floor: each
+band's top is as high as the band is loud and as wide as it is in the stereo field, the sides
+fade 30 dB down, the roof is a faint sheet and the ridge a bright edge, so harmonics stand as
+sharp peaks and a wide pad lies as a broad sheet. The loudest parts burn towards white. With
+**Draw** set to Lines, each track is one line through its bands' positions instead, with a
+fainter line above it for the bands' falling peaks.
+
+The panel opens looking from the side, where the box reads as an ordinary spectrum analyser
+with every track in its own colour; turning it shows the stereo field too.
 
 On a track the device shows that track; on a group, the group and every track inside it; on
 the main channel, every track. Returns are not inside a group; on the main channel they show as
@@ -44,13 +53,17 @@ than the range, the quieter track is covered there and its line is dashed.
 | Muted Tracks | Dim, Hide | How a muted track shows. Post-fader a muted track is silent either way. |
 | Overlaps | Off, Mark, Only Overlaps | Only Overlaps fades every line so the overlaps stand out. |
 | Overlap Range | 1 to 12 dB, 6 | How close two levels must be to overlap. A small range (about 3 dB) suits dense mixes, where every element overlaps somewhere. |
-| Release | 0.05 to 2 s, 0.3 | How fast the lines fall. They rise in 10 ms. |
+| Release | 0.05 to 2 s, 0.3 | How fast the levels fall. They rise in 10 ms. |
+| Draw | Cloud, Lines | How each track is drawn. |
+| Tilt | 0 to 6 dB per octave, 0 | Lifts each band by its octaves above 1 kHz and lowers those below, so a mix with a natural falling balance reads level; 3 or 4.5 dB is usual. |
+| Response | Fast, Slow | Slow rises and falls over about 3 s, so the view shows the tonal balance of a whole section rather than its moments. |
 
 ## The view
 
 Dragging turns the box; Shift-dragging or dragging with the right button moves it; the wheel
-zooms; a double-click resets it. **Front** looks at the stereo field and the levels, **Side** is
-a spectrum, **Top** maps frequency against the stereo field, **3D** is the default.
+zooms; a double-click resets it to Side. **Front** looks at the stereo field and the levels, **Side**
+is a spectrum and the default, **Top** maps frequency against the stereo field, **3D** looks
+from above at an angle. A view button turns the box there over a few frames.
 
 ## The analysis
 
