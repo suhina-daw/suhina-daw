@@ -23,7 +23,9 @@ pub mod param {
     pub const OVERLAP_RANGE: usize = 3;
     /// How fast the lines fall, in seconds.
     pub const RELEASE: usize = 4;
-    pub(crate) const COUNT: usize = 5;
+    /// How each track is drawn: [`super::draw::CLOUD`] or [`super::draw::LINES`].
+    pub const DRAW: usize = 5;
+    pub(crate) const COUNT: usize = 6;
 }
 
 /// Options of the point parameter.
@@ -36,6 +38,14 @@ pub mod point {
 pub mod muted {
     pub const DIM: f64 = 0.0;
     pub const HIDE: f64 = 1.0;
+}
+
+/// Options of the draw parameter.
+pub mod draw {
+    /// Each band as a glow as bright as it is loud and as wide as it is in the stereo field.
+    pub const CLOUD: f64 = 0.0;
+    /// Each track as one line through its bands.
+    pub const LINES: f64 = 1.0;
 }
 
 /// Options of the overlaps parameter.
@@ -51,6 +61,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("overlaps", "Overlaps", &["Off", "Mark", "Only Overlaps"], 1),
     ParamInfo::continuous("overlapRange", "Overlap Range", (1.0, 12.0), 6.0, Unit::Decibels, Scale::Linear),
     ParamInfo::continuous("release", "Release", (0.05, 2.0), 0.3, Unit::Seconds, Scale::Logarithmic),
+    ParamInfo::choice("draw", "Draw", &["Cloud", "Lines"], 0),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "mix-space", name: "Mix Space", role: Role::Effect, params: &PARAMS };

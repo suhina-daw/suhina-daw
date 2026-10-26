@@ -52,6 +52,14 @@ pub struct BandReading {
     pub correlation: f32,
 }
 
+impl BandReading {
+    /// How wide the band is in the stereo field, from its correlation: 0 for the same sound in
+    /// both channels (a point), about 0.7 for unrelated channels, 1 for opposite ones.
+    pub fn width(&self) -> f32 {
+        ((1.0 - self.correlation.clamp(-1.0, 1.0)) / 2.0).sqrt()
+    }
+}
+
 /// The FFT bins one band sums.
 #[derive(Clone, Copy, Debug)]
 struct Bins {

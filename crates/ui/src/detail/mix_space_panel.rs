@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
-use suhina_device_mix_space::{muted, overlaps, point};
+use suhina_device_mix_space::{draw, muted, overlaps, point};
 use suhina_engine::model::{Project, TrackId};
 use suhina_engine::{MeterMonitor, TapPoint};
 use suhina_session::{MixSpace, MixSpaceSnapshot};
@@ -234,6 +234,7 @@ pub fn show(
     let marks = value("overlaps", overlaps::MARK);
     let range = value("overlapRange", 6.0) as f32;
     let release = value("release", 0.3) as f32;
+    let draw = value("draw", draw::CLOUD);
     let tap = if pre { TapPoint::PreFader } else { TapPoint::PostFader };
     let now = ui.input(|i| i.time);
     ui.ctx().data_mut(|d| {
@@ -400,26 +401,36 @@ pub fn show(
         }
     }
     let only = marks == overlaps::ONLY;
-    for (index, line) in lines.iter().enumerate() {
-        let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
-        let color = line.look.color.gamma_multiply(alpha);
-        let points: Vec<Pos2> =
-            line.bands.iter().take(bands).map(|b| at([b.pan, height(b.level_db), depth(b.frequency)])).collect();
-        let peaks: Vec<Pos2> =
-            line.bands.iter().take(bands).map(|b| at([b.pan, height(b.peak_db), depth(b.frequency)])).collect();
-        painter.add(Shape::line(peaks, Stroke::new(1.0, color.gamma_multiply(0.25))));
-        for (i, pair) in points.windows(2).enumerate() {
-            let (Some(a), Some(b)) = (line.bands.get(i), line.bands.get(i + 1)) else { continue };
-            if a.level_db <= FLOOR_DB && b.level_db <= FLOOR_DB {
-                continue;
-            }
-            let over = a.level_db > 0.0 || b.level_db > 0.0;
-            let stroke = if over { Stroke::new(2.5, theme::recording()) } else { Stroke::new(1.6, color) };
-            let hidden = covered.get(index).is_some_and(|c| c.get(i).copied().unwrap_or(false));
-            if hidden {
-                painter.extend(Shape::dashed_line(pair, Stroke::new(1.2, color.gamma_multiply(0.7)), 3.0, 3.0));
-            } else {
-                painter.line_segment([pair[0], pair[1]], stroke);
+    if draw == draw::CLOUD {
+        let mut mesh = egui::Mesh::default();
+        for (index, line) in lines.iter().enumerate() {
+            let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
+            let covered = covered.get(index).map_or(&[][..], Vec::as_slice);
+            cloud(&mut mesh, &at, line, bands, alpha, covered);
+        }
+        painter.add(Shape::mesh(mesh));
+    } else {
+        for (index, line) in lines.iter().enumerate() {
+            let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
+            let color = line.look.color.gamma_multiply(alpha);
+            let points: Vec<Pos2> =
+                line.bands.iter().take(bands).map(|b| at([b.pan, height(b.level_db), depth(b.frequency)])).collect();
+            let peaks: Vec<Pos2> =
+                line.bands.iter().take(bands).map(|b| at([b.pan, height(b.peak_db), depth(b.frequency)])).collect();
+            painter.add(Shape::line(peaks, Stroke::new(1.0, color.gamma_multiply(0.25))));
+            for (i, pair) in points.windows(2).enumerate() {
+                let (Some(a), Some(b)) = (line.bands.get(i), line.bands.get(i + 1)) else { continue };
+                if a.level_db <= FLOOR_DB && b.level_db <= FLOOR_DB {
+                    continue;
+                }
+                let over = a.level_db > 0.0 || b.level_db > 0.0;
+                let stroke = if over { Stroke::new(2.5, theme::recording()) } else { Stroke::new(1.6, color) };
+                let hidden = covered.get(index).is_some_and(|c| c.get(i).copied().unwrap_or(false));
+                if hidden {
+                    painter.extend(Shape::dashed_line(pair, Stroke::new(1.2, color.gamma_multiply(0.7)), 3.0, 3.0));
+                } else {
+                    painter.line_segment([pair[0], pair[1]], stroke);
+                }
             }
         }
     }
@@ -460,6 +471,55 @@ pub fn show(
     if let Some((_, overlap)) = nearest {
         response.on_hover_text_at_pointer(&overlap.text);
     }
+}
+
+/// One track as a cloud, like a spectrogram in three dimensions: each band a row of soft glows
+/// as wide as the band is in the stereo field, brighter and bigger the louder it is, fading
+/// downwards so a loud band stands as a bright spire and a quiet one as a faint haze. A band
+/// another track covers is dimmer.
+fn cloud(
+    mesh: &mut egui::Mesh,
+    at: &impl Fn([f32; 3]) -> Pos2,
+    line: &Line<'_>,
+    bands: usize,
+    alpha: f32,
+    covered: &[bool],
+) {
+    for (index, band) in line.bands.iter().take(bands).enumerate() {
+        if band.level_db <= FLOOR_DB {
+            continue;
+        }
+        let loud = ((band.level_db - FLOOR_DB) / -FLOOR_DB).clamp(0.0, 1.2);
+        let intensity = loud.min(1.0).powf(1.6);
+        // The loudest parts burn towards white, as a spectrogram's do.
+        let hot = ((loud - 0.75) * 2.0).clamp(0.0, 0.7);
+        let color = lerp(line.look.color, Color32::WHITE, hot);
+        let dim = if covered.get(index).copied().unwrap_or(false) { 0.4 } else { 1.0 };
+        let width = band.width().max(0.02);
+        let across = 1 + (width * 10.0).round() as usize;
+        let depth = depth(band.frequency);
+        let size = 1.2 + 3.0 * loud;
+        for step in 0..across {
+            let offset = if across == 1 { 0.0 } else { (step as f32 / (across - 1) as f32) * 2.0 - 1.0 };
+            let x = (band.pan + offset * width).clamp(-1.0, 1.0);
+            let falloff = 1.0 - offset.abs() * 0.5;
+            for layer in 0..3 {
+                let y = height(band.level_db - layer as f32 * 5.0);
+                let a = intensity * falloff * (1.0 - layer as f32 * 0.3) * alpha * dim * 0.6;
+                if a < 0.01 {
+                    continue;
+                }
+                let centre = at([x, y, depth]);
+                let rect = Rect::from_center_size(centre, Vec2::splat(size));
+                mesh.add_colored_rect(rect, color.gamma_multiply(a));
+            }
+        }
+    }
+}
+
+fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
+    let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
+    Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 fn hertz(frequency: f32) -> String {
@@ -524,29 +584,43 @@ mod tests {
         assert!(loud.y < quiet.y);
     }
 
-    /// Three made-up tracks: a kick and a bass that meet in the low end, a wide pad, and a lead
-    /// that goes over the ceiling.
+    /// Four tracks of real sound run through the analysis: a kick (a falling sine), a mono saw
+    /// bass, a wide pad of detuned saws and a square lead panned right.
     fn feed() -> Feed {
-        let grid = suhina_dsp::MixSpaceAnalyzer::new(48_000.0, 24).readings().to_vec();
-        let shape = |f: &dyn Fn(f32) -> (f32, f32)| -> Vec<suhina_dsp::BandReading> {
-            grid.iter()
-                .map(|b| {
-                    let (level, pan) = f(b.frequency);
-                    suhina_dsp::BandReading { level_db: level, peak_db: level + 3.0, pan, ..*b }
-                })
-                .collect()
+        const RATE: f32 = 48_000.0;
+        let frames = 48_000;
+        let saw = |f: f32, n: usize| 2.0 * (f * n as f32 / RATE).fract() - 1.0;
+        let analyse = |make: &dyn Fn(usize) -> (f32, f32)| {
+            let mut analyzer = suhina_dsp::MixSpaceAnalyzer::new(f64::from(RATE), 24);
+            let (left, right): (Vec<f32>, Vec<f32>) = (0..frames).map(make).unzip();
+            analyzer.push(&left, &right);
+            analyzer.readings().to_vec()
         };
-        let bump = |f: f32, centre: f32, width: f32, top: f32| top - ((f / centre).log2() / width).powi(2) * 12.0;
+        let kick = analyse(&|n| {
+            let t = (n % 24_000) as f32 / RATE;
+            let phase = std::f32::consts::TAU * (50.0 * t + 60.0 * (1.0 - (-t * 30.0).exp()) / 30.0);
+            let v = phase.sin() * (-t * 6.0).exp() * 0.9;
+            (v, v)
+        });
+        let bass = analyse(&|n| {
+            let v = saw(55.0, n) * 0.3;
+            (v, v)
+        });
+        let pad = analyse(&|n| {
+            let l = (saw(220.0, n) + saw(277.2, n) + saw(329.6, n)) * 0.05;
+            let r = (saw(220.9, n) + saw(276.4, n) + saw(330.5, n)) * 0.05;
+            (l, r)
+        });
+        let lead = analyse(&|n| {
+            let v = if (880.0 * n as f32 / RATE).fract() < 0.5 { 1.0 } else { -1.0 };
+            let (gl, gr) = suhina_dsp::pan::gains(0.5);
+            (v * gl as f32, v * gr as f32)
+        });
         let tracks = [
-            (1, "Kick", Color32::from_rgb(240, 200, 60), shape(&|f| (bump(f, 60.0, 0.6, -8.0), 0.0))),
-            (2, "Bass", Color32::from_rgb(190, 110, 230), shape(&|f| (bump(f, 80.0, 0.8, -10.0), 0.02))),
-            (
-                3,
-                "Pad",
-                Color32::from_rgb(90, 190, 120),
-                shape(&|f| (bump(f, 900.0, 2.0, -20.0), if f > 300.0 { -0.6 } else { 0.0 })),
-            ),
-            (4, "Lead", Color32::from_rgb(240, 120, 110), shape(&|f| (bump(f, 3_000.0, 1.2, 3.0), 0.4))),
+            (1, "Kick", Color32::from_rgb(240, 200, 60), kick),
+            (2, "Bass", Color32::from_rgb(190, 110, 230), bass),
+            (3, "Pad", Color32::from_rgb(90, 190, 120), pad),
+            (4, "Lead", Color32::from_rgb(240, 120, 110), lead),
         ];
         Feed {
             snapshot: Arc::new(MixSpaceSnapshot {
