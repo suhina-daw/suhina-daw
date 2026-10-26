@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use egui::{Align2, Color32, ColorImage, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
-use suhina_device_mix_space::{draw, muted, overlaps, point, response};
+use suhina_device_mix_space::{axis, draw, muted, overlaps, point, response};
 use suhina_engine::model::{Project, TrackId};
 use suhina_engine::{MeterMonitor, TapPoint};
 use suhina_session::{MixSpace, MixSpaceSnapshot};
@@ -192,6 +192,14 @@ enum View {
 }
 
 impl Camera {
+    /// The view for the time axis: frequency left to right, time going back into the depth.
+    fn view_for(view: View, time: bool) -> Self {
+        if time && view == View::ThreeD {
+            return Self { yaw: 0.25, pitch: 0.55, zoom: 1.05, offset: Vec2::ZERO };
+        }
+        Self::view(view)
+    }
+
     fn view(view: View) -> Self {
         let (yaw, pitch) = match view {
             View::Front => (0.0, 0.0),
@@ -309,6 +317,7 @@ pub fn show(
     let range = value("overlapRange", 6.0) as f32;
     let release = value("release", 0.3) as f32;
     let draw = value("draw", draw::MESH);
+    let time = value("axis", axis::STEREO) == axis::TIME;
     let tilt = value("tilt", 0.0) as f32;
     let floor = value("floor", f64::from(FLOOR_DB)) as f32;
     let slow = value("response", response::FAST) == response::SLOW;
@@ -343,7 +352,7 @@ pub fn show(
         x = rect.right() + 3.0;
         let response = widgets::button_area(ui, rect, camera_id.with(label), format!("{label} view"))
             .on_hover_text(format!("Look at the box from the {}", label.to_lowercase()));
-        let lit = state.target == Camera::view(view);
+        let lit = state.target == Camera::view_for(view, time);
         painter.rect_filled(
             rect,
             2.0,
@@ -357,7 +366,7 @@ pub fn show(
             theme::text_secondary(),
         );
         if response.clicked() {
-            state.target = Camera::view(view);
+            state.target = Camera::view_for(view, time);
         }
     }
     let view = Rect::from_min_max(Pos2::new(area.left(), area.top() + 22.0), area.max);
@@ -413,22 +422,32 @@ pub fn show(
     for corner in corners(0.0) {
         painter.line_segment([at(corner), at([corner[0], top, corner[2]])], edge);
     }
-    // Faint lines at every octave on the floor, and the labels.
-    for frequency in [100.0, 1_000.0, 10_000.0] {
-        let z = depth(frequency);
-        painter.line_segment(
-            [at([-1.0, 0.0, z]), at([1.0, 0.0, z])],
-            Stroke::new(1.0, theme::text_hint().gamma_multiply(0.25)),
-        );
-    }
+    // Faint lines at every decade on the floor, and the labels.
     let font = theme::ui_font(theme::TEXT_TINY);
     let hint = theme::text_hint();
-    painter.text(at([-1.0, 0.0, -1.0]), Align2::RIGHT_TOP, "L", font.clone(), hint);
-    painter.text(at([1.0, 0.0, -1.0]), Align2::LEFT_TOP, "R", font.clone(), hint);
-    painter.text(at([1.0, 0.0, -1.0]) + Vec2::new(0.0, 11.0), Align2::LEFT_TOP, "20 Hz", font.clone(), hint);
-    painter.text(at([1.0, 0.0, 1.0]), Align2::LEFT_TOP, "20 kHz", font.clone(), hint);
-    for frequency in [(100.0, "100"), (1_000.0, "1k"), (10_000.0, "10k")] {
-        painter.text(at([1.0, 0.0, depth(frequency.0)]), Align2::LEFT_TOP, frequency.1, font.clone(), hint);
+    let faint = Stroke::new(1.0, theme::text_hint().gamma_multiply(0.25));
+    let ticks = [(100.0, "100"), (1_000.0, "1k"), (10_000.0, "10k")];
+    if time {
+        // Frequency runs across, time into the depth: now at the front.
+        for (frequency, label) in ticks {
+            let x = depth(frequency);
+            painter.line_segment([at([x, 0.0, -1.0]), at([x, 0.0, 1.0])], faint);
+            painter.text(at([x, 0.0, 1.0]), Align2::CENTER_TOP, label, font.clone(), hint);
+        }
+        painter.text(at([-1.0, 0.0, 1.0]), Align2::CENTER_TOP, "20 Hz", font.clone(), hint);
+        painter.text(at([1.0, 0.0, 1.0]), Align2::CENTER_TOP, "20 kHz", font.clone(), hint);
+        painter.text(at([1.0, 0.0, 1.0]) + Vec2::new(8.0, -2.0), Align2::LEFT_BOTTOM, "now", font.clone(), hint);
+        painter.text(at([1.0, 0.0, -1.0]) + Vec2::new(8.0, -2.0), Align2::LEFT_BOTTOM, "earlier", font.clone(), hint);
+    } else {
+        for (frequency, label) in ticks {
+            let z = depth(frequency);
+            painter.line_segment([at([-1.0, 0.0, z]), at([1.0, 0.0, z])], faint);
+            painter.text(at([1.0, 0.0, z]), Align2::LEFT_TOP, label, font.clone(), hint);
+        }
+        painter.text(at([-1.0, 0.0, -1.0]), Align2::RIGHT_TOP, "L", font.clone(), hint);
+        painter.text(at([1.0, 0.0, -1.0]), Align2::LEFT_TOP, "R", font.clone(), hint);
+        painter.text(at([1.0, 0.0, -1.0]) + Vec2::new(0.0, 11.0), Align2::LEFT_TOP, "20 Hz", font.clone(), hint);
+        painter.text(at([1.0, 0.0, 1.0]), Align2::LEFT_TOP, "20 kHz", font.clone(), hint);
     }
     painter.text(at([-1.0, 1.0, -1.0]), Align2::RIGHT_CENTER, "0 dB", font.clone(), theme::recording());
     painter.text(
@@ -541,7 +560,28 @@ pub fn show(
             })
             .collect();
         let scale = ui.ctx().pixels_per_point();
-        let image = landscape(&camera, view, scale, &lines, &alphas, bands, floor, draw == draw::MESH);
+        let image = if time {
+            // Each new reading becomes the front row; older rows move back and fall off.
+            let history_id = camera_id.with("history");
+            let mut history = ui.data(|d| d.get_temp::<History>(history_id)).unwrap_or_default();
+            if history.serial != feed.snapshot.serial || history.rows.is_empty() {
+                history.serial = feed.snapshot.serial;
+                history.rows.push_front(time_row(&lines, &alphas, bands, floor));
+                history.rows.truncate(HISTORY_ROWS);
+            }
+            let rows: Vec<Vec<(f32, [f32; 3])>> = history.rows.iter().cloned().collect();
+            let xs: Vec<f32> = lines
+                .first()
+                .map(|l| l.bands.iter().take(bands).map(|b| depth(b.frequency)).collect())
+                .unwrap_or_default();
+            let count = rows.len().max(2);
+            // The newest row nearest the camera, which looks from the depth's far end.
+            let zs: Vec<f32> = (0..rows.len()).map(|t| 1.0 - t as f32 / (count - 1) as f32 * 2.0).collect();
+            ui.data_mut(|d| d.insert_temp(history_id, history));
+            surface(&camera, view, scale, &rows, &xs, &zs, floor, draw == draw::MESH, [6.0, 4.0])
+        } else {
+            landscape(&camera, view, scale, &lines, &alphas, bands, floor, draw == draw::MESH)
+        };
         let texture_id = camera_id.with("landscape");
         let texture = match ui.data(|d| d.get_temp::<egui::TextureHandle>(texture_id)) {
             Some(mut texture) => {
@@ -678,6 +718,48 @@ fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp:
         .collect()
 }
 
+/// Rows of the time view: about two seconds of readings at 60 a second.
+const HISTORY_ROWS: usize = 120;
+
+/// The time view's past readings, newest first, and the snapshot the newest came from.
+#[derive(Debug, Clone, Default)]
+struct History {
+    serial: u64,
+    rows: std::collections::VecDeque<Vec<(f32, [f32; 3])>>,
+}
+
+/// One row of the time view: per band, every track's power summed and its colour weighted by
+/// each track's share, smoothed along the frequencies so the row is one ridge.
+fn time_row(lines: &[Line<'_>], alphas: &[f32], bands: usize, floor: f32) -> Vec<(f32, [f32; 3])> {
+    let mut row = vec![(0.0f32, [0.0f32; 3]); bands];
+    for (line, alpha) in lines.iter().zip(alphas) {
+        let rgb = [line.look.color.r(), line.look.color.g(), line.look.color.b()].map(|v| f32::from(v) / 255.0);
+        for (cell, band) in row.iter_mut().zip(line.bands) {
+            if band.level_db <= floor {
+                continue;
+            }
+            let power = 10f32.powf(band.level_db / 10.0) * alpha;
+            cell.0 += power;
+            for (sum, value) in cell.1.iter_mut().zip(rgb) {
+                *sum += value * power;
+            }
+        }
+    }
+    let before = row.clone();
+    for (i, cell) in row.iter_mut().enumerate() {
+        let (Some(h), Some(a), Some(b)) =
+            (before.get(i), before.get(i.saturating_sub(1)), before.get((i + 1).min(bands.saturating_sub(1))))
+        else {
+            continue;
+        };
+        cell.0 = (a.0 + 2.0 * h.0 + b.0) / 4.0;
+        for k in 0..3 {
+            cell.1[k] = (a.1[k] + 2.0 * h.1[k] + b.1[k]) / 4.0;
+        }
+    }
+    row
+}
+
 /// Columns of the landscape across the stereo field.
 const FIELD_COLUMNS: usize = 128;
 /// Columns between two grid lines across the stereo field.
@@ -704,8 +786,6 @@ fn landscape(
     floor: f32,
     mesh: bool,
 ) -> ColorImage {
-    use crate::detail::mix_space_raster::{Corner, Look, render};
-    let span = -floor.min(-6.0);
     let column = |c: usize| c as f32 / (FIELD_COLUMNS - 1) as f32 * 2.0 - 1.0;
     // Per band and column: the summed power and the colour weighted by each track's power.
     let mut grid: Vec<Vec<(f32, [f32; 3])>> = Vec::with_capacity(bands);
@@ -752,6 +832,28 @@ fn landscape(
             }
         }
     }
+    let xs: Vec<f32> = (0..FIELD_COLUMNS).map(column).collect();
+    surface(camera, view, scale, &grid, &xs, &depths, floor, mesh, [LINE_COLUMNS, LINE_BANDS])
+}
+
+/// A landscape from `grid` (rows of columns: the summed power and the power-weighted colour)
+/// drawn pixel by pixel: column `c` of row `r` stands at `xs[c]` across and `zs[r]` into the
+/// depth, as high as its power. Lines fall every `lines_every` columns and rows.
+#[allow(clippy::too_many_arguments)]
+fn surface(
+    camera: &Camera,
+    view: Rect,
+    scale: f32,
+    grid: &[Vec<(f32, [f32; 3])>],
+    xs: &[f32],
+    zs: &[f32],
+    floor: f32,
+    mesh: bool,
+    lines_every: [f32; 2],
+) -> ColorImage {
+    use crate::detail::mix_space_raster::{Corner, Look, render};
+    let span = -floor.min(-6.0);
+    let (bands, columns) = (grid.len().min(zs.len()), xs.len());
     let heights: Vec<Vec<f32>> = grid
         .iter()
         .map(|row| {
@@ -759,18 +861,20 @@ fn landscape(
         })
         .collect();
     let at_height = |band: usize, c: usize| heights.get(band).and_then(|r| r.get(c)).copied().unwrap_or(0.0);
-    let column_step = 2.0 / (FIELD_COLUMNS - 1) as f32;
-    let mut corners = Vec::with_capacity(bands * FIELD_COLUMNS);
+
+    let mut corners = Vec::with_capacity(bands * columns);
     for band in 0..bands {
-        let z = depths.get(band).copied().unwrap_or(0.0);
+        let z = zs.get(band).copied().unwrap_or(0.0);
         let next = (band + 1).min(bands.saturating_sub(1));
         let previous = band.saturating_sub(1);
-        let dz_span = (depths.get(next).copied().unwrap_or(z) - depths.get(previous).copied().unwrap_or(z)).max(1e-3);
-        for c in 0..FIELD_COLUMNS {
+        let dz_span = (zs.get(next).copied().unwrap_or(z) - zs.get(previous).copied().unwrap_or(z)).max(1e-3);
+        for c in 0..columns {
             let (power, rgb) = grid.get(band).and_then(|r| r.get(c)).copied().unwrap_or((0.0, [0.0; 3]));
             let h = at_height(band, c);
-            let dx = (at_height(band, (c + 1).min(FIELD_COLUMNS - 1)) - at_height(band, c.saturating_sub(1)))
-                / (2.0 * column_step);
+            let right = (c + 1).min(columns.saturating_sub(1));
+            let left = c.saturating_sub(1);
+            let dx_span = (xs.get(right).copied().unwrap_or(0.0) - xs.get(left).copied().unwrap_or(0.0)).max(1e-3);
+            let dx = (at_height(band, right) - at_height(band, left)) / dx_span;
             let dz = (at_height(next, c) - at_height(previous, c)) / dz_span;
             let db = if power > 0.0 { 10.0 * power.log10() } else { floor };
             let loud = ((db - floor) / span).clamp(0.0, 1.2);
@@ -778,21 +882,21 @@ fn landscape(
             // The loudest ground burns towards white, as a spectrogram's does.
             let hot = ((loud - 0.85) * 2.5).clamp(0.0, 0.5);
             let color = base.map(|v| v + (1.0 - v) * hot);
-            let point = [column(c), h, z];
+            let point = [xs.get(c).copied().unwrap_or(0.0), h, z];
             let at = camera.project(view, point);
             corners.push(Corner {
                 at: [(at.x - view.left()) * scale, (at.y - view.top()) * scale],
                 depth: camera.distance(point),
                 normal: [-dx, 1.0, -dz],
                 color: [color[0], color[1], color[2], (loud / 0.08).clamp(0.0, 1.0)],
-                grid: [c as f32 / LINE_COLUMNS, band as f32 / LINE_BANDS],
+                grid: [c as f32 / lines_every[0], band as f32 / lines_every[1]],
             });
         }
     }
-    let mut triangles = Vec::with_capacity(bands * FIELD_COLUMNS * 2);
-    let index = |band: usize, c: usize| u32::try_from(band * FIELD_COLUMNS + c).unwrap_or(u32::MAX);
+    let mut triangles = Vec::with_capacity(bands * columns * 2);
+    let index = |band: usize, c: usize| u32::try_from(band * columns + c).unwrap_or(u32::MAX);
     for band in 0..bands.saturating_sub(1) {
-        for c in 0..FIELD_COLUMNS - 1 {
+        for c in 0..columns.saturating_sub(1) {
             let (a, b, d, e) = (index(band, c), index(band, c + 1), index(band + 1, c + 1), index(band + 1, c));
             triangles.push([a, b, d]);
             triangles.push([a, d, e]);
@@ -1029,5 +1133,77 @@ mod tests {
             harness.run_steps(2);
             save(&mut harness, name);
         }
+    }
+
+    #[test]
+    fn the_time_view_draws_the_last_readings_front_to_back() {
+        let feed = feed();
+        // Two seconds of a beat: a kick every half second, a snare between, hats on every
+        // eighth, the rest held.
+        let envelope = |id: u32, t: usize| -> f32 {
+            let since = |period: usize, offset: usize| ((t + period - offset) % period) as f32;
+            match id {
+                1 => (-since(30, 0) / 4.0).exp(),
+                2 => (-since(30, 15) / 3.0).exp(),
+                3 => (-since(8, 0) / 1.5).exp(),
+                _ => 1.0,
+            }
+        };
+        let mut history = History { serial: feed.snapshot.serial, ..History::default() };
+        for t in 0..HISTORY_ROWS {
+            let shaped: Vec<(TrackLook, Vec<suhina_dsp::BandReading>)> = feed
+                .tracks
+                .iter()
+                .filter_map(|look| {
+                    let space = feed.snapshot.track(look.id, TapPoint::PostFader)?;
+                    let gain = 20.0 * envelope(look.id.0, t).max(1e-4).log10();
+                    let bands = space
+                        .bands
+                        .iter()
+                        .map(|b| suhina_dsp::BandReading { level_db: b.level_db + gain, ..*b })
+                        .collect();
+                    Some((look.clone(), envelope_free(bands)))
+                })
+                .collect();
+            let lines: Vec<Line<'_>> = shaped.iter().map(|(look, bands)| Line { look, bands }).collect();
+            let alphas = vec![1.0; lines.len()];
+            let bands = lines.iter().map(|l| l.bands.len()).min().unwrap_or(0);
+            history.rows.push_back(time_row(&lines, &alphas, bands, FLOOR_DB));
+        }
+        let camera_id = Id::new(("mix-space-camera", TrackId::MAIN.0, &crate::detail::detail_view::DeviceAt(vec![0])));
+        let mut harness =
+            egui_kittest::Harness::builder().with_size((720.0, 420.0)).with_pixels_per_point(2.0).wgpu().build_ui(
+                move |ui| {
+                    ui.ctx().data_mut(|d| d.insert_temp(feed_id(), feed.clone()));
+                    let values = vec![("axis".to_string(), axis::TIME)];
+                    show(
+                        ui,
+                        Rect::from_min_size(Pos2::ZERO, Vec2::new(720.0, 420.0)),
+                        TrackId::MAIN,
+                        &crate::detail::detail_view::DeviceAt(vec![0]),
+                        &values,
+                    );
+                },
+            );
+        theme::install(&harness.ctx);
+        harness.ctx.data_mut(|d| d.insert_temp(camera_id.with("history"), history));
+        for (name, camera) in [
+            ("mix-space-time-3d.png", Camera::view_for(View::ThreeD, true)),
+            ("mix-space-time-low.png", Camera { yaw: -0.3, pitch: 0.35, zoom: 1.2, offset: Vec2::ZERO }),
+        ] {
+            harness.ctx.data_mut(|d| d.insert_temp(camera_id, CameraState { now: camera, target: camera }));
+            harness.run_steps(2);
+            let image = harness.render().expect("render");
+            if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {
+                let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+                std::fs::create_dir_all(&output).expect("folder");
+                image.save(output.join(name)).expect("save");
+            }
+        }
+    }
+
+    /// The bands as the view draws them by default: their envelope.
+    fn envelope_free(bands: Vec<suhina_dsp::BandReading>) -> Vec<suhina_dsp::BandReading> {
+        envelope(&bands, 4)
     }
 }

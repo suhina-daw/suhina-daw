@@ -35,7 +35,11 @@ pub mod param {
     /// How finely each track's spectrum is drawn: its envelope over 1/3, 1/6 or 1/12 octave,
     /// or every 1/24-octave band.
     pub const DETAIL: usize = 9;
-    pub(crate) const COUNT: usize = 10;
+    /// What runs into the depth: [`super::axis::STEREO`] (the stereo field across, frequency
+    /// into the depth) or [`super::axis::TIME`] (frequency across, the last two seconds into the
+    /// depth).
+    pub const AXIS: usize = 10;
+    pub(crate) const COUNT: usize = 11;
 }
 
 /// Options of the point parameter.
@@ -59,6 +63,12 @@ pub mod draw {
     pub const SURFACE: f64 = 1.0;
     /// Each track as one line through its bands.
     pub const LINES: f64 = 2.0;
+}
+
+/// Options of the axis parameter.
+pub mod axis {
+    pub const STEREO: f64 = 0.0;
+    pub const TIME: f64 = 1.0;
 }
 
 /// Options of the response parameter.
@@ -87,6 +97,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("response", "Response", &["Fast", "Slow"], 0),
     ParamInfo::continuous("floor", "Floor", (-120.0, -12.0), -72.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("detail", "Detail", &["1/3 Octave", "1/6 Octave", "1/12 Octave", "Every Band"], 0),
+    ParamInfo::choice("axis", "Axis", &["Stereo", "Time"], 0),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "mix-space", name: "Mix Space", role: Role::Effect, params: &PARAMS };
