@@ -326,6 +326,12 @@ pub fn show(
     });
     let painter = ui.painter().with_clip_rect(area);
     painter.rect_filled(area, 0.0, theme::control_background());
+    // The view itself is nearly black, so the lit ground stands out.
+    painter.rect_filled(
+        Rect::from_min_max(Pos2::new(area.left(), area.top() + 22.0), area.max),
+        0.0,
+        Color32::from_gray(10),
+    );
 
     // The view buttons along the top.
     let camera_id = Id::new(("mix-space-camera", track.0, device));
@@ -671,7 +677,7 @@ fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp:
 }
 
 /// Columns of the field across the stereo field.
-const FIELD_COLUMNS: usize = 48;
+const FIELD_COLUMNS: usize = 96;
 
 /// Every track blended into one landscape, like a spectrogram in three dimensions. Over a grid
 /// of the stereo field against the bands, each point is as high as all tracks' sound there
@@ -717,24 +723,50 @@ fn field(
         grid.push(row);
         depths.push(depth(frequency));
     }
-    // Each grid point's place, colour and opacity.
+    // Each grid point's height in the box, and the colour of the tracks there.
+    let heights: Vec<[f32; FIELD_COLUMNS]> = grid
+        .iter()
+        .map(|row| row.map(|(power, _)| if power > 0.0 { height(10.0 * power.log10(), floor) } else { 0.0 }))
+        .collect();
+    let at_height = |band: usize, c: usize| heights.get(band).and_then(|r| r.get(c)).copied().unwrap_or(0.0);
+    let column_step = 2.0 / (FIELD_COLUMNS - 1) as f32;
+    // The light comes from above, the left and the front, so slopes facing it are bright and
+    // slopes facing away dark, which gives the ground its shape.
+    let light = {
+        let [x, y, z] = [-0.45f32, 0.8, -0.4];
+        let length = (x * x + y * y + z * z).sqrt();
+        [x / length, y / length, z / length]
+    };
     let point = |band: usize, c: usize| -> Option<(Pos2, Color32)> {
         let (power, rgb) = grid.get(band)?.get(c)?;
         let z = *depths.get(band)?;
+        let h = at_height(band, c);
         let db = if *power > 0.0 { 10.0 * power.log10() } else { floor };
         let loud = ((db - floor) / span).clamp(0.0, 1.2);
-        let base = if *power > 0.0 {
-            Color32::from_rgb(
-                (rgb[0] / power).round() as u8,
-                (rgb[1] / power).round() as u8,
-                (rgb[2] / power).round() as u8,
-            )
-        } else {
-            Color32::TRANSPARENT
+        if *power <= 0.0 {
+            return Some((camera.project(view, [column(c), 0.0, z]), Color32::TRANSPARENT));
+        }
+        // The slope from the neighbours: across the stereo field and along the frequencies.
+        let dx = (at_height(band, (c + 1).min(FIELD_COLUMNS - 1)) - at_height(band, c.saturating_sub(1)))
+            / (2.0 * column_step);
+        let next = (band + 1).min(bands.saturating_sub(1));
+        let previous = band.saturating_sub(1);
+        let dz_span = (depths.get(next).copied().unwrap_or(z) - depths.get(previous).copied().unwrap_or(z)).max(1e-3);
+        let dz = (at_height(next, c) - at_height(previous, c)) / dz_span;
+        let normal = {
+            let [x, y, z] = [-dx, 1.0, -dz];
+            let length = (x * x + y * y + z * z).sqrt();
+            [x / length, y / length, z / length]
         };
-        let color = lerp(base, Color32::WHITE, ((loud - 0.8) * 2.0).clamp(0.0, 0.6));
-        let alpha = loud.min(1.0).powf(1.3) * 0.85;
-        Some((camera.project(view, [column(c), height(db, floor), z]), color.gamma_multiply(alpha)))
+        let lit = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
+        let shade = 0.3 + 0.7 * lit.max(0.0) + 0.25 * h.min(1.0);
+        let base = [rgb[0] / power, rgb[1] / power, rgb[2] / power];
+        let channel = |v: f32| (v * shade).clamp(0.0, 255.0).round() as u8;
+        let color = Color32::from_rgb(channel(base[0]), channel(base[1]), channel(base[2]));
+        // The loudest peaks catch the light towards white; ground near the floor fades out.
+        let color = lerp(color, Color32::WHITE, ((loud - 0.85) * 2.5).clamp(0.0, 0.5));
+        let alpha = (loud / 0.08).clamp(0.0, 1.0);
+        Some((camera.project(view, [column(c), h, z]), color.gamma_multiply(alpha)))
     };
     for band in 0..bands.saturating_sub(1) {
         for c in 0..FIELD_COLUMNS - 1 {
