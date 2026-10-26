@@ -214,3 +214,35 @@ fn a_launched_clip_moves_its_track_meter() {
     blocks(&mut renderer, (3.0 * f64::from(SR) / 256.0) as usize, 256);
     assert_level(controller.meter_monitor().track(TrackId(1)).expect("track 1"), [NOTE; 2], "launched");
 }
+
+#[test]
+fn the_mix_tap_copies_each_track_before_and_after_its_volume_only_while_asked() {
+    let mut project = held(vec![]);
+    channel(&mut project, 4).volume = 0.5;
+    let mut renderer = Renderer::new(&project, SR).expect("renderer");
+    let monitor = renderer.meter_monitor();
+    let tap = monitor.mix_tap();
+    let mut reader = tap.take_reader().expect("reader");
+    blocks(&mut renderer, 20, 256);
+    assert_eq!(reader.read(|_, _, _| {}), 0, "nothing is copied until a reader asks");
+    tap.set_points(true, true);
+    blocks(&mut renderer, 400, 256);
+    let mut peaks = std::collections::HashMap::new();
+    reader.read(|point, slot, block| {
+        let entry = peaks.entry((point, slot)).or_insert(0.0f32);
+        *entry = entry.max(peak(block));
+    });
+    let slot_of = |id: u32| (0..8).find(|&s| monitor.slot_track(s) == Some(TrackId(id))).expect("slot");
+    let at = |point, id| peaks.get(&(point, slot_of(id))).copied().unwrap_or(0.0);
+    assert!(close(at(crate::TapPoint::PostFader, 1), NOTE, 0.01));
+    assert!(close(at(crate::TapPoint::PostFader, 4), NOTE * 0.5, 0.01), "{}", at(crate::TapPoint::PostFader, 4));
+    assert!(close(at(crate::TapPoint::PreFader, 4), NOTE, 0.01), "{}", at(crate::TapPoint::PreFader, 4));
+    // The group shows the sum of its tracks, before its own volume.
+    assert!(close(at(crate::TapPoint::PreFader, 3), 2.0 * NOTE, 0.01));
+    tap.set_points(false, false);
+    blocks(&mut renderer, 2, 256);
+    reader.read(|_, _, _| {});
+    blocks(&mut renderer, 20, 256);
+    assert_eq!(reader.read(|_, _, _| {}), 0, "nothing is copied once the reader stops asking");
+    assert_eq!(tap.dropped(), 0);
+}

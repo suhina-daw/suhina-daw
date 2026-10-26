@@ -9,7 +9,7 @@ rust-version.workspace = true
 [dependencies]
 suhina-media.workspace = true
 bhtsne = { version = "0.7", default-features = false }  # MIT
-realfft = "3.5"  # MIT
+realfft.workspace = true
 
 [dev-dependencies]
 hound.workspace = true

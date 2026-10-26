@@ -49,6 +49,7 @@ mod meters_tests;
 mod metronome;
 #[cfg(test)]
 mod midi_effect_tests;
+mod mix_tap;
 #[cfg(test)]
 mod node_tests;
 mod plugin;
@@ -99,6 +100,7 @@ pub use live::{
 };
 pub use meters::{Level, MAX_METERED_TRACKS, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
 pub use metronome::ClickSound;
+pub use mix_tap::{MixTap, MixTapReader, TapPoint};
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
     Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, Plugins, Sent,

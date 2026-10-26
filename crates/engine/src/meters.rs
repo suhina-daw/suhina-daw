@@ -23,6 +23,7 @@ use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
 use crate::buses::gains_until;
 use crate::chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
+use crate::mix_tap::{MixTap, MixTapWriter, TapPoint};
 use crate::route;
 
 /// Tracks that are metered; a project's tracks after these have no meter.
@@ -35,6 +36,9 @@ pub const PEAK_FALL_DB_PER_SECOND: f64 = 24.0;
 pub const RMS_SECONDS: f64 = 0.3;
 /// Levels below this (−120 dB) are silence: they read as zero, so a decaying meter ends.
 const FLOOR: f32 = 1e-6;
+/// A track's gain on each side at unity volume and a centred pan (`track_gains`): the level the
+/// pre-fader tap shows a track's sound at, so it matches the post-fader one at those settings.
+const UNITY_GAIN: f32 = 0.25;
 /// The track id of an unused row.
 const NO_TRACK: u32 = u32::MAX;
 
@@ -85,13 +89,14 @@ impl Row {
 pub struct MeterMonitor {
     main: Row,
     tracks: Box<[Row]>,
+    mix: MixTap,
 }
 
 impl Default for MeterMonitor {
     fn default() -> Self {
         let tracks: Box<[Row]> =
             (0..MAX_METERED_TRACKS).map(|_| Row { track: AtomicU32::new(NO_TRACK), ..Row::default() }).collect();
-        Self { main: Row::default(), tracks }
+        Self { main: Row::default(), tracks, mix: MixTap::default() }
     }
 }
 
@@ -117,6 +122,19 @@ impl MeterMonitor {
             (value >= 0.).then_some(value)
         })
     }
+    /// The mix tap: every metered track's sound for the mix space analysis.
+    pub fn mix_tap(&self) -> &MixTap {
+        &self.mix
+    }
+
+    /// The track meter slot `slot` measures, or `None` when it is unused.
+    pub fn slot_track(&self, slot: usize) -> Option<TrackId> {
+        match self.tracks.get(slot)?.track.load(Ordering::Relaxed) {
+            NO_TRACK => None,
+            id => Some(TrackId(id)),
+        }
+    }
+
     /// The main output's level.
     pub fn main(&self) -> Level {
         self.main.level()
@@ -192,6 +210,14 @@ pub(crate) struct Levels {
     chain_slots: Vec<Option<usize>>,
     /// `MAX_BLOCK` interleaved stereo frames per slot.
     buffer: Vec<f32>,
+    /// Per slot, the factor from a source's sound as mixed into the output back to the sound
+    /// before the track's volume and pan (at [`UNITY_GAIN`]); zero where that gain is zero and the sound is lost.
+    pre_direct: Vec<(f32, f32)>,
+    /// The same as `buffer`, before each track's volume and pan, filled only while the mix tap
+    /// wants it ([`TapPoint::PreFader`]).
+    pre_buffer: Vec<f32>,
+    /// Whether `pre_buffer` is being filled this block.
+    pre_on: bool,
     /// Per slot, whether anything was added to it this block.
     touched: Vec<bool>,
 }
@@ -216,6 +242,7 @@ impl Levels {
         };
         let ratio = |a: f32, b: f32| if b > 0.0 && b.is_finite() { a / b } else { 0.0 };
         let mut direct = Vec::with_capacity(tracks.len());
+        let mut pre_direct = Vec::with_capacity(tracks.len());
         let mut chained = Vec::with_capacity(tracks.len());
         for &track in &tracks {
             let own = own(track);
@@ -224,6 +251,7 @@ impl Levels {
                 _ => (0.0, 0.0),
             };
             direct.push((ratio(own.0, mixed.0), ratio(own.1, mixed.1)));
+            pre_direct.push((ratio(UNITY_GAIN, mixed.0), ratio(UNITY_GAIN, mixed.1)));
             chained.push((own.0 / CHAIN_INPUT_GAIN, own.1 / CHAIN_INPUT_GAIN));
         }
         // A group whose chain the tracks inside it play into (a bus) hears them through it.
@@ -260,6 +288,9 @@ impl Levels {
         let chain_slots = chains.iter().map(|c| tracks.iter().position(|&t| t == c.track)).collect();
         Self {
             buffer: vec![0.0; tracks.len() * MAX_BLOCK * 2],
+            pre_buffer: vec![0.0; tracks.len() * MAX_BLOCK * 2],
+            pre_direct,
+            pre_on: false,
             touched: vec![false; tracks.len()],
             tracks,
             direct,
@@ -287,6 +318,13 @@ impl Levels {
             if let Some(touched) = self.touched.get_mut(slot) {
                 *touched = true;
             }
+        }
+        if self.pre_on
+            && let Some(&(pre_left, pre_right)) = self.pre_direct.get(slot)
+            && let Some([l, r]) = self.pre_buffer.get_mut(at..at + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok())
+        {
+            *l += left * pre_left;
+            *r += right * pre_right;
         }
     }
 
@@ -322,6 +360,13 @@ impl Levels {
                 *l += cl * gain_left;
                 *r += cr * gain_right;
             }
+            if self.pre_on
+                && let Some(to) = self.pre_buffer.get_mut(at..at + frames * 2)
+            {
+                for (to, from) in to.iter_mut().zip(chain.output(frames)) {
+                    *to += from * (UNITY_GAIN / CHAIN_INPUT_GAIN);
+                }
+            }
             if let Some(touched) = self.touched.get_mut(slot) {
                 *touched = true;
             }
@@ -336,23 +381,44 @@ impl Levels {
                 if let Some(to) = self.buffer.get_mut(group * MAX_BLOCK * 2 + i) {
                     *to += sample * volume;
                 }
+                if self.pre_on
+                    && let Some(to) = self.pre_buffer.get_mut(group * MAX_BLOCK * 2 + i)
+                {
+                    *to += sample;
+                }
             }
             if let Some(touched) = self.touched.get_mut(group) {
                 *touched = true;
             }
         }
+        let post_tap = writer.monitor.mix.is_tapping(TapPoint::PostFader);
         for slot in 0..self.tracks.len() {
+            let at = slot * MAX_BLOCK * 2;
+            if self.pre_on
+                && let Some(block) = self.pre_buffer.get_mut(at..at + frames * 2)
+            {
+                writer.tap(TapPoint::PreFader, slot, block);
+                block.fill(0.0);
+            }
             let touched = self.touched.get_mut(slot).map(std::mem::take).unwrap_or(false);
             if !touched {
                 writer.measure(Meter::Track(slot), &[], frames);
+                if post_tap && let Some(block) = self.buffer.get(at..at + frames * 2) {
+                    writer.tap(TapPoint::PostFader, slot, block);
+                }
                 continue;
             }
-            let at = slot * MAX_BLOCK * 2;
             if let Some(block) = self.buffer.get_mut(at..at + frames * 2) {
                 writer.measure(Meter::Track(slot), block, frames);
+                if post_tap {
+                    writer.tap(TapPoint::PostFader, slot, block);
+                }
                 block.fill(0.0);
             }
         }
+        // Whether the next block fills the pre-fader buffers: they start clean, as they were
+        // cleared above or never filled.
+        self.pre_on = writer.monitor.mix.is_tapping(TapPoint::PreFader);
     }
 }
 
@@ -383,13 +449,17 @@ pub(crate) struct MeterWriter {
     frames: usize,
     peak_keep: f32,
     rms_move: f32,
+    tap: MixTapWriter,
 }
 
 impl MeterWriter {
     /// Allocates: call it off the audio thread.
     pub(crate) fn new(sample_rate: u32) -> Self {
+        let monitor = Arc::new(MeterMonitor::default());
+        let tap = MixTapWriter::new(&monitor.mix, sample_rate);
         Self {
-            monitor: Arc::new(MeterMonitor::default()),
+            monitor,
+            tap,
             sample_rate: f64::from(sample_rate.max(1)),
             main: Ballistics::default(),
             tracks: vec![Ballistics::default(); MAX_METERED_TRACKS],
@@ -397,6 +467,11 @@ impl MeterWriter {
             peak_keep: 0.0,
             rms_move: 1.0,
         }
+    }
+
+    /// Copies a track's block to the mix tap. Never allocates.
+    pub(crate) fn tap(&mut self, point: TapPoint, slot: usize, block: &[f32]) {
+        self.tap.write(&self.monitor.mix, point, slot, block);
     }
 
     /// Shows the tracks of a new graph, slot by slot. A slot that now meters another track

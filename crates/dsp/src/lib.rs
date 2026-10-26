@@ -3,7 +3,7 @@
 
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
 //! conversions, the pan law, parameter smoothing, filters, crossovers, LFO waveforms, waveshapers, oversampling,
-//! delay lines and allpasses.
+//! delay lines and allpasses, and the mix space analysis.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
@@ -19,6 +19,7 @@ pub mod delay;
 pub mod first_order;
 pub mod gain;
 pub mod lfo;
+pub mod mix_space;
 pub mod oversample;
 pub mod pan;
 pub mod resampler;
@@ -32,6 +33,7 @@ pub use crossover::{LinkwitzRiley, Slope};
 pub use dc::DcBlocker;
 pub use delay::{Allpass, DelayLine};
 pub use first_order::{FirstOrder, FirstOrderCoefficients};
+pub use mix_space::{BandReading, MixSpaceAnalyzer};
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{Glide, OnePole, Smoother, time_constant};

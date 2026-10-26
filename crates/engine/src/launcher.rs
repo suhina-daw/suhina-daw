@@ -523,6 +523,11 @@ impl Controller {
     pub fn meter_monitor(&self) -> &crate::meters::MeterMonitor {
         &self.meter_monitor
     }
+    /// The level meters, shared, for a thread that reads them on its own (the mix space
+    /// analysis).
+    pub fn meter_monitor_shared(&self) -> Arc<crate::meters::MeterMonitor> {
+        Arc::clone(&self.meter_monitor)
+    }
 }
 
 /// A note of a launch clip, in content beats, with its mix resolved.

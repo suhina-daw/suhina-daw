@@ -49,6 +49,9 @@ pub struct DeviceBox {
     /// The id of a device that runs a file ([docs/spec/nam-amp-and-cab.md]); the file is the
     /// state's path.
     pub file_device: Option<&'static str>,
+    /// The id of a built-in effect or instrument, for the panels that draw their own view (the
+    /// Mix Space device's box).
+    pub builtin: Option<&'static str>,
     /// The file's path, when the device runs one.
     pub file: Option<String>,
     pub graph: Option<GraphBox>,
@@ -684,6 +687,10 @@ pub(super) fn device_box(
             DeviceKind::Builtin(id) if suhina_device_registry::is_file_device(id) => {
                 suhina_device_registry::info(id).map(|info| info.id)
             }
+            _ => None,
+        },
+        builtin: match &d.kind {
+            DeviceKind::Builtin(id) => suhina_device_registry::info(id).map(|info| info.id),
             _ => None,
         },
         file: d

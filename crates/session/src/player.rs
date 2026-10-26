@@ -160,6 +160,11 @@ impl Player {
         self.controller.meter_monitor()
     }
 
+    /// The level meters, shared, for a thread of its own (the mix space analysis).
+    pub fn meter_monitor_shared(&self) -> std::sync::Arc<suhina_engine::MeterMonitor> {
+        self.controller.meter_monitor_shared()
+    }
+
     pub(crate) fn controller_mut(&mut self) -> &mut Controller {
         &mut self.controller
     }

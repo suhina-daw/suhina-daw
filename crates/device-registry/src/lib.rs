@@ -12,7 +12,7 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 14] = [
+pub const DEVICES: [&DeviceInfo; 15] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
@@ -27,6 +27,7 @@ pub const DEVICES: [&DeviceInfo; 14] = [
     &suhina_device_delay::INFO,
     &suhina_device_reverb::INFO,
     &suhina_device_pitch::INFO,
+    &suhina_device_mix_space::INFO,
 ];
 
 /// What the device with this id is, or `None` for an unknown id.
@@ -87,6 +88,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "delay" => Box::new(suhina_device_delay::Delay::new()),
         "reverb" => Box::new(suhina_device_reverb::Reverb::new()),
         "pitch" => Box::new(suhina_device_pitch::Pitch::new()),
+        "mix-space" => Box::new(suhina_device_mix_space::MixSpace::new()),
         _ => return None,
     })
 }

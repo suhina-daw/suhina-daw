@@ -307,6 +307,8 @@ struct AutoArm {
 pub struct App {
     /// When the level meters last showed something new (`ui.input` time).
     meters_moved_at: f64,
+    /// The mix space analysis of the playing engine, for the Mix Space devices' views.
+    mix_space: Option<suhina_session::MixSpace>,
     projects: Projects,
     /// The project whose view state is in the fields below; others are in `stashes`.
     shown_project: Option<ProjectId>,
@@ -587,6 +589,7 @@ impl App {
             shown: View::Session,
             view: SessionViewState::default(),
             meters_moved_at: 0.0,
+            mix_space: None,
             arrangement: ArrangementViewState::default(),
             status: Status::Hint(start_panel::DROP_HINT.into()),
             tempo_drag: None,
@@ -2578,6 +2581,14 @@ impl App {
             self.arrangement.drop = probe;
             let meters =
                 crate::kit::meter::Meters::read(self.session().and_then(|s| s.player()).map(|p| p.meter_monitor()));
+            let mut mix_space = self.mix_space.take();
+            crate::detail::mix_space_panel::feed(
+                ui.ctx(),
+                &mut mix_space,
+                self.session().and_then(|s| s.player()).map(|p| p.meter_monitor_shared()),
+                self.session().map(|s| s.project()),
+            );
+            self.mix_space = mix_space;
             // Meters fall for a moment after the sound stops: drawn again at once while they
             // move, and looked at again soon after they last moved, as the engine renders in
             // blocks that can be longer than a frame. An engine that stopped rendering leaves

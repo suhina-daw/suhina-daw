@@ -11,6 +11,7 @@ autotests = false
 [dependencies]
 suhina-model.workspace = true
 suhina-engine.workspace = true
+suhina-dsp.workspace = true
 suhina-media.workspace = true
 suhina-mp3.workspace = true
 suhina-library.workspace = true

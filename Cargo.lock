@@ -5115,6 +5115,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-mix-space"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+]
+
+[[package]]
 name = "suhina-device-nam-amp-modeler"
 version = "0.0.1"
 dependencies = [
@@ -5159,6 +5166,7 @@ dependencies = [
  "suhina-device-dj-eq",
  "suhina-device-fm-synth",
  "suhina-device-limiter",
+ "suhina-device-mix-space",
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-overdrive",
@@ -5223,6 +5231,7 @@ name = "suhina-dsp"
 version = "0.0.1"
 dependencies = [
  "fft-convolver",
+ "realfft",
 ]
 
 [[package]]
@@ -5395,6 +5404,7 @@ dependencies = [
  "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
+ "suhina-dsp",
  "suhina-engine",
  "suhina-library",
  "suhina-media",
@@ -5444,10 +5454,12 @@ dependencies = [
  "memory-stats",
  "serde_json",
  "suhina-device-api",
+ "suhina-device-mix-space",
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
+ "suhina-dsp",
  "suhina-engine",
  "suhina-library",
  "suhina-media",

@@ -27,6 +27,7 @@ suhina-device-sdk = { path = "crates/device-sdk" }
 suhina-ipc = { path = "crates/ipc" }
 suhina-plugins = { path = "crates/plugins" }
 suhina-device-utility = { path = "devices/utility" }
+suhina-device-mix-space = { path = "devices/mix-space" }
 suhina-device-auto-pan = { path = "devices/auto-pan" }
 suhina-device-dj-eq = { path = "devices/dj-eq" }
 suhina-device-vinyl-distortion = { path = "devices/vinyl-distortion" }
@@ -64,6 +65,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }  # 
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
 nam-rs = "0.4"  # MIT; NAM model inference for the two NAM devices
 rtrb = "0.4"  # MIT OR Apache-2.0
+realfft = "3.5"  # MIT
 midir = "0.11"  # MIT
 notify-debouncer-full = "0.7"  # MIT OR Apache-2.0; with notify (CC0-1.0)
 memory-stats = "1.2"  # MIT; the process's RAM, for the control bar

@@ -129,6 +129,9 @@ fn chain_row(
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
             // A NAM panel asks for the mock's wider box (nam spec › The panels); the rest keep
             // the plain device width.
+            if device.builtin == Some(MIX_SPACE) {
+                return (crate::detail::mix_space_panel::MIX_WIDTH, crate::detail::mix_space_panel::MIX_HEIGHT);
+            }
             let authored_base =
                 if device.file_device.is_some() { crate::detail::nam_panel::NAM_WIDTH } else { DEVICE_WIDTH };
             // A NAM panel draws its own controls: the stock graph every built-in has (#600) does
@@ -582,6 +585,9 @@ fn clip_for_readers(ui: &Ui, rect: Rect, info: &ClipInfo) {
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
 }
 
+/// The id of the Mix Space device, whose panel draws its own view.
+const MIX_SPACE: &str = "mix-space";
+
 fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
 }
@@ -715,6 +721,19 @@ fn device_panel(
         Pos2::new(rect.left() + PAD, header.bottom() + PAD),
         Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
     );
+    if device.builtin == Some(MIX_SPACE) {
+        // Its parameters as the generated list on the left, its box beside them
+        // (docs/spec/mix-space.md).
+        let split = body.left() + crate::detail::mix_space_panel::CONTROLS_WIDTH;
+        if let Some(graph) = &device.graph {
+            let list = Rect::from_min_max(body.min, Pos2::new(split - PAD, body.bottom()));
+            graph_controls(ui, list, graph, track, &device.at, actions);
+        }
+        let view = Rect::from_min_max(Pos2::new(split, body.top()), body.max);
+        crate::detail::mix_space_panel::show(ui, view, track, &device.at, &device.values);
+        outline(painter);
+        return clicked;
+    }
     match device.file_device {
         Some("nam-amp-modeler") => {
             crate::detail::nam_panel::show_amp(ui, body, track, device, nam, actions);
