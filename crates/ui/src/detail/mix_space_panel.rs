@@ -305,7 +305,7 @@ pub fn show(
     let value = |id: &str, default: f64| values.iter().find(|(v, _)| v == id).map_or(default, |(_, v)| *v);
     let pre = value("point", point::POST_FADER) == point::PRE_FADER;
     let hide_muted = value("muted", muted::DIM) == muted::HIDE;
-    let marks = value("overlaps", overlaps::MARK);
+    let marks = value("overlaps", overlaps::OFF);
     let range = value("overlapRange", 6.0) as f32;
     let release = value("release", 0.3) as f32;
     let draw = value("draw", draw::CLOUD);
@@ -433,8 +433,18 @@ pub fn show(
         hint,
     );
 
-    // The tracks.
+    // The tracks. A track the pointer is on in the legend shows every band; the rest show their
+    // envelope at the device's Detail and fade back.
     let feed = ui.ctx().data(|d| d.get_temp::<Feed>(feed_id())).unwrap_or_default();
+    let focus_id = camera_id.with("focus");
+    let focus = ui.data(|d| d.get_temp::<TrackId>(focus_id));
+    // Bands on each side an envelope reaches over: 1/3, 1/6, 1/12 octave, or none.
+    let spread = match value("detail", 0.0).round() as i64 {
+        0 => 4,
+        1 => 2,
+        2 => 1,
+        _ => 0,
+    };
     // The tilt lifts each band by its octaves above 1 kHz, so a balanced mix reads level.
     let tilted: Vec<(TrackLook, Vec<suhina_dsp::BandReading>)> = feed
         .tracks
@@ -450,7 +460,8 @@ pub fn show(
                     suhina_dsp::BandReading { level_db: above(b.level_db), peak_db: above(b.peak_db), ..*b }
                 })
                 .collect();
-            Some((look.clone(), smooth_position(bands)))
+            let bands = if focus == Some(look.id) { smooth_position(bands) } else { envelope(&bands, spread) };
+            Some((look.clone(), bands))
         })
         .collect();
     let lines: Vec<Line<'_>> = tilted
@@ -516,7 +527,9 @@ pub fn show(
     if draw == draw::CLOUD {
         let mut pieces = Vec::new();
         for (index, line) in lines.iter().enumerate() {
-            let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
+            let alpha = if line.look.muted { 0.3 } else { 1.0 }
+                * if only { 0.15 } else { 1.0 }
+                * if focus.is_some_and(|f| f != line.look.id) { 0.2 } else { 1.0 };
             let covered = covered.get(index).map_or(&[][..], Vec::as_slice);
             cloud(&mut pieces, &camera, view, line, bands, alpha, covered, floor);
         }
@@ -534,7 +547,9 @@ pub fn show(
         painter.extend(ridges);
     } else {
         for (index, line) in lines.iter().enumerate() {
-            let alpha = if line.look.muted { 0.3 } else { 1.0 } * if only { 0.15 } else { 1.0 };
+            let alpha = if line.look.muted { 0.3 } else { 1.0 }
+                * if only { 0.15 } else { 1.0 }
+                * if focus.is_some_and(|f| f != line.look.id) { 0.2 } else { 1.0 };
             let color = line.look.color.gamma_multiply(alpha);
             let points: Vec<Pos2> = line
                 .bands
@@ -582,8 +597,16 @@ pub fn show(
     }
     // The legend: each line's colour and name.
     let mut y = view.top() + 2.0;
+    let mut hovered = None;
     for line in &lines {
         let rect = Rect::from_min_size(Pos2::new(view.right() - 110.0, y), Vec2::new(106.0, 12.0));
+        let row = ui
+            .interact(rect, camera_id.with(("legend", line.look.id.0)), Sense::hover())
+            .on_hover_text(format!("{}: every band, the others faded", line.look.name));
+        if row.hovered() {
+            hovered = Some(line.look.id);
+            painter.rect_filled(rect.expand(1.0), 2.0, theme::panel_background());
+        }
         painter.rect_filled(
             Rect::from_min_size(rect.min + Vec2::new(0.0, 3.0), Vec2::splat(6.0)),
             1.0,
@@ -602,9 +625,50 @@ pub fn show(
             break;
         }
     }
+    if hovered != focus {
+        ui.data_mut(|d| match hovered {
+            Some(id) => {
+                d.insert_temp(focus_id, id);
+            }
+            None => d.remove::<TrackId>(focus_id),
+        });
+        ui.ctx().request_repaint();
+    }
     if let Some((_, overlap)) = nearest {
         response.on_hover_text_at_pointer(&overlap.text);
     }
+}
+
+/// A track's spectrum as one shape: each band's level and peak the highest within `spread`
+/// bands on each side (so the shape rides over the harmonics' tips rather than between them),
+/// then averaged over the same reach so it is round; its stereo position and correlation are
+/// averaged by loudness as [`smooth_position`] does. `spread` 0 keeps the levels as they are.
+fn envelope(bands: &[suhina_dsp::BandReading], spread: usize) -> Vec<suhina_dsp::BandReading> {
+    let bands = smooth_position(bands.to_vec());
+    if spread == 0 {
+        return bands;
+    }
+    let reach = |len: usize, i: usize| i.saturating_sub(spread)..(i + spread + 1).min(len);
+    let tops: Vec<(f32, f32)> = (0..bands.len())
+        .map(|i| {
+            bands
+                .get(reach(bands.len(), i))
+                .unwrap_or_default()
+                .iter()
+                .fold((f32::MIN, f32::MIN), |(l, p), b| (l.max(b.level_db), p.max(b.peak_db)))
+        })
+        .collect();
+    bands
+        .iter()
+        .enumerate()
+        .map(|(i, band)| {
+            let near = tops.get(reach(tops.len(), i)).unwrap_or_default();
+            let count = near.len().max(1) as f32;
+            let level_db = near.iter().map(|t| t.0).sum::<f32>() / count;
+            let peak_db = near.iter().map(|t| t.1).sum::<f32>() / count;
+            suhina_dsp::BandReading { level_db, peak_db, ..*band }
+        })
+        .collect()
 }
 
 /// One track as a cloud, like a spectrogram in three dimensions: its spectrum as a lit tent

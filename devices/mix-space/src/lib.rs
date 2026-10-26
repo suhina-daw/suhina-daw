@@ -32,7 +32,10 @@ pub mod param {
     pub const RESPONSE: usize = 7;
     /// The level at the box's floor, in dBFS: quieter sound is not drawn.
     pub const FLOOR: usize = 8;
-    pub(crate) const COUNT: usize = 9;
+    /// How finely each track's spectrum is drawn: its envelope over 1/3, 1/6 or 1/12 octave,
+    /// or every 1/24-octave band.
+    pub const DETAIL: usize = 9;
+    pub(crate) const COUNT: usize = 10;
 }
 
 /// Options of the point parameter.
@@ -80,6 +83,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("tilt", "Tilt", (0.0, 6.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("response", "Response", &["Fast", "Slow"], 0),
     ParamInfo::continuous("floor", "Floor", (-120.0, -12.0), -72.0, Unit::Decibels, Scale::Linear),
+    ParamInfo::choice("detail", "Detail", &["1/3 Octave", "1/6 Octave", "1/12 Octave", "Every Band"], 0),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "mix-space", name: "Mix Space", role: Role::Effect, params: &PARAMS };
