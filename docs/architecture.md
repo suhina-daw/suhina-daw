@@ -251,6 +251,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
 | Decode workers | Scoped threads in `media` while a project loads; in the window, a thread per drop (`suhina-drop`) that decodes its samples before `clip.addFiles` runs (ADR 0011). | yes |
 | Missing files and plug-in scans | In the window, `suhina-find-files` searches the index and folders for a project's missing files, and `suhina-plugin-scan` runs a plug-in scan, so the frame never waits. | yes |
 | Library | One thread in `library` (`suhina-library`): checks the browser's folders against their saved indexes, reads the ones that changed, and takes the file-system watcher's events (`notify`, its own threads) or polls (ADR 0012). Started by the desktop app and the MCP server only. | yes |
+| Mix space | One thread in `session` (`suhina-mix-space`) per engine, started in the desktop app: empties the engine's mix tap and keeps a `MixSpaceAnalyzer` (`dsp`) per track and tap point, publishing the readings about 60 times a second for the Mix Space devices' views. It turns the tap off half a second after no view asks for it ([spec](spec/mix-space.md)). | yes |
 | Backups | One thread in `session` (`suhina-backup`), started with the first backup: turns each project copy the window's thread made (`Projects::back_up`, which waits at most a second for the plug-ins' state, as a save does) into JSON, writes it through a temporary file, cleans up old ones and keeps the journal ([spec](spec/backups.md)). | yes |
 | Browser files | One thread in the window (`suhina-browser-files`): reads the length, tempo and key of the files the browser shows, and decodes the selected sample for its waveform and preview. | yes |
 | Sample analysis | `soundmap-analysis` threads, half the cores, while a `SoundMap` has files queued; they decode and analyse samples and send the results back. Started by the desktop app and the MCP server only. In the window, a `soundmap-layout` thread per new layout computes it (t-SNE) so the frame never waits. | yes |
@@ -282,7 +283,9 @@ The main thread and the audio thread share nothing mutable. They talk in two dir
   `mixer.levels` and the window's meters, [spec](spec/level-meters.md)). While recording, two
   rings carry what the armed tracks play out (`Controller::take_recorder`), each piece stamped
   with the beat that was heard when it was played; the recording thread empties them
-  ([spec](spec/recording.md)).
+  ([spec](spec/recording.md)). While a Mix Space view is open, the meters also copy each
+  track's block, before or after its volume and pan, into one more ring, the mix tap
+  (`MeterMonitor::mix_tap`), which the mix space thread empties ([spec](spec/mix-space.md)).
 
 ## Commands
 

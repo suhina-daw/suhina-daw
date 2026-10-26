@@ -139,6 +139,9 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
+- Mix Space: a device that draws every track playing through its track as a coloured line in a
+  3D box, stereo position across, level up to a 0 dBFS ceiling with a zone above it, frequency
+  into the depth; overlaps between tracks are marked, pre- or post-fader.
 - SDK sampler graphs can bind a sample while being added to a track; project saving,
   relocation and missing-file relinking retain the graph and its source separately.
 

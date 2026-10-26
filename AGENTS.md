@@ -125,6 +125,7 @@ crates/
 devices/
   sampler  single-source sample and granular instrument; SDK runtime and theme-aware panel
   utility  gain, balance, width, mono, bass mono, phase, channels, DC filter; depends on dsp, device-api
+  mix-space  a view, not an effect: every track playing through it as a line in a 3D box (stereo, level, frequency)
   auto-pan LFO panning and tremolo, free in Hz or synced to the song position
   dj-eq    three bands with kills, Linkwitz-Riley crossovers at 24 or 48 dB/octave
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled

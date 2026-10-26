@@ -173,7 +173,7 @@ impl Camera {
         let (x, z) = (x * cy - z * sy, x * sy + z * cy);
         let (sp, cp) = self.pitch.sin_cos();
         let (y, z) = (y * cp - z * sp, y * sp + z * cp);
-        let scale = area.height().min(area.width()) * 0.42 * self.zoom * DISTANCE / (DISTANCE + z).max(0.5);
+        let scale = area.height().min(area.width()) * 0.3 * self.zoom * DISTANCE / (DISTANCE + z).max(0.5);
         area.center() + self.offset + Vec2::new(x * scale, -y * scale)
     }
 }
