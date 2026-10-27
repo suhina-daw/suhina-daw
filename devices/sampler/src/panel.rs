@@ -27,14 +27,15 @@ fn visible(ui: &mut DeviceUi, condition: UiValue) {
 
 /// A caption, and the menu it names right of it, on the source row.
 fn named_menu(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, caption_width: f32, width: f32, when: UiValue) {
-    label(ui, caption, [x, SOURCE_ROW + 3., caption_width, 13.], None);
+    label(ui, caption, [x, SOURCE_ROW + 2., caption_width, 16.], None);
     visible(ui, when.clone());
     control(ui, id, Widget::Menu, [x + caption_width, SOURCE_ROW, width, 18.], UiGesture::Menu, None);
     visible(ui, when);
 }
 
 fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: UiValue) {
-    label(ui, caption, [x, SOUND_ROW, width, 11.], None);
+    // 14 px holds an 11 px caption's descenders.
+    label(ui, caption, [x, SOUND_ROW, width, 14.], None);
     visible(ui, when.clone());
     let format = match id {
         "cutoff" => TextFormat::Frequency,
@@ -48,7 +49,7 @@ fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: Ui
         id,
         Widget::Dial { label: String::new(), decimals: usize::from(id == "resonance"), format },
         // Tall enough for a ring over its readout, clear of the caption above it.
-        [x, SOUND_ROW + 13., width, 35.],
+        [x, SOUND_ROW + 14., width, 34.],
         UiGesture::Drag,
         None,
     );
@@ -152,20 +153,21 @@ fn envelope(ui: &mut DeviceUi, title: &str, x: f32, ids: &[(&str, &str)], graph:
 /// The device header's controls: Input and Record, and the pages.
 pub(super) fn header() -> DeviceUi {
     let mut ui = DeviceUi {
-        size: [HEADER_WIDTH, 18.],
+        // The header row's whole height, so the Input menu and the buttons are not cut.
+        size: [HEADER_WIDTH, 20.],
         // Clear, so the header row stays one colour behind its controls.
         background: [0, 0, 0, 0],
         hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
         ..DeviceUi::default()
     };
-    control(&mut ui, "recording", Widget::SampleRecording, [0., 0., 200., 18.], UiGesture::Drag, None);
+    control(&mut ui, "recording", Widget::SampleRecording, [0., 0., 200., 20.], UiGesture::Drag, None);
     if let Some(c) = ui.controls.last_mut() {
         c.x = None;
     }
     // Sample shows the waveform; Controls and More are pages a second click closes again.
     for (caption, value, x, w) in [("Sample", 0, 208., 62.), ("Controls", 1, 274., 70.), ("More", 3, 348., 52.)] {
         let gesture = if value == 0 { UiGesture::Set(0) } else { UiGesture::Tab(value) };
-        button(&mut ui, "panel_view", caption, [x, 0., w, 18.], gesture, None);
+        button(&mut ui, "panel_view", caption, [x, 1., w, 18.], gesture, None);
     }
     ui
 }
@@ -234,7 +236,7 @@ pub(super) fn panel() -> DeviceUi {
     divider(&mut ui, 672., SOURCE_ROW, source_row.clone());
 
     // Voices: one, several or (slices) through to End, and how many.
-    label(&mut ui, "Voices", [498., SOURCE_ROW + 3., 40., 13.], None);
+    label(&mut ui, "Voices", [498., SOURCE_ROW + 2., 40., 16.], None);
     visible(&mut ui, source_row.clone());
     control(&mut ui, "slice_overlap", Widget::Menu, [538., SOURCE_ROW, 76., 18.], UiGesture::Menu, None);
     visible(&mut ui, row(slice.clone()));
@@ -251,7 +253,7 @@ pub(super) fn panel() -> DeviceUi {
 
     // The sound row: the filter, the LFO's shape and rate, the voice's knobs and its buttons.
     let sound = source_row.clone();
-    label(&mut ui, "Filter", [LEFT, SOUND_ROW, 60., 13.], None);
+    label(&mut ui, "Filter", [LEFT, SOUND_ROW, 60., 14.], None);
     visible(&mut ui, sound.clone());
     control(&mut ui, "filter", Widget::Menu, [LEFT, SOUND_ROW + 22., 72., 18.], UiGesture::Menu, None);
     visible(&mut ui, sound.clone());

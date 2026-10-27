@@ -24,7 +24,7 @@ pub const COMPACT_WIDTH: f32 = 260.0;
 /// its padding.
 pub const COMPACT_HEIGHT: f32 = 168.0;
 /// Tallest strip of controls in a device's header row.
-pub const HEADER_HEIGHT: f32 = 18.0;
+pub const HEADER_HEIGHT: f32 = 20.0;
 /// Widest strip of controls in a device's header row.
 pub const HEADER_WIDTH: f32 = 480.0;
 /// Largest layout text read.

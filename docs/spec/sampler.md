@@ -89,10 +89,10 @@ finish during the span.
 
 The SDK panel uses a fixed 900 by 168 logical-pixel canvas, leaving the host's
 header and margins inside the 200-pixel device row. Its height never depends on
-the selected page. The layout also gives a 400 by 18 strip the host draws in the device's
+the selected page. The layout also gives a 400 by 20 strip the host draws in the device's
 header row, left of its maker, the device's name giving way to it: Input and Record, and the
 pages Sample, Controls and More, the open one outlined. A built-in layout's header strip is at
-most 480 by 18 pixels (`builtin::HEADER_WIDTH`, `HEADER_HEIGHT`).
+most 480 by 20 pixels (`builtin::HEADER_WIDTH`, `HEADER_HEIGHT`).
 
 Sample, Slice and Grain are buttons in a column left of the waveform, each a drawn glyph over
 its caption (a wave between two bars, a strip cut in three, scattered grains); the chosen one has
