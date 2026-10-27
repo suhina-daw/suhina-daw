@@ -230,12 +230,12 @@ fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
     painter.line_segment(line, Stroke::new(2., sample_marker_color()));
 }
 
-/// The colour of slice lines: the waveform's accent turned to the opposite hue and lightened, so
-/// the lines stand apart from the waveform in any theme.
+/// The colour of slice lines: the waveform's accent turned to the opposite hue, fully saturated
+/// and bright, so the lines stand apart from the waveform in any theme.
 fn slice_line(accent: Color32) -> Color32 {
-    let [r, g, b, _] = accent.to_array();
-    let opposite = |c: u8| (255 - c) / 2 + 110;
-    Color32::from_rgb(opposite(r), opposite(g), opposite(b))
+    let hsva = egui::ecolor::Hsva::from(accent);
+    let hue = if hsva.s < 0.15 { 0.5 } else { (hsva.h + 0.5).fract() };
+    Color32::from(egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0))
 }
 
 /// A time in a source as minutes, seconds and, when it has them, milliseconds: `0:00`,
@@ -850,14 +850,28 @@ fn sample_waveform(
                 }
                 let x = view.x(from, field);
                 let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&from));
-                // A line through the waveform in a colour of its own; one placed by hand is
-                // thicker, with a dot at its top.
+                // A bright line in a colour of its own over a dark edge, so it shows over the
+                // waveform and over silence, with a tab at its top; one placed by hand is thicker,
+                // with a round tab.
+                let width = if pinned { 2.5 } else { 1.5 };
                 wave_painter.line_segment(
                     [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                    Stroke::new(if pinned { 2. } else { 1. }, line),
+                    Stroke::new(width + 2., Color32::from_black_alpha(150)),
                 );
+                wave_painter
+                    .line_segment([Pos2::new(x, field.top()), Pos2::new(x, field.bottom())], Stroke::new(width, line));
                 if pinned {
-                    wave_painter.circle_filled(Pos2::new(x, field.top() + 3.), 3., line);
+                    wave_painter.circle_filled(Pos2::new(x, field.top() + 4.), 4., line);
+                } else {
+                    wave_painter.add(egui::Shape::convex_polygon(
+                        vec![
+                            Pos2::new(x - 4., field.top()),
+                            Pos2::new(x + 4., field.top()),
+                            Pos2::new(x, field.top() + 6.),
+                        ],
+                        line,
+                        Stroke::NONE,
+                    ));
                 }
             }
         }
@@ -1727,8 +1741,11 @@ pub(crate) fn show(
     } else {
         color(canvas.background)
     };
-    painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
-    crate::kit::native_css::background_rounded(&painter, rect, 0.);
+    // A clear background (a header strip's) leaves what is under the canvas showing.
+    if canvas.background[3] > 0 {
+        painter.fill_background(rect, 0.0, crate::kit::style_class::background(background));
+        crate::kit::native_css::background_rounded(&painter, rect, 0.);
+    }
     paint(&painter, &canvas.layers, rect.min, parameters, &loaded);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;

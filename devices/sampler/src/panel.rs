@@ -47,8 +47,8 @@ fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: Ui
         ui,
         id,
         Widget::Dial { label: String::new(), decimals: usize::from(id == "resonance"), format },
-        // Tall enough for a ring over its readout.
-        [x, SOUND_ROW + 11., width, 37.],
+        // Tall enough for a ring over its readout, clear of the caption above it.
+        [x, SOUND_ROW + 13., width, 35.],
         UiGesture::Drag,
         None,
     );
@@ -153,6 +153,8 @@ fn envelope(ui: &mut DeviceUi, title: &str, x: f32, ids: &[(&str, &str)], graph:
 pub(super) fn header() -> DeviceUi {
     let mut ui = DeviceUi {
         size: [HEADER_WIDTH, 18.],
+        // Clear, so the header row stays one colour behind its controls.
+        background: [0, 0, 0, 0],
         hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
         ..DeviceUi::default()
     };
@@ -188,6 +190,12 @@ pub(super) fn panel() -> DeviceUi {
     // Sample, Slice and Grain beside the waveform; Slice keeps its value 2 after Grain's 1.
     for (i, (name, mode)) in [("Sample", 0), ("Slice", 2), ("Grain", 1)].iter().enumerate() {
         button(&mut ui, "mode", name, [0., i as f32 * 57., 56., 54.], UiGesture::Set(*mode), None);
+    }
+    // Input and Record are in the header; this hidden one tells the waveform not to draw its own.
+    control(&mut ui, "recording", Widget::SampleRecording, [LEFT, 0., 200., 18.], UiGesture::Drag, None);
+    visible(&mut ui, UiValue::from(0.));
+    if let Some(c) = ui.controls.last_mut() {
+        c.x = None;
     }
     control(&mut ui, "sample", Widget::SampleWaveform, [LEFT, 0., 900. - LEFT, 96.], UiGesture::Position, None);
     visible(&mut ui, UiValue::from(1.) + controls_page() * (-1f32).into());
