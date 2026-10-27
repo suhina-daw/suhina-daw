@@ -378,7 +378,7 @@ fn compact_panel_interactive_controls_never_overlap_on_any_page() {
                                 v.evaluate(&|id, _, _| match id {
                                     "panel_view" => view,
                                     "mode" => mode,
-                                    "lfo_rate_mode" => rate as f32,
+                                    "lfo_rate_mode" => f64::from(rate),
                                     _ => 0.,
                                 }) > 0.
                             })

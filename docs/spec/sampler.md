@@ -288,9 +288,8 @@ Beat uses Source BPM and First beat rather than transport tempo; its whole-bar
 choice uses the source time signature. Region boundaries divide the whole source,
 so trimming hides boundaries without changing their identities.
 
-Transient finds hits by level, not by single peaks. A follower tracks the source's peak
-level (instant rise, 50 ms release) every 5 ms; a hit is a rise in decibels over the loudest
-level of the 50 ms before it, so a low note's cycles (down to 20 Hz) and a decaying tail never
+Transient finds hits by level, not by single peaks. The level is the source's peak in each
+5 ms; a hit is a rise in decibels over the loudest level of the 50 ms before it, so a low note's cycles (down to 20 Hz) and a decaying tail never
 count. Only the strongest rise within 50 ms is kept, none closer than 50 ms to Start or End,
 and none more than 45 dB under the source's loudest level. A boundary sits one reading
 before the rise begins. Sensitivity sets the rise needed: 18 dB at 0, 5.6 dB at 0.5 and

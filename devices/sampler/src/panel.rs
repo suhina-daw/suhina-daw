@@ -116,7 +116,7 @@ fn envelope(ui: &mut DeviceUi, title: &str, x: f32, ids: &[(&str, &str)], graph:
         value(ui, id, caption, [x + 64. + i as f32 * 52., SOUND_ROW - 2., 50., 16.], None);
         visible(ui, when.clone());
     }
-    control(ui, name, graph, [x, SOUND_ROW + 17., 272., 23.], UiGesture::Position, None);
+    control(ui, name, graph, [x, SOUND_ROW + 16., 272., 24.], UiGesture::Position, None);
     visible(ui, when);
     if let Some(c) = ui.controls.last_mut() {
         c.id = name.into();

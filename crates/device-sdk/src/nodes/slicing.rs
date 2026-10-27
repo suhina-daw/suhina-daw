@@ -140,8 +140,6 @@ impl NativeNode for Kernel {
 
 /// Seconds between two readings of a source's level.
 const HOP: f64 = 0.005;
-/// How fast the followed level falls after a peak, in seconds.
-const RELEASE: f64 = 0.05;
 /// A rise is measured over the loudest level in this many seconds before it: longer than the
 /// cycle of the lowest note (20 Hz), so a held note never rises.
 const LOOKBACK: f64 = 0.05;
@@ -216,9 +214,10 @@ impl SliceAnalysis {
         }
     }
     /// Finds the hits in a source: where its level rises clearly over the loudest it was in the
-    /// moment before. The level follows the peaks with a slow release, and a rise is measured
-    /// against the last `LOOKBACK` seconds, so the cycles of a low note or a decaying tail never
-    /// read as hits; only one hit is kept in `MIN_GAP`, and nothing near silence counts.
+    /// moment before. The level is the peak of each `HOP`, and a rise is measured against the
+    /// loudest of the last `LOOKBACK` seconds, which holds a whole cycle of the lowest note, so
+    /// the cycles of a low note or a decaying tail never read as hits; only one hit is kept in
+    /// `MIN_GAP`, and nothing near silence counts.
     pub fn new(source: &[f32], channels: usize, rate: f64) -> Self {
         let mut result = Self::default();
         let channels = channels.max(1);
@@ -227,14 +226,13 @@ impl SliceAnalysis {
             return result;
         }
         let hop = ((rate * HOP) as usize).max(1);
-        let release = (-1. / (rate * RELEASE)).exp();
-        let mut follower = 0f64;
+        let mut peak = 0f64;
         let mut levels = Vec::with_capacity(frames / hop + 1);
         for (i, frame) in source.chunks(channels).enumerate() {
-            let peak = frame.iter().filter(|v| v.is_finite()).fold(0f64, |p, v| p.max(f64::from(v.abs())));
-            follower = peak.max(follower * release);
+            peak = frame.iter().filter(|v| v.is_finite()).fold(peak, |p, v| p.max(f64::from(v.abs())));
             if (i + 1) % hop == 0 {
-                levels.push(decibels(follower));
+                levels.push(decibels(peak));
+                peak = 0.;
             }
         }
         let floor = levels.iter().copied().fold(f64::NEG_INFINITY, f64::max) + SILENCE;

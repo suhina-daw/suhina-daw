@@ -490,7 +490,8 @@ impl DeviceUi {
                         c.x.is_none()
                             && c.y.is_none()
                             && c.bounds[2] >= 40.
-                            && c.bounds[3] >= 32.
+                            // A compact panel's envelope under its values is 24 px tall.
+                            && c.bounds[3] >= 24.
                             && ids.iter().collect::<HashSet<_>>().len() == ids.len()
                             && ids.iter().enumerate().all(|(i, id)| {
                                 parameters.iter().any(|p| {

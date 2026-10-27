@@ -141,13 +141,15 @@ mod slice_tests {
     #[test]
     fn transient_manual_and_beat_maps_are_bounded() {
         use suhina_device_sdk::sampler::SliceAnalysis;
-        let source = [vec![0.; 50], vec![1.; 50], vec![0.; 50], vec![0.5; 50]].concat();
+        // A hit, then a quieter one after a short silence: both found, a reading before each.
+        let source = [vec![0.; 500], vec![1.; 500], vec![0.; 500], vec![0.5; 500]].concat();
         let analysis = SliceAnalysis::new(&source, 1, 1000.);
         let mut p: Vec<f64> = PARAMS.iter().map(|p| p.default).collect();
         p[59] = 1.;
-        let points = analysis.points(&p, 200, 1000., 120.);
-        assert!(points.contains(&0.25));
-        assert!(points.contains(&0.75));
+        let points = analysis.points(&p, 2000, 1000., 120.);
+        for hit in [0.25, 0.75] {
+            assert!(points.iter().any(|p| (p - hit).abs() < 0.005), "{hit} in {:?}", &points[..4]);
+        }
         p[60] = 3.;
         p[61] = 0.6;
         p[62] = 0.2;
