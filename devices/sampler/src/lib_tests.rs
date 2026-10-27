@@ -185,7 +185,7 @@ fn warp_controls_share_the_source_row_without_overlaps() {
         .collect();
     assert_eq!(controls.len(), 3);
     for c in &controls {
-        assert_eq!(c.bounds[1], 102.);
+        assert_eq!(c.bounds[1], 108.);
     }
     assert!(controls.windows(2).all(|w| w[0].bounds[0] + w[0].bounds[2] <= w[1].bounds[0]));
 }
@@ -281,7 +281,7 @@ fn playback_changes_stop_voices_but_reselecting_the_mode_does_not() {
 fn compact_panel_keeps_controls_reachable_on_its_pages() {
     let ui = panel();
     let slice_by = ui.controls.iter().find(|c| c.x.as_ref().is_some_and(|b| b.parameter == "slice_by")).unwrap();
-    assert_eq!(slice_by.bounds, [176., 102., 96., 18.]);
+    assert_eq!(slice_by.bounds, [270., 108., 92., 18.]);
     assert_eq!(ui.size, [900., 168.]);
     assert!(ui.size[1] + 32. <= 200.);
     assert_eq!(ui.viewport_size, Some(ui.size));
@@ -313,7 +313,6 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
                 || matches!(&c.widget, Some(Widget::Envelope { attack, decay, level, release }) if [Some(attack.as_str()),Some(decay.as_str()),Some(level.as_str()),release.as_deref()].contains(&Some(p.id)))), "{}", p.id);
     }
     assert!(!ui.controls.iter().any(|c| c.id == "grain_cloud"));
-    assert!(!ui.controls.iter().any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == "crossfade")));
     assert_eq!(
         ui.controls
             .iter()
@@ -339,7 +338,7 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
             let waveforms: Vec<_> =
                 controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
             assert_eq!(waveforms.len(), 1);
-            assert_eq!(waveforms[0].bounds, [64., 22., 836., 78.]);
+            assert_eq!(waveforms[0].bounds, [62., 22., 838., 82.]);
             assert_eq!(controls.iter().any(|c| c.id == "lfo_preview"), view == 2.);
             if view == 0. {
                 for id in ["gain", "pan", "filter", if mode == 2. { "slice_overlap" } else { "voice_mode" }] {

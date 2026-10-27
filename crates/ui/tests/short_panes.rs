@@ -497,7 +497,7 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
 /// lets the detail area be dragged up to its default height: the cap that keeps the area no
 /// taller than its panels never holds it under that height (PR #727, a tester's report).
 #[test]
-fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
+fn a_device_row_alone_is_open_at_full_height_or_closed() {
     let mut project = demo_project();
     let keys = project.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).expect("Keys has a channel");
     // Only a plug-in on the track, its editor not embedded: a short panel.
@@ -518,10 +518,10 @@ fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
     let bottom = detail_bottom(&h);
     let header = h.get_by_label("Track Keys").rect();
     click(&mut h, pos2(header.left() + 30.0, header.center().y));
-    // Down to a short area, then up past the default height.
+    // Down to a short area: the row stays whole, never cut to an in-between height.
     pull_to(&mut h, bottom - 80.0);
-    let shrunk = bottom - splitter(&h).bottom();
-    assert!((shrunk - 80.0).abs() < 2.0, "the device row can shrink: {shrunk}");
+    let kept = bottom - splitter(&h).bottom();
+    assert!((kept - 200.0).abs() < 1.5, "the device row keeps its full height: {kept}");
     pull_to(&mut h, bottom - 400.0);
     let height = bottom - splitter(&h).bottom();
     assert!((height - 200.0).abs() < 1.5, "the standalone device row stays at 200 px: {height}");

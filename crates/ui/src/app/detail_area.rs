@@ -324,9 +324,9 @@ impl App {
             )
         } else {
             self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
-            // A standalone device row has a fixed budget; panels fit inside it. Keep the
-            // clip editor's remembered height separate, including its Devices tab.
-            let height = if resizable { self.detail_height } else { self.device_row_height.min(area.height()) };
+            // A device row alone is open at its full height or closed, never in between, where it
+            // would cut its panels off. The clip editor, its Devices tab too, keeps its height.
+            let height = if resizable { self.detail_height } else { DETAIL_HEIGHT.min(area.height()) };
             let y = if pulled {
                 // Above it only the edited track, or nothing.
                 let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
@@ -368,9 +368,7 @@ impl App {
                         // drag going back up opens it again (`collapsed_splitter`).
                         self.detail_max = false;
                         self.hide_editor();
-                    } else if !resizable {
-                        self.device_row_height = height.clamp(least, DETAIL_HEIGHT);
-                    } else if !self.detail_max {
+                    } else if resizable && !self.detail_max {
                         self.detail_height = height.max(least);
                     }
                 }
@@ -559,7 +557,6 @@ impl App {
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
-        self.detail_cap = picked.inner.content_height.map(|h| h as f32);
         if let Some((track, at)) = picked.inner.clicked {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
             self.pick_device(track, at, add, run);
@@ -611,7 +608,6 @@ impl App {
         if response.double_clicked() {
             self.show_editor();
             self.detail_height = DETAIL_HEIGHT;
-            self.device_row_height = DETAIL_HEIGHT;
             self.detail_width = detail_view::STACK_WIDTH;
         }
         if response.dragged_by(egui::PointerButton::Primary) {
@@ -621,7 +617,6 @@ impl App {
             if height >= least / 2.0 {
                 self.show_editor();
                 self.detail_height = height.max(least);
-                self.device_row_height = height.clamp(80., DETAIL_HEIGHT);
             }
         } else {
             self.detail_drag = None;

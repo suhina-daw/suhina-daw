@@ -229,6 +229,28 @@ fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
     painter.line_segment(line, Stroke::new(2., sample_marker_color()));
 }
 
+/// The height of the time ruler under a sample's waveform.
+const RULER: f32 = 15.;
+
+/// A time in a source as minutes, seconds and, when it has them, milliseconds: `0:00`,
+/// `0:00.480`, `1:02.500`.
+fn clock(seconds: f64) -> String {
+    let millis = (seconds.max(0.) * 1000.).round().min(f64::from(u32::MAX)) as u32;
+    let (minutes, rest, fraction) = (millis / 60_000, millis / 1000 % 60, millis % 1000);
+    if fraction == 0 { format!("{minutes}:{rest:02}") } else { format!("{minutes}:{rest:02}.{fraction:03}") }
+}
+
+/// Plays a slice's note for a moment, as a click on the slice does.
+fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
+    let id = egui::Id::new("sample-audition");
+    if let Some((track, key, _)) = ui.ctx().data(|d| d.get_temp::<(TrackId, u8, f64)>(id)) {
+        actions.push(Action::new("preview.noteOff", json!({"track":track.0,"key":key})));
+    }
+    actions.push(Action::new("preview.noteOn", json!({"track":track.0,"key":key,"velocity":100})));
+    let until = ui.input(|i| i.time) + 0.25;
+    ui.ctx().data_mut(|d| d.insert_temp(id, (track, key, until)));
+}
+
 fn sample_waveform(
     ui: &mut egui::Ui,
     bounds: Rect,
@@ -262,9 +284,8 @@ fn sample_waveform(
             bounds.max - Vec2::new(8., if inline_recording { 26. } else { 8. }),
         )
     } else {
-        let ruler_height = if bounds.height() < 90. { 16. } else { 34. };
-        let footer = if bounds.height() < 90. { 18. } else { 24. };
-        Rect::from_min_max(bounds.min + Vec2::new(8., ruler_height), bounds.max - Vec2::new(8., footer))
+        // The waveform fills the control; its time ruler is a strip along the bottom.
+        Rect::from_min_max(bounds.min + Vec2::new(6., 4.), bounds.max - Vec2::new(6., RULER))
     };
     let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
@@ -403,6 +424,13 @@ fn sample_waveform(
         manual_points.iter().filter(|point| **point > active_start && **point <= selection_start).count();
     let selected_key =
         (value("root") as usize).checked_add(selected_index).filter(|key| *key <= 127).map(|key| key as u8);
+    // A click on a slice picks it and plays it.
+    if slicing
+        && response.clicked()
+        && let Some(key) = selected_key
+    {
+        audition(ui, actions, track, key);
+    }
     let hovered = ui.input(|i| i.pointer.hover_pos()).filter(|p| field.intersect(visible).contains(*p));
     if let Some(pointer) = hovered {
         let (zoom, wheel, shift) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta(), i.modifiers.shift));
@@ -623,7 +651,7 @@ fn sample_waveform(
     }
     if !compact {
         let ruler =
-            Rect::from_min_max(Pos2::new(field.left(), bounds.top()), Pos2::new(field.right(), field.top() - 8.));
+            Rect::from_min_max(Pos2::new(field.left(), field.bottom()), Pos2::new(field.right(), bounds.bottom()));
         let ruler_response =
             ui.interact(ruler, source_id.with("ruler"), egui::Sense::drag()).on_hover_cursor(egui::CursorIcon::ZoomIn);
         let ruler_id = source_id.with("ruler-drag");
@@ -682,33 +710,12 @@ fn sample_waveform(
                 Stroke::new(3., colors.accent),
             );
         }
-        if !compact && let Some(key) = selected_key {
-            let caption =
-                format!("Slice {} · {} · MIDI {key}", selected_index + 1, crate::detail::piano_roll::key_name(key));
-            painter.text(
-                Pos2::new(field.left(), bounds.bottom() - 9.),
-                egui::Align2::LEFT_CENTER,
-                caption,
-                crate::kit::theme::ui_font(11.),
-                colors.text_primary,
-            );
-            let button =
-                Rect::from_min_size(Pos2::new(field.right() - 70., bounds.bottom() - 18.), Vec2::new(70., 18.));
-            if ui.put(button, egui::Button::new("Audition")).clicked() {
-                let id = egui::Id::new("sample-audition");
-                if let Some((track, key, _)) = ui.ctx().data(|d| d.get_temp::<(TrackId, u8, f64)>(id)) {
-                    actions.push(Action::new("preview.noteOff", json!({"track":track.0,"key":key})));
-                }
-                actions.push(Action::new("preview.noteOn", json!({"track":track.0,"key":key,"velocity":100})));
-                let until = ui.input(|i| i.time) + 0.25;
-                ui.ctx().data_mut(|d| d.insert_temp(id, (track, key, until)));
-            }
-        }
     }
     if !compact {
-        let ruler = Rect::from_min_max(bounds.min, Pos2::new(bounds.right(), field.top() - 6.));
+        let ruler = Rect::from_min_max(Pos2::new(bounds.left(), field.bottom()), bounds.max);
         painter.rect_filled(ruler, 0., colors.text_primary.gamma_multiply(0.04));
     }
+    let label_y = bounds.bottom() - RULER / 2.;
     if let Some(axis) = axis.filter(|_| division > 0.) {
         // Bound work by the available screen width, even for long sources at high BPM.
         let mut step = division;
@@ -729,7 +736,7 @@ fn sample_waveform(
                 [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
                 Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
             );
-            if !compact && x >= last_label + 140. && x <= field.right() - 120. {
+            if !compact && x >= last_label + 70. && x <= field.right() - 40. {
                 last_label = x;
                 let numerator = f64::from(value("source_numerator")).round().clamp(1., 16.);
                 let denominator = [2., 4., 8., 16.].get(value("source_denominator") as usize).copied().unwrap_or(4.);
@@ -737,10 +744,10 @@ fn sample_waveform(
                 let bar = (source_beat / numerator).floor() as i64 + 1;
                 let within = source_beat.rem_euclid(numerator) + 1.;
                 painter.text(
-                    Pos2::new(x, bounds.top() + 8.),
+                    Pos2::new(x + 2., label_y),
                     egui::Align2::LEFT_CENTER,
-                    format!("{bar}.{within:.2}"),
-                    crate::kit::theme::ui_font(12.),
+                    if within.fract() == 0. { format!("{bar}.{within:.0}") } else { format!("{bar}.{within:.2}") },
+                    crate::kit::theme::ui_font(10.),
                     colors.text_primary,
                 );
             }
@@ -770,13 +777,13 @@ fn sample_waveform(
                     Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
                 );
             }
-            if !compact && x >= last_label + 100. && x <= field.right() - 75. {
+            if !compact && x >= last_label + 90. && x <= field.right() - 50. {
                 last_label = x;
                 painter.text(
-                    Pos2::new(view.x(point, field), bounds.top() + 8.),
+                    Pos2::new(view.x(point, field) + 2., label_y),
                     egui::Align2::LEFT_CENTER,
-                    format!("{seconds:.3}s"),
-                    crate::kit::theme::ui_font(12.),
+                    clock(seconds),
+                    crate::kit::theme::ui_font(10.),
                     colors.text_primary,
                 );
             }
@@ -888,7 +895,7 @@ fn sample_waveform(
         } else {
             field.top() + 6. + offset.min(field.height() * 0.5)
         };
-        let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(14., if compact { 12. } else { 18. }));
+        let marker = Rect::from_center_size(Pos2::new(x, y), Vec2::new(12., if compact { 12. } else { 13. }));
         sample_marker(&painter, x, y, field.bottom());
         painter.rect_filled(marker, 0., sample_marker_color());
         painter.text(
@@ -1579,16 +1586,14 @@ fn paint_control(
         && matches!(control.widget, Some(Widget::Button { .. }))
         && matches!(control.gesture, UiGesture::Set(_) | UiGesture::Tab(_))
     {
-        if control.x.as_ref().is_some_and(|binding| binding.parameter == "mode")
-            && let Some(Widget::Button { label, .. }) = &control.widget
-        {
-            let accent = color(palette.accent);
-            painter.rect_filled(bounds.shrink(1.), 3., accent);
-            // Choose readable ink from the actual theme accent, including light themes.
-            let luminance =
-                0.2126 * f32::from(accent.r()) + 0.7152 * f32::from(accent.g()) + 0.0722 * f32::from(accent.b());
-            let ink = if luminance > 140. { Color32::BLACK } else { Color32::WHITE };
-            painter.text(bounds.center(), egui::Align2::CENTER_CENTER, label, crate::kit::theme::ui_font(12.), ink);
+        // The sampler's page tabs: the open one outlined, as its mode buttons are.
+        if control.x.as_ref().is_some_and(|binding| binding.parameter == "panel_view") {
+            painter.rect_stroke(
+                bounds.shrink(1.),
+                3.,
+                Stroke::new(1.5, color(palette.accent)),
+                egui::StrokeKind::Inside,
+            );
             return;
         }
         let mark = Rect::from_min_max(
@@ -1599,7 +1604,8 @@ fn paint_control(
     }
 }
 
-/// Native mode glyphs share the button's themed ink, hit target and accessible label.
+/// The sampler's mode buttons: a caption on the control's face; the chosen one outlined in the
+/// accent, with the accent's ink.
 fn paint_sample_mode(
     painter: &egui::Painter,
     bounds: Rect,
@@ -1608,53 +1614,18 @@ fn paint_sample_mode(
     state: crate::kit::skin::State,
     palette: WidgetPalette,
 ) {
-    let radius = crate::kit::style_class::radius(2.);
-    let fill = crate::kit::style_class::background(color(if selected { palette.accent } else { palette.control }));
-    let ink = crate::kit::style_class::foreground(color(if selected { accent_text(fill) } else { palette.text }));
+    let radius = crate::kit::style_class::radius(3.);
+    let fill = crate::kit::style_class::background(color(palette.control));
     if !crate::kit::skin::button(painter, bounds, state, fill, radius) {
-        painter.rect_filled(bounds.shrink(1.), radius, fill);
+        painter.rect_filled(bounds.shrink(1.), radius, if selected { fill.gamma_multiply(1.4) } else { fill });
     }
     crate::kit::native_css::background_rounded(painter, bounds, radius);
-    let center = Pos2::new(bounds.center().x, bounds.top() + 15.);
-    let stroke = Stroke::new(1.5, ink);
-    match label {
-        "Slice" => {
-            for (x, h) in [(-8., 6.), (-2., 9.), (5., 4.)] {
-                painter.line_segment([center + Vec2::new(x, -h), center + Vec2::new(x, h)], stroke);
-                painter.line_segment(
-                    [center + Vec2::new(x + 3., -9.), center + Vec2::new(x + 3., 9.)],
-                    Stroke::new(1., ink.gamma_multiply(0.5)),
-                );
-            }
-        }
-        "Grain" => {
-            for (x, y) in [(-7., -4.), (0., -7.), (7., -2.), (-3., 2.), (5., 6.), (-8., 7.)] {
-                painter.circle_filled(center + Vec2::new(x, y), 1.8, ink);
-            }
-        }
-        _ => {
-            let points = (0..=20)
-                .map(|i| {
-                    let x = i as f32;
-                    center + Vec2::new(x - 10., (x * std::f32::consts::TAU / 20.).sin() * 6.)
-                })
-                .collect();
-            painter.add(egui::Shape::line(points, stroke));
-        }
-    }
+    let accent = color(palette.accent);
     if selected {
-        painter.line_segment(
-            [bounds.left_top() + Vec2::new(2., 4.), bounds.left_bottom() + Vec2::new(2., -4.)],
-            Stroke::new(2., ink),
-        );
+        painter.rect_stroke(bounds.shrink(1.), radius, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
     }
-    painter.text(
-        Pos2::new(bounds.center().x, bounds.bottom() - 11.),
-        egui::Align2::CENTER_CENTER,
-        label,
-        crate::kit::theme::ui_font(11.),
-        ink,
-    );
+    let ink = crate::kit::style_class::foreground(if selected { accent } else { color(palette.text) });
+    painter.text(bounds.center(), egui::Align2::CENTER_CENTER, label, crate::kit::theme::ui_font(12.), ink);
 }
 
 /// The native sampler gives up waveform height before its fixed-size controls scroll.

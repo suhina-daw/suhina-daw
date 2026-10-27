@@ -98,34 +98,6 @@ fn button(ui: &mut DeviceUi, id: &str, caption: &str, bounds: [f32; 4], gesture:
         c.tooltip = caption.into();
     }
 }
-fn adsr(ui: &mut DeviceUi, prefix: &str, title: &str, x: f32) {
-    let ids = if prefix == "AMP" {
-        ["attack", "decay", "sustain", "release"]
-    } else {
-        ["filter_attack", "filter_decay", "filter_sustain", "filter_release"]
-    };
-    label(ui, title, [x + 8., 86., 280., 14.], Some(1));
-    for (i, caption) in ["A", "D", "S", "R"].iter().enumerate() {
-        value(ui, ids[i], caption, [x + i as f32 * 72., 104., 72., 18.], Some(1));
-    }
-    control(
-        ui,
-        &format!("{prefix}_envelope"),
-        Widget::Envelope {
-            attack: ids[0].into(),
-            decay: ids[1].into(),
-            level: ids[2].into(),
-            release: Some(ids[3].into()),
-        },
-        [x + 8., 126., 284., 40.],
-        UiGesture::Position,
-        Some(1),
-    );
-    if let Some(c) = ui.controls.last_mut() {
-        c.id = format!("{prefix}_envelope");
-        c.x = None;
-    }
-}
 mod panel;
 pub fn panel() -> DeviceUi {
     panel::panel()

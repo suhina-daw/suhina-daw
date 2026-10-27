@@ -89,15 +89,17 @@ finish during the span.
 
 The SDK panel uses a fixed 900 by 168 logical-pixel canvas, leaving the host's
 header and margins inside the 200-pixel device row. Its height never depends on
-the selected page. Sample, Slice and Grain form a vertical selector with distinct
-wave, slice-boundary and grain-dot icons above their captions. Selected buttons
-use themed contrast ink and a side mark. Grid, Snap and First beat occupy the top
-row beside Input and Record; Sample, LFO, Envelopes and More are at the upper right. The
-waveform has identical bounds in every mode. Stereo channels have separate lanes;
-Start–End stays bright and the source outside it is dim. The selected slice has a
-background highlight, automatic boundaries a thin line and cap, pinned boundaries
-a thick line and round cap, and voice heads a separate text-colour line. Marker
-colours come from the theme. The filename appears once in the device header.
+the selected page. Sample, Slice and Grain are text buttons in a column left of the
+waveform; the chosen one is outlined in the accent, with accent text. The top row has Input
+and Record on the left and the pages Sample, LFO, Envelopes and More on the right, the open
+one outlined. The waveform fills the space right of the mode buttons with identical bounds in
+every mode, its time ruler a 15-pixel strip along its bottom (`0:00`, `0:00.480`, or bars and
+beats from the source tempo). Stereo channels have separate lanes; Start–End stays bright and
+the source outside it is dim. The selected slice has a background highlight, automatic
+boundaries a thin line and cap, pinned boundaries a thick line and round cap, and voice heads a
+separate text-colour line. Clicking a slice selects it and plays its note for a moment; its
+number and note are in the waveform's context menu. Marker colours come from the theme. The
+filename appears once in the device header.
 
 LFO and Envelopes at the upper right are mutually exclusive tabs. Clicking the
 active tab again returns to normal controls. Both keep the full-width waveform
@@ -109,22 +111,26 @@ independent pitch, filter, volume and pan depths. Dragging the preview adjusts
 rate horizontally; destination fields edit their own depth. The preview shows
 the oscillator independently of destination depths. Switching tabs does not change sound parameters.
 
-The source row groups playback/note release, slicing method and its contextual
-sensitivity/division/region count, voice overlap, Warp and source tempo. The bottom
-strip has filter type/slope, cutoff and resonance knobs, a compact LFO shape/rate
-section, fade-in/out, pitch, velocity, volume and pan knobs, Reverse and Retrigger.
-LFO keeps the filter and source row while replacing those latter knobs with a
-waveform and four depth fields. Its bordered Hz/time value accepts typing as well
-as dragging, and beat modes offer the musical division menu.
-Envelopes replaces both lower rows with the three envelope editors.
-More retains cents, root, key/velocity ranges, glide, numeric source/loop bounds,
-grain density/jitter/spread and Freeze. Grain position/scan/size remain in its source row.
+The source row, under the waveform, has captioned controls for the mode: Slice has Note end
+(Play to end or Release on key up), Slice by and its Sensitivity, Division or Regions; Sample has
+Playback, Start and End; Grain has Position, Scan and Size. Every mode then has Voices (Mono,
+Poly or, for slices, Through) and their number, Warp, its mode and the source tempo. The sound
+row under it has Filter (type and slope), Cutoff and Res knobs, the LFO's shape, rate unit and
+rate, knobs for Fade in, Fade out, Pitch, Vel, Volume and Pan, and Reverse and Retrigger.
+LFO keeps the filter and the LFO's rate, and puts the LFO's drawn shape and its pitch, filter,
+volume and pan depths in place of the knobs. Its bordered Hz/time value accepts typing as well
+as dragging, and beat modes offer the musical division menu. Envelopes keeps the source row and
+puts the Amplitude and Filter envelopes (A, D, S, R) and the Pitch envelope (A, D, Amt) side by
+side in the sound row's place, each with its values on a line and its graph under them. More
+replaces both rows with cents, root, key and velocity ranges, glide, loop bounds and fade, grain
+density, jitter and spread, the filter envelope's amount and velocity and key tracking, First
+beat, the editing grid and its Snap, and Freeze.
 
 All controls retain SDK bindings and dispatch device.setParam. The panel has no
 fixed colour stylesheet: typed controls inherit the active theme and user CSS.
 Control identities use parameter names (with suffixes for repeated controls),
 bounded by the existing device-panel scope. Knobs use the theme's artwork;
-mode icons share the scoped button foreground/accent, and waveform ink, grid and
+mode buttons share the scoped button foreground/accent, and waveform ink, grid and
 background use the waveform scope. Changing the page never changes sound values.
 
 The Sampler is a built-in device: a project stores it by its id with its parameter values by id,
@@ -179,10 +185,11 @@ is visible only while sample recording is active.
 
 ## Panel and voice controls
 
-Sample/Slice/Grain buttons and icons sit at the left. Editor tabs sit at the upper right.
+Sample/Slice/Grain buttons sit at the left. Editor tabs sit at the upper right.
 The waveform and recording controls remain visible when the editor is open.
-Amplitude includes velocity-to-volume; filter includes envelope, velocity and
-key amounts. Tuning and note range are under More; gain and pan are knobs on the normal page.
+Velocity-to-volume is the Vel knob; the filter envelope's amount and its velocity and key
+amounts are under More. Tuning and note range are under More; gain and pan are knobs on the
+normal page.
 Glide is under More and affects Mono playback.
 Playback uses a Gate/One shot/Loop menu plus Reverse and Retrigger. Retrigger is
 on by default: a reused voice starts from the sample region's beginning. With it
@@ -300,8 +307,8 @@ also offers numerical editing, deletion and Regenerate slices. Regeneration clea
 pins and suppressions for the current method in one undo step. Pins survive method
 changes, sensitivity changes and trimming. Transient suppressions identify source
 frames; Beat and Region suppressions identify their method and grid ordinal.
-The selected slice displays its number and MIDI note and offers Audition through
-the shared preview-note commands; note release is scheduled by the host even when
+Clicking a slice selects it and auditions it through the shared preview-note commands; its
+number and MIDI note are in the context menu; note release is scheduled by the host even when
 the panel is hidden. Keyboard playing uses the common typing-keyboard note route.
 
 Ctrl+wheel zooms around the pointer; horizontal wheel, Shift+wheel and middle-button
