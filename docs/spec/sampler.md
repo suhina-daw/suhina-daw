@@ -288,12 +288,16 @@ Beat uses Source BPM and First beat rather than transport tempo; its whole-bar
 choice uses the source time signature. Region boundaries divide the whole source,
 so trimming hides boundaries without changing their identities.
 
-Transient finds hits by level, not by single peaks. The level is the source's peak in each
-5 ms; a hit is a rise in decibels over the loudest level of the 50 ms before it, so a low note's cycles (down to 20 Hz) and a decaying tail never
-count. Only the strongest rise within 50 ms is kept, none closer than 50 ms to Start or End,
-and none more than 45 dB under the source's loudest level. A boundary sits one reading
-before the rise begins. Sensitivity sets the rise needed: 18 dB at 0, 5.6 dB at 0.5 and
-1.5 dB at 1. A single held or decaying note is one slice at any sensitivity.
+Transient finds hits by level in four bands (under 200 Hz, 200 to 1200 Hz, 1200 to 5000 Hz and
+above), so a new chord or a hat over a held bass counts as well as a louder hit. A band's level
+is its peak in each 5 ms; its rise is in decibels over its loudest level of the 50 ms before, so
+a low note's cycles (down to 20 Hz) and a decaying tail never count, and a hit's strength is the
+sum of its bands' rises. Only the strongest hit within 50 ms is kept, none closer than 50 ms to
+Start or End, and none more than 45 dB under the source's loudest level. A boundary sits one
+reading before the rise begins. Sensitivity sets the strength needed: 40 dB at 0, 13.75 dB at
+0.5 and 5 dB at 1; at 1, a dense 93-second loop gave about as many boundaries as another
+sampler's analysis at full sensitivity, three quarters of them within 20 ms of its own.
+A single held or decaying note is one slice at any sensitivity.
 
 Notes from Root upward trigger successive slices at original pitch, with tuning
 still applied. Notes outside the map are silent. Slice voices offers Mono, Poly

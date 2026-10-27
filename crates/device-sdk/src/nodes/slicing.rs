@@ -145,6 +145,19 @@ const HOP: f64 = 0.005;
 const LOOKBACK: f64 = 0.05;
 /// The shortest time between two hits, and from a hit to the source region's edges.
 const MIN_GAP: f64 = 0.05;
+/// The bands a source's hits are looked for in, low and high edge in Hz (0: none).
+const BANDS: [(f64, f64); 4] = [(0., 200.), (200., 1200.), (1200., 5000.), (5000., 0.)];
+
+/// A band's filter state and its peak in the current reading.
+#[derive(Default, Clone)]
+struct Band {
+    high_pass: f64,
+    low_pass: f64,
+    high: f64,
+    low: f64,
+    peak: f64,
+}
+
 /// Levels this many decibels under the source's loudest are silence: no hit starts there.
 const SILENCE: f64 = -45.;
 
@@ -214,10 +227,12 @@ impl SliceAnalysis {
         }
     }
     /// Finds the hits in a source: where its level rises clearly over the loudest it was in the
-    /// moment before. The level is the peak of each `HOP`, and a rise is measured against the
-    /// loudest of the last `LOOKBACK` seconds, which holds a whole cycle of the lowest note, so
-    /// the cycles of a low note or a decaying tail never read as hits; only one hit is kept in
-    /// `MIN_GAP`, and nothing near silence counts.
+    /// moment before, in any of four bands (`BANDS`), so a new chord or a hat over a held bass
+    /// counts as well as a louder hit. A band's level is its peak in each `HOP`, and a rise is
+    /// measured against the loudest of the last `LOOKBACK` seconds, which holds a whole cycle of
+    /// the lowest note, so the cycles of a low note or a decaying tail never read as hits. A hit's
+    /// strength is the sum of its bands' rises; only one hit is kept in `MIN_GAP`, and nothing
+    /// near silence counts.
     pub fn new(source: &[f32], channels: usize, rate: f64) -> Self {
         let mut result = Self::default();
         let channels = channels.max(1);
@@ -226,27 +241,49 @@ impl SliceAnalysis {
             return result;
         }
         let hop = ((rate * HOP) as usize).max(1);
-        let mut peak = 0f64;
-        let mut levels = Vec::with_capacity(frames / hop + 1);
+        let pole = |hz: f64| if hz > 0. { (-std::f64::consts::TAU * hz / rate).exp() } else { 0. };
+        // Each band: a one-pole high-pass at its low edge and low-pass at its high edge.
+        let mut bands: Vec<Band> = BANDS
+            .iter()
+            .map(|&(low, high)| Band { high_pass: pole(low), low_pass: pole(high), ..Band::default() })
+            .collect();
+        let mut levels: Vec<Vec<f64>> = vec![Vec::with_capacity(frames / hop + 1); BANDS.len()];
+        let mut previous = 0f64;
         for (i, frame) in source.chunks(channels).enumerate() {
-            peak = frame.iter().filter(|v| v.is_finite()).fold(peak, |p, v| p.max(f64::from(v.abs())));
+            let x = frame.iter().filter(|v| v.is_finite()).map(|v| f64::from(*v)).sum::<f64>() / channels as f64;
+            for band in &mut bands {
+                let high = if band.high_pass > 0. { x - previous + band.high_pass * band.high } else { x };
+                band.high = high;
+                band.low =
+                    if band.low_pass > 0. { (1. - band.low_pass) * high + band.low_pass * band.low } else { high };
+                band.peak = band.peak.max(band.low.abs());
+            }
+            previous = x;
             if (i + 1) % hop == 0 {
-                levels.push(decibels(peak));
-                peak = 0.;
+                for (band, level) in bands.iter_mut().zip(&mut levels) {
+                    level.push(decibels(band.peak));
+                    band.peak = 0.;
+                }
             }
         }
-        let floor = levels.iter().copied().fold(f64::NEG_INFINITY, f64::max) + SILENCE;
+        let floor = levels.iter().flatten().copied().fold(f64::NEG_INFINITY, f64::max) + SILENCE;
         let lookback = ((rate * LOOKBACK) as usize / hop).max(1);
-        let rises: Vec<f64> = (0..levels.len())
+        let count = levels.first().map_or(0, Vec::len);
+        let rises: Vec<f64> = (0..count)
             .map(|n| {
-                let now = levels.get(n).copied().unwrap_or(f64::NEG_INFINITY);
-                let before = levels
-                    .get(n.saturating_sub(lookback)..n)
-                    .unwrap_or_default()
+                levels
                     .iter()
-                    .copied()
-                    .fold(f64::NEG_INFINITY, f64::max);
-                if n == 0 || now < floor { 0. } else { (now - before.max(floor + SILENCE)).max(0.) }
+                    .map(|band| {
+                        let now = band.get(n).copied().unwrap_or(f64::NEG_INFINITY);
+                        let before = band
+                            .get(n.saturating_sub(lookback)..n)
+                            .unwrap_or_default()
+                            .iter()
+                            .copied()
+                            .fold(f64::NEG_INFINITY, f64::max);
+                        if n == 0 || now < floor { 0. } else { (now - before.max(floor + SILENCE)).max(0.) }
+                    })
+                    .sum()
             })
             .collect();
         let gap = ((rate * MIN_GAP) as usize / hop).max(1);
@@ -290,8 +327,9 @@ impl SliceAnalysis {
         };
         match value(60, 0.) as u8 {
             0 => {
-                // Sensitivity sets how many decibels a hit must rise: 18 at none, 1.5 at full.
-                let needed = 1.5 + 16.5 * (1. - sensitivity).powi(2);
+                // Sensitivity sets how many decibels a hit's bands must rise together: 40 at none,
+                // 13.75 at half, 5 at full.
+                let needed = 5. + 35. * (1. - sensitivity).powi(2);
                 let near = MIN_GAP * rate / frames.max(1) as f64;
                 for &(point, rise) in &self.attacks {
                     if rise >= needed && point - start >= near && end - point >= near {

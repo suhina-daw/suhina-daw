@@ -415,8 +415,7 @@ fn sample_waveform(
     let selection_start = manual_points
         .iter()
         .copied()
-        .filter(|point| *point > active_start && *point <= selected)
-        .next_back()
+        .rfind(|point| *point > active_start && *point <= selected)
         .unwrap_or(active_start);
     let selection_end =
         manual_points.iter().copied().find(|point| *point > selection_start).unwrap_or(active_end).min(active_end);
@@ -748,7 +747,7 @@ fn sample_waveform(
                     egui::Align2::LEFT_CENTER,
                     // Bar, beat and, between beats, the sixteenth: 5, 5.3, 5.3.2.
                     match (within.floor(), ((within.fract() * 4.).round() as i64 + 1).min(4)) {
-                        (beat, 1) if beat == 1. => format!("{bar}"),
+                        (1., 1) => format!("{bar}"),
                         (beat, 1) => format!("{bar}.{beat}"),
                         (beat, sixteenth) => format!("{bar}.{beat}.{sixteenth}"),
                     },
