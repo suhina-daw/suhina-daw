@@ -89,8 +89,10 @@ finish during the span.
 
 The SDK panel uses a fixed 900 by 168 logical-pixel canvas, leaving the host's
 header and margins inside the 200-pixel device row. Its height never depends on
-the selected page. Sample, Slice and Grain are text buttons in a column left of the
-waveform; the chosen one is outlined in the accent, with accent text. The top row has Input
+the selected page. Sample, Slice and Grain are buttons in a column left of the
+waveform, each a drawn glyph over its caption (a wave between two bars, a strip cut in three,
+scattered grains); the chosen one has a lighter face and its glyph and caption in the accent,
+the others are in a dimmer text colour. The top row has Input
 and Record on the left and the pages Sample, LFO, Envelopes and More on the right, the open
 one outlined. The waveform fills the space right of the mode buttons with identical bounds in
 every mode, its time ruler a 15-pixel strip along its bottom (`0:00`, `0:00.480`, or bars and
@@ -185,7 +187,7 @@ is visible only while sample recording is active.
 
 ## Panel and voice controls
 
-Sample/Slice/Grain buttons sit at the left. Editor tabs sit at the upper right.
+Sample/Slice/Grain buttons and their glyphs sit at the left. Editor tabs sit at the upper right.
 The waveform and recording controls remain visible when the editor is open.
 Velocity-to-volume is the Vel knob; the filter envelope's amount and its velocity and key
 amounts are under More. Tuning and note range are under More; gain and pan are knobs on the

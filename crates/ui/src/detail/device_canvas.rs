@@ -1604,8 +1604,8 @@ fn paint_control(
     }
 }
 
-/// The sampler's mode buttons: a caption on the control's face; the chosen one outlined in the
-/// accent, with the accent's ink.
+/// The sampler's mode buttons: a drawn glyph over the caption, both in the accent on a lighter
+/// face for the chosen mode, in the dimmer text colour for the others.
 fn paint_sample_mode(
     painter: &egui::Painter,
     bounds: Rect,
@@ -1614,18 +1614,65 @@ fn paint_sample_mode(
     state: crate::kit::skin::State,
     palette: WidgetPalette,
 ) {
-    let radius = crate::kit::style_class::radius(3.);
-    let fill = crate::kit::style_class::background(color(palette.control));
+    let radius = crate::kit::style_class::radius(2.);
+    let base = color(palette.control);
+    let fill = crate::kit::style_class::background(if selected { base.gamma_multiply(1.35) } else { base });
     if !crate::kit::skin::button(painter, bounds, state, fill, radius) {
-        painter.rect_filled(bounds.shrink(1.), radius, if selected { fill.gamma_multiply(1.4) } else { fill });
+        painter.rect_filled(bounds.shrink(0.5), radius, fill);
     }
     crate::kit::native_css::background_rounded(painter, bounds, radius);
-    let accent = color(palette.accent);
-    if selected {
-        painter.rect_stroke(bounds.shrink(1.), radius, Stroke::new(1.5, accent), egui::StrokeKind::Inside);
+    let ink = crate::kit::style_class::foreground(if selected {
+        color(palette.accent)
+    } else {
+        color(palette.text).gamma_multiply(0.62)
+    });
+    let center = Pos2::new(bounds.center().x, bounds.top() + bounds.height() * 0.36);
+    let stroke = Stroke::new(1.8, ink);
+    match label {
+        // Three cuts across a strip: the source in pieces.
+        "Slice" => {
+            painter.rect_stroke(
+                Rect::from_center_size(center, Vec2::new(5., 16.)),
+                1.,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+            for side in [-1., 1.] {
+                painter.rect_stroke(
+                    Rect::from_center_size(center + Vec2::new(side * 9., 0.), Vec2::new(5., 6.)),
+                    1.,
+                    stroke,
+                    egui::StrokeKind::Middle,
+                );
+            }
+        }
+        // Scattered grains.
+        "Grain" => {
+            for (x, y) in [(-8., -4.), (-1., -7.), (7., -3.), (-4., 3.), (4., 5.), (10., 6.), (-10., 6.)] {
+                painter.circle_filled(center + Vec2::new(x, y), 1.9, ink);
+            }
+        }
+        // A cycle of a wave between two bars: the whole sample.
+        _ => {
+            for side in [-1., 1.] {
+                painter.line_segment([center + Vec2::new(side * 11., -8.), center + Vec2::new(side * 11., 8.)], stroke);
+            }
+            let points = (0..=24)
+                .map(|i| {
+                    let t = i as f32 / 24.;
+                    center + Vec2::new(t * 16. - 8., -(t * std::f32::consts::TAU).sin() * 6.)
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, stroke));
+        }
     }
-    let ink = crate::kit::style_class::foreground(if selected { accent } else { color(palette.text) });
-    painter.text(bounds.center(), egui::Align2::CENTER_CENTER, label, crate::kit::theme::ui_font(12.), ink);
+    painter.text(
+        Pos2::new(bounds.center().x, bounds.top() + bounds.height() * 0.76),
+        egui::Align2::CENTER_CENTER,
+        label,
+        crate::kit::theme::ui_font(12.),
+        ink,
+    );
 }
 
 /// The native sampler gives up waveform height before its fixed-size controls scroll.
