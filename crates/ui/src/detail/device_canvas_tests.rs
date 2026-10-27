@@ -4,6 +4,56 @@
 use super::*;
 
 #[test]
+fn sampler_mode_icons_have_distinct_geometry_and_keep_their_captions() {
+    let context = egui::Context::default();
+    for label in ["Sample", "Slice", "Grain"] {
+        let output = context.run_ui(Default::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            paint_sample_mode(
+                ui.painter(),
+                Rect::from_min_size(Pos2::new(10., 10.), Vec2::new(60., 46.)),
+                label,
+                true,
+                crate::kit::skin::State::Normal,
+                widget_palette(),
+            );
+        });
+        assert!(output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == label)));
+        match label {
+            "Sample" => {
+                assert!(output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Path(p) if p.points.len() == 21)))
+            }
+            "Slice" => assert!(
+                output.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::LineSegment { .. })).count() >= 6
+            ),
+            _ => assert_eq!(output.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Circle(_))).count(), 6),
+        }
+    }
+}
+
+#[test]
+fn sample_zoom_keeps_the_source_point_under_the_pointer() {
+    let field = Rect::from_min_size(Pos2::new(70., 24.), Vec2::new(832., 110.));
+    let view = SampleView { start: 0.2, span: 0.5 };
+    let anchor = field.left() + field.width() * 0.7;
+    let zoomed = view.zoomed(anchor, 2., field, 48000);
+    assert!((view.point(anchor, field) - zoomed.point(anchor, field)).abs() < 1e-7);
+    assert_eq!(zoomed.span, 0.25);
+    assert_eq!(zoomed.zoomed(anchor, 0., field, 48000), zoomed);
+    assert_eq!(zoomed.zoomed(anchor, f32::NAN, field, 48000), zoomed);
+}
+
+#[test]
+fn sample_pan_and_zoom_stay_inside_the_file() {
+    let field = Rect::from_min_size(Pos2::ZERO, Vec2::new(800., 110.));
+    let view = SampleView { start: 0.25, span: 0.5 };
+    assert_eq!(view.panned(1e6, field).start, 0.);
+    assert_eq!(view.panned(-1e6, field).start, 0.5);
+    assert_eq!(view.zoomed(400., 0.01, field, 48000), SampleView::default());
+    assert_eq!(view.zoomed(400., 1e9, field, 1), SampleView::default());
+}
+
+#[test]
 fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispatch() {
     use crate::kit::{control_layout::Placement, skin};
     let canvas = Arc::new(DeviceUi {
@@ -160,7 +210,7 @@ fn sample_markers_have_one_solid_color_without_an_outline() {
             _ => None,
         })
         .collect();
-    assert_eq!(strokes, vec![Stroke::new(2., SAMPLE_MARKER)]);
+    assert_eq!(strokes, vec![Stroke::new(2., sample_marker_color())]);
     output.textures_delta.clear();
 }
 
@@ -214,7 +264,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
         .iter()
         .filter(|s| {
             matches!(&s.shape,
-                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(2., SAMPLE_MARKER)
+                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary)
                     && points[0].x == points[1].x && points[0].y == 28.
             )
         })
@@ -256,7 +306,7 @@ fn historical_sampler_waveforms_keep_recording_controls() {
         crate::kit::theme::install(ui.ctx());
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &[],
             TrackId(1),
@@ -300,7 +350,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
     let mut empty = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &empty_canvas,
             &empty_parameters,
             TrackId(1),
@@ -391,9 +441,9 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         );
     }
     for (name, index, param, expected) in [
-        ("AMP_envelope", 3, "sustain", 0.6 + 8. / 24.),
-        ("FILTER_envelope", 3, "filter_sustain", 0.6 + 8. / 24.),
-        ("PITCH_envelope", 1, "pitch_env", 44.),
+        ("AMP_envelope", 3, "sustain", 0.6 + 2. / 18.),
+        ("FILTER_envelope", 3, "filter_sustain", 0.6 + 2. / 18.),
+        ("PITCH_envelope", 1, "pitch_env", 12. + 96. * 2. / 18.),
     ] {
         let control = canvas.controls.iter().find(|c| c.id == name).unwrap();
         let [x, y, w, h] = control.bounds;
@@ -405,7 +455,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             adsr,
         );
         let start = plot.points[index];
-        let actions = pointer_gesture(&canvas, &parameters, start, Some(start - Vec2::new(0., 8.)));
+        let actions = pointer_gesture(&canvas, &parameters, start, Some(start - Vec2::new(0., 2.)));
         assert!(
             actions
                 .iter()
@@ -417,7 +467,10 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         parameters.iter_mut().find(|p| p.id == id).unwrap().value = value;
     }
     let zero = EnvelopePlot::new(
-        Rect::from_min_size(Pos2::new(8., 126.), Vec2::new(284., 40.)),
+        {
+            let c = canvas.controls.iter().find(|c| c.id == "AMP_envelope").unwrap();
+            Rect::from_min_size(Pos2::new(c.bounds[0], c.bounds[1]), Vec2::new(c.bounds[2], c.bounds[3]))
+        },
         [0., 0., 0.78, 0.3],
         30.,
         true,
@@ -431,27 +484,32 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
     );
     assert!(!actions.iter().any(|a| a.params["param"] == "attack"));
     parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 2.;
-    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(200., 140.), Some(Pos2::new(244., 136.)));
+    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(510., 145.), Some(Pos2::new(564., 145.)));
     assert!(actions.iter().any(
         |a| a.params["param"] == "lfo_rate" && (a.params["value"].as_f64().unwrap() - 0.4472136).abs() < 0.001
     ));
     assert!(!actions.iter().any(|a| a.params["param"] == "lfo_pitch"));
     parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
-    let actions = click(&canvas, &parameters, Pos2::new(639., 95.));
+    let actions = click(&canvas, &parameters, Pos2::new(576., 110.));
     assert!(actions.iter().any(|a| a.params["param"] == "warp" && a.params["value"] == 1.));
-    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(640., 136.), Some(Pos2::new(640., 126.)));
+    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(729., 147.), Some(Pos2::new(729., 137.)));
     assert!(
         actions
             .iter()
             .any(|a| a.params["param"] == "gain" && (a.params["value"].as_f64().unwrap() - 1.8).abs() < 0.001),
         "{actions:?}"
     );
-    let actions = click(&canvas, &parameters, Pos2::new(286., 158.));
-    assert!(actions.iter().any(|a| a.params["param"] == "filter_slope" && a.params["value"] == 1.));
+    assert!(
+        canvas
+            .controls
+            .iter()
+            .any(|c| c.x.as_ref().is_some_and(|b| b.parameter == "filter_slope")
+                && matches!(c.widget, Some(Widget::Menu)))
+    );
     for (mode, playback, param) in [(0., 0., "start"), (0., 1., "start"), (0., 2., "loop_start"), (1., 2., "start")] {
         parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = mode;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
-        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(8., 30.), Some(Pos2::new(229., 30.)));
+        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(72., 44.), Some(Pos2::new(277., 44.)));
         assert!(
             actions
                 .iter()
@@ -465,7 +523,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = 0.;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = 2.;
         for control in &canvas.controls {
-            if control.widget.is_none() {
+            if control.widget.is_none() || matches!(control.widget, Some(Widget::Number { bordered: true, .. })) {
                 continue;
             }
             let Some(binding) = control.x.as_ref().or(control.y.as_ref()) else {
@@ -499,7 +557,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         }
     }
     for playback in [0., 1., 2.] {
-        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 3.;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
         for id in ["loop_start", "loop_end"] {
             let visible = canvas.controls.iter().filter(|c| c.y.as_ref().is_some_and(|b| b.parameter == id)).any(|c| {
@@ -509,10 +567,11 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
                     .evaluate(&|id, _, _| parameters.iter().find(|p| p.id == id).unwrap().value)
                     > 0.
             });
-            assert_eq!(visible, playback == 2.);
+            assert!(visible);
         }
     }
-    for (id, x, expected) in [("cutoff", 336., 3100. * 1000_f64.powf(0.05)), ("resonance", 394., 0.707 + 9.9 * 0.05)] {
+    parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+    for (id, x, expected) in [("cutoff", 197., 3100. * 1000_f64.powf(0.05)), ("resonance", 255., 0.707 + 9.9 * 0.05)] {
         let actions = pointer_gesture(&canvas, &parameters, Pos2::new(x, 142.), Some(Pos2::new(x, 132.)));
         assert!(
             actions
@@ -900,7 +959,7 @@ fn sampler_slice_controls_replace_loop_fields() {
         crate::kit::theme::install(ui.ctx());
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -965,7 +1024,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
                 crate::kit::theme::install(ui.ctx());
                 show(
                     ui,
-                    Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                    Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
                     &canvas,
                     &parameters,
                     TrackId(1),
@@ -992,8 +1051,8 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         }
         output
     };
-    let field = Rect::from_min_max(Pos2::new(8., 32.), Pos2::new(892., 74.));
-    let line = Pos2::new(SampleView::default().x(0.3, field), 50.);
+    let field = Rect::from_min_max(Pos2::new(76., 52.), Pos2::new(892., 106.));
+    let line = Pos2::new(SampleView::default().x(0.3, field), 80.);
     frame(line, None);
     let output = frame(line, None);
     assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
@@ -1001,16 +1060,16 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         output
             .shapes
             .iter()
-            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==Color32::GRAY))
+            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==crate::kit::theme::palette().text_primary.gamma_multiply(0.18)))
     );
     frame(line, Some(true));
-    let moved = Pos2::new(SampleView::default().x(0.6, field), 50.);
+    let moved = Pos2::new(SampleView::default().x(0.6, field), 80.);
     let preview = frame(moved, None);
     assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.3, 0.5]);
     assert!(
         preview.shapes.iter().any(|s| matches!(&s.shape,
             egui::Shape::LineSegment { points, stroke }
-                if stroke.color == SAMPLE_MARKER && (points[0].x - moved.x).abs() < 0.01
+                if stroke.color == sample_marker_color() && (points[0].x - moved.x).abs() < 0.01
         )),
         "the marker follows the pointer before the command is committed"
     );
@@ -1025,7 +1084,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         frame(moved, Some(false));
     }
     assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.5]);
-    let empty = Pos2::new(SampleView::default().x(0.4, field), 50.);
+    let empty = Pos2::new(SampleView::default().x(0.4, field), 80.);
     frame(empty, None);
     frame(empty, Some(true));
     frame(empty, Some(false));
@@ -1034,7 +1093,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     let points = ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap();
     assert_eq!(points.len(), 2);
     assert!((points[0] - 0.4).abs() < 1e-6);
-    let blank = Pos2::new(SampleView::default().x(0.7, field), 50.);
+    let blank = Pos2::new(SampleView::default().x(0.7, field), 34.);
     frame(blank, None);
     frame(blank, Some(true));
     frame(blank + Vec2::new(-25., -20.), None);
@@ -1069,7 +1128,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -1094,7 +1153,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         });
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -1104,6 +1163,112 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-manual-navigation.png");
+}
+
+#[test]
+fn automatic_boundary_drag_dispatches_one_correction_on_release() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.clone().unwrap();
+    let parameters: Vec<_> = panel
+        .parameters
+        .iter()
+        .map(|parameter| {
+            let value = match parameter.id.as_str() {
+                "mode" | "slice_by" => 2.,
+                "slice_regions" => 4.,
+                _ => parameter.default,
+            };
+            GraphParameter::new(parameter, value)
+        })
+        .collect();
+    let field = Rect::from_min_max(Pos2::new(76., 52.), Pos2::new(892., 106.));
+    let from = Pos2::new(SampleView::default().x(0.25, field), 80.);
+    let to = Pos2::new(SampleView::default().x(0.3, field), 80.);
+    let actions = pointer_gesture(&canvas, &parameters, from, Some(to));
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0].id, "device.editSampleSlice");
+    assert_eq!(actions[0].params["operation"], "move");
+    assert_eq!(actions[0].params["identity"], 1);
+    assert!((actions[0].params["point"].as_f64().unwrap() - 0.3).abs() < 1e-6);
+}
+
+#[test]
+fn stereo_peaks_preserve_separate_channel_levels() {
+    let source = suhina_engine::AudioData { sample_rate: 48000, channels: 2, samples: [0.1, 0.8].repeat(16) };
+    assert!(sample_channel_peaks(&source, (0, 16), Some(0)).iter().all(|peak| *peak == 0.1));
+    assert!(sample_channel_peaks(&source, (0, 16), Some(1)).iter().all(|peak| *peak == 0.8));
+}
+
+#[test]
+fn exactly_one_sampler_mode_is_selected_for_each_mode() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.as_ref().unwrap();
+    for mode in [0., 1., 2.] {
+        let parameters: Vec<_> = panel
+            .parameters
+            .iter()
+            .map(|p| GraphParameter::new(p, if p.id == "mode" { mode } else { p.default }))
+            .collect();
+        let selected: Vec<_> = canvas
+            .controls
+            .iter()
+            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &parameters))
+            .collect();
+        assert_eq!(selected.len(), 1);
+        assert!(matches!(selected[0].gesture, UiGesture::Set(target) if f64::from(target) == mode));
+    }
+}
+
+#[test]
+fn sampler_fits_fixed_height_without_shrinking_parameter_rows() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.as_ref().unwrap();
+    for available in [168., 180., 200., 220.] {
+        let size = fitted_size(canvas, available);
+        assert_eq!(size.y, 168., "the compact sampler never grows the fixed device row");
+        let reduction = canvas.size[1] - size.y;
+        for control in &canvas.controls {
+            let [_, y, _, height] = fitted_control_bounds(control, reduction);
+            assert!(y >= 0. && y + height <= available, "{} outside {available}px: {y}+{height}", control.id);
+            if control.bounds[1] >= 138. {
+                assert_eq!(height, control.bounds[3], "parameter row must retain readable size");
+            }
+        }
+    }
+    assert_eq!(fitted_size(canvas, 120.).y, 168., "smaller hosts scroll instead of crushing controls");
+}
+
+#[test]
+fn unknown_tempo_has_a_time_grid_unless_grid_is_off() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    for grid in [0., 3.] {
+        let parameters: Vec<_> = panel
+            .parameters
+            .iter()
+            .map(|p| GraphParameter::new(p, if p.id == "grid_division" { grid } else { p.default }))
+            .collect();
+        let context = egui::Context::default();
+        let output = context.run_ui(Default::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(
+                    sample_source_id(TrackId(1), 0),
+                    Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.; 20544] }),
+                )
+            });
+            sample_waveform(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(832., 110.)),
+                &parameters,
+                TrackId(1),
+                0,
+                &mut Vec::new(),
+                false,
+            );
+        });
+        let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
+        assert_eq!(lines > 2, grid > 0., "grid setting {grid}: {lines} lines");
+    }
 }
 fn snapshot<State>(harness: &mut egui_kittest::Harness<'_, State>, name: &str) {
     if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {

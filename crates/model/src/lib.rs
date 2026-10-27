@@ -312,6 +312,26 @@ pub struct Device {
 pub const MAX_SAMPLE_SLICES: usize = 4096;
 
 impl Device {
+    /// Versioned source corrections; interpreted by the device API, not the project model.
+    pub fn sample_edit_data(&self) -> Option<&[u8]> {
+        let bytes = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_edits")?.data;
+        (bytes.len() <= 8 + MAX_SAMPLE_SLICES * 17).then_some(bytes.as_slice())
+    }
+
+    pub fn set_sample_edit_data(&mut self, bytes: Vec<u8>) -> Result<(), &'static str> {
+        if bytes.len() > 8 + MAX_SAMPLE_SLICES * 17 {
+            return Err("sample corrections exceed the memory budget");
+        }
+        self.extensions.0.retain(|e| !(e.format == "suhina" && e.key == "sample_edits"));
+        self.extensions.0.push(Extension { format: "suhina".into(), key: "sample_edits".into(), data: bytes });
+        Ok(())
+    }
+
+    pub fn clear_sample_edits(&mut self) {
+        self.extensions
+            .0
+            .retain(|e| !(e.format == "suhina" && matches!(e.key.as_str(), "sample_edits" | "sample_slices")));
+    }
     /// Manual source boundaries; None reads legacy fixed slice parameters.
     pub fn sample_slices(&self) -> Option<Vec<f64>> {
         let data = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_slices")?.data;

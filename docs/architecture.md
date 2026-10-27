@@ -83,6 +83,10 @@ device's `suhina/sample_slices` extension, with legacy fixed parameters as fallb
 The command `device.setSampleSlices` edits the list with snapshot undo. Preparation
 validates immutable maps, and graph adoption swaps their Arc storage without
 allocating or freeing on the audio thread; held voices keep their current bounds.
+Versioned source corrections are decoded into the Device API's immutable `SampleEdits`
+resource off the audio thread. Chain and group adoption exchange its Arc without
+freeing the old data. The sampler merges candidates and pins without allocating
+when selecting a MIDI slice; UI and commands share the same correction format.
 Source identity participates in graph transfer,
 so replacing a sample cannot keep an old voice reading the previous source.
 The sample instrument publishes up to 32 independent voice positions through the

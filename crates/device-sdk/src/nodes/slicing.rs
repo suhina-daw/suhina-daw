@@ -149,6 +149,56 @@ impl Default for SliceAnalysis {
     }
 }
 impl SliceAnalysis {
+    /// Identity of a candidate before applying user corrections.
+    pub fn identity(p: &[f64], frames: usize, rate: f64, point: f64) -> i64 {
+        let value = |i: usize, default| p.get(i).copied().unwrap_or(default);
+        match value(60, 0.) as u8 {
+            1 => {
+                let division = crate::sample_axis::SampleAxis::division(
+                    value(88, 3.) as usize,
+                    value(91, 4.),
+                    value(92, 1.) as usize,
+                );
+                crate::sample_axis::SampleAxis::new(frames, rate, value(83, 0.), value(85, 0.))
+                    .map_or(0, |axis| (axis.beat(point) / division).round() as i64)
+            }
+            2 => (point * value(89, 16.).round().clamp(1., 128.)).round() as i64,
+            _ => (point * frames as f64).round() as i64,
+        }
+    }
+
+    /// Merge prepared corrections without allocating; only points inside the trim are emitted.
+    pub fn edited_points<'a>(
+        &self,
+        p: &[f64],
+        frames: usize,
+        rate: f64,
+        tempo: f64,
+        edits: &'a suhina_device_api::sample_edits::SampleEdits,
+    ) -> EditedPoints<'a> {
+        let start = p.get(1).copied().unwrap_or(0.);
+        let end = p.get(2).copied().unwrap_or(1.);
+        let method = p.get(60).copied().unwrap_or(0.) as u8;
+        let mut automatic = self.points(p, frames, rate, tempo);
+        for point in &mut automatic {
+            if method == 3
+                || *point <= start
+                || *point >= end
+                || edits.excludes(method, Self::identity(p, frames, rate, *point))
+            {
+                *point = end;
+            }
+        }
+        automatic.sort_unstable_by(f64::total_cmp);
+        EditedPoints {
+            automatic,
+            pins: edits.pins(),
+            auto_index: 0,
+            pin_index: edits.pins().partition_point(|point| *point <= start),
+            end,
+            last: start,
+        }
+    }
     pub fn new(source: &[f32], channels: usize, rate: f64) -> Self {
         let mut result = Self::default();
         let channels = channels.max(1);
@@ -196,15 +246,39 @@ impl SliceAnalysis {
             1 => {
                 let beats = [4., 2., 1., 0.5, 0.25, 0.125];
                 let beat = beats.get((sensitivity * 5.).round() as usize).copied().unwrap_or(1.);
-                let step = beat * 60. / tempo.max(1.) * rate / frames.max(1) as f64;
-                for i in 1..128 {
-                    add(start + i as f64 * step);
+                if value(0, 0.) == 2. {
+                    if let Some(axis) = crate::sample_axis::SampleAxis::new(frames, rate, value(83, 0.), value(85, 0.))
+                    {
+                        let division = crate::sample_axis::SampleAxis::division(
+                            value(88, 3.) as usize,
+                            value(91, 4.),
+                            value(92, 1.) as usize,
+                        );
+                        let first = (axis.beat(start) / division).floor() + 1.;
+                        for i in 0..127 {
+                            add(axis.point((first + f64::from(i)) * division));
+                        }
+                    }
+                } else {
+                    // Saved legacy playback retains its project-tempo slicing behavior.
+                    let step = beat * 60. / tempo.max(1.) * rate / frames.max(1) as f64;
+                    for i in 1..128 {
+                        add(start + i as f64 * step);
+                    }
                 }
             }
             2 => {
-                let count = 1 + (sensitivity * 31.).round() as usize;
+                let count = if value(0, 0.) == 2. {
+                    value(89, 16.).round().clamp(1., 128.) as usize
+                } else {
+                    1 + (sensitivity * 31.).round() as usize
+                };
                 for i in 1..count {
-                    add(start + (end - start) * i as f64 / count as f64);
+                    add(if value(0, 0.) == 2. {
+                        i as f64 / count as f64
+                    } else {
+                        start + (end - start) * i as f64 / count as f64
+                    });
                 }
             }
             _ => {
@@ -225,3 +299,39 @@ impl SliceAnalysis {
         unique
     }
 }
+
+pub struct EditedPoints<'a> {
+    automatic: [f64; 129],
+    pins: &'a [f64],
+    auto_index: usize,
+    pin_index: usize,
+    end: f64,
+    last: f64,
+}
+impl Iterator for EditedPoints<'_> {
+    type Item = f64;
+    fn next(&mut self) -> Option<f64> {
+        loop {
+            let automatic = self.automatic.get(self.auto_index).copied().unwrap_or(self.end);
+            let pinned = self.pins.get(self.pin_index).copied().unwrap_or(self.end);
+            let point = automatic.min(pinned);
+            if point >= self.end {
+                return None;
+            }
+            if automatic <= pinned {
+                self.auto_index += 1;
+            }
+            if pinned <= automatic {
+                self.pin_index += 1;
+            }
+            if point > self.last {
+                self.last = point;
+                return Some(point);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "slicing_tests.rs"]
+mod tests;

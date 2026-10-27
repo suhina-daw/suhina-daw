@@ -23,6 +23,7 @@ mod modulation;
 pub mod native_node;
 mod nodes;
 mod runtime;
+pub mod sample_axis;
 pub mod sample_resource;
 pub mod sampler;
 pub mod ui;

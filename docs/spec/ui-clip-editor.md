@@ -53,7 +53,10 @@ lane, the grid and zoom, and the `note.*` commands.
   row ends in a two-part switch, **Clip** and **Devices** ([components](../design/components.md)
   › Clip properties). **Devices** puts the track's device chain where the piano roll was: the clip
   column stays on the left (on top when stacked) with the switch in it, and the chain fills the
-  rest, as it does beside an audio clip; dropping an instrument, effect or plug-in there adds it to
+  rest. The MIDI clip retains its resizable detail area in both tabs. A standalone device row
+  opens at 200 logical pixels and can shrink or collapse by dragging downward, but never
+  grows above 200 pixels. Its height is remembered separately from the clip editor.
+  Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
   detail area first when it is hidden. An audio clip has no switch: its track's devices already

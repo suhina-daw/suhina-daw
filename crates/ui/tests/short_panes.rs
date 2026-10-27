@@ -520,7 +520,23 @@ fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
     click(&mut h, pos2(header.left() + 30.0, header.center().y));
     // Down to a short area, then up past the default height.
     pull_to(&mut h, bottom - 80.0);
+    let shrunk = bottom - splitter(&h).bottom();
+    assert!((shrunk - 80.0).abs() < 2.0, "the device row can shrink: {shrunk}");
     pull_to(&mut h, bottom - 400.0);
     let height = bottom - splitter(&h).bottom();
-    assert!(height >= 199.0, "the area goes up to its default height at least: {height}");
+    assert!((height - 200.0).abs() < 1.5, "the standalone device row stays at 200 px: {height}");
+    pull_to(&mut h, bottom - 20.0);
+    assert!(splitter(&h).bottom() >= bottom - 1.0, "dragging down collapses the device row");
+    pull_to(&mut h, bottom - 350.0);
+    assert!((bottom - splitter(&h).bottom() - 200.0).abs() < 2.0, "reopening retains the 200 px ceiling");
+}
+
+#[test]
+fn midi_clip_devices_keeps_the_resizable_editor_area() {
+    let mut h = piano_app();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let start = splitter(&h).top();
+    pull_to(&mut h, start - 100.0);
+    assert!(splitter(&h).top() < start - 80.0, "the MIDI clip Devices tab can still grow");
 }

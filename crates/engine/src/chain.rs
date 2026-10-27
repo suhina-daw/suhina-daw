@@ -86,6 +86,7 @@ pub(crate) struct Chain {
     /// whether a new chain holds the same devices as an old one.
     ids: Vec<String>,
     sample_slices: Vec<Option<std::sync::Arc<[f64]>>>,
+    sample_edits: Vec<Option<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>>,
     /// Every parameter's value from the project (its default when the project has none), per
     /// device.
     params: Vec<Vec<f64>>,
@@ -393,6 +394,7 @@ impl Chain {
                 device.load_shared_sample(source.sample_rate, source.channels, source.clone());
             }
             device.load_sample_slices(stored.sample_slices().map(std::sync::Arc::from));
+            device.load_sample_edits(crate::assets::sample_edits(stored));
             if device.prepare(f64::from(sample_rate)).is_err() {
                 continue;
             }
@@ -439,6 +441,10 @@ impl Chain {
             track,
             column,
             slots,
+            sample_edits: positions
+                .iter()
+                .map(|&i| channel.devices.get(i).and_then(crate::assets::sample_edits))
+                .collect(),
             sample_slices: positions
                 .iter()
                 .map(|&i| {
@@ -496,6 +502,7 @@ impl Chain {
             positions: Vec::new(),
             ids: Vec::new(),
             sample_slices: Vec::new(),
+            sample_edits: Vec::new(),
             params: Vec::new(),
             instrument: false,
             latency: 0,
@@ -1242,6 +1249,9 @@ impl Chain {
                 (Slot::Device(device) | Slot::MidiDevice(device), _) => {
                     if let Some(points) = self.sample_slices.get_mut(position) {
                         device.swap_sample_slices(points);
+                    }
+                    if let Some(edits) = self.sample_edits.get_mut(position) {
+                        device.swap_sample_edits(edits);
                     }
                     // A parameter that follows a lane keeps its running value until the lane
                     // sets it in the next block.

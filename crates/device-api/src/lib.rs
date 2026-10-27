@@ -19,6 +19,7 @@
 //! as plug-ins without the engine.
 
 pub mod conformance;
+pub mod sample_edits;
 
 use std::fmt;
 
@@ -505,6 +506,16 @@ pub trait Device: Send {
     /// Exchanges a validated, sorted sample map during graph adoption, without freeing storage.
     fn swap_sample_slices(&mut self, slices: &mut Option<std::sync::Arc<[f64]>>) {
         let _ = slices;
+    }
+
+    /// Install source corrections off the audio thread.
+    fn load_sample_edits(&mut self, edits: Option<std::sync::Arc<sample_edits::SampleEdits>>) {
+        let _ = edits;
+    }
+
+    /// Exchange prepared corrections during adoption; never release their last owner here.
+    fn swap_sample_edits(&mut self, edits: &mut Option<std::sync::Arc<sample_edits::SampleEdits>>) {
+        let _ = edits;
     }
 
     /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.

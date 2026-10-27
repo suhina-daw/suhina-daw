@@ -13,6 +13,35 @@ fn loaded() -> Sampler {
     );
     s
 }
+
+#[test]
+fn corrected_slice_render_is_block_independent_and_through_reaches_the_end() {
+    use std::sync::Arc;
+    use suhina_device_api::sample_edits::SampleEdits;
+    let make = |overlap| {
+        let mut sampler = loaded();
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [
+            ("mode", 2.),
+            ("slice_by", 2.),
+            ("slice_regions", 4.),
+            ("slice_overlap", overlap),
+            ("attack", 0.),
+            ("sustain", 1.),
+        ] {
+            set(&mut sampler, id, value);
+        }
+        sampler.load_sample_edits(Some(Arc::new(SampleEdits::new(vec![0.3], vec![(2, 1)]).unwrap())));
+        note(&mut sampler, 60);
+        sampler
+    };
+    let short = render(&mut make(1.), 48000, 64);
+    assert_eq!(short, render(&mut make(1.), 48000, 127));
+    assert!(short[1000..14000 * 2].iter().any(|sample| sample.abs() > 0.01));
+    assert!(short[14402 * 2..].iter().all(|sample| *sample == 0.));
+    let through = render(&mut make(2.), 48000, 64);
+    assert!(through[24000 * 2..47000 * 2].iter().any(|sample| sample.abs() > 0.01));
+}
 fn set(s: &mut Sampler, id: &str, value: f64) {
     s.set_param(INFO.param_index(id).unwrap(), value);
 }
@@ -145,7 +174,7 @@ fn equivalent_pitch_preserving_modes_do_not_restart_the_stretcher() {
 }
 
 #[test]
-fn warp_controls_share_the_fade_row_without_overlaps() {
+fn warp_controls_share_the_source_row_without_overlaps() {
     let ui = panel();
     let controls: Vec<_> = ui
         .controls
@@ -156,7 +185,7 @@ fn warp_controls_share_the_fade_row_without_overlaps() {
         .collect();
     assert_eq!(controls.len(), 3);
     for c in &controls {
-        assert_eq!(c.bounds[1], 86.);
+        assert_eq!(c.bounds[1], 102.);
     }
     assert!(controls.windows(2).all(|w| w[0].bounds[0] + w[0].bounds[2] <= w[1].bounds[0]));
 }
@@ -252,7 +281,7 @@ fn playback_changes_stop_voices_but_reselecting_the_mode_does_not() {
 fn compact_panel_keeps_controls_reachable_on_its_pages() {
     let ui = panel();
     let slice_by = ui.controls.iter().find(|c| c.x.as_ref().is_some_and(|b| b.parameter == "slice_by")).unwrap();
-    assert_eq!(slice_by.bounds, [276., 86., 124., 18.]);
+    assert_eq!(slice_by.bounds, [176., 102., 96., 18.]);
     assert_eq!(ui.size, [900., 168.]);
     assert!(ui.size[1] + 32. <= 200.);
     assert_eq!(ui.viewport_size, Some(ui.size));
@@ -274,6 +303,8 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
                     | "envelope_tab"
                     | "warp_beats"
                     | "crossfade"
+                    | "source_numerator"
+                    | "source_denominator"
             )
         {
             continue;
@@ -290,8 +321,8 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
             .count(),
         1
     );
-    for view in [0., 1., 2.] {
-        for mode in [0., 1.] {
+    for view in [0., 1., 2., 3.] {
+        for mode in [0., 1., 2.] {
             let controls: Vec<_> = ui
                 .controls
                 .iter()
@@ -308,16 +339,78 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
             let waveforms: Vec<_> =
                 controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
             assert_eq!(waveforms.len(), 1);
-            assert_eq!(waveforms[0].bounds, [0., 24., 900., 58.]);
+            assert_eq!(waveforms[0].bounds, [64., 22., 836., 78.]);
             assert_eq!(controls.iter().any(|c| c.id == "lfo_preview"), view == 2.);
             if view == 0. {
-                for id in ["gain", "pan", "filter", "voice_mode"] {
+                for id in ["gain", "pan", "filter", if mode == 2. { "slice_overlap" } else { "voice_mode" }] {
                     assert!(controls.iter().any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == id)));
                 }
-                assert_eq!(controls.iter().any(|c| c.y.as_ref().is_some_and(|b| b.parameter == "jitter")), mode == 1.);
+                assert_eq!(
+                    controls.iter().any(|c| c.y.as_ref().is_some_and(|b| b.parameter == "position")),
+                    mode == 1.
+                );
             }
         }
     }
+}
+
+#[test]
+fn slice_release_and_overlap_share_the_source_row() {
+    let ui = panel();
+    let bound = |id: &str| ui.controls.iter().find(|c| c.x.as_ref().is_some_and(|b| b.parameter == id)).unwrap().bounds;
+    let overlap = bound("slice_overlap");
+    let release = bound("slice_release");
+    assert!(release[0] + release[2] <= overlap[0]);
+    assert_eq!(overlap[1], release[1]);
+}
+
+#[test]
+fn compact_panel_interactive_controls_never_overlap_on_any_page() {
+    let ui = panel();
+    for view in [0., 1., 2., 3.] {
+        for mode in [0., 1., 2.] {
+            for rate in 0..6 {
+                let visible: Vec<_> = ui
+                    .controls
+                    .iter()
+                    .filter(|c| {
+                        !matches!(c.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator))
+                            && c.visible_when.as_ref().is_none_or(|v| {
+                                v.evaluate(&|id, _, _| match id {
+                                    "panel_view" => view,
+                                    "mode" => mode,
+                                    "lfo_rate_mode" => rate as f32,
+                                    _ => 0.,
+                                }) > 0.
+                            })
+                    })
+                    .collect();
+                for (i, a) in visible.iter().enumerate() {
+                    for b in visible.iter().skip(i + 1) {
+                        let [ax, ay, aw, ah] = a.bounds;
+                        let [bx, by, bw, bh] = b.bounds;
+                        assert!(
+                            ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay,
+                            "{} overlaps {} in view {view}, mode {mode}, rate {rate}",
+                            a.id,
+                            b.id
+                        );
+                    }
+                }
+            }
+        }
+    }
+    for id in ["cutoff", "resonance", "fade_in", "fade_out", "pitch", "velocity", "gain", "pan"] {
+        assert!(
+            ui.controls
+                .iter()
+                .any(|c| c.y.as_ref().is_some_and(|b| b.parameter == id)
+                    && matches!(c.widget, Some(Widget::Dial { .. }))),
+            "{id} uses a knob"
+        );
+    }
+    assert!(ui.controls.iter().any(|c| c.y.as_ref().is_some_and(|b| b.parameter == "lfo_rate")
+        && matches!(c.widget, Some(Widget::Number { bordered: true, .. }))));
 }
 #[test]
 fn envelopes_have_independent_stages_and_responsive_release() {

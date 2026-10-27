@@ -152,6 +152,17 @@ dropped that data on its next save, without a word. Decided ([#763](https://gith
 
 ## Consequences
 
+### Sampler source corrections (2026-10-27, issue #1026)
+
+Project version 5 stores sampler source corrections in the versioned
+`suhina/sample_edits` extension, described in [the sampler spec](../spec/sampler.md#source-correction-storage).
+Only user-authored pins and suppressed candidate identities persist; transient
+analysis is derived from the source. Both lists have a 4096-entry limit. The old
+source reference and manual map remain readable. Loading a replacement source
+clears its source-specific corrections in the same undoable command. Preparation
+decodes immutable correction resources before graph adoption, so audio processing
+does not parse files or allocate their storage.
+
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
 - Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,

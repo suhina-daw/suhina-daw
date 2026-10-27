@@ -7,6 +7,9 @@ last_verified: 2026-10-22
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sampler.rs
+  - crates/device-sdk/src/sample_axis.rs
+  - crates/device-sdk/src/nodes/slicing.rs
+  - crates/device-api/src/sample_edits.rs
   - crates/device-sdk/src/nodes/stretch.rs
   - crates/ui/src/detail/device_canvas.rs
   - crates/ui/src/detail/detail_view.rs
@@ -14,7 +17,68 @@ covers:
 
 # Sampler
 
-Sampler is a single-source polyphonic instrument. Simple reads a sample at a rate
+## Waveform editing revision (#1026, in progress)
+
+This revision is being implemented on #916. The following contract is the target;
+implementation below is local and awaits the authorized release build and runtime validation.
+
+- Sample, Slice and Grain are a vertical mode selector to the left of the waveform.
+  They use the SDK and Suhina's theme, with a stable waveform rectangle across modes.
+- The source Start/End region stays bright and the unused audio is dimmed. Selection,
+  sounding slices, read heads and loop bounds have separate marks. Stereo lanes are
+  drawn separately. Automatic and pinned boundaries differ by shape as well as colour.
+- Ctrl+wheel zooms around the pointer. Horizontal wheel input and Shift+wheel pan;
+  middle-button dragging pans without editing a boundary. Fit source and Fit selection
+  change only the view. Zoom is bounded by one source frame and the whole file.
+- A source axis maps file positions to seconds and quarter-note beats, using Source BPM
+  and a first-beat position in the file. The ruler uses the source's time signature.
+  Project tempo never moves file boundaries. Source BPM must be valid before a beat
+  grid is shown; unknown tempo is not silently replaced with a musical assertion.
+  Unknown tempo still shows a source-anchored seconds grid when Grid is enabled;
+  it is a visual time reference, not musical snap. Selected mode buttons have an
+  explicit selection mark even when a theme replaces their face.
+  The active mode uses an accent-filled button with contrasting text. The ruler has
+  its own strip and shows one unit at a time: source bars/beats when the beat grid
+  is available, otherwise seconds. Grid lines are subdued; slice boundaries use
+  text-colour lines and caps, distinct from the accent-coloured waveform. The
+  selected slice has a stronger background and bottom edge; unused audio is neutral
+  and dim. Output controls precede the adjacent voice and note-release sections.
+- Grid division and the Beat slicing division are independent. Straight and triplet
+  grids have an explicit snap switch; Alt bypasses snap for a gesture. Grid snapping
+  is distinct from zero-crossing snapping, which is deferred in this revision.
+- Transient uses Sensitivity, Beat uses Division and Region uses Regions. Every mode's
+  boundaries can be moved, inserted or deleted. One drag is one undo step. Numerical
+  editing and waveform dragging use the same command and validation.
+- Manual corrections are source positions. Automatic analysis generates a candidate
+  map; pinned positions and suppression records modify it. A moved automatic boundary
+  records suppression of its original candidate and pins the destination. Transient
+  candidates have source-frame identities; beat/region candidates use method and
+  ordinal identities. Suppression belongs to its method; pinned positions survive
+  method changes. Trimming hides points without deleting them. Regenerate clears
+  corrections for the active method and pinned points in one undoable edit.
+- Inserting/removing a boundary changes the ordinal MIDI mapping, so the panel always
+  shows the selected slice's MIDI note. Notes before Root or after the last slice are
+  silent. Source replacement clears source-specific corrections in the same undo step.
+- Slicing method, voice overlap (one, polyphonic, through to the source-region end)
+  and note release (play to boundary or release on note-off) are independent choices.
+  Short fades apply at the actual played region's edges, including reverse and warp.
+- Saved legacy parameters retain their meaning. Old fixed and dynamic manual maps
+  remain readable. New state has bounded input, explicit versioning and migration.
+  Analysis and map preparation happen off the audio thread, and processing consumes
+  immutable bounded data through the existing graph/resource handoff.
+
+The interaction reference is the public instrument manual's slicing description
+(https://www.ableton.com/en/manual/live-instrument-reference/#slicing-playback-mode),
+checked 2026-10-27, and the user's workflow observations. Grid snapping, correction
+identity and navigation above are Suhina design decisions, not claims of equivalence.
+No proprietary screenshots, transcripts or assets are included in the repository.
+
+Validation must cover pointer anchoring, source/beat conversion, snap and free edits,
+automatic corrections, undo/save/reopen, empty and short sources, reverse/stereo/warp,
+malformed maps and legacy renders. Compiling checks and desktop verification are
+pending the user's explicit permission to build; no passing result is implied here.
+
+Sampler is a single-source polyphonic instrument. Sample reads a sample at a rate
 determined by MIDI key (root 60), transpose and cents. Grain schedules bounded,
 Hann-windowed grains from the same source. Both use the same amplitude envelope,
 filter and output controls. All voices and grains are allocated before processing.
@@ -23,13 +87,17 @@ The graph source prepares the shared kernel once per processing span (split at
 timestamped note events), retaining the native block grain budget when voices
 finish during the span.
 
-The SDK panel uses a 900 by 168 logical-pixel canvas (200 pixels including the
-host header and padding). Sample and Grain buttons at the upper left select the
-synthesis mode. A single full-width waveform stays visible at identical bounds
-in both modes and while editing envelopes. Its compact marker rows stay inside the waveform; Input and Record sit adjacent
-in the top row immediately before LFO and Envelopes. The filename appears once in the device
-header, appended to the device name only when that name does not already contain
-the source stem. There is no filename caption inside the waveform or grain cloud.
+The SDK panel uses a fixed 900 by 168 logical-pixel canvas, leaving the host's
+header and margins inside the 200-pixel device row. Its height never depends on
+the selected page. Sample, Slice and Grain form a vertical selector with distinct
+wave, slice-boundary and grain-dot icons above their captions. Selected buttons
+use themed contrast ink and a side mark. Grid, Snap and First beat occupy the top
+row beside Input and Record; Sample, LFO, Envelopes and More are at the upper right. The
+waveform has identical bounds in every mode. Stereo channels have separate lanes;
+Start–End stays bright and the source outside it is dim. The selected slice has a
+background highlight, automatic boundaries a thin line and cap, pinned boundaries
+a thick line and round cap, and voice heads a separate text-colour line. Marker
+colours come from the theme. The filename appears once in the device header.
 
 LFO and Envelopes at the upper right are mutually exclusive tabs. Clicking the
 active tab again returns to normal controls. Both keep the full-width waveform
@@ -41,19 +109,29 @@ independent pitch, filter, volume and pan depths. Dragging the preview adjusts
 rate horizontally; destination fields edit their own depth. The preview shows
 the oscillator independently of destination depths. Switching tabs does not change sound parameters.
 
-Below the mode-specific source/granular row, the normal controls have their own
-backdrop and five named mini-sections: Tuning (transpose, cents, root and note
-range), Filter (type, 12/24 slope buttons and compact cutoff/resonance dials), Voices (mode, polyphony/glide
-and velocity range), Output (gain, pan and velocity amount), and Playback (mode,
-Reverse and Retrigger). Section surfaces, headings and borders use the active
-host theme and do not intercept pointer or keyboard input. The Grain row retains
-position, scan, size, density, jitter, spread and Freeze without a cloud preview.
+The source row groups playback/note release, slicing method and its contextual
+sensitivity/division/region count, voice overlap, Warp and source tempo. The bottom
+strip has filter type/slope, cutoff and resonance knobs, a compact LFO shape/rate
+section, fade-in/out, pitch, velocity, volume and pan knobs, Reverse and Retrigger.
+LFO keeps the filter and source row while replacing those latter knobs with a
+waveform and four depth fields. Its bordered Hz/time value accepts typing as well
+as dragging, and beat modes offer the musical division menu.
+Envelopes replaces both lower rows with the three envelope editors.
+More retains cents, root, key/velocity ranges, glide, numeric source/loop bounds,
+grain density/jitter/spread and Freeze. Grain position/scan/size remain in its source row.
+
+All controls retain SDK bindings and dispatch device.setParam. The panel has no
+fixed colour stylesheet: typed controls inherit the active theme and user CSS.
+Control identities use parameter names (with suffixes for repeated controls),
+bounded by the existing device-panel scope. Knobs use the theme's artwork;
+mode icons share the scoped button foreground/accent, and waveform ink, grid and
+background use the waveform scope. Changing the page never changes sound values.
 
 The Sampler is a built-in device: a project stores it by its id with its parameter values by id,
 and its panel is its layout, loaded by id from the running Suhina
 ([ADR 0021](../decisions/0021-device-graph-files.md) › Amendment: device panels). A parameter a
 project does not store takes its default, so the LFO destinations and source fades added later
-start at zero and LFO shape at Sine. `panel_view` persists Controls (0), Envelopes (1) or LFO (2);
+start at zero and LFO shape at Sine. `panel_view` persists Controls (0), Envelopes (1), LFO (2) or More (3);
 new devices default to Controls. Legacy `grain_env` and `envelope_tab` remain readable but no
 longer select an editor.
 Numeric values drag vertically, Shift gives precision, and double-click resets.
@@ -88,7 +166,7 @@ on the arrangement clock, independently of launch quantization. The project must
 be saved, an audio output open, the track armed, and an audio input selected.
 
 The Voices selector switches between Poly and Mono (last note replaces the voice).
-Glide is shown in Mono and controls the existing pitch transition time. Pitch env
+Glide is available under More and controls the existing mono pitch transition time. Pitch env
 adds a signed semitone offset with its own attack and decay back to zero, in both
 Simple and Grain modes. These parameters use the standard device parameter command
 and project persistence. Defaults preserve existing projects.
@@ -101,19 +179,19 @@ is visible only while sample recording is active.
 
 ## Panel and voice controls
 
-Sample/Grain buttons sit at the upper left. Envelopes sits at the far right.
+Sample/Slice/Grain buttons and icons sit at the left. Editor tabs sit at the upper right.
 The waveform and recording controls remain visible when the editor is open.
 Amplitude includes velocity-to-volume; filter includes envelope, velocity and
-key amounts. Tuning, note range, gain and pan are in the corresponding named mini-sections.
-Glide replaces the polyphony count in Mono mode.
-Playback uses Gate/One shot/Loop buttons plus Reverse and Retrigger. Retrigger is
+key amounts. Tuning and note range are under More; gain and pan are knobs on the normal page.
+Glide is under More and affects Mono playback.
+Playback uses a Gate/One shot/Loop menu plus Reverse and Retrigger. Retrigger is
 on by default: a reused voice starts from the sample region's beginning. With it
 off, an active reused voice keeps its position and envelopes while changing key
 and velocity; unused voices still start normally. Replaced voices interpolate
 from their last output to the new voice over 5 ms, without extra audible voices.
 
-Filter buttons show Off, low-pass, high-pass, band-pass and notch response icons.
-12/24 selects one or two cascaded biquad sections (12/24 dB/oct for low/high-pass).
+The filter menu offers Off, low-pass, high-pass, band-pass and notch.
+The slope menu selects one or two cascaded biquad sections (12/24 dB/oct for low/high-pass).
 A dedicated filter ADSR drives Env amount in octaves independently of AMP.
 Cutoff < Vel adds octaves proportional to note velocity. Cutoff < Key adds the
 signed amount in octaves per octave above the root key. All modulation amounts
@@ -161,16 +239,15 @@ and Loop end edges on every pass, including reverse and ping-pong playback.
 Outside the loop region, the source edges still apply. Zero fades preserve the
 full loop length without overlapping or skipping source frames. The historical
 `crossfade` parameter is retained for saved-definition compatibility but has no
-sound effect or panel control. Loop start and Loop end fields appear only for
-Sample with Playback = Loop; Start, End, Fade in ms and Fade out ms remain
-available for other Sample playback modes. Hidden controls cannot intercept input.
+sound effect or panel control. Loop start and Loop end fields are on More and
+apply in Sample with Playback = Loop. Source Start/End markers stay available in
+the waveform. Hidden controls cannot intercept input.
 
-The waveform occupies y=24..82. The source/grain row at y=86 and five normal
-sections at y=108..168 retain gaps and internal padding within the 200-pixel device.
-Cutoff and Res have twice the ordinary drag sensitivity (200 logical pixels per
-range). Shift remains available. All parameter inputs, including choice menus,
-segmented buttons, switches and waveform markers, reset to their parameter's
-saved definition default on double-click; recording actions remain actions.
+The waveform occupies y=22..100, with its own ruler and slice/audition footer.
+The source row occupies y=102..120 and the lower strip y=122..168. None of the
+pages changes the panel height. Numeric values support Shift precision; regular
+parameter widgets reset on double-click. Bordered rate fields use click-to-type
+and dragging, preserving the shared parameter command and undo path.
 
 ## Envelope graph geometry
 
@@ -194,53 +271,77 @@ Definition revision 7 updates the panel only and preserves all sound parameters.
 
 ## Slice playback
 
-Playback Slices replaces loop fields with Sensitivity and Slice by (Transient,
-Beat, Region, Manual). Notes from Root upward trigger successive slices at the
-original pitch, with transpose/cents still applied; notes outside the slice map
-are silent. Slices play to their boundary, ignoring note-off. Reverse is supported.
-Transient detects rising amplitude in 5 ms windows; Sensitivity lowers its threshold.
-Beat uses quarter-note subdivisions at the transport tempo (120 BPM before playback);
-Sensitivity selects 4, 2, 1, 1/2, 1/4 or 1/8 beats. Region selects 1..32 equal
-regions with Sensitivity. Manual uses a dynamic list of normalized source positions, with at most 4096 points. Double-click empty waveform to add a point; double-click a line to
-remove it. Drag a line horizontally to move it; its hover cursor is horizontal
-resize. A drag is one undo step, even when crossing another line. Start/End crop
-the map without deleting points outside it. All points persist in the device's
-`suhina/sample_slices` extension as little-endian f64 values; an absent extension
-reads legacy slice_1..slice_16 parameters. Empty lists are explicit. The shared
-`device.setSampleSlices` command validates, sorts and deduplicates positions; its
-4096-entry input budget applies both to stored maps and command input.
-The runtime installs immutable lists off the audio thread and selects note ranges
-by binary search without allocating. MIDI keys address successive slices from Root;
-all points remain editable even beyond the 128 available MIDI keys.
-Automatic maps hold at most 128 slices. Grain synthesis retains its existing behavior.
-Definition revision 8 appends slice controls and migrates revisions 1..7.
+Slice is a visible synthesis mode (value 2); the previous Sample (0) and Grain (1)
+values keep their meanings. Old Sample + Playback Slices remains playable with its
+original tempo-based mapping. New Slice uses separate controls: Transient with
+Sensitivity, Beat with Division, Region with Regions (1..128), and Manual.
+Beat uses Source BPM and First beat rather than transport tempo; its whole-bar
+choice uses the source time signature. Region boundaries divide the whole source,
+so trimming hides boundaries without changing their identities.
 
-## Waveform navigation
+Notes from Root upward trigger successive slices at original pitch, with tuning
+still applied. Notes outside the map are silent. Slice voices offers Mono, Poly
+and Through; Through continues from the chosen boundary to End. Slice release
+independently chooses Play to end or Release on key up. Fades use the region
+actually played. Changing synthesis or playback mode stops existing voices.
 
-Areas outside the displayed S/E markers are gray, including during loop editing.
-The waveform's default cursor is a magnifying glass. Drag empty waveform upward
-to zoom in and downward to zoom out, anchored at the press position. Horizontal
-drag pans the view; both axes work in the same gesture. Zoom stops at one source
-frame and the full sample; panning stays within the source. Navigation is local
-view state and never edits the sample or adds undo history. Replacing the source
-resets the view. Wave peaks are recomputed for the visible source range so zoom
-retains detail. Source/loop markers, manual lines and voice heads share the same
-coordinate transform and clipping. Manual lines take precedence over navigation.
+In Slice mode double-click empty waveform to add a pinned boundary, double-click
+a boundary to delete it, or drag a boundary to move it. The drag previews locally
+and dispatches one `device.editSampleSlice` command on release. The context menu
+also offers numerical editing, deletion and Regenerate slices. Regeneration clears
+pins and suppressions for the current method in one undo step. Pins survive method
+changes, sensitivity changes and trimming. Transient suppressions identify source
+frames; Beat and Region suppressions identify their method and grid ordinal.
+The selected slice displays its number and MIDI note and offers Audition through
+the shared preview-note commands; note release is scheduled by the host even when
+the panel is hidden. Keyboard playing uses the common typing-keyboard note route.
 
-Sampler receives block tempo before note events, so a Beat slice triggered at frame zero uses the current tempo. Decoded PCM and transient analysis are shared across graph preparations. Every panel control is a typed SDK widget, including the LFO WaveformPreview; the sampler definition contains no custom drawing primitives.
+Ctrl+wheel zooms around the pointer; horizontal wheel, Shift+wheel and middle-button
+drag pan. Drag the ruler to zoom vertically and pan horizontally. Empty waveform
+left-drag is not navigation. Show whole sample, Zoom to source region and Zoom to
+selected slice change local view state only. Zoom is bounded by a source frame
+and the whole file. Replacing a source resets the view and source-specific edits.
+Grid and Beat Division are separate. Grid offers straight and triplet subdivisions;
+Snap can be disabled, and Alt bypasses it. The ruler shows source bars/beats and
+seconds; its lines thin at wide zoom. Source time signature is edited in its context
+menu. With unknown BPM the ruler shows seconds and beat snapping is unavailable.
+
+### Source correction storage
+
+Project version 5 introduces the `suhina/sample_edits` extension. Its payload is
+`SSE1`, a little-endian u32 pin count, that many normalized f64 positions, and zero
+or more nine-byte suppression records (u8 method and signed little-endian i64
+identity). Both lists are capped at 4096. Pins must be finite and strictly inside
+0..1; methods are 0..2. Preparation rejects unsupported headers, truncated data,
+invalid values and oversized lists; commands return errors without changing state.
+Pins and suppression records are sorted and deduplicated off the audio thread.
+The immutable `SampleEdits` resource is shared through the Device API and exchanged
+during graph adoption; its old owner remains on the retiring graph. Note selection
+merges the bounded candidate array and sorted pins without allocation or locks.
+Held voices retain their bounds when corrections change.
+
+Legacy `suhina/sample_slices` f64 lists and slice_1..slice_16 remain readable. The
+first correction in Manual seeds pins from the legacy map. `device.setSampleSlices`
+continues to replace manual pins; `device.editSampleSlice` adds/moves/deletes a
+boundary or regenerates candidates, shared by UI, CLI and MCP. Source replacement
+clears corrections and legacy boundaries in the same undo step as the new source.
+
+Sampler receives block tempo before note events for legacy Beat slicing. Decoded
+PCM and transient analysis are shared across graph preparations. Every panel
+control uses the SDK; the sampler definition contains no custom drawing primitives.
 
 ## Tempo-synchronised sample playback
 
 In Sample mode, the source row keeps all controls on one line. Warp, the warp-mode
-selector and Source BPM sit to the right of Fade out; loop and slice controls use the
-space to their left. The three warp controls appear after a nonempty source is loaded
-and are hidden in Grain, Envelopes and LFO views.
+selector and Source BPM sit to the right of the voice controls. The three warp
+controls appear after a nonempty source is loaded, on the normal and LFO pages;
+Envelopes and More replace this source row.
 
 `warp` defaults off and `warp_mode` defaults to Rhythmic. Source BPM is the
 original tempo of the file. Loading a source initializes it from metadata or its
-filename, then the existing loop-tempo detector. If none is available, the current
-project/playback tempo is stored, so enabling Warp at that tempo keeps the original
-speed. Source replacement recalculates its tempo; source and tempo undo together
+filename, then the existing loop-tempo detector. If none is available, Source BPM remains zero; the legacy warp length is initialized
+from the current tempo so enabling Warp retains the original speed without asserting
+a detected musical grid. Source replacement recalculates its tempo; source and tempo undo together
 and persist through save/reopen. With Warp on, speed is project BPM / Source BPM.
 For example, a 120 BPM loop plays at its original speed in a 120 BPM project and
 half speed in a 60 BPM project, regardless of its length or Start/End trimming.
@@ -248,14 +349,14 @@ half speed in a 60 BPM project, regardless of its length or Start/End trimming.
 The editable Source BPM field replaces Fit beats in the same row. Set it to the
 loop's actual BPM to correct detection; double-click requests fresh detection.
 The tooltip shows both BPM values and their speed ratio. Warp on/off remains
-explicit in the button label. Source BPM has no timing effect with Warp off.
+explicit in the button label. Source BPM determines the grid and new Beat slices even with Warp off.
 Tempo detection can choose a half/double tempo; the visible original BPM makes
 that correction explicit. The SDK Tempo text format shows BPM, or Auto at zero.
 
 `source_bpm` is appended (range 0..999, default 0). Zero retains the historical
 `warp_beats` timing, preserving saved revisions 1..11. That legacy parameter is
 kept for automation and commands, but hidden in the new panel. A legacy sample
-without an explicit original tempo initializes it when Warp is enabled; explicit
+without a stored original-tempo parameter initializes it when Warp is enabled; explicit
 saved beat lengths are preserved. Editing legacy `warp_beats` clears Source BPM
 back to zero, so old command callers remain effective. Double-clicking Source BPM
 explicitly re-detects the tempo regardless of legacy beat-length settings.
