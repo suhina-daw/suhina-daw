@@ -89,44 +89,47 @@ finish during the span.
 
 The SDK panel uses a fixed 900 by 168 logical-pixel canvas, leaving the host's
 header and margins inside the 200-pixel device row. Its height never depends on
-the selected page. Sample, Slice and Grain are buttons in a column left of the
-waveform, each a drawn glyph over its caption (a wave between two bars, a strip cut in three,
-scattered grains); the chosen one has a lighter face and its glyph and caption in the accent,
-the others are in a dimmer text colour. The top row has Input
-and Record on the left and the pages Sample, LFO, Envelopes and More on the right, the open
-one outlined. The waveform fills the space right of the mode buttons with identical bounds in
-every mode, its time ruler a 15-pixel strip along its bottom (`0:00`, `0:00.480`, or bars and
-beats from the source tempo). Stereo channels have separate lanes; Start–End stays bright and
-the source outside it is dim. The selected slice has a background highlight, automatic
-boundaries a thin line and cap, pinned boundaries a thick line and round cap, and voice heads a
-separate text-colour line. Clicking a slice selects it and plays its note for a moment; its
-number and note are in the waveform's context menu. Marker colours come from the theme. The
-filename appears once in the device header.
+the selected page. The layout also gives a 400 by 18 strip the host draws in the device's
+header row, left of its maker, the device's name giving way to it: Input and Record, and the
+pages Sample, Controls and More, the open one outlined. A built-in layout's header strip is at
+most 480 by 18 pixels (`builtin::HEADER_WIDTH`, `HEADER_HEIGHT`).
 
-LFO and Envelopes at the upper right are mutually exclusive tabs. Clicking the
-active tab again returns to normal controls. Both keep the full-width waveform
-visible. Envelopes shows simultaneous amplitude/filter/pitch envelope editors;
-each ADSR stage has its own draggable point, with decay also adjusting sustain. The
-pitch peak adjusts attack and signed amount; its envelope remains attack/decay.
-LFO has its own large waveform preview and shared rate selectable as Hz, Time (milliseconds), Beat, Triplet, Dotted or 16th, with
-independent pitch, filter, volume and pan depths. Dragging the preview adjusts
-rate horizontally; destination fields edit their own depth. The preview shows
-the oscillator independently of destination depths. Switching tabs does not change sound parameters.
+Sample, Slice and Grain are buttons in a column left of the waveform, each a drawn glyph over
+its caption (a wave between two bars, a strip cut in three, scattered grains); the chosen one has
+a lighter face and its glyph and caption in the accent, the others are in a dimmer text colour.
+On the Sample page the waveform fills the space right of the mode buttons, 96 pixels high, with
+identical bounds in every mode; its times (`0:00`, `0:00.480`, or bar, beat and sixteenth from
+the source tempo: `5`, `5.3`, `5.3.2`) sit on the grid lines along its bottom. Stereo channels
+have separate lanes; Start–End stays bright and the source outside it is dim. Slices alternate
+between the plain background and a lighter band, so neighbours stand apart; their lines take
+the accent turned to the opposite hue and lightened, so they differ from the waveform in any
+theme. A slice past the last key (127, counted from Root) is dimmed and has no line: no note
+plays it. The selected slice has a background highlight, pinned boundaries a thick line and a
+dot, and voice heads a separate text-colour line. Clicking a slice selects it and plays its note
+for a moment; its number and note are in the waveform's context menu. Dragging the waveform away
+from a boundary zooms the view, in as it goes down and out as it goes up, around where the drag
+began, and moves it sideways with the pointer. Marker colours come from the theme.
+
+The Controls page puts in the waveform's place the LFO (its drawn shape, and its pitch, filter,
+volume and pan depths) and the Amplitude and Filter envelopes (A, D, S, R) and the Pitch
+envelope (A, D, Amt), each in a titled section with its values two by two over its graph. Each
+ADSR stage has its own draggable point, with decay also adjusting sustain; the pitch peak
+adjusts attack and signed amount. Dragging the LFO's drawing sets its rate. Clicking the open
+page again returns to Sample. `panel_view` 2, the earlier LFO page, shows the Controls page.
+Switching pages does not change sound parameters.
 
 The source row, under the waveform, has captioned controls for the mode: Slice has Note end
 (Play to end or Release on key up), Slice by and its Sensitivity, Division or Regions; Sample has
-Playback, Start and End; Grain has Position, Scan and Size. Every mode then has Voices (Mono,
-Poly or, for slices, Through) and their number, Warp, its mode and the source tempo. The sound
-row under it has Filter (type and slope), Cutoff and Res knobs, the LFO's shape, rate unit and
-rate, knobs for Fade in, Fade out, Pitch, Vel, Volume and Pan, and Reverse and Retrigger.
-LFO keeps the filter and the LFO's rate, and puts the LFO's drawn shape and its pitch, filter,
-volume and pan depths in place of the knobs. Its bordered Hz/time value accepts typing as well
-as dragging, and beat modes offer the musical division menu. Envelopes keeps the source row and
-puts the Amplitude and Filter envelopes (A, D, S, R) and the Pitch envelope (A, D, Amt) side by
-side in the sound row's place, each with its values on a line and its graph under them. More
-replaces both rows with cents, root, key and velocity ranges, glide, loop bounds and fade, grain
-density, jitter and spread, the filter envelope's amount and velocity and key tracking, First
-beat, the editing grid and its Snap, and Freeze.
+Playback, Start and End; Grain has Position, Scan and Size. A line divides them from Voices
+(Mono, Poly or, for slices, Through) and their Max number, and another from Warp, its mode and
+the source tempo. The sound row under it has three sections on their own backgrounds: Filter
+(type and slope) with Cutoff and Res knobs; the LFO's shape, rate unit and rate; and knobs for
+Fade in, Fade out, Pitch, Vel, Volume and Pan; then Reverse and Retrigger. The LFO's bordered
+Hz/time value accepts typing as well as dragging, and beat modes offer the musical division
+menu. Both rows stay on the Controls page. More replaces both rows with cents, root, key and
+velocity ranges, glide, loop bounds and fade, grain density, jitter and spread, the filter
+envelope's amount and velocity and key tracking, First beat, the editing grid and its Snap,
+and Freeze.
 
 All controls retain SDK bindings and dispatch device.setParam. The panel has no
 fixed colour stylesheet: typed controls inherit the active theme and user CSS.
@@ -139,8 +142,8 @@ The Sampler is a built-in device: a project stores it by its id with its paramet
 and its panel is its layout, loaded by id from the running Suhina
 ([ADR 0021](../decisions/0021-device-graph-files.md) › Amendment: device panels). A parameter a
 project does not store takes its default, so the LFO destinations and source fades added later
-start at zero and LFO shape at Sine. `panel_view` persists Controls (0), Envelopes (1), LFO (2) or More (3);
-new devices default to Controls. Legacy `grain_env` and `envelope_tab` remain readable but no
+start at zero and LFO shape at Sine. `panel_view` persists Sample (0), Controls (1), the earlier LFO page (2, shown as Controls)
+or More (3); new devices default to Sample. Legacy `grain_env` and `envelope_tab` remain readable but no
 longer select an editor.
 Numeric values drag vertically, Shift gives precision, and double-click resets.
 All edits use the shared device parameter command, persistence and undo.
@@ -317,8 +320,7 @@ number and MIDI note are in the context menu; note release is scheduled by the h
 the panel is hidden. Keyboard playing uses the common typing-keyboard note route.
 
 Ctrl+wheel zooms around the pointer; horizontal wheel, Shift+wheel and middle-button
-drag pan. Drag the ruler to zoom vertically and pan horizontally. Empty waveform
-left-drag is not navigation. Show whole sample, Zoom to source region and Zoom to
+drag pan. Dragging the waveform away from a boundary zooms (down in, up out) and pans. Show whole sample, Zoom to source region and Zoom to
 selected slice change local view state only. Zoom is bounded by a source frame
 and the whole file. Replacing a source resets the view and source-specific edits.
 Grid and Beat Division are separate. Grid offers straight and triplet subdivisions;

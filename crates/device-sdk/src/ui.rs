@@ -593,7 +593,7 @@ impl DeviceUi {
                 || x + w > self.size[0]
                 || y + h > self.size[1]
             {
-                return Err(fail("invalid custom control id/name/bounds"));
+                return Err(fail(&format!("invalid custom control id/name/bounds: {:.64}", c.id)));
             }
             if let Some(condition) = &c.visible_when {
                 condition.validate(&ids, 0, &mut expression_budget)?;

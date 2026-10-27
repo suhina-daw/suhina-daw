@@ -66,7 +66,7 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("filter_decay", "Filter decay", 0., 10., 0.22, Unit::Seconds),
     continuous("filter_sustain", "Filter sustain", 0., 1., 0.87, Unit::Percent),
     continuous("filter_release", "Filter release", 0., 10., 0.48, Unit::Seconds),
-    ParamInfo::choice("panel_view", "Panel view", &["Controls", "Envelopes", "LFO", "More"], 0),
+    ParamInfo::choice("panel_view", "Panel view", &["Sample", "Controls", "Controls (LFO)", "More"], 0),
     continuous("lfo_filter", "LFO filter (oct)", 0., 8., 0., Unit::Octaves),
     continuous("lfo_volume", "LFO volume", 0., 1., 0., Unit::Percent),
     continuous("lfo_pan", "LFO pan", 0., 1., 0., Unit::Percent),

@@ -309,7 +309,7 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
         {
             continue;
         }
-        assert!(ui.controls.iter().any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == p.id)
+        assert!(ui.controls.iter().chain(&super::panel::header().controls).any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == p.id)
                 || matches!(&c.widget, Some(Widget::Envelope { attack, decay, level, release }) if [Some(attack.as_str()),Some(decay.as_str()),Some(level.as_str()),release.as_deref()].contains(&Some(p.id)))), "{}", p.id);
     }
     assert!(!ui.controls.iter().any(|c| c.id == "grain_cloud"));
@@ -337,9 +337,13 @@ fn compact_panel_keeps_controls_reachable_on_its_pages() {
                 .collect();
             let waveforms: Vec<_> =
                 controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
-            assert_eq!(waveforms.len(), 1);
-            assert_eq!(waveforms[0].bounds, [62., 22., 838., 74.]);
-            assert_eq!(controls.iter().any(|c| c.id == "lfo_preview"), view == 2.);
+            // The Controls page (1, and the old LFO page 2) takes the waveform's place.
+            let controls_page = view == 1. || view == 2.;
+            assert_eq!(waveforms.len(), usize::from(!controls_page));
+            if let Some(waveform) = waveforms.first() {
+                assert_eq!(waveform.bounds, [62., 0., 838., 96.]);
+            }
+            assert_eq!(controls.iter().any(|c| c.id == "lfo_preview"), controls_page);
             if view == 0. {
                 for id in ["gain", "pan", "filter", if mode == 2. { "slice_overlap" } else { "voice_mode" }] {
                     assert!(controls.iter().any(|c| c.x.iter().chain(c.y.iter()).any(|b| b.parameter == id)));

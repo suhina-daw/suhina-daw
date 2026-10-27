@@ -8,7 +8,7 @@ use suhina_device_sdk::ui::*;
 /// The sampler's layout: its compact panel, every parameter drawn by the canvas (ADR 0021 ›
 /// Amendment: device panels for built-in devices).
 pub fn layout() -> suhina_device_sdk::builtin::Layout {
-    suhina_device_sdk::builtin::Layout { ui: Some(panel()), ..Default::default() }
+    suhina_device_sdk::builtin::Layout { ui: Some(panel()), header: Some(panel::header()), ..Default::default() }
 }
 
 const ACCENT: [u8; 4] = [166, 163, 255, 255];

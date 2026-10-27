@@ -180,7 +180,8 @@ impl SampleView {
     }
     fn dragged(self, anchor: Pos2, delta: Vec2, field: Rect, frames: usize) -> Self {
         let fraction = f64::from((anchor.x - field.left()) / field.width());
-        let span = (self.span * (f64::from(delta.y) / 120.).exp()).clamp(1. / frames.max(1) as f64, 1.);
+        // Down zooms in, up out.
+        let span = (self.span * (f64::from(-delta.y) / 120.).exp()).clamp(1. / frames.max(1) as f64, 1.);
         let start = (self.point(anchor.x, field) - fraction * span - f64::from(delta.x / field.width()) * self.span)
             .clamp(0., 1. - span);
         Self { start, span }
@@ -229,8 +230,13 @@ fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32) {
     painter.line_segment(line, Stroke::new(2., sample_marker_color()));
 }
 
-/// The height of the time ruler under a sample's waveform.
-const RULER: f32 = 15.;
+/// The colour of slice lines: the waveform's accent turned to the opposite hue and lightened, so
+/// the lines stand apart from the waveform in any theme.
+fn slice_line(accent: Color32) -> Color32 {
+    let [r, g, b, _] = accent.to_array();
+    let opposite = |c: u8| (255 - c) / 2 + 110;
+    Color32::from_rgb(opposite(r), opposite(g), opposite(b))
+}
 
 /// A time in a source as minutes, seconds and, when it has them, milliseconds: `0:00`,
 /// `0:00.480`, `1:02.500`.
@@ -284,8 +290,8 @@ fn sample_waveform(
             bounds.max - Vec2::new(8., if inline_recording { 26. } else { 8. }),
         )
     } else {
-        // The waveform fills the control; its time ruler is a strip along the bottom.
-        Rect::from_min_max(bounds.min + Vec2::new(6., 4.), bounds.max - Vec2::new(6., RULER))
+        // The waveform fills the control; its times sit on the grid lines along its bottom.
+        Rect::from_min_max(bounds.min + Vec2::new(6., 4.), bounds.max - Vec2::new(6., 4.))
     };
     let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
@@ -646,24 +652,9 @@ fn sample_waveform(
                 }
                 manual_points = Arc::from(points);
             }
-        }
-    }
-    if !compact {
-        let ruler =
-            Rect::from_min_max(Pos2::new(field.left(), field.bottom()), Pos2::new(field.right(), bounds.bottom()));
-        let ruler_response =
-            ui.interact(ruler, source_id.with("ruler"), egui::Sense::drag()).on_hover_cursor(egui::CursorIcon::ZoomIn);
-        let ruler_id = source_id.with("ruler-drag");
-        if ruler_response.drag_started() {
-            ui.ctx().data_mut(|d| d.insert_temp(ruler_id, view));
-        }
-        if ruler_response.dragged()
-            && let Some(source) = &source
-        {
-            let initial = ui.ctx().data(|d| d.get_temp::<SampleView>(ruler_id)).unwrap_or(view);
-            let delta = ruler_response.drag_delta();
-            let anchor = ruler_response.interact_pointer_pos().unwrap_or(ruler.center()) - delta;
-            view = initial.dragged(anchor, delta, field, source.frames());
+        } else if let Some(source) = &source {
+            // Away from a boundary, dragging zooms the view, up and down, and moves it sideways.
+            view = state.view.dragged(state.anchor, delta, field, source.frames());
         }
     }
     let cursor = if panning {
@@ -674,7 +665,7 @@ fn sample_waveform(
         egui::CursorIcon::Default
     };
     response.on_hover_cursor(cursor).on_hover_text(
-        "Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Drag the ruler to zoom. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap.",
+        "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap.",
     );
     let pointer_down = ui.input(|i| i.pointer.primary_down());
     ui.ctx().data_mut(|d| {
@@ -710,11 +701,7 @@ fn sample_waveform(
             );
         }
     }
-    if !compact {
-        let ruler = Rect::from_min_max(Pos2::new(bounds.left(), field.bottom()), bounds.max);
-        painter.rect_filled(ruler, 0., colors.text_primary.gamma_multiply(0.04));
-    }
-    let label_y = bounds.bottom() - RULER / 2.;
+    let label_y = field.bottom() - 7.;
     if let Some(axis) = axis.filter(|_| division > 0.) {
         // Bound work by the available screen width, even for long sources at high BPM.
         let mut step = division;
@@ -775,12 +762,10 @@ fn sample_waveform(
             }
             let point = seconds / duration;
             let x = view.x(point, field);
-            if division > 0. {
-                wave_painter.line_segment(
-                    [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                    Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
-                );
-            }
+            wave_painter.line_segment(
+                [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
+                Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
+            );
             if !compact && x >= last_label + 90. && x <= field.right() - 50. {
                 last_label = x;
                 painter.text(
@@ -836,24 +821,43 @@ fn sample_waveform(
             }
         }
         if slicing {
-            let points = &manual_points;
-            let first = points.partition_point(|p| *p <= active_start.max(view.start));
-            for &point in points
-                .get(first..)
-                .unwrap_or_default()
-                .iter()
-                .take_while(|p| **p < active_end.min(view.start + view.span))
-            {
-                let x = view.x(point, field);
-                let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&point));
-                // A plain line through the waveform; a boundary placed by hand is thicker, with a
-                // dot at its top.
+            // Each slice from Start to End: every other one on a lighter band, so neighbours stand
+            // apart, and the ones past the last key (127) dimmed, with no line: no note plays them.
+            let inside = manual_points.iter().copied().filter(|p| *p > active_start && *p < active_end);
+            let edges: Vec<f64> =
+                std::iter::once(active_start).chain(inside).chain(std::iter::once(active_end)).collect();
+            let playable = 128usize.saturating_sub(value("root").max(0.) as usize);
+            let line = slice_line(colors.accent);
+            for (index, pair) in edges.windows(2).enumerate() {
+                let [from, to] = [pair[0], pair[1]];
+                if to < view.start || from > view.start + view.span {
+                    continue;
+                }
+                let band = Rect::from_min_max(
+                    Pos2::new(view.x(from, field), field.top()),
+                    Pos2::new(view.x(to, field), field.bottom()),
+                )
+                .intersect(field);
+                if index >= playable {
+                    wave_painter.rect_filled(band, 0., crate::kit::theme::panel_background().gamma_multiply(0.6));
+                    continue;
+                }
+                if index % 2 == 1 {
+                    wave_painter.rect_filled(band, 0., colors.text_primary.gamma_multiply(0.05));
+                }
+                if index == 0 {
+                    continue;
+                }
+                let x = view.x(from, field);
+                let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&from));
+                // A line through the waveform in a colour of its own; one placed by hand is
+                // thicker, with a dot at its top.
                 wave_painter.line_segment(
                     [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                    Stroke::new(if pinned { 2. } else { 1. }, colors.text_primary.gamma_multiply(0.45)),
+                    Stroke::new(if pinned { 2. } else { 1. }, line),
                 );
                 if pinned {
-                    wave_painter.circle_filled(Pos2::new(x, field.top() + 3.), 3., colors.text_primary);
+                    wave_painter.circle_filled(Pos2::new(x, field.top() + 3.), 3., line);
                 }
             }
         }

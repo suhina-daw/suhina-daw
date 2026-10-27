@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The sampler's panel: mode buttons beside the waveform, a row of the mode's source controls
-//! under it, and a row of sound controls the LFO, Envelopes and More pages replace. Geometry is
-//! authored here; the typed SDK widgets take their paint from the theme and user CSS.
+//! under it and a row of sound controls under that. The Controls page puts the LFO and the
+//! envelopes in the waveform's place, More the rest in the rows' place; the pages, Input and
+//! Record are in the device's header. Geometry is authored here; the typed SDK widgets take
+//! their paint from the theme and user CSS.
 use super::*;
 
-/// The waveform and the mode buttons beside it start under the top row.
-const TOP: f32 = 22.;
 /// The source row, under the waveform.
 const SOURCE_ROW: f32 = 100.;
 /// The sound row: its captions, then its controls.
@@ -108,22 +108,68 @@ fn rates(ui: &mut DeviceUi, x: f32, when: UiValue) {
     }
 }
 
-/// An envelope's caption, its values on a line beside it and its graph under them.
+/// A section's background, with its title when it has one, under the controls drawn after it.
+fn section(ui: &mut DeviceUi, title: &str, bounds: [f32; 4], when: UiValue) {
+    control(ui, "section", Widget::Panel { label: title.into() }, bounds, UiGesture::Drag, None);
+    visible(ui, when);
+    if let Some(c) = ui.controls.last_mut() {
+        c.x = None;
+        c.name = format!("{title} section");
+    }
+}
+
+/// A line between two groups of a row.
+fn divider(ui: &mut DeviceUi, x: f32, y: f32, when: UiValue) {
+    // Eight pixels wide, the least a control is; the line is drawn at its middle.
+    control(ui, "divider", Widget::Separator, [x - 4., y, 8., 18.], UiGesture::Drag, None);
+    visible(ui, when);
+    if let Some(c) = ui.controls.last_mut() {
+        c.x = None;
+    }
+}
+
+/// The Controls page: both its pages' values in place of the waveform.
+fn controls_page() -> UiValue {
+    view(1.) + view(2.)
+}
+
+/// An envelope on the Controls page: its section, its values two by two and its graph under them.
 fn envelope(ui: &mut DeviceUi, title: &str, x: f32, ids: &[(&str, &str)], graph: Widget, name: &str) {
-    let when = view(1.);
-    label(ui, title, [x, SOUND_ROW, 62., 13.], None);
-    visible(ui, when.clone());
+    let when = controls_page();
+    section(ui, title, [x, 0., 186., 96.], when.clone());
     for (i, (id, caption)) in ids.iter().enumerate() {
-        value(ui, id, caption, [x + 64. + i as f32 * 52., SOUND_ROW, 50., 16.], None);
+        value(ui, id, caption, [x + 4. + (i % 2) as f32 * 90., 14. + (i / 2) as f32 * 20., 88., 18.], None);
         visible(ui, when.clone());
     }
-    control(ui, name, graph, [x, SOUND_ROW + 18., 272., 30.], UiGesture::Position, None);
+    control(ui, name, graph, [x + 4., 56., 178., 36.], UiGesture::Position, None);
     visible(ui, when);
     if let Some(c) = ui.controls.last_mut() {
         c.id = name.into();
         c.x = None;
     }
 }
+
+/// The device header's controls: Input and Record, and the pages.
+pub(super) fn header() -> DeviceUi {
+    let mut ui = DeviceUi {
+        size: [HEADER_WIDTH, 18.],
+        hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
+        ..DeviceUi::default()
+    };
+    control(&mut ui, "recording", Widget::SampleRecording, [0., 0., 200., 18.], UiGesture::Drag, None);
+    if let Some(c) = ui.controls.last_mut() {
+        c.x = None;
+    }
+    // Sample shows the waveform; Controls and More are pages a second click closes again.
+    for (caption, value, x, w) in [("Sample", 0, 208., 62.), ("Controls", 1, 274., 70.), ("More", 3, 348., 52.)] {
+        let gesture = if value == 0 { UiGesture::Set(0) } else { UiGesture::Tab(value) };
+        button(&mut ui, "panel_view", caption, [x, 0., w, 18.], gesture, None);
+    }
+    ui
+}
+
+/// How wide the header's controls are.
+const HEADER_WIDTH: f32 = 400.;
 
 pub(super) fn panel() -> DeviceUi {
     let mut ui = DeviceUi {
@@ -132,27 +178,24 @@ pub(super) fn panel() -> DeviceUi {
         hidden_parameters: PARAMS.iter().map(|p| p.id.into()).collect(),
         ..DeviceUi::default()
     };
+    // Section backgrounds first, under the controls: the sound row's filter, LFO and voice.
+    let rows = UiValue::from(1.) + view(3.) * (-1f32).into();
+    for bounds in
+        [[LEFT - 2., SOUND_ROW - 2., 250., 50.], [314., SOUND_ROW - 2., 150., 50.], [466., SOUND_ROW - 2., 320., 50.]]
+    {
+        section(&mut ui, "", bounds, rows.clone());
+    }
     // Sample, Slice and Grain beside the waveform; Slice keeps its value 2 after Grain's 1.
     for (i, (name, mode)) in [("Sample", 0), ("Slice", 2), ("Grain", 1)].iter().enumerate() {
-        button(&mut ui, "mode", name, [0., TOP + i as f32 * 48., 56., 46.], UiGesture::Set(*mode), None);
+        button(&mut ui, "mode", name, [0., i as f32 * 57., 56., 54.], UiGesture::Set(*mode), None);
     }
-    control(&mut ui, "recording", Widget::SampleRecording, [LEFT, 0., 316., 18.], UiGesture::Drag, None);
-    if let Some(c) = ui.controls.last_mut() {
-        c.x = None;
-    }
-    // The pages: Sample is the controls; clicking an open page again goes back to them.
-    for (caption, value, x, w) in
-        [("Sample", 0, 628., 62.), ("LFO", 2, 694., 48.), ("Envelopes", 1, 746., 82.), ("More", 3, 832., 68.)]
-    {
-        let gesture = if value == 0 { UiGesture::Set(0) } else { UiGesture::Tab(value) };
-        button(&mut ui, "panel_view", caption, [x, 0., w, 18.], gesture, None);
-    }
-    control(&mut ui, "sample", Widget::SampleWaveform, [LEFT, TOP, 900. - LEFT, 74.], UiGesture::Position, None);
+    control(&mut ui, "sample", Widget::SampleWaveform, [LEFT, 0., 900. - LEFT, 96.], UiGesture::Position, None);
+    visible(&mut ui, UiValue::from(1.) + controls_page() * (-1f32).into());
     if let Some(c) = ui.controls.last_mut() {
         c.x = None;
     }
 
-    // The source row stays on every page but More.
+    // The source row and the sound row stay on every page but More.
     let source_row = view(0.) + view(1.) + view(2.);
     let slice = equals("mode", 2.) + equals("mode", 0.) * equals("playback", 3.);
     let sample = equals("mode", 0.) * (UiValue::from(1.) + equals("playback", 3.) * (-1f32).into());
@@ -179,6 +222,8 @@ pub(super) fn panel() -> DeviceUi {
         value(&mut ui, id, caption, [x, SOURCE_ROW, w, 18.], None);
         visible(&mut ui, row(grain.clone()));
     }
+    divider(&mut ui, 494., SOURCE_ROW, source_row.clone());
+    divider(&mut ui, 672., SOURCE_ROW, source_row.clone());
 
     // Voices: one, several or (slices) through to End, and how many.
     label(&mut ui, "Voices", [498., SOURCE_ROW + 3., 40., 13.], None);
@@ -194,10 +239,10 @@ pub(super) fn panel() -> DeviceUi {
     control(&mut ui, "warp_mode", Widget::Menu, [722., SOURCE_ROW, 86., 18.], UiGesture::Menu, None);
     visible(&mut ui, source_row.clone());
     value(&mut ui, "source_bpm", "Source", [812., SOURCE_ROW, 88., 18.], None);
-    visible(&mut ui, source_row);
+    visible(&mut ui, source_row.clone());
 
-    // The sound row: the filter and the LFO's rate stay on the LFO page.
-    let sound = view(0.) + view(2.);
+    // The sound row: the filter, the LFO's shape and rate, the voice's knobs and its buttons.
+    let sound = source_row.clone();
     label(&mut ui, "Filter", [LEFT, SOUND_ROW, 60., 13.], None);
     visible(&mut ui, sound.clone());
     control(&mut ui, "filter", Widget::Menu, [LEFT, SOUND_ROW + 22., 72., 18.], UiGesture::Menu, None);
@@ -206,9 +251,9 @@ pub(super) fn panel() -> DeviceUi {
     visible(&mut ui, sound.clone());
     dial(&mut ui, "cutoff", "Cutoff", 212., 50., sound.clone());
     dial(&mut ui, "resonance", "Res", 264., 44., sound.clone());
-    rates(&mut ui, 318., sound);
+    rates(&mut ui, 318., sound.clone());
 
-    let controls = view(0.);
+    let controls = sound.clone();
     for (i, (id, caption)) in [
         ("fade_in", "Fade in"),
         ("fade_out", "Fade out"),
@@ -227,16 +272,19 @@ pub(super) fn panel() -> DeviceUi {
     button(&mut ui, "retrigger", "Retrigger", [790., SOUND_ROW + 24., 110., 18.], UiGesture::Toggle, None);
     visible(&mut ui, controls);
 
-    // LFO: its shape drawn, and how deep it moves pitch, filter, volume and pan.
+    // Controls: in the waveform's place, the LFO's shape drawn and how deep it moves pitch,
+    // filter, volume and pan, then the amplitude and filter envelopes (attack, decay, sustain,
+    // release) and the pitch envelope (attack, decay, amount).
+    section(&mut ui, "LFO", [LEFT, 0., 268., 96.], controls_page());
     control(
         &mut ui,
         "lfo_rate",
         Widget::WaveformPreview { shape: "lfo_shape".into() },
-        [470., SOUND_ROW + 2., 200., 44.],
+        [LEFT + 4., 14., 150., 78.],
         UiGesture::Position,
         None,
     );
-    visible(&mut ui, view(2.));
+    visible(&mut ui, controls_page());
     if let Some(c) = ui.controls.last_mut() {
         c.id = "lfo_preview".into();
         if let Some(b) = &mut c.x {
@@ -248,26 +296,22 @@ pub(super) fn panel() -> DeviceUi {
             .iter()
             .enumerate()
     {
-        let x = 678. + (i % 2) as f32 * 112.;
-        value(&mut ui, id, caption, [x, SOUND_ROW + 2. + (i / 2) as f32 * 22., 108., 18.], None);
-        visible(&mut ui, view(2.));
+        value(&mut ui, id, caption, [LEFT + 160., 14. + i as f32 * 20., 104., 18.], None);
+        visible(&mut ui, controls_page());
     }
-
-    // Envelopes: amplitude and filter (attack, decay, sustain, release) and pitch (attack,
-    // decay, amount), side by side in the sound row's place.
     let adsr = |prefix: &str| -> [String; 4] {
         ["attack", "decay", "sustain", "release"].map(|stage| format!("{prefix}{stage}"))
     };
-    for (title, x, [a, d, s, r]) in [("Amplitude", LEFT, adsr("")), ("Filter", 342., adsr("filter_"))] {
+    for (title, x, [a, d, s, r]) in [("Amplitude", 334., adsr("")), ("Filter", 524., adsr("filter_"))] {
         let graph =
             Widget::Envelope { attack: a.clone(), decay: d.clone(), level: s.clone(), release: Some(r.clone()) };
         let ids = [(a.as_str(), "A"), (d.as_str(), "D"), (s.as_str(), "S"), (r.as_str(), "R")];
-        envelope(&mut ui, title, x, &ids, graph, &format!("{}_envelope", if x == LEFT { "AMP" } else { "FILTER" }));
+        envelope(&mut ui, title, x, &ids, graph, &format!("{}_envelope", if x < 500. { "AMP" } else { "FILTER" }));
     }
     envelope(
         &mut ui,
         "Pitch",
-        622.,
+        714.,
         &[("pitch_attack", "A"), ("pitch_decay", "D"), ("pitch_env", "Amt")],
         Widget::Envelope {
             attack: "pitch_attack".into(),
@@ -280,7 +324,7 @@ pub(super) fn panel() -> DeviceUi {
 
     // More: the rest, in the source and sound rows' place.
     let more = view(3.);
-    let cell = |i: usize| [LEFT + (i % 7) as f32 * 120., SOURCE_ROW + (i / 7) as f32 * 20., 116., 18.];
+    let cell = |i: usize| [LEFT + (i % 7) as f32 * 120., SOURCE_ROW + (i / 7) as f32 * 22., 116., 18.];
     let fields = [
         ("cents", "Cents"),
         ("root", "Root"),
