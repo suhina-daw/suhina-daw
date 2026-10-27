@@ -633,3 +633,129 @@ fn malformed_tempo_and_time_signature_events_are_left_out() {
     assert!(import.warnings.iter().any(|w| w.contains("not on a bar line")), "{:?}", import.warnings);
     assert!(import.warnings.iter().any(|w| w.contains("out of range")), "{:?}", import.warnings);
 }
+
+/// A set with one audio track whose chain is `devices` (Live's XML).
+fn audio_track_set(devices: &str) -> String {
+    format!(
+        r#"<Ableton><LiveSet><Tracks><AudioTrack Id="1"><Name><EffectiveName Value="Vox"/></Name>
+           <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></AudioTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+/// A rack chain (`AudioEffectBranch` or `InstrumentBranch`) as Live stores it.
+fn rack_chain(tag: &str, name: &str, volume: &str, pan: &str, speaker: &str, solo: &str, devices: &str) -> String {
+    let inner = if tag == "InstrumentBranch" { "MidiToAudioDeviceChain" } else { "AudioToAudioDeviceChain" };
+    format!(
+        r#"<{tag} Id="0"><Name><EffectiveName Value="{name}"/><UserName Value=""/></Name>
+           <DeviceChain><{inner} Id="0"><Devices>{devices}</Devices></{inner}></DeviceChain>
+           <MixerDevice><Speaker><Manual Value="{speaker}"/></Speaker><Volume><Manual Value="{volume}"/></Volume>
+           <Panorama><Manual Value="{pan}"/></Panorama></MixerDevice><IsSoloed Value="{solo}"/></{tag}>"#
+    )
+}
+
+fn effect_rack(chains: &str, extra: &str) -> String {
+    format!(
+        r#"<AudioEffectGroupDevice Id="0"><On><Manual Value="true"/></On><UserName Value=""/>
+           <Branches>{chains}</Branches>{extra}</AudioEffectGroupDevice>"#
+    )
+}
+
+/// The UK Garage set's vocal rack: one chain of five plug-ins in a row.
+#[test]
+fn an_effect_rack_of_plug_ins_becomes_a_group_that_keeps_them() {
+    use suhina_model::DeviceKind;
+    let plugin = |name: &str| {
+        format!(
+            r#"<PluginDevice Id="0"><On><Manual Value="true"/></On><UserName Value=""/><PluginDesc><Vst3PluginInfo Id="0">
+               <Name Value="{name}"/><Uid><Fields.0 Value="1"/><Fields.1 Value="2"/><Fields.2 Value="3"/><Fields.3 Value="4"/></Uid>
+               </Vst3PluginInfo></PluginDesc></PluginDevice>"#
+        )
+    };
+    let plugins: String =
+        ["Saturn 2", "OTT", "Auto-Tune Pro", "ValhallaVintageVerb", "ShaperBox 3"].map(plugin).concat();
+    let chain = rack_chain("AudioEffectBranch", "Saturn 2 | OTT", "1", "0", "true", "false", &plugins);
+    let import = read_xml(&audio_track_set(&effect_rack(&chain, ""))).unwrap();
+    let channel = import.project.channels.iter().find(|c| c.name == "Vox").unwrap();
+    let [rack] = channel.devices.as_slice() else { panic!("one device: {:?}", channel.devices) };
+    assert_eq!(rack.name, "Audio Effect Rack");
+    let group = rack.as_group().unwrap_or_else(|| panic!("a group: {:?}", rack.kind));
+    let [branch] = group.branches.as_slice() else { panic!("one branch") };
+    assert_eq!(branch.name, "Saturn 2 | OTT");
+    assert_eq!((branch.volume, branch.pan, branch.mute, branch.solo), (1.0, 0.0, false, false));
+    assert_eq!(branch.devices.len(), 5);
+    assert!(branch.devices.iter().all(|d| matches!(d.kind, DeviceKind::Vst3 { .. })), "{:?}", branch.devices);
+    assert!(!import.warnings.iter().any(|w| w.contains("placeholder")), "{:?}", import.warnings);
+}
+
+#[test]
+fn rack_chains_keep_their_volume_pan_mute_and_solo() {
+    let chains = [
+        rack_chain("AudioEffectBranch", "Dry", "0.5011872053", "-0.390625", "true", "true", ""),
+        rack_chain("AudioEffectBranch", "Wet", "0.2511886358", "2", "false", "false", ""),
+    ]
+    .concat();
+    let macros = r#"<MacroControls.0><Manual Value="63.5"/></MacroControls.0><MacroDisplayNames.0 Value="PUNCH"/>
+                    <MacroControls.9><Manual Value="70"/></MacroControls.9>"#;
+    let import = read_xml(&audio_track_set(&effect_rack(&chains, macros))).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    let group = rack.as_group().unwrap();
+    let [dry, wet] = group.branches.as_slice() else { panic!("two branches") };
+    assert_eq!((dry.volume, dry.pan, dry.mute, dry.solo), (0.5011872053, -0.390625, false, true));
+    assert_eq!((wet.volume, wet.pan, wet.mute, wet.solo), (0.2511886358, 1.0, true, false), "pan clamped to 1");
+    assert_eq!(group.macros[0].name, "PUNCH");
+    let macro_1 = rack.params.iter().find(|p| p.id == "macro.1").map(|p| p.value);
+    assert_eq!(macro_1, Some(0.5));
+    assert!(import.warnings.iter().any(|w| w.contains("past the eighth")), "{:?}", import.warnings);
+}
+
+#[test]
+fn racks_nested_past_the_limit_stay_placeholders() {
+    use suhina_model::DeviceKind;
+    // Five racks, each in the one before: the fifth is one too deep.
+    let mut rack = String::new();
+    for _ in 0..5 {
+        rack = effect_rack(&rack_chain("AudioEffectBranch", "", "1", "0", "true", "false", &rack), "");
+    }
+    let import = read_xml(&audio_track_set(&rack)).unwrap();
+    let mut device = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    for _ in 0..3 {
+        device = &device.as_group().unwrap().branches[0].devices[0];
+    }
+    let innermost = &device.as_group().unwrap().branches[0].devices[0];
+    assert_eq!(innermost.kind, DeviceKind::Foreign { format: "als".into(), id: "AudioEffectGroupDevice".into() });
+    assert!(import.warnings.iter().any(|w| w.contains("nested deeper")), "{:?}", import.warnings);
+}
+
+#[test]
+fn an_instrument_rack_with_zones_plays_every_chain_and_says_so() {
+    let zones = r#"<ZoneSettings><KeyRange><Min Value="0"/><Max Value="59"/></KeyRange>
+                   <VelocityRange><Min Value="1"/><Max Value="127"/></VelocityRange></ZoneSettings>"#;
+    let chain = rack_chain("InstrumentBranch", "Low", "1", "0", "true", "false", r#"<OriginalSimpler Id="0"/>"#)
+        .replace("<IsSoloed", &format!("{zones}<IsSoloed"));
+    let rack = format!(
+        r#"<InstrumentGroupDevice Id="0"><On><Manual Value="false"/></On><UserName Value="Keys"/>
+           <Branches>{chain}</Branches></InstrumentGroupDevice>"#
+    );
+    let xml = audio_track_set(&rack).replace("AudioTrack", "MidiTrack");
+    let import = read_xml(&xml).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    assert_eq!(rack.name, "Keys");
+    assert!(!rack.enabled);
+    let branch = &rack.as_group().unwrap().branches[0];
+    assert_eq!(branch.devices[0].kind, suhina_model::DeviceKind::Builtin("sampler".into()));
+    assert!(import.warnings.iter().any(|w| w.contains("zones")), "{:?}", import.warnings);
+}
+
+#[test]
+fn a_rack_without_chains_or_values_is_an_empty_group() {
+    let import = read_xml(&audio_track_set("<AudioEffectGroupDevice Id=\"0\"/>")).unwrap();
+    let rack = &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0];
+    let group = rack.as_group().unwrap();
+    assert_eq!(group.branches.len(), 1);
+    assert!(group.branches[0].devices.is_empty());
+    let chains = rack_chain("AudioEffectBranch", "Broken", "-3", "nan", "maybe", "no", "");
+    let import = read_xml(&audio_track_set(&effect_rack(&chains, ""))).unwrap();
+    let branch =
+        &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0].as_group().unwrap().branches[0];
+    assert_eq!((branch.volume, branch.pan, branch.mute, branch.solo), (1.0, 0.0, false, false));
+}

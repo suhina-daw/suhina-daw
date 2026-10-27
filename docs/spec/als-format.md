@@ -298,7 +298,7 @@ from `true` to `false`) and `UserName@Value` (empty unless renamed).
 gain of EQ Eight is `Bands.2/ParameterA/Gain/Manual` (+3 dB stored as `3`). `LastPresetRef`
 points at the default preset the device was loaded from. The importer keeps them as
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
-with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, Simpler and a one-sample Sampler (below), the
+with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, Simpler and a one-sample Sampler (below), racks as device groups (below), the
 Delay and Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
 [`reverb.md`](reverb.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
 table is in [`pitch.md`](pitch.md) › Import). A MIDI track's MIDI effects come first in its
@@ -431,6 +431,41 @@ Still open: Slicing's first note (Suhina uses the part's `RootKey`; whether Live
 another key needs a set with a MIDI clip playing them), the Beat grid's values, the LFO's units,
 and which of the stored onsets Live plays at a sensitivity (on the loop, at 100 % Live drew about
 50 of its 440).
+
+### Audio Effect Rack and Instrument Rack (`AudioEffectGroupDevice`, `InstrumentGroupDevice`)
+
+Observed in the user's own 196 Live 12 sets (none committed): 419 Audio Effect Racks (270 with
+one chain, 97 with two, the rest more), 87 Instrument Racks and 168 Drum Racks. A rack becomes a
+Suhina device group ([device groups](device-groups.md)), each chain a branch; a Drum Rack stays a
+placeholder (its pads need the drum sampler). Every one of the 194 sets that open imports, with
+506 groups among them.
+
+A rack's chains are `Branches/AudioEffectBranch` (effect rack) or `Branches/InstrumentBranch`;
+a chain's devices are `DeviceChain/AudioToAudioDeviceChain/Devices` or
+`DeviceChain/MidiToAudioDeviceChain/Devices`, read like a track's chain (plug-ins with their
+state, Simpler, Reverb, racks inside racks).
+
+| Element | Observed | Suhina |
+|---|---|---|
+| `On/Manual` | true/false | the group's `enabled` |
+| `UserName` | empty unless renamed | the group's name; empty: "Audio Effect Rack" or "Instrument Rack" |
+| chain `Name/UserName`, `Name/EffectiveName` | the effective name lists the chain's devices: `FabFilter Saturn 2 \| OTT \| Auto-Tune Pro \| …` | the branch's name (the user's name first); neither: `Chain N` |
+| chain `MixerDevice/Volume/Manual` | linear gain, as a track's: `1` (3 644 chains), `0.5011872053` (−6 dB), `0.2511886358` (−12 dB); range `0.000316` … `1.995` | the branch's `volume`; a negative value keeps unity |
+| chain `MixerDevice/Panorama/Manual` | -1 … 1: `-0.390625`, `0.390625` | the branch's `pan`, clamped |
+| chain `MixerDevice/Speaker/Manual` | `false` on a muted chain | the branch's `mute` = not `Speaker` |
+| chain `IsSoloed@Value` | `true` on a soloed chain | the branch's `solo` |
+| chain `ZoneSettings/KeyRange`, `VelocityRange` (Instrument Rack) | `0` … `127`, `1` … `127` in the sets seen | not mapped yet: every branch plays every note, with a warning when a zone is narrower |
+| `MacroControls.0` … `.15/Manual` | 0 … 127: `71`, `63.5` | the first eight are `macro.1` … `macro.8` = value / 127; a later one moved or named gives a warning |
+| `MacroDisplayNames.0` … `.15@Value` | `Macro 1` … by default, `PUNCH`, `BODY` | the first eight macros' names |
+
+Limits, each with a warning: more than 16 chains keeps the first 16, a rack nested deeper than
+four groups is a placeholder, and a channel keeps its first 64 devices counted at every depth.
+
+Still open: where Live stores which parameters a macro moves. The macro elements hold only their
+value, range and automation target, and no element in the sets names a macro by index except a
+plug-in's `PowerMacroControlIndex` (the device switch, `-1` when unmapped), so the mappings are
+not imported. A set with one macro mapped to one known parameter would show it. Also open: the
+chain selector (`BranchSelectorRange`, `0` … `0` in every chain seen).
 
 ### MIDI effects
 
