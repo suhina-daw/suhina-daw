@@ -746,7 +746,12 @@ fn sample_waveform(
                 painter.text(
                     Pos2::new(x + 2., label_y),
                     egui::Align2::LEFT_CENTER,
-                    if within.fract() == 0. { format!("{bar}.{within:.0}") } else { format!("{bar}.{within:.2}") },
+                    // Bar, beat and, between beats, the sixteenth: 5, 5.3, 5.3.2.
+                    match (within.floor(), ((within.fract() * 4.).round() as i64 + 1).min(4)) {
+                        (beat, 1) if beat == 1. => format!("{bar}"),
+                        (beat, 1) => format!("{bar}.{beat}"),
+                        (beat, sixteenth) => format!("{bar}.{beat}.{sixteenth}"),
+                    },
                     crate::kit::theme::ui_font(10.),
                     colors.text_primary,
                 );
@@ -842,17 +847,14 @@ fn sample_waveform(
             {
                 let x = view.x(point, field);
                 let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&point));
+                // A plain line through the waveform; a boundary placed by hand is thicker, with a
+                // dot at its top.
                 wave_painter.line_segment(
                     [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                    Stroke::new(if pinned { 2. } else { 1. }, colors.text_primary.gamma_multiply(0.7)),
+                    Stroke::new(if pinned { 2. } else { 1. }, colors.text_primary.gamma_multiply(0.45)),
                 );
                 if pinned {
                     wave_painter.circle_filled(Pos2::new(x, field.top() + 3.), 3., colors.text_primary);
-                } else {
-                    wave_painter.line_segment(
-                        [Pos2::new(x - 3., field.top() + 3.), Pos2::new(x + 3., field.top() + 3.)],
-                        Stroke::new(1., colors.text_primary),
-                    );
                 }
             }
         }

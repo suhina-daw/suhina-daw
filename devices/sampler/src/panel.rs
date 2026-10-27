@@ -9,9 +9,9 @@ use super::*;
 /// The waveform and the mode buttons beside it start under the top row.
 const TOP: f32 = 22.;
 /// The source row, under the waveform.
-const SOURCE_ROW: f32 = 108.;
+const SOURCE_ROW: f32 = 100.;
 /// The sound row: its captions, then its controls.
-const SOUND_ROW: f32 = 128.;
+const SOUND_ROW: f32 = 120.;
 /// Where everything right of the mode buttons starts.
 const LEFT: f32 = 62.;
 
@@ -34,7 +34,7 @@ fn named_menu(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, caption_width:
 }
 
 fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: UiValue) {
-    label(ui, caption, [x, SOUND_ROW, width, 12.], None);
+    label(ui, caption, [x, SOUND_ROW, width, 11.], None);
     visible(ui, when.clone());
     let format = match id {
         "cutoff" => TextFormat::Frequency,
@@ -47,7 +47,8 @@ fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: Ui
         ui,
         id,
         Widget::Dial { label: String::new(), decimals: usize::from(id == "resonance"), format },
-        [x, SOUND_ROW + 12., width, 28.],
+        // Tall enough for a ring over its readout.
+        [x, SOUND_ROW + 11., width, 37.],
         UiGesture::Drag,
         None,
     );
@@ -65,7 +66,7 @@ fn dial(ui: &mut DeviceUi, id: &str, caption: &str, x: f32, width: f32, when: Ui
 
 /// The LFO's shape and rate: the shape and the rate's unit on a line, the rate under them.
 fn rates(ui: &mut DeviceUi, x: f32, when: UiValue) {
-    let y = SOUND_ROW;
+    let y = SOUND_ROW + 2.;
     control(ui, "lfo_shape", Widget::WaveformMenu, [x, y, 80., 18.], UiGesture::Menu, None);
     visible(ui, when.clone());
     control(ui, "lfo_rate_mode", Widget::Menu, [x + 84., y, 58., 18.], UiGesture::Menu, None);
@@ -113,10 +114,10 @@ fn envelope(ui: &mut DeviceUi, title: &str, x: f32, ids: &[(&str, &str)], graph:
     label(ui, title, [x, SOUND_ROW, 62., 13.], None);
     visible(ui, when.clone());
     for (i, (id, caption)) in ids.iter().enumerate() {
-        value(ui, id, caption, [x + 64. + i as f32 * 52., SOUND_ROW - 2., 50., 16.], None);
+        value(ui, id, caption, [x + 64. + i as f32 * 52., SOUND_ROW, 50., 16.], None);
         visible(ui, when.clone());
     }
-    control(ui, name, graph, [x, SOUND_ROW + 16., 272., 24.], UiGesture::Position, None);
+    control(ui, name, graph, [x, SOUND_ROW + 18., 272., 30.], UiGesture::Position, None);
     visible(ui, when);
     if let Some(c) = ui.controls.last_mut() {
         c.id = name.into();
@@ -146,7 +147,7 @@ pub(super) fn panel() -> DeviceUi {
         let gesture = if value == 0 { UiGesture::Set(0) } else { UiGesture::Tab(value) };
         button(&mut ui, "panel_view", caption, [x, 0., w, 18.], gesture, None);
     }
-    control(&mut ui, "sample", Widget::SampleWaveform, [LEFT, TOP, 900. - LEFT, 82.], UiGesture::Position, None);
+    control(&mut ui, "sample", Widget::SampleWaveform, [LEFT, TOP, 900. - LEFT, 74.], UiGesture::Position, None);
     if let Some(c) = ui.controls.last_mut() {
         c.x = None;
     }
@@ -186,22 +187,22 @@ pub(super) fn panel() -> DeviceUi {
     visible(&mut ui, row(slice.clone()));
     control(&mut ui, "voice_mode", Widget::Menu, [538., SOURCE_ROW, 76., 18.], UiGesture::Menu, None);
     visible(&mut ui, row(sample.clone() + grain.clone()));
-    value(&mut ui, "poly", "", [618., SOURCE_ROW, 36., 18.], None);
+    value(&mut ui, "poly", "Max", [618., SOURCE_ROW, 52., 18.], None);
     visible(&mut ui, source_row.clone());
-    button(&mut ui, "warp", "Warp", [662., SOURCE_ROW, 46., 18.], UiGesture::Toggle, None);
+    button(&mut ui, "warp", "Warp", [674., SOURCE_ROW, 44., 18.], UiGesture::Toggle, None);
     visible(&mut ui, source_row.clone());
-    control(&mut ui, "warp_mode", Widget::Menu, [712., SOURCE_ROW, 92., 18.], UiGesture::Menu, None);
+    control(&mut ui, "warp_mode", Widget::Menu, [722., SOURCE_ROW, 86., 18.], UiGesture::Menu, None);
     visible(&mut ui, source_row.clone());
-    value(&mut ui, "source_bpm", "Source", [808., SOURCE_ROW, 92., 18.], None);
+    value(&mut ui, "source_bpm", "Source", [812., SOURCE_ROW, 88., 18.], None);
     visible(&mut ui, source_row);
 
     // The sound row: the filter and the LFO's rate stay on the LFO page.
     let sound = view(0.) + view(2.);
     label(&mut ui, "Filter", [LEFT, SOUND_ROW, 60., 13.], None);
     visible(&mut ui, sound.clone());
-    control(&mut ui, "filter", Widget::Menu, [LEFT, SOUND_ROW + 18., 72., 18.], UiGesture::Menu, None);
+    control(&mut ui, "filter", Widget::Menu, [LEFT, SOUND_ROW + 22., 72., 18.], UiGesture::Menu, None);
     visible(&mut ui, sound.clone());
-    control(&mut ui, "filter_slope", Widget::Menu, [LEFT + 74., SOUND_ROW + 18., 70., 18.], UiGesture::Menu, None);
+    control(&mut ui, "filter_slope", Widget::Menu, [LEFT + 74., SOUND_ROW + 22., 70., 18.], UiGesture::Menu, None);
     visible(&mut ui, sound.clone());
     dial(&mut ui, "cutoff", "Cutoff", 212., 50., sound.clone());
     dial(&mut ui, "resonance", "Res", 264., 44., sound.clone());
@@ -221,9 +222,9 @@ pub(super) fn panel() -> DeviceUi {
     {
         dial(&mut ui, id, caption, 470. + i as f32 * 52., 50., controls.clone());
     }
-    button(&mut ui, "reverse", "Reverse", [790., SOUND_ROW, 110., 18.], UiGesture::Toggle, None);
+    button(&mut ui, "reverse", "Reverse", [790., SOUND_ROW + 2., 110., 18.], UiGesture::Toggle, None);
     visible(&mut ui, controls.clone());
-    button(&mut ui, "retrigger", "Retrigger", [790., SOUND_ROW + 22., 110., 18.], UiGesture::Toggle, None);
+    button(&mut ui, "retrigger", "Retrigger", [790., SOUND_ROW + 24., 110., 18.], UiGesture::Toggle, None);
     visible(&mut ui, controls);
 
     // LFO: its shape drawn, and how deep it moves pitch, filter, volume and pan.
@@ -231,7 +232,7 @@ pub(super) fn panel() -> DeviceUi {
         &mut ui,
         "lfo_rate",
         Widget::WaveformPreview { shape: "lfo_shape".into() },
-        [470., SOUND_ROW, 200., 40.],
+        [470., SOUND_ROW + 2., 200., 44.],
         UiGesture::Position,
         None,
     );
@@ -248,7 +249,7 @@ pub(super) fn panel() -> DeviceUi {
             .enumerate()
     {
         let x = 678. + (i % 2) as f32 * 112.;
-        value(&mut ui, id, caption, [x, SOUND_ROW + (i / 2) as f32 * 22., 108., 18.], None);
+        value(&mut ui, id, caption, [x, SOUND_ROW + 2. + (i / 2) as f32 * 22., 108., 18.], None);
         visible(&mut ui, view(2.));
     }
 
