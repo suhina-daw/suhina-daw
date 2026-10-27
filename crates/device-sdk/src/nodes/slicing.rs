@@ -138,6 +138,22 @@ impl NativeNode for Kernel {
     }
 }
 
+/// Seconds between two readings of a source's level.
+const HOP: f64 = 0.005;
+/// How fast the followed level falls after a peak, in seconds.
+const RELEASE: f64 = 0.05;
+/// A rise is measured over the loudest level in this many seconds before it: longer than the
+/// cycle of the lowest note (20 Hz), so a held note never rises.
+const LOOKBACK: f64 = 0.05;
+/// The shortest time between two hits, and from a hit to the source region's edges.
+const MIN_GAP: f64 = 0.05;
+/// Levels this many decibels under the source's loudest are silence: no hit starts there.
+const SILENCE: f64 = -45.;
+
+fn decibels(level: f64) -> f64 {
+    20. * level.max(1e-9).log10()
+}
+
 /// Source analysis happens on loading, never on the audio thread.
 #[derive(Clone)]
 pub struct SliceAnalysis {
@@ -199,23 +215,63 @@ impl SliceAnalysis {
             last: start,
         }
     }
+    /// Finds the hits in a source: where its level rises clearly over the loudest it was in the
+    /// moment before. The level follows the peaks with a slow release, and a rise is measured
+    /// against the last `LOOKBACK` seconds, so the cycles of a low note or a decaying tail never
+    /// read as hits; only one hit is kept in `MIN_GAP`, and nothing near silence counts.
     pub fn new(source: &[f32], channels: usize, rate: f64) -> Self {
         let mut result = Self::default();
         let channels = channels.max(1);
         let frames = source.len() / channels;
-        let window = (rate * 0.005).max(1.) as usize;
-        let mut previous = 0.;
-        for (i, block) in source.chunks(window.saturating_mul(channels).max(1)).enumerate() {
-            let peak = block.iter().filter(|v| v.is_finite()).fold(0f64, |p, v| p.max(f64::from(v.abs())));
-            let rise = (peak - previous).max(0.);
-            previous = peak;
-            if i == 0 || rise <= 0. {
+        if frames == 0 || !(rate.is_finite() && rate > 0.) {
+            return result;
+        }
+        let hop = ((rate * HOP) as usize).max(1);
+        let release = (-1. / (rate * RELEASE)).exp();
+        let mut follower = 0f64;
+        let mut levels = Vec::with_capacity(frames / hop + 1);
+        for (i, frame) in source.chunks(channels).enumerate() {
+            let peak = frame.iter().filter(|v| v.is_finite()).fold(0f64, |p, v| p.max(f64::from(v.abs())));
+            follower = peak.max(follower * release);
+            if (i + 1) % hop == 0 {
+                levels.push(decibels(follower));
+            }
+        }
+        let floor = levels.iter().copied().fold(f64::NEG_INFINITY, f64::max) + SILENCE;
+        let lookback = ((rate * LOOKBACK) as usize / hop).max(1);
+        let rises: Vec<f64> = (0..levels.len())
+            .map(|n| {
+                let now = levels.get(n).copied().unwrap_or(f64::NEG_INFINITY);
+                let before = levels
+                    .get(n.saturating_sub(lookback)..n)
+                    .unwrap_or_default()
+                    .iter()
+                    .copied()
+                    .fold(f64::NEG_INFINITY, f64::max);
+                if n == 0 || now < floor { 0. } else { (now - before.max(floor + SILENCE)).max(0.) }
+            })
+            .collect();
+        let gap = ((rate * MIN_GAP) as usize / hop).max(1);
+        for (n, &rise) in rises.iter().enumerate() {
+            let around = rises.get(n.saturating_sub(gap)..(n + gap + 1).min(rises.len())).unwrap_or_default();
+            // The strongest rise near it, the first of equal ones.
+            let strongest = around.iter().enumerate().all(|(i, &other)| {
+                let at = n.saturating_sub(gap) + i;
+                other < rise || (other == rise && at >= n)
+            });
+            if rise <= 0. || !strongest {
                 continue;
             }
+            // The hit starts where the level began to rise, one step before it.
+            let mut first = n;
+            while first > 0 && rises.get(first - 1).is_some_and(|r| *r > 0.) {
+                first -= 1;
+            }
+            let at = first.saturating_sub(1).saturating_mul(hop) as f64 / frames as f64;
             if let Some(slot) = result.attacks.iter_mut().min_by(|a, b| a.1.total_cmp(&b.1))
                 && rise > slot.1
             {
-                *slot = ((i.saturating_mul(window)) as f64 / frames.max(1) as f64, rise);
+                *slot = (at, rise);
             }
         }
         result
@@ -236,9 +292,11 @@ impl SliceAnalysis {
         };
         match value(60, 0.) as u8 {
             0 => {
-                let maximum = self.attacks.iter().fold(0f64, |v, a| v.max(a.1));
-                for &(point, strength) in &self.attacks {
-                    if strength > maximum * (1. - sensitivity) && strength > 0. {
+                // Sensitivity sets how many decibels a hit must rise: 18 at none, 1.5 at full.
+                let needed = 1.5 + 16.5 * (1. - sensitivity).powi(2);
+                let near = MIN_GAP * rate / frames.max(1) as f64;
+                for &(point, rise) in &self.attacks {
+                    if rise >= needed && point - start >= near && end - point >= near {
                         add(point);
                     }
                 }
