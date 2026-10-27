@@ -409,9 +409,11 @@ fn midi_effects_keep_their_place_before_the_instrument() {
     assert_eq!(value("range"), Some(24.0));
     assert_eq!(value("mode"), Some(1.0));
 
-    assert_eq!(simpler.kind, DeviceKind::Foreign { format: "als".into(), id: "OriginalSimpler".into() });
+    // Simpler plays in Suhina's sampler (docs/spec/als-format.md › Simpler and Sampler).
+    assert_eq!(simpler.kind, DeviceKind::Builtin("sampler".into()));
+    assert_eq!(simpler.name, "Simpler");
     let placeholders: Vec<_> = import.warnings.iter().filter(|w| w.contains("placeholder")).collect();
-    assert_eq!(placeholders.len(), 2, "{:?}", import.warnings);
+    assert_eq!(placeholders.len(), 1, "{:?}", import.warnings);
     assert!(placeholders.iter().any(|w| w.contains("MidiChord")), "{placeholders:?}");
 }
 

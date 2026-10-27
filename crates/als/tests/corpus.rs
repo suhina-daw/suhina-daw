@@ -174,13 +174,15 @@ fn devices(name: &str, track: &str) -> Vec<suhina_model::Device> {
 }
 
 #[test]
-fn live_devices_become_placeholders() {
+fn live_devices_become_placeholders_or_their_suhina_device() {
     use suhina_model::DeviceKind;
     let foreign = |id: &str| DeviceKind::Foreign { format: "als".into(), id: id.into() };
+    let sampler = DeviceKind::Builtin("sampler".into());
+    // Simpler, empty in these files, becomes Suhina's sampler; EQ Eight stays a placeholder.
     let d = devices("40-midi-track-instrument", "1-Simpler");
-    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [foreign("OriginalSimpler")]);
+    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [sampler.clone()]);
     let d = devices("42-device-param", "1-Simpler");
-    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [foreign("OriginalSimpler"), foreign("Eq8")]);
+    assert_eq!(d.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(), [sampler, foreign("Eq8")]);
     assert!(d[1].enabled);
     assert!(!devices("43-device-off", "1-Simpler")[1].enabled);
 }

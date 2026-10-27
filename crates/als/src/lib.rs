@@ -454,6 +454,36 @@ impl Reader {
                 extensions,
             });
         }
+        // Live's Simpler and a Sampler with one sample play in Suhina's sampler, with their
+        // sample file (docs/spec/als-format.md › Simpler and Sampler).
+        if node.has_tag_name("OriginalSimpler") || node.has_tag_name("MultiSampler") {
+            let mut notes = Vec::new();
+            let import = devices::sampler(node, &mut |w| notes.push(w));
+            for note in notes {
+                self.warn(format!("track {track_name}: {note}"));
+            }
+            if let Some(import) = import {
+                let mut device = Device {
+                    name: user_name
+                        .unwrap_or(if node.has_tag_name("MultiSampler") { "Sampler" } else { "Simpler" })
+                        .to_string(),
+                    kind: DeviceKind::Builtin("sampler".into()),
+                    enabled,
+                    state: None,
+                    params: import.params,
+                    automation: Vec::new(),
+                    clip_host: false,
+                    extensions,
+                };
+                if let Some((file, absolute)) = &import.file {
+                    device.set_sample_reference(file, absolute.as_deref().unwrap_or(file));
+                }
+                if !import.slices.is_empty() && device.set_sample_slices(&import.slices).is_err() {
+                    self.warn(format!("track {track_name}: sampler slices not read; left automatic"));
+                }
+                return Some(device);
+            }
+        }
         if !node.has_tag_name("PluginDevice") {
             self.warn(format!("track {track_name}: Live device {tag} is imported as a placeholder"));
             return Some(Device {
