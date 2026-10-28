@@ -15,7 +15,7 @@
     ["Drum Buss", "29.12", "drum bus processor", "none", "the compressor is a plain compressor; ROADMAP's bus compressor is a different device"],
     ["Dynamic Tube", "29.13", "tube saturation", "none", ""],
     ["Echo", "29.14", "modulation delay", "planned", "ROADMAP: delays"],
-    ["EQ Eight", "29.15", "parametric EQ", "equivalent", "Suhina EQ takes every band parameter of both curves (eight types, Stereo/Left-Right/Mid-Side, Scale, Adaptive Q); no analyser, Audition or oversampling option yet"],
+    ["EQ Eight", "29.15", "parametric EQ", "equivalent", "Suhina EQ takes every band parameter of both curves (eight types, Stereo/Left-Right/Mid-Side, Scale, Adaptive Q) and its panel draws the summed response with a draggable dot per band (docs/spec/eq.md › The panel); no analyser, Audition or oversampling option yet"],
     ["EQ Three", "29.16", "DJ EQ", "equivalent", "Suhina three-band DJ EQ: gains from silence to +6 dB with kills, Linkwitz-Riley crossovers at 24 or 48 dB/octave; its 0 dB sum keeps the measured dip at the low crossover"],
     ["Erosion", "29.17", "modulation destruction", "none", ""],
     ["External Audio Effect", "29.18", "external send and return", "none", "needs external audio I/O, which Suhina does not have"],

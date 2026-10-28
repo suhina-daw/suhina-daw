@@ -1,12 +1,13 @@
 ---
-description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, how Live's EQ Eight imports into it, and how close it comes to Live's renders
-read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements
+description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, the panel's response display with the bands' dots, how Live's EQ Eight imports into it, and how close it comes to Live's renders
+read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements, eq panel, response display, curve display, band dots
 type: spec
 status: current
 last_verified: 2026-10-28
 covers:
   - devices/eq/**
   - crates/dsp/src/svf.rs
+  - crates/ui/src/detail/eq_curve.rs
 ---
 
 # EQ
@@ -125,6 +126,45 @@ A type or mode outside its list is left at the default with a warning. `Precisio
 switch, Audition, the analyser's settings and `SelectedBand` are about the panel and are not
 read; `AdaptiveQFactor` (1.12) and `AdaptiveQAffectsShelves` (false) are the constants above.
 
+## The panel
+
+The EQ's panel (ADR 0021 › Amendment: device panels for built-in devices) is a canvas 440 × 168 px
+(`devices/eq/src/panel.rs`): the response display, the selected band's three strips at its left,
+the bands' type menus and numbered selectors under the display, the globals at the right and the
+Edit switch under them. Everything that follows the selected band is one host-drawn widget
+(`Widget::EqCurve`, `crates/ui/src/detail/eq_curve.rs`); the globals are the SDK's own menu,
+button and value controls. The parameters stay the device's: every edit is one `device.setParam`
+command, the same one a generated list writes.
+
+- **Display.** The summed magnitude response of the on bands of the curve in use, over the
+  parameters' own ranges: frequency 10 Hz – 22 kHz logarithmically, gain ±15 dB, with a dB line
+  every 6 dB and a line at the decades and between them, labelled 100, 1k and 10k. In Stereo
+  only curve A is drawn; in Left/Right and Mid/Side both curves are, curve B at half strength.
+  The response is the device's own filter sections (`band_sections`) evaluated at 48 kHz: the
+  drawing is the device's maths, never a second copy of it (Decision 7). Only the bend near
+  Nyquist belongs to the rate, and a cut or shelf corner above 20 kHz is the only place a
+  project at another rate could show a slightly different curve than it hears.
+- **Dots.** One numbered dot per band at its frequency and gain — for the cuts and the notch,
+  whose gain is fixed at 0 dB, on the 0 dB line. Dragging moves the frequency, and the gain
+  where the type has one: the drag starts from the band's values and writes them as one undo
+  step. Dragging a band that is off turns it on. A click or a drag start selects the band; a
+  double-click resets the band's frequency, gain and Q. The selected band's dot is filled.
+- **Strips.** The selected band's Frequency, Gain and Q: a caption, a vertical track with a
+  thumb and the value under it, dragged like every value in a panel (Shift for precision,
+  double-click resets, the arrow keys step while it has focus). Frequency and Q move
+  logarithmically, as their scales do.
+- **Type menus and numbered selectors.** A menu per band lists the eight types, drawn as a
+  glyph of the type's shape. A band's numbered button switches a band on and selects it when
+  it is off or unselected, and switches the selected band off when it is on; an off band's
+  number is dim.
+- **Globals and the Edit switch.** Mode, Adaptive Q, Scale and Output sit in the right column.
+  In Left/Right and Mid/Side an Edit switch under them picks which curve the display edits, A
+  or B; the strips name the curve they edit ("Band 1 Frequency B"). In Stereo the switch is
+  hidden and curve A is edited.
+- **Selection and the Edit switch are panel state**, as the import says of the original's
+  `SelectedBand` and `Edit`: they are not parameters, they are not saved in a project, and
+  undo does not take them back.
+
 ## Decisions
 
 Each entry: what was chosen, what it costs, why.
@@ -147,9 +187,15 @@ Each entry: what was chosen, what it costs, why.
 6. **Type changes, on/off and mode changes fade; frequency, gain and Q glide over 20 ms.** Not
    measured (they need automation during a render). A bell whose Q falls fast swells a little
    while its resonance empties (half again the level for 20 ms from Q 6 to 0.3), with no step.
-7. **Left for later:** the analyser, Audition, the curve display with its draggable dots and the
-   Edit switch are panel parts (the device-specs AGENTS › Scope); the panel is the generated
-   parameter list until a layout gives it a curve.
+7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser and Audition
+   are still left out.** The display sums the same filter sections the device runs
+   (`band_sections`), so what the panel shows is what the device renders and there is no
+   second response implementation to drift from. Cost: about 6 000 magnitude evaluations per
+   curve per frame, on the UI thread, at the display's 192 points. The drawn bend near
+   Nyquist is 48 kHz's wherever the project runs; only a corner above 20 kHz could differ at
+   another rate. The analyser and Audition remain panel parts left for later (the
+   device-specs AGENTS › Scope): the analyser needs the engine to read a device's spectrum
+   back, which no panel does yet.
 
 ## Known differences
 
@@ -181,4 +227,6 @@ sample rates; every band at its extremes stable, silence in, silence out.
 `devices/eq/src/golden_tests.rs`: golden renders of six scenarios, compared within 1e-6 with the
 files in `devices/eq/tests/golden`, whose README lists them. `crates/dsp/src/svf.rs` tests the
 filter against the cookbook biquads and under fast modulation; `crates/als/src/devices_tests.rs`
-tests the import.
+tests the import. `devices/eq/src/panel.rs` tests the layout; `crates/ui/tests/detail_eq_panel.rs`
+the panel itself: the display, the dots' drags, the strips, the type menus, the numbered
+selectors, the globals and the Edit switch, each through the commands it writes.

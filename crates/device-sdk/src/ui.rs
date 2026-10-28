@@ -595,7 +595,8 @@ impl DeviceUi {
                     | Widget::Separator
                     | Widget::Graphic { .. }
                     | Widget::SampleWaveform
-                    | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
+                    | Widget::SampleRecording
+                    | Widget::EqCurve => c.x.is_none() && c.y.is_none(),
                     Widget::Envelope { attack, decay, level, release } => {
                         let ids: Vec<_> =
                             [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
@@ -740,6 +741,7 @@ impl DeviceUi {
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
                             | Widget::Envelope { .. }
+                            | Widget::EqCurve
                     )
                 )
             {

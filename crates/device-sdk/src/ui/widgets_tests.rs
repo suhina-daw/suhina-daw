@@ -3,6 +3,27 @@
 
 use super::*;
 #[test]
+fn the_eq_curves_display_takes_no_binding_and_draws_nothing_of_its_own() {
+    let control = |x: Option<UiBinding>, y: Option<UiBinding>| CustomControl {
+        widget: Some(Widget::EqCurve),
+        id: "curve".into(),
+        name: "EQ curve".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 440., 168.],
+        visible_when: None,
+        gesture: UiGesture::Drag,
+        x,
+        y,
+        drawing: vec![],
+    };
+    let ui = DeviceUi { controls: vec![control(None, None)], ..DeviceUi::default() };
+    assert!(ui.validate(&[]).is_ok(), "the display finds its bands on the host side");
+    assert!(ui.controls[0].drawings().is_empty(), "the host draws it");
+    let ui = DeviceUi { controls: vec![control(Some(UiBinding::new("x")), None)], ..DeviceUi::default() };
+    assert!(ui.validate(&[]).is_err(), "a binding would name one parameter where the bands are forty");
+}
+
+#[test]
 fn panels_follow_the_theme_and_tabs_validate_their_zero_based_range() {
     let parameter = Parameter::new("view", "View", (0., 2.), 0.);
     let mut ui = DeviceUi::default();
