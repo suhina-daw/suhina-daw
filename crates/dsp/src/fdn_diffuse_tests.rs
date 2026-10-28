@@ -188,3 +188,94 @@ fn onset_gain_changes_first_reflection_without_moving_it() {
         }
     }
 }
+
+#[test]
+fn early_channel_weights_are_bounded_and_isolate_the_early_path() {
+    for value in [f32::NAN, f32::INFINITY, -4.01, 4.01] {
+        assert!(
+            DiffusedFdn::new(DiffuseSettings { early_output_weights: [value, 1.], ..DiffuseSettings::default() })
+                .is_err()
+        );
+    }
+    let mut fdn = DiffusedFdn::new(DiffuseSettings {
+        core: Settings { output_weights: Some([[0.; 8]; 2]), ..Settings::default() },
+        early_level: 1.,
+        early_output_weights: [1., 0.],
+        width: 1.,
+        ..DiffuseSettings::default()
+    })
+    .unwrap();
+    let mut energy = 0.;
+    for frame in 0..6000 {
+        let output = fdn.process_frame(if frame == 0 { [1.; 2] } else { [0.; 2] });
+        assert_eq!(output[1], 0.);
+        energy += output[0] * output[0];
+    }
+    assert!(energy > 0.01);
+}
+
+#[test]
+fn custom_early_patterns_reject_unpaired_or_unbounded_data() {
+    let base = DiffuseSettings::default();
+    assert!(DiffusedFdn::new(DiffuseSettings { early_tap_times_ms: Some([[0.; 8]; 2]), ..base }).is_err());
+    assert!(DiffusedFdn::new(DiffuseSettings { early_tap_weights: Some([[0.; 8]; 2]), ..base }).is_err());
+    for bad in [f64::NAN, f64::INFINITY, -0.01, 100.01] {
+        assert!(
+            DiffusedFdn::new(DiffuseSettings {
+                early_tap_times_ms: Some([[bad; 8]; 2]),
+                early_tap_weights: Some([[1.; 8]; 2]),
+                ..base
+            })
+            .is_err()
+        );
+    }
+    for bad in [f32::NAN, f32::INFINITY, -4.01, 4.01] {
+        assert!(
+            DiffusedFdn::new(DiffuseSettings {
+                early_tap_times_ms: Some([[0.; 8]; 2]),
+                early_tap_weights: Some([[bad; 8]; 2]),
+                ..base
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn custom_early_arrivals_match_independent_filtered_impulses_and_reset() {
+    use crate::{FirstOrder, FirstOrderCoefficients};
+    let mut times = [[0.; 8]; 2];
+    let mut gains = [[0.; 8]; 2];
+    times[0][0] = 5.;
+    times[1][0] = 10.;
+    gains[0][0] = 0.5;
+    gains[1][0] = -0.25;
+    let settings = DiffuseSettings {
+        core: Settings { output_weights: Some([[0.; 8]; 2]), ..Settings::default() },
+        early_level: 1.,
+        width: 1.,
+        early_tap_times_ms: Some(times),
+        early_tap_weights: Some(gains),
+        ..DiffuseSettings::default()
+    };
+    let mut fdn = DiffusedFdn::new(settings).unwrap();
+    let mut first = Vec::new();
+    for pass in 0..2 {
+        let mut hp = [FirstOrder::new(FirstOrderCoefficients::highpass(48_000., 120.)); 2];
+        let mut lp = [FirstOrder::new(FirstOrderCoefficients::lowpass(48_000., 14_000.)); 2];
+        for frame in 0..1800 {
+            let actual = fdn.process_frame(if frame == 0 { [1.; 2] } else { [0.; 2] });
+            let raw = [if frame == 360 { 0.5 } else { 0. }, if frame == 600 { -0.25 } else { 0. }];
+            for channel in 0..2 {
+                let expected = lp[channel].process(hp[channel].process(raw[channel])) as f32;
+                assert!((actual[channel] - expected).abs() < 1e-7, "frame {frame}, channel {channel}");
+            }
+            if pass == 0 {
+                first.push(actual);
+            } else {
+                assert_eq!(actual, first[frame]);
+            }
+        }
+        fdn.reset();
+    }
+}

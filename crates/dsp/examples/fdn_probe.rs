@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             let dry = signal(stimulus, RATE, 20);
             let mut wet = dry.clone();
-            let mut core = Core::new(developed, options.diffused)?;
+            let mut core = Core::new(developed, options.diffused, options.tank)?;
             core.process(&mut wet);
             write_wav(&output.join(format!("{name}-{stimulus}-dry.wav")), &dry)?;
             write_wav(&output.join(format!("{name}-{stimulus}-wet.wav")), &wet)?;
@@ -47,12 +47,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             renders.push(json!({"name": name, "stimulus": stimulus, "sample_rate": RATE,
                 "decay_seconds": settings.decay_seconds, "room_scale": settings.room_scale, "high_decay_ratio": settings.high_decay_ratio,
                 "damping_hz": settings.damping_hz, "history_bytes": core.history_bytes(),
-                "diffused": options.diffused, "wrapper_settings": probe_core::describe(developed),
+                "tank": options.tank, "diffused": options.diffused, "wrapper_settings": probe_core::describe(developed),
                 "input_peak": dry.iter().map(|v| v.abs()).fold(0_f32, f32::max), "onset_seconds": 1., "duration_seconds": 20,
                 "mix": {"dry": 0.8, "wet": 0.2}, "normalized": false}));
         }
     }
-    let metadata = json!({"schema": 1, "prototype": if options.diffused { "diffused-eight-line-fdn" } else { "eight-line-fdn" }, "build_profile": if cfg!(debug_assertions) {"debug"} else {"release"},
+    let metadata = json!({"schema": 1, "prototype": if options.tank { "cross-coupled-tank" } else if options.diffused { "diffused-fdn" } else { "eight-line-fdn" }, "build_profile": if cfg!(debug_assertions) {"debug"} else {"release"},
         "commit": command("git", &["rev-parse", "HEAD"]), "rustc": command("rustc", &["--version"]),
         "source_dirty": command("git", &["status", "--porcelain"]).map(|s| !s.is_empty()),
         "os": std::env::consts::OS, "arch": std::env::consts::ARCH,
@@ -164,8 +164,9 @@ fn benchmark(
     let mut trial_percent = Vec::new();
     let mut history_bytes = 0;
     for _ in 0..3 {
-        let mut cores =
-            (0..instances).map(|_| Core::new(developed, options.diffused)).collect::<Result<Vec<_>, _>>()?;
+        let mut cores = (0..instances)
+            .map(|_| Core::new(developed, options.diffused, options.tank))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut buffers = vec![vec![0.; block * 2]; instances];
         history_bytes = cores.first().map_or(0, Core::history_bytes);
         for core in &mut cores {
@@ -212,7 +213,7 @@ fn benchmark(
         "decay_seconds": settings.decay_seconds, "room_scale": settings.room_scale,
         "high_decay_ratio": settings.high_decay_ratio, "damping_hz": settings.damping_hz,
         "history_bytes_per_instance": history_bytes, "trial_group_percent_one_core": trial_percent,
-        "diffused": options.diffused, "wrapper_settings": probe_core::describe(developed),
+        "tank": options.tank, "diffused": options.diffused, "wrapper_settings": probe_core::describe(developed),
         "group_percent_one_core": group_percent, "per_instance_percent_one_core": group_percent / instances as f64,
         "median_trial_per_instance_percent_one_core": trial_median / instances as f64,
         "real_time_factor": group_percent / 100., "block_deadline_us": deadline * 1e6,

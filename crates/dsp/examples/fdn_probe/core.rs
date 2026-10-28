@@ -11,6 +11,7 @@ pub struct Options {
     pub profile: String,
     pub flat_decay: bool,
     pub diffused: bool,
+    pub tank: bool,
     pub render_only: bool,
     pub impulse_only: bool,
     local: Value,
@@ -23,6 +24,7 @@ impl Options {
             profile: "baseline".into(),
             flat_decay: false,
             diffused: false,
+            tank: false,
             render_only: false,
             impulse_only: false,
             local: Value::Null,
@@ -42,6 +44,8 @@ impl Options {
                 }
             } else if arg == "--flat-decay" {
                 result.flat_decay = true;
+            } else if arg == "--tank" {
+                result.tank = true;
             } else if arg == "--diffused" {
                 result.diffused = true;
             } else if arg == "--render-only" {
@@ -58,7 +62,9 @@ impl Options {
                     return Err("settings JSON must be an object".into());
                 }
             } else {
-                return Err("unknown option; use --flat-decay, --diffused, --render-only or --settings <json>".into());
+                return Err(
+                    "unknown option; use --flat-decay, --diffused, --tank, --render-only or --settings <json>".into()
+                );
             }
         }
         Ok(result)
@@ -69,8 +75,52 @@ impl Options {
         if let Some(value) = self.local.get(name) {
             let object = value.as_object().ok_or("per-render settings must be an object")?;
             for (key, value) in object {
+                if key == "loop_delay_compensation" {
+                    core.loop_delay_compensation = value.as_bool().ok_or("loop_delay_compensation must be boolean")?;
+                    continue;
+                }
+                if key == "input_weights" {
+                    core.input_weights =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
+                if key == "feedback_matrix" {
+                    core.feedback_matrix =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
+                if key == "early_tap_times_ms" {
+                    s.early_tap_times_ms =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
+                if key == "early_tap_weights" {
+                    s.early_tap_weights =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
+                if key == "early_output_weights" {
+                    s.early_output_weights = serde_json::from_value(value.clone())?;
+                    continue;
+                }
+                if key == "tank_output_weights" {
+                    s.tank_output_weights =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
+                if key == "output_weights" {
+                    core.output_weights =
+                        if value.is_null() { None } else { Some(serde_json::from_value(value.clone())?) };
+                    continue;
+                }
                 let number = value.as_f64().ok_or("setting must be a finite number")?;
                 match key.as_str() {
+                    "fdn_lines" => {
+                        if number != 8. && number != 16. {
+                            return Err("fdn_lines must be 8 or 16".into());
+                        }
+                        s.fdn_lines = number as u8;
+                    }
                     "decay_seconds" => core.decay_seconds = number,
                     "room_scale" => core.room_scale = number,
                     "late_scale" => s.late_scale = number,
@@ -78,6 +128,8 @@ impl Options {
                     "feedback_rotation" => core.feedback_rotation = number,
                     "input_rotation" => core.input_rotation = number,
                     "output_rotation" => core.output_rotation = number,
+                    "output_tap_spread" => core.output_tap_spread = number,
+                    "loop_diffusion_scale" => core.loop_diffusion_scale = number,
                     "loop_diffusion" => core.loop_diffusion = number as f32,
                     "predelay_ms" => s.predelay_ms = number,
                     "diffusion" => s.diffusion = number as f32,
@@ -99,12 +151,15 @@ impl Options {
 
 pub enum Core {
     Plain(Box<Fdn>),
+    Tank(Box<suhina_dsp::reverb_tank::Tank>),
     Diffused(Box<DiffusedFdn>),
 }
 
 impl Core {
-    pub fn new(s: DiffuseSettings, diffused: bool) -> Result<Self, SettingsError> {
-        if diffused {
+    pub fn new(s: DiffuseSettings, diffused: bool, tank: bool) -> Result<Self, SettingsError> {
+        if tank {
+            Ok(Self::Tank(Box::new(suhina_dsp::reverb_tank::Tank::new(s)?)))
+        } else if diffused {
             Ok(Self::Diffused(Box::new(DiffusedFdn::new(s)?)))
         } else {
             Ok(Self::Plain(Box::new(Fdn::new(s.core)?)))
@@ -113,25 +168,28 @@ impl Core {
     pub fn process(&mut self, samples: &mut [f32]) {
         match self {
             Self::Plain(core) => core.process(samples),
+            Self::Tank(core) => core.process(samples),
             Self::Diffused(core) => core.process(samples),
         }
     }
     pub fn process_frame(&mut self, frame: [f32; 2]) -> [f32; 2] {
         match self {
             Self::Plain(core) => core.process_frame(frame),
+            Self::Tank(core) => core.process_frame(frame),
             Self::Diffused(core) => core.process_frame(frame),
         }
     }
     pub fn history_bytes(&self) -> usize {
         match self {
             Self::Plain(core) => core.history_bytes(),
+            Self::Tank(core) => core.history_bytes(),
             Self::Diffused(core) => core.history_bytes(),
         }
     }
 }
 
 pub fn describe(s: DiffuseSettings) -> Value {
-    json!({"feedback_rotation": s.core.feedback_rotation, "input_rotation": s.core.input_rotation, "output_rotation": s.core.output_rotation, "loop_diffusion": s.core.loop_diffusion, "late_scale": s.late_scale, "predelay_ms": s.predelay_ms, "diffusion": s.diffusion, "early_level": s.early_level,
+    json!({"input_weights": s.core.input_weights, "feedback_matrix": s.core.feedback_matrix, "early_output_weights": s.early_output_weights, "early_tap_times_ms": s.early_tap_times_ms, "early_tap_weights": s.early_tap_weights, "fdn_lines": s.fdn_lines, "tank_output_weights": s.tank_output_weights, "loop_delay_compensation": s.core.loop_delay_compensation, "loop_diffusion_scale": s.core.loop_diffusion_scale, "output_weights": s.core.output_weights, "output_tap_spread": s.core.output_tap_spread, "feedback_rotation": s.core.feedback_rotation, "input_rotation": s.core.input_rotation, "output_rotation": s.core.output_rotation, "loop_diffusion": s.core.loop_diffusion, "late_scale": s.late_scale, "predelay_ms": s.predelay_ms, "diffusion": s.diffusion, "early_level": s.early_level,
         "early_onset_gain": s.early_onset_gain, "early_tilt_db": s.early_tilt_db, "early_diffusion": s.early_diffusion,
         "width": s.width, "low_cut_hz": s.low_cut_hz, "high_cut_hz": s.high_cut_hz})
 }

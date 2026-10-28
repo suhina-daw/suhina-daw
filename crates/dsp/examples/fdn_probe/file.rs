@@ -37,7 +37,7 @@ pub fn render(input: &Path, output: &Path, options: &Options) -> Result<(), Box<
         &options.profile,
         Settings { sample_rate: spec.sample_rate, decay_seconds: decay, ..Settings::default() },
     )?;
-    let mut core = Core::new(settings, options.diffused)?;
+    let mut core = Core::new(settings, options.diffused, options.tank)?;
     let mut writer = hound::WavWriter::create(output.join("input-wet.wav"), spec)?;
     let mut samples = reader.samples::<f32>();
     let mut count = 0_u64;
@@ -76,7 +76,7 @@ pub fn render(input: &Path, output: &Path, options: &Options) -> Result<(), Box<
         "settings": super::probe_core::describe(settings), "normalized": false,
         "commit": super::command("git", &["rev-parse", "HEAD"]),
         "source_dirty": super::command("git", &["status", "--porcelain"]).map(|s| !s.is_empty()),
-        "history_bytes": core.history_bytes(), "diffused": options.diffused,
+        "history_bytes": core.history_bytes(), "tank": options.tank, "diffused": options.diffused,
     });
     std::fs::write(output.join("input-manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
     Ok(())

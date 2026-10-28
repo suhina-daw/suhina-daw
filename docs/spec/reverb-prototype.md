@@ -7,6 +7,7 @@ last_verified: 2026-10-23
 covers:
   - crates/dsp/src/fdn.rs
   - crates/dsp/src/fdn_tests.rs
+  - crates/dsp/src/reverb_tank.rs
   - crates/dsp/src/fdn_scatter.rs
   - crates/dsp/src/fdn_diffuse.rs
   - crates/dsp/src/fdn_diffuse_tests.rs
@@ -312,6 +313,37 @@ it is not that paper's matrix-exponential optimizer. Zero bypass must preserve
 existing renders. Nonzero operation adds bounded arithmetic and needs a new CPU
 measurement. Validation data must remain separate from parameter selection.
 
+## Experimental output observation taps
+
+Following Schlecht, Scerbo, De Sena and Valimaki, *Modal Excitation in Feedback
+Delay Networks* (2024), the probe can vary output observation points while leaving
+the feedback recurrence unchanged. This first experiment changes output positions
+only, not input positions. `output_tap_spread` is finite in 0..1, default zero.
+For line length m and exploratory fractions [0, .13, .47, .71, .29, .89, .53, 1],
+read at max(1, round(m * (1 - spread * fraction))). Both output projections use
+that sample; feedback still reads the full length and applies the original loss.
+Zero uses the original observation path exactly. Nonzero spread with loop diffusion
+is rejected: observing inside the delay would otherwise bypass the scattering
+section and confound this experiment. No extra history, interpolation or modulation
+is introduced. Nonzero spread adds a read per line, so measure CPU rather than
+assuming it is free. Pole locations and internal feedback histories are unchanged;
+output gain, onset, modal residues and stereo cancellation need independent checks.
+This does not implement the paper's full modal analysis or establish audio quality.
+The external predelay remains independent. Settings are fixed at construction.
+
+
+### Independent output projections
+
+The optional `output_weights` setting is two arrays of eight finite gains in -8..8.
+It replaces the prepared output-rotation vectors, without changing input weights,
+feedback, delay allocation or processing operation count. `null`/omission retains
+the original rotation behaviour. Gains are not normalized automatically; the probe
+reports them so analysis can distinguish spectral/temporal shape from output level.
+This exposes a wider family of modal observations motivated by the same modal
+excitation references. Per-channel time/frequency and mono-fold-down comparisons
+are required; a lower summed-stereo error alone is insufficient. These are fixed
+research settings, not production controls or a fitted commercial preset.
+
 ## Cost gate
 
 CPU timing begins with the first runnable core. The probe reports repeated release
@@ -332,6 +364,116 @@ portable thresholds. Acoustic quality and low CPU are independent requirements.
 Do not add lines or modulation without remeasuring both. Actual app playback,
 underruns and parameter-movement cost require the later device integration.
 
+### Dispersive feedback experiment
+
+The research core may scale its eight lossy Schroeder sections independently
+from the main delay lines, with `loop_diffusion_scale` in [0.25, 32], default 1.
+Dattorro (1997), sections 1.3.1–1.3.3, motivates longer diffusion inside the
+recirculating tank; Schlecht (2021), Allpass Feedback Delay Networks, introduction,
+describes feedback-loop diffusion and dispersive applications. This experiment
+is neither a reproduction of Dattorro's topology nor a claim that the complete
+network is allpass. Each section retains delay-proportional attenuation, so
+extending it does not intentionally extend the homogeneous modal decay.
+
+Construction validates the scale before allocating bounded histories. Processing
+uses the existing operations, with longer histories only. A zero diffusion gain
+retains the original sample output. Validate finite/reset behaviour, homogeneous
+decay at long scales, malformed settings, and measure CPU and source-dependent
+envelope regressions before considering a listening candidate.
+
+### Cross-coupled tank alternative
+
+An unregistered research block may use two cross-coupled branches, each with two
+Schroeder lattices and two delays, after four input lattices. Public basis:
+Dattorro (1997), Figure 1 and Table 2. The initial alternative omits modulation
+and replaces the four global decay factors with delay-proportional loss in all
+tank histories. This deliberately differs from the paper's default implementation.
+Output taps sum signed delayed internal signals. External predelay remains 2.5 ms.
+The `fdn_probe --tank` research switch selects it explicitly; production devices
+remain unchanged. Parameters use late_scale for tank size, diffusion for the
+first tank lattice gain, early_diffusion for the second; metadata identifies the
+model. CPU, native-versus-analytic impulse agreement, finite input handling and
+reset/decay tests are required before comparing listening candidates.
+
+Tank output taps also support optional prepared 2x7 multipliers in [-4,4],
+defaulting to one. These are fixed output observations and cannot change the
+feedback poles. Reject non-finite multipliers before allocation. Fitted values
+remain local research inputs and must pass the whole source bank and mono checks.
+
+### Sixteen-line comparison
+
+The same native feedback-network implementation may instantiate 8 or 16 lines.
+The 16-line experiment adds one normalized Hadamard stage and an interleaved
+prime-delay set, preserving delay-proportional loss and the shared diffusion
+wrapper. `fdn_lines` selects 8 (default) or 16; unsupported sizes fail before
+allocation. Eight-element custom output weights are rejected for 16 lines.
+This tests increased mode density, not an assumption that more lines are better.
+Require eight-line compatibility, orthogonality, finite/reset/decay tests, source
+comparisons and measured CPU below the existing gate before selecting it.
+
+### General orthogonal feedback experiment
+
+The eight-line research network may accept a fixed 8x8 real feedback matrix,
+replacing the Hadamard/permutation/rotation stage. Construction checks every
+entry is finite and bounded and every row inner product agrees with the identity
+within 1e-5. Sixteen-line instances reject this eight-line-only option. No matrix
+preparation occurs during audio processing. Default settings retain the old path.
+
+Dal Santo et al. (2023), Differentiable Feedback Delay Network for Colorless
+Reverberation, sections 2.4–3.1, motivates avoiding strongly recirculating short
+lines and adjusting feedback/input/output mixing while preserving homogeneous
+loss. A zero-diagonal orthogonal matrix is our separate experiment in that
+framework, not a claimed reproduction of the paper's optimized solution.
+An optional finite eight-element input projection in [-8,8] replaces the input
+rotation in eight-line instances; sixteen-line instances reject it. It prepares
+the same per-line multipliers already used during processing.
+The early path may have two fixed finite channel gains in [-4,4], default one,
+to keep its observation independent of the late-network projections.
+
+Require invalid-matrix rejection, an independently computed diagonal-loop
+impulse test, channel-isolation tests, native/analytic agreement, and CPU
+measurements. Fitted coefficients remain local. These are research controls;
+none is a new registered effect or a selected production setting.
+
+### Independent stereo early-reflection experiment
+
+The unregistered diffusion wrapper may accept paired optional 2x8 early tap times
+and signed weights. Times are finite 0–100 ms relative to the existing predelay,
+scaled by room size; weights are finite [-4,4]. Both arrays must be present or
+absent. Custom taps override the default tap pattern and its onset/tilt shaping;
+early level, channel gains, optional early diffusion and final filters still apply.
+Allocate one bounded shared mono history from the largest prepared tap. Prepare
+integer times off-thread; processing only reads, multiplies and sums the taps.
+Defaults retain sample-identical rendering. No measured pattern is a built-in
+preset; observation-derived times and fitted weights remain local research data.
+
+Basis: Dattorro (1997) sections 1.3.1–1.3.3 distinguish input and tank diffusion
+for percussive signals. Schlecht, Fagerstrom and Valimaki (2023), Decorrelation in
+Feedback Delay Networks, separates feedforward correlation from the recursive
+tail. These motivate testing independent early-channel arrival patterns, not a
+claim that either paper specifies the local captured reference's algorithm.
+Require malformed-array/value rejection, independently calculated channel arrival
+and filtered-impulse tests, reset/block consistency, default compatibility,
+native/analytic agreement, transient/source comparisons and a fresh CPU check.
+
+### Nominal scattering-delay compensation experiment
+
+An optional off-thread setting subtracts each scattering history length from its
+main delay when loop scattering is enabled. Reject settings whose remaining main
+delay would be zero or negative, before allocating history. With scattering
+bypassed this option has no effect. Recalculate the main-delay homogeneous loss
+from the shortened length; the scattering section retains its own homogeneous
+loss. No additional processing operation or allocation is introduced per frame.
+
+This tests whether part of scattering's tonal change comes from added nominal
+loop delay. It does not preserve frequency-dependent group delay or modal
+frequencies exactly. Motivation is the delay/filter-feedback distinction in
+Schlecht and Habets (2020), Scattering in Feedback Delay Networks; the particular
+compensation is our experiment, not a claimed result of that paper. Require an
+independent isolated-path impulse check, invalid-length rejection, reset and
+bypass equivalence, native/analytic comparison, source-bank regression checks and
+CPU measurements before selection. No production setting is changed.
+
 ## Sources
 
 Original implementation of published methods; no upstream code or paper text copied.
@@ -348,3 +490,10 @@ Original implementation of published methods; no upstream code or paper text cop
 - Dal Santo et al. (2024), *RIR2FDN: An improved room impulse response analysis
   and synthesis*, DAFx24: evaluate energy decay, density and spectral shape together;
   matching measured responses remains an analysis and listening problem.
+
+- Schlecht, Scerbo, De Sena and Välimäki (2024), *Modal Excitation in Feedback
+  Delay Networks*: observation and excitation positions control modal residues.
+
+- Dal Santo et al. (2023), *Differentiable Feedback Delay Network for Colorless
+  Reverberation*, DAFx23: jointly consider spectral coloration and temporal
+  density, with lossless feedback mixing before homogeneous attenuation.

@@ -68,3 +68,6 @@ pub(crate) const STATE_CEILING: f64 = 1e20;
 pub(crate) fn flush(value: f64) -> f64 {
     if (DENORMAL_FLOOR..STATE_CEILING).contains(&value.abs()) { value } else { 0.0 }
 }
+
+/// Experimental cross-coupled reverb tank; not a registered device.
+pub mod reverb_tank;

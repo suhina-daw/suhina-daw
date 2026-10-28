@@ -3,18 +3,28 @@
 
 //! Experimental diffusion/early-reflection wrapper; see the reverb prototype spec.
 
-use crate::fdn::{Fdn, Settings, SettingsError};
+use crate::fdn::{Fdn, Fdn16, Settings, SettingsError};
 use crate::{Allpass, DelayLine, FirstOrder, FirstOrderCoefficients};
 
 /// Construct off-thread; no live parameter mutation in this research core.
 #[derive(Debug, Clone, Copy)]
 pub struct DiffuseSettings {
     pub core: Settings,
+    /// Research feedback-network order, eight or sixteen.
+    pub fdn_lines: u8,
+    /// Research tank output-tap multipliers; unused by the FDN wrapper.
+    pub tank_output_weights: Option<[[f32; 7]; 2]>,
     /// Scales only the late network, leaving early taps and input diffusion fixed.
     pub late_scale: f64,
     pub predelay_ms: f64,
     pub diffusion: f32,
     pub early_level: f32,
+    /// Fixed independent early-output gains, prepared off-thread.
+    pub early_output_weights: [f32; 2],
+    /// Paired custom stereo tap times, in milliseconds before room scaling.
+    pub early_tap_times_ms: Option<[[f64; 8]; 2]>,
+    /// Paired custom signed gains; overrides the default pattern and onset/tilt.
+    pub early_tap_weights: Option<[[f32; 8]; 2]>,
     /// Relative gain of the first early reflection, prepared off-thread.
     pub early_onset_gain: f32,
     /// Gain tilt in dB from the first to the last early reflection.
@@ -30,10 +40,15 @@ impl Default for DiffuseSettings {
     fn default() -> Self {
         Self {
             core: Settings::default(),
+            fdn_lines: 8,
+            tank_output_weights: None,
             late_scale: 1.,
             predelay_ms: 2.5,
             diffusion: 0.3,
             early_level: 0.15,
+            early_output_weights: [1.; 2],
+            early_tap_times_ms: None,
+            early_tap_weights: None,
             early_onset_gain: 1.,
             early_tilt_db: 0.,
             early_diffusion: 0.,
@@ -47,17 +62,24 @@ impl Default for DiffuseSettings {
 /// Native shared blocks only; no captured reference samples or runtime I/O.
 #[derive(Debug)]
 pub struct DiffusedFdn {
-    core: Fdn,
+    core: Core,
     predelay: DelayLine,
     pre_frames: usize,
     early: DelayLine,
     taps: [usize; 8],
     early_gains: [f32; 8],
+    custom_early: Option<EarlyPattern>,
     diffusers: [(Allpass, f64); 4],
     early_diffusers: [[(Allpass, f64); 2]; 2],
     highpass: [FirstOrder; 2],
     lowpass: [FirstOrder; 2],
     settings: DiffuseSettings,
+}
+
+#[derive(Debug)]
+struct EarlyPattern {
+    taps: [[usize; 8]; 2],
+    gains: [[f32; 8]; 2],
 }
 
 impl DiffusedFdn {
@@ -69,6 +91,7 @@ impl DiffusedFdn {
             || !(0. ..=100.).contains(&s.predelay_ms)
             || !(0. ..=0.8).contains(&s.diffusion)
             || !(0. ..=2.).contains(&s.early_level)
+            || !s.early_output_weights.into_iter().all(|x| (-4. ..=4.).contains(&x))
             || !(0. ..=8.).contains(&s.early_onset_gain)
             || !(-12. ..=12.).contains(&s.early_tilt_db)
             || !(0. ..=0.8).contains(&s.early_diffusion)
@@ -78,7 +101,26 @@ impl DiffusedFdn {
         {
             return Err(SettingsError);
         }
-        let core = Fdn::new(Settings { room_scale: s.core.room_scale * s.late_scale, ..s.core })?;
+        let custom_early = match (s.early_tap_times_ms, s.early_tap_weights) {
+            (None, None) => None,
+            (Some(times), Some(gains))
+                if times.iter().flatten().all(|x| (0. ..=100.).contains(x))
+                    && gains.iter().flatten().all(|x| (-4. ..=4.).contains(x)) =>
+            {
+                Some(EarlyPattern {
+                    taps: times
+                        .map(|channel| channel.map(|ms| (ms * rate * s.core.room_scale / 1000.).round() as usize)),
+                    gains,
+                })
+            }
+            _ => return Err(SettingsError),
+        };
+        let settings = Settings { room_scale: s.core.room_scale * s.late_scale, ..s.core };
+        let core = match s.fdn_lines {
+            8 => Core::Eight(Box::new(Fdn::new(settings)?)),
+            16 => Core::Sixteen(Box::new(Fdn16::new(settings)?)),
+            _ => return Err(SettingsError),
+        };
         let pre_frames = (s.predelay_ms * rate / 1000.).round() as usize;
         let tap_ms = [0., 3.7, 7.9, 12.7, 18.1, 25.3, 34.9, 46.7];
         let taps = tap_ms.map(|ms| (ms * rate * s.core.room_scale / 1000.).round() as usize);
@@ -96,13 +138,16 @@ impl DiffusedFdn {
                 (Allpass::for_seconds(frames / rate, rate), frames)
             })
         });
+        let early_capacity =
+            custom_early.as_ref().map_or(taps[7], |pattern| pattern.taps.iter().flatten().copied().max().unwrap_or(0));
         Ok(Self {
             core,
             predelay: DelayLine::new(pre_frames),
             pre_frames,
-            early: DelayLine::new(taps[7]),
+            early: DelayLine::new(early_capacity),
             taps,
             early_gains,
+            custom_early,
             diffusers,
             early_diffusers,
             highpass: [FirstOrder::new(FirstOrderCoefficients::highpass(rate, s.low_cut_hz)); 2],
@@ -145,12 +190,21 @@ impl DiffusedFdn {
         let delayed = if self.pre_frames == 0 { mono } else { self.predelay.read(self.pre_frames) };
         self.predelay.push(mono);
         let mut early = [0.; 2];
-        // Independent sparse early pattern; the first tap is the current predelayed sample.
-        for (i, frames) in self.taps.iter().enumerate() {
-            let x = if *frames == 0 { delayed } else { self.early.read(*frames) };
-            let gain = self.early_gains[i];
-            early[0] += x * gain * if i % 3 == 1 { -1. } else { 1. };
-            early[1] += x * gain * if i % 3 == 2 { -1. } else { 1. };
+        if let Some(pattern) = &self.custom_early {
+            for ((sample, taps), gains) in early.iter_mut().zip(&pattern.taps).zip(&pattern.gains) {
+                for (frames, gain) in taps.iter().zip(gains) {
+                    let x = if *frames == 0 { delayed } else { self.early.read(*frames) };
+                    *sample += x * gain;
+                }
+            }
+        } else {
+            // Independent sparse early pattern; the first tap is the current predelayed sample.
+            for (i, frames) in self.taps.iter().enumerate() {
+                let x = if *frames == 0 { delayed } else { self.early.read(*frames) };
+                let gain = self.early_gains[i];
+                early[0] += x * gain * if i % 3 == 1 { -1. } else { 1. };
+                early[1] += x * gain * if i % 3 == 2 { -1. } else { 1. };
+            }
         }
         self.early.push(delayed);
         if self.settings.early_diffusion > 0. {
@@ -168,7 +222,7 @@ impl DiffusedFdn {
         }
         let mut output = self.core.process_frame([diffuse; 2]);
         for i in 0..2 {
-            let x = output[i] + self.settings.early_level * early[i];
+            let x = output[i] + self.settings.early_level * self.settings.early_output_weights[i] * early[i];
             output[i] = self.lowpass[i].process(self.highpass[i].process(f64::from(x))) as f32;
         }
         let mid = (output[0] + output[1]) * 0.5;
@@ -188,3 +242,29 @@ impl DiffusedFdn {
 #[allow(clippy::unwrap_used)]
 #[path = "fdn_diffuse_tests.rs"]
 mod tests;
+
+#[derive(Debug)]
+enum Core {
+    Eight(Box<Fdn>),
+    Sixteen(Box<Fdn16>),
+}
+impl Core {
+    fn process_frame(&mut self, x: [f32; 2]) -> [f32; 2] {
+        match self {
+            Self::Eight(c) => c.process_frame(x),
+            Self::Sixteen(c) => c.process_frame(x),
+        }
+    }
+    fn reset(&mut self) {
+        match self {
+            Self::Eight(c) => c.reset(),
+            Self::Sixteen(c) => c.reset(),
+        }
+    }
+    fn history_bytes(&self) -> usize {
+        match self {
+            Self::Eight(c) => c.history_bytes(),
+            Self::Sixteen(c) => c.history_bytes(),
+        }
+    }
+}
