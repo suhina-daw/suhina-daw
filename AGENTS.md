@@ -134,6 +134,7 @@ devices/
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled
   overdrive  pedal-style: band, drive, tone, dynamics, dry/wet; oversampled
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet
+  multiband three bands: above and below stages per band (downward and upward compression, expansion), Amount, Time
   fm-synth six operators, 32 algorithms, DX7 voice files; the engine is a port of MSFA (Apache-2.0)
   limiter  brickwall peak limiter with 1.5 ms lookahead; never over the ceiling
   nam-amp-modeler  a `.nam` model through `nam-rs` (MIT) inference, with trims, EQ, HQ, a trim delay; the NAM folders and panels

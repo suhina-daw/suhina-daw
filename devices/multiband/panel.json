@@ -1,0 +1,4958 @@
+{
+ "ui": {
+  "size": [
+   820.0,
+   168.0
+  ],
+  "viewport_size": null,
+  "background": [
+   37,
+   36,
+   33,
+   255
+  ],
+  "assets": [],
+  "layers": [
+   {
+    "kind": "rect",
+    "rect": [
+     4.0,
+     4.0,
+     372.0,
+     140.0
+    ],
+    "color": [
+     46,
+     45,
+     42,
+     255
+    ],
+    "radius": 3.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     4.0,
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": {
+           "op": "parameter",
+           "parameter": "lowCrossover",
+           "normalized": false,
+           "logarithmic": false
+          }
+         },
+         "b": -2.995732273553991
+        },
+        "b": 53.85251575600323
+       },
+       "b": 4.0
+      },
+      "b": {
+       "op": "multiply",
+       "a": 4.0,
+       "b": -1.0
+      }
+     },
+     140.0
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": {
+           "op": "parameter",
+           "parameter": "highCrossover",
+           "normalized": false,
+           "logarithmic": false
+          }
+         },
+         "b": -2.995732273553991
+        },
+        "b": 53.85251575600323
+       },
+       "b": 4.0
+      },
+      "b": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "multiply",
+         "a": {
+          "op": "add",
+          "a": {
+           "op": "log",
+           "value": {
+            "op": "parameter",
+            "parameter": "lowCrossover",
+            "normalized": false,
+            "logarithmic": false
+           }
+          },
+          "b": -2.995732273553991
+         },
+         "b": 53.85251575600323
+        },
+        "b": 4.0
+       },
+       "b": -1.0
+      }
+     },
+     140.0
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0,
+     {
+      "op": "add",
+      "a": 376.0,
+      "b": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "multiply",
+         "a": {
+          "op": "add",
+          "a": {
+           "op": "log",
+           "value": {
+            "op": "parameter",
+            "parameter": "highCrossover",
+            "normalized": false,
+            "logarithmic": false
+           }
+          },
+          "b": -2.995732273553991
+         },
+         "b": 53.85251575600323
+        },
+        "b": 4.0
+       },
+       "b": -1.0
+      }
+     },
+     140.0
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 100.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 100.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     144.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 1000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 1000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     144.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 10000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 10000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     144.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -20.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     376.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -20.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -40.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     376.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -40.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -60.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     376.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -60.0,
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     376.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "to": [
+     376.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.75
+      },
+      "b": 4.0
+     }
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     144.0
+    ],
+    "color": [
+     166,
+     163,
+     255,
+     255
+    ],
+    "width": 2.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     4.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 53.85251575600323
+      },
+      "b": 4.0
+     },
+     144.0
+    ],
+    "color": [
+     166,
+     163,
+     255,
+     255
+    ],
+    "width": 2.0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 100.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 53.85251575600323
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     131.0
+    ],
+    "text": "100",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 1000.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 53.85251575600323
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     131.0
+    ],
+    "text": "1k",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 10000.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 53.85251575600323
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     131.0
+    ],
+    "text": "10k",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   }
+  ],
+  "controls": [
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "lowCrossover",
+    "name": "Low Crossover",
+    "tooltip": "Low Crossover: drag vertically; double click resets",
+    "bounds": [
+     8.0,
+     146.0,
+     72.0,
+     18.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "highCrossover",
+    "name": "High Crossover",
+    "tooltip": "High Crossover: drag vertically; double click resets",
+    "bounds": [
+     300.0,
+     146.0,
+     72.0,
+     18.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "Low",
+     "off_label": null,
+     "indicator": false
+    },
+    "visible_when": null,
+    "id": "tab_low",
+    "name": "Low",
+    "tooltip": "Low",
+    "bounds": [
+     384.0,
+     4.0,
+     52.0,
+     18.0
+    ],
+    "gesture": {
+     "set": 0
+    },
+    "x": {
+     "parameter": "band",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "Mid",
+     "off_label": null,
+     "indicator": false
+    },
+    "visible_when": null,
+    "id": "tab_mid",
+    "name": "Mid",
+    "tooltip": "Mid",
+    "bounds": [
+     438.0,
+     4.0,
+     52.0,
+     18.0
+    ],
+    "gesture": {
+     "set": 1
+    },
+    "x": {
+     "parameter": "band",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "High",
+     "off_label": null,
+     "indicator": false
+    },
+    "visible_when": null,
+    "id": "tab_high",
+    "name": "High",
+    "tooltip": "High",
+    "bounds": [
+     492.0,
+     4.0,
+     52.0,
+     18.0
+    ],
+    "gesture": {
+     "set": 2
+    },
+    "x": {
+     "parameter": "band",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "Peak",
+     "off_label": "RMS",
+     "indicator": false
+    },
+    "visible_when": null,
+    "id": "peak_toggle",
+    "name": "Peak",
+    "tooltip": "Peak",
+    "bounds": [
+     554.0,
+     4.0,
+     52.0,
+     18.0
+    ],
+    "gesture": "toggle",
+    "x": {
+     "parameter": "peak",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "Soft knee",
+     "off_label": null,
+     "indicator": true
+    },
+    "visible_when": null,
+    "id": "knee_toggle",
+    "name": "Soft knee",
+    "tooltip": "Soft knee",
+    "bounds": [
+     608.0,
+     4.0,
+     70.0,
+     18.0
+    ],
+    "gesture": "toggle",
+    "x": {
+     "parameter": "softKnee",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "OTT",
+     "off_label": null,
+     "indicator": false
+    },
+    "visible_when": null,
+    "id": "preset_ott",
+    "name": "OTT preset",
+    "tooltip": "Apply the OTT quick preset",
+    "bounds": [
+     720.0,
+     4.0,
+     96.0,
+     18.0
+    ],
+    "gesture": {
+     "preset": 0
+    },
+    "x": null,
+    "y": null,
+    "drawing": []
+   },
+   {
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "low_curve",
+    "name": "Low curve",
+    "tooltip": "Low curve: drag up or down to change it",
+    "bounds": [
+     384.0,
+     28.0,
+     76.0,
+     76.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": [
+     {
+      "kind": "rect",
+      "rect": [
+       0.0,
+       0.0,
+       76.0,
+       76.0
+      ],
+      "color": [
+       37,
+       36,
+       33,
+       255
+      ],
+      "radius": 3.0
+     },
+     {
+      "kind": "line",
+      "from": [
+       0.0,
+       76.0
+      ],
+      "to": [
+       76.0,
+       0.0
+      ],
+      "color": [
+       56,
+       55,
+       51,
+       255
+      ],
+      "width": 1.0
+     },
+     {
+      "kind": "path",
+      "points": [
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "lowBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "add",
+              "a": -80.0,
+              "b": {
+               "op": "multiply",
+               "a": {
+                "op": "parameter",
+                "parameter": "lowBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": -1.0
+              }
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "lowBelowSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "lowBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "add",
+               "a": {
+                "op": "parameter",
+                "parameter": "lowBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": 80.0
+              },
+              "b": {
+               "op": "parameter",
+               "parameter": "lowBelowSlope",
+               "normalized": false,
+               "logarithmic": false
+              }
+             },
+             "b": -1.0
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "lowBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "lowBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "lowAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "lowAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "lowAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "lowAboveThreshold",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "lowAboveSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "multiply",
+            "a": {
+             "op": "parameter",
+             "parameter": "lowAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "add",
+             "a": 1.0,
+             "b": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "lowAboveSlope",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             }
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ]
+      ],
+      "color": [
+       242,
+       166,
+       90,
+       255
+      ],
+      "width": 2.0,
+      "closed": false,
+      "fill": null
+     }
+    ]
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "On",
+     "off_label": "Off",
+     "indicator": true
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "low_on",
+    "name": "On",
+    "tooltip": "On",
+    "bounds": [
+     384.0,
+     110.0,
+     76.0,
+     20.0
+    ],
+    "gesture": "toggle",
+    "x": {
+     "parameter": "lowOn",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowAboveThreshold",
+    "name": "Above",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowAboveSlope",
+    "name": "Above slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowBelowThreshold",
+    "name": "Below",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowBelowSlope",
+    "name": "Below slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowBelowSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Attack",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowAttack",
+    "name": "Attack",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowAttack",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Release",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowRelease",
+    "name": "Release",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowRelease",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Input",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowInput",
+    "name": "Input",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowInput",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Gain",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 0.0
+    },
+    "id": "lowGain",
+    "name": "Gain",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowGain",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "mid_curve",
+    "name": "Mid curve",
+    "tooltip": "Mid curve: drag up or down to change it",
+    "bounds": [
+     384.0,
+     28.0,
+     76.0,
+     76.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": [
+     {
+      "kind": "rect",
+      "rect": [
+       0.0,
+       0.0,
+       76.0,
+       76.0
+      ],
+      "color": [
+       37,
+       36,
+       33,
+       255
+      ],
+      "radius": 3.0
+     },
+     {
+      "kind": "line",
+      "from": [
+       0.0,
+       76.0
+      ],
+      "to": [
+       76.0,
+       0.0
+      ],
+      "color": [
+       56,
+       55,
+       51,
+       255
+      ],
+      "width": 1.0
+     },
+     {
+      "kind": "path",
+      "points": [
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "midBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "add",
+              "a": -80.0,
+              "b": {
+               "op": "multiply",
+               "a": {
+                "op": "parameter",
+                "parameter": "midBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": -1.0
+              }
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "midBelowSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "midBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "add",
+               "a": {
+                "op": "parameter",
+                "parameter": "midBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": 80.0
+              },
+              "b": {
+               "op": "parameter",
+               "parameter": "midBelowSlope",
+               "normalized": false,
+               "logarithmic": false
+              }
+             },
+             "b": -1.0
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "midBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "midBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "midAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "midAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "midAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "midAboveThreshold",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "midAboveSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "multiply",
+            "a": {
+             "op": "parameter",
+             "parameter": "midAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "add",
+             "a": 1.0,
+             "b": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "midAboveSlope",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             }
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ]
+      ],
+      "color": [
+       95,
+       211,
+       192,
+       255
+      ],
+      "width": 2.0,
+      "closed": false,
+      "fill": null
+     }
+    ]
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "On",
+     "off_label": "Off",
+     "indicator": true
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "mid_on",
+    "name": "On",
+    "tooltip": "On",
+    "bounds": [
+     384.0,
+     110.0,
+     76.0,
+     20.0
+    ],
+    "gesture": "toggle",
+    "x": {
+     "parameter": "midOn",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midAboveThreshold",
+    "name": "Above",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midAboveSlope",
+    "name": "Above slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midBelowThreshold",
+    "name": "Below",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midBelowSlope",
+    "name": "Below slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midBelowSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Attack",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midAttack",
+    "name": "Attack",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midAttack",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Release",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midRelease",
+    "name": "Release",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midRelease",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Input",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midInput",
+    "name": "Input",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midInput",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Gain",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 1.0
+    },
+    "id": "midGain",
+    "name": "Gain",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midGain",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "high_curve",
+    "name": "High curve",
+    "tooltip": "High curve: drag up or down to change it",
+    "bounds": [
+     384.0,
+     28.0,
+     76.0,
+     76.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": [
+     {
+      "kind": "rect",
+      "rect": [
+       0.0,
+       0.0,
+       76.0,
+       76.0
+      ],
+      "color": [
+       37,
+       36,
+       33,
+       255
+      ],
+      "radius": 3.0
+     },
+     {
+      "kind": "line",
+      "from": [
+       0.0,
+       76.0
+      ],
+      "to": [
+       76.0,
+       0.0
+      ],
+      "color": [
+       56,
+       55,
+       51,
+       255
+      ],
+      "width": 1.0
+     },
+     {
+      "kind": "path",
+      "points": [
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "highBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "add",
+              "a": -80.0,
+              "b": {
+               "op": "multiply",
+               "a": {
+                "op": "parameter",
+                "parameter": "highBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": -1.0
+              }
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "highBelowSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "max",
+           "a": -80.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "highBelowThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "add",
+               "a": {
+                "op": "parameter",
+                "parameter": "highBelowThreshold",
+                "normalized": false,
+                "logarithmic": false
+               },
+               "b": 80.0
+              },
+              "b": {
+               "op": "parameter",
+               "parameter": "highBelowSlope",
+               "normalized": false,
+               "logarithmic": false
+              }
+             },
+             "b": -1.0
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "highBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "highBelowThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "highAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "parameter",
+           "parameter": "highAboveThreshold",
+           "normalized": false,
+           "logarithmic": false
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ],
+       [
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "add",
+            "a": {
+             "op": "parameter",
+             "parameter": "highAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "multiply",
+             "a": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "highAboveThreshold",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             },
+             "b": {
+              "op": "exp",
+              "value": {
+               "op": "multiply",
+               "a": {
+                "op": "log",
+                "value": {
+                 "op": "add",
+                 "a": {
+                  "op": "parameter",
+                  "parameter": "highAboveSlope",
+                  "normalized": false,
+                  "logarithmic": false
+                 },
+                 "b": 0.001
+                }
+               },
+               "b": -1.0
+              }
+             }
+            }
+           }
+          },
+          "b": 0.95
+         },
+         "b": 76.0
+        },
+        {
+         "op": "add",
+         "a": {
+          "op": "multiply",
+          "a": {
+           "op": "min",
+           "a": 0.0,
+           "b": {
+            "op": "multiply",
+            "a": {
+             "op": "parameter",
+             "parameter": "highAboveThreshold",
+             "normalized": false,
+             "logarithmic": false
+            },
+            "b": {
+             "op": "add",
+             "a": 1.0,
+             "b": {
+              "op": "multiply",
+              "a": {
+               "op": "parameter",
+               "parameter": "highAboveSlope",
+               "normalized": false,
+               "logarithmic": false
+              },
+              "b": -1.0
+             }
+            }
+           }
+          },
+          "b": -0.95
+         },
+         "b": 0.0
+        }
+       ]
+      ],
+      "color": [
+       159,
+       180,
+       255,
+       255
+      ],
+      "width": 2.0,
+      "closed": false,
+      "fill": null
+     }
+    ]
+   },
+   {
+    "widget": {
+     "kind": "button",
+     "label": "On",
+     "off_label": "Off",
+     "indicator": true
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "high_on",
+    "name": "On",
+    "tooltip": "On",
+    "bounds": [
+     384.0,
+     110.0,
+     76.0,
+     20.0
+    ],
+    "gesture": "toggle",
+    "x": {
+     "parameter": "highOn",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "y": null,
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highAboveThreshold",
+    "name": "Above",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Above slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highAboveSlope",
+    "name": "Above slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highBelowThreshold",
+    "name": "Below",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Below slope",
+     "decimals": 2,
+     "format": "number"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highBelowSlope",
+    "name": "Below slope",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     28.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highBelowSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Attack",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highAttack",
+    "name": "Attack",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     468.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highAttack",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Release",
+     "decimals": 1,
+     "format": "seconds"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highRelease",
+    "name": "Release",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     530.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highRelease",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Input",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highInput",
+    "name": "Input",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     592.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highInput",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Gain",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": {
+     "op": "equal",
+     "a": {
+      "op": "parameter",
+      "parameter": "band",
+      "normalized": false,
+      "logarithmic": false
+     },
+     "b": 2.0
+    },
+    "id": "highGain",
+    "name": "Gain",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     654.0,
+     96.0,
+     60.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highGain",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Amount",
+     "decimals": 0,
+     "format": "percent"
+    },
+    "visible_when": null,
+    "id": "amount",
+    "name": "Amount",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     720.0,
+     28.0,
+     96.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "amount",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Time",
+     "decimals": 0,
+     "format": "percent"
+    },
+    "visible_when": null,
+    "id": "time",
+    "name": "Time",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     720.0,
+     96.0,
+     48.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "time",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "dial",
+     "label": "Output",
+     "decimals": 1,
+     "format": "decibels"
+    },
+    "visible_when": null,
+    "id": "output",
+    "name": "Output",
+    "tooltip": "Drag vertically; Shift for precision; double click resets",
+    "bounds": [
+     768.0,
+     96.0,
+     48.0,
+     66.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "output",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   }
+  ],
+  "hidden_parameters": [
+   "lowCrossover",
+   "highCrossover",
+   "peak",
+   "softKnee",
+   "amount",
+   "time",
+   "output",
+   "lowOn",
+   "lowInput",
+   "lowAboveThreshold",
+   "lowAboveSlope",
+   "lowBelowThreshold",
+   "lowBelowSlope",
+   "lowAttack",
+   "lowRelease",
+   "lowGain",
+   "midOn",
+   "midInput",
+   "midAboveThreshold",
+   "midAboveSlope",
+   "midBelowThreshold",
+   "midBelowSlope",
+   "midAttack",
+   "midRelease",
+   "midGain",
+   "highOn",
+   "highInput",
+   "highAboveThreshold",
+   "highAboveSlope",
+   "highBelowThreshold",
+   "highBelowSlope",
+   "highAttack",
+   "highRelease",
+   "highGain",
+   "band"
+  ],
+  "presets": [
+   {
+    "name": "OTT",
+    "values": {
+     "lowCrossover": 90.0,
+     "highCrossover": 2500.0,
+     "peak": 0.0,
+     "softKnee": 1.0,
+     "amount": 1.0,
+     "time": 1.0,
+     "output": 0.0,
+     "lowOn": 1.0,
+     "lowInput": 5.0,
+     "lowAboveThreshold": -34.0,
+     "lowAboveSlope": 0.015,
+     "lowBelowThreshold": -41.0,
+     "lowBelowSlope": 0.24,
+     "lowAttack": 0.05,
+     "lowRelease": 0.28,
+     "lowGain": 10.0,
+     "midOn": 1.0,
+     "midInput": 5.0,
+     "midAboveThreshold": -30.0,
+     "midAboveSlope": 0.015,
+     "midBelowThreshold": -41.0,
+     "midBelowSlope": 0.24,
+     "midAttack": 0.022,
+     "midRelease": 0.28,
+     "midGain": 6.0,
+     "highOn": 1.0,
+     "highInput": 5.0,
+     "highAboveThreshold": -35.0,
+     "highAboveSlope": 0.0,
+     "highBelowThreshold": -41.0,
+     "highBelowSlope": 0.24,
+     "highAttack": 0.013,
+     "highRelease": 0.13,
+     "highGain": 10.0
+    }
+   }
+  ]
+ },
+ "expanded": {
+  "size": [
+   1200.0,
+   160.0
+  ],
+  "viewport_size": null,
+  "background": [
+   37,
+   36,
+   33,
+   255
+  ],
+  "assets": [],
+  "layers": [
+   {
+    "kind": "rect",
+    "rect": [
+     4.0,
+     24.0,
+     1192.0,
+     112.0
+    ],
+    "color": [
+     46,
+     45,
+     42,
+     255
+    ],
+    "radius": 3.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     4.0,
+     24.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": {
+           "op": "parameter",
+           "parameter": "lowCrossover",
+           "normalized": false,
+           "logarithmic": false
+          }
+         },
+         "b": -2.995732273553991
+        },
+        "b": 172.55967414289208
+       },
+       "b": 4.0
+      },
+      "b": {
+       "op": "multiply",
+       "a": 4.0,
+       "b": -1.0
+      }
+     },
+     112.0
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": {
+           "op": "parameter",
+           "parameter": "highCrossover",
+           "normalized": false,
+           "logarithmic": false
+          }
+         },
+         "b": -2.995732273553991
+        },
+        "b": 172.55967414289208
+       },
+       "b": 4.0
+      },
+      "b": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "multiply",
+         "a": {
+          "op": "add",
+          "a": {
+           "op": "log",
+           "value": {
+            "op": "parameter",
+            "parameter": "lowCrossover",
+            "normalized": false,
+            "logarithmic": false
+           }
+          },
+          "b": -2.995732273553991
+         },
+         "b": 172.55967414289208
+        },
+        "b": 4.0
+       },
+       "b": -1.0
+      }
+     },
+     112.0
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "rect",
+    "rect": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0,
+     {
+      "op": "add",
+      "a": 1196.0,
+      "b": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "multiply",
+         "a": {
+          "op": "add",
+          "a": {
+           "op": "log",
+           "value": {
+            "op": "parameter",
+            "parameter": "highCrossover",
+            "normalized": false,
+            "logarithmic": false
+           }
+          },
+          "b": -2.995732273553991
+         },
+         "b": 172.55967414289208
+        },
+        "b": 4.0
+       },
+       "b": -1.0
+      }
+     },
+     112.0
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     26
+    ],
+    "radius": 0.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 100.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 100.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     136.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 1000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 1000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     136.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 10000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": 10000.0
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     136.0
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -20.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     1196.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -20.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -40.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     1196.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -40.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -60.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     1196.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": -60.0,
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     236,
+     232,
+     225,
+     18
+    ],
+    "width": 1.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     4.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "lowBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     242,
+     166,
+     90,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "midBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     95,
+     211,
+     192,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     1196.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highAboveThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     255
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "to": [
+     1196.0,
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "parameter",
+        "parameter": "highBelowThreshold",
+        "normalized": false,
+        "logarithmic": false
+       },
+       "b": -1.4
+      },
+      "b": 24.0
+     }
+    ],
+    "color": [
+     159,
+     180,
+     255,
+     150
+    ],
+    "width": 1.5
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "lowCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     136.0
+    ],
+    "color": [
+     166,
+     163,
+     255,
+     255
+    ],
+    "width": 2.0
+   },
+   {
+    "kind": "line",
+    "from": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     24.0
+    ],
+    "to": [
+     {
+      "op": "add",
+      "a": {
+       "op": "multiply",
+       "a": {
+        "op": "add",
+        "a": {
+         "op": "log",
+         "value": {
+          "op": "parameter",
+          "parameter": "highCrossover",
+          "normalized": false,
+          "logarithmic": false
+         }
+        },
+        "b": -2.995732273553991
+       },
+       "b": 172.55967414289208
+      },
+      "b": 4.0
+     },
+     136.0
+    ],
+    "color": [
+     166,
+     163,
+     255,
+     255
+    ],
+    "width": 2.0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 100.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 172.55967414289208
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     123.0
+    ],
+    "text": "100",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 1000.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 172.55967414289208
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     123.0
+    ],
+    "text": "1k",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   },
+   {
+    "kind": "text",
+    "position": [
+     {
+      "op": "add",
+      "a": {
+       "op": "add",
+       "a": {
+        "op": "multiply",
+        "a": {
+         "op": "add",
+         "a": {
+          "op": "log",
+          "value": 10000.0
+         },
+         "b": -2.995732273553991
+        },
+        "b": 172.55967414289208
+       },
+       "b": 4.0
+      },
+      "b": 3.0
+     },
+     123.0
+    ],
+    "text": "10k",
+    "color": [
+     236,
+     232,
+     225,
+     120
+    ],
+    "size": 9.0,
+    "align": "left",
+    "format": "number",
+    "parameter": null,
+    "decimals": 0
+   }
+  ],
+  "controls": [
+   {
+    "widget": {
+     "kind": "label",
+     "label": "Low"
+    },
+    "visible_when": null,
+    "id": "low_title",
+    "name": "Low",
+    "tooltip": "",
+    "bounds": [
+     4.0,
+     2.0,
+     60.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": null
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "lowAboveThreshold",
+    "name": "Low Above",
+    "tooltip": "Low Above: drag vertically; double click resets",
+    "bounds": [
+     68.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "lowBelowThreshold",
+    "name": "Low Below",
+    "tooltip": "Low Below: drag vertically; double click resets",
+    "bounds": [
+     142.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "label",
+     "label": "Mid"
+    },
+    "visible_when": null,
+    "id": "mid_title",
+    "name": "Mid",
+    "tooltip": "",
+    "bounds": [
+     404.0,
+     2.0,
+     60.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": null
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "midAboveThreshold",
+    "name": "Mid Above",
+    "tooltip": "Mid Above: drag vertically; double click resets",
+    "bounds": [
+     468.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "midBelowThreshold",
+    "name": "Mid Below",
+    "tooltip": "Mid Below: drag vertically; double click resets",
+    "bounds": [
+     542.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "midBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "label",
+     "label": "High"
+    },
+    "visible_when": null,
+    "id": "high_title",
+    "name": "High",
+    "tooltip": "",
+    "bounds": [
+     804.0,
+     2.0,
+     60.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": null
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "highAboveThreshold",
+    "name": "High Above",
+    "tooltip": "High Above: drag vertically; double click resets",
+    "bounds": [
+     868.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highAboveThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 1,
+     "format": "decibels",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "highBelowThreshold",
+    "name": "High Below",
+    "tooltip": "High Below: drag vertically; double click resets",
+    "bounds": [
+     942.0,
+     2.0,
+     70.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highBelowThreshold",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "lowCrossover",
+    "name": "Low Crossover",
+    "tooltip": "Low Crossover: drag vertically; double click resets",
+    "bounds": [
+     4.0,
+     138.0,
+     80.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "highCrossover",
+    "name": "High Crossover",
+    "tooltip": "High Crossover: drag vertically; double click resets",
+    "bounds": [
+     1116.0,
+     138.0,
+     80.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   }
+  ],
+  "hidden_parameters": [
+   "lowCrossover",
+   "highCrossover",
+   "peak",
+   "softKnee",
+   "amount",
+   "time",
+   "output",
+   "lowOn",
+   "lowInput",
+   "lowAboveThreshold",
+   "lowAboveSlope",
+   "lowBelowThreshold",
+   "lowBelowSlope",
+   "lowAttack",
+   "lowRelease",
+   "lowGain",
+   "midOn",
+   "midInput",
+   "midAboveThreshold",
+   "midAboveSlope",
+   "midBelowThreshold",
+   "midBelowSlope",
+   "midAttack",
+   "midRelease",
+   "midGain",
+   "highOn",
+   "highInput",
+   "highAboveThreshold",
+   "highAboveSlope",
+   "highBelowThreshold",
+   "highBelowSlope",
+   "highAttack",
+   "highRelease",
+   "highGain",
+   "band"
+  ]
+ }
+}

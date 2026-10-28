@@ -38,6 +38,9 @@ pub struct DeviceUi {
     pub layers: Vec<Draw>,
     pub controls: Vec<CustomControl>,
     pub hidden_parameters: Vec<String>,
+    /// Quick presets its `preset` buttons apply.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub presets: Vec<UiPreset>,
     /// The panel's own style sheet (version 6): presentation only, applied above the
     /// application theme and below the user's overrides, and only inside this panel. `#id`
     /// selects a control by its id. Parts it leaves out keep the application's theme.
@@ -80,6 +83,7 @@ impl Default for DeviceUi {
             layers: Vec::new(),
             controls: Vec::new(),
             hidden_parameters: Vec::new(),
+            presets: Vec::new(),
             style: None,
         }
     }
@@ -181,6 +185,16 @@ pub enum UiExpression {
         a: UiValue,
         b: UiValue,
     },
+    /// The smaller of the two.
+    Min {
+        a: UiValue,
+        b: UiValue,
+    },
+    /// The larger of the two.
+    Max {
+        a: UiValue,
+        b: UiValue,
+    },
     Exp {
         value: UiValue,
     },
@@ -240,6 +254,8 @@ impl UiValue {
                 UiExpression::Equal { a, b } => {
                     f64::from((a.eval(parameter, depth + 1) - b.eval(parameter, depth + 1)).abs() < 0.0001)
                 }
+                UiExpression::Min { a, b } => a.eval(parameter, depth + 1).min(b.eval(parameter, depth + 1)),
+                UiExpression::Max { a, b } => a.eval(parameter, depth + 1).max(b.eval(parameter, depth + 1)),
                 UiExpression::Exp { value } => value.eval(parameter, depth + 1).exp(),
                 UiExpression::Log { value } => value.eval(parameter, depth + 1).ln(),
                 UiExpression::Sin { value } => value.eval(parameter, depth + 1).sin(),
@@ -392,7 +408,21 @@ pub enum UiGesture {
     Set(u16),
     /// Select a tab; selecting the active tab returns to value zero.
     Tab(u16),
+    /// Apply the canvas's quick preset at this index: every value it holds, as one undo step.
+    Preset(u16),
 }
+
+/// A quick preset a canvas button applies: parameter values by id. Parameters it leaves out keep
+/// their values.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiPreset {
+    pub name: String,
+    pub values: std::collections::BTreeMap<String, f64>,
+}
+
+/// Most quick presets on one canvas.
+pub const MAX_UI_PRESETS: usize = 32;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiBinding {
@@ -465,6 +495,23 @@ impl DeviceUi {
         if self.hidden_parameters.iter().any(|id| !ids.contains(id.as_str())) {
             return Err(fail("hidden row refers to unknown parameter"));
         }
+        if self.presets.len() > MAX_UI_PRESETS {
+            return Err(fail("more than 32 quick presets"));
+        }
+        for preset in &self.presets {
+            if preset.name.is_empty() || preset.name.len() > 64 || preset.values.len() > 256 {
+                return Err(fail("a quick preset needs a name of 1..64 bytes and at most 256 values"));
+            }
+            for (id, value) in &preset.values {
+                let p = parameters
+                    .iter()
+                    .find(|p| &p.id == id)
+                    .ok_or_else(|| fail(&format!("quick preset {:?} sets unknown parameter {id:?}", preset.name)))?;
+                if !value.is_finite() || !(p.min..=p.max).contains(value) {
+                    return Err(fail(&format!("quick preset {:?} sets {id} outside its range", preset.name)));
+                }
+            }
+        }
         let count = self.controls.iter().try_fold(self.layers.len(), |total, c| {
             total.checked_add(c.drawings().len()).ok_or_else(|| fail("drawing count overflow"))
         })?;
@@ -511,7 +558,11 @@ impl DeviceUi {
                     Widget::Button { .. } => {
                         matches!(
                             c.gesture,
-                            UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_)
+                            UiGesture::Toggle
+                                | UiGesture::Momentary
+                                | UiGesture::Set(_)
+                                | UiGesture::Tab(_)
+                                | UiGesture::Preset(_)
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
@@ -597,7 +648,14 @@ impl DeviceUi {
             if let Some(condition) = &c.visible_when {
                 condition.validate(&ids, 0, &mut expression_budget)?;
             }
-            if c.x.is_none()
+            if let UiGesture::Preset(index) = c.gesture {
+                if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
+                    return Err(fail("a preset gesture is a button without bindings"));
+                }
+                if usize::from(index) >= self.presets.len() {
+                    return Err(fail("a preset gesture names a preset the canvas does not have"));
+                }
+            } else if c.x.is_none()
                 && c.y.is_none()
                 && !matches!(
                     c.widget,
@@ -676,6 +734,8 @@ impl UiValue {
                 UiExpression::Add { a, b }
                 | UiExpression::Multiply { a, b }
                 | UiExpression::Equal { a, b }
+                | UiExpression::Min { a, b }
+                | UiExpression::Max { a, b }
                 | UiExpression::Wave { shape: a, cycles: b } => {
                     a.validate(ids, depth + 1, budget)?;
                     b.validate(ids, depth + 1, budget)?;

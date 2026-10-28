@@ -428,3 +428,69 @@ fn other_devices_are_not_mapped() {
     let doc = roxmltree::Document::parse("<Compressor2/>").unwrap_or_else(|e| panic!("{e}"));
     assert!(builtin(doc.root_element(), &mut |_| {}).is_none());
 }
+
+/// Live's Multiband Dynamics (`MultibandDynamics`) with values like an OTT-style setting: every
+/// physical value as it is, the ratios as slopes, the times in seconds, and notes for what is not
+/// imported (a solo, a merged band, the side-chain).
+#[test]
+fn multiband_dynamics_takes_every_stored_value() {
+    let mut xml = vec![
+        manual_xml("SplitLowMid", "88.28"),
+        manual_xml("SplitMidHigh", "2500"),
+        manual_xml("EnvelopeIsPeak", "true"),
+        manual_xml("SoftKnee", "false"),
+        manual_xml("GlobalAmount", "0.48"),
+        manual_xml("GlobalTime", "3.16"),
+        manual_xml("OutputGain", "1.5"),
+    ];
+    for band in ["Low", "Mid", "High"] {
+        xml.extend([
+            manual_xml(&format!("Active{band}"), "true"),
+            manual_xml(&format!("InputGain{band}"), "5.2"),
+            manual_xml(&format!("AboveThreshold{band}"), "-30.25"),
+            manual_xml(&format!("AboveRatio{band}"), "-0.75"),
+            manual_xml(&format!("BelowThreshold{band}"), "-41.75"),
+            manual_xml(&format!("BelowRatio{band}"), "0.5"),
+            manual_xml(&format!("Attack{band}"), "22.4"),
+            manual_xml(&format!("Release{band}"), "282"),
+            manual_xml(&format!("Gain{band}"), "-3"),
+        ]);
+    }
+    xml.push("<SoloMid Value=\"true\" /><SplitLowMidOn Value=\"false\" />".to_owned());
+    xml.push("<SideChain><OnOff><Manual Value=\"true\" /></OnOff></SideChain>".to_owned());
+    let (id, params, warnings) = mapped("MultibandDynamics", &xml.concat());
+    assert_eq!(id, "multiband");
+    assert_eq!(params.len(), 7 + 3 * 9);
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-6, "{id}: {got} against {expected}");
+    };
+    near("lowCrossover", 88.28);
+    near("highCrossover", 2500.0);
+    near("peak", 1.0);
+    near("softKnee", 0.0);
+    near("amount", 0.48);
+    near("time", 3.16);
+    near("output", 1.5);
+    for band in ["low", "mid", "high"] {
+        near(&format!("{band}On"), 1.0);
+        near(&format!("{band}Input"), 5.2);
+        near(&format!("{band}AboveThreshold"), -30.25);
+        near(&format!("{band}AboveSlope"), 0.25);
+        near(&format!("{band}BelowThreshold"), -41.75);
+        near(&format!("{band}BelowSlope"), 0.5);
+        near(&format!("{band}Attack"), 0.0224);
+        near(&format!("{band}Release"), 0.282);
+        near(&format!("{band}Gain"), -3.0);
+    }
+}
+
+/// Ratios outside their stored ranges are held at the ends, so the slopes stay in ours.
+#[test]
+fn multiband_dynamics_holds_ratios_in_range() {
+    let xml = [manual_xml("AboveRatioMid", "-4"), manual_xml("BelowRatioMid", "9")].concat();
+    let (_, params, _) = mapped("MultibandDynamics", &xml);
+    assert_eq!(param(&params, "midAboveSlope"), 0.0);
+    assert_eq!(param(&params, "midBelowSlope"), 0.0);
+}

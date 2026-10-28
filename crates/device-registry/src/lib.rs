@@ -12,7 +12,7 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 15] = [
+pub const DEVICES: [&DeviceInfo; 16] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
@@ -22,6 +22,7 @@ pub const DEVICES: [&DeviceInfo; 15] = [
     &suhina_device_vinyl_distortion::INFO,
     &suhina_device_overdrive::INFO,
     &suhina_device_compressor::INFO,
+    &suhina_device_multiband::INFO,
     &suhina_device_limiter::INFO,
     &suhina_device_nam_amp_modeler::INFO,
     &suhina_device_nam_cab_loader::INFO,
@@ -48,6 +49,7 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
 /// The layouts kept as JSON next to a device crate, by device id.
 pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("compressor", include_str!("../../../devices/compressor/panel.json")),
+    ("multiband", include_str!("../../../devices/multiband/panel.json")),
     ("overdrive", include_str!("../../../devices/overdrive/panel.json")),
     ("reverb", include_str!("../../../devices/reverb/panel.json")),
     ("limiter", include_str!("../../../devices/limiter/panel.json")),
@@ -94,6 +96,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "vinyl-distortion" => Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
         "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
         "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
+        "multiband" => Box::new(suhina_device_multiband::Multiband::new()),
         "limiter" => Box::new(suhina_device_limiter::Limiter::new()),
         "nam-amp-modeler" => Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
         "nam-cab-loader" => Box::new(suhina_device_nam_cab_loader::CabLoader::new()),

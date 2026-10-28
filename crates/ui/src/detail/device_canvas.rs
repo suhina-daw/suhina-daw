@@ -1038,10 +1038,14 @@ fn paint_control(
             })
         })
         .flatten();
-    let on =
-        control.x.iter().chain(control.y.iter()).any(|b| {
-            parameters.iter().find(|p| p.id == b.parameter).is_some_and(|p| normalized(p, b.logarithmic) >= 0.5)
-        });
+    // A segmented button or tab is on while its parameter holds its value, any other while the
+    // parameter is in the upper half of its range.
+    let on = control.x.iter().chain(control.y.iter()).any(|b| {
+        parameters.iter().find(|p| p.id == b.parameter).is_some_and(|p| match control.gesture {
+            UiGesture::Set(value) | UiGesture::Tab(value) => (p.value - f64::from(value)).abs() < 0.5,
+            _ => normalized(p, b.logarithmic) >= 0.5,
+        })
+    });
     let state = response.map_or(crate::kit::skin::State::Normal, |r| crate::kit::skin::State::response(r, !knob && on));
     let ink = crate::kit::style_class::foreground(crate::kit::theme::text_value());
     let mut body = None;
@@ -1074,8 +1078,10 @@ fn paint_control(
             && let Draw::Rect { radius, .. } = draw
         {
             let replaced = *body.get_or_insert_with(|| {
+                // On is the accent, so it reads at a glance and the SDK's dark label for an on
+                // button stays legible on it.
                 let fill = crate::kit::style_class::background(if on {
-                    crate::kit::theme::control_active()
+                    crate::kit::theme::accent()
                 } else {
                     crate::kit::theme::control_background()
                 });
@@ -1187,6 +1193,38 @@ pub(crate) fn show(
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
             );
+            continue;
+        }
+        if let UiGesture::Preset(index) = control.gesture {
+            let response = ui
+                .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                parameters,
+                &loaded,
+                Some(&response),
+            );
+            if response.clicked()
+                && let Some(preset) = canvas.presets.get(usize::from(index))
+            {
+                // Every value but the last is continuous, so the preset is one undo step.
+                let count = preset.values.len();
+                for (i, (id, value)) in preset.values.iter().enumerate() {
+                    actions.push(Action::new(
+                        "device.setParam",
+                        json!({
+                            "track": track.0, "device": at.value(), "param": id, "value": value,
+                            "continuous": i + 1 < count, "gesture": control.id
+                        }),
+                    ));
+                }
+            }
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
             continue;
         }
         if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
