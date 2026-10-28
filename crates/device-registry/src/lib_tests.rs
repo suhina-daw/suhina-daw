@@ -151,7 +151,7 @@ fn every_listed_device_can_be_made_and_ids_are_unique() {
 }
 
 #[test]
-fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
+fn the_multiband_panel_switches_bands_and_shows_only_its_canvas() {
     let panel = panel("multiband").unwrap();
     let compact = panel.ui.as_ref().unwrap();
     // One tab per band sets the shown band; each band's knobs show only for it.
@@ -161,5 +161,7 @@ fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
         let knob = compact.controls.iter().find(|c| c.id == format!("{band}Attack")).unwrap();
         assert!(knob.visible_when.is_some(), "{band}: its knobs show for its tab only");
     }
-    assert!(panel.expanded.as_ref().is_some_and(|e| e.size[0] > compact.size[0]));
+    // Every parameter is on the canvas, so the generated list under it is hidden; no expanded view.
+    assert_eq!(compact.hidden_parameters.len(), suhina_device_multiband::INFO.params.len());
+    assert!(panel.expanded.is_none());
 }
