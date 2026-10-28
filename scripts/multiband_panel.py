@@ -133,9 +133,16 @@ def number(pid, label, bounds, fmt, decimals, log=True, visible=None):
             "x": None, "y": {"parameter": pid, "logarithmic": log, "drag_scale": 1.0}, "drawing": []}
 
 
-def display(cid, name, bounds, drawing, visible=None):
-    return {"visible_when": visible, "id": cid, "name": name, "tooltip": "", "bounds": bounds,
-            "gesture": "drag", "x": None, "y": None, "drawing": drawing}
+def display(cid, name, bounds, drawing, bind, visible=None):
+    """A drawing; dragging it up or down moves `bind` (a drawn control needs a binding)."""
+    return {"visible_when": visible, "id": cid, "name": name, "tooltip": f"{name}: drag up or down to change it",
+            "bounds": bounds, "gesture": "drag", "x": None,
+            "y": {"parameter": bind, "logarithmic": False, "drag_scale": 1.0}, "drawing": drawing}
+
+
+def label(cid, caption, bounds):
+    return {"widget": {"kind": "label", "label": caption}, "visible_when": None, "id": cid, "name": caption,
+            "tooltip": "", "bounds": bounds, "gesture": "drag", "x": None, "y": None}
 
 
 def compact():
@@ -155,7 +162,7 @@ def compact():
              ("Input", "Input", False, 1, "decibels"), ("Gain", "Gain", False, 1, "decibels")]
     for i, (bid, name, color) in enumerate(BANDS):
         shown = equal(par("band"), float(i))
-        controls.append(display(f"{bid}_curve", f"{name} curve", [384.0, 28.0, 76.0, 76.0], curve(bid, 76.0, color), shown))
+        controls.append(display(f"{bid}_curve", f"{name} curve", [384.0, 28.0, 76.0, 76.0], curve(bid, 76.0, color), f"{bid}AboveSlope", shown))
         controls.append(button(f"{bid}_on", f"{bid}On", "On", [384.0, 110.0, 76.0, 20.0], visible=shown))
         for k, (suffix, label, log, decimals, fmt) in enumerate(knobs):
             col, row = k % 4, k // 4
@@ -176,10 +183,10 @@ def expanded():
     ]
     for i, (bid, name, color) in enumerate(BANDS):
         x = 8.0 + i * 326.0
-        controls.append(display(f"{bid}_title", name, [x, 4.0, 60.0, 20.0], [text(0.0, 2.0, name, tint(color, 255), 12.0)]))
+        controls.append(label(f"{bid}_title", name, [x, 4.0, 60.0, 20.0]))
         controls.append(number(f"{bid}AboveThreshold", f"{name} Above", [x + 64.0, 4.0, 70.0, 20.0], "decibels", 1, False))
         controls.append(number(f"{bid}BelowThreshold", f"{name} Below", [x + 138.0, 4.0, 70.0, 20.0], "decibels", 1, False))
-        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 230.0, sy + 6.0, 80.0, 80.0], curve(bid, 80.0, color)))
+        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 230.0, sy + 6.0, 80.0, 80.0], curve(bid, 80.0, color), f"{bid}AboveSlope"))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
             "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": []}
 

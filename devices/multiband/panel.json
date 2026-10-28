@@ -1342,7 +1342,7 @@
     },
     "id": "low_curve",
     "name": "Low curve",
-    "tooltip": "",
+    "tooltip": "Low curve: drag up or down to change it",
     "bounds": [
      384.0,
      28.0,
@@ -1351,7 +1351,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "lowAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
@@ -1884,7 +1888,7 @@
     },
     "id": "mid_curve",
     "name": "Mid curve",
-    "tooltip": "",
+    "tooltip": "Mid curve: drag up or down to change it",
     "bounds": [
      384.0,
      28.0,
@@ -1893,7 +1897,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "midAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
@@ -2426,7 +2434,7 @@
     },
     "id": "high_curve",
     "name": "High curve",
-    "tooltip": "",
+    "tooltip": "High curve: drag up or down to change it",
     "bounds": [
      384.0,
      28.0,
@@ -2435,7 +2443,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "highAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
@@ -4231,6 +4243,10 @@
     "drawing": []
    },
    {
+    "widget": {
+     "kind": "label",
+     "label": "Low"
+    },
     "visible_when": null,
     "id": "low_title",
     "name": "Low",
@@ -4243,28 +4259,7 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
-    "drawing": [
-     {
-      "kind": "text",
-      "position": [
-       0.0,
-       2.0
-      ],
-      "text": "Low",
-      "color": [
-       242,
-       166,
-       90,
-       255
-      ],
-      "size": 12.0,
-      "align": "left",
-      "format": "number",
-      "parameter": null,
-      "decimals": 0
-     }
-    ]
+    "y": null
    },
    {
     "widget": {
@@ -4340,7 +4335,7 @@
     "visible_when": null,
     "id": "low_curve_x",
     "name": "Low curve",
-    "tooltip": "",
+    "tooltip": "Low curve: drag up or down to change it",
     "bounds": [
      238.0,
      34.0,
@@ -4349,7 +4344,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "lowAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
@@ -4555,6 +4554,10 @@
     ]
    },
    {
+    "widget": {
+     "kind": "label",
+     "label": "Mid"
+    },
     "visible_when": null,
     "id": "mid_title",
     "name": "Mid",
@@ -4567,28 +4570,7 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
-    "drawing": [
-     {
-      "kind": "text",
-      "position": [
-       0.0,
-       2.0
-      ],
-      "text": "Mid",
-      "color": [
-       95,
-       211,
-       192,
-       255
-      ],
-      "size": 12.0,
-      "align": "left",
-      "format": "number",
-      "parameter": null,
-      "decimals": 0
-     }
-    ]
+    "y": null
    },
    {
     "widget": {
@@ -4664,7 +4646,7 @@
     "visible_when": null,
     "id": "mid_curve_x",
     "name": "Mid curve",
-    "tooltip": "",
+    "tooltip": "Mid curve: drag up or down to change it",
     "bounds": [
      564.0,
      34.0,
@@ -4673,7 +4655,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "midAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
@@ -4879,6 +4865,10 @@
     ]
    },
    {
+    "widget": {
+     "kind": "label",
+     "label": "High"
+    },
     "visible_when": null,
     "id": "high_title",
     "name": "High",
@@ -4891,28 +4881,7 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
-    "drawing": [
-     {
-      "kind": "text",
-      "position": [
-       0.0,
-       2.0
-      ],
-      "text": "High",
-      "color": [
-       159,
-       180,
-       255,
-       255
-      ],
-      "size": 12.0,
-      "align": "left",
-      "format": "number",
-      "parameter": null,
-      "decimals": 0
-     }
-    ]
+    "y": null
    },
    {
     "widget": {
@@ -4988,7 +4957,7 @@
     "visible_when": null,
     "id": "high_curve_x",
     "name": "High curve",
-    "tooltip": "",
+    "tooltip": "High curve: drag up or down to change it",
     "bounds": [
      890.0,
      34.0,
@@ -4997,7 +4966,11 @@
     ],
     "gesture": "drag",
     "x": null,
-    "y": null,
+    "y": {
+     "parameter": "highAboveSlope",
+     "logarithmic": false,
+     "drag_scale": 1.0
+    },
     "drawing": [
      {
       "kind": "rect",
