@@ -1834,13 +1834,12 @@ pub(crate) fn show(
         } else {
             control.tooltip.clone()
         };
-        // Bordered numeric fields are editable inputs as well as drag controls.
-        // Keep the SDK binding and undo command path, including nested devices.
+        // A bordered rate field (in Hz, or a number with a unit after it, as the sampler's LFO
+        // rate and time) can be typed in as well as dragged. Other bordered numbers (an authored
+        // panel's `number`, without a unit) keep the panel's own drag.
         if let Some(Widget::Number { bordered: true, decimals, format, prefix, suffix, .. }) = &control.widget
-            && matches!(
-                format,
-                suhina_device_sdk::ui::TextFormat::Frequency | suhina_device_sdk::ui::TextFormat::Number
-            )
+            && (*format == suhina_device_sdk::ui::TextFormat::Frequency
+                || (*format == suhina_device_sdk::ui::TextFormat::Number && !suffix.is_empty()))
             && let Some(binding) = control.y.as_ref().or(control.x.as_ref())
             && let Some(p) = parameters.iter().find(|p| p.id == binding.parameter)
         {

@@ -34,8 +34,8 @@ implementation below is local and awaits the authorized release build and runtim
   and a first-beat position in the file. The ruler uses the source's time signature.
   Project tempo never moves file boundaries. Source BPM must be valid before a beat
   grid is shown; unknown tempo is not silently replaced with a musical assertion.
-  Unknown tempo still shows a source-anchored seconds grid when Grid is enabled;
-  it is a visual time reference, not musical snap. Selected mode buttons have an
+  Unknown tempo still shows a source-anchored seconds grid, Grid on or off, since
+  the times sit on its lines; it is a visual time reference, not musical snap. Selected mode buttons have an
   explicit selection mark even when a theme replaces their face.
   The active mode uses an accent-filled button with contrasting text. The ruler has
   its own strip and shows one unit at a time: source bars/beats when the beat grid
