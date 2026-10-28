@@ -20,6 +20,25 @@ use suhina_update::Channel;
 /// The keys of `keymap.json`, where the keys and the mouse switches are saved.
 pub(crate) const KEYMAP: &[&str] = &["keymap.json"];
 
+/// The note under Editors on macOS: the editors open in a window of their own, and what is
+/// missing is the device view's embed, which a host on this system cannot give (ADR 0006).
+const EDITORS_NOTE_EMBED: &str = "Editors open in a window of their own; the device view needs Windows or X11";
+/// The note under Editors where no editor opens at all: a system with no display (Linux without
+/// an X server, Wayland without editors yet).
+const EDITORS_NOTE_NONE: &str = "Editors need Windows or an X server (DISPLAY); they do not open here yet";
+
+/// The note under Editors where the device view's embedded editor cannot open. On macOS the
+/// editors still open, in a window of their own: a view of the plug-in host's process cannot
+/// attach to another process's window (ADR 0006), so the embed is what is missing, not the
+/// editors. On a system with no display at all (Linux without an X server), neither opens.
+/// Both notes are one line of the row's note width: a longer one is cut mid-word.
+pub(crate) fn editors_note(editors_embeddable: bool) -> Option<&'static str> {
+    if editors_embeddable {
+        return None;
+    }
+    Some(if cfg!(target_os = "macos") { EDITORS_NOTE_EMBED } else { EDITORS_NOTE_NONE })
+}
+
 /// Every setting the window shows, page by page.
 pub(crate) static ROWS: &[Entry] = &[
     // General.
@@ -271,8 +290,8 @@ pub(crate) static ROWS: &[Entry] = &[
         "In a window above Suhina, or inside the device panel as part of the chain",
         &["plugin_editors"],
         |cx, r| {
-            if !cx.about.editors_embeddable {
-                cx.note("Editors need Windows or an X server (DISPLAY); they do not open on this system yet");
+            if let Some(note) = editors_note(cx.about.editors_embeddable) {
+                cx.note(note);
             }
             let options = [("Window", EditorPlacement::Window), ("Device view", EditorPlacement::DeviceView)];
             cx.choose(r, &options, |s| &mut s.plugin_editors);
@@ -900,6 +919,45 @@ mod tests {
             .filter(|line| !line.starts_with('#'))
             .filter_map(|line| line.split_once('=').map(|(key, _)| key.trim().to_string()))
             .collect()
+    }
+
+    /// The note under Editors tells the truth about this system: where the editors still open
+    /// (macOS, #999), it does not say they do not; where they cannot (no display), it does.
+    #[test]
+    fn the_editors_note_names_what_is_missing_not_the_editors() {
+        assert!(editors_note(true).is_none(), "an embeddable system needs no note");
+        let note = editors_note(false).unwrap_or_default();
+        if cfg!(target_os = "macos") {
+            assert!(note.contains("window of their own"), "{note}");
+            assert!(note.contains("the device view needs Windows or X11"), "{note}");
+            assert!(!note.contains("do not open"), "{note}");
+        } else {
+            assert!(note.contains("DISPLAY"), "{note}");
+            assert!(note.contains("do not open"), "{note}");
+        }
+    }
+
+    /// Both notes under Editors fit the row's one line, measured in the window's own fonts:
+    /// a longer note is cut mid-word and read by nobody (the macOS note was, #999).
+    #[test]
+    fn the_editors_notes_fit_the_one_line_the_row_gives_them() {
+        let ctx = egui::Context::default();
+        crate::kit::theme::install(&ctx);
+        let font = crate::kit::theme::ui_font(crate::kit::theme::TEXT_SMALL);
+        let budget = crate::settings::settings_view::NOTE_WIDTH;
+        let mut over = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for note in [EDITORS_NOTE_EMBED, EDITORS_NOTE_NONE] {
+                let width =
+                    ui.fonts_mut(|f| f.layout_no_wrap(note.to_string(), font.clone(), egui::Color32::WHITE).size().x);
+                if width > budget {
+                    over.push(format!("{note} — {width:.0} px of {budget:.0}"));
+                }
+            }
+        });
+        // No renderer here to apply the font texture the pass made.
+        out.textures_delta.clear();
+        assert!(over.is_empty(), "a note longer than the row's one line: {}", over.join("; "));
     }
 
     #[test]

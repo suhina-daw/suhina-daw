@@ -428,10 +428,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
   closes the shown track's plug-in's editor (the device the chain panel selects, else the
   track's first running one; mappable, Settings › Shortcuts). Editors float
-  above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
-  (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
-  the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
-  so this works on Wayland desktops too.
+  above Suhina's window, owned by it (Windows, X11), and respond at once; on macOS they
+  float in a plain window of the host's own, since a view of another process's cannot attach
+  to Suhina's window (ADR 0006). A setting (Plug-ins › Editors › Device view) shows them
+  inside the device panel instead, as part of the chain, on Windows and X11; on macOS the
+  setting falls back to the window. On Linux the window is an X11 one whenever an X server
+  (or XWayland) is there, so this works on Wayland desktops too.
 - Renders (`suhina-cli render`, MCP `project_render`) run the same plug-ins.
 - MCP `project_render` from an open project starts its plug-ins with the state the running ones
   have now, so a change made in a plug-in's editor is in the render as it is heard.

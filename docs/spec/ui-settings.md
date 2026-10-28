@@ -58,7 +58,7 @@ is on exactly one page, under one heading.
 | Audio | Now | Output, Latency, Key to sound, Input now (read only), List devices again |
 | MIDI | MIDI inputs | Each MIDI input port, On or Off |
 | MIDI | Arming | Auto-arm the selected track, On or Off (Off by default) |
-| Plug-ins | Editors | Editors (Window, Device view) |
+| Plug-ins | Editors | Editors (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Plug-ins | Library | Folders (each on or off, with its format; add with a format, remove), Scan and Rescan all with a count of what was found, Plug-in manager (opens the [plug-in manager](plugin-manager.md)) |
 | Arrangement | Clips | Allow sample stacking, Allow MIDI stacking, Waveform and note colour (Auto, Light, Dark, Custom), Custom waveform and note colour, Audio clip colour strength |
 | Arrangement | Tracks | Track headers, Track header colour strength |
