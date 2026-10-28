@@ -126,9 +126,9 @@ knob; colours are the theme's (text, panel, control, border, accent), the three 
   its transfer curve (output against input: the below stage, 1 : 1 between the thresholds, the
   above stage), its On button and eight dials (Above, Above slope, Below, Below slope, Attack,
   Release, Input, Gain); Amount, Time and Output at the right edge.
-- **Expanded** (980 × 260, opened from the device's header over the main view): the same band view
-  across the whole width, each band's name, its two thresholds as fields and its transfer curve, and
-  the crossovers as fields.
+- **Expanded** (1200 × 160, opened from the device's header as a strip over the device row): the
+  same band view across the whole width, each band's name and its two thresholds as fields over it,
+  the crossovers as fields under it. The transfer curves stay on the compact panel.
 - **Quick preset OTT** (the button at the top right): heavy upward and downward compression on all
   three bands, in one undo step; Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input
   +5 dB, above thresholds -34/-30/-35 dB with slopes 0.015/0.015/0, below -41 dB with slope 0.24,

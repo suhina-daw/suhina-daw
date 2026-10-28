@@ -219,17 +219,18 @@ def compact():
 
 
 def expanded():
-    w, h = 980.0, 340.0
-    sx, sy, sw, sh = 8.0, 28.0, 964.0, 190.0
+    """A wide, low strip over the device row: the band view across its width, each band's name and
+    thresholds over it and the crossovers under it. The curves stay on the compact panel."""
+    w, h = 1200.0, 160.0
+    sx, sy, sw, sh = 4.0, 24.0, 1192.0, 112.0
     controls = []
     for i, (bid, name, color) in enumerate(BANDS):
-        x = 8.0 + i * 326.0
-        controls.append(label(f"{bid}_title", name, [x, 4.0, 60.0, 20.0]))
-        controls.append(number(f"{bid}AboveThreshold", f"{name} Above", [x + 64.0, 4.0, 70.0, 20.0], "decibels", 1, False))
-        controls.append(number(f"{bid}BelowThreshold", f"{name} Below", [x + 138.0, 4.0, 70.0, 20.0], "decibels", 1, False))
-        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 121.0, sy + sh + 32.0, 84.0, 84.0], curve(bid, 84.0, color), f"{bid}AboveSlope"))
-    controls.append(number("lowCrossover", "Low Crossover", [sx, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
-    controls.append(number("highCrossover", "High Crossover", [sx + sw - 80.0, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
+        x = 4.0 + i * 400.0
+        controls.append(label(f"{bid}_title", name, [x, 2.0, 60.0, 20.0]))
+        controls.append(number(f"{bid}AboveThreshold", f"{name} Above", [x + 64.0, 2.0, 70.0, 20.0], "decibels", 1, False))
+        controls.append(number(f"{bid}BelowThreshold", f"{name} Below", [x + 138.0, 2.0, 70.0, 20.0], "decibels", 1, False))
+    controls.append(number("lowCrossover", "Low Crossover", [sx, sy + sh + 2.0, 80.0, 20.0], "frequency", 0))
+    controls.append(number("highCrossover", "High Crossover", [sx + sw - 80.0, sy + sh + 2.0, 80.0, 20.0], "frequency", 0))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
             "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
 

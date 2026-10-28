@@ -3457,8 +3457,8 @@
  },
  "expanded": {
   "size": [
-   980.0,
-   340.0
+   1200.0,
+   160.0
   ],
   "viewport_size": null,
   "background": [
@@ -3472,10 +3472,10 @@
    {
     "kind": "rect",
     "rect": [
-     8.0,
-     28.0,
-     964.0,
-     190.0
+     4.0,
+     24.0,
+     1192.0,
+     112.0
     ],
     "color": [
      46,
@@ -3488,8 +3488,8 @@
    {
     "kind": "rect",
     "rect": [
-     8.0,
-     28.0,
+     4.0,
+     24.0,
      {
       "op": "add",
       "a": {
@@ -3509,17 +3509,17 @@
          },
          "b": -2.995732273553991
         },
-        "b": 139.5532935182449
+        "b": 172.55967414289208
        },
-       "b": 8.0
+       "b": 4.0
       },
       "b": {
        "op": "multiply",
-       "a": 8.0,
+       "a": 4.0,
        "b": -1.0
       }
      },
-     190.0
+     112.0
     ],
     "color": [
      242,
@@ -3549,11 +3549,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0,
+     24.0,
      {
       "op": "add",
       "a": {
@@ -3573,9 +3573,9 @@
          },
          "b": -2.995732273553991
         },
-        "b": 139.5532935182449
+        "b": 172.55967414289208
        },
-       "b": 8.0
+       "b": 4.0
       },
       "b": {
        "op": "multiply",
@@ -3596,14 +3596,14 @@
           },
           "b": -2.995732273553991
          },
-         "b": 139.5532935182449
+         "b": 172.55967414289208
         },
-        "b": 8.0
+        "b": 4.0
        },
        "b": -1.0
       }
      },
-     190.0
+     112.0
     ],
     "color": [
      95,
@@ -3633,14 +3633,14 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0,
+     24.0,
      {
       "op": "add",
-      "a": 972.0,
+      "a": 1196.0,
       "b": {
        "op": "multiply",
        "a": {
@@ -3660,14 +3660,14 @@
           },
           "b": -2.995732273553991
          },
-         "b": 139.5532935182449
+         "b": 172.55967414289208
         },
-        "b": 8.0
+        "b": 4.0
        },
        "b": -1.0
       }
      },
-     190.0
+     112.0
     ],
     "color": [
      159,
@@ -3692,11 +3692,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0
+     24.0
     ],
     "to": [
      {
@@ -3711,11 +3711,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     218.0
+     136.0
     ],
     "color": [
      236,
@@ -3740,11 +3740,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0
+     24.0
     ],
     "to": [
      {
@@ -3759,11 +3759,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     218.0
+     136.0
     ],
     "color": [
      236,
@@ -3788,11 +3788,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0
+     24.0
     ],
     "to": [
      {
@@ -3807,11 +3807,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     218.0
+     136.0
     ],
     "color": [
      236,
@@ -3824,27 +3824,27 @@
    {
     "kind": "line",
     "from": [
-     8.0,
+     4.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -20.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
-     972.0,
+     1196.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -20.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -3858,27 +3858,27 @@
    {
     "kind": "line",
     "from": [
-     8.0,
+     4.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -40.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
-     972.0,
+     1196.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -40.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -3892,27 +3892,27 @@
    {
     "kind": "line",
     "from": [
-     8.0,
+     4.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -60.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
-     972.0,
+     1196.0,
      {
       "op": "add",
       "a": {
        "op": "multiply",
        "a": -60.0,
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -3926,7 +3926,7 @@
    {
     "kind": "line",
     "from": [
-     8.0,
+     4.0,
      {
       "op": "add",
       "a": {
@@ -3937,9 +3937,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
@@ -3960,9 +3960,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -3974,9 +3974,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -3990,7 +3990,7 @@
    {
     "kind": "line",
     "from": [
-     8.0,
+     4.0,
      {
       "op": "add",
       "a": {
@@ -4001,9 +4001,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
@@ -4024,9 +4024,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4038,9 +4038,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -4071,9 +4071,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4085,9 +4085,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
@@ -4108,9 +4108,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4122,9 +4122,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -4155,9 +4155,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4169,9 +4169,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
@@ -4192,9 +4192,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4206,9 +4206,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -4239,9 +4239,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4253,13 +4253,13 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
-     972.0,
+     1196.0,
      {
       "op": "add",
       "a": {
@@ -4270,9 +4270,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -4303,9 +4303,9 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
      {
       "op": "add",
@@ -4317,13 +4317,13 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "to": [
-     972.0,
+     1196.0,
      {
       "op": "add",
       "a": {
@@ -4334,9 +4334,9 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.375
+       "b": -1.4
       },
-      "b": 28.0
+      "b": 24.0
      }
     ],
     "color": [
@@ -4367,11 +4367,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0
+     24.0
     ],
     "to": [
      {
@@ -4391,11 +4391,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     218.0
+     136.0
     ],
     "color": [
      166,
@@ -4425,11 +4425,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     28.0
+     24.0
     ],
     "to": [
      {
@@ -4449,11 +4449,11 @@
         },
         "b": -2.995732273553991
        },
-       "b": 139.5532935182449
+       "b": 172.55967414289208
       },
-      "b": 8.0
+      "b": 4.0
      },
-     218.0
+     136.0
     ],
     "color": [
      166,
@@ -4480,13 +4480,13 @@
          },
          "b": -2.995732273553991
         },
-        "b": 139.5532935182449
+        "b": 172.55967414289208
        },
-       "b": 8.0
+       "b": 4.0
       },
       "b": 3.0
      },
-     205.0
+     123.0
     ],
     "text": "100",
     "color": [
@@ -4518,13 +4518,13 @@
          },
          "b": -2.995732273553991
         },
-        "b": 139.5532935182449
+        "b": 172.55967414289208
        },
-       "b": 8.0
+       "b": 4.0
       },
       "b": 3.0
      },
-     205.0
+     123.0
     ],
     "text": "1k",
     "color": [
@@ -4556,13 +4556,13 @@
          },
          "b": -2.995732273553991
         },
-        "b": 139.5532935182449
+        "b": 172.55967414289208
        },
-       "b": 8.0
+       "b": 4.0
       },
       "b": 3.0
      },
-     205.0
+     123.0
     ],
     "text": "10k",
     "color": [
@@ -4589,8 +4589,8 @@
     "name": "Low",
     "tooltip": "",
     "bounds": [
-     8.0,
      4.0,
+     2.0,
      60.0,
      20.0
     ],
@@ -4619,8 +4619,8 @@
     "name": "Low Above",
     "tooltip": "Low Above: drag vertically; double click resets",
     "bounds": [
-     72.0,
-     4.0,
+     68.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -4654,8 +4654,8 @@
     "name": "Low Below",
     "tooltip": "Low Below: drag vertically; double click resets",
     "bounds": [
-     146.0,
-     4.0,
+     142.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -4669,330 +4669,6 @@
     "drawing": []
    },
    {
-    "visible_when": null,
-    "id": "low_curve_x",
-    "name": "Low curve",
-    "tooltip": "Low curve: drag up or down to change it",
-    "bounds": [
-     129.0,
-     250.0,
-     84.0,
-     84.0
-    ],
-    "gesture": "drag",
-    "x": null,
-    "y": {
-     "parameter": "lowAboveSlope",
-     "logarithmic": false,
-     "drag_scale": 1.0
-    },
-    "drawing": [
-     {
-      "kind": "rect",
-      "rect": [
-       0.0,
-       0.0,
-       84.0,
-       84.0
-      ],
-      "color": [
-       37,
-       36,
-       33,
-       255
-      ],
-      "radius": 3.0
-     },
-     {
-      "kind": "line",
-      "from": [
-       0.0,
-       84.0
-      ],
-      "to": [
-       84.0,
-       0.0
-      ],
-      "color": [
-       56,
-       55,
-       51,
-       255
-      ],
-      "width": 1.0
-     },
-     {
-      "kind": "path",
-      "points": [
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "lowBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "add",
-              "a": -80.0,
-              "b": {
-               "op": "multiply",
-               "a": {
-                "op": "parameter",
-                "parameter": "lowBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": -1.0
-              }
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "lowBelowSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "lowBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "add",
-               "a": {
-                "op": "parameter",
-                "parameter": "lowBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": 80.0
-              },
-              "b": {
-               "op": "parameter",
-               "parameter": "lowBelowSlope",
-               "normalized": false,
-               "logarithmic": false
-              }
-             },
-             "b": -1.0
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "lowBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "lowBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "lowAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "lowAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "lowAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "lowAboveThreshold",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "lowAboveSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "multiply",
-            "a": {
-             "op": "parameter",
-             "parameter": "lowAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "add",
-             "a": 1.0,
-             "b": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "lowAboveSlope",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             }
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ]
-      ],
-      "color": [
-       242,
-       166,
-       90,
-       255
-      ],
-      "width": 2.0,
-      "closed": false,
-      "fill": null
-     }
-    ]
-   },
-   {
     "widget": {
      "kind": "label",
      "label": "Mid"
@@ -5002,8 +4678,8 @@
     "name": "Mid",
     "tooltip": "",
     "bounds": [
-     334.0,
-     4.0,
+     404.0,
+     2.0,
      60.0,
      20.0
     ],
@@ -5032,8 +4708,8 @@
     "name": "Mid Above",
     "tooltip": "Mid Above: drag vertically; double click resets",
     "bounds": [
-     398.0,
-     4.0,
+     468.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -5067,8 +4743,8 @@
     "name": "Mid Below",
     "tooltip": "Mid Below: drag vertically; double click resets",
     "bounds": [
-     472.0,
-     4.0,
+     542.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -5082,330 +4758,6 @@
     "drawing": []
    },
    {
-    "visible_when": null,
-    "id": "mid_curve_x",
-    "name": "Mid curve",
-    "tooltip": "Mid curve: drag up or down to change it",
-    "bounds": [
-     455.0,
-     250.0,
-     84.0,
-     84.0
-    ],
-    "gesture": "drag",
-    "x": null,
-    "y": {
-     "parameter": "midAboveSlope",
-     "logarithmic": false,
-     "drag_scale": 1.0
-    },
-    "drawing": [
-     {
-      "kind": "rect",
-      "rect": [
-       0.0,
-       0.0,
-       84.0,
-       84.0
-      ],
-      "color": [
-       37,
-       36,
-       33,
-       255
-      ],
-      "radius": 3.0
-     },
-     {
-      "kind": "line",
-      "from": [
-       0.0,
-       84.0
-      ],
-      "to": [
-       84.0,
-       0.0
-      ],
-      "color": [
-       56,
-       55,
-       51,
-       255
-      ],
-      "width": 1.0
-     },
-     {
-      "kind": "path",
-      "points": [
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "midBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "add",
-              "a": -80.0,
-              "b": {
-               "op": "multiply",
-               "a": {
-                "op": "parameter",
-                "parameter": "midBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": -1.0
-              }
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "midBelowSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "midBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "add",
-               "a": {
-                "op": "parameter",
-                "parameter": "midBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": 80.0
-              },
-              "b": {
-               "op": "parameter",
-               "parameter": "midBelowSlope",
-               "normalized": false,
-               "logarithmic": false
-              }
-             },
-             "b": -1.0
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "midBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "midBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "midAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "midAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "midAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "midAboveThreshold",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "midAboveSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "multiply",
-            "a": {
-             "op": "parameter",
-             "parameter": "midAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "add",
-             "a": 1.0,
-             "b": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "midAboveSlope",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             }
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ]
-      ],
-      "color": [
-       95,
-       211,
-       192,
-       255
-      ],
-      "width": 2.0,
-      "closed": false,
-      "fill": null
-     }
-    ]
-   },
-   {
     "widget": {
      "kind": "label",
      "label": "High"
@@ -5415,8 +4767,8 @@
     "name": "High",
     "tooltip": "",
     "bounds": [
-     660.0,
-     4.0,
+     804.0,
+     2.0,
      60.0,
      20.0
     ],
@@ -5445,8 +4797,8 @@
     "name": "High Above",
     "tooltip": "High Above: drag vertically; double click resets",
     "bounds": [
-     724.0,
-     4.0,
+     868.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -5480,8 +4832,8 @@
     "name": "High Below",
     "tooltip": "High Below: drag vertically; double click resets",
     "bounds": [
-     798.0,
-     4.0,
+     942.0,
+     2.0,
      70.0,
      20.0
     ],
@@ -5493,330 +4845,6 @@
      "drag_scale": 1.0
     },
     "drawing": []
-   },
-   {
-    "visible_when": null,
-    "id": "high_curve_x",
-    "name": "High curve",
-    "tooltip": "High curve: drag up or down to change it",
-    "bounds": [
-     781.0,
-     250.0,
-     84.0,
-     84.0
-    ],
-    "gesture": "drag",
-    "x": null,
-    "y": {
-     "parameter": "highAboveSlope",
-     "logarithmic": false,
-     "drag_scale": 1.0
-    },
-    "drawing": [
-     {
-      "kind": "rect",
-      "rect": [
-       0.0,
-       0.0,
-       84.0,
-       84.0
-      ],
-      "color": [
-       37,
-       36,
-       33,
-       255
-      ],
-      "radius": 3.0
-     },
-     {
-      "kind": "line",
-      "from": [
-       0.0,
-       84.0
-      ],
-      "to": [
-       84.0,
-       0.0
-      ],
-      "color": [
-       56,
-       55,
-       51,
-       255
-      ],
-      "width": 1.0
-     },
-     {
-      "kind": "path",
-      "points": [
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "highBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "add",
-              "a": -80.0,
-              "b": {
-               "op": "multiply",
-               "a": {
-                "op": "parameter",
-                "parameter": "highBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": -1.0
-              }
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "highBelowSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "max",
-           "a": -80.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "highBelowThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "add",
-               "a": {
-                "op": "parameter",
-                "parameter": "highBelowThreshold",
-                "normalized": false,
-                "logarithmic": false
-               },
-               "b": 80.0
-              },
-              "b": {
-               "op": "parameter",
-               "parameter": "highBelowSlope",
-               "normalized": false,
-               "logarithmic": false
-              }
-             },
-             "b": -1.0
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "highBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "highBelowThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "highAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "parameter",
-           "parameter": "highAboveThreshold",
-           "normalized": false,
-           "logarithmic": false
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ],
-       [
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "add",
-            "a": {
-             "op": "parameter",
-             "parameter": "highAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "multiply",
-             "a": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "highAboveThreshold",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             },
-             "b": {
-              "op": "exp",
-              "value": {
-               "op": "multiply",
-               "a": {
-                "op": "log",
-                "value": {
-                 "op": "add",
-                 "a": {
-                  "op": "parameter",
-                  "parameter": "highAboveSlope",
-                  "normalized": false,
-                  "logarithmic": false
-                 },
-                 "b": 0.001
-                }
-               },
-               "b": -1.0
-              }
-             }
-            }
-           }
-          },
-          "b": 1.05
-         },
-         "b": 84.0
-        },
-        {
-         "op": "add",
-         "a": {
-          "op": "multiply",
-          "a": {
-           "op": "min",
-           "a": 0.0,
-           "b": {
-            "op": "multiply",
-            "a": {
-             "op": "parameter",
-             "parameter": "highAboveThreshold",
-             "normalized": false,
-             "logarithmic": false
-            },
-            "b": {
-             "op": "add",
-             "a": 1.0,
-             "b": {
-              "op": "multiply",
-              "a": {
-               "op": "parameter",
-               "parameter": "highAboveSlope",
-               "normalized": false,
-               "logarithmic": false
-              },
-              "b": -1.0
-             }
-            }
-           }
-          },
-          "b": -1.05
-         },
-         "b": 0.0
-        }
-       ]
-      ],
-      "color": [
-       159,
-       180,
-       255,
-       255
-      ],
-      "width": 2.0,
-      "closed": false,
-      "fill": null
-     }
-    ]
    },
    {
     "widget": {
@@ -5839,8 +4867,8 @@
     "name": "Low Crossover",
     "tooltip": "Low Crossover: drag vertically; double click resets",
     "bounds": [
-     8.0,
-     224.0,
+     4.0,
+     138.0,
      80.0,
      20.0
     ],
@@ -5874,8 +4902,8 @@
     "name": "High Crossover",
     "tooltip": "High Crossover: drag vertically; double click resets",
     "bounds": [
-     892.0,
-     224.0,
+     1116.0,
+     138.0,
      80.0,
      20.0
     ],

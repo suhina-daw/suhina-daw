@@ -35,7 +35,7 @@ A device with one has a button beside the X in its header, labelled **Expand** *
 **Close** *name*'s **expanded panel** while it is open). The panel opens at the bottom of the main
 area, as tall as its canvas needs (the whole area at most) so the views above stay in sight, with
 the device's name and a close button (**Close expanded panel**) along its top; its canvas is
-centred, and scrolls when the main area is smaller. The close button, Escape or a second click on
+scaled to the strip's width (0.5 to 2.5 times its size, pointer input included). The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
 panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases

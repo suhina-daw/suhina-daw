@@ -54,15 +54,19 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
 
 /// Draws `device`'s expanded panel at the bottom of `area` (the main area), on top of the views and
 /// as tall as its canvas needs (all of `area` at most), so the views above it stay in sight: a title
-/// row with its name and a close button, then its canvas, scrolled when the area is smaller.
+/// row with its name and a close button, then its canvas scaled to the strip's width.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
 /// The close button and Escape close it.
 pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox, actions: &mut Vec<Action>) {
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
     };
-    // A slice at the bottom of the main area, as tall as the canvas needs; the views stay above it.
-    let height = (ROW + PAD + canvas.size[1] + PAD * 2.0).min(area.height());
+    // A strip across the bottom of the main area, over the device row like a wide display: the
+    // canvas is scaled to the strip's width (half to two and a half times its own) and the strip
+    // is as tall as the scaled canvas; the views stay above it.
+    let size = Vec2::new(canvas.size[0], canvas.size[1]);
+    let scale = ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5);
+    let height = (ROW + PAD + size.y * scale + PAD * 2.0).min(area.height());
     let slice = Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max);
     egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
@@ -101,24 +105,22 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             }
             let body =
                 Rect::from_min_max(Pos2::new(rect.left() + PAD, header.bottom() + PAD), rect.max - Vec2::splat(PAD));
-            let size = Vec2::new(canvas.size[0], canvas.size[1]);
-            ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
-                egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(ui, |ui| {
-                    // Centred while it fits, from the top left when it scrolls.
-                    let room = ui.available_size();
-                    let offset = Vec2::new(((room.x - size.x) / 2.0).max(0.0), ((room.y - size.y) / 2.0).max(0.0));
-                    let (space, _) = ui.allocate_exact_size(size + offset, Sense::hover());
-                    let canvas_rect = Rect::from_min_size(space.min + offset, size);
-                    crate::detail::device_canvas::show(
-                        ui,
-                        canvas_rect,
-                        canvas,
-                        &graph.parameters,
-                        track,
-                        &device.at,
-                        actions,
-                    );
-                });
+            // The canvas in a layer of its own, scaled by its transform so pointer input scales too.
+            let layer = egui::LayerId::new(egui::Order::Foreground, Id::new("device-expanded-canvas"));
+            let fit = (body.width() / size.x).min(body.height() / size.y).clamp(0.5, 2.5);
+            ui.ctx().set_transform_layer(layer, egui::emath::TSTransform::new(body.min.to_vec2(), fit));
+            ui.ctx().move_to_top(layer);
+            egui::Area::new(layer.id).order(layer.order).fixed_pos(Pos2::ZERO).constrain(false).show(ui.ctx(), |ui| {
+                let (canvas_rect, _) = ui.allocate_exact_size(size, Sense::hover());
+                crate::detail::device_canvas::show(
+                    ui,
+                    canvas_rect,
+                    canvas,
+                    &graph.parameters,
+                    track,
+                    &device.at,
+                    actions,
+                );
             });
         },
     );
