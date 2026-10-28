@@ -64,6 +64,18 @@ pub const LAYOUT_FILES: &[(&str, &str)] = &[
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
 /// Made once per id while Suhina runs, off the audio thread. `None` for an unknown id.
+/// The layouts that do not load, by device id with the reason: such a device shows the generated
+/// parameter list instead, so the app writes these to its log at start.
+pub fn layout_errors() -> Vec<(&'static str, String)> {
+    DEVICES
+        .iter()
+        .filter_map(|info| match layout(info.id)? {
+            Err(e) => Some((info.id, e.to_string())),
+            Ok(layout) => layout.panel(info).err().map(|e| (info.id, e.to_string())),
+        })
+        .collect()
+}
+
 pub fn panel(id: &str) -> Option<&'static Panel> {
     /// Every device's panel, in the order of [`DEVICES`].
     static PANELS: OnceLock<Vec<Panel>> = OnceLock::new();

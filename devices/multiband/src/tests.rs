@@ -222,3 +222,35 @@ fn the_follower_reaches_most_of_a_step_in_about_an_eighth_of_the_attack() {
     }
     assert!((v - (1.0 - (-1.0f64).exp())).abs() < 0.01, "{v}");
 }
+
+#[test]
+fn a_soloed_band_plays_alone_and_soloing_every_band_changes_nothing() {
+    // A 1 kHz tone is in the mid band: soloing the low band silences it.
+    let low_only = steady_gain(&[(param::SOLO, 1.0)], -12.0);
+    assert!(low_only < -40.0, "low soloed: {low_only} dB");
+    let mid_only = steady_gain(&[(param::SOLO + 1, 1.0)], -12.0);
+    assert!(mid_only.abs() < 0.5, "mid soloed: {mid_only} dB");
+    let all = steady_gain(&[(param::SOLO, 1.0), (param::SOLO + 1, 1.0), (param::SOLO + 2, 1.0)], -12.0);
+    assert!(all.abs() < 0.05, "all soloed: {all} dB");
+}
+
+#[test]
+fn the_readouts_show_the_compressing_band_and_rest_after_a_reset() {
+    let mut d = device(&fast(&[
+        (param::band(MID, param::ABOVE_THRESHOLD), -30.0),
+        (param::band(MID, param::ABOVE_SLOPE), 0.25),
+    ]));
+    let mut signal = sine(1_000.0, -6.0, 24_000);
+    d.process(&ProcessContext::default(), &mut signal);
+    let r = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
+    assert!(r[2 * MID] > -20.0, "mid level {}", r[2 * MID]);
+    assert!(r[2 * MID + 1] < -5.0, "mid gain change {}", r[2 * MID + 1]);
+    assert!(r[readout::OUTPUT_LEFT] > -30.0 && r[readout::OUTPUT_LEFT] <= 0.5, "meter {}", r[readout::OUTPUT_LEFT]);
+    let loudest = (0..SPECTRUM_BANDS).max_by(|&a, &b| r[readout::SPECTRUM + a].total_cmp(&r[readout::SPECTRUM + b]));
+    let centre = loudest.map(|i| Analyser::<SPECTRUM_BANDS>::centre(i, SPECTRUM_LOW, SPECTRUM_HIGH));
+    assert!(centre.is_some_and(|hz| (700.0..1_400.0).contains(&hz)), "loudest band at {centre:?} Hz");
+    d.reset();
+    let idle = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
+    assert_eq!(idle[2 * MID + 1], 0.0);
+    assert!(idle[readout::SPECTRUM] <= LEVEL_FLOOR_DB as f32);
+}

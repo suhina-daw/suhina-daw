@@ -151,6 +151,11 @@ fn every_listed_device_can_be_made_and_ids_are_unique() {
 }
 
 #[test]
+fn every_layout_loads_so_none_is_reported() {
+    assert_eq!(layout_errors(), Vec::<(&str, String)>::new());
+}
+
+#[test]
 fn the_multiband_panel_switches_bands_and_opens_an_expanded_spectrum() {
     let panel = panel("multiband").unwrap();
     let compact = panel.ui.as_ref().unwrap();

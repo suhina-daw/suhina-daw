@@ -24,6 +24,7 @@ suhina-library.workspace = true
 suhina-output.workspace = true
 suhina-midi.workspace = true
 suhina-plugins.workspace = true
+suhina-device-registry.workspace = true
 suhina-ui.workspace = true
 # The build's endpoints: one instance per build, and agents working on the open projects (ADR 0028).
 suhina-automation.workspace = true

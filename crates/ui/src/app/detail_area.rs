@@ -378,6 +378,26 @@ impl App {
         {
             shown.follow_automation(session.project(), monitor.beat());
         }
+        // Devices' live values (a band's level and gain change), for their canvases.
+        if let Some(monitor) = self.session().and_then(|s| s.player()).map(suhina_session::Player::meter_monitor)
+            && let detail_view::Detail::Devices(chain) | detail_view::Detail::Clip(_, chain) = &mut shown
+        {
+            let open = detail_view::expanded(ui.ctx());
+            for device in &mut chain.devices {
+                let is_open = open.as_ref().is_some_and(|(track, at)| *track == chain.track && *at == device.at);
+                let (Some(graph), [index]) = (device.graph.as_mut(), device.at.0.as_slice()) else { continue };
+                graph.parameters.push(detail_view::GraphParameter::host_value(
+                    suhina_device_sdk::ui::EXPANDED_ID,
+                    if is_open { 1.0 } else { 0.0 },
+                ));
+                if let Some(values) = monitor.readouts(chain.track, *index) {
+                    graph.parameters.extend(
+                        values.iter().enumerate().filter_map(|(i, &v)| detail_view::GraphParameter::readout(i, v)),
+                    );
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                }
+            }
+        }
         self.expanded_panel = detail_view::expanded_device(ui.ctx(), &shown);
         if let Some(session) = self.session() {
             for channel in session.project().channels.iter().filter(|channel| {

@@ -60,9 +60,12 @@ for `low`, `mid` and `high` (shown for `low`).
 | 15 + 9b | `lowGain` | Low Gain | −24 – +24 dB | 0 dB | decibels, linear |
 
 | 34 | `band` | Band | Low, Mid, High | Mid | choice |
+| 35 + b | `lowSolo` | Low Solo | off, on | off | toggle |
 
-`b` is the band: 0 low, 1 mid, 2 high (35 parameters). `band` only chooses which band's controls
-the panel shows; it changes no sound and the import leaves it at its default.
+`b` is the band: 0 low, 1 mid, 2 high (38 parameters). `band` only chooses which band's controls
+the panel shows; it changes no sound and the import leaves it at its default. While any band is
+soloed only the soloed bands are heard; a band that is not heard still follows its level, so it
+comes back without a jump.
 
 - **Slopes** are the stage's output slope: decibels out per decibel in, beyond its threshold.
   Above: 0 holds the level at the threshold (a limiter, 1 : ∞), 0.25 is 4 : 1 compression, 1
@@ -116,26 +119,46 @@ Per frame, with the left and right sides through the same filters:
 ## Panel
 
 `devices/multiband/panel.json`, written by `scripts/multiband_panel.py` (run it after changing the
-script; the file is its output). Both canvases draw from the parameters only, so they follow every
-knob; colours are the theme's (text, panel, control, border, accent), the three band colours fixed.
+script; the file is its output). The canvases draw from the parameters and from the device's live
+values ([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound.
+Colours are the theme's (text, panel, control, border, accent) but for the three band colours and
+the band view's background, which stays dark in every theme so the signal reads on it.
 
-- **Compact** (820 × 168, the device row's height). Left: the bands over a 20 Hz – 20 kHz log axis,
-  each shaded in its colour between the crossover lines, with its above threshold (solid) and below
-  threshold (fainter) drawn as lines at their level, and the two crossovers as fields under it.
-  Right of it: tabs Low, Mid, High (the `band` parameter), Peak and Soft knee; for the chosen band
-  its transfer curve (output against input: the below stage, 1 : 1 between the thresholds, the
-  above stage), its On button and eight dials (Above, Above slope, Below, Below slope, Attack,
-  Release, Input, Gain); Amount, Time and Output at the right edge.
-- **Expanded** (1200 × 160, opened from the device's header as a strip over the device row): the
-  same band view across the whole width, each band's name and its two thresholds as fields over it,
-  the crossovers as fields under it. The transfer curves stay on the compact panel.
-- **Quick preset OTT** (the button at the top right): heavy upward and downward compression on all
-  three bands, in one undo step; Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input
-  +5 dB, above thresholds -34/-30/-35 dB with slopes 0.015/0.015/0, below -41 dB with slope 0.24,
-  attacks 50/22/13 ms, releases 280/280/130 ms, gains +10/+6/+10 dB). The name is a style name
+- **Compact** (820 × 168, the device row's height), its sections parted by vertical lines:
+  - the **band view** over a 20 Hz – 20 kHz log axis: each band tinted between the crossovers, the
+    input spectrum as bars, each band's level as a moving line and its gain change as a bar down
+    from the top (a cut) or up from the bottom (a lift) with the change in dB, and a grey veil over
+    a band that is off or not heard because another is soloed. The crossover lines are dragged
+    sideways and each band's above (solid) and below (fainter) threshold up and down, within its
+    own band; a double click resets one. The crossovers are also fields under the view;
+  - tabs Low, Mid, High (the `band` parameter), Peak (RMS while off) and Soft knee; for the chosen
+    band its transfer curve (the below stage, 1 : 1 between, the above stage, with the signal's
+    place on it as a dot and the stages as ratios: `1/s : 1` above, `1 : s` below), its power
+    button, Solo and eight dials (Above, Above slope, Below, Below slope, Attack, Release, Input,
+    Gain);
+  - the OTT quick preset, Amount, Time and Output; the output's peak meters at the right edge.
+  - While the expanded strip is open the band view gives way to the three bands' curves side by
+    side, each with its power button and Solo, and the chosen band's curve beside the dials is left
+    out.
+- **Expanded** (1200 × 160, `strip`: opened from the device's header as a strip over the device
+  row, scaled to its width): the same band view and handles across the whole width, each band's
+  name with its gain change and its two thresholds as fields over it, the crossovers under it.
+- **Quick preset OTT**: heavy upward and downward compression on all three bands, in one undo step;
+  Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input +5 dB, above thresholds
+  -34/-30/-35 dB with slopes 0.015/0.015/0, below -41 dB with slope 0.24, attacks 50/22/13 ms,
+  releases 280/280/130 ms, gains +10/+6/+10 dB, no solo). The name is a style name
   ([ADR 0014](../decisions/0014-stock-presets.md) › Amendment: established style names).
-- **Not shown yet:** the signal's spectrum, the gain change and level meters, which need the
-  device to hand live values to its panel (no device does that yet).
+
+### Readouts
+
+What `Device::readouts` holds, from the block's last frame:
+
+| Index | Value |
+|---|---|
+| 0, 2, 4 | the low, mid and high band's level as its follower reads it, dB (-100 when off) |
+| 1, 3, 5 | that band's gain change from its stages, scaled by Amount, dB (0 when off) |
+| 6, 7 | the output's peak, left and right, dBFS, falling with a 0.3 s time constant |
+| 8 – 31 | the input spectrum: 24 bands spaced evenly in log frequency from 20 Hz to 20 kHz, each a band-pass with a 50 ms RMS follower (`suhina_dsp::Analyser`), dB |
 
 ## Import
 
@@ -160,9 +183,9 @@ physical unit (Hz, dB, ms, factors), the ratios as the stored values `v` of thei
 
 - The stored `SideChain` block (its own `OnOff`, `DryWet` = Mix and `Volume` = gain) is not
   imported yet; a side-chain that is on is noted in the import's warnings.
-- `SplitLowMidOn` and `SplitMidHighOn` (the buttons that merge a band into its neighbour) and the
-  `Solo` values are plain values, not parameters; a merged band or a solo is noted and played as
-  three bands.
+- `SplitLowMidOn` and `SplitMidHighOn` (the buttons that merge a band into its neighbour) are plain
+  values, not parameters; a merged band is noted and played as its own band. The plain `Solo`
+  values (`SoloLow`, `SoloMid`, `SoloHigh`) become the band's Solo.
 - A value missing or not a finite number keeps our default; ratios outside their range are held
   at its ends.
 
@@ -197,12 +220,13 @@ physical unit (Hz, dB, ms, factors), the ratios as the stored values `v` of thei
   of them (four settings on music and the song) heard no difference.
 - **Below stage, deep cuts.** At `1 : 0.25` the measured cut stops at −32 dB; ours reaches −28 dB
   there (2.5 dB RMS on that static curve, 0.5 – 0.6 dB at `1 : 0.5` and `1 : ∞`).
-- **Side-chain, band merge buttons and solo** are not built (Decisions 6, Import).
+- **Side-chain and band merge buttons** are not built (Decisions 6, Import).
 
 ## Cost
 
 Per frame and side, five biquad pairs (two crossovers and the all-pass); per band one follower,
-two logarithms and one exponential. Not measured against the 1 % budget yet.
+two logarithms and one exponential; for the panel's spectrum 24 band-pass biquads on the mono
+sum and 24 logarithms per block. Not measured against the 1 % budget yet.
 
 ## Tests
 
@@ -210,5 +234,7 @@ two logarithms and one exponential. Not measured against the 1 % budget yet.
 a band that is off passes untouched; the above stage's static gain at slopes 0.25, 0 and 2 and
 the below stage's at 0.5 and 4 against the formulas; the knee; Amount 0 is a plain crossover and
 50 % halves the gain change; Time scales the attack; Peak and RMS read a sine alike; the limit
-holds at 36 dB; the follower's attack reaches 63 % in about `attack / 8`. `crates/als/src/devices_tests.rs`:
-the stored elements import with the conversions above. `crates/device-registry/src/lib_tests.rs`: the panel loads, fits the device row, reaches every parameter, switches bands by its tabs and has an expanded canvas.
+holds at 36 dB; the follower's attack reaches 63 % in about `attack / 8`; a soloed band plays
+alone and soloing all three changes nothing; the readouts show the compressing band's level and
+cut, the output meter and the tone's spectrum band, and rest after a reset. `crates/als/src/devices_tests.rs`:
+the stored elements import with the conversions above. `crates/device-registry/src/lib_tests.rs`: the panel loads, fits the device row, reaches every parameter, switches bands by its tabs and has an expanded canvas; every layout loads (`layout_errors` is empty).

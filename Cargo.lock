@@ -4779,6 +4779,7 @@ dependencies = [
  "rfd",
  "serde_json",
  "suhina-automation",
+ "suhina-device-registry",
  "suhina-engine",
  "suhina-library",
  "suhina-media",

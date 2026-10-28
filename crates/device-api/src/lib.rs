@@ -481,6 +481,9 @@ impl<const N: usize> ParamBank<N> {
 /// and may allocate. [`reset`](Self::reset), [`set_param`](Self::set_param),
 /// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
 /// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
+/// Most live values a device hands its panel ([`Device::readouts`]).
+pub const MAX_READOUTS: usize = 32;
+
 pub trait Device: Send {
     /// Current normalized sample read position, when a sample voice is active.
     fn sample_position(&self) -> Option<f32> {
@@ -491,6 +494,13 @@ pub trait Device: Send {
         let mut positions = [None; 32];
         positions[0] = self.sample_position();
         positions
+    }
+
+    /// Live values for the device's panel (a band's level, its gain change), read after each
+    /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
+    /// that shows none. Runs on the audio thread: no allocation.
+    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
+        None
     }
 
     fn info(&self) -> &'static DeviceInfo;

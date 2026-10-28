@@ -20,7 +20,7 @@ use suhina_device_api::{
     check_sample_rate,
 };
 use suhina_dsp::gain::db_to_gain_f64;
-use suhina_dsp::{AttackRelease, LinkwitzRiley, Smoother};
+use suhina_dsp::{Analyser, AttackRelease, LinkwitzRiley, Smoother};
 
 /// How long a gain or threshold change takes to arrive.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -40,6 +40,23 @@ pub const GAIN_LIMIT_DB: f64 = 36.0;
 const LIMIT_SHARPNESS: f64 = 7.04;
 /// Levels under this count as this, in decibels.
 pub const LEVEL_FLOOR_DB: f64 = -100.0;
+
+/// The panel's spectrum: this many bands from [`SPECTRUM_LOW`] to [`SPECTRUM_HIGH`] hertz.
+pub const SPECTRUM_BANDS: usize = 24;
+pub const SPECTRUM_LOW: f64 = 20.0;
+pub const SPECTRUM_HIGH: f64 = 20_000.0;
+/// How fast the spectrum and the output meter follow, in seconds.
+const DISPLAY_SECONDS: f64 = 0.05;
+const METER_FALL_SECONDS: f64 = 0.3;
+
+/// What the panel reads ([`Device::readouts`]): band `b`'s level at `2 b`, its gain change at
+/// `2 b + 1` (dB), the output's peak left and right at 6 and 7 (dBFS), the input spectrum's
+/// bands from 8 on (dB).
+pub mod readout {
+    pub const OUTPUT_LEFT: usize = 6;
+    pub const OUTPUT_RIGHT: usize = 7;
+    pub const SPECTRUM: usize = 8;
+}
 
 /// The bands, in parameter order.
 pub const BANDS: [&str; 3] = ["low", "mid", "high"];
@@ -67,7 +84,9 @@ pub mod param {
     pub const GAIN: usize = 8;
     /// Which band the panel shows the controls of (0 low, 1 mid, 2 high); it changes no sound.
     pub const SHOWN_BAND: usize = BAND + 3 * PER_BAND;
-    pub(crate) const COUNT: usize = SHOWN_BAND + 1;
+    /// Band `b` soloed is `SOLO + b`: while any band is soloed, only soloed bands are heard.
+    pub const SOLO: usize = SHOWN_BAND + 1;
+    pub(crate) const COUNT: usize = SOLO + 3;
 
     /// The index of band `band`'s parameter `which`.
     pub const fn band(band: usize, which: usize) -> usize {
@@ -160,6 +179,9 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("highRelease", "High Release", (0.0001, 5.0), 0.1, Unit::Seconds, Scale::Logarithmic),
     ParamInfo::continuous("highGain", "High Gain", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
     ParamInfo::choice("band", "Band", &["Low", "Mid", "High"], 1),
+    ParamInfo::toggle("lowSolo", "Low Solo", false),
+    ParamInfo::toggle("midSolo", "Mid Solo", false),
+    ParamInfo::toggle("highSolo", "High Solo", false),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "multiband", name: "Multiband", role: Role::Effect, params: &PARAMS };
@@ -254,6 +276,25 @@ pub struct Multiband {
     frequencies: [Smoother; 2],
     sides: [Side; 2],
     frame: u64,
+    /// What the panel shows, from the block's last frame: per band its level in dB as the
+    /// follower reads it and the gain change of its stages in dB (low, mid, high).
+    readouts: [f32; suhina_device_api::MAX_READOUTS],
+    /// The input's spectrum and the output's falling peak, for the panel only.
+    spectrum: Analyser<SPECTRUM_BANDS>,
+    meter: [f64; 2],
+    meter_fall: f64,
+}
+
+/// The readouts of bands that hear nothing: the floor level and no gain change.
+fn idle_readouts() -> [f32; suhina_device_api::MAX_READOUTS] {
+    // Everything at the floor but the three gain changes, which are none.
+    let mut readouts = [LEVEL_FLOOR_DB as f32; suhina_device_api::MAX_READOUTS];
+    for band in 0..3 {
+        if let Some(change) = readouts.get_mut(band * 2 + 1) {
+            *change = 0.0;
+        }
+    }
+    readouts
 }
 
 impl Default for Multiband {
@@ -280,6 +321,10 @@ impl Multiband {
             frequencies: [Smoother::new(0.0, 1); 2],
             sides: [Side::new(DEFAULT_SAMPLE_RATE, 120.0, 2_500.0); 2],
             frame: 0,
+            readouts: idle_readouts(),
+            spectrum: Analyser::new(DEFAULT_SAMPLE_RATE, SPECTRUM_LOW, SPECTRUM_HIGH, DISPLAY_SECONDS),
+            meter: [0.0; 2],
+            meter_fall: 0.0,
         };
         device.rebuild();
         device
@@ -295,6 +340,10 @@ impl Multiband {
 
     fn on(&self, band: usize) -> bool {
         self.band_value(band, param::ON) >= 0.5
+    }
+
+    fn soloed(&self, band: usize) -> bool {
+        self.value(param::SOLO + band) >= 0.5
     }
 
     fn peak(&self) -> bool {
@@ -369,6 +418,9 @@ impl Multiband {
         self.sides = [Side::new(self.sample_rate, low, high); 2];
         self.tune_followers();
         self.frame = 0;
+        self.spectrum = Analyser::new(self.sample_rate, SPECTRUM_LOW, SPECTRUM_HIGH, DISPLAY_SECONDS);
+        self.meter = [0.0; 2];
+        self.meter_fall = suhina_dsp::smooth::time_constant(METER_FALL_SECONDS, self.sample_rate);
     }
 }
 
@@ -385,6 +437,7 @@ impl Device for Multiband {
 
     fn reset(&mut self) {
         self.rebuild();
+        self.readouts = idle_readouts();
     }
 
     fn set_param(&mut self, index: usize, value: f64) {
@@ -402,11 +455,17 @@ impl Device for Multiband {
         self.params.param(index)
     }
 
+    fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        Some(self.readouts)
+    }
+
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
         let amount = self.value(param::AMOUNT).clamp(0.0, 1.0);
         let peak = self.peak();
         let knee_db = if self.value(param::SOFT_KNEE) >= 0.5 { SOFT_KNEE_DB } else { HARD_KNEE_DB };
         let on = [self.on(0), self.on(1), self.on(2)];
+        let any_solo = (0..3).any(|b| self.soloed(b));
+        let heard = [0, 1, 2].map(|b| !any_solo || self.soloed(b));
         let slopes = [0, 1, 2].map(|b| {
             (
                 self.band_value(b, param::ABOVE_SLOPE).clamp(0.0, 2.0),
@@ -428,19 +487,25 @@ impl Device for Multiband {
             }
             self.frame = self.frame.wrapping_add(1);
             let [left, right] = frame.map(|s| if s.is_finite() { f64::from(s) } else { 0.0 });
+            self.spectrum.process(0.5 * (left + right));
             let [left_side, right_side] = &mut self.sides;
             let (lefts, rights) = (left_side.bands(left), right_side.bands(right));
             let mut sum = [0.0f64; 2];
-            for ((((band, l), r), on), (above_slope, below_slope)) in
-                self.bands.iter_mut().zip(lefts).zip(rights).zip(on).zip(slopes)
+            for (index, (((((band, l), r), on), (above_slope, below_slope)), heard)) in
+                self.bands.iter_mut().zip(lefts).zip(rights).zip(on).zip(slopes).zip(heard).enumerate()
             {
+                // A band that is not heard (another is soloed) still follows its level.
+                let audible = if heard { 1.0 } else { 0.0 };
                 let input_db = f64::from(band.input.next_value());
                 let gain_db = f64::from(band.gain.next_value());
                 let above_threshold = f64::from(band.above_threshold.next_value());
                 let below_threshold = f64::from(band.below_threshold.next_value());
                 if !on {
-                    sum[0] += l;
-                    sum[1] += r;
+                    sum[0] += l * audible;
+                    sum[1] += r * audible;
+                    if let Some([level, change]) = self.readouts.get_mut(index * 2..index * 2 + 2) {
+                        (*level, *change) = (LEVEL_FLOOR_DB as f32, 0.0);
+                    }
                     continue;
                 }
                 let input = db_to_gain_f64(input_db * amount);
@@ -454,14 +519,27 @@ impl Device for Multiband {
                     if peak { 20.0 * band.level.max(1e-12).log10() } else { 10.0 * band.level.max(1e-24).log10() }
                         .max(LEVEL_FLOOR_DB);
                 let stage = Stage { above_threshold, above_slope, below_threshold, below_slope };
-                let gain = db_to_gain_f64((static_gain(level_db, &stage, knee_db) + gain_db) * amount);
-                sum[0] += l * gain;
-                sum[1] += r * gain;
+                let change_db = static_gain(level_db, &stage, knee_db);
+                if let Some([level, change]) = self.readouts.get_mut(index * 2..index * 2 + 2) {
+                    (*level, *change) = (level_db as f32, (change_db * amount) as f32);
+                }
+                let gain = db_to_gain_f64((change_db + gain_db) * amount);
+                sum[0] += l * gain * audible;
+                sum[1] += r * gain * audible;
             }
             let output = db_to_gain_f64(f64::from(self.output.next_value()) * amount);
-            for (sample, x) in frame.iter_mut().zip(sum) {
-                *sample = (x * output) as f32;
+            for ((sample, x), meter) in frame.iter_mut().zip(sum).zip(&mut self.meter) {
+                let y = x * output;
+                *meter = if y.abs() > *meter { y.abs() } else { *meter * self.meter_fall };
+                *sample = y as f32;
             }
+        }
+        let db = |v: f64| if v > 0.0 { (20.0 * v.log10()).max(LEVEL_FLOOR_DB) } else { LEVEL_FLOOR_DB };
+        for (slot, meter) in self.readouts.iter_mut().skip(readout::OUTPUT_LEFT).zip(self.meter) {
+            *slot = db(meter) as f32;
+        }
+        for (slot, level) in self.readouts.iter_mut().skip(readout::SPECTRUM).zip(self.spectrum.levels()) {
+            *slot = level as f32;
         }
     }
 }

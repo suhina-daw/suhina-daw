@@ -2939,8 +2939,12 @@ impl App {
                     (None, _) => self.start_panel(ui),
                 });
             }
-            // A device's expanded panel, over the views (and the large sample map).
-            if let Some((track, device)) = self.expanded_panel.take() {
+            // A device's expanded panel, over the views (and the large sample map); not while a
+            // dialog is open, which it would cover.
+            if let Some((track, device)) = self.expanded_panel.take()
+                && !self.settings_open
+                && !self.dialog_holds_actions()
+            {
                 detail_view::show_expanded(ui, inner, track, &device, &mut actions);
             }
             drop_overlay(ui, view_area);

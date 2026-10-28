@@ -464,7 +464,7 @@ pub(super) fn parameter_layout(parameters: &[GraphParameter], width: f32, hidden
     let mut line_top = 0.0f32;
     parameters
         .iter()
-        .filter(|p| !hidden.contains(&p.id))
+        .filter(|p| !hidden.contains(&p.id) && !p.is_readout())
         .map(|parameter| {
             if let Some([x, y]) = parameter.ui.position {
                 let [w, h] = parameter.ui.size.unwrap_or([width, parameter_height(parameter)]);

@@ -791,6 +791,94 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     ctx.data_mut(|d| d.insert_temp(key, cache));
     loaded
 }
+/// A `handle` widget: its line where its parameter is, grabbed within a few pixels of it and
+/// dragged along its axis; a double click resets it. Every drag is one undo gesture.
+#[allow(clippy::too_many_arguments)]
+fn handle(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
+    (canvas, bounds): (Rect, Rect),
+    control: &suhina_device_sdk::ui::CustomControl,
+    (line_color, span): ([u8; 4], Option<&[suhina_device_sdk::ui::UiValue; 2]>),
+    parameters: &[GraphParameter],
+    (track, at): (TrackId, &crate::detail::detail_view::DeviceAt),
+    actions: &mut Vec<Action>,
+) {
+    /// How far from its line a handle is grabbed, in points.
+    const GRAB: f32 = 5.0;
+    let (binding, vertical) = match (&control.x, &control.y) {
+        (Some(b), None) => (b, true),
+        (None, Some(b)) => (b, false),
+        _ => return,
+    };
+    let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { return };
+    let lookup = |id: &str, norm: bool, log: bool| {
+        parameters.iter().find(|p| p.id == id).map_or(0.0, |p| if norm { normalized(p, log) } else { p.value })
+    };
+    let (from, to) = span.map_or_else(
+        || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
+        |[a, b]| {
+            let origin = if vertical { canvas.top() } else { canvas.left() };
+            (origin + a.evaluate(&lookup), origin + b.evaluate(&lookup))
+        },
+    );
+    let n = normalized(p, binding.logarithmic) as f32;
+    let (line, grab) = if vertical {
+        let x = bounds.left() + n * bounds.width();
+        let line = [Pos2::new(x, from), Pos2::new(x, to)];
+        (line, Rect::from_min_max(Pos2::new(x - GRAB, from), Pos2::new(x + GRAB, to)))
+    } else {
+        let y = bounds.bottom() - n * bounds.height();
+        let line = [Pos2::new(from, y), Pos2::new(to, y)];
+        (line, Rect::from_min_max(Pos2::new(from, y - GRAB), Pos2::new(to, y + GRAB)))
+    };
+    if !grab.is_positive() {
+        return;
+    }
+    let id = ui.id().with(("sd-handle", track.0, at.value().to_string(), &control.id));
+    let response = ui
+        .interact(grab, id, egui::Sense::click_and_drag())
+        .on_hover_cursor(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical })
+        .on_hover_text(&control.tooltip);
+    let hot = response.hovered() || response.dragged();
+    let stroke = Stroke::new(if hot { 3.0 } else { 2.0 }, color(line_color));
+    painter.line_segment(line, stroke);
+    let grip = Rect::from_center_size(
+        if vertical { Pos2::new(line[0].x, line[0].y + 6.0) } else { Pos2::new(line[1].x - 6.0, line[0].y) },
+        Vec2::splat(if hot { 9.0 } else { 7.0 }),
+    );
+    painter.rect_filled(grip, 1.0, color(line_color));
+    let value = if response.double_clicked() {
+        Some(p.default)
+    } else if response.dragged() || response.drag_stopped() {
+        response.interact_pointer_pos().map(|pos| {
+            let t = f64::from(if vertical {
+                (pos.x - bounds.left()) / bounds.width()
+            } else {
+                (bounds.bottom() - pos.y) / bounds.height()
+            })
+            .clamp(0.0, 1.0);
+            if binding.logarithmic && p.min > 0.0 {
+                (p.min.ln() + t * (p.max.ln() - p.min.ln())).exp()
+            } else {
+                p.min + t * (p.max - p.min)
+            }
+        })
+    } else {
+        None
+    };
+    if let Some(value) = value {
+        actions.push(Action::new(
+            "device.setParam",
+            json!({
+                "track": track.0, "device": at.value(), "param": p.id, "value": value,
+                "continuous": response.dragged() && !response.drag_stopped(), "gesture": control.id
+            }),
+        ));
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
+}
+
 fn color(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
@@ -923,6 +1011,15 @@ fn paint_scaled(
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
             }
+            Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
+                let label = format!("{prefix}{}{suffix}", fixed(f64::from(value(number)), *decimals));
+                let ink = crate::kit::style_class::foreground(color(*c));
+                let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
+                let galley = painter.layout_no_wrap(label, font, ink);
+                let position = point(position);
+                let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
+                crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
+            }
             Draw::Gradient { rect, colors } => {
                 let r = rectangle(rect);
                 let mut mesh = egui::Mesh::default();
@@ -1002,6 +1099,7 @@ fn paint_control(
     parameters: &[GraphParameter],
     loaded: &Loaded,
     response: Option<&egui::Response>,
+    accent_on: bool,
 ) {
     let class = control_class(control);
     let _scope = response
@@ -1078,10 +1176,12 @@ fn paint_control(
             && let Draw::Rect { radius, .. } = draw
         {
             let replaced = *body.get_or_insert_with(|| {
-                // On is the accent, so it reads at a glance and the SDK's dark label for an on
-                // button stays legible on it.
-                let fill = crate::kit::style_class::background(if on {
+                // A canvas may fill an on button with the accent, so it reads at a glance and the
+                // SDK's dark label for an on button stays legible on it.
+                let fill = crate::kit::style_class::background(if on && accent_on {
                     crate::kit::theme::accent()
+                } else if on {
+                    crate::kit::theme::control_active()
                 } else {
                     crate::kit::theme::control_background()
                 });
@@ -1195,6 +1295,19 @@ pub(crate) fn show(
             );
             continue;
         }
+        if let Some(Widget::Handle { color: line_color, span }) = &control.widget {
+            handle(
+                ui,
+                &painter,
+                (rect, bounds),
+                control,
+                (*line_color, span.as_ref()),
+                parameters,
+                (track, at),
+                actions,
+            );
+            continue;
+        }
         if let UiGesture::Preset(index) = control.gesture {
             let response = ui
                 .interact(bounds, ui.id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
@@ -1208,6 +1321,7 @@ pub(crate) fn show(
                 parameters,
                 &loaded,
                 Some(&response),
+                canvas.accent_on,
             );
             if response.clicked()
                 && let Some(preset) = canvas.presets.get(usize::from(index))
@@ -1237,6 +1351,7 @@ pub(crate) fn show(
                 parameters,
                 &loaded,
                 None,
+                canvas.accent_on,
             );
             continue;
         }
@@ -1279,6 +1394,7 @@ pub(crate) fn show(
             parameters,
             &loaded,
             Some(&response),
+            canvas.accent_on,
         );
         if response.is_pointer_button_down_on() || response.clicked() || response.drag_started() {
             response.request_focus();

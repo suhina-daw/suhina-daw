@@ -38,6 +38,13 @@ pub struct DeviceUi {
     pub layers: Vec<Draw>,
     pub controls: Vec<CustomControl>,
     pub hidden_parameters: Vec<String>,
+    /// An expanded canvas only: open as a strip over the device row, scaled to the strip's width,
+    /// rather than over the whole main area at its own size.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub strip: bool,
+    /// Whether a button that is on fills with the accent (`true`) or the control's active colour.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub accent_on: bool,
     /// Quick presets its `preset` buttons apply.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub presets: Vec<UiPreset>,
@@ -83,6 +90,8 @@ impl Default for DeviceUi {
             layers: Vec::new(),
             controls: Vec::new(),
             hidden_parameters: Vec::new(),
+            strip: false,
+            accent_on: false,
             presets: Vec::new(),
             style: None,
         }
@@ -185,6 +194,10 @@ pub enum UiExpression {
         a: UiValue,
         b: UiValue,
     },
+    /// The device's live value at `index` (`Device::readouts`), 0 while it hands none.
+    Readout {
+        index: u8,
+    },
     /// The smaller of the two.
     Min {
         a: UiValue,
@@ -253,6 +266,9 @@ impl UiValue {
                 UiExpression::Multiply { a, b } => a.eval(parameter, depth + 1) * b.eval(parameter, depth + 1),
                 UiExpression::Equal { a, b } => {
                     f64::from((a.eval(parameter, depth + 1) - b.eval(parameter, depth + 1)).abs() < 0.0001)
+                }
+                UiExpression::Readout { index } => {
+                    READOUT_IDS.get(usize::from(*index)).map_or(0.0, |id| parameter(id, false, false))
                 }
                 UiExpression::Min { a, b } => a.eval(parameter, depth + 1).min(b.eval(parameter, depth + 1)),
                 UiExpression::Max { a, b } => a.eval(parameter, depth + 1).max(b.eval(parameter, depth + 1)),
@@ -363,6 +379,22 @@ pub enum Draw {
         #[serde(default)]
         decimals: usize,
     },
+    /// A number computed from an expression (a ratio from a slope, a live value), written as
+    /// `prefix`, the number with `decimals`, then `suffix`.
+    Value {
+        #[serde(default)]
+        align: TextAlign,
+        position: [UiValue; 2],
+        value: UiValue,
+        #[serde(default)]
+        prefix: String,
+        #[serde(default)]
+        suffix: String,
+        color: Color,
+        size: f32,
+        #[serde(default)]
+        decimals: usize,
+    },
     Image {
         asset: String,
         rect: [UiValue; 4],
@@ -421,6 +453,17 @@ pub struct UiPreset {
     pub values: std::collections::BTreeMap<String, f64>,
 }
 
+/// The ids a canvas's parameter lookup gets for the device's live values: `#r0` is readout 0.
+/// A host hands them in beside the parameters; they are never parameters of a device.
+pub const READOUT_IDS: [&str; 32] = [
+    "#r0", "#r1", "#r2", "#r3", "#r4", "#r5", "#r6", "#r7", "#r8", "#r9", "#r10", "#r11", "#r12", "#r13", "#r14",
+    "#r15", "#r16", "#r17", "#r18", "#r19", "#r20", "#r21", "#r22", "#r23", "#r24", "#r25", "#r26", "#r27", "#r28",
+    "#r29", "#r30", "#r31",
+];
+
+/// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
+pub const EXPANDED_ID: &str = "#expanded";
+
 /// Most quick presets on one canvas.
 pub const MAX_UI_PRESETS: usize = 32;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -475,6 +518,9 @@ impl DeviceUi {
         if self.style.as_ref().is_some_and(|style| style.len() > MAX_STYLE_BYTES || style.contains('\0')) {
             return Err(fail("panel style exceeds 64 KiB or contains NUL"));
         }
+        // Drawings may also read the device's live values (a text's value, a parameter lookup).
+        let readouts =
+            parameters.iter().map(|p| p.id.as_str()).chain(READOUT_IDS).chain([EXPANDED_ID]).collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
         let mut pixels = 0u64;
@@ -566,6 +612,13 @@ impl DeviceUi {
                         )
                     }
                     Widget::Disclosure { .. } => c.gesture == UiGesture::Toggle,
+                    Widget::Handle { span, .. } => {
+                        c.gesture == UiGesture::Position
+                            && c.x.is_some() != c.y.is_some()
+                            && span.as_ref().is_none_or(|span| {
+                                span.iter().all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
+                            })
+                    }
                     Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
                         c.gesture == UiGesture::Drag && c.x.is_none() && c.y.is_some()
                     }
@@ -646,7 +699,7 @@ impl DeviceUi {
                 return Err(fail("invalid custom control id/name/bounds"));
             }
             if let Some(condition) = &c.visible_when {
-                condition.validate(&ids, 0, &mut expression_budget)?;
+                condition.validate(&readouts, 0, &mut expression_budget)?;
             }
             if let UiGesture::Preset(index) = c.gesture {
                 if !matches!(c.widget, Some(Widget::Button { .. })) || c.x.is_some() || c.y.is_some() {
@@ -707,7 +760,7 @@ impl DeviceUi {
             }
         }
         for draw in self.layers.iter().cloned().chain(self.controls.iter().flat_map(|c| c.drawings().into_owned())) {
-            draw.validate(&ids, &asset_ids, &mut expression_budget)?;
+            draw.validate(&readouts, &asset_ids, &mut expression_budget)?;
         }
         Ok(())
     }
@@ -739,6 +792,11 @@ impl UiValue {
                 | UiExpression::Wave { shape: a, cycles: b } => {
                     a.validate(ids, depth + 1, budget)?;
                     b.validate(ids, depth + 1, budget)?;
+                }
+                UiExpression::Readout { index } => {
+                    if usize::from(*index) >= READOUT_IDS.len() {
+                        return Err(fail());
+                    }
                 }
                 UiExpression::Sin { value }
                 | UiExpression::Cos { value }
@@ -788,6 +846,16 @@ impl Draw {
                 }
                 position.iter().collect()
             }
+            Self::Value { position, value, prefix, suffix, size, decimals, .. } => {
+                if prefix.len() + suffix.len() > 256
+                    || !size.is_finite()
+                    || !(8.0..=48.0).contains(size)
+                    || *decimals > 8
+                {
+                    return Err(fail("invalid value text"));
+                }
+                position.iter().chain([value]).collect()
+            }
             Self::Image { asset, rect, uv, tile_size, .. } => {
                 if !assets.contains(asset.as_str())
                     || uv.iter().any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
@@ -810,6 +878,46 @@ impl Draw {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn readout(index: u8) -> UiValue {
+        UiValue::Expression(Box::new(UiExpression::Readout { index }))
+    }
+
+    #[test]
+    fn readouts_read_the_hosts_values_and_refuse_an_index_past_the_last() {
+        let lookup = |id: &str, _: bool, _: bool| if id == "#r3" { -4.5 } else { 0.0 };
+        assert_eq!(readout(3).evaluate(&lookup), -4.5);
+        assert!(readout(31).validate(&HashSet::new(), 0, &mut 32768).is_ok());
+        assert!(readout(32).validate(&HashSet::new(), 0, &mut 32768).is_err());
+        let min = UiValue::Expression(Box::new(UiExpression::Min { a: 2.0.into(), b: readout(3) }));
+        assert_eq!(min.evaluate(&lookup), -4.5);
+    }
+
+    #[test]
+    fn handles_bind_one_axis_and_presets_name_declared_values() {
+        let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
+        let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
+        ui.controls.push(CustomControl {
+            id: "cut_handle".into(),
+            name: "Cut".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 200., 60.],
+            widget: Some(Widget::Handle { color: [255; 4], span: Some([0.0.into(), readout(0)]) }),
+            gesture: UiGesture::Position,
+            x: Some(UiBinding::new("cut")),
+            y: None,
+            drawing: vec![],
+            visible_when: Some(UiValue::parameter(EXPANDED_ID, false)),
+        });
+        ui.validate(&params).unwrap();
+        ui.controls[0].y = Some(UiBinding::new("cut"));
+        assert!(ui.validate(&params).is_err(), "a handle has one axis");
+        ui.controls[0].y = None;
+        ui.presets.push(UiPreset { name: "Bright".into(), values: [("cut".into(), 8_000.0)].into() });
+        ui.validate(&params).unwrap();
+        ui.presets[0].values.insert("cut".into(), 50_000.0);
+        assert!(ui.validate(&params).is_err(), "a preset value outside its range");
+    }
 
     #[test]
     fn waveform_expressions_round_trip_and_validate_parameter_references() {

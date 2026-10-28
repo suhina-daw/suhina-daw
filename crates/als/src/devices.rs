@@ -309,9 +309,7 @@ fn multiband(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
         p.set(&format!("{ours}Attack"), manual(node, &format!("Attack{theirs}")).map(|ms| ms / 1000.0));
         p.set(&format!("{ours}Release"), manual(node, &format!("Release{theirs}")).map(|ms| ms / 1000.0));
         p.set(&format!("{ours}Gain"), manual(node, &format!("Gain{theirs}")));
-        if plain_flag(node, &format!("Solo{theirs}")) == Some(true) {
-            warn(format!("Multiband Dynamics: the {ours} band's solo is not imported; all bands play"));
-        }
+        p.set(&format!("{ours}Solo"), plain_flag(node, &format!("Solo{theirs}")).map(toggle));
     }
     for (stored, band) in [("SplitLowMidOn", "low"), ("SplitMidHighOn", "high")] {
         if plain_flag(node, stored) == Some(false) {

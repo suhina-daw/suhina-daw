@@ -431,7 +431,7 @@ fn other_devices_are_not_mapped() {
 
 /// Live's Multiband Dynamics (`MultibandDynamics`) with values like an OTT-style setting: every
 /// physical value as it is, the ratios as slopes, the times in seconds, and notes for what is not
-/// imported (a solo, a merged band, the side-chain).
+/// imported (a merged band, the side-chain); a band's solo comes with it.
 #[test]
 fn multiband_dynamics_takes_every_stored_value() {
     let mut xml = vec![
@@ -460,8 +460,8 @@ fn multiband_dynamics_takes_every_stored_value() {
     xml.push("<SideChain><OnOff><Manual Value=\"true\" /></OnOff></SideChain>".to_owned());
     let (id, params, warnings) = mapped("MultibandDynamics", &xml.concat());
     assert_eq!(id, "multiband");
-    assert_eq!(params.len(), 7 + 3 * 9);
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert_eq!(params.len(), 7 + 3 * 9 + 1);
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
     let near = |id: &str, expected: f64| {
         let got = param(&params, id);
         assert!((got - expected).abs() < 1e-6, "{id}: {got} against {expected}");
@@ -473,6 +473,7 @@ fn multiband_dynamics_takes_every_stored_value() {
     near("amount", 0.48);
     near("time", 3.16);
     near("output", 1.5);
+    near("midSolo", 1.0);
     for band in ["low", "mid", "high"] {
         near(&format!("{band}On"), 1.0);
         near(&format!("{band}Input"), 5.2);
