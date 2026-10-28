@@ -219,7 +219,7 @@ def compact():
 
 
 def expanded():
-    w, h = 980.0, 320.0
+    w, h = 980.0, 340.0
     sx, sy, sw, sh = 8.0, 28.0, 964.0, 190.0
     controls = []
     for i, (bid, name, color) in enumerate(BANDS):
