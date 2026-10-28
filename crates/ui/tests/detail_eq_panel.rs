@@ -10,7 +10,7 @@
 use egui::{Key, Modifiers, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions, Project};
+use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions, Project, TrackId};
 use suhina_session::Session;
 use suhina_ui::{App, kit::theme};
 
@@ -67,6 +67,61 @@ fn parameter(harness: &Harness<'static, App>, id: &str) -> f64 {
         .find(|p| p.id == id)
         .map(|p| p.value)
         .expect("the parameter is on the device")
+}
+
+/// The demo project with an EQ on Drums' channel.
+fn eq_project() -> Project {
+    let mut project = suhina_ui::demo::demo_project();
+    project.channels[0].devices.push(eq_device());
+    project
+}
+
+/// The EQ panel's analyser end to end: with the session's player a real renderer and the
+/// transport playing, the panel's watch reaches the engine and the device's input lands in
+/// its ring (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn the_eq_panels_analyser_receives_the_playing_input() {
+    let mut renderer = suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000)
+        .expect("a renderer");
+    let mut session = Session::new(eq_project());
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = Harness::builder()
+        .with_size((1280.0, 900.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    // The panel is drawn: it claims its watch row through the frame's monitor.
+    assert!(harness.query_by_label("EQ response display").is_some());
+    let mut played = |harness: &mut Harness<'static, App>| {
+        harness.get_by_label("Play").click();
+        harness.run_steps(2);
+        let mut block = [0.0f32; 2 * 256];
+        for _ in 0..47 {
+            renderer.process(&mut block);
+        }
+        harness.run_steps(2);
+        harness
+            .ctx
+            .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum")))
+            .and_then(|monitor| monitor.spectrum().samples(TrackId(1), 0))
+            .unwrap_or_else(|| panic!("the EQ's ring holds the playing input"))
+    };
+    let (samples, valid) = played(&mut harness);    assert!(valid > 0, "the engine appended to the ring");
+    assert!(
+        samples.iter().any(|&s| s.abs() > 0.01),
+        "the playing input is in the ring, peak {}",
+        samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    );
 }
 
 #[test]

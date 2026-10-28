@@ -181,7 +181,9 @@ spectrum.
   watches costs nothing. The watch rows are keyed by the device's index in the chain; a panel
   claims row `device index mod 16` while it is drawn, and reads the ring only while the watch
   still names its device. When two chains of the same track play at once (clips in more than
-  one column), whichever wrote last shows.
+  one column), whichever wrote last shows. A device inside a device group's branches is not
+  tapped yet: the group's pass does not run the tap, so its panel draws only the response
+  curve (issue #1048).
 - **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
   already in the tree), and folds the spectrum into 64 bands spaced logarithmically over
   10 Hz – 22 kHz, taking each band's loudest bin. The level is the sine's amplitude against
