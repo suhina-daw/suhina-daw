@@ -18,6 +18,8 @@ PANEL = [37, 36, 33, 255]
 CONTROL = [46, 45, 42, 255]
 BORDER = [56, 55, 51, 255]
 ACCENT = [166, 163, 255, 255]
+GLOBALS = ["lowCrossover", "highCrossover", "peak", "softKnee", "amount", "time", "output"]
+BAND_PARAMETERS = ["On", "Input", "AboveThreshold", "AboveSlope", "BelowThreshold", "BelowSlope", "Attack", "Release", "Gain"]
 BANDS = [("low", "Low", [242, 166, 90, 255]), ("mid", "Mid", [95, 211, 192, 255]), ("high", "High", [159, 180, 255, 255])]
 
 
@@ -145,6 +147,11 @@ def label(cid, caption, bounds):
             "tooltip": "", "bounds": bounds, "gesture": "drag", "x": None, "y": None}
 
 
+def every_parameter():
+    """Every parameter id, so the panel shows only its canvas and not the generated list under it."""
+    return GLOBALS + [f"{bid}{suffix}" for bid, _, _ in BANDS for suffix in BAND_PARAMETERS] + ["band"]
+
+
 def compact():
     w, h = 820.0, 168.0
     sx, sy, sw, sh = 4.0, 4.0, 372.0, 140.0
@@ -171,24 +178,23 @@ def compact():
     controls.append(dial("time", "Time", [720.0, 96.0, 48.0, 66.0], True, 0, "percent"))
     controls.append(dial("output", "Output", [768.0, 96.0, 48.0, 66.0], False, 1, "decibels"))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
-            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": []}
+            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
 
 
 def expanded():
-    w, h = 980.0, 260.0
-    sx, sy, sw, sh = 8.0, 28.0, 964.0, 200.0
-    controls = [
-        number("lowCrossover", "Low Crossover", [sx + 4.0, sy + sh + 6.0, 80.0, 20.0], "frequency", 0),
-        number("highCrossover", "High Crossover", [sx + sw - 84.0, sy + sh + 6.0, 80.0, 20.0], "frequency", 0),
-    ]
+    w, h = 980.0, 320.0
+    sx, sy, sw, sh = 8.0, 28.0, 964.0, 190.0
+    controls = []
     for i, (bid, name, color) in enumerate(BANDS):
         x = 8.0 + i * 326.0
         controls.append(label(f"{bid}_title", name, [x, 4.0, 60.0, 20.0]))
         controls.append(number(f"{bid}AboveThreshold", f"{name} Above", [x + 64.0, 4.0, 70.0, 20.0], "decibels", 1, False))
         controls.append(number(f"{bid}BelowThreshold", f"{name} Below", [x + 138.0, 4.0, 70.0, 20.0], "decibels", 1, False))
-        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 230.0, sy + 6.0, 80.0, 80.0], curve(bid, 80.0, color), f"{bid}AboveSlope"))
+        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 121.0, sy + sh + 32.0, 84.0, 84.0], curve(bid, 84.0, color), f"{bid}AboveSlope"))
+    controls.append(number("lowCrossover", "Low Crossover", [sx, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
+    controls.append(number("highCrossover", "High Crossover", [sx + sw - 80.0, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
-            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": []}
+            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
 
 
 def main():

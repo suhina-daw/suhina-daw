@@ -3046,12 +3046,48 @@
     "drawing": []
    }
   ],
-  "hidden_parameters": []
+  "hidden_parameters": [
+   "lowCrossover",
+   "highCrossover",
+   "peak",
+   "softKnee",
+   "amount",
+   "time",
+   "output",
+   "lowOn",
+   "lowInput",
+   "lowAboveThreshold",
+   "lowAboveSlope",
+   "lowBelowThreshold",
+   "lowBelowSlope",
+   "lowAttack",
+   "lowRelease",
+   "lowGain",
+   "midOn",
+   "midInput",
+   "midAboveThreshold",
+   "midAboveSlope",
+   "midBelowThreshold",
+   "midBelowSlope",
+   "midAttack",
+   "midRelease",
+   "midGain",
+   "highOn",
+   "highInput",
+   "highAboveThreshold",
+   "highAboveSlope",
+   "highBelowThreshold",
+   "highBelowSlope",
+   "highAttack",
+   "highRelease",
+   "highGain",
+   "band"
+  ]
  },
  "expanded": {
   "size": [
    980.0,
-   260.0
+   320.0
   ],
   "viewport_size": null,
   "background": [
@@ -3068,7 +3104,7 @@
      8.0,
      28.0,
      964.0,
-     200.0
+     190.0
     ],
     "color": [
      46,
@@ -3112,7 +3148,7 @@
        "b": -1.0
       }
      },
-     200.0
+     190.0
     ],
     "color": [
      242,
@@ -3196,7 +3232,7 @@
        "b": -1.0
       }
      },
-     200.0
+     190.0
     ],
     "color": [
      95,
@@ -3260,7 +3296,7 @@
        "b": -1.0
       }
      },
-     200.0
+     190.0
     ],
     "color": [
      159,
@@ -3308,7 +3344,7 @@
       },
       "b": 8.0
      },
-     228.0
+     218.0
     ],
     "color": [
      236,
@@ -3356,7 +3392,7 @@
       },
       "b": 8.0
      },
-     228.0
+     218.0
     ],
     "color": [
      236,
@@ -3404,7 +3440,7 @@
       },
       "b": 8.0
      },
-     228.0
+     218.0
     ],
     "color": [
      236,
@@ -3423,7 +3459,7 @@
       "a": {
        "op": "multiply",
        "a": -20.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3435,7 +3471,7 @@
       "a": {
        "op": "multiply",
        "a": -20.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3457,7 +3493,7 @@
       "a": {
        "op": "multiply",
        "a": -40.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3469,7 +3505,7 @@
       "a": {
        "op": "multiply",
        "a": -40.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3491,7 +3527,7 @@
       "a": {
        "op": "multiply",
        "a": -60.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3503,7 +3539,7 @@
       "a": {
        "op": "multiply",
        "a": -60.0,
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3530,7 +3566,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3567,7 +3603,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3594,7 +3630,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3631,7 +3667,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3678,7 +3714,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3715,7 +3751,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3762,7 +3798,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3799,7 +3835,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3846,7 +3882,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3863,7 +3899,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3910,7 +3946,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3927,7 +3963,7 @@
         "normalized": false,
         "logarithmic": false
        },
-       "b": -2.5
+       "b": -2.375
       },
       "b": 28.0
      }
@@ -3988,7 +4024,7 @@
       },
       "b": 8.0
      },
-     228.0
+     218.0
     ],
     "color": [
      166,
@@ -4046,7 +4082,7 @@
       },
       "b": 8.0
      },
-     228.0
+     218.0
     ],
     "color": [
      166,
@@ -4079,7 +4115,7 @@
       },
       "b": 3.0
      },
-     215.0
+     205.0
     ],
     "text": "100",
     "color": [
@@ -4117,7 +4153,7 @@
       },
       "b": 3.0
      },
-     215.0
+     205.0
     ],
     "text": "1k",
     "color": [
@@ -4155,7 +4191,7 @@
       },
       "b": 3.0
      },
-     215.0
+     205.0
     ],
     "text": "10k",
     "color": [
@@ -4172,76 +4208,6 @@
    }
   ],
   "controls": [
-   {
-    "widget": {
-     "kind": "number",
-     "decimals": 0,
-     "format": "frequency",
-     "color": [
-      166,
-      163,
-      255,
-      255
-     ],
-     "center": true,
-     "bordered": true,
-     "prefix": "",
-     "suffix": ""
-    },
-    "visible_when": null,
-    "id": "lowCrossover",
-    "name": "Low Crossover",
-    "tooltip": "Low Crossover: drag vertically; double click resets",
-    "bounds": [
-     12.0,
-     234.0,
-     80.0,
-     20.0
-    ],
-    "gesture": "drag",
-    "x": null,
-    "y": {
-     "parameter": "lowCrossover",
-     "logarithmic": true,
-     "drag_scale": 1.0
-    },
-    "drawing": []
-   },
-   {
-    "widget": {
-     "kind": "number",
-     "decimals": 0,
-     "format": "frequency",
-     "color": [
-      166,
-      163,
-      255,
-      255
-     ],
-     "center": true,
-     "bordered": true,
-     "prefix": "",
-     "suffix": ""
-    },
-    "visible_when": null,
-    "id": "highCrossover",
-    "name": "High Crossover",
-    "tooltip": "High Crossover: drag vertically; double click resets",
-    "bounds": [
-     888.0,
-     234.0,
-     80.0,
-     20.0
-    ],
-    "gesture": "drag",
-    "x": null,
-    "y": {
-     "parameter": "highCrossover",
-     "logarithmic": true,
-     "drag_scale": 1.0
-    },
-    "drawing": []
-   },
    {
     "widget": {
      "kind": "label",
@@ -4337,10 +4303,10 @@
     "name": "Low curve",
     "tooltip": "Low curve: drag up or down to change it",
     "bounds": [
-     238.0,
-     34.0,
-     80.0,
-     80.0
+     129.0,
+     250.0,
+     84.0,
+     84.0
     ],
     "gesture": "drag",
     "x": null,
@@ -4355,8 +4321,8 @@
       "rect": [
        0.0,
        0.0,
-       80.0,
-       80.0
+       84.0,
+       84.0
       ],
       "color": [
        37,
@@ -4370,10 +4336,10 @@
       "kind": "line",
       "from": [
        0.0,
-       80.0
+       84.0
       ],
       "to": [
-       80.0,
+       84.0,
        0.0
       ],
       "color": [
@@ -4393,9 +4359,9 @@
          "a": {
           "op": "multiply",
           "a": -80.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4433,7 +4399,7 @@
             "b": -1.0
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4449,9 +4415,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4463,7 +4429,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4479,9 +4445,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4493,7 +4459,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4504,9 +4470,9 @@
          "a": {
           "op": "multiply",
           "a": 0.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4535,7 +4501,7 @@
             }
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4648,10 +4614,10 @@
     "name": "Mid curve",
     "tooltip": "Mid curve: drag up or down to change it",
     "bounds": [
-     564.0,
-     34.0,
-     80.0,
-     80.0
+     455.0,
+     250.0,
+     84.0,
+     84.0
     ],
     "gesture": "drag",
     "x": null,
@@ -4666,8 +4632,8 @@
       "rect": [
        0.0,
        0.0,
-       80.0,
-       80.0
+       84.0,
+       84.0
       ],
       "color": [
        37,
@@ -4681,10 +4647,10 @@
       "kind": "line",
       "from": [
        0.0,
-       80.0
+       84.0
       ],
       "to": [
-       80.0,
+       84.0,
        0.0
       ],
       "color": [
@@ -4704,9 +4670,9 @@
          "a": {
           "op": "multiply",
           "a": -80.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4744,7 +4710,7 @@
             "b": -1.0
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4760,9 +4726,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4774,7 +4740,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4790,9 +4756,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4804,7 +4770,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4815,9 +4781,9 @@
          "a": {
           "op": "multiply",
           "a": 0.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -4846,7 +4812,7 @@
             }
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -4959,10 +4925,10 @@
     "name": "High curve",
     "tooltip": "High curve: drag up or down to change it",
     "bounds": [
-     890.0,
-     34.0,
-     80.0,
-     80.0
+     781.0,
+     250.0,
+     84.0,
+     84.0
     ],
     "gesture": "drag",
     "x": null,
@@ -4977,8 +4943,8 @@
       "rect": [
        0.0,
        0.0,
-       80.0,
-       80.0
+       84.0,
+       84.0
       ],
       "color": [
        37,
@@ -4992,10 +4958,10 @@
       "kind": "line",
       "from": [
        0.0,
-       80.0
+       84.0
       ],
       "to": [
-       80.0,
+       84.0,
        0.0
       ],
       "color": [
@@ -5015,9 +4981,9 @@
          "a": {
           "op": "multiply",
           "a": -80.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -5055,7 +5021,7 @@
             "b": -1.0
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -5071,9 +5037,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -5085,7 +5051,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -5101,9 +5067,9 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -5115,7 +5081,7 @@
            "normalized": false,
            "logarithmic": false
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -5126,9 +5092,9 @@
          "a": {
           "op": "multiply",
           "a": 0.0,
-          "b": 1.0
+          "b": 1.05
          },
-         "b": 80.0
+         "b": 84.0
         },
         {
          "op": "add",
@@ -5157,7 +5123,7 @@
             }
            }
           },
-          "b": -1.0
+          "b": -1.05
          },
          "b": 0.0
         }
@@ -5174,8 +5140,114 @@
       "fill": null
      }
     ]
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "lowCrossover",
+    "name": "Low Crossover",
+    "tooltip": "Low Crossover: drag vertically; double click resets",
+    "bounds": [
+     8.0,
+     224.0,
+     80.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "lowCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
+   },
+   {
+    "widget": {
+     "kind": "number",
+     "decimals": 0,
+     "format": "frequency",
+     "color": [
+      166,
+      163,
+      255,
+      255
+     ],
+     "center": true,
+     "bordered": true,
+     "prefix": "",
+     "suffix": ""
+    },
+    "visible_when": null,
+    "id": "highCrossover",
+    "name": "High Crossover",
+    "tooltip": "High Crossover: drag vertically; double click resets",
+    "bounds": [
+     892.0,
+     224.0,
+     80.0,
+     20.0
+    ],
+    "gesture": "drag",
+    "x": null,
+    "y": {
+     "parameter": "highCrossover",
+     "logarithmic": true,
+     "drag_scale": 1.0
+    },
+    "drawing": []
    }
   ],
-  "hidden_parameters": []
+  "hidden_parameters": [
+   "lowCrossover",
+   "highCrossover",
+   "peak",
+   "softKnee",
+   "amount",
+   "time",
+   "output",
+   "lowOn",
+   "lowInput",
+   "lowAboveThreshold",
+   "lowAboveSlope",
+   "lowBelowThreshold",
+   "lowBelowSlope",
+   "lowAttack",
+   "lowRelease",
+   "lowGain",
+   "midOn",
+   "midInput",
+   "midAboveThreshold",
+   "midAboveSlope",
+   "midBelowThreshold",
+   "midBelowSlope",
+   "midAttack",
+   "midRelease",
+   "midGain",
+   "highOn",
+   "highInput",
+   "highAboveThreshold",
+   "highAboveSlope",
+   "highBelowThreshold",
+   "highBelowSlope",
+   "highAttack",
+   "highRelease",
+   "highGain",
+   "band"
+  ]
  }
 }
