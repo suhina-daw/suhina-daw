@@ -178,7 +178,7 @@ are local to the canvas or the control. Layer order is array order; controls dra
 Drawing commands: rectangle, circle, line, path, arc, text, image and four-corner gradient.
 Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
 Text can append a parameter's current value with bounded decimal precision. Numeric drawing
-values can be literals or bounded expressions (parameter, normalized parameter, add, multiply,
+values can be literals or bounded expressions (parameter, normalized parameter, add, multiply, min, max,
 sine, cosine, exponential, natural logarithm, equality and oscillator waveforms). Expression depth is at most 16, with 32768 expression nodes per canvas;
 non-finite results become zero, finite values are bounded before drawing. This supports moving
 markers, response drawings, circular handles, segmented displays and meters driven by parameters.
@@ -198,7 +198,11 @@ Gestures: drag (relative X/Y), position (absolute pointer position, Y upward), t
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
-A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected.
+A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
+A `{"preset": 0}` gesture applies the canvas's quick preset 0: a button with no bindings that sets
+every value the preset holds (`"presets": [{"name": "OTT", "values": {"amount": 0.7}}]`, at most
+32 presets of 256 values, each id a declared parameter and each value in its range) as one undo
+step; parameters the preset leaves out keep their values.
 Tabs bind only X to a linear parameter whose minimum is zero; the positive tab
 value must be in range. Button widgets show exact-value selection for tabs.
 Click and Space/Enter share the same command and undo path.
@@ -235,7 +239,7 @@ Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `
 current value and unit to the prefix `text`. `decimals` is 0..8. Unknown fields are rejected.
 
 A value expression uses `op`: `parameter` has `parameter` (id), `normalized` (false), `logarithmic`
-(false); `add` and `multiply` have `a` and `b`; `sin` and `cos` have `value` (radians).
+(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `sin` and `cos` have `value` (radians).
 The `equal` expression has `a` and `b` and returns 1 when their difference is less than 0.0001, otherwise 0; use it for selected segment highlights.
 The parameter expression returns raw units unless `normalized` is true. Use the same
 `logarithmic` flag on bindings and normalized drawings.

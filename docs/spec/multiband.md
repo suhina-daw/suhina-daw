@@ -129,6 +129,11 @@ knob; colours are the theme's (text, panel, control, border, accent), the three 
 - **Expanded** (980 × 260, opened from the device's header over the main view): the same band view
   across the whole width, each band's name, its two thresholds as fields and its transfer curve, and
   the crossovers as fields.
+- **Quick preset OTT** (the button at the top right): heavy upward and downward compression on all
+  three bands, in one undo step; Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input
+  +5 dB, above thresholds -34/-30/-35 dB with slopes 0.015/0.015/0, below -41 dB with slope 0.24,
+  attacks 50/22/13 ms, releases 280/280/130 ms, gains +10/+6/+10 dB). The name is a style name
+  ([ADR 0014](../decisions/0014-stock-presets.md) › Amendment: established style names).
 - **Not shown yet:** the signal's spectrum, the gain change and level meters, which need the
   device to hand live values to its panel (no device does that yet).
 

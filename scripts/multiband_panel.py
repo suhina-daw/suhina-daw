@@ -43,6 +43,19 @@ def equal(a, b):
     return {"op": "equal", "a": a, "b": b}
 
 
+def minimum(a, b):
+    return {"op": "min", "a": a, "b": b}
+
+
+def maximum(a, b):
+    return {"op": "max", "a": a, "b": b}
+
+
+def reciprocal(value):
+    """1 / value for a positive value, through exp(-ln v)."""
+    return {"op": "exp", "value": mul({"op": "log", "value": value}, -1.0)}
+
+
 def freq_x(value, x0, width):
     """x of a frequency (a parameter or a number in Hz) on a 20 Hz - 20 kHz log axis."""
     ln = {"op": "log", "value": value}
@@ -103,10 +116,14 @@ def curve(bid, size, color):
     def point(x_db, y_db):
         return [add(mul(x_db, s), size), add(mul(y_db, -s), 0.0)]
 
-    # output at -80 dB in: Tb - (Tb + 80) * slope; at 0 dB in: Ta * (1 - slope).
+    # Output at -80 dB in: Tb - (Tb + 80) * slope; at 0 dB in: Ta * (1 - slope). Where a stage
+    # leaves the box first, it ends at the box's edge: the input where it meets -80 or 0 dB.
     out_low = add(bt, mul(mul(add(bt, 80.0), bs), -1.0))
+    in_low = add(bt, mul(add(-80.0, mul(bt, -1.0)), reciprocal(add(bs, 0.001))))
     out_top = mul(at, add(1.0, mul(aslope, -1.0)))
-    points = [point(-80.0, out_low), point(bt, bt), point(at, at), point(0.0, out_top)]
+    in_top = add(at, mul(mul(at, -1.0), reciprocal(add(aslope, 0.001))))
+    points = [point(maximum(-80.0, in_low), maximum(-80.0, out_low)), point(bt, bt), point(at, at),
+              point(minimum(0.0, in_top), minimum(0.0, out_top))]
     return [
         rect(0.0, 0.0, size, size, PANEL, 3.0),
         line([0.0, size], [size, 0.0], BORDER),
@@ -121,8 +138,8 @@ def dial(pid, label, bounds, log=False, decimals=1, fmt="number", visible=None):
             "gesture": "drag", "x": None, "y": {"parameter": pid, "logarithmic": log, "drag_scale": 1.0}, "drawing": []}
 
 
-def button(cid, pid, label, bounds, gesture="toggle", visible=None):
-    return {"widget": {"kind": "button", "label": label, "off_label": None, "indicator": False},
+def button(cid, pid, label, bounds, gesture="toggle", visible=None, off_label=None, indicator=False):
+    return {"widget": {"kind": "button", "label": label, "off_label": off_label, "indicator": indicator},
             "visible_when": visible, "id": cid, "name": label, "tooltip": label, "bounds": bounds,
             "gesture": gesture, "x": {"parameter": pid, "logarithmic": False, "drag_scale": 1.0}, "y": None, "drawing": []}
 
@@ -147,6 +164,25 @@ def label(cid, caption, bounds):
             "tooltip": "", "bounds": bounds, "gesture": "drag", "x": None, "y": None}
 
 
+def preset_button(cid, label, index, bounds):
+    return {"widget": {"kind": "button", "label": label, "off_label": None, "indicator": False}, "visible_when": None,
+            "id": cid, "name": f"{label} preset", "tooltip": f"Apply the {label} quick preset", "bounds": bounds,
+            "gesture": {"preset": index}, "x": None, "y": None, "drawing": []}
+
+
+def ott():
+    """Heavy upward and downward compression on all three bands, Suhina's own rounded values."""
+    values = {"lowCrossover": 90.0, "highCrossover": 2500.0, "peak": 0.0, "softKnee": 1.0, "amount": 1.0,
+              "time": 1.0, "output": 0.0}
+    bands = {"low": (-34.0, 0.015, 50.0, 280.0, 10.0), "mid": (-30.0, 0.015, 22.0, 280.0, 6.0),
+             "high": (-35.0, 0.0, 13.0, 130.0, 10.0)}
+    for bid, (above, slope, attack, release, gain) in bands.items():
+        values.update({f"{bid}On": 1.0, f"{bid}Input": 5.0, f"{bid}AboveThreshold": above, f"{bid}AboveSlope": slope,
+                       f"{bid}BelowThreshold": -41.0, f"{bid}BelowSlope": 0.24, f"{bid}Attack": attack / 1000.0,
+                       f"{bid}Release": release / 1000.0, f"{bid}Gain": gain})
+    return {"name": "OTT", "values": values}
+
+
 def every_parameter():
     """Every parameter id, so the panel shows only its canvas and not the generated list under it."""
     return GLOBALS + [f"{bid}{suffix}" for bid, _, _ in BANDS for suffix in BAND_PARAMETERS] + ["band"]
@@ -161,8 +197,9 @@ def compact():
     ]
     for i, (bid, name, _) in enumerate(BANDS):
         controls.append(button(f"tab_{bid}", "band", name, [384.0 + i * 54.0, 4.0, 52.0, 18.0], {"set": i}))
-    controls.append(button("peak_toggle", "peak", "Peak", [554.0, 4.0, 52.0, 18.0]))
-    controls.append(button("knee_toggle", "softKnee", "Soft knee", [608.0, 4.0, 70.0, 18.0]))
+    controls.append(button("peak_toggle", "peak", "Peak", [554.0, 4.0, 52.0, 18.0], off_label="RMS"))
+    controls.append(button("knee_toggle", "softKnee", "Soft knee", [608.0, 4.0, 70.0, 18.0], indicator=True))
+    controls.append(preset_button("preset_ott", "OTT", 0, [720.0, 4.0, 96.0, 18.0]))
     knobs = [("AboveThreshold", "Above", False, 1, "decibels"), ("AboveSlope", "Above slope", False, 2, "number"),
              ("BelowThreshold", "Below", False, 1, "decibels"), ("BelowSlope", "Below slope", False, 2, "number"),
              ("Attack", "Attack", True, 1, "seconds"), ("Release", "Release", True, 1, "seconds"),
@@ -170,7 +207,7 @@ def compact():
     for i, (bid, name, color) in enumerate(BANDS):
         shown = equal(par("band"), float(i))
         controls.append(display(f"{bid}_curve", f"{name} curve", [384.0, 28.0, 76.0, 76.0], curve(bid, 76.0, color), f"{bid}AboveSlope", shown))
-        controls.append(button(f"{bid}_on", f"{bid}On", "On", [384.0, 110.0, 76.0, 20.0], visible=shown))
+        controls.append(button(f"{bid}_on", f"{bid}On", "On", [384.0, 110.0, 76.0, 20.0], visible=shown, off_label="Off", indicator=True))
         for k, (suffix, label, log, decimals, fmt) in enumerate(knobs):
             col, row = k % 4, k // 4
             controls.append(dial(f"{bid}{suffix}", label, [468.0 + col * 62.0, 28.0 + row * 68.0, 60.0, 66.0], log, decimals, fmt, shown))
@@ -178,7 +215,7 @@ def compact():
     controls.append(dial("time", "Time", [720.0, 96.0, 48.0, 66.0], True, 0, "percent"))
     controls.append(dial("output", "Output", [768.0, 96.0, 48.0, 66.0], False, 1, "decibels"))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
-            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
+            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter(), "presets": [ott()]}
 
 
 def expanded():
