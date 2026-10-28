@@ -40,6 +40,7 @@ use crate::plugin::{
 use crate::plugin_params::SlotParams;
 use crate::sends::SendOut;
 use crate::sine::{self, SineTones};
+use crate::spectrum;
 
 /// The most frames one block of a chain holds; the renderer splits longer blocks.
 pub(crate) const MAX_BLOCK: usize = 1024;
@@ -679,12 +680,15 @@ impl Chain {
     /// [`Chain::answered`] to tell when its answer is in and [`Chain::collect`] to take it, after
     /// which this goes on from there. Returns false once every device has run (a plug-in that
     /// cannot take a block that way runs as in [`Chain::complete`]).
-    pub(crate) fn advance(&mut self, frames: usize, context: &ProcessContext) -> bool {
+    pub(crate) fn advance(&mut self, frames: usize, context: &ProcessContext, spectrum: &spectrum::Spectrum) -> bool {
         self.context = *context;
         if self.waiting.is_some() {
             return true;
         }
         let to = frames.min(MAX_BLOCK);
+        // The devices whose input the analyser watches, by row: their input blocks are
+        // appended as they pass (docs/spec/eq.md › The panel › The analyser).
+        let watched = spectrum.watched(self.track);
         let Self {
             slots,
             buffer,
@@ -710,6 +714,15 @@ impl Chain {
         while let Some(slot) = slots.get_mut(*stage) {
             match slot {
                 Slot::Device(device) => {
+                    if let Some(row) = self
+                        .positions
+                        .get(*stage)
+                        .copied()
+                        .filter(|position| watched.contains(&Some(*position)))
+                    {
+                        let input = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+                        spectrum.append(row, input, to - from);
+                    }
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     *stage += 1;
                 }
@@ -1341,7 +1354,12 @@ pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 /// for at most [`ANSWER_SLICE`] at a time. Never allocates; returns by the deadline in real time
 /// (a plug-in still out then is a miss), and offline once every plug-in has answered or used up
 /// [`OFFLINE_TIMEOUT`].
-pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &ProcessContext) {
+pub(crate) fn run_as_answered(
+    chains: &mut [Chain],
+    frames: usize,
+    context: &ProcessContext,
+    spectrum: &spectrum::Spectrum,
+) {
     loop {
         let now = crate::clock::now();
         let mut out = false;
@@ -1349,7 +1367,7 @@ pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &Pro
         for chain in chains.iter_mut().filter(|chain| chain.is_waiting()) {
             if chain.answered(now) {
                 chain.collect(frames);
-                chain.advance(frames, context);
+                chain.advance(frames, context, spectrum);
                 moved = true;
             }
             out |= chain.is_waiting();

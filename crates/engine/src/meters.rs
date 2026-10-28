@@ -24,6 +24,7 @@ use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 use crate::buses::gains_until;
 use crate::chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
 use crate::route;
+use crate::spectrum;
 
 /// Tracks that are metered; a project's tracks after these have no meter.
 pub const MAX_METERED_TRACKS: usize = 512;
@@ -117,18 +118,21 @@ impl Row {
 }
 
 /// The levels of the main output and of every metered track, written by the audio thread
-/// and readable from any thread. Clip indicators are reset from any thread.
+/// and readable from any thread. Clip indicators are reset from any thread. It also carries
+/// the watched devices' input rings the EQ panel's analyser reads
+/// ([`spectrum::Spectrum`], docs/spec/eq.md › The panel › The analyser).
 #[derive(Debug)]
 pub struct MeterMonitor {
     main: Row,
     tracks: Box<[Row]>,
+    pub(crate) spectrum: spectrum::Spectrum,
 }
 
 impl Default for MeterMonitor {
     fn default() -> Self {
         let tracks: Box<[Row]> =
             (0..MAX_METERED_TRACKS).map(|_| Row { track: AtomicU32::new(NO_TRACK), ..Row::default() }).collect();
-        Self { main: Row::default(), tracks }
+        Self { main: Row::default(), tracks, spectrum: spectrum::Spectrum::new() }
     }
 }
 
@@ -166,6 +170,12 @@ impl MeterMonitor {
     /// The main output's level.
     pub fn main(&self) -> Level {
         self.main.level()
+    }
+
+    /// The watched devices' input rings, the EQ panel's analyser's source
+    /// (docs/spec/eq.md › The panel › The analyser).
+    pub fn spectrum(&self) -> &spectrum::Spectrum {
+        &self.spectrum
     }
 
     /// The level of `track`, or `None` when the engine plays no such track or it has no meter.
@@ -443,8 +453,10 @@ pub(crate) struct MeterWriter {
 impl MeterWriter {
     /// Allocates: call it off the audio thread.
     pub(crate) fn new(sample_rate: u32) -> Self {
+        let monitor = Arc::new(MeterMonitor::default());
+        monitor.spectrum.set_rate(sample_rate);
         Self {
-            monitor: Arc::new(MeterMonitor::default()),
+            monitor,
             sample_rate: f64::from(sample_rate.max(1)),
             main: Ballistics::default(),
             tracks: vec![Ballistics::default(); MAX_METERED_TRACKS],
@@ -455,8 +467,10 @@ impl MeterWriter {
     }
 
     /// Shows the tracks of a new graph, slot by slot. A slot that now meters another track
-    /// starts from silence with its clip indicator off. Never allocates.
+    /// starts from silence with its clip indicator off, and no device is watched any more:
+    /// the panels claim their rows again next frame. Never allocates.
     pub(crate) fn assign(&mut self, tracks: &[TrackId]) {
+        self.monitor.spectrum.clear();
         for (slot, row) in self.monitor.tracks.iter().enumerate() {
             row.sample.store(0, Ordering::Relaxed);
             row.readouts.iter().for_each(|entry| entry.device.store(0, Ordering::Relaxed));

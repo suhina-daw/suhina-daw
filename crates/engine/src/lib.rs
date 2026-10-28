@@ -82,6 +82,7 @@ mod sends;
 #[cfg(test)]
 mod sends_tests;
 mod sine;
+pub mod spectrum;
 mod stretch;
 mod swap;
 mod tempo;
@@ -1173,10 +1174,11 @@ impl Renderer {
         // answers, while the others are still out (#151). A bus runs after the chains that play
         // into it, in order below.
         let chains = &mut self.graph.chains;
+        let spectrum = &self.meters.monitor.spectrum;
         for chain in chains.iter_mut().filter(|c| !c.is_bus) {
-            chain.advance(frames, &context);
+            chain.advance(frames, &context, spectrum);
         }
-        run_as_answered(chains, frames, &context);
+        run_as_answered(chains, frames, &context, spectrum);
         // In order, so a bus or a return has every chain that plays into it before it runs.
         // With a source render's capture, the source chain's output is mixed into the capture
         // buffer instead of where it plays.

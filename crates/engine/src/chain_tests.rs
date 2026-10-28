@@ -335,6 +335,44 @@ fn stopping_the_transport_releases_an_instruments_notes() {
     assert!(peak(&after[24_000..]) < 1e-4, "{}", peak(&after[24_000..]));
 }
 
+/// A watched device's input lands in its spectrum ring while the notes play, before the
+/// device's own controls, and only the watched device's ring has it
+/// (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_devices_input_lands_in_its_spectrum_ring() {
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut renderer =
+        Renderer::build(&loud, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone plays");
+    let (samples, valid) = spectrum.samples(TrackId(1), 0).expect("the watched device has input");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let input_peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(input_peak > 0.01, "the tone's input is in the ring, peak {input_peak}");
+    assert!(spectrum.samples(TrackId(1), 1).is_none(), "another device's ring reads nothing");
+    let loud_peak = peak(&out);
+
+    // The ring is the input: with the utility 12 dB down, the output is quieter and the ring
+    // is not.
+    let quiet = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[("gain", -12.0)])]);
+    let mut renderer =
+        Renderer::build(&quiet, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    monitor.spectrum().watch(0, TrackId(1), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    let (samples, _) = monitor.spectrum().samples(TrackId(1), 0).expect("the watched device has input");
+    let quiet_peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(peak(&out) < loud_peak * 0.4, "the gain's output is quieter, {} against {loud_peak}", peak(&out));
+    assert!(
+        (quiet_peak - input_peak).abs() < 0.02,
+        "the ring heard the input, not the gain, {quiet_peak} vs {input_peak}"
+    );
+}
+
 #[test]
 fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
     // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it

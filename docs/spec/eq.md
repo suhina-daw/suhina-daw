@@ -1,6 +1,6 @@
 ---
-description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, the panel's response display with the bands' dots, how Live's EQ Eight imports into it, and how close it comes to Live's renders
-read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements, eq panel, response display, curve display, band dots
+description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, the panel's response display with the bands' dots and the input spectrum's analyser, how Live's EQ Eight imports into it, and how close it comes to Live's renders
+read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements, eq panel, response display, curve display, band dots, analyser, spectrum
 type: spec
 status: current
 last_verified: 2026-10-28
@@ -8,6 +8,7 @@ covers:
   - devices/eq/**
   - crates/dsp/src/svf.rs
   - crates/ui/src/detail/eq_curve.rs
+  - crates/engine/src/spectrum.rs
 ---
 
 # EQ
@@ -165,6 +166,30 @@ command, the same one a generated list writes.
   `SelectedBand` and `Edit`: they are not parameters, they are not saved in a project, and
   undo does not take them back.
 
+### The analyser
+
+While sound plays through the device, the display also draws the spectrum of the device's
+**input** — the sound about to be equalised — as a dim line behind the response curve, on the
+same frequency axis and dB grid. The line is the same in Stereo, Left/Right and Mid/Side: the
+tap is before the EQ, so the mode does not change it. With nothing playing it holds the last
+spectrum.
+
+- **The tap.** The chain pass on the audio thread mixes a watched device's input block to mono
+  (left and right halved) and appends it to a ring of 2048 samples in the meter monitor
+  (`crates/engine/src/spectrum.rs`). The rings are fixed tables of atomics, like the meters':
+  the audio thread only stores, never allocates, locks or waits, and a device whose row nobody
+  watches costs nothing. The watch rows are keyed by the device's index in the chain; a panel
+  claims row `device index mod 16` while it is drawn, and reads the ring only while the watch
+  still names its device. When two chains of the same track play at once (clips in more than
+  one column), whichever wrote last shows.
+- **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
+  already in the tree), and folds the spectrum into 64 bands spaced logarithmically over
+  10 Hz – 22 kHz, taking each band's loudest bin. The level is the sine's amplitude against
+  full scale in dB (a full-scale sine at a band's centre draws at 0 dB); bands below the FFT's
+  first bin (about 23 Hz at 48 kHz) show that bin. The bands are drawn at half strength, as a
+  line, and nothing about them is history: each frame is the last 2048 samples (about 43 ms),
+  no peak hold, no smoothing.
+
 ## Decisions
 
 Each entry: what was chosen, what it costs, why.
@@ -187,15 +212,16 @@ Each entry: what was chosen, what it costs, why.
 6. **Type changes, on/off and mode changes fade; frequency, gain and Q glide over 20 ms.** Not
    measured (they need automation during a render). A bell whose Q falls fast swells a little
    while its resonance empties (half again the level for 20 ms from Q 6 to 0.3), with no step.
-7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser and Audition
-   are still left out.** The display sums the same filter sections the device runs
-   (`band_sections`), so what the panel shows is what the device renders and there is no
-   second response implementation to drift from. Cost: about 6 000 magnitude evaluations per
-   curve per frame, on the UI thread, at the display's 192 points. The drawn bend near
-   Nyquist is 48 kHz's wherever the project runs; only a corner above 20 kHz could differ at
-   another rate. The analyser and Audition remain panel parts left for later (the
-   device-specs AGENTS › Scope): the analyser needs the engine to read a device's spectrum
-   back, which no panel does yet.
+7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser's tap is the
+   meters' pattern, and Audition is still left out.** The display sums the same filter
+   sections the device runs (`band_sections`), so what the panel shows is what the device
+   renders and there is no second response implementation to drift from. Cost: about 6 000
+   magnitude evaluations per curve per frame, on the UI thread, at the display's 192 points.
+   The drawn bend near Nyquist is 48 kHz's wherever the project runs; only a corner above
+   20 kHz could differ at another rate. The analyser (above) reads the device's input through
+   the meter monitor's atomics and does its FFT on the UI thread, so the audio thread's cost
+   is the mono mixdown and the ring stores alone, only while a panel watches; Audition remains
+   a panel part left for later (the device-specs AGENTS › Scope).
 
 ## Known differences
 
@@ -230,3 +256,5 @@ filter against the cookbook biquads and under fast modulation; `crates/als/src/d
 tests the import. `devices/eq/src/panel.rs` tests the layout; `crates/ui/tests/detail_eq_panel.rs`
 the panel itself: the display, the dots' drags, the strips, the type menus, the numbered
 selectors, the globals and the Edit switch, each through the commands it writes.
+`crates/engine/src/spectrum.rs` tests the watch and the ring round trip; the panel's band
+folding in `crates/ui/src/detail/eq_curve.rs` tests a tone against its band.

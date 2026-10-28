@@ -5716,6 +5716,7 @@ dependencies = [
  "image",
  "memory-stats",
  "resvg",
+ "rustfft",
  "serde_json",
  "suhina-device-api",
  "suhina-device-eq",

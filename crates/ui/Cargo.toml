@@ -24,6 +24,7 @@ suhina-device-nam-cab-loader.workspace = true
 suhina-soundmap.workspace = true
 suhina-update.workspace = true
 suhina-style.workspace = true
+rustfft = "6.4"  # MIT OR Apache-2.0, pure Rust; the EQ panel's analyser bands
 serde_json.workspace = true
 base64.workspace = true
 memory-stats.workspace = true
