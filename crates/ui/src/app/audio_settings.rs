@@ -170,10 +170,12 @@ impl App {
                     );
                 }
                 if !previewing {
-                    ui.painter().set(
-                        tint,
-                        egui::Shape::rect_filled(window, 0.0, theme::window_background().gamma_multiply(0.6)),
-                    );
+                    // The status bar stays undimmed at the bottom: an error or a confirmation from
+                    // the page is seen while the dialog is open, not only behind it.
+                    let top = (window.bottom() - theme::STATUS_BAR).max(window.min.y);
+                    let dim = Rect::from_min_max(window.min, Pos2::new(window.right(), top));
+                    ui.painter()
+                        .set(tint, egui::Shape::rect_filled(dim, 0.0, theme::window_background().gamma_multiply(0.6)));
                 }
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
             },

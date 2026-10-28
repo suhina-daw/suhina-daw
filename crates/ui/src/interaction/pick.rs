@@ -25,6 +25,8 @@ pub enum PickField {
     ExportFile,
     /// A folder the person allows attached MCP agents to write in.
     McpWriteFolder,
+    /// A folder to look in for plug-ins (Settings › Plug-ins, added with nothing typed).
+    PluginFolder,
     /// A project to open (File › Open…, the start panel's Open…).
     OpenProject,
     /// A folder for the browser (+ Add folder).
@@ -55,6 +57,7 @@ impl PickField {
             Self::SaveFolder => "Folder to save in",
             Self::ExportFile => "Export audio to",
             Self::McpWriteFolder => "Allow MCP writes in",
+            Self::PluginFolder => "Add a plug-in folder",
             Self::OpenProject => "Open a project",
             Self::BrowserFolder => "Add a folder to the browser",
             Self::NamModelsFolder => "NAM models folder",
