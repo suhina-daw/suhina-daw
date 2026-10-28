@@ -65,7 +65,9 @@ pub mod param {
     pub const ATTACK: usize = 6;
     pub const RELEASE: usize = 7;
     pub const GAIN: usize = 8;
-    pub(crate) const COUNT: usize = BAND + 3 * PER_BAND;
+    /// Which band the panel shows the controls of (0 low, 1 mid, 2 high); it changes no sound.
+    pub const SHOWN_BAND: usize = BAND + 3 * PER_BAND;
+    pub(crate) const COUNT: usize = SHOWN_BAND + 1;
 
     /// The index of band `band`'s parameter `which`.
     pub const fn band(band: usize, which: usize) -> usize {
@@ -157,6 +159,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("highAttack", "High Attack", (0.0001, 5.0), 0.005, Unit::Seconds, Scale::Logarithmic),
     ParamInfo::continuous("highRelease", "High Release", (0.0001, 5.0), 0.1, Unit::Seconds, Scale::Logarithmic),
     ParamInfo::continuous("highGain", "High Gain", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
+    ParamInfo::choice("band", "Band", &["Low", "Mid", "High"], 1),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "multiband", name: "Multiband", role: Role::Effect, params: &PARAMS };

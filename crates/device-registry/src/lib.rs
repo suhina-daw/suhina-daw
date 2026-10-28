@@ -49,6 +49,7 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
 /// The layouts kept as JSON next to a device crate, by device id.
 pub const LAYOUT_FILES: &[(&str, &str)] = &[
     ("compressor", include_str!("../../../devices/compressor/panel.json")),
+    ("multiband", include_str!("../../../devices/multiband/panel.json")),
     ("overdrive", include_str!("../../../devices/overdrive/panel.json")),
     ("reverb", include_str!("../../../devices/reverb/panel.json")),
     ("limiter", include_str!("../../../devices/limiter/panel.json")),

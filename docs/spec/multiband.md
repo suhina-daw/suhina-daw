@@ -6,6 +6,7 @@ status: current
 last_verified: 2026-10-28
 covers:
   - devices/multiband/**
+  - scripts/multiband_panel.py
   - crates/als/src/devices.rs
 ---
 
@@ -58,7 +59,10 @@ for `low`, `mid` and `high` (shown for `low`).
 | 14 + 9b | `lowRelease` | Low Release | 0.1 ms – 5 s | 300 ms (mid 200, high 100) | seconds, logarithmic |
 | 15 + 9b | `lowGain` | Low Gain | −24 – +24 dB | 0 dB | decibels, linear |
 
-`b` is the band: 0 low, 1 mid, 2 high (34 parameters).
+| 34 | `band` | Band | Low, Mid, High | Mid | choice |
+
+`b` is the band: 0 low, 1 mid, 2 high (35 parameters). `band` only chooses which band's controls
+the panel shows; it changes no sound and the import leaves it at its default.
 
 - **Slopes** are the stage's output slope: decibels out per decibel in, beyond its threshold.
   Above: 0 holds the level at the threshold (a limiter, 1 : ∞), 0.25 is 4 : 1 compression, 1
@@ -108,6 +112,25 @@ Per frame, with the left and right sides through the same filters:
 - **Changes while playing.** Gains and thresholds glide over 20 ms, crossovers over 50 ms as
   log2 hertz with the filters retuned every 16 frames; slopes, times, knee, Peak and Amount take
   effect at once.
+
+## Panel
+
+`devices/multiband/panel.json`, written by `scripts/multiband_panel.py` (run it after changing the
+script; the file is its output). Both canvases draw from the parameters only, so they follow every
+knob; colours are the theme's (text, panel, control, border, accent), the three band colours fixed.
+
+- **Compact** (820 × 168, the device row's height). Left: the bands over a 20 Hz – 20 kHz log axis,
+  each shaded in its colour between the crossover lines, with its above threshold (solid) and below
+  threshold (fainter) drawn as lines at their level, and the two crossovers as fields under it.
+  Right of it: tabs Low, Mid, High (the `band` parameter), Peak and Soft knee; for the chosen band
+  its transfer curve (output against input: the below stage, 1 : 1 between the thresholds, the
+  above stage), its On button and eight dials (Above, Above slope, Below, Below slope, Attack,
+  Release, Input, Gain); Amount, Time and Output at the right edge.
+- **Expanded** (980 × 260, opened from the device's header over the main view): the same band view
+  across the whole width, each band's name, its two thresholds as fields and its transfer curve, and
+  the crossovers as fields.
+- **Not shown yet:** the signal's spectrum, the gain change and level meters, which need the
+  device to hand live values to its panel (no device does that yet).
 
 ## Import
 
@@ -183,4 +206,4 @@ a band that is off passes untouched; the above stage's static gain at slopes 0.2
 the below stage's at 0.5 and 4 against the formulas; the knee; Amount 0 is a plain crossover and
 50 % halves the gain change; Time scales the attack; Peak and RMS read a sine alike; the limit
 holds at 36 dB; the follower's attack reaches 63 % in about `attack / 8`. `crates/als/src/devices_tests.rs`:
-the stored elements import with the conversions above.
+the stored elements import with the conversions above. `crates/device-registry/src/lib_tests.rs`: the panel loads, fits the device row, reaches every parameter, switches bands by its tabs and has an expanded canvas.
