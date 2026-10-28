@@ -32,7 +32,8 @@ column is 272 px wide by default. A smaller detail area or column scrolls the pa
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and
-**Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
+**Close** *name*'s **expanded panel** while it is open). The panel opens at the bottom of the main
+area, as tall as its canvas needs (the whole area at most) so the views above stay in sight, with
 the device's name and a close button (**Close expanded panel**) along its top; its canvas is
 centred, and scrolls when the main area is smaller. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another

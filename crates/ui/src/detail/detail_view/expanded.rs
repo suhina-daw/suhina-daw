@@ -52,7 +52,8 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
     found.map(|device| (track, device.clone()))
 }
 
-/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title
+/// Draws `device`'s expanded panel at the bottom of `area` (the main area), on top of the views and
+/// as tall as its canvas needs (all of `area` at most), so the views above it stay in sight: a title
 /// row with its name and a close button, then its canvas, scrolled when the area is smaller.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
 /// The close button and Escape close it.
@@ -60,11 +61,14 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
     };
-    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(area.min).show(
+    // A slice at the bottom of the main area, as tall as the canvas needs; the views stay above it.
+    let height = (ROW + PAD + canvas.size[1] + PAD * 2.0).min(area.height());
+    let slice = Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max);
+    egui::Area::new(Id::new("device-expanded-area")).order(egui::Order::Foreground).fixed_pos(slice.min).show(
         ui.ctx(),
         |ui| {
-            // The whole main area takes the pointer, so the views under it get no clicks.
-            let (rect, _) = ui.allocate_exact_size(area.size(), Sense::click());
+            // The slice takes the pointer, so the views under it get no clicks.
+            let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
             painter.fill_background(rect, 0.0, theme::panel_background());
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));

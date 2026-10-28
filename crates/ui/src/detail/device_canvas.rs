@@ -1078,8 +1078,10 @@ fn paint_control(
             && let Draw::Rect { radius, .. } = draw
         {
             let replaced = *body.get_or_insert_with(|| {
+                // On is the accent, so it reads at a glance and the SDK's dark label for an on
+                // button stays legible on it.
                 let fill = crate::kit::style_class::background(if on {
-                    crate::kit::theme::control_active()
+                    crate::kit::theme::accent()
                 } else {
                     crate::kit::theme::control_background()
                 });
