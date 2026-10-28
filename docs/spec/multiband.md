@@ -126,9 +126,9 @@ knob; colours are the theme's (text, panel, control, border, accent), the three 
   its transfer curve (output against input: the below stage, 1 : 1 between the thresholds, the
   above stage), its On button and eight dials (Above, Above slope, Below, Below slope, Attack,
   Release, Input, Gain); Amount, Time and Output at the right edge.
-- **No expanded view:** everything a compressor needs fits the compact panel; a large view pays off
-  for an equaliser's curve, not here. Every parameter is on the canvas, so the generated list is
-  hidden.
+- **Expanded** (980 × 260, opened from the device's header over the main view): the same band view
+  across the whole width, each band's name, its two thresholds as fields and its transfer curve, and
+  the crossovers as fields.
 - **Not shown yet:** the signal's spectrum, the gain change and level meters, which need the
   device to hand live values to its panel (no device does that yet).
 
@@ -206,4 +206,4 @@ a band that is off passes untouched; the above stage's static gain at slopes 0.2
 the below stage's at 0.5 and 4 against the formulas; the knee; Amount 0 is a plain crossover and
 50 % halves the gain change; Time scales the attack; Peak and RMS read a sine alike; the limit
 holds at 36 dB; the follower's attack reaches 63 % in about `attack / 8`. `crates/als/src/devices_tests.rs`:
-the stored elements import with the conversions above. `crates/device-registry/src/lib_tests.rs`: the panel loads, fits the device row, reaches every parameter, switches bands by its tabs and hides the generated list.
+the stored elements import with the conversions above. `crates/device-registry/src/lib_tests.rs`: the panel loads, fits the device row, reaches every parameter, switches bands by its tabs and has an expanded canvas.

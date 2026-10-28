@@ -1,7 +1,7 @@
 # Copyright (C) 2026 The Suhina contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Writes devices/multiband/panel.json: the compact panel (no expanded view).
+"""Writes devices/multiband/panel.json: the compact panel and the expanded one.
 
 The panels are drawn from expressions over the device's parameters, so the band areas, the
 crossover lines, the thresholds and each band's transfer curve follow the knobs. Colours that the
@@ -142,6 +142,11 @@ def display(cid, name, bounds, drawing, bind, visible=None):
             "y": {"parameter": bind, "logarithmic": False, "drag_scale": 1.0}, "drawing": drawing}
 
 
+def label(cid, caption, bounds):
+    return {"widget": {"kind": "label", "label": caption}, "visible_when": None, "id": cid, "name": caption,
+            "tooltip": "", "bounds": bounds, "gesture": "drag", "x": None, "y": None}
+
+
 def every_parameter():
     """Every parameter id, so the panel shows only its canvas and not the generated list under it."""
     return GLOBALS + [f"{bid}{suffix}" for bid, _, _ in BANDS for suffix in BAND_PARAMETERS] + ["band"]
@@ -176,8 +181,24 @@ def compact():
             "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
 
 
+def expanded():
+    w, h = 980.0, 320.0
+    sx, sy, sw, sh = 8.0, 28.0, 964.0, 190.0
+    controls = []
+    for i, (bid, name, color) in enumerate(BANDS):
+        x = 8.0 + i * 326.0
+        controls.append(label(f"{bid}_title", name, [x, 4.0, 60.0, 20.0]))
+        controls.append(number(f"{bid}AboveThreshold", f"{name} Above", [x + 64.0, 4.0, 70.0, 20.0], "decibels", 1, False))
+        controls.append(number(f"{bid}BelowThreshold", f"{name} Below", [x + 138.0, 4.0, 70.0, 20.0], "decibels", 1, False))
+        controls.append(display(f"{bid}_curve_x", f"{name} curve", [x + 121.0, sy + sh + 32.0, 84.0, 84.0], curve(bid, 84.0, color), f"{bid}AboveSlope"))
+    controls.append(number("lowCrossover", "Low Crossover", [sx, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
+    controls.append(number("highCrossover", "High Crossover", [sx + sw - 80.0, sy + sh + 6.0, 80.0, 20.0], "frequency", 0))
+    return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [],
+            "layers": spectrum(sx, sy, sw, sh, True), "controls": controls, "hidden_parameters": every_parameter()}
+
+
 def main():
-    panel = {"ui": compact()}
+    panel = {"ui": compact(), "expanded": expanded()}
     out = Path("devices/multiband/panel.json")
     out.write_text(json.dumps(panel, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {out}")
