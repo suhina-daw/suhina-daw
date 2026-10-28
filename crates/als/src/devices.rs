@@ -26,6 +26,7 @@ pub(crate) fn builtin(
         "Delay" => Some(("delay", "Delay", delay(node, warn))),
         "Eq8" => Some(("eq", "EQ", eq(node, warn))),
         "FilterEQ3" => Some(("dj-eq", "DJ EQ", eq3(node, warn))),
+        "MultibandDynamics" => Some(("multiband", "Multiband", multiband(node, warn))),
         "MidiPitcher" => Some(("pitch", "Pitch", pitch(node, warn))),
         _ => None,
     }
@@ -279,6 +280,49 @@ fn eq3(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
         _ => step(node, "Slope", 2, "EQ Three slope", warn),
     };
     p.set("slope", slope);
+    p.0
+}
+
+/// Live's Multiband Dynamics (`MultibandDynamics`) as Suhina's `multiband`
+/// (`docs/spec/multiband.md` › Import). Every value is stored in a physical unit; the ratios
+/// are stored on their own scales and become our slopes.
+fn multiband(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
+    let mut p = Params::default();
+    p.set("lowCrossover", manual(node, "SplitLowMid"));
+    p.set("highCrossover", manual(node, "SplitMidHigh"));
+    p.set("peak", manual_flag(node, "EnvelopeIsPeak").map(toggle));
+    p.set("softKnee", manual_flag(node, "SoftKnee").map(toggle));
+    p.set("amount", manual(node, "GlobalAmount").map(|a| a.clamp(0.0, 1.0)));
+    p.set("time", manual(node, "GlobalTime"));
+    p.set("output", manual(node, "OutputGain"));
+    for (ours, theirs) in [("low", "Low"), ("mid", "Mid"), ("high", "High")] {
+        p.set(&format!("{ours}On"), manual_flag(node, &format!("Active{theirs}")).map(toggle));
+        p.set(&format!("{ours}Input"), manual(node, &format!("InputGain{theirs}")));
+        p.set(&format!("{ours}AboveThreshold"), manual(node, &format!("AboveThreshold{theirs}")));
+        p.set(&format!("{ours}BelowThreshold"), manual(node, &format!("BelowThreshold{theirs}")));
+        // Stored -1 … 1 (shown 1 : 1/(1+v)) and -3 … 1 (shown 1 : 1/(1-v)); ours is the slope.
+        let above = manual(node, &format!("AboveRatio{theirs}")).map(|v| 1.0 + v.clamp(-1.0, 1.0));
+        let below = manual(node, &format!("BelowRatio{theirs}")).map(|v| 1.0 - v.clamp(-3.0, 1.0));
+        p.set(&format!("{ours}AboveSlope"), above);
+        p.set(&format!("{ours}BelowSlope"), below);
+        // Times are stored in milliseconds; ours are seconds.
+        p.set(&format!("{ours}Attack"), manual(node, &format!("Attack{theirs}")).map(|ms| ms / 1000.0));
+        p.set(&format!("{ours}Release"), manual(node, &format!("Release{theirs}")).map(|ms| ms / 1000.0));
+        p.set(&format!("{ours}Gain"), manual(node, &format!("Gain{theirs}")));
+        if plain_flag(node, &format!("Solo{theirs}")) == Some(true) {
+            warn(format!("Multiband Dynamics: the {ours} band's solo is not imported; all bands play"));
+        }
+    }
+    for (stored, band) in [("SplitLowMidOn", "low"), ("SplitMidHighOn", "high")] {
+        if plain_flag(node, stored) == Some(false) {
+            warn(format!(
+                "Multiband Dynamics: the {band} band is merged into the mid band there; it plays as its own band"
+            ));
+        }
+    }
+    if boolean(node, &["SideChain", "OnOff", "Manual"]) == Some(true) {
+        warn("Multiband Dynamics: the side-chain is not imported; the device listens to its own input".to_owned());
+    }
     p.0
 }
 

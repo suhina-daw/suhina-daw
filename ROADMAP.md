@@ -68,8 +68,7 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
   and tested: [`docs/spec/device-import.md`](docs/spec/device-import.md). The sampler and drum
   sampler as import targets: [#101](https://github.com/suhina-daw/suhina-daw/issues/101).
 - **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
-  reverb are done); multiband dynamics,
-  saturation, the sampler and drum sampler later
+  reverb are done, and multiband dynamics); saturation, the sampler and drum sampler later
   ([ADR 0016](docs/decisions/0016-parity-target.md)).
 
 ### The devices
@@ -90,7 +89,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | NAM Amp Modeler: a `.nam` capture through the pure-Rust `nam-rs` inference (MIT), with trims, its own EQ, HQ for the A2 width dial, a trim delay | nam-rs (MIT) | done |
 | NAM Cab Loader: a `.wav` impulse response through uniform-partitioned FFT convolution, with a phase invert, a high pass, tone cuts, a trim delay and a volume | fft-convolver (MIT) under `dsp` | done |
 | pitch, a MIDI effect: transposes by semitones or scale degrees, Block, Fold or Limit to a key window | own | done; step buttons planned |
-| multiband dynamics, upward and downward | own crossovers and detectors | planned |
+| multiband: three bands, above and below stages (downward and upward compression, expansion), Amount and Time; imported from Live Sets | own crossovers and level followers | done; side-chain planned |
 | delay: stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze | own (`dsp` delay lines) | done |
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
@@ -255,6 +254,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The NAM Amp Modeler and NAM Cab Loader run a `.nam` model and a `.wav` impulse response from
   the NAM folders in Settings, with `device.setNamFile` to load a file and `device.file` to read
   it ([nam spec](docs/spec/nam-amp-and-cab.md)).
+- Multiband dynamics: the multiband effect splits a track into three bands and gives each an above stage (downward compression or upward expansion) and a below stage (upward compression or downward expansion), with Amount and Time over all of them; a Live Set's multiband dynamics device imports into it with its settings ([spec](docs/spec/multiband.md)). The side-chain is planned.
 - MIDI effects run before a track's instrument: the pitch effect transposes the notes by
   semitones or by steps along the playing clip's scale and keeps them inside a window of keys
   (Block, Fold, Limit); a note-off always ends the key its note started

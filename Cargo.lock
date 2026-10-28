@@ -4908,6 +4908,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-multiband"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-dsp",
+]
+
+[[package]]
 name = "suhina-device-nam-amp-modeler"
 version = "0.0.1"
 dependencies = [
@@ -4953,6 +4961,7 @@ dependencies = [
  "suhina-device-eq",
  "suhina-device-fm-synth",
  "suhina-device-limiter",
+ "suhina-device-multiband",
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-overdrive",
