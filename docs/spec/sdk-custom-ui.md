@@ -35,8 +35,11 @@ A device with one has a button beside the X in its header, labelled **Expand** *
 **Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
 the device's name and a close button (**Close expanded panel**) along its top; its canvas is
 centred, and scrolls when the main area is smaller. An expanded canvas with `"strip": true` opens
-instead as a strip at the bottom of the main area, over the device row, scaled to the strip's width
-(0.5 to 2.5 times its size, pointer input included). A canvas with `"accent_on": true` fills a
+instead as a strip at the bottom of the main area, over the device row, its canvas stretched to the
+strip on each axis (drawings, controls and pointer input alike; text and line widths by the smaller
+axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
+changes its height (80 points to the whole main area, kept per device while the app runs) and a
+double click on the header fits it again. A canvas with `"accent_on": true` fills a
 button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
@@ -202,9 +205,13 @@ Bindings map normalized coordinates to parameter units with optional logarithmic
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
 A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
-A drawing coloured `[3, 0, 1]` … `[3, 0, 5]` (any alpha) takes a theme token: `--device-display`
+A `graphic` widget (`{"kind": "graphic", "drawing": [...]}`) draws its own drawings and takes no
+input or binding (a display or a curve that must not catch drags). Drawings of a control without a
+widget are not resolved against the theme as widgets' are; they name the theme's palette as
+`[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
+accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
 (a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
-its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) and `--device-highlight` (`#ffcf7a`), from
+its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) `--device-highlight` (`#ffcf7a`) and `--device-spectrum` (`#3fc4e4`), from
 the theme's CSS custom property of that name or the default, with the drawing's alpha. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture
 `position`, one binding) draws a line where its parameter is, across its bounds (an X binding: a
 vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 5 points
@@ -398,7 +405,10 @@ parameter drag calibration. Position controls (envelope handles and XY pads) sta
 mapped directly to their canvas positions.
 
 `UiBinding.drag_scale` defaults to 1 and multiplies drag sensitivity only; it must
-be finite within 0.01..100. Position mapping and keyboard steps are unaffected.
+be finite and within 0.01..100 either way. A negative scale drags and steps the other way (a ratio
+knob over a slope: up is more ratio). Position mapping is unaffected. While a knob or slider is
+dragged the cursor is hidden and held where the drag began, the value following the mouse's raw
+motion, and it reappears there when the drag ends.
 Double-click resets every parameter input, including menus and segmented buttons,
 to its definition default. Passive widgets and host recording actions are excluded.
 `WaveformMenu` accepts six standard shapes, optionally a seventh Wander shape;

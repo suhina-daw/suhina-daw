@@ -35,6 +35,45 @@ pub fn pointer_over(ui: &Ui, rect: Rect) -> Option<Pos2> {
 /// Normalized device parameter range traversed by a vertical drag.
 pub(crate) const PARAMETER_DRAG_PIXELS: f64 = 400.;
 
+/// How far the pointer moved this frame while `response` is dragged as a value (a knob, a
+/// slider dragged up and down): the cursor is hidden and held where the drag began, so it never
+/// leaves the window, and it is back there, visible, when the drag ends. The movement comes from
+/// the mouse's raw motion; where the platform sends none, from the pointer, and the cursor then
+/// only returns to its place at the end.
+pub(crate) fn held_drag_delta(ui: &egui::Ui, response: &egui::Response) -> egui::Vec2 {
+    let ctx = ui.ctx();
+    let origin_id = response.id.with("held-drag-origin");
+    if response.drag_started()
+        && let Some(origin) = ctx.input(|i| i.pointer.press_origin())
+    {
+        ctx.data_mut(|d| d.insert_temp(origin_id, origin));
+    }
+    let origin = ctx.data(|d| d.get_temp::<egui::Pos2>(origin_id));
+    if response.drag_stopped() {
+        if let Some(origin) = origin {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(origin));
+        }
+        ctx.data_mut(|d| d.remove::<egui::Pos2>(origin_id));
+    }
+    if !response.dragged() {
+        return egui::Vec2::ZERO;
+    }
+    ctx.set_cursor_icon(egui::CursorIcon::None);
+    let raw = ctx.input(|i| {
+        i.events.iter().fold(None, |sum: Option<egui::Vec2>, event| match event {
+            egui::Event::MouseMoved(delta) => Some(sum.unwrap_or_default() + *delta),
+            _ => sum,
+        })
+    });
+    match (raw, origin) {
+        (Some(delta), Some(origin)) => {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(origin));
+            delta
+        }
+        _ => response.drag_delta(),
+    }
+}
+
 /// `value` to `decimals` places, without the minus sign of a negative that rounds to zero.
 pub(crate) fn fixed(value: f64, decimals: usize) -> String {
     let text = format!("{value:.decimals$}");

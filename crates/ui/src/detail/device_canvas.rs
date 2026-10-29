@@ -797,7 +797,7 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
 fn handle(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
-    (canvas, bounds): (Rect, Rect),
+    (canvas, bounds, stretch): (Rect, Rect, Vec2),
     control: &suhina_device_sdk::ui::CustomControl,
     (line_color, span): ([u8; 4], Option<&[suhina_device_sdk::ui::UiValue; 2]>),
     parameters: &[GraphParameter],
@@ -805,7 +805,7 @@ fn handle(
     actions: &mut Vec<Action>,
 ) {
     /// How far from its line a handle is grabbed, in points.
-    const GRAB: f32 = 5.0;
+    const GRAB: f32 = 7.0;
     let (binding, vertical) = match (&control.x, &control.y) {
         (Some(b), None) => (b, true),
         (None, Some(b)) => (b, false),
@@ -818,8 +818,8 @@ fn handle(
     let (from, to) = span.map_or_else(
         || if vertical { (bounds.top(), bounds.bottom()) } else { (bounds.left(), bounds.right()) },
         |[a, b]| {
-            let origin = if vertical { canvas.top() } else { canvas.left() };
-            (origin + a.evaluate(&lookup), origin + b.evaluate(&lookup))
+            let (origin, scale) = if vertical { (canvas.top(), stretch.y) } else { (canvas.left(), stretch.x) };
+            (origin + a.evaluate(&lookup) * scale, origin + b.evaluate(&lookup) * scale)
         },
     );
     let n = normalized(p, binding.logarithmic) as f32;
@@ -883,6 +883,18 @@ fn handle(
 /// default), keeping the drawing's alpha.
 fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
+    // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
+    if [r, g] == [3, 1] {
+        let palette = crate::kit::theme::palette();
+        let base = match b {
+            1 => palette.text_primary,
+            2 => palette.panel_background,
+            3 => palette.control_background,
+            4 => palette.border,
+            _ => palette.accent,
+        };
+        return Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
+    }
     if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
     {
         let base = crate::kit::style_class::property(property)
@@ -902,10 +914,6 @@ fn normalized(p: &GraphParameter, log: bool) -> f64 {
         0.0
     }
 }
-fn paint(painter: &egui::Painter, drawings: &[Draw], origin: Pos2, parameters: &[GraphParameter], loaded: &Loaded) {
-    paint_scaled(painter, drawings, origin, parameters, loaded, Vec2::splat(1.0));
-}
-
 fn paint_scaled(
     painter: &egui::Painter,
     drawings: &[Draw],
@@ -1249,7 +1257,10 @@ pub(crate) fn show(
         color(canvas.background)
     };
     painter.fill_background(rect, 0.0, background);
-    paint(&painter, &canvas.layers, rect.min, parameters, &loaded);
+    // A canvas shown larger than its own size (an expanded strip) is stretched to it on each axis.
+    let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
+    let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
+    paint_scaled(&painter, &canvas.layers, rect.min, parameters, &loaded, stretch);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
         if sample_panel
@@ -1273,7 +1284,7 @@ pub(crate) fn show(
             continue;
         }
         let [x, y, w, h] = control.bounds;
-        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y), Vec2::new(w, h));
+        let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
         let name = crate::kit::control_layout::semantic_name("device", &control.id);
         if crate::kit::control_layout::placement(&name).hidden {
             continue;
@@ -1310,7 +1321,7 @@ pub(crate) fn show(
             handle(
                 ui,
                 &painter,
-                (rect, bounds),
+                (rect, bounds, stretch),
                 control,
                 (*line_color, span.as_ref()),
                 parameters,
@@ -1352,7 +1363,10 @@ pub(crate) fn show(
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &control.name));
             continue;
         }
-        if matches!(control.widget, Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator)) {
+        if matches!(
+            control.widget,
+            Some(Widget::Label { .. } | Widget::Panel { .. } | Widget::Separator | Widget::Graphic { .. })
+        ) {
             paint_control(
                 &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
                 &painter,
@@ -1556,8 +1570,7 @@ pub(crate) fn show(
                     }
                 }
                 UiGesture::Drag if response.dragged() => {
-                    let delta = response.drag_delta();
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                    let delta = crate::kit::widgets::held_drag_delta(ui, &response);
                     // A discrete value is rounded when it is written, so a drag that moves less than half
                     // a step in a frame would be lost: the unrounded position is kept while the drag lasts.
                     let position_id = response.id.with(("drag-position", axis));
@@ -1595,7 +1608,7 @@ pub(crate) fn show(
                 control.gesture,
                 UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
             ) {
-                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine;
+                next += (if axis == 0 { dx } else { dy }) as f64 * 0.01 * fine * f64::from(binding.drag_scale.signum());
             }
             let mut value = if binding.logarithmic {
                 (p.min.ln() + next.clamp(0.0, 1.0) * (p.max.ln() - p.min.ln())).exp()

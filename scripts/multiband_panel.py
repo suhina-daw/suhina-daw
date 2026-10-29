@@ -17,15 +17,20 @@ import json
 import math
 from pathlib import Path
 
-# The SDK's theme colours (resolved against the theme's palette).
-TEXT = [236, 232, 225, 255]
-PANEL = [37, 36, 33, 255]
-CONTROL = [46, 45, 42, 255]
-BORDER = [56, 55, 51, 255]
-ACCENT = [166, 163, 255, 255]
-# Theme tokens (crates/device-sdk/src/ui.rs › THEME_TOKENS): their CSS property or the design's.
+# The theme's palette by token (crates/device-sdk/src/ui.rs › THEME_PALETTE_TOKENS), so drawings of
+# controls without a widget follow the theme as widgets do.
+TEXT = [3, 1, 1, 255]
+PANEL = [3, 1, 2, 255]
+CONTROL = [3, 1, 3, 255]
+BORDER = [3, 1, 4, 255]
+ACCENT = [3, 1, 5, 255]
+# Theme tokens (THEME_TOKENS): their CSS property or the design's colour.
 DISPLAY = [3, 0, 1, 255]
 HIGHLIGHT = [3, 0, 5, 255]
+SPECTRUM_COLOR = [3, 0, 6, 255]
+# The device's knee widths (devices/multiband/src/lib.rs): above with Soft knee off and on, below.
+HARD_KNEE_DB, SOFT_KNEE_DB, BELOW_KNEE_DB = 10.0, 23.6, 16.3
+GAIN_LIMIT_DB, LIMIT_SHARPNESS = 36.0, 7.04
 BANDS = [("low", "Low", [3, 0, 2, 255]), ("mid", "Mid", [3, 0, 3, 255]), ("high", "High", [3, 0, 4, 255])]
 GLOBALS = ["lowCrossover", "highCrossover", "peak", "softKnee", "amount", "time", "output"]
 BAND_PARAMETERS = ["On", "Input", "AboveThreshold", "AboveSlope", "BelowThreshold", "BelowSlope", "Attack", "Release", "Gain"]
@@ -190,12 +195,15 @@ def band_view(x0, y0, w, h, big=False):
     level_in = [readout(SPECTRUM + i) for i in index]
     ys_in = [level_y(v, y0, h) for v in level_in]
     ys_out = [level_y(add(v, band_change_at(c, None)), y0, h) for v, c in zip(level_in, centres_hz)]
+    # Soft as the design's gradient: a faint fill to the floor and a stronger band under the line.
     for i in range(len(centres_x) - 1):
         quad = [[centres_x[i], ys_in[i]], [centres_x[i + 1], ys_in[i + 1]], [centres_x[i + 1], y0 + h], [centres_x[i], y0 + h]]
-        draws.append(path(quad, INVISIBLE, 0.0, fill=tint(ACCENT, 70), closed_path=True))
-    draws.append(path([[x, y] for x, y in zip(centres_x, ys_in)], tint(ACCENT, 210), 1.4))
-    for i in range(0, len(centres_x) - 1, 2):
-        draws.append(line([centres_x[i], ys_out[i]], [centres_x[i + 1], ys_out[i + 1]], tint(TEXT, 100), 1.0))
+        draws.append(path(quad, INVISIBLE, 0.0, fill=tint(SPECTRUM_COLOR, 22), closed_path=True))
+        under = [[centres_x[i], ys_in[i]], [centres_x[i + 1], ys_in[i + 1]], [centres_x[i + 1], add(ys_in[i + 1], h * 0.12)],
+                 [centres_x[i], add(ys_in[i], h * 0.12)]]
+        draws.append(path(under, INVISIBLE, 0.0, fill=tint(SPECTRUM_COLOR, 40), closed_path=True))
+    draws.append(path([[x, y] for x, y in zip(centres_x, ys_in)], tint(SPECTRUM_COLOR, 220), 1.4))
+    draws.append(path([[x, y] for x, y in zip(centres_x, ys_out)], tint(TEXT, 90), 1.0))
     # 0 dB of gain change, and the gain line under it: 3 px per dB (3.4 in the design's 178 px).
     zero = y0 + h * 0.17
     per_db = h * 3.4 / 178.0
@@ -246,53 +254,101 @@ def band_view(x0, y0, w, h, big=False):
     return draws
 
 
+def absolute(v):
+    return maximum(v, mul(v, -1.0))
+
+
+def power_of(base, exponent):
+    """base ** exponent for a positive base, through exp(exponent ln base)."""
+    return {"op": "exp", "value": mul({"op": "log", "value": add(base, 1e-9)}, exponent)}
+
+
+def knee(u, half, scale):
+    """The device's knee (lib.rs › knee): (u + W/2)^2 / 2W inside it, u above it, 0 under it, with
+    `half` = W/2 and `scale` = 1/2W given flat so the expression stays within the SDK's depth."""
+    inside = add(maximum(mul(half, -1.0), minimum(half, u)), half)
+    return add(mul(mul(inside, inside), scale), maximum(0.0, sub(u, half)))
+
+
+def limit(g):
+    """The device's gain limit (lib.rs › limit) as the curve draws it: held at ±36 dB. The device
+    bends into the limit; the difference shows only within a few dB of it."""
+    return maximum(-GAIN_LIMIT_DB, minimum(GAIN_LIMIT_DB, g))
+
+
+def stage_change(bid, level):
+    """A band's gain change at `level` dB as the device computes it (lib.rs › static_gain): both
+    stages at once, each with its knee and limit (before Amount)."""
+    soft = par("softKnee")
+    half = add(HARD_KNEE_DB / 2.0, mul(soft, (SOFT_KNEE_DB - HARD_KNEE_DB) / 2.0))
+    scale = add(1.0 / (2.0 * HARD_KNEE_DB), mul(soft, 1.0 / (2.0 * SOFT_KNEE_DB) - 1.0 / (2.0 * HARD_KNEE_DB)))
+    above = mul(sub(par(f"{bid}AboveSlope"), 1.0), knee(sub(level, par(f"{bid}AboveThreshold")), half, scale))
+    below = mul(sub(1.0, par(f"{bid}BelowSlope")),
+                knee(sub(par(f"{bid}BelowThreshold"), level), BELOW_KNEE_DB / 2.0, 1.0 / (2.0 * BELOW_KNEE_DB)))
+    return add(limit(above), limit(below))
+
+
 def curve(bid, size, color):
-    """A band's transfer curve in a size x size box: the below stage, 1:1 between, the above stage,
-    the signal's place on it, and a grey veil while the band is not heard."""
+    """A band's transfer curve in a size x size box, computed as the device computes it at 17
+    input levels from -80 to 0 dB (both stages, knees, limit); the 1:1 diagonal; the input
+    level as a line through the box, the cut or lift at it as a segment off the diagonal and a dot
+    on the curve; and a grey veil while the band is not heard."""
     s = size / 80.0
-    bt, bs, at, aslope = par(f"{bid}BelowThreshold"), par(f"{bid}BelowSlope"), par(f"{bid}AboveThreshold"), par(f"{bid}AboveSlope")
 
     def point(x_db, y_db):
         return [add(mul(x_db, s), size), mul(y_db, -s)]
 
-    out_low = sub(bt, mul(add(bt, 80.0), bs))
-    in_low = add(bt, mul(sub(-80.0, bt), reciprocal(add(bs, 0.001))))
-    out_top = mul(at, sub(1.0, aslope))
-    in_top = sub(at, mul(at, reciprocal(add(aslope, 0.001))))
-    points = [point(maximum(-80.0, in_low), maximum(-80.0, out_low)), point(bt, bt), point(at, at),
-              point(minimum(0.0, in_top), minimum(0.0, out_top))]
+    # The box clips what leaves it.
+    points = [point(x, add(x, stage_change(bid, x))) for x in [-80.0 + 5.0 * k for k in range(17)]]
     index = [b for b, _, _ in BANDS].index(bid)
     level_in = maximum(-80.0, minimum(0.0, readout(2 * index)))
-    level_out = maximum(-80.0, minimum(0.0, add(readout(2 * index), readout(2 * index + 1))))
-    draws = [rect(0.0, 0.0, size, size, DISPLAY, 3.0), rect(0.0, 0.0, size, 1.0, BORDER)]
-    draws += [line([size * k / 12.0, size - size * k / 12.0], [size * (k + 0.5) / 12.0, size - size * (k + 0.5) / 12.0],
-                   tint(TEXT, 50)) for k in range(12)]
+    level_out = add(level_in, readout(2 * index + 1))
+    x_in = add(mul(level_in, s), size)
+    draws = [rect(0.0, 0.0, size, size, DISPLAY, 3.0)]
+    draws += [line([size * k / 14.0, size - size * k / 14.0], [size * (k + 0.5) / 14.0, size - size * (k + 0.5) / 14.0],
+                   tint(TEXT, 45)) for k in range(14)]
     draws += [
-        path(points, color, 2.4),
+        line([x_in, 0.0], [x_in, size], tint(TEXT, 40)),
+        path(points, color, 2.2),
+        line(point(level_in, level_in), point(level_in, level_out), HIGHLIGHT, 2.5),
         circle(point(level_in, level_out), 3.0, TEXT),
         rect(0.0, 0.0, size, mul(muted(bid), size), tint(DISPLAY, 190)),
     ]
     return draws
 
 
-def knob(pid, caption, bounds, value, suffix="", decimals=1, log=False, visible=None, tag="", big=False, prefix=""):
+def graphic(cid, name, bounds, drawing, visible=None):
+    """A drawing that takes no input."""
+    return {"widget": {"kind": "graphic", "drawing": drawing}, "visible_when": visible, "id": cid, "name": name,
+            "tooltip": "", "bounds": bounds, "gesture": "drag", "x": None, "y": None}
+
+
+def knob(pid, caption, bounds, value, suffix="", decimals=1, log=False, visible=None, tag="", big=False, prefix="",
+         invert=False, texts=None):
     """Design D's knob: its name, a ring with a pointer (the accent ring for a big one), its value.
     Dragging it up or down changes `pid`; `value` is the expression written under it."""
     _, _, w, h = bounds
     r = 19.0 if big else 13.0
     cx, cy = w / 2.0, 13.0 + r
-    angle = add(-0.75 * math.pi, mul(par(pid, normalized=True, log=log), 1.5 * math.pi))
+    turned = par(pid, normalized=True, log=log)
+    if invert:
+        turned = sub(1.0, turned)
+    angle = add(-0.75 * math.pi, mul(turned, 1.5 * math.pi))
     tip = [add(cx, mul(sin(angle), r - 3.0)), sub(cy, mul(cos(angle), r - 3.0))]
     drawing = [
-        text(cx, 0.0, caption, tint(TEXT, 170), 9.5, center=True),
+        text(cx, 0.0, caption, tint(TEXT, 170), 11.0, center=True),
         circle([cx, cy], r, ACCENT if big else BORDER),
         circle([cx, cy], r - (3.0 if big else 2.0), CONTROL),
         line([cx, cy], tip, TEXT, 3.0 if big else 2.0),
-        value_text(cx, cy + r + 3.0, value, prefix=prefix, suffix=suffix, size=9.5, decimals=decimals, center=True),
     ]
+    # A value is written once, or as one of several texts that each move off the canvas while
+    # another applies (a ratio that reads ∞ : 1 or 1 : x).
+    drawing += texts(cx, cy + r + 2.0) if texts else [
+        value_text(cx, cy + r + 2.0, value, prefix=prefix, suffix=suffix, size=11.0, decimals=decimals, center=True)]
     return {"visible_when": visible, "id": f"{pid}{tag}", "name": caption,
             "tooltip": f"{caption}: drag vertically; Shift for precision; double click resets", "bounds": bounds,
-            "gesture": "drag", "x": None, "y": {"parameter": pid, "logarithmic": log, "drag_scale": 1.0}, "drawing": drawing}
+            "gesture": "drag", "x": None,
+            "y": {"parameter": pid, "logarithmic": log, "drag_scale": -1.0 if invert else 1.0}, "drawing": drawing}
 
 
 def button(cid, pid, caption, bounds, gesture="toggle", visible=None, off_label=None):
@@ -364,23 +420,28 @@ def preset_button(cid, caption, index, bounds, visible=None):
 
 
 def meter(cid, bounds, visible=None):
-    """The output's two peak meters (accent and text, as the design), over `meterRange` dB with its
-    scale; dragging up or down widens or narrows the range."""
+    """The output's peak: its level now in dB over two meters (accent and text, as the design), and
+    the scale they span (`meterRange`, 0 at the top), which dragging up or down widens or narrows."""
     _, _, w, h = bounds
-    top, bottom = 2.0, h - 2.0
+    top, bottom = 26.0, h - 2.0
     span = bottom - top
     rng = par("meterRange")
-    drawing = []
-    for i, (index, color) in enumerate(((OUTPUT_LEFT, tint(ACCENT, 160)), (OUTPUT_RIGHT, TEXT))):
-        bx = 1.0 + i * 6.0
+    peak = maximum(readout(OUTPUT_LEFT), readout(OUTPUT_RIGHT))
+    drawing = [
+        text(w / 2.0, 0.0, "Peak", tint(TEXT, 150), 10.0, center=True),
+        value_text(w / 2.0, 11.0, maximum(-99.9, peak), size=11.0, decimals=1, center=True),
+    ]
+    for i, (index, color) in enumerate(((OUTPUT_LEFT, tint(ACCENT, 170)), (OUTPUT_RIGHT, TEXT))):
+        bx = 2.0 + i * 7.0
         level = maximum(0.0, add(1.0, mul(maximum(mul(rng, -1.0), minimum(0.0, readout(index))), reciprocal(rng))))
-        drawing.append(rect(bx, top, 5.0, span, CONTROL, 2.0))
-        drawing.append(rect(bx, sub(bottom, mul(level, span)), 5.0, mul(level, span), color, 2.0))
+        drawing.append(rect(bx, top, 6.0, span, CONTROL, 2.0))
+        drawing.append(rect(bx, sub(bottom, mul(level, span)), 6.0, mul(level, span), color, 2.0))
     for k in (0.0, 0.5, 1.0):
-        drawing.append(value_text(14.0, top + span * k - 4.0, mul(rng, -k), size=8.0, decimals=0, color=tint(TEXT, 120)))
+        drawing.append(value_text(17.0, top + span * k - 6.0, mul(rng, -k), size=10.0, decimals=0, color=tint(TEXT, 140)))
     return {"visible_when": visible, "id": cid, "name": "Output meter",
-            "tooltip": "Output level; drag up or down to change its range, double click resets", "bounds": bounds,
-            "gesture": "drag", "x": None, "y": {"parameter": "meterRange", "logarithmic": False, "drag_scale": 1.0},
+            "tooltip": "Output peak. Drag up or down to change the meter's range (now its bottom number, in dB); "
+                       "double click resets it to 60 dB", "bounds": bounds,
+            "gesture": "drag", "x": None, "y": {"parameter": "meterRange", "logarithmic": False, "drag_scale": -1.0},
             "drawing": drawing}
 
 
@@ -414,25 +475,51 @@ def every_parameter():
             + [f"{bid}Solo" for bid, _, _ in BANDS] + ["meterRange"])
 
 
+def shown_when(condition, x):
+    """`x` while `condition` (0 or 1) is 1, far off the canvas otherwise."""
+    return add(x, mul(sub(1.0, condition), 100000.0))
+
+
+def ratio_texts(slope):
+    """A downward stage's ratio: 1/s : 1, and ∞ : 1 once it passes 50 : 1."""
+    finite = step(sub(slope, 0.02))
+
+    def texts(cx, y):
+        return [value_text(shown_when(finite, cx), y, reciprocal(add(slope, 1e-6)), suffix=" : 1", size=11.0, center=True),
+                text(shown_when(sub(1.0, finite), cx), y, "∞ : 1", TEXT, 11.0, center=True)]
+    return texts
+
+
+def up_ratio_texts(slope):
+    """An upward stage's ratio: 1/s : 1 while it lifts (s under 1), 1 : s while it expands."""
+    expands = step(sub(slope, 1.0))
+
+    def texts(cx, y):
+        return [value_text(shown_when(sub(1.0, expands), cx), y, reciprocal(add(slope, 1e-6)), suffix=" : 1", size=11.0,
+                           center=True),
+                value_text(shown_when(expands, cx), y, slope, prefix="1 : ", size=11.0, decimals=2, center=True)]
+    return texts
+
+
 def band_knobs(bid, x0, y0, visible, tag):
-    """Design D's 4 x 2 knob grid for band `bid`, each cell 48 x 70."""
+    """Design D's 4 x 2 knob grid for band `bid`, each cell 48 x 70. The ratio knobs turn and drag
+    the other way to their slope, so more ratio is to the right and up."""
     p = lambda s: f"{bid}{s}"
-    ratio = lambda s: reciprocal(add(par(p(s)), 0.001))
     cells = [
-        (p("AboveThreshold"), "Above", par(p("AboveThreshold")), " dB", 1, False),
-        (p("AboveSlope"), "Ratio", ratio("AboveSlope"), ":1", 1, False),
-        (p("BelowThreshold"), "Below", par(p("BelowThreshold")), " dB", 1, False),
-        (p("BelowSlope"), "Upward", ratio("BelowSlope"), ":1", 1, False),
-        (p("Attack"), "Attack", mul(par(p("Attack")), 1000.0), " ms", 0, True),
-        (p("Release"), "Release", mul(par(p("Release")), 1000.0), " ms", 0, True),
-        (p("Input"), "Input", par(p("Input")), " dB", 1, False),
-        (p("Gain"), "Gain", par(p("Gain")), " dB", 1, False),
+        (p("AboveThreshold"), "Threshold", par(p("AboveThreshold")), " dB", 1, False, False, None),
+        (p("AboveSlope"), "Ratio", None, "", 1, False, True, ratio_texts(par(p("AboveSlope")))),
+        (p("BelowThreshold"), "Up thresh.", par(p("BelowThreshold")), " dB", 1, False, False, None),
+        (p("BelowSlope"), "Up ratio", None, "", 1, False, True, up_ratio_texts(par(p("BelowSlope")))),
+        (p("Attack"), "Attack", mul(par(p("Attack")), 1000.0), " ms", 0, True, False, None),
+        (p("Release"), "Release", mul(par(p("Release")), 1000.0), " ms", 0, True, False, None),
+        (p("Input"), "Input", par(p("Input")), " dB", 1, False, False, None),
+        (p("Gain"), "Gain", par(p("Gain")), " dB", 1, False, False, None),
     ]
     controls = []
-    for k, (pid, caption, value, suffix, decimals, log) in enumerate(cells):
+    for k, (pid, caption, value, suffix, decimals, log, invert, texts) in enumerate(cells):
         col, row = k % 4, k // 4
         controls.append(knob(pid, caption, [x0 + col * 49.0, y0 + row * 72.0, 48.0, 70.0], value, suffix, decimals, log,
-                             visible, tag))
+                             visible, tag, invert=invert, texts=texts))
     return controls
 
 
@@ -443,47 +530,45 @@ def compact():
     to the three bands' curves and the rest moves left into the chosen band's column."""
     w, h = 820.0, 168.0
     sx, sy, sw, sh = 4.0, 4.0, 416.0, 160.0
-    controls = [
-        display("band_view", "Band view", [sx, sy, sw, sh], band_view(0.0, 0.0, sw, sh), "amount", closed()),
-        *handles("", sx, sy, sw, sh, closed()),
-    ]
+    controls = [graphic("band_view", "Band view", [sx, sy, sw, sh], band_view(0.0, 0.0, sw, sh), closed())]
     for i, (bid, name, color) in enumerate(BANDS):
         x = sx + i * 140.0
-        controls.append(display(f"{bid}_curve_open", f"{name} curve", [x, sy, 132.0, 132.0], curve(bid, 132.0, color),
-                                f"{bid}AboveSlope", opened()))
+        controls.append(graphic(f"{bid}_curve_open", f"{name} curve", [x, sy, 132.0, 132.0], curve(bid, 132.0, color),
+                                opened()))
         controls.append(power(f"{bid}_power_open", bid, name, [x, sy + 138.0, 64.0, 22.0], opened()))
         controls.append(button(f"{bid}_solo_open", f"{bid}Solo", "Solo", [x + 68.0, sy + 138.0, 64.0, 22.0],
                                visible=opened()))
     controls.append(separator("sep_view", 424.0, 4.0, 160.0))
-    # The row of switches over the right part: bands, detector, knee; presets at its right end.
+    # The row of switches over the right part: bands, detector, knee.
     for i, (bid, name, _) in enumerate(BANDS):
         controls.append(button(f"tab_{bid}", "band", name, [430.0 + i * 38.0, 3.0, 36.0, 16.0], {"set": i}))
     controls.append(button("rms", "peak", "RMS", [550.0, 3.0, 36.0, 16.0], {"set": 0}))
     controls.append(button("peak_toggle", "peak", "Peak", [588.0, 3.0, 36.0, 16.0], {"set": 1}))
-    controls.append(button("knee_toggle", "softKnee", "Soft knee", [628.0, 3.0, 56.0, 16.0]))
-    controls.append(preset_button("preset_default", "Default", 0, [728.0, 3.0, 46.0, 16.0]))
-    controls.append(preset_button("preset_ott", "OTT", 1, [776.0, 3.0, 40.0, 16.0]))
+    controls.append(button("knee_toggle", "softKnee", "Soft knee", [628.0, 3.0, 60.0, 16.0]))
     # The chosen band's column (design D: 74 px): its dot and name, its curve, power and solo.
     for i, (bid, name, color) in enumerate(BANDS):
         shown = mul(equal(par("band"), float(i)), closed())
-        heading = [circle([4.0, 6.0], 4.0, color), text(12.0, 0.0, name, TEXT, 11.0)]
-        controls.append(display(f"{bid}_heading", f"{name} band", [430.0, 24.0, 64.0, 14.0], heading, f"{bid}Gain", shown))
-        controls.append(display(f"{bid}_curve", f"{name} curve", [430.0, 40.0, 64.0, 64.0], curve(bid, 64.0, color),
-                                f"{bid}AboveSlope", shown))
+        heading = [circle([5.0, 8.0], 4.0, color), text(14.0, 1.0, name, TEXT, 12.0)]
+        controls.append(graphic(f"{bid}_heading", f"{name} band", [430.0, 22.0, 64.0, 16.0], heading, shown))
+        controls.append(graphic(f"{bid}_curve", f"{name} curve", [430.0, 40.0, 64.0, 64.0], curve(bid, 64.0, color), shown))
         controls.append(power(f"{bid}_power", bid, name, [430.0, 110.0, 31.0, 20.0], shown))
         controls.append(button(f"{bid}_solo", f"{bid}Solo", "Solo", [463.0, 110.0, 31.0, 20.0], visible=shown))
-    # The knob grid, the global column and the meters: from x 500 while the band view shows, 70 px
-    # further left (into the chosen band's column) while the strip is open.
+    # The knob grid, the global column, the presets and the meter: from x 500 while the band view
+    # shows, 70 px further left (into the chosen band's column) while the strip is open.
     for tag, dx, state in (("", 0.0, closed()), ("_open", -70.0, opened())):
         for i, (bid, _, _) in enumerate(BANDS):
             controls += band_knobs(bid, 500.0 + dx, 22.0, mul(equal(par("band"), float(i)), state), tag)
         controls.append(separator(f"sep_global{tag}", 698.0 + dx, 24.0, 140.0, state))
-        controls.append(knob("amount", "Amount", [702.0 + dx, 22.0, 84.0, 74.0], mul(par("amount"), 100.0), " %", 0,
+        controls.append(knob("amount", "Amount", [702.0 + dx, 22.0, 72.0, 74.0], mul(par("amount"), 100.0), " %", 0,
                              False, state, tag, big=True))
-        controls.append(knob("time", "Time", [702.0 + dx, 96.0, 42.0, 70.0], mul(par("time"), 100.0), " %", 0, True,
+        controls.append(knob("time", "Time", [702.0 + dx, 96.0, 36.0, 70.0], mul(par("time"), 100.0), " %", 0, True,
                              state, tag))
-        controls.append(knob("output", "Output", [744.0 + dx, 96.0, 42.0, 70.0], par("output"), "", 1, False, state, tag))
-        controls.append(meter(f"meter{tag}", [790.0 + dx, 22.0, 28.0, 144.0], state))
+        controls.append(knob("output", "Output", [738.0 + dx, 96.0, 36.0, 70.0], par("output"), "", 1, False, state, tag))
+        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [776.0 + dx, 3.0, 42.0, 16.0], state))
+        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [776.0 + dx, 21.0, 42.0, 16.0], state))
+        controls.append(meter(f"meter{tag}", [776.0 + dx, 40.0, 42.0, 126.0], state))
+    # Handles last, so they are over everything they cross.
+    controls += handles("", sx, sy, sw, sh, closed())
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
             "hidden_parameters": every_parameter(), "presets": [default_preset(), ott()], "accent_on": True}
 
@@ -497,10 +582,45 @@ def expanded():
             "hidden_parameters": every_parameter(), "strip": True, "accent_on": True}
 
 
+def evaluate(e, values):
+    """A panel expression's value with parameters from `values` (for the check below)."""
+    if not isinstance(e, dict):
+        return float(e)
+    op = e["op"]
+    if op == "parameter":
+        return values[e["parameter"]]
+    if op in ("exp", "log", "sin", "cos"):
+        v = evaluate(e["value"], values)
+        return {"exp": math.exp, "log": math.log, "sin": math.sin, "cos": math.cos}[op](v)
+    a, b = evaluate(e["a"], values), evaluate(e["b"], values)
+    return {"add": a + b, "multiply": a * b, "min": min(a, b), "max": max(a, b), "equal": float(abs(a - b) < 1e-4)}[op]
+
+
+def check_curve():
+    """The curve's expression gives the device's static gain (lib.rs › static_gain, with its
+    limit held at ±36 dB), crossed thresholds included; fails the script otherwise."""
+    def device(level, at, aslope, bt, bslope, soft):
+        def knee(u, w):
+            return (u + w / 2) ** 2 / (2 * w) if abs(u) <= w / 2 else max(u, 0.0)
+        clamp = lambda g: max(-GAIN_LIMIT_DB, min(GAIN_LIMIT_DB, g))
+        above = (aslope - 1) * knee(level - at, SOFT_KNEE_DB if soft else HARD_KNEE_DB)
+        below = (1 - bslope) * knee(bt - level, BELOW_KNEE_DB)
+        return clamp(above) + clamp(below)
+    for at, aslope, bt, bslope, soft in ((-20, 0.25, -60, 1.0, 1), (-67.6, 0.016, -18.9, 0.24, 1), (-30, 2.0, -40, 3.0, 0)):
+        values = {"midAboveThreshold": at, "midAboveSlope": aslope, "midBelowThreshold": bt, "midBelowSlope": bslope,
+                  "softKnee": soft}
+        for level in (-80.0, -55.0, -40.0, -21.0, -10.0, 0.0):
+            got = evaluate(stage_change("mid", level), values)
+            want = device(level, at, aslope, bt, bslope, soft)
+            assert abs(got - want) < 1e-6, (at, aslope, bt, bslope, soft, level, got, want)
+
+
 def main():
+    check_curve()
     panel = {"ui": compact(), "expanded": expanded()}
     out = Path("devices/multiband/panel.json")
-    out.write_text(json.dumps(panel, indent=1) + "\n", encoding="utf-8")
+    # Compact: the curves are long expressions, and a layout is limited to 2 MiB.
+    out.write_text(json.dumps(panel, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"wrote {out}")
 
 

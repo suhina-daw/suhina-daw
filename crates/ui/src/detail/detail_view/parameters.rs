@@ -374,10 +374,10 @@ pub(super) fn knob(
         *value = (*value + f64::from(direction) * step).clamp(min, max);
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
+    let held = widgets::held_drag_delta(ui, &response);
     if response.dragged() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-        let delta = f64::from(response.drag_delta().y) / widgets::PARAMETER_DRAG_PIXELS * fine;
+        let delta = f64::from(held.y) / widgets::PARAMETER_DRAG_PIXELS * fine;
         position = (position - delta).clamp(0.0, 1.0);
         *value = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
         response.mark_changed();

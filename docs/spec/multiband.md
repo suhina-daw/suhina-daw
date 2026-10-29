@@ -51,10 +51,10 @@ for `low`, `mid` and `high` (shown for `low`).
 | 6 | `output` | Output | −24 – +24 dB | 0 dB | decibels, linear |
 | 7 + 9b | `lowOn` | Low On | off / on | on | toggle |
 | 8 + 9b | `lowInput` | Low Input | −24 – +24 dB | 0 dB | decibels, linear |
-| 9 + 9b | `lowAboveThreshold` | Low Above Threshold | −80 – 0 dB | −20 dB | decibels, linear |
-| 10 + 9b | `lowAboveSlope` | Low Above Slope | 0 – 2 | 1 | none, linear |
-| 11 + 9b | `lowBelowThreshold` | Low Below Threshold | −80 – 0 dB | −60 dB | decibels, linear |
-| 12 + 9b | `lowBelowSlope` | Low Below Slope | 0 – 4 | 1 | none, linear |
+| 9 + 9b | `lowAboveThreshold` | Low Threshold | −80 – 0 dB | −20 dB | decibels, linear |
+| 10 + 9b | `lowAboveSlope` | Low Slope | 0 – 2 | 1 | none, linear |
+| 11 + 9b | `lowBelowThreshold` | Low Up Threshold | −80 – 0 dB | −60 dB | decibels, linear |
+| 12 + 9b | `lowBelowSlope` | Low Up Slope | 0 – 4 | 1 | none, linear |
 | 13 + 9b | `lowAttack` | Low Attack | 0.1 ms – 5 s | 50 ms (mid 10, high 5) | seconds, logarithmic |
 | 14 + 9b | `lowRelease` | Low Release | 0.1 ms – 5 s | 300 ms (mid 200, high 100) | seconds, logarithmic |
 | 15 + 9b | `lowGain` | Low Gain | −24 – +24 dB | 0 dB | decibels, linear |
@@ -126,10 +126,10 @@ view). The canvases draw from the parameters and from the device's live values
 ([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound. Every
 colour follows the theme: text, panel, control, border and accent are the theme's, and the display,
 the three band colours and the gain line are theme tokens (`--device-display`,
-`--device-series-1` … `3`, `--device-highlight`; [SDK UI](sdk-custom-ui.md)).
+`--device-series-1` … `3`, `--device-highlight`, `--device-spectrum`; [SDK UI](sdk-custom-ui.md)).
 
 - **Band view** (both canvases): the dark display with each band tinted between the crossovers;
-  the input spectrum filled in the accent, the output's (input plus the band's gain change) dotted
+  the input spectrum filled softly in its own colour, the output's (input plus the band's gain change) dotted
   over it; a 0 dB line near the top with the gain line under it, falling by each band's cut with
   the area above it shaded; each band's above threshold dashed with a ring in the middle of its
   band and its below threshold fainter; the crossovers with a grip near the bottom and their
@@ -138,15 +138,21 @@ the three band colours and the gain line are theme tokens (`--device-display`,
   dragged sideways and the thresholds up and down within their band; a double click resets one.
 - **Compact** (820 × 168, the device row's height): the band view at the left; over the right part
   a row of Low / Mid / High (the `band` parameter), RMS / Peak, Soft knee, and the Default and OTT
-  quick presets; the chosen band's column (its name, transfer curve with the signal's place as a
-  dot, power button and Solo); its knobs Above, Ratio, Below, Upward, Attack, Release, Input, Gain
-  (Ratio and Upward are the slopes shown as `1/s : 1`); after a divider Amount (large, in the
-  accent), Time and Output; and the output's two meters, dragged up or down to change their range
-  (`meterRange`), with their scale. While the expanded strip is open the band view gives way to the
+  quick presets; the chosen band's column (its name, transfer curve, power button and Solo); its knobs
+  Threshold, Ratio, Up thresh., Up ratio, Attack, Release, Input, Gain. Ratio shows the above
+  slope as `1/s : 1` (∞ : 1 under 0.02) and Up ratio the below slope as `1/s : 1` while it lifts and
+  `1 : s` while it expands; both turn and drag the other way to their slope, so more ratio is to the
+  right and up. The transfer curve is computed at 17 input levels as the device computes its gain
+  (both stages at once, their knees with Soft knee's width, the limit held at ±36 dB), so crossed
+  thresholds and the knee show as they sound; the input level is a line through it, the cut or lift
+  there a segment off the diagonal and a dot; after a divider Amount (large, in the
+  accent), Time and Output; the Default and OTT presets stacked; and the output's peak in dB over
+  its two meters, dragged up or down to change their range (`meterRange`, its bottom number). While the expanded strip is open the band view gives way to the
   three bands' curves side by side, each with its power button and Solo, and the rest moves left
   into the chosen band's column.
 - **Expanded** (1200 × 160, `strip`: a strip over the device row scaled to its width, its header
-  with the name and Close): the band view large with its handles and a dB scale.
+  with the name and Close, dragged up or down to change its height): the band view stretched to it
+  with its handles and a dB scale.
 - **Quick preset Default**: every sound parameter at its default, in one undo step.
 - **Quick preset OTT**: heavy upward and downward compression on all three bands, in one undo step;
   Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input +5 dB, above thresholds

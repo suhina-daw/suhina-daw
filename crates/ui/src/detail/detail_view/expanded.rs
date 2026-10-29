@@ -65,9 +65,13 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     let size = Vec2::new(canvas.size[0], canvas.size[1]);
     // A strip across the bottom of the main area: the canvas scaled to its width (half to two and
     // a half times its own size), the strip as tall as the scaled canvas; the views stay above.
+    // The strip's height: its canvas's at the strip's width unless the header was dragged; kept
+    // per device while the app runs.
+    let height_id = Id::new(("device-expanded-height", &device.name));
+    let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
+    let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
     let slice = if canvas.strip {
-        let scale = ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5);
-        let height = (ROW + PAD + size.y * scale + PAD * 2.0).min(area.height());
+        let height = wanted.clamp(80.0_f32.min(area.height()), area.height().max(1.0));
         Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max)
     } else {
         area
@@ -81,6 +85,21 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             painter.fill_background(rect, 0.0, theme::panel_background());
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
             painter.fill_background(header, 0.0, theme::control_background());
+            if canvas.strip {
+                // The header is the strip's handle: dragged up it grows, down it shrinks; a double
+                // click fits it to its canvas again.
+                let grip = header.with_max_x(header.right() - 32.0);
+                let drag = ui
+                    .interact(grip, Id::new("device-expanded-resize"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::ResizeVertical)
+                    .on_hover_text("Drag up or down to change the height; double click fits it");
+                if drag.double_clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<f32>(height_id));
+                } else if drag.dragged() {
+                    let height = (slice.height() - drag.drag_delta().y).clamp(80.0, area.height().max(80.0));
+                    ui.ctx().data_mut(|d| d.insert_temp(height_id, height));
+                }
+            }
             widgets::text_in(
                 &painter,
                 header.shrink2(Vec2::new(PAD * 2.0, 0.0)),
@@ -134,24 +153,8 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 });
                 return;
             }
-            // The canvas in a layer of its own, scaled by its transform so pointer input scales
-            // too, and kept just above the strip's layer (a dialog opened later stays on top).
-            let layer = egui::LayerId::new(egui::Order::Foreground, Id::new("device-expanded-canvas"));
-            let fit = (body.width() / size.x).min(body.height() / size.y).clamp(0.5, 2.5);
-            ui.ctx().set_transform_layer(layer, egui::emath::TSTransform::new(body.min.to_vec2(), fit));
-            ui.ctx().set_sublayer(ui.layer_id(), layer);
-            egui::Area::new(layer.id).order(layer.order).fixed_pos(Pos2::ZERO).constrain(false).show(ui.ctx(), |ui| {
-                let (canvas_rect, _) = ui.allocate_exact_size(size, Sense::hover());
-                crate::detail::device_canvas::show(
-                    ui,
-                    canvas_rect,
-                    canvas,
-                    &graph.parameters,
-                    track,
-                    &device.at,
-                    actions,
-                );
-            });
+            // The canvas stretched to the strip on each axis.
+            crate::detail::device_canvas::show(ui, body, canvas, &graph.parameters, track, &device.at, actions);
         },
     );
 }

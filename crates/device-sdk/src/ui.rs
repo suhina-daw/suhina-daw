@@ -463,14 +463,21 @@ pub const READOUT_IDS: [&str; 32] = [
 
 /// Colours a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
 /// CSS custom property's colour, or the default when the theme sets none. Displays (a spectrum's
-/// dark ground), a device's series of bands and a highlight (a gain line) follow the theme so.
-pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 5] = [
+/// dark ground), a device's series of bands, a highlight (a gain line) and a spectrum follow the
+/// theme so.
+pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 6] = [
     ([3, 0, 1], "--device-display", [10, 17, 23]),
     ([3, 0, 2], "--device-series-1", [242, 166, 90]),
     ([3, 0, 3], "--device-series-2", [95, 211, 192]),
     ([3, 0, 4], "--device-series-3", [159, 180, 255]),
     ([3, 0, 5], "--device-highlight", [255, 207, 122]),
+    ([3, 0, 6], "--device-spectrum", [63, 196, 228]),
 ];
+
+/// The theme's palette by token, for drawings of controls without a widget (which the SDK does not
+/// resolve): text, panel, control, border and accent, each `[3, 1, k]` with the drawing's alpha.
+pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
+    [([3, 1, 1], "text"), ([3, 1, 2], "panel"), ([3, 1, 3], "control"), ([3, 1, 4], "border"), ([3, 1, 5], "accent")];
 
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
@@ -586,6 +593,7 @@ impl DeviceUi {
                     Widget::Label { .. }
                     | Widget::Panel { .. }
                     | Widget::Separator
+                    | Widget::Graphic { .. }
                     | Widget::SampleWaveform
                     | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
                     Widget::Envelope { attack, decay, level, release } => {
@@ -727,6 +735,7 @@ impl DeviceUi {
                         Widget::Label { .. }
                             | Widget::Panel { .. }
                             | Widget::Separator
+                            | Widget::Graphic { .. }
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
                             | Widget::Envelope { .. }
@@ -746,8 +755,9 @@ impl DeviceUi {
                 return Err(fail("button gestures require only X binding"));
             }
             for binding in [c.x.as_ref(), c.y.as_ref()].into_iter().flatten() {
-                if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale) {
-                    return Err(fail("drag scale must be finite and within 0.01..100"));
+                // A negative scale drags the other way (a ratio knob over a slope).
+                if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale.abs()) {
+                    return Err(fail("drag scale must be finite and within 0.01..100 either way"));
                 }
                 let p = parameters
                     .iter()
@@ -905,6 +915,39 @@ mod tests {
     }
 
     #[test]
+    fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
+        let params = [Parameter::new("slope", "Slope", (0., 2.), 1.)];
+        let mut ui = DeviceUi { size: [100., 100.], ..DeviceUi::default() };
+        ui.controls.push(CustomControl {
+            id: "view".into(),
+            name: "View".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 100., 50.],
+            widget: Some(Widget::Graphic { drawing: vec![] }),
+            gesture: UiGesture::Drag,
+            x: None,
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        });
+        ui.controls.push(CustomControl {
+            id: "ratio".into(),
+            name: "Ratio".into(),
+            tooltip: String::new(),
+            bounds: [0., 50., 50., 50.],
+            widget: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding { drag_scale: -1.0, ..UiBinding::new("slope") }),
+            drawing: vec![],
+            visible_when: None,
+        });
+        ui.validate(&params).unwrap();
+        ui.controls[1].y = Some(UiBinding { drag_scale: -0.001, ..UiBinding::new("slope") });
+        assert!(ui.validate(&params).is_err(), "a scale under 0.01 either way");
+    }
+
+    #[test]
     fn handles_bind_one_axis_and_presets_name_declared_values() {
         let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.)];
         let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
@@ -1023,9 +1066,10 @@ mod tests {
             ..DeviceUi::default()
         };
         let parameters = [Parameter::new("amount", "Amount", (0., 1.), 0.)];
-        for scale in [1., 2., 0., -1., f32::NAN, f32::INFINITY, 101.] {
+        // A negative scale drags the other way; its size has the same limits.
+        for scale in [1., 2., -1., 0., -0.001, f32::NAN, f32::INFINITY, 101., -101.] {
             ui.controls[0].x.as_mut().unwrap().drag_scale = scale;
-            assert_eq!(ui.validate(&parameters).is_ok(), scale == 1. || scale == 2.);
+            assert_eq!(ui.validate(&parameters).is_ok(), [1., 2., -1.].contains(&scale), "{scale}");
         }
     }
 }
