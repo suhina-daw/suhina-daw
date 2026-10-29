@@ -374,6 +374,9 @@ it is a place to drop, and the status line says what a drop there does.
   a question asks Move, Copy or Cancel. Its *Remember my choice* box sets the setting to the
   answer, so the next drop does it without asking. The setting can also be Move or Copy. Ctrl
   held at the drop always copies, Shift always moves, whatever the setting says.
+- **A name already taken:** when the folder has a file named as one of the samples, a warning
+  says so before anything moves: *Keep both* goes on, the new file getting a number; *Skip*
+  leaves out the samples whose name is taken; *Cancel* moves or copies nothing.
 - **Copy** is `library.copyTo`, as Copy to folder… does. **Move** is `library.moveTo`: each file
   is renamed into the folder when both are on one drive, or copied and the original removed once
   the copy is whole. A name taken in the folder gets a number (`Kick 2.wav`); nothing is

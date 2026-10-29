@@ -24,6 +24,7 @@ pub mod loading_dialog;
 mod menu_bar;
 pub mod menus;
 pub mod missing_files;
+pub mod name_clash_dialog;
 mod plugin_host;
 pub mod project_dialog;
 pub mod splash;
@@ -44,6 +45,7 @@ use suhina_session::{CommandKind, ExportGather, PluginStatus, ProjectId, Project
 
 use crate::app::export_dialog::{ExportChoice, ExportDialog, ExportJob};
 use crate::app::folder_drop_dialog::FolderDropChoice;
+use crate::app::name_clash_dialog::NameClashChoice;
 use crate::app::project_dialog::{
     AboutChoice, AgentChoice, AraEditsChoice, Choice, DialogState, Lists, RecoveryChoice, SaveChoice, SavePrompt,
     UnsavedChoice,
@@ -330,6 +332,9 @@ pub struct App {
     /// Remember my choice box.
     folder_drop: Option<(Vec<PathBuf>, PathBuf)>,
     folder_drop_remember: bool,
+    /// Samples going into a browser folder that has files of the same names, waiting for Keep
+    /// both, Skip or Cancel: the files, the folder, whether they are copied, and the taken names.
+    name_clash: Option<(Vec<PathBuf>, PathBuf, bool, Vec<String>)>,
     /// What to do once the project is saved, when Save in that question first asks for a name.
     save_then: Option<Leaving>,
     /// Every project with unsaved changes was answered for: the window may close.
@@ -601,6 +606,7 @@ impl App {
             unsaved_prompt: None,
             ara_prompt: None,
             folder_drop: None,
+            name_clash: None,
             folder_drop_remember: false,
             save_then: None,
             quit_confirmed: false,
@@ -1817,7 +1823,8 @@ impl App {
             || self.save_prompt.is_some()
             || self.project_dialog.is_some()
             || self.ara_prompt.is_some()
-            || self.folder_drop.is_some();
+            || self.folder_drop.is_some()
+            || self.name_clash.is_some();
         if !other_dialog && let Some(offer) = self.recovery.first().cloned() {
             let written = suhina_session::backup::date_time(offer.written);
             let written = written.get(..16).unwrap_or(&written);
@@ -2020,6 +2027,23 @@ impl App {
                 Some(AraEditsChoice::New) => self.run(&self.with_ara_edits(&action, "new")),
                 Some(AraEditsChoice::Cancel) => {}
                 None => self.ara_prompt = Some((action, plugin)),
+            }
+        }
+        if let Some((files, folder, copy, taken)) = self.name_clash.take() {
+            let name = folder.file_name().map_or_else(|| folder.display().to_string(), |n| n.to_string_lossy().into());
+            match name_clash_dialog::show(ui, window, &taken, files.len(), &name) {
+                Some(NameClashChoice::KeepBoth) => self.files_into_folder_now(files, &folder, copy),
+                Some(NameClashChoice::Skip) => {
+                    let free: Vec<PathBuf> = files.into_iter().filter(|f| !drops::name_taken(f, &folder)).collect();
+                    if free.is_empty() {
+                        self.status =
+                            Status::Hint(format!("Nothing to {} into {name}", if copy { "copy" } else { "move" }));
+                    } else {
+                        self.files_into_folder_now(free, &folder, copy);
+                    }
+                }
+                Some(NameClashChoice::Cancel) => {}
+                None => self.name_clash = Some((files, folder, copy, taken)),
             }
         }
         if let Some((files, folder)) = self.folder_drop.take() {

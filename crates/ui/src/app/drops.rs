@@ -6,8 +6,24 @@
 use super::*;
 
 impl App {
-    /// Moves or copies sample files into a folder of the browser (#943), saying how it went.
+    /// Moves or copies sample files into a folder of the browser (#943); when a file there has
+    /// the name of one of them, asks first whether to keep both or skip those.
     pub(super) fn files_into_folder(&mut self, files: Vec<PathBuf>, folder: &Path, copy: bool) {
+        let taken: Vec<String> = files
+            .iter()
+            .filter(|f| name_taken(f, folder))
+            .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        suhina_plugins::trace!("browser: {} of {} names already in {}", taken.len(), files.len(), folder.display());
+        if taken.is_empty() {
+            self.files_into_folder_now(files, folder, copy);
+        } else {
+            self.name_clash = Some((files, folder.to_path_buf(), copy, taken));
+        }
+    }
+
+    /// Moves or copies sample files into a folder of the browser (#943), saying how it went.
+    pub(super) fn files_into_folder_now(&mut self, files: Vec<PathBuf>, folder: &Path, copy: bool) {
         let items: Vec<String> = files.iter().map(|p| p.display().to_string()).collect();
         let params = json!({ "items": items, "folder": folder.display().to_string() });
         suhina_plugins::trace!(
@@ -97,6 +113,15 @@ impl App {
             self.browser.drag = None;
             self.map_window.drag = None;
             return;
+        }
+        if released {
+            let kinds: Vec<String> = items.iter().map(|i| format!("{:?}", i.kind)).collect();
+            suhina_plugins::trace!(
+                "browser: drag of {} released at {:?}, over folder {:?}",
+                kinds.join(","),
+                pointer,
+                self.browser.drop_folder
+            );
         }
         // Samples over a folder of the browser go into it, moved or copied (#943).
         if let Some(folder) = self.browser.drop_folder.take() {
@@ -865,4 +890,12 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
 /// Whether `path` names a theme package (`<name>.theme.suhina`), which is no project.
 pub fn is_theme_package(path: &std::path::Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".theme.suhina"))
+}
+
+/// Whether `folder` has a file of `file`'s name that is not `file` itself (one already there
+/// is left where it is, not copied over itself).
+pub(super) fn name_taken(file: &Path, folder: &Path) -> bool {
+    let Some(name) = file.file_name() else { return false };
+    let there = folder.join(name);
+    there.exists() && std::fs::canonicalize(&there).ok() != std::fs::canonicalize(file).ok()
 }
