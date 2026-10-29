@@ -1006,7 +1006,7 @@
     ]
   },
   "Arrangement/Tracks/new_project_returns": {
-    "sourceFingerprint": "732abbadd5e65e783a2f790fa330f5b06a4b07d4be6dbccba871357b0ad44179",
+    "sourceFingerprint": "7914528ff4c1b1a88ad36b8e8bc402fb7e087c4dfb3005225ed0b9e80115144c",
     "summary": "Choose whether a new blank project starts with return tracks.",
     "description": "Return tracks receive sound sent from other channels, often for shared effects. This preference decides whether a new blank project gets the A and B return tracks. With None the project has no returns, so no track shows send controls until you insert a return track. It only affects new blank projects: a project you open that already has returns always shows them, and the New or open dialog offers the other kind for a single project.",
     "options": [
@@ -1029,31 +1029,8 @@
       "docs/decisions/0010-project-files.md"
     ]
   },
-  "Arrangement/Tracks/copy_names": {
-    "sourceFingerprint": "6cd95affc6be1eb1fee3ecef47cb3dcc63ad2207d27a4b42b8fb1a69ab457d86",
-    "summary": "Choose how a duplicated or pasted track is named when its name is taken.",
-    "description": "When a track named Bass is duplicated or pasted and Bass is already taken, the copy gets a number. Wrapped names it Bass (2), Hash names it Bass #2. A name that contains # without a number after it shows the track's number, so it is kept as it is and every copy shows its own number. Tracks that were never renamed are called # MIDI or # Audio and keep that name.",
-    "options": [
-      {
-        "name": "Wrapped (2)",
-        "description": "Copies read Bass (2), Bass (3). This is the default."
-      },
-      {
-        "name": "Hash #2",
-        "description": "Copies read Bass #2, Bass #3."
-      }
-    ],
-    "whenToChange": "Pick Hash if you prefer numbered names without brackets, for example to match how your other projects are named.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings/view_settings.rs",
-      "crates/session/src/track_copy.rs",
-      "crates/model/src/names.rs",
-      "docs/spec/arrangement-editing.md"
-    ]
-  },
   "Arrangement/Tracks/alt_wheel": {
-    "sourceFingerprint": "05e6863fabc6582f97b6042a9773ae9f59732da499802ffc852ad74b8ac62bb1",
+    "sourceFingerprint": "08e96feac6a5daa0c402e1340ff71c6a861ec32d09f8bd88225f7b8fad4eb1a7",
     "summary": "Choose whether Alt and the mouse wheel resize all tracks or only the one under the pointer.",
     "description": "In the Arrangement view, holding Alt and turning the mouse wheel over the tracks makes them taller or shorter. All tracks changes every track and its automation lanes together. The one under the pointer changes only the track or the automation lane the pointer is over.",
     "options": [
@@ -1155,8 +1132,60 @@
       "docs/spec/arrangement-editing.md"
     ]
   },
+  "Arrangement/Track sizes/Compact height": {
+    "sourceFingerprint": "22e05422cbf2a0e007c5de3a335af971cf23c7a283dcfd532280cd42dba852b6",
+    "summary": "Customize the Compact Arrangement row height.",
+    "description": "The initial Compact height is 20 pixels. Its control keeps it above Tiny and below Small. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
+    "options": [],
+    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/track_sizes.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
+  "Arrangement/Track sizes/Small height": {
+    "sourceFingerprint": "b28e4e4ec3075003b5816ab1e2cfb91f5517b9f11d60467c35ea1a492748363f",
+    "summary": "Customize the Small Arrangement row height.",
+    "description": "The initial Small height is 40 pixels. Its control keeps it above Compact and below Medium. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
+    "options": [],
+    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/track_sizes.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
+  "Arrangement/Track sizes/Medium height": {
+    "sourceFingerprint": "36817502fbbe84c3dbebb5b94e38577151f1867655f239bdf9b0d7678b32bdab",
+    "summary": "Customize the Medium Arrangement row height.",
+    "description": "The initial Medium height is 64 pixels. Its control keeps it above Small and below Large. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
+    "options": [],
+    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/track_sizes.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
+  "Arrangement/Track sizes/Large height": {
+    "sourceFingerprint": "ba97b504391e5be0b173a46892e083284322ac778b30be309c091670734307ee",
+    "summary": "Customize the Large Arrangement row height.",
+    "description": "The initial Large height is 104 pixels. Its control keeps it above Medium and at most 400 pixels. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
+    "options": [],
+    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/track_sizes.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
   "Arrangement/Tools/arrangement_toolbar": {
-    "sourceFingerprint": "2c8a63c57d07ca0c3df92fe375e5928b1a16bd31af40a3887ee3abfc319bab25",
+    "sourceFingerprint": "dfbb527972fe530e0f7873b810a0cc3a2824a3eeddebb9dafaa6640b320d085d",
     "summary": "Show a row of tools over the Arrangement and let the number keys choose them.",
     "description": "With this on, a toolbar runs along the top of the Arrangement with six tools: Select (moves, trims and selects clips, as without the toolbar), Range (a drag selects time anywhere), Split (a click cuts a clip where you click), Erase (a click deletes a clip), Draw (a drag on a lane makes an empty clip as long as the drag) and Mute (a click mutes or unmutes a clip). The keys 1 to 6 choose them while the Arrangement was clicked last; when the piano roll was clicked last, the same keys choose its own tools. The Arrangement is outlined in the accent colour while it has the keys.",
     "options": [
@@ -1179,7 +1208,7 @@
     ]
   },
   "Arrangement/Tools/arrangement_grid": {
-    "sourceFingerprint": "d16d7038e42172aa6d29baa0847b0fa4283aa6145ec461d471c4efdafd82628a",
+    "sourceFingerprint": "cf4e204d5bf10b8bf78d76727dfded8fda752be1a68795a77039fd74a18930c2",
     "summary": "Choose the Arrangement's grid when Suhina starts.",
     "description": "The Arrangement has a grid of its own, apart from the control bar's Quantize box: its lines, and where clips, fades, automation points and ruler clicks snap. This sets what it starts on. A fixed value keeps its lines that far apart (coarser when zoomed far out); an adaptive grid makes its lines finer as you zoom in. From there the grid menu (the toolbar, an empty lane's right-click menu, an automation lane's menu) and Ctrl+1 to Ctrl+4 change it; changing this setting sets the grid again.",
     "options": [
@@ -1249,7 +1278,7 @@
     ]
   },
   "Arrangement/Automation/automation_click": {
-    "sourceFingerprint": "e4aa8ff1ec3d7abe67ca6392d065ff97f75fed1fa2b7a298cd5990d3513163bf",
+    "sourceFingerprint": "1f827ef5968036a13c39b01f476bbc40dc56a4a98a2f84fadf88f02b25b04462",
     "summary": "Choose whether a single click anywhere on an automation lane adds a point.",
     "description": "Off (the default), a click on an automation lane adds a point only on or near the envelope's line, where the pointer turns into a hand and the line's value shows beside it; a click away from the line only ends the painted range and the selected points, and a double-click there adds a point at the pointer. On, a click anywhere on the lane adds a point at the pointer's beat and height, as before.",
     "options": [
@@ -1268,58 +1297,6 @@
       "crates/ui/src/settings/view_settings.rs",
       "crates/ui/src/arrangement/automation_lanes.rs",
       "docs/spec/automation.md"
-    ]
-  },
-  "Arrangement/Track sizes/Compact height": {
-    "sourceFingerprint": "22e05422cbf2a0e007c5de3a335af971cf23c7a283dcfd532280cd42dba852b6",
-    "summary": "Customize the Compact Arrangement row height.",
-    "description": "The initial Compact height is 20 pixels. Its control keeps it above Tiny and below Small. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
-    "options": [],
-    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings/track_sizes.rs",
-      "crates/ui/src/settings/settings_view.rs",
-      "docs/spec/arrangement-editing.md"
-    ]
-  },
-  "Arrangement/Track sizes/Small height": {
-    "sourceFingerprint": "b28e4e4ec3075003b5816ab1e2cfb91f5517b9f11d60467c35ea1a492748363f",
-    "summary": "Customize the Small Arrangement row height.",
-    "description": "The initial Small height is 40 pixels. Its control keeps it above Compact and below Medium. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
-    "options": [],
-    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings/track_sizes.rs",
-      "crates/ui/src/settings/settings_view.rs",
-      "docs/spec/arrangement-editing.md"
-    ]
-  },
-  "Arrangement/Track sizes/Medium height": {
-    "sourceFingerprint": "36817502fbbe84c3dbebb5b94e38577151f1867655f239bdf9b0d7678b32bdab",
-    "summary": "Customize the Medium Arrangement row height.",
-    "description": "The initial Medium height is 64 pixels. Its control keeps it above Small and below Large. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
-    "options": [],
-    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings/track_sizes.rs",
-      "crates/ui/src/settings/settings_view.rs",
-      "docs/spec/arrangement-editing.md"
-    ]
-  },
-  "Arrangement/Track sizes/Large height": {
-    "sourceFingerprint": "ba97b504391e5be0b173a46892e083284322ac778b30be309c091670734307ee",
-    "summary": "Customize the Large Arrangement row height.",
-    "description": "The initial Large height is 104 pixels. Its control keeps it above Medium and at most 400 pixels. Exact track heights, under Advanced, shows an exact pixel field; otherwise use the slider. Changes update matching named row heights immediately and preserve manually sized rows that do not match a named height. The five heights are saved together.",
-    "options": [],
-    "whenToChange": "Adjust this when the named size is useful but you want a different amount of vertical space.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings/track_sizes.rs",
-      "crates/ui/src/settings/settings_view.rs",
-      "docs/spec/arrangement-editing.md"
     ]
   },
   "Arrangement/Advanced/stretch_alt_drag": {
@@ -1390,6 +1367,29 @@
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/track_sizes.rs",
       "crates/ui/src/settings/settings_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
+  "Arrangement/Advanced/copy_names": {
+    "sourceFingerprint": "a90400a7c63e6034f55c05ac70435b7f386f7b8deda47d2e559e392a4331be59",
+    "summary": "Choose how a duplicated or pasted track is named when its name is taken.",
+    "description": "When a track named Bass is duplicated or pasted and Bass is already taken, the copy gets a number. Wrapped names it Bass (2), Hash names it Bass #2. A name that contains # without a number after it shows the track's number, so it is kept as it is and every copy shows its own number. Tracks that were never renamed are called # MIDI or # Audio and keep that name.",
+    "options": [
+      {
+        "name": "Wrapped (2)",
+        "description": "Copies read Bass (2), Bass (3). This is the default."
+      },
+      {
+        "name": "Hash #2",
+        "description": "Copies read Bass #2, Bass #3."
+      }
+    ],
+    "whenToChange": "Pick Hash if you prefer numbered names without brackets, for example to match how your other projects are named.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/session/src/track_copy.rs",
+      "crates/model/src/names.rs",
       "docs/spec/arrangement-editing.md"
     ]
   },
@@ -1591,7 +1591,7 @@
     ]
   },
   "Browser/Browser/browser_folder_drop": {
-    "sourceFingerprint": "f3c8a9139f8204766e8670bd68b03baec653d3dead2909e70bcc098ee4f9d637",
+    "sourceFingerprint": "15bd78b04b1425e655480f656db49531ee802447d76b1dc7bb07ea08d0f4b209",
     "summary": "Choose what dragging samples onto a folder in the browser does.",
     "description": "Samples dragged in the browser and dropped on one of its folders go into that folder. Ask shows a question with Move, Copy and Cancel, and a Remember my choice box that sets this setting. Move takes the files out of where they were; their pins, recent places and colour tags go with them, and a file an open project plays is left where it is. Copy leaves the originals. A name already taken in the folder gets a number (Kick 2.wav); nothing is overwritten. Holding Ctrl while dropping always copies, Shift always moves.",
     "options": [
@@ -1757,7 +1757,7 @@
     ]
   },
   "Browser/Sample map/map_label_size": {
-    "sourceFingerprint": "408cafc06e0deb688332c7f71f407fd385b4aedde10baddeb168add9c9dddf64",
+    "sourceFingerprint": "3f65b23994aed1b587df0e467df0d9b39668200a2c0daee5113a37fc00e7962c",
     "summary": "Set how large the names of the sample map's clusters are, or hide them.",
     "description": "The sample map names its groups of similar sounds (Kick, Snare, Vocal and so on) with labels drawn over the points. In a narrow map, large labels can cover the very points they name. This setting scales every label by the same amount, so bigger groups keep their larger labels and labels still never overlap. It is the same choice as Labels in the map's top bar.",
     "options": [

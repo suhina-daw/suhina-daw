@@ -67,15 +67,15 @@ what is inside it).
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
-| Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Copy names, Alt+wheel changes the height of |
+| Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
 | Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
-| Arrangement | Automation | A click anywhere adds a point (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere) |
+| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere) |
 | Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
-| Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights |
+| Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
 | Clip editor | Piano roll | Full-height piano roll covers, Piano roll grid source, Piano roll toolbar size, Moved notes replace notes |
-| Browser | Browser | Browser side, Recent item kinds layout, Samples dropped on a folder |
+| Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
 | Browser | Tags | Colour tag limit |

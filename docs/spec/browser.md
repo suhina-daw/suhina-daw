@@ -370,7 +370,7 @@ Samples dragged in the list and dropped on one of the browser's folders (an adde
 folder inside one) go into that folder (#943). The folder row under the pointer lights up while
 it is a place to drop, and the status line says what a drop there does.
 
-- **Move or copy:** with Settings › Browser › *Samples dropped on a folder* at Ask (the default),
+- **Move or copy:** with Settings › Browser › *Dropping on a folder* at Ask (the default),
   a question asks Move, Copy or Cancel. Its *Remember my choice* box sets the setting to the
   answer, so the next drop does it without asking. The setting can also be Move or Copy. Ctrl
   held at the drop always copies, Shift always moves, whatever the setting says.

@@ -28,7 +28,7 @@ fn arrangement(project: Project) -> Harness<'static, App> {
     harness
 }
 
-/// Turns Settings › Arrangement › Automation › A click anywhere adds a point on or off.
+/// Turns Settings › Arrangement › Automation › Click anywhere adds on or off.
 fn click_anywhere(harness: &mut Harness<'static, App>, on: bool) {
     let ctx = harness.ctx.clone();
     let mut settings = harness.state().settings().clone();
