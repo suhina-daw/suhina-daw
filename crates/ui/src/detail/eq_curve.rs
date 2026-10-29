@@ -39,8 +39,9 @@ const BAND_WIDTH: f32 = DISPLAY[2] / BANDS as f32;
 /// The strips' column: `[x, y of the first group, width, a group's height]`; a group is its
 /// caption, its track and its value.
 const STRIPS: [f32; 4] = [2.0, 4.0, 52.0, 54.0];
-/// The Edit switch's rectangle in the globals' column, under the four global controls.
-const EDIT: [f32; 4] = [356.0, 111.0, 82.0, 20.0];
+/// The Edit switch's rectangle in the globals' column, under the four global controls
+/// (`devices/eq/src/panel.rs`).
+const EDIT: [f32; 4] = [356.0, 135.0, 82.0, 20.0];
 /// The display's height in dB: the gain parameter's full range, top to bottom.
 const DB: f64 = 15.0;
 /// The frequency axis: the frequency parameter's full range, left to right.

@@ -313,6 +313,12 @@ fn render_the_panel() {
         image.save(folder.join(name)).expect("save failed");
     };
     save(&mut harness, "eq-panel.png");
+    // The Mode menu open, to look the dropdown and its room below the control over.
+    harness.get_by_label("Mode").click();
+    harness.run();
+    save(&mut harness, "eq-panel-mode-menu.png");
+    harness.get_by_label("Stereo").click();
+    harness.run();
     harness.get_by_label("Mode").click();
     harness.run();
     harness.get_by_label("Left/Right").click();

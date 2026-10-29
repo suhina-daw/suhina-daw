@@ -49,13 +49,15 @@ fn panel() -> DeviceUi {
         visible_when: None,
     });
     caption(&mut ui, "Mode", 4.0);
+    // The globals' column: a row every 28 px, 8 px between rows, from the caption at 4 to the
+    // Edit switch at 135 (which the curve display's host side draws, `eq_curve.rs`).
     ui.controls.push(CustomControl {
         id: "mode".into(),
         name: "Mode".into(),
         tooltip: "Stereo runs curve A on both sides; Left/Right and Mid/Side run curve A on the \
                   left or mid and curve B on the right or side."
             .into(),
-        bounds: [GLOBALS_X, 15.0, GLOBALS_WIDTH, 20.0],
+        bounds: [GLOBALS_X, 23.0, GLOBALS_WIDTH, 20.0],
         widget: Some(Widget::Menu),
         gesture: UiGesture::Menu,
         x: Some(UiBinding::new("mode")),
@@ -63,9 +65,9 @@ fn panel() -> DeviceUi {
         drawing: vec![],
         visible_when: None,
     });
-    toggle(&mut ui, "Adapt. Q", 39.0);
-    number(&mut ui, "scale", "Scale", "Scale ", TextFormat::Percent, 63.0);
-    number(&mut ui, "output", "Output", "Output ", TextFormat::Decibels, 87.0);
+    toggle(&mut ui, "Adapt. Q", 51.0);
+    number(&mut ui, "scale", "Scale", "Scale ", TextFormat::Percent, 79.0);
+    number(&mut ui, "output", "Output", "Output ", TextFormat::Decibels, 107.0);
     ui
 }
 

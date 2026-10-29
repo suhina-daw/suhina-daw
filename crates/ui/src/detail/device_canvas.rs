@@ -2169,7 +2169,9 @@ pub(crate) fn show(
             if control.gesture == UiGesture::Menu {
                 let key_open =
                     focused && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
-                let mut popup = egui::Popup::menu(&response);
+                // The menu sits a little clear of its control: glued to its bottom edge it
+                // reads as clipping into it (the EQ's Mode, seen in use).
+                let mut popup = egui::Popup::menu(&response).gap(2.0);
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
                     control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"continuous":false,"gesture":control.id})));
