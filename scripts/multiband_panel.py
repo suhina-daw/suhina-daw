@@ -336,7 +336,7 @@ def knob(pid, caption, bounds, value, suffix="", decimals=1, log=False, visible=
     angle = add(-0.75 * math.pi, mul(turned, 1.5 * math.pi))
     tip = [add(cx, mul(sin(angle), r - 3.0)), sub(cy, mul(cos(angle), r - 3.0))]
     drawing = [
-        text(cx, 0.0, caption, tint(TEXT, 170), 11.0, center=True),
+        text(cx, 0.0, caption, tint(TEXT, 170), 10.0, center=True),
         circle([cx, cy], r, ACCENT if big else BORDER),
         circle([cx, cy], r - (3.0 if big else 2.0), CONTROL),
         line([cx, cy], tip, TEXT, 3.0 if big else 2.0),
@@ -506,9 +506,9 @@ def band_knobs(bid, x0, y0, visible, tag):
     the other way to their slope, so more ratio is to the right and up."""
     p = lambda s: f"{bid}{s}"
     cells = [
-        (p("AboveThreshold"), "Threshold", par(p("AboveThreshold")), " dB", 1, False, False, None),
+        (p("AboveThreshold"), "Thresh.", par(p("AboveThreshold")), " dB", 1, False, False, None),
         (p("AboveSlope"), "Ratio", None, "", 1, False, True, ratio_texts(par(p("AboveSlope")))),
-        (p("BelowThreshold"), "Up thresh.", par(p("BelowThreshold")), " dB", 1, False, False, None),
+        (p("BelowThreshold"), "Up thr.", par(p("BelowThreshold")), " dB", 1, False, False, None),
         (p("BelowSlope"), "Up ratio", None, "", 1, False, True, up_ratio_texts(par(p("BelowSlope")))),
         (p("Attack"), "Attack", mul(par(p("Attack")), 1000.0), " ms", 0, True, False, None),
         (p("Release"), "Release", mul(par(p("Release")), 1000.0), " ms", 0, True, False, None),
@@ -524,11 +524,11 @@ def band_knobs(bid, x0, y0, visible, tag):
 
 
 def compact():
-    """Design D in the device row (820 x 168): the band view at the left; a row of switches and
+    """Design D in the device row (870 x 168): the band view at the left; a row of switches and
     presets over the chosen band's column (name, curve, power, solo), its knob grid, the global
     column (Amount, Time, Output) and the meters. While the strip is open the band view gives way
     to the three bands' curves and the rest moves left into the chosen band's column."""
-    w, h = 820.0, 168.0
+    w, h = 870.0, 168.0
     sx, sy, sw, sh = 4.0, 4.0, 416.0, 160.0
     controls = [graphic("band_view", "Band view", [sx, sy, sw, sh], band_view(0.0, 0.0, sw, sh), closed())]
     for i, (bid, name, color) in enumerate(BANDS):
@@ -564,9 +564,11 @@ def compact():
         controls.append(knob("time", "Time", [702.0 + dx, 96.0, 36.0, 70.0], mul(par("time"), 100.0), " %", 0, True,
                              state, tag))
         controls.append(knob("output", "Output", [738.0 + dx, 96.0, 36.0, 70.0], par("output"), "", 1, False, state, tag))
-        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [776.0 + dx, 3.0, 42.0, 16.0], state))
-        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [776.0 + dx, 21.0, 42.0, 16.0], state))
-        controls.append(meter(f"meter{tag}", [776.0 + dx, 40.0, 42.0, 126.0], state))
+        # The presets in a column of their own, then the meter at the right edge.
+        controls.append(separator(f"sep_presets{tag}", 777.0 + dx, 24.0, 140.0, state))
+        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [782.0 + dx, 24.0, 44.0, 18.0], state))
+        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [782.0 + dx, 46.0, 44.0, 18.0], state))
+        controls.append(meter(f"meter{tag}", [828.0 + dx, 4.0, 40.0, 162.0], state))
     # Handles last, so they are over everything they cross.
     controls += handles("", sx, sy, sw, sh, closed())
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
