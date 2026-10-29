@@ -605,6 +605,57 @@ struct Smoothed {
     amount: f64,
 }
 
+/// The Simplify slider kept for one range: how far it is, and the lane's points as they were
+/// before it began, drawn faintly while the range's menu is open so the new line can be compared.
+#[derive(Debug, Clone, PartialEq)]
+struct Simplified {
+    of: String,
+    track: TrackId,
+    key: LaneKey,
+    amount: f64,
+    original: Vec<AutomationPoint>,
+    /// The points inside the range before, for the count the menu shows.
+    before: usize,
+}
+
+/// The shapes' Rate: how long one cycle lasts, as a label and in beats (bars from the meter's
+/// bar). 1/4 is a quarter note, one beat in 4/4.
+const RATES: [(&str, Rate); 8] = [
+    ("4 bars", Rate::Bars(4.0)),
+    ("2 bars", Rate::Bars(2.0)),
+    ("1 bar", Rate::Bars(1.0)),
+    ("1/2", Rate::Beats(2.0)),
+    ("1/4", Rate::Beats(1.0)),
+    ("1/8", Rate::Beats(0.5)),
+    ("1/16", Rate::Beats(0.25)),
+    ("1/32", Rate::Beats(0.125)),
+];
+/// The Rate a shape takes until another is chosen: 1/4.
+const DEFAULT_RATE: usize = 4;
+
+/// One cycle's length: in bars of the meter, or in beats (quarter notes).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Rate {
+    Bars(f64),
+    Beats(f64),
+}
+
+impl Rate {
+    fn beats(self, bar_beats: f64) -> f64 {
+        match self {
+            Self::Bars(bars) => bars * bar_beats,
+            Self::Beats(beats) => beats,
+        }
+    }
+}
+
+/// How far from the old line Simplify at `amount` (0 to 1) lets the new one go, as a share of the
+/// lane's height: nothing at 0, a fifth of the lane at 1, finer near 0 where small steps matter.
+fn simplify_tolerance(amount: f64) -> f64 {
+    let amount = amount.clamp(0.0, 1.0);
+    0.2 * amount * amount
+}
+
 /// A segment's curve being bent: the segment's first point, the drag along the control points'
 /// paths, how far the pointer has moved and the curve that gives.
 #[derive(Debug, Clone, PartialEq)]
@@ -680,15 +731,17 @@ pub struct LanesState {
     /// The lane clicked last, which Ctrl+V pastes copied automation onto at the play position;
     /// a clip or a track header clicked since lets go of it.
     pub last_lane: Option<(TrackId, LaneKey)>,
-    /// The range menu's Intensity (0 to 1; `None` for the whole travel) and Rate (cycles a bar;
-    /// `None` for one a beat), the window's choices.
+    /// The range menu's Depth (0 to 1; `None` for the whole travel) and Rate (an index into
+    /// [`RATES`]; `None` for 1/4), the window's choices.
     shape_depth: Option<f64>,
-    shape_rate: Option<f64>,
+    shape_rate: Option<usize>,
     /// Scale as the menu shows it for what it scales (a range or picked points, by a key): the
     /// value shown and the value the points are at now, from where the scaling began.
     stretch: Option<Stretch>,
     /// Smooth as the range menu shows it, and the smoothing it put in last.
     smooth: Option<Smoothed>,
+    /// Simplify as the range menu shows it, with the line from before it.
+    simplify: Option<Simplified>,
     /// When a dragged menu slider last put its value in (the window's clock, in seconds).
     live_at: f64,
     /// The shape put in a range last (track, lane, start, end, shape), which the menu's sliders
@@ -1561,7 +1614,8 @@ fn lane(
                 let center =
                     suhina_engine::model::automation::value_at(&level, start, param.scale.stepped(), &param.scale)
                         .map_or(0.5, |v| param.scale.position(v));
-                range_menu(ui, state, track, key, (start, end), center, geometry.grid.bar_beats, actions);
+                let lane = (&param.points[..], &level[..]);
+                range_menu(ui, state, track, key, (start, end), center, geometry.grid.bar_beats, lane, actions);
             }
             // Elsewhere nothing is drawn: the shape is the one the next points' segments take,
             // and a click on the chosen one goes back to straight lines.
@@ -1636,6 +1690,12 @@ fn lane(
             &format!("automation lane {} {}/{:?}", track.0, key.param, key.device),
             format!("{drew}, {} points", param.points.len()),
         );
+    }
+    if let Some(simplified) = state.simplify.as_ref().filter(|s| s.track == track && &s.key == key && s.amount > 0.0) {
+        let before = envelope(&simplified.original, &param.scale, plot, geometry);
+        if before.len() > 1 {
+            lane_painter.add(Shape::line(before, Stroke::new(1.0, ink.gamma_multiply(LEVEL_ALPHA))));
+        }
     }
     if line.len() > 1 {
         lane_painter.add(Shape::line(line, Stroke::new(1.5, ink)));
@@ -1911,9 +1971,10 @@ fn lane(
     }
 }
 
-/// The menu of a painted range: how many bars it holds; the shapes, with Depth and Cycles per bar
-/// for them (a change puts the shape put in last in again, live while a slider is dragged); and
-/// for whatever points the range holds, Scale, Smooth (rounds corners and jumps) and Fewer points.
+/// The menu of a painted range: how many bars it holds; the shapes, with Depth and Rate for them
+/// (a change puts the shape put in last in again, live while a slider is dragged); and for
+/// whatever points the range holds, Scale, Smooth (rounds corners and jumps) and Simplify (fewer
+/// points, the old line drawn faintly to compare).
 #[allow(clippy::too_many_arguments)]
 fn range_menu(
     ui: &mut Ui,
@@ -1923,6 +1984,7 @@ fn range_menu(
     (start, end): (f64, f64),
     center: f64,
     bar_beats: f64,
+    (points, level): (&[AutomationPoint], &[AutomationPoint]),
     actions: &mut Vec<Action>,
 ) {
     let bar = bar_beats.max(1e-3);
@@ -1941,10 +2003,10 @@ fn range_menu(
         params
     };
     let put = |state: &mut LanesState, shape: &'static str, actions: &mut Vec<Action>| {
-        let rate = state.shape_rate.unwrap_or(bar.round().max(1.0));
+        let rate = RATES.get(state.shape_rate.unwrap_or(DEFAULT_RATE)).map_or(1.0, |(_, r)| r.beats(bar));
         let mut params = ranged();
         params["shape"] = json!(shape);
-        params["cycles"] = json!(((rate * bars).round() as usize).clamp(1, 512));
+        params["cycles"] = json!((((end - start) / rate.max(1e-6)).round() as usize).clamp(1, 512));
         params["depth"] = json!(state.shape_depth.unwrap_or(1.0));
         // Put in again in the same range, the shape swings around the place the first one did,
         // and replaces it when nothing else changed since (`continue` with `replace`), so the
@@ -1958,6 +2020,7 @@ fn range_menu(
         actions.push(Action::new("automation.insertShape", params));
         state.selection = None;
         state.smooth = None;
+        state.simplify = None;
         state.last_shape = Some(LastShape { track, key: key.clone(), start, end, shape, center });
     };
     if let Some(shape) = shape_menu(ui, "Insert shape", None) {
@@ -1973,24 +2036,41 @@ fn range_menu(
     if depth_slider.changed() {
         state.shape_depth = Some(depth / 100.0);
     }
-    let mut rate = state.shape_rate.unwrap_or(bar.round().max(1.0));
-    let rate_slider = ui.add(egui::Slider::new(&mut rate, 1.0..=32.0).text("Cycles per bar").integer()).on_hover_text(
-        "How many times the inserted shape repeats in each bar: 4 is once a beat in 4/4. \
-             Changing it puts the shape in again.",
-    );
+    let mut rate = state.shape_rate.unwrap_or(DEFAULT_RATE);
+    let rate_slider = ui
+        .add(
+            egui::Slider::new(&mut rate, 0..=RATES.len() - 1)
+                .text("Rate")
+                .custom_formatter(|v, _| RATES.get(v as usize).map_or_else(String::new, |(l, _)| (*l).to_owned()))
+                .custom_parser(|text| {
+                    RATES.iter().position(|(l, _)| l.eq_ignore_ascii_case(text.trim())).map(|i| i as f64)
+                }),
+        )
+        .on_hover_text(
+            "How long one cycle of a repeating shape lasts: 1 bar is once a bar, 1/4 once a quarter note \
+             (a beat in 4/4), 1/16 four times a beat. Changing it puts the shape in again.",
+        );
     if rate_slider.changed() {
         state.shape_rate = Some(rate);
     }
     let depth_due = live(ui, state, &depth_slider);
     let rate_due = live(ui, state, &rate_slider);
-    if (depth_due || rate_due)
-        && let Some(shape) = state
-            .last_shape
-            .as_ref()
-            .filter(|l| l.track == track && &l.key == key && l.start == start && l.end == end)
-            .map(|l| l.shape)
-    {
-        put(state, shape, actions);
+    let inserted = state
+        .last_shape
+        .as_ref()
+        .filter(|l| l.track == track && &l.key == key && l.start == start && l.end == end)
+        .map(|l| l.shape);
+    match inserted {
+        Some(shape) if depth_due || rate_due => put(state, shape, actions),
+        Some(_) => {}
+        // Nothing of this menu's in the range to change: the two set the next shape.
+        None => {
+            ui.label(
+                egui::RichText::new("Depth and Rate apply to the next shape inserted here")
+                    .color(theme::text_hint())
+                    .size(theme::TEXT_SMALL),
+            );
+        }
     }
     ui.separator();
     ui.label(egui::RichText::new("Points in the range").color(theme::text_hint()).size(theme::TEXT_SMALL));
@@ -2000,6 +2080,9 @@ fn range_menu(
         params["factor"] = json!(factor);
         params["continue"] = json!(joined);
         actions.push(Action::new("automation.scaleRange", params));
+        // The shape is scaled now: Depth and Rate would put the unscaled one back.
+        state.last_shape = None;
+        state.simplify = None;
     }
     let kept = state.smooth.clone().filter(|s| s.of == of);
     let mut amount = kept.as_ref().map_or(0.0, |s| s.amount) * 100.0;
@@ -2010,7 +2093,7 @@ fn range_menu(
              to the next, a triangle's tips turn round. 0 % leaves them sharp.",
         );
     let amount = amount / 100.0;
-    state.smooth = Some(Smoothed { of, amount });
+    state.smooth = Some(Smoothed { of: of.clone(), amount });
     if live(ui, state, &smooth_slider) {
         // Each amount replaces the one before in this range's step (`continue` with `replace`),
         // so it rounds the line as it was; a line it does not change (a sine's) stays as it is.
@@ -2020,16 +2103,40 @@ fn range_menu(
         params["replace"] = json!(kept.is_some());
         actions.push(Action::new("automation.smooth", params));
         state.selection = None;
+        state.last_shape = None;
+        state.simplify = None;
     }
-    if ui
-        .button("Fewer points")
-        .on_hover_text("Removes the points the line does not need, bending the rest to keep its shape")
-        .clicked()
-    {
-        actions.push(Action::new("automation.simplify", ranged()));
+    // Simplify: fewer points, the rest bent to keep the line's shape, as far from it as the slider
+    // lets them; the line from before is drawn faintly while the menu is open.
+    let inside = |points: &[AutomationPoint]| points.iter().filter(|p| p.beat >= start && p.beat <= end).count();
+    let kept = state.simplify.clone().filter(|s| s.of == of);
+    let mut amount = kept.as_ref().map_or(0.0, |s| s.amount) * 100.0;
+    let now = inside(points);
+    let before = kept.as_ref().map_or(now, |s| s.before);
+    let simplify_slider = ui
+        .add(egui::Slider::new(&mut amount, 0.0..=100.0).text("Simplify").suffix(" %").fixed_decimals(0))
+        .on_hover_text(
+            "Removes the points the line does not need, bending the rest to keep its shape: further right \
+             lets the new line stray further from the old one, which shows faintly while this menu is open.",
+        );
+    ui.label(
+        egui::RichText::new(format!("{before} \u{2192} {now} points"))
+            .color(theme::text_hint())
+            .size(theme::TEXT_SMALL),
+    );
+    let amount = amount / 100.0;
+    let original = kept.as_ref().map_or_else(|| level.to_vec(), |s| s.original.clone());
+    state.simplify = Some(Simplified { of, track, key: key.clone(), amount, original, before });
+    if live(ui, state, &simplify_slider) {
+        // Each amount replaces the one before in this range's step, so it thins the line as it was.
+        let mut params = ranged();
+        params["tolerance"] = json!(simplify_tolerance(amount));
+        params["continue"] = json!(kept.is_some());
+        params["replace"] = json!(kept.is_some());
+        actions.push(Action::new("automation.simplify", params));
         state.selection = None;
         state.smooth = None;
-        ui.close();
+        state.last_shape = None;
     }
 }
 

@@ -234,6 +234,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "how far from the old line the new one may go, as a share of the lane's height, 0 to 1 (default 0.02)",
             ),
+            CONTINUE,
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: crate::automation_range::simplify,
