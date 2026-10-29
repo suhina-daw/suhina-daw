@@ -4,7 +4,8 @@ name: Generated docs
 #   - docs/commands.md, from the command registry;
 #   - last_verified in the front matter of every document changed since it was last set
 #     (scripts/docs.py stamp);
-#   - docs/features.md and the two feature figures, from docs/features.json (scripts/features.py);
+#   - docs/features.md and the two feature figures, from docs/features.json and the issues of each
+#     `area:` label (scripts/features.py); also once a day, so closed issues show without a merge;
 #   - docs/INDEX.md, from the documents' front matter.
 # Pull requests leave all of them alone, so two pull requests never conflict on them (issue #462).
 #
@@ -23,10 +24,15 @@ name: Generated docs
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  # scripts/features.py reads the issues and the open pull requests.
+  issues: read
+  pull-requests: read
 
 # One run at a time, in order; a run that finds main moved on leaves the work to the newer run.
 concurrency:
@@ -54,6 +60,8 @@ jobs:
       - name: last_verified of the documents changed on main
         run: python3 scripts/docs.py stamp
       - name: The feature list and figures
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/features.py
       - name: docs/INDEX.md
         run: python3 scripts/docs.py index --write

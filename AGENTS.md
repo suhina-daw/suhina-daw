@@ -211,8 +211,8 @@ Work is tracked in the GitHub project **Suhina**
 testing and follow-ups a change leaves open go there as items, written in English, with a
 Status, a Priority (P0 to P2) and a Phase (the ROADMAP milestone). A feature or a piece of an epic
 gets an issue, so the pull request can say `Closes #N`; a bug fixed at once
-or a small change goes straight to a pull request that says what it fixes. An issue gets a type label and
-area labels (`CONTRIBUTING.md` › Issues lists them); a larger piece split into issues is an
+or a small change goes straight to a pull request that says what it fixes. An issue gets a type label,
+area labels and one `area:` label for the area of Suhina it belongs to (`CONTRIBUTING.md` › Issues lists them); a larger piece split into issues is an
 `epic`, and repository, build and release work is a `chore`. Items imported from the earlier
 board keep their old key in the title (`(LOOP-27)`); a pull request for one names that key.
 Before starting a feature or a piece of an epic, claim it the way [`CONTRIBUTING.md`](CONTRIBUTING.md) › *Working on an issue*

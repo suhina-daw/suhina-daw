@@ -1,184 +1,206 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="782" height="678" viewBox="0 0 782 678" role="img" aria-label="Suhina features by area: done, partly done and planned">
-<rect width="782" height="678" rx="8" fill="#fcfcfb"/>
-<text x="16" y="26" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#0b0b0b">What Suhina does today, by area</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="792" height="678" viewBox="0 0 792 678" role="img" aria-label="Suhina by area: done, in progress and planned">
+<rect width="792" height="678" rx="8" fill="#fcfcfb"/>
+<text x="16" y="26" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#0b0b0b">Suhina by area: done, in progress, planned</text>
 <rect x="16" y="38" width="12" height="12" rx="3" fill="#184f95"/>
 <text x="34" y="48" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">Done</text>
 <rect x="78" y="38" width="12" height="12" rx="3" fill="#3987e5"/>
-<text x="96" y="48" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">Partly done</text>
+<text x="96" y="48" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">In progress</text>
 <rect x="186" y="38" width="12" height="12" rx="3" fill="#86b6ef"/>
 <text x="204" y="48" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">Planned</text>
-<text x="236" y="76" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#0b0b0b">All areas</text>
-<clipPath id="bar0"><rect x="246" y="64" width="330" height="16" rx="4"/></clipPath>
+<text x="206" y="76" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#0b0b0b">All areas</text>
+<clipPath id="bar0"><rect x="216" y="64" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar0)">
-<rect x="246.0" y="64" width="214.8" height="16" fill="#184f95"><title>All areas: 125 of 192 done</title></rect>
-<rect x="459.8" y="64" width="2" height="16" fill="#fcfcfb"/>
-<rect x="460.8" y="64" width="12.0" height="16" fill="#3987e5"><title>All areas: 7 of 192 partly done</title></rect>
-<rect x="471.9" y="64" width="2" height="16" fill="#fcfcfb"/>
-<rect x="472.9" y="64" width="103.1" height="16" fill="#86b6ef"><title>All areas: 60 of 192 planned</title></rect>
+<rect x="216.0" y="64" width="141.8" height="16" fill="#184f95"><title>All areas: 198 of 419 done</title></rect>
+<rect x="356.8" y="64" width="2" height="16" fill="#fcfcfb"/>
+<rect x="357.8" y="64" width="21.5" height="16" fill="#3987e5"><title>All areas: 30 of 419 in progress</title></rect>
+<rect x="378.2" y="64" width="2" height="16" fill="#fcfcfb"/>
+<rect x="379.2" y="64" width="136.8" height="16" fill="#86b6ef"><title>All areas: 191 of 419 planned</title></rect>
 </g>
-<text x="586" y="76" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#52514e">125 done · 7 partly · 60 planned</text>
-<text x="236" y="114" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Projects and files</text>
-<clipPath id="bar1"><rect x="246" y="102" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="76" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" fill="#52514e">198 done · 30 in progress · 191 planned · 57 bugs</text>
+<text x="206" y="114" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Projects and files</text>
+<clipPath id="bar1"><rect x="216" y="102" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar1)">
-<rect x="246.0" y="102" width="212.1" height="16" fill="#184f95"><title>Projects and files: 9 of 14 done</title></rect>
-<rect x="457.1" y="102" width="2" height="16" fill="#fcfcfb"/>
-<rect x="458.1" y="102" width="117.9" height="16" fill="#86b6ef"><title>Projects and files: 5 of 14 planned</title></rect>
+<rect x="216.0" y="102" width="190.0" height="16" fill="#184f95"><title>Projects and files: 19 of 30 done</title></rect>
+<rect x="405.0" y="102" width="2" height="16" fill="#fcfcfb"/>
+<rect x="406.0" y="102" width="110.0" height="16" fill="#86b6ef"><title>Projects and files: 11 of 30 planned</title></rect>
 </g>
-<text x="586" y="114" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">9 done · 5 planned</text>
-<text x="236" y="142" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Session view and launching</text>
-<clipPath id="bar2"><rect x="246" y="130" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="114" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">19 done · 11 planned · 1 bug</text>
+<text x="206" y="142" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Launcher</text>
+<clipPath id="bar2"><rect x="216" y="130" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar2)">
-<rect x="246.0" y="130" width="304.6" height="16" fill="#184f95"><title>Session view and launching: 12 of 13 done</title></rect>
-<rect x="549.6" y="130" width="2" height="16" fill="#fcfcfb"/>
-<rect x="550.6" y="130" width="25.4" height="16" fill="#86b6ef"><title>Session view and launching: 1 of 13 planned</title></rect>
+<rect x="216.0" y="130" width="262.5" height="16" fill="#184f95"><title>Launcher: 14 of 16 done</title></rect>
+<rect x="477.5" y="130" width="2" height="16" fill="#fcfcfb"/>
+<rect x="478.5" y="130" width="18.8" height="16" fill="#3987e5"><title>Launcher: 1 of 16 in progress</title></rect>
+<rect x="496.2" y="130" width="2" height="16" fill="#fcfcfb"/>
+<rect x="497.2" y="130" width="18.8" height="16" fill="#86b6ef"><title>Launcher: 1 of 16 planned</title></rect>
 </g>
-<text x="586" y="142" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">12 done · 1 planned</text>
-<text x="236" y="170" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Arrangement view</text>
-<clipPath id="bar3"><rect x="246" y="158" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="142" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">14 done · 1 in progress · 1 planned · 1 bug</text>
+<text x="206" y="170" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Arrangement view</text>
+<clipPath id="bar3"><rect x="216" y="158" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar3)">
-<rect x="246.0" y="158" width="253.8" height="16" fill="#184f95"><title>Arrangement view: 10 of 13 done</title></rect>
-<rect x="498.8" y="158" width="2" height="16" fill="#fcfcfb"/>
-<rect x="499.8" y="158" width="76.2" height="16" fill="#86b6ef"><title>Arrangement view: 3 of 13 planned</title></rect>
+<rect x="216.0" y="158" width="135.5" height="16" fill="#184f95"><title>Arrangement view: 14 of 31 done</title></rect>
+<rect x="350.5" y="158" width="2" height="16" fill="#fcfcfb"/>
+<rect x="351.5" y="158" width="77.4" height="16" fill="#3987e5"><title>Arrangement view: 8 of 31 in progress</title></rect>
+<rect x="427.9" y="158" width="2" height="16" fill="#fcfcfb"/>
+<rect x="428.9" y="158" width="87.1" height="16" fill="#86b6ef"><title>Arrangement view: 9 of 31 planned</title></rect>
 </g>
-<text x="586" y="170" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">10 done · 3 planned</text>
-<text x="236" y="198" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Clips and the clip editor</text>
-<clipPath id="bar4"><rect x="246" y="186" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="170" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">14 done · 8 in progress · 9 planned · 16 bugs</text>
+<text x="206" y="198" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Clips and the clip editor</text>
+<clipPath id="bar4"><rect x="216" y="186" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar4)">
-<rect x="246.0" y="186" width="188.6" height="16" fill="#184f95"><title>Clips and the clip editor: 4 of 7 done</title></rect>
-<rect x="433.6" y="186" width="2" height="16" fill="#fcfcfb"/>
-<rect x="434.6" y="186" width="94.3" height="16" fill="#3987e5"><title>Clips and the clip editor: 2 of 7 partly done</title></rect>
-<rect x="527.9" y="186" width="2" height="16" fill="#fcfcfb"/>
-<rect x="528.9" y="186" width="47.1" height="16" fill="#86b6ef"><title>Clips and the clip editor: 1 of 7 planned</title></rect>
+<rect x="216.0" y="186" width="158.8" height="16" fill="#184f95"><title>Clips and the clip editor: 9 of 17 done</title></rect>
+<rect x="373.8" y="186" width="2" height="16" fill="#fcfcfb"/>
+<rect x="374.8" y="186" width="17.6" height="16" fill="#3987e5"><title>Clips and the clip editor: 1 of 17 in progress</title></rect>
+<rect x="391.5" y="186" width="2" height="16" fill="#fcfcfb"/>
+<rect x="392.5" y="186" width="123.5" height="16" fill="#86b6ef"><title>Clips and the clip editor: 7 of 17 planned</title></rect>
 </g>
-<text x="586" y="198" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">4 done · 2 partly · 1 planned</text>
-<text x="236" y="226" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio, tempo and warping</text>
-<clipPath id="bar5"><rect x="246" y="214" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="198" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">9 done · 1 in progress · 7 planned · 3 bugs</text>
+<text x="206" y="226" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio, tempo and warping</text>
+<clipPath id="bar5"><rect x="216" y="214" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar5)">
-<rect x="246.0" y="214" width="183.3" height="16" fill="#184f95"><title>Audio, tempo and warping: 5 of 9 done</title></rect>
-<rect x="428.3" y="214" width="2" height="16" fill="#fcfcfb"/>
-<rect x="429.3" y="214" width="36.7" height="16" fill="#3987e5"><title>Audio, tempo and warping: 1 of 9 partly done</title></rect>
-<rect x="465.0" y="214" width="2" height="16" fill="#fcfcfb"/>
-<rect x="466.0" y="214" width="110.0" height="16" fill="#86b6ef"><title>Audio, tempo and warping: 3 of 9 planned</title></rect>
+<rect x="216.0" y="214" width="175.0" height="16" fill="#184f95"><title>Audio, tempo and warping: 7 of 12 done</title></rect>
+<rect x="390.0" y="214" width="2" height="16" fill="#fcfcfb"/>
+<rect x="391.0" y="214" width="25.0" height="16" fill="#3987e5"><title>Audio, tempo and warping: 1 of 12 in progress</title></rect>
+<rect x="415.0" y="214" width="2" height="16" fill="#fcfcfb"/>
+<rect x="416.0" y="214" width="100.0" height="16" fill="#86b6ef"><title>Audio, tempo and warping: 4 of 12 planned</title></rect>
 </g>
-<text x="586" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done · 1 partly · 3 planned</text>
-<text x="236" y="254" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">MIDI editing</text>
-<clipPath id="bar6"><rect x="246" y="242" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">7 done · 1 in progress · 4 planned · 2 bugs</text>
+<text x="206" y="254" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">MIDI editing</text>
+<clipPath id="bar6"><rect x="216" y="242" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar6)">
-<rect x="246.0" y="242" width="165.0" height="16" fill="#184f95"><title>MIDI editing: 7 of 14 done</title></rect>
-<rect x="410.0" y="242" width="2" height="16" fill="#fcfcfb"/>
-<rect x="411.0" y="242" width="23.6" height="16" fill="#3987e5"><title>MIDI editing: 1 of 14 partly done</title></rect>
-<rect x="433.6" y="242" width="2" height="16" fill="#fcfcfb"/>
-<rect x="434.6" y="242" width="141.4" height="16" fill="#86b6ef"><title>MIDI editing: 6 of 14 planned</title></rect>
+<rect x="216.0" y="242" width="156.0" height="16" fill="#184f95"><title>MIDI editing: 13 of 25 done</title></rect>
+<rect x="371.0" y="242" width="2" height="16" fill="#fcfcfb"/>
+<rect x="372.0" y="242" width="12.0" height="16" fill="#3987e5"><title>MIDI editing: 1 of 25 in progress</title></rect>
+<rect x="383.0" y="242" width="2" height="16" fill="#fcfcfb"/>
+<rect x="384.0" y="242" width="132.0" height="16" fill="#86b6ef"><title>MIDI editing: 11 of 25 planned</title></rect>
 </g>
-<text x="586" y="254" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">7 done · 1 partly · 6 planned</text>
-<text x="236" y="282" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Recording and inputs</text>
-<clipPath id="bar7"><rect x="246" y="270" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="254" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">13 done · 1 in progress · 11 planned · 2 bugs</text>
+<text x="206" y="282" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Recording and inputs</text>
+<clipPath id="bar7"><rect x="216" y="270" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar7)">
-<rect x="246.0" y="270" width="228.5" height="16" fill="#184f95"><title>Recording and inputs: 9 of 13 done</title></rect>
-<rect x="473.5" y="270" width="2" height="16" fill="#fcfcfb"/>
-<rect x="474.5" y="270" width="101.5" height="16" fill="#86b6ef"><title>Recording and inputs: 4 of 13 planned</title></rect>
+<rect x="216.0" y="270" width="187.5" height="16" fill="#184f95"><title>Recording and inputs: 10 of 16 done</title></rect>
+<rect x="402.5" y="270" width="2" height="16" fill="#fcfcfb"/>
+<rect x="403.5" y="270" width="37.5" height="16" fill="#3987e5"><title>Recording and inputs: 2 of 16 in progress</title></rect>
+<rect x="440.0" y="270" width="2" height="16" fill="#fcfcfb"/>
+<rect x="441.0" y="270" width="75.0" height="16" fill="#86b6ef"><title>Recording and inputs: 4 of 16 planned</title></rect>
 </g>
-<text x="586" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">9 done · 4 planned</text>
-<text x="236" y="310" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Automation</text>
-<clipPath id="bar8"><rect x="246" y="298" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="282" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">10 done · 2 in progress · 4 planned · 2 bugs</text>
+<text x="206" y="310" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Automation</text>
+<clipPath id="bar8"><rect x="216" y="298" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar8)">
-<rect x="246.0" y="298" width="235.7" height="16" fill="#184f95"><title>Automation: 5 of 7 done</title></rect>
-<rect x="480.7" y="298" width="2" height="16" fill="#fcfcfb"/>
-<rect x="481.7" y="298" width="94.3" height="16" fill="#86b6ef"><title>Automation: 2 of 7 planned</title></rect>
+<rect x="216.0" y="298" width="100.0" height="16" fill="#184f95"><title>Automation: 3 of 9 done</title></rect>
+<rect x="315.0" y="298" width="2" height="16" fill="#fcfcfb"/>
+<rect x="316.0" y="298" width="66.7" height="16" fill="#3987e5"><title>Automation: 2 of 9 in progress</title></rect>
+<rect x="381.7" y="298" width="2" height="16" fill="#fcfcfb"/>
+<rect x="382.7" y="298" width="133.3" height="16" fill="#86b6ef"><title>Automation: 4 of 9 planned</title></rect>
 </g>
-<text x="586" y="310" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done · 2 planned</text>
-<text x="236" y="338" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Mixing and routing</text>
-<clipPath id="bar9"><rect x="246" y="326" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="310" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">3 done · 2 in progress · 4 planned · 2 bugs</text>
+<text x="206" y="338" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Mixing and routing</text>
+<clipPath id="bar9"><rect x="216" y="326" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar9)">
-<rect x="246.0" y="326" width="176.0" height="16" fill="#184f95"><title>Mixing and routing: 8 of 15 done</title></rect>
-<rect x="421.0" y="326" width="2" height="16" fill="#fcfcfb"/>
-<rect x="422.0" y="326" width="154.0" height="16" fill="#86b6ef"><title>Mixing and routing: 7 of 15 planned</title></rect>
+<rect x="216.0" y="326" width="142.9" height="16" fill="#184f95"><title>Mixing and routing: 10 of 21 done</title></rect>
+<rect x="357.9" y="326" width="2" height="16" fill="#fcfcfb"/>
+<rect x="358.9" y="326" width="42.9" height="16" fill="#3987e5"><title>Mixing and routing: 3 of 21 in progress</title></rect>
+<rect x="400.7" y="326" width="2" height="16" fill="#fcfcfb"/>
+<rect x="401.7" y="326" width="114.3" height="16" fill="#86b6ef"><title>Mixing and routing: 8 of 21 planned</title></rect>
 </g>
-<text x="586" y="338" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">8 done · 7 planned</text>
-<text x="236" y="366" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Devices as a system</text>
-<clipPath id="bar10"><rect x="246" y="354" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="338" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">10 done · 3 in progress · 8 planned · 4 bugs</text>
+<text x="206" y="366" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Devices as a system</text>
+<clipPath id="bar10"><rect x="216" y="354" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar10)">
-<rect x="246.0" y="354" width="198.0" height="16" fill="#184f95"><title>Devices as a system: 6 of 10 done</title></rect>
-<rect x="443.0" y="354" width="2" height="16" fill="#fcfcfb"/>
-<rect x="444.0" y="354" width="132.0" height="16" fill="#86b6ef"><title>Devices as a system: 4 of 10 planned</title></rect>
+<rect x="216.0" y="354" width="120.0" height="16" fill="#184f95"><title>Devices as a system: 14 of 35 done</title></rect>
+<rect x="335.0" y="354" width="2" height="16" fill="#fcfcfb"/>
+<rect x="336.0" y="354" width="8.6" height="16" fill="#3987e5"><title>Devices as a system: 1 of 35 in progress</title></rect>
+<rect x="343.6" y="354" width="2" height="16" fill="#fcfcfb"/>
+<rect x="344.6" y="354" width="171.4" height="16" fill="#86b6ef"><title>Devices as a system: 20 of 35 planned</title></rect>
 </g>
-<text x="586" y="366" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">6 done · 4 planned</text>
-<text x="236" y="394" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Built-in effects</text>
-<clipPath id="bar11"><rect x="246" y="382" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="366" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">14 done · 1 in progress · 20 planned · 3 bugs</text>
+<text x="206" y="394" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Built-in effects</text>
+<clipPath id="bar11"><rect x="216" y="382" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar11)">
-<rect x="246.0" y="382" width="191.1" height="16" fill="#184f95"><title>Built-in effects: 11 of 19 done</title></rect>
-<rect x="436.1" y="382" width="2" height="16" fill="#fcfcfb"/>
-<rect x="437.1" y="382" width="17.4" height="16" fill="#3987e5"><title>Built-in effects: 1 of 19 partly done</title></rect>
-<rect x="453.4" y="382" width="2" height="16" fill="#fcfcfb"/>
-<rect x="454.4" y="382" width="121.6" height="16" fill="#86b6ef"><title>Built-in effects: 7 of 19 planned</title></rect>
+<rect x="216.0" y="382" width="69.2" height="16" fill="#184f95"><title>Built-in effects: 9 of 39 done</title></rect>
+<rect x="284.2" y="382" width="2" height="16" fill="#fcfcfb"/>
+<rect x="285.2" y="382" width="23.1" height="16" fill="#3987e5"><title>Built-in effects: 3 of 39 in progress</title></rect>
+<rect x="307.3" y="382" width="2" height="16" fill="#fcfcfb"/>
+<rect x="308.3" y="382" width="207.7" height="16" fill="#86b6ef"><title>Built-in effects: 27 of 39 planned</title></rect>
 </g>
-<text x="586" y="394" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">11 done · 1 partly · 7 planned</text>
-<text x="236" y="422" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Instruments and MIDI effects</text>
-<clipPath id="bar12"><rect x="246" y="410" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="394" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">9 done · 3 in progress · 27 planned</text>
+<text x="206" y="422" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Instruments and MIDI effects</text>
+<clipPath id="bar12"><rect x="216" y="410" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar12)">
-<rect x="246.0" y="410" width="120.0" height="16" fill="#184f95"><title>Instruments and MIDI effects: 4 of 11 done</title></rect>
-<rect x="365.0" y="410" width="2" height="16" fill="#fcfcfb"/>
-<rect x="366.0" y="410" width="210.0" height="16" fill="#86b6ef"><title>Instruments and MIDI effects: 7 of 11 planned</title></rect>
+<rect x="216.0" y="410" width="57.7" height="16" fill="#184f95"><title>Instruments and MIDI effects: 5 of 26 done</title></rect>
+<rect x="272.7" y="410" width="2" height="16" fill="#fcfcfb"/>
+<rect x="273.7" y="410" width="11.5" height="16" fill="#3987e5"><title>Instruments and MIDI effects: 1 of 26 in progress</title></rect>
+<rect x="284.2" y="410" width="2" height="16" fill="#fcfcfb"/>
+<rect x="285.2" y="410" width="230.8" height="16" fill="#86b6ef"><title>Instruments and MIDI effects: 20 of 26 planned</title></rect>
 </g>
-<text x="586" y="422" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">4 done · 7 planned</text>
-<text x="236" y="450" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Plug-ins</text>
-<clipPath id="bar13"><rect x="246" y="438" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="422" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done · 1 in progress · 20 planned</text>
+<text x="206" y="450" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Plug-ins</text>
+<clipPath id="bar13"><rect x="216" y="438" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar13)">
-<rect x="246.0" y="438" width="297.0" height="16" fill="#184f95"><title>Plug-ins: 9 of 10 done</title></rect>
-<rect x="542.0" y="438" width="2" height="16" fill="#fcfcfb"/>
-<rect x="543.0" y="438" width="33.0" height="16" fill="#3987e5"><title>Plug-ins: 1 of 10 partly done</title></rect>
+<rect x="216.0" y="438" width="141.2" height="16" fill="#184f95"><title>Plug-ins: 24 of 51 done</title></rect>
+<rect x="356.2" y="438" width="2" height="16" fill="#fcfcfb"/>
+<rect x="357.2" y="438" width="17.6" height="16" fill="#3987e5"><title>Plug-ins: 3 of 51 in progress</title></rect>
+<rect x="373.8" y="438" width="2" height="16" fill="#fcfcfb"/>
+<rect x="374.8" y="438" width="141.2" height="16" fill="#86b6ef"><title>Plug-ins: 24 of 51 planned</title></rect>
 </g>
-<text x="586" y="450" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">9 done · 1 partly</text>
-<text x="236" y="478" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Browser and library</text>
-<clipPath id="bar14"><rect x="246" y="466" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="450" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">24 done · 3 in progress · 24 planned · 8 bugs</text>
+<text x="206" y="478" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Browser and library</text>
+<clipPath id="bar14"><rect x="216" y="466" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar14)">
-<rect x="246.0" y="466" width="288.8" height="16" fill="#184f95"><title>Browser and library: 7 of 8 done</title></rect>
-<rect x="533.8" y="466" width="2" height="16" fill="#fcfcfb"/>
-<rect x="534.8" y="466" width="41.2" height="16" fill="#86b6ef"><title>Browser and library: 1 of 8 planned</title></rect>
+<rect x="216.0" y="466" width="173.7" height="16" fill="#184f95"><title>Browser and library: 11 of 19 done</title></rect>
+<rect x="388.7" y="466" width="2" height="16" fill="#fcfcfb"/>
+<rect x="389.7" y="466" width="31.6" height="16" fill="#3987e5"><title>Browser and library: 2 of 19 in progress</title></rect>
+<rect x="420.3" y="466" width="2" height="16" fill="#fcfcfb"/>
+<rect x="421.3" y="466" width="94.7" height="16" fill="#86b6ef"><title>Browser and library: 6 of 19 planned</title></rect>
 </g>
-<text x="586" y="478" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">7 done · 1 planned</text>
-<text x="236" y="506" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Export and rendering</text>
-<clipPath id="bar15"><rect x="246" y="494" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="478" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">11 done · 2 in progress · 6 planned · 7 bugs</text>
+<text x="206" y="506" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Export and rendering</text>
+<clipPath id="bar15"><rect x="216" y="494" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar15)">
-<rect x="246.0" y="494" width="247.5" height="16" fill="#184f95"><title>Export and rendering: 3 of 4 done</title></rect>
-<rect x="492.5" y="494" width="2" height="16" fill="#fcfcfb"/>
-<rect x="493.5" y="494" width="82.5" height="16" fill="#86b6ef"><title>Export and rendering: 1 of 4 planned</title></rect>
+<rect x="216.0" y="494" width="240.0" height="16" fill="#184f95"><title>Export and rendering: 4 of 5 done</title></rect>
+<rect x="455.0" y="494" width="2" height="16" fill="#fcfcfb"/>
+<rect x="456.0" y="494" width="60.0" height="16" fill="#86b6ef"><title>Export and rendering: 1 of 5 planned</title></rect>
 </g>
-<text x="586" y="506" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">3 done · 1 planned</text>
-<text x="236" y="534" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Control and sync</text>
-<clipPath id="bar16"><rect x="246" y="522" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="506" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">4 done · 1 planned</text>
+<text x="206" y="534" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Control and sync</text>
+<clipPath id="bar16"><rect x="216" y="522" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar16)">
-<rect x="246.0" y="522" width="82.5" height="16" fill="#184f95"><title>Control and sync: 1 of 4 done</title></rect>
-<rect x="327.5" y="522" width="2" height="16" fill="#fcfcfb"/>
-<rect x="328.5" y="522" width="247.5" height="16" fill="#86b6ef"><title>Control and sync: 3 of 4 planned</title></rect>
+<rect x="216.0" y="522" width="85.7" height="16" fill="#184f95"><title>Control and sync: 2 of 7 done</title></rect>
+<rect x="300.7" y="522" width="2" height="16" fill="#fcfcfb"/>
+<rect x="301.7" y="522" width="42.9" height="16" fill="#3987e5"><title>Control and sync: 1 of 7 in progress</title></rect>
+<rect x="343.6" y="522" width="2" height="16" fill="#fcfcfb"/>
+<rect x="344.6" y="522" width="171.4" height="16" fill="#86b6ef"><title>Control and sync: 4 of 7 planned</title></rect>
 </g>
-<text x="586" y="534" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">1 done · 3 planned</text>
-<text x="236" y="562" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Commands and agents</text>
-<clipPath id="bar17"><rect x="246" y="550" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="534" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">2 done · 1 in progress · 4 planned</text>
+<text x="206" y="562" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Commands and agents</text>
+<clipPath id="bar17"><rect x="216" y="550" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar17)">
-<rect x="246.0" y="550" width="330.0" height="16" fill="#184f95"><title>Commands and agents: 5 of 5 done</title></rect>
+<rect x="216.0" y="550" width="300.0" height="16" fill="#184f95"><title>Commands and agents: 5 of 5 done</title></rect>
 </g>
-<text x="586" y="562" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done</text>
-<text x="236" y="590" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio system and performance</text>
-<clipPath id="bar18"><rect x="246" y="578" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="562" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done</text>
+<text x="206" y="590" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio system and performance</text>
+<clipPath id="bar18"><rect x="216" y="578" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar18)">
-<rect x="246.0" y="578" width="330.0" height="16" fill="#184f95"><title>Audio system and performance: 5 of 5 done</title></rect>
+<rect x="216.0" y="578" width="190.9" height="16" fill="#184f95"><title>Audio system and performance: 7 of 11 done</title></rect>
+<rect x="405.9" y="578" width="2" height="16" fill="#fcfcfb"/>
+<rect x="406.9" y="578" width="109.1" height="16" fill="#86b6ef"><title>Audio system and performance: 4 of 11 planned</title></rect>
 </g>
-<text x="586" y="590" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done</text>
-<text x="236" y="618" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Look, settings and access</text>
-<clipPath id="bar19"><rect x="246" y="606" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="590" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">7 done · 4 planned · 1 bug</text>
+<text x="206" y="618" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Look, settings and access</text>
+<clipPath id="bar19"><rect x="216" y="606" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar19)">
-<rect x="246.0" y="606" width="206.2" height="16" fill="#184f95"><title>Look, settings and access: 5 of 8 done</title></rect>
-<rect x="451.2" y="606" width="2" height="16" fill="#fcfcfb"/>
-<rect x="452.2" y="606" width="123.8" height="16" fill="#86b6ef"><title>Look, settings and access: 3 of 8 planned</title></rect>
+<rect x="216.0" y="606" width="124.4" height="16" fill="#184f95"><title>Look, settings and access: 17 of 41 done</title></rect>
+<rect x="339.4" y="606" width="2" height="16" fill="#fcfcfb"/>
+<rect x="340.4" y="606" width="175.6" height="16" fill="#86b6ef"><title>Look, settings and access: 24 of 41 planned</title></rect>
 </g>
-<text x="586" y="618" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">5 done · 3 planned</text>
-<text x="236" y="646" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio to MIDI</text>
-<clipPath id="bar20"><rect x="246" y="634" width="330" height="16" rx="4"/></clipPath>
+<text x="526" y="618" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">17 done · 24 planned · 5 bugs</text>
+<text x="206" y="646" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#0b0b0b">Audio to MIDI</text>
+<clipPath id="bar20"><rect x="216" y="634" width="300" height="16" rx="4"/></clipPath>
 <g clip-path="url(#bar20)">
-<rect x="246.0" y="634" width="110.0" height="16" fill="#3987e5"><title>Audio to MIDI: 1 of 3 partly done</title></rect>
-<rect x="355.0" y="634" width="2" height="16" fill="#fcfcfb"/>
-<rect x="356.0" y="634" width="220.0" height="16" fill="#86b6ef"><title>Audio to MIDI: 2 of 3 planned</title></rect>
+<rect x="216.0" y="634" width="100.0" height="16" fill="#184f95"><title>Audio to MIDI: 1 of 3 done</title></rect>
+<rect x="315.0" y="634" width="2" height="16" fill="#fcfcfb"/>
+<rect x="316.0" y="634" width="200.0" height="16" fill="#86b6ef"><title>Audio to MIDI: 2 of 3 planned</title></rect>
 </g>
-<text x="586" y="646" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">1 partly · 2 planned</text>
+<text x="526" y="646" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#52514e">1 done · 2 planned</text>
 </svg>

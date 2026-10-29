@@ -58,6 +58,11 @@
   (`engine`, `ui`, `formats`, `browser`, `audio-io`, `plug-ins`, `devices`, `presets`, `tests`),
   plus `windows`, `macos` or `linux` when it concerns one platform. The forms set the type, and
   `.github/workflows/issue-labels.yml` adds area and platform labels from the form's answers.
+  A feature or a bug in something a user does also gets one `area:` label, the area of Suhina it
+  belongs to (`area: launcher`, `area: arrangement`, `area: effects` …; the label list has all
+  twenty, the same as [`docs/features.json`](docs/features.json)): the README's figure and
+  [`docs/features.md`](docs/features.md) count what is done, in progress and planned from them.
+  A maintainer or an agent adds it in triage when the author did not.
 - **Pull request labels:** `.github/workflows/pr-labels.yml` keeps them as `.github/labeler.yml` maps
   them: the kind from the branch name (`feature/` `enhancement`, `fix/` `bug`, `docs/`
   `documentation`, `chore/` `chore`; also `documentation` when every file changed is a document)
