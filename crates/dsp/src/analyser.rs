@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A spectrum for a device's panel: `N` band-pass filters spaced evenly on a log axis, each with
-//! a mean-square follower, read as levels in decibels. It is a display, not a measurement: the
-//! bands overlap as their width says and the levels follow with one time constant.
+//! a mean-square follower that rises fast and falls slowly, read as levels in decibels. It is a
+//! display, not a measurement: the bands overlap as their width says.
 
 use crate::biquad::{Biquad, Coefficients};
-use crate::follower::approach;
-use crate::smooth::time_constant;
+use crate::follower::AttackRelease;
 
 /// Levels under this read as this, in decibels.
 pub const FLOOR_DB: f64 = -100.0;
@@ -17,14 +16,14 @@ pub const FLOOR_DB: f64 = -100.0;
 pub struct Analyser<const N: usize> {
     filters: [Biquad; N],
     power: [f64; N],
-    coefficient: f64,
+    follower: AttackRelease,
 }
 
 impl<const N: usize> Analyser<N> {
     /// Bands centred evenly in log frequency over `low`..`high` hertz at `sample_rate`, levels
-    /// following with a time constant of `seconds`. Bands over 45 % of the sample rate stay
-    /// silent. Out-of-range inputs fall back to 20 Hz – 20 kHz and 50 ms.
-    pub fn new(sample_rate: f64, low: f64, high: f64, seconds: f64) -> Self {
+    /// rising with a time constant of `rise` seconds and falling with `fall`. Bands over 45 % of
+    /// the sample rate stay silent. Out-of-range inputs fall back to 20 Hz – 20 kHz.
+    pub fn new(sample_rate: f64, low: f64, high: f64, (rise, fall): (f64, f64)) -> Self {
         let sample_rate = if sample_rate.is_finite() && sample_rate > 0.0 { sample_rate } else { 48_000.0 };
         let (low, high) =
             if low.is_finite() && high.is_finite() && low > 0.0 && high > low { (low, high) } else { (20.0, 20_000.0) };
@@ -38,8 +37,7 @@ impl<const N: usize> Analyser<N> {
                 Biquad::default()
             }
         });
-        let seconds = if seconds.is_finite() && seconds > 0.0 { seconds } else { 0.05 };
-        Self { filters, power: [0.0; N], coefficient: time_constant(seconds, sample_rate) }
+        Self { filters, power: [0.0; N], follower: AttackRelease::new(rise, fall, sample_rate) }
     }
 
     /// The centre of band `index` of `N` over `low`..`high` hertz, as [`new`](Self::new) places it.
@@ -53,7 +51,7 @@ impl<const N: usize> Analyser<N> {
         let x = if x.is_finite() { x } else { 0.0 };
         for (filter, power) in self.filters.iter_mut().zip(&mut self.power) {
             let y = filter.process(x);
-            *power = approach(*power, y * y, self.coefficient);
+            *power = self.follower.rise(*power, y * y);
             if *power < 1e-30 {
                 *power = 0.0;
             }
@@ -81,7 +79,7 @@ mod tests {
 
     #[test]
     fn a_sine_lights_its_own_band_most() {
-        let mut analyser = Analyser::<24>::new(SR, 20.0, 20_000.0, 0.05);
+        let mut analyser = Analyser::<24>::new(SR, 20.0, 20_000.0, (0.05, 0.05));
         let hz = Analyser::<24>::centre(12, 20.0, 20_000.0);
         for n in 0..24_000 {
             analyser.process((std::f64::consts::TAU * hz * n as f64 / SR).sin());
@@ -95,7 +93,7 @@ mod tests {
 
     #[test]
     fn silence_and_hostile_input_read_the_floor() {
-        let mut analyser = Analyser::<8>::new(f64::NAN, -1.0, 0.0, f64::INFINITY);
+        let mut analyser = Analyser::<8>::new(f64::NAN, -1.0, 0.0, (f64::INFINITY, -1.0));
         for x in [f64::NAN, f64::INFINITY, 0.0] {
             analyser.process(x);
         }

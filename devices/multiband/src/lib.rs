@@ -45,8 +45,11 @@ pub const LEVEL_FLOOR_DB: f64 = -100.0;
 pub const SPECTRUM_BANDS: usize = 24;
 pub const SPECTRUM_LOW: f64 = 20.0;
 pub const SPECTRUM_HIGH: f64 = 20_000.0;
-/// How fast the spectrum and the output meter follow, in seconds.
-const DISPLAY_SECONDS: f64 = 0.05;
+/// How the panel's values move, in seconds: the spectrum rises fast and falls slowly, the bands'
+/// level and gain change are smoothed so they read rather than flicker, the meter falls.
+const SPECTRUM_RISE_SECONDS: f64 = 0.01;
+const SPECTRUM_FALL_SECONDS: f64 = 0.3;
+const DISPLAY_SECONDS: f64 = 0.08;
 const METER_FALL_SECONDS: f64 = 0.3;
 
 /// What the panel reads ([`Device::readouts`]): band `b`'s level at `2 b`, its gain change at
@@ -283,6 +286,8 @@ pub struct Multiband {
     spectrum: Analyser<SPECTRUM_BANDS>,
     meter: [f64; 2],
     meter_fall: f64,
+    /// The one-pole coefficient that smooths the bands' level and gain change for the panel.
+    display: f64,
 }
 
 /// The readouts of bands that hear nothing: the floor level and no gain change.
@@ -322,9 +327,15 @@ impl Multiband {
             sides: [Side::new(DEFAULT_SAMPLE_RATE, 120.0, 2_500.0); 2],
             frame: 0,
             readouts: idle_readouts(),
-            spectrum: Analyser::new(DEFAULT_SAMPLE_RATE, SPECTRUM_LOW, SPECTRUM_HIGH, DISPLAY_SECONDS),
+            spectrum: Analyser::new(
+                DEFAULT_SAMPLE_RATE,
+                SPECTRUM_LOW,
+                SPECTRUM_HIGH,
+                (SPECTRUM_RISE_SECONDS, SPECTRUM_FALL_SECONDS),
+            ),
             meter: [0.0; 2],
             meter_fall: 0.0,
+            display: 0.0,
         };
         device.rebuild();
         device
@@ -418,9 +429,15 @@ impl Multiband {
         self.sides = [Side::new(self.sample_rate, low, high); 2];
         self.tune_followers();
         self.frame = 0;
-        self.spectrum = Analyser::new(self.sample_rate, SPECTRUM_LOW, SPECTRUM_HIGH, DISPLAY_SECONDS);
+        self.spectrum = Analyser::new(
+            self.sample_rate,
+            SPECTRUM_LOW,
+            SPECTRUM_HIGH,
+            (SPECTRUM_RISE_SECONDS, SPECTRUM_FALL_SECONDS),
+        );
         self.meter = [0.0; 2];
         self.meter_fall = suhina_dsp::smooth::time_constant(METER_FALL_SECONDS, self.sample_rate);
+        self.display = suhina_dsp::smooth::time_constant(DISPLAY_SECONDS, self.sample_rate);
     }
 }
 
@@ -504,7 +521,9 @@ impl Device for Multiband {
                     sum[0] += l * audible;
                     sum[1] += r * audible;
                     if let Some([level, change]) = self.readouts.get_mut(index * 2..index * 2 + 2) {
-                        (*level, *change) = (LEVEL_FLOOR_DB as f32, 0.0);
+                        let k = self.display as f32;
+                        *level = LEVEL_FLOOR_DB as f32 + (*level - LEVEL_FLOOR_DB as f32) * k;
+                        *change *= k;
                     }
                     continue;
                 }
@@ -521,7 +540,9 @@ impl Device for Multiband {
                 let stage = Stage { above_threshold, above_slope, below_threshold, below_slope };
                 let change_db = static_gain(level_db, &stage, knee_db);
                 if let Some([level, change]) = self.readouts.get_mut(index * 2..index * 2 + 2) {
-                    (*level, *change) = (level_db as f32, (change_db * amount) as f32);
+                    let k = self.display as f32;
+                    *level = level_db as f32 + (*level - level_db as f32) * k;
+                    *change = (change_db * amount) as f32 + (*change - (change_db * amount) as f32) * k;
                 }
                 let gain = db_to_gain_f64((change_db + gain_db) * amount);
                 sum[0] += l * gain * audible;

@@ -143,21 +143,29 @@ def band_view(x0, y0, w, h):
     for db in (-20.0, -40.0, -60.0):
         y = y0 + h * -db / 80.0
         draws.append(line([x0, y], [x0 + w, y], tint(TEXT, 18)))
-    # The input spectrum: one bar per band of the device's analyser, from its level to the floor.
-    bar = w / SPECTRUM_BANDS
-    for i in range(SPECTRUM_BANDS):
-        top = level_y(clamp_db(readout(SPECTRUM + i)), y0, h)
-        draws.append(rect(x0 + i * bar + 0.5, top, bar - 1.0, add(y0 + h, mul(top, -1.0)), tint(TEXT, 34)))
+    # The input spectrum as a filled curve through the analyser's bands (centred evenly on the
+    # log axis), made of one convex quad per step, with its outline on top.
+    step = w / SPECTRUM_BANDS
+    xs_spectrum = [x0] + [x0 + (i + 0.5) * step for i in range(SPECTRUM_BANDS)] + [x0 + w]
+    ys = [level_y(clamp_db(readout(SPECTRUM + min(max(i - 1, 0), SPECTRUM_BANDS - 1))), y0, h)
+          for i in range(SPECTRUM_BANDS + 2)]
+    for i in range(len(xs_spectrum) - 1):
+        quad = [[xs_spectrum[i], ys[i]], [xs_spectrum[i + 1], ys[i + 1]], [xs_spectrum[i + 1], y0 + h],
+                [xs_spectrum[i], y0 + h]]
+        draws.append({"kind": "path", "points": quad, "color": [0, 0, 0, 0], "width": 0.0, "closed": True,
+                      "fill": [70, 150, 170, 120]})
+    draws.append({"kind": "path", "points": [[x, y] for x, y in zip(xs_spectrum, ys)], "color": [120, 200, 215, 230],
+                  "width": 1.5, "closed": False, "fill": None})
+    # Each band's gain change as a line from 0 dB (the top): down for a cut, with the area above it
+    # shaded, and the change in dB.
     for i, (bid, _, color) in enumerate(BANDS):
         left, right = xs[i], xs[i + 1]
         width = add(right, mul(left, -1.0))
-        level = level_y(clamp_db(readout(2 * i)), y0, h)
-        draws.append(line([left, level], [right, level], tint(TEXT, 210), 2.0))
-        cut = mul(maximum(0.0, mul(readout(2 * i + 1), -1.0)), h / 80.0)
-        lift = mul(maximum(0.0, readout(2 * i + 1)), h / 80.0)
-        draws.append(rect(left, y0, width, minimum(cut, h), tint(color, 90)))
-        draws.append(rect(left, add(y0 + h, mul(minimum(lift, h), -1.0)), width, minimum(lift, h), tint(color, 90)))
-        draws.append(value_text(add(left, 4.0), y0 + 3.0, readout(2 * i + 1), suffix=" dB", color=tint(color, 255)))
+        cut = minimum(mul(maximum(0.0, mul(readout(2 * i + 1), -1.0)), h / 40.0), h)
+        gain_y = add(y0 + 1.0, cut)
+        draws.append(rect(left, y0, width, cut, tint(color, 40)))
+        draws.append(line([left, gain_y], [right, gain_y], tint(color, 255), 2.0))
+        draws.append(value_text(add(left, 4.0), add(gain_y, 3.0), readout(2 * i + 1), suffix=" dB", color=tint(color, 255)))
         draws.append(rect(left, y0, width, mul(muted(bid), h), tint(DISPLAY, 190)))
     for hz, caption in ((100.0, "100"), (1000.0, "1k"), (10000.0, "10k")):
         draws.append(text(freq_x_number(hz, x0, w) + 3.0, y0 + h - 13.0, caption, tint(TEXT, 120), 9.0))
@@ -197,9 +205,9 @@ def curve(bid, size, color):
     ]
 
 
-def dial(pid, caption, bounds, log=False, decimals=1, fmt="number", visible=None):
+def dial(pid, caption, bounds, log=False, decimals=1, fmt="number", visible=None, tag=""):
     return {"widget": {"kind": "dial", "label": caption, "decimals": decimals, "format": fmt}, "visible_when": visible,
-            "id": pid, "name": caption, "tooltip": "Drag vertically; Shift for precision; double click resets",
+            "id": f"{pid}{tag}", "name": caption, "tooltip": "Drag vertically; Shift for precision; double click resets",
             "bounds": bounds, "gesture": "drag", "x": None,
             "y": {"parameter": pid, "logarithmic": log, "drag_scale": 1.0}, "drawing": []}
 
@@ -268,13 +276,13 @@ def handles(prefix, x0, y0, w, h, visible=None):
     return controls
 
 
-def separator(cid, x, y, h):
-    return {"widget": {"kind": "separator"}, "visible_when": None, "id": cid, "name": "Separator", "tooltip": "",
+def separator(cid, x, y, h, visible=None):
+    return {"widget": {"kind": "separator"}, "visible_when": visible, "id": cid, "name": "Separator", "tooltip": "",
             "bounds": [x - 4.0, y, 8.0, h], "gesture": "drag", "x": None, "y": None}
 
 
-def preset_button(cid, caption, index, bounds):
-    return {"widget": {"kind": "button", "label": caption, "off_label": None, "indicator": False}, "visible_when": None,
+def preset_button(cid, caption, index, bounds, visible=None):
+    return {"widget": {"kind": "button", "label": caption, "off_label": None, "indicator": False}, "visible_when": visible,
             "id": cid, "name": f"{caption} preset", "tooltip": f"Apply the {caption} quick preset", "bounds": bounds,
             "gesture": {"preset": index}, "x": None, "y": None, "drawing": []}
 
@@ -290,6 +298,17 @@ def ott():
                        f"{bid}BelowThreshold": -41.0, f"{bid}BelowSlope": 0.24, f"{bid}Attack": attack / 1000.0,
                        f"{bid}Release": release / 1000.0, f"{bid}Gain": gain, f"{bid}Solo": 0.0})
     return {"name": "OTT", "values": values}
+
+
+def default_preset():
+    """Every parameter at the device's default (devices/multiband/src/lib.rs › PARAMS)."""
+    values = {"lowCrossover": 120.0, "highCrossover": 2500.0, "peak": 0.0, "softKnee": 1.0, "amount": 1.0,
+              "time": 1.0, "output": 0.0}
+    for bid, attack, release in (("low", 0.05, 0.3), ("mid", 0.01, 0.2), ("high", 0.005, 0.1)):
+        values.update({f"{bid}On": 1.0, f"{bid}Input": 0.0, f"{bid}AboveThreshold": -20.0, f"{bid}AboveSlope": 1.0,
+                       f"{bid}BelowThreshold": -60.0, f"{bid}BelowSlope": 1.0, f"{bid}Attack": attack,
+                       f"{bid}Release": release, f"{bid}Gain": 0.0, f"{bid}Solo": 0.0})
+    return {"name": "Default", "values": values}
 
 
 def every_parameter():
@@ -337,24 +356,29 @@ def compact():
              ("Attack", "Attack", True, 1, "seconds"), ("Release", "Release", True, 1, "seconds"),
              ("Input", "Input", False, 1, "decibels"), ("Gain", "Gain", False, 1, "decibels")]
     for i, (bid, name, color) in enumerate(BANDS):
-        shown = equal(par("band"), float(i))
-        shown_closed = mul(shown, closed())
+        shown_closed = mul(equal(par("band"), float(i)), closed())
         controls.append(display(f"{bid}_curve", f"{name} curve", [386.0, 28.0, 80.0, 80.0], curve(bid, 80.0, color),
                                 f"{bid}AboveSlope", shown_closed))
         controls.append(power(f"{bid}_power", bid, name, [386.0, 114.0, 38.0, 22.0], shown_closed))
         controls.append(button(f"{bid}_solo", f"{bid}Solo", "Solo", [428.0, 114.0, 38.0, 22.0], visible=shown_closed))
-        for k, (suffix, caption, log, decimals, fmt) in enumerate(knobs):
-            col, row = k % 4, k // 4
-            controls.append(dial(f"{bid}{suffix}", caption, [472.0 + col * 60.0, 28.0 + row * 68.0, 58.0, 66.0], log,
-                                 decimals, fmt, shown))
-    controls.append(separator("sep_bands", 714.0, 4.0, 160.0))
-    controls.append(preset_button("preset_ott", "OTT", 0, [720.0, 4.0, 80.0, 18.0]))
-    controls.append(dial("amount", "Amount", [718.0, 28.0, 84.0, 66.0], False, 0, "percent"))
-    controls.append(dial("time", "Time", [718.0, 96.0, 42.0, 66.0], True, 0, "percent"))
-    controls.append(dial("output", "Output", [760.0, 96.0, 42.0, 66.0], False, 1, "decibels"))
+    # The dials and the global column, from x 472 while the band view shows and moved left into the
+    # chosen band's curve's place while the strip is open, so the panel keeps to the left.
+    for tag, dx, state in (("", 0.0, closed()), ("_open", -86.0, opened())):
+        for i, (bid, name, color) in enumerate(BANDS):
+            shown = mul(equal(par("band"), float(i)), state)
+            for k, (suffix, caption, log, decimals, fmt) in enumerate(knobs):
+                col, row = k % 4, k // 4
+                controls.append(dial(f"{bid}{suffix}", caption, [472.0 + dx + col * 60.0, 28.0 + row * 68.0, 58.0, 66.0],
+                                     log, decimals, fmt, shown, tag))
+        controls.append(separator(f"sep_bands{tag}", 714.0 + dx, 4.0, 160.0, state))
+        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [720.0 + dx, 4.0, 46.0, 18.0], state))
+        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [768.0 + dx, 4.0, 34.0, 18.0], state))
+        controls.append(dial("amount", "Amount", [718.0 + dx, 28.0, 84.0, 66.0], False, 0, "percent", state, tag))
+        controls.append(dial("time", "Time", [718.0 + dx, 96.0, 42.0, 66.0], True, 0, "percent", state, tag))
+        controls.append(dial("output", "Output", [760.0 + dx, 96.0, 42.0, 66.0], False, 1, "decibels", state, tag))
     controls.append(separator("sep_meter", 805.0, 4.0, 160.0))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": meters(808.0, 8.0, 152.0),
-            "controls": controls, "hidden_parameters": every_parameter(), "presets": [ott()], "accent_on": True}
+            "controls": controls, "hidden_parameters": every_parameter(), "presets": [default_preset(), ott()], "accent_on": True}
 
 
 def expanded():

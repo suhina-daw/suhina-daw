@@ -155,10 +155,10 @@ What `Device::readouts` holds, from the block's last frame:
 
 | Index | Value |
 |---|---|
-| 0, 2, 4 | the low, mid and high band's level as its follower reads it, dB (-100 when off) |
-| 1, 3, 5 | that band's gain change from its stages, scaled by Amount, dB (0 when off) |
+| 0, 2, 4 | the low, mid and high band's level as its follower reads it, smoothed over 80 ms for the display, dB (-100 when off) |
+| 1, 3, 5 | that band's gain change from its stages, scaled by Amount, smoothed the same way, dB (0 when off) |
 | 6, 7 | the output's peak, left and right, dBFS, falling with a 0.3 s time constant |
-| 8 – 31 | the input spectrum: 24 bands spaced evenly in log frequency from 20 Hz to 20 kHz, each a band-pass with a 50 ms RMS follower (`suhina_dsp::Analyser`), dB |
+| 8 – 31 | the input spectrum: 24 bands spaced evenly in log frequency from 20 Hz to 20 kHz, each a band-pass with an RMS follower that rises in 10 ms and falls in 300 ms (`suhina_dsp::Analyser`), dB |
 
 ## Import
 
