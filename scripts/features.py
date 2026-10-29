@@ -142,7 +142,8 @@ def svg(areas: list, theme: str) -> str:
     for status in STATUSES:
         out.append(f'<rect x="{x}" y="38" width="12" height="12" rx="3" fill="{t[status]}"/>')
         out.append(f'<text x="{x + 18}" y="48" {font} font-size="12" fill="{t["muted"]}">{LABELS[status]}</text>')
-        x += 18 + 8 * len(LABELS[status]) + 20
+        # About 6.5 px a character at 12 px, then a gap.
+        x += 18 + round(6.5 * len(LABELS[status])) + 18
     for i, area in enumerate(areas):
         y = top + i * row
         c = counts(area)
