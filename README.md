@@ -7,12 +7,10 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-Suhina was called Loopwerk until October 2026; settings kept under the old name carry over on the first start. <!-- rename_suhina: keep -->
-
 <a href="docs/features.md">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/features-by-area-dark.svg">
-    <img width="716" alt="Suhina's features by area: how many are done, partly done and planned" src="docs/features-by-area.svg">
+    <img width="782" alt="Suhina's features by area: how many are done, partly done and planned" src="docs/features-by-area.svg">
   </picture>
 </a>
 

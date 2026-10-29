@@ -67,6 +67,12 @@ class WriteTest(unittest.TestCase):
             self.assertTrue(root.tag.endswith("svg"))
             self.assertIn(features.THEMES[theme]["surface"], features.svg([AREA], theme))
 
+    def test_svg_shows_the_total_and_each_breakdown(self):
+        text = features.svg([AREA], "light")
+        self.assertIn("All areas", text)
+        self.assertIn("1 done · 1 partly · 1 planned", text)
+        self.assertEqual(features.breakdown({"done": 3, "partial": 0, "planned": 2}), "3 done · 2 planned")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,14 +122,22 @@ def markdown(areas: list) -> str:
     return "\n".join(out) + "\n"
 
 
+def breakdown(c: dict) -> str:
+    """"9 done · 1 partly · 4 planned", leaving out what is zero."""
+    words = {"done": "done", "partial": "partly", "planned": "planned"}
+    return " · ".join(f"{c[s]} {words[s]}" for s in STATUSES if c[s])
+
+
 def svg(areas: list, theme: str) -> str:
-    """Horizontal bars, one per area, split into done, partly done and planned."""
+    """One bar per area, the full width split into the shares done, partly done and planned,
+    with the counts beside it; the first row is every area together."""
     t = THEMES[theme]
-    label_w, bar_w, count_w, pad = 230, 400, 70, 16
+    label_w, bar_w, count_w, pad = 230, 330, 190, 16
     row, bar_h, top = 28, 16, 64
+    total = {s: sum(counts(a)[s] for a in areas) for s in STATUSES}
+    rows = [("All areas", total, True)] + [(a["name"], counts(a), False) for a in areas]
     width = pad + label_w + bar_w + count_w + pad
-    height = top + row * len(areas) + pad
-    most = max(len(a["features"]) for a in areas)
+    height = top + row * len(rows) + 10 + pad
     font = "font-family=\"-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif\""
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
@@ -144,31 +152,31 @@ def svg(areas: list, theme: str) -> str:
         out.append(f'<text x="{x + 18}" y="48" {font} font-size="12" fill="{t["muted"]}">{LABELS[status]}</text>')
         # About 6.5 px a character at 12 px, then a gap.
         x += 18 + round(6.5 * len(LABELS[status])) + 18
-    for i, area in enumerate(areas):
-        y = top + i * row
-        c = counts(area)
-        n = len(area["features"])
-        out.append(f'<text x="{pad + label_w - 10}" y="{y + 12}" text-anchor="end" {font} '
-                   f'font-size="12" fill="{t["ink"]}">{escape(area["name"])}</text>')
-        x0 = pad + label_w
-        scale = bar_w / most
+    x0 = pad + label_w
+    for i, (name, c, whole) in enumerate(rows):
+        # The total stands apart from the areas below it.
+        y = top + i * row + (0 if whole else 10)
+        n = sum(c.values())
+        weight = ' font-weight="600"' if whole else ""
+        out.append(f'<text x="{x0 - 10}" y="{y + 12}" text-anchor="end" {font} '
+                   f'font-size="12"{weight} fill="{t["ink"]}">{escape(name)}</text>')
         x = x0
-        out.append(f'<clipPath id="bar{i}"><rect x="{x0}" y="{y}" width="{n * scale:.1f}" height="{bar_h}" rx="4"/></clipPath>')
+        out.append(f'<clipPath id="bar{i}"><rect x="{x0}" y="{y}" width="{bar_w}" height="{bar_h}" rx="4"/></clipPath>')
         out.append(f'<g clip-path="url(#bar{i})">')
         for status in STATUSES:
             if c[status] == 0:
                 continue
-            w = c[status] * scale
-            title = f"{area['name']}: {c[status]} {MARKS[status]}"
+            w = bar_w * c[status] / n
+            title = f"{name}: {c[status]} of {n} {MARKS[status]}"
             out.append(f'<rect x="{x:.1f}" y="{y}" width="{w:.1f}" height="{bar_h}" fill="{t[status]}">'
                        f'<title>{escape(title)}</title></rect>')
             x += w
-            if x < x0 + n * scale - 0.5:
+            if x < x0 + bar_w - 0.5:
                 # A 2 px gap of the surface between segments.
                 out.append(f'<rect x="{x - 1:.1f}" y="{y}" width="2" height="{bar_h}" fill="{t["surface"]}"/>')
         out.append("</g>")
-        out.append(f'<text x="{x0 + n * scale + 8:.1f}" y="{y + 12}" {font} font-size="12" '
-                   f'fill="{t["muted"]}">{c["done"]}/{n}</text>')
+        out.append(f'<text x="{x0 + bar_w + 10}" y="{y + 12}" {font} font-size="12"{weight} '
+                   f'fill="{t["muted"]}">{escape(breakdown(c))}</text>')
     out.append("</svg>")
     return "\n".join(out) + "\n"
 

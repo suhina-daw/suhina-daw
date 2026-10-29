@@ -170,7 +170,7 @@ the UI layer may depend on a GUI toolkit.
 ### Crate names
 
 Every package is named `suhina-*`; the directory has no prefix. The project had another name
-until October 2026 (README); nothing new may use it, in names, text or code.
+until October 2026 (git history); nothing new may use it, in names, text or code.
 
 | Kind | Directory | Package (`Cargo.toml`) | In Rust code |
 |---|---|---|---|
