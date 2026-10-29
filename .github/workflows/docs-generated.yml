@@ -4,15 +4,8 @@ name: Generated docs
 #   - docs/commands.md, from the command registry;
 #   - last_verified in the front matter of every document changed since it was last set
 #     (scripts/docs.py stamp);
-#   - the marked parts of the parity report, from scripts/parity/score.py, devices.json and the
-#     command count of docs/commands.md (scripts/parity/update_report.py);
-#   - docs/INDEX.md, from the documents' front matter;
-#   - the parity figures, from scripts/parity/.
+#   - docs/INDEX.md, from the documents' front matter.
 # Pull requests leave all of them alone, so two pull requests never conflict on them (issue #462).
-# A pull request changes only the inputs; ci.yml checks that they render.
-#
-# None of it needs a copy of the manual: the numbers it was read for are recorded in
-# scripts/parity/score.py. See docs/research/parity-live-12.md › Reproducing.
 #
 # Two jobs, so the key that may push to main never shares a machine with code from the repository
 # or its dependencies (build scripts, proc macros): `generate` builds and writes the files with no
@@ -59,29 +52,14 @@ jobs:
         run: cargo run --quiet -p suhina-cli -- commands --markdown > docs/commands.md
       - name: last_verified of the documents changed on main
         run: python3 scripts/docs.py stamp
-      # After commands.md, whose rows it counts for the command count.
-      - name: The parity report's marked parts
-        run: python3 scripts/parity/update_report.py
       - name: docs/INDEX.md
         run: python3 scripts/docs.py index --write
-      # The parity figures: pure Python over the recorded numbers, so they cannot drift from the
-      # numbers the report's marked parts are rendered from.
-      - name: Parity figures
-        run: |
-          # Pinned so the figures are byte-for-byte the same between runs; a newer matplotlib draws
-          # slightly different pixels, and an unpinned one would make the bot commit new PNGs for
-          # nothing. Raise it on purpose, in a pull request of its own.
-          python3 -m pip install --quiet --disable-pip-version-check matplotlib==3.10.9
-          python3 scripts/parity/charts.py
       # Every document, since `stamp` may change any of them; publish copies back only the ones
       # that differ and checks what changed in them.
       - uses: actions/upload-artifact@v7
         with:
           name: generated-docs
-          path: |
-            docs/**/*.md
-            docs/research/parity-live-12-by-area.png
-            docs/research/parity-live-12-overview.png
+          path: docs/**/*.md
           retention-days: 1
 
   publish:
@@ -110,7 +88,7 @@ jobs:
         env:
           GENERATED: ${{ runner.temp }}/generated
         run: |
-          for name in INDEX.md commands.md research/parity-live-12.md; do
+          for name in INDEX.md commands.md; do
             source="$GENERATED/$name"
             if [ ! -f "$source" ] || [ -L "$source" ]; then
               echo "::error::$name is missing from the generated files or is not a regular file."
@@ -122,19 +100,10 @@ jobs:
           # find -type f lists regular files only, never a link.
           (cd "$GENERATED" && find . -type f -name '*.md' -print0) | while IFS= read -r -d '' rel; do
             rel=${rel#./}
-            case "$rel" in INDEX.md|commands.md|research/parity-live-12.md) continue ;; esac
+            case "$rel" in INDEX.md|commands.md) continue ;; esac
             if git --literal-pathspecs ls-files --error-unmatch -- "docs/$rel" >/dev/null 2>&1 && [ ! -L "docs/$rel" ]; then
               cmp -s "$GENERATED/$rel" "docs/$rel" || cp "$GENERATED/$rel" "docs/$rel"
             fi
-          done
-          # upload-artifact keeps the path below the files' common root, which is docs/ here.
-          for name in parity-live-12-by-area.png parity-live-12-overview.png; do
-            source="$GENERATED/research/$name"
-            if [ ! -f "$source" ] || [ -L "$source" ]; then
-              echo "::error::research/$name is missing from the generated files or is not a regular file."
-              exit 1
-            fi
-            cp "$source" "docs/research/$name"
           done
           changed=$(git status --porcelain)
           if [ -z "$changed" ]; then
@@ -143,25 +112,17 @@ jobs:
           fi
           # Only modified (" M") or new ("??") files, never a deletion or a rename, and only the
           # files generated above; any other document only modified.
-          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^( M|\?\?) docs/research/parity-live-12-(by-area|overview)\.png$|^ M docs/.*\.md$'; then
-            echo "::error::Only the generated docs, the parity report, the parity figures and last_verified dates may change (above: anything else)."
+          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^ M docs/.*\.md$'; then
+            echo "::error::Only the generated docs and last_verified dates may change (above: anything else)."
             exit 1
           fi
           # In those other documents, nothing but the last_verified line.
-          other=$(git diff -U0 -- 'docs/*.md' ':!docs/INDEX.md' ':!docs/commands.md' ':!docs/research/parity-live-12.md' \
+          other=$(git diff -U0 -- 'docs/*.md' ':!docs/INDEX.md' ':!docs/commands.md' \
             | grep -E '^[-+]' | grep -Ev '^(\+\+\+|---) ' \
             | grep -Ev '^[-+]last_verified: [0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
           if [ -n "$other" ]; then
             printf '%s\n' "$other"
             echo "::error::A document changed in more than its last_verified line (above)."
-            exit 1
-          fi
-          # In the parity report, the marked parts and last_verified only: with both left out, the
-          # committed and the regenerated report are the same text.
-          outside='s/<!-- parity:begin ([a-z0-9-]+) -->.*?<!-- parity:end -->/<$1>/gs; s/^last_verified: .*$//m'
-          if ! cmp -s <(git show HEAD:docs/research/parity-live-12.md | perl -0pe "$outside") \
-              <(perl -0pe "$outside" docs/research/parity-live-12.md); then
-            echo "::error::The parity report changed outside its marked parts."
             exit 1
           fi
           git diff --stat
@@ -171,11 +132,10 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/INDEX.md docs/commands.md docs/research/parity-live-12-by-area.png \
-            docs/research/parity-live-12-overview.png
+          git add docs/INDEX.md docs/commands.md
           git add -u -- 'docs/*.md'
           # The subject starts "Docs: regenerate", which `docs.py stamp` skips (scripts/docs.py).
-          git commit -m "Docs: regenerate INDEX.md, commands.md, the parity report and figures, and last_verified dates"
+          git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates"
           if ! git push origin HEAD:main; then
             echo "::notice::main moved on during this run; the run for the newer commit regenerates the files."
           fi

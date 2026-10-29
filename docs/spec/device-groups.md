@@ -466,5 +466,4 @@ it.
    reported, the browser listing them; ADR 0014 amended for the group format.
 9. **Key and velocity ranges for branches** of instrument groups (open question 5).
 
-ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, and the parity
-coverage (`scripts/parity/score.py`) changes then, not with this spec.
+ROADMAP gets a line under *Built-in effects and instruments* when item 2 lands, not with this spec.

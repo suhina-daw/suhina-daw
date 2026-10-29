@@ -21,7 +21,7 @@
 - **Documentation:** a change that alters how something works updates the documents that
   describe it in the same pull request (architecture, ADRs, specs, ROADMAP); `AGENTS.md` ›
   *Before you finish a task* lists which document covers what. Leave out what `main` writes after
-  the merge: `docs/INDEX.md`, `docs/commands.md`, the parity report's marked parts and figures, and
+  the merge: `docs/INDEX.md`, `docs/commands.md` and
   the `last_verified` line of a document you change (it is stamped with the day of the merge).
   [`docs/README.md`](docs/README.md) says what an ADR, a spec and a system document each hold and
   how an ADR is amended; `python scripts/docs.py check` checks it.
@@ -37,13 +37,10 @@
   and `python -m unittest discover -s scripts -p 'test_settings_guide.py'`. Check all changed
   settings, not only the first reported error; do not defer the help to another repository,
   a follow-up or a separate request.
-- **Parity measurement:** a pull request that adds, changes or removes something a user can do
-  updates its coverage in `scripts/parity/score.py` (and `scripts/parity/devices.json` for a
-  built-in effect or instrument) in the same pull request, and leaves the numbers in
-  `docs/research/parity-live-12.md` alone: they are regenerated on `main` after the merge. One
-  that moves no coverage writes `Parity: no change` and the
-  reason in its description. CI warns, without failing, when a change to `crates/`, `devices/` or
-  `apps/` does neither. `AGENTS.md` › *Before you finish a task* has the rule.
+- **Device names:** built-in effects and instruments get names of Suhina's own, and so do branch
+  names and pull request titles. A single generic word that says what a device does is fine
+  ("Compressor", "Saturator"); a distinctive name that people recognise as another product's
+  device is not. `AGENTS.md` rule 9 has the rule.
 - **Style:** `cargo fmt`, and `cargo clippy --all-targets -- -D warnings`. Comments explain *why*.
 - **Names:** packages are `suhina-<name>` (`suhina-device-<name>` for devices), used in code as
   `suhina_<name>`; directories have no prefix. `AGENTS.md` › *Crate names* says how a new crate
@@ -285,12 +282,9 @@ when asked to finish a pull request.
 
 **Workflows and scripts need the owner's review.** To protect code that runs with the
 repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for
-`.github/` and `scripts/`, except `scripts/parity/`. The main ruleset requires a code owner's
+`.github/` and `scripts/`. The main ruleset requires a code owner's
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
-not one from another maintainer. Parity scripts run without environment secrets; the generated
-documentation is published in a separate job that does not execute them. Changes confined to
-`scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
-code out of jobs that use environment secrets.
+not one from another maintainer.
 
 ## Clean-room
 

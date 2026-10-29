@@ -54,14 +54,15 @@ the documents that match your task.
 9. **Other DAWs are named only where a format is handled.** Product names such as Ableton,
    Live or FL Studio may appear in format crates (`crates/als`), their tests, `docs/spec/` and
    `docs/decisions/`, to say which file format the code reads, and in the design brief
-   (`docs/design/brief.md`), to say what Suhina's look must not resemble. They also appear in
-   [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) and the scripts under
-   `scripts/parity/`, which measure what Suhina has against another DAW's public manual: status
-   analysis of our own project, never content from that manual (its PDF, text, tables, screenshots
-   and parameter lists are never committed; the scripts read a copy the user owns and write to
-   `target/parity/`). ROADMAP and README
+   (`docs/design/brief.md`), to say what Suhina's look must not resemble. Comparisons with
+   another product (how much of it Suhina covers, which of its features are missing) are not kept
+   in this repository ([ADR 0016](docs/decisions/0016-scope.md) › 5). ROADMAP and README
    describe Suhina's own devices and features under their own names; which device of another
    product imports into which is a spec ([`docs/spec/device-import.md`](docs/spec/device-import.md)).
+   **Built-in effects and instruments get names of Suhina's own**, and so do branch names and pull
+   request titles: a single generic word that says what a device does stays allowed even when
+   another product uses it too ("Compressor", "Delay", "Saturator"), but a distinctive name that
+   people recognise as one product's device, a compound or coined name, does not.
    Product terms and set phrases of other DAWs are not used as generic words either: "drum sampler",
    not "drum rack"; "built-in effects and instruments", not "built-in devices". "Device" on its own
    is a generic word and stays (the `device.*` commands, `devices/`). The model, engine, CLI core and
@@ -150,9 +151,7 @@ docs/
   decisions/  architecture decision records; read 0001 before changing the model, 0004 before a device
   spec/       clean-room specs written from observation (formats, behaviour, UI views)
   design/     UI design brief, component measurements and reference mockups (ADR 0009)
-  research/   status analysis of our own project: parity against another DAW's public manual
-              (ADR 0016; an ordinary document whose marked parts scripts/parity/ keeps current)
-              and its two figures
+  research/   status analysis of our own project: node coverage of the device SDK, licence audits
   INDEX.md    generated list of documents, one line each (scripts/docs.py find and covers query it)
   commands.md generated list of every command (suhina-cli commands --markdown)
 assets/brand/ the logo as SVG: `suhina-logo.svg` (the name with the wave, drawn on the splash by
@@ -160,8 +159,7 @@ assets/brand/ the logo as SVG: `suhina-logo.svg` (the name with the wave, drawn 
               `suhina-icon.png`, the app's icon (`Suhina.app` on macOS, by `scripts/macos_app.sh`)
 third_party/  vendored source: the ASIO SDK's host part (GPL-3.0, built with `asio`) and LAME 3.100's
               encoder (LGPL, always built for MP3 export; Suhina's own fft.c, ADR 0029)
-scripts/   research helpers (e.g. extracting and diffing .als files), the parity measurement
-           (parity/, reading a manual the user owns; its output is never committed), docs.py
+scripts/   research helpers (e.g. extracting and diffing .als files), docs.py
            (the docs index), release_notes.py and discord_post.py (release notes, Discord posts),
            agent_post.py (an agent's issue or PR comment, as the bot or as the person, § 3)
 ```
@@ -415,18 +413,6 @@ Write them by doing them in the build, not from the code. A change with nothing 
 (a refactor, tests, CI, documentation) says so in one line instead; an engine change a user can
 hear or measure is not one of them.
 
-**A change in what Suhina does updates the parity measurement.** Always, in the same pull request:
-every change that adds, changes or removes something a user can do (the same changes that need a
-*How to check it* section) updates the coverage of the chapters it moves in
-[`scripts/parity/score.py`](scripts/parity/score.py), and
-[`scripts/parity/devices.json`](scripts/parity/devices.json) for a built-in effect or instrument,
-and nothing else: the numbers in [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md)
-(its marked parts, the command count among them) are regenerated on `main` after the merge, so a
-pull request leaves them alone, even when it adds a command. A pull request that moves no
-coverage writes `Parity: no change` and the reason in its description ("Parity: no change, a
-refactor"). When a pull request changes `crates/`, `devices/` or `apps/` and does neither, the
-[Parity notice](.github/workflows/parity-notice.yml) check warns; it does not fail.
-
 **Settings include their website help.** Whenever you add, remove, move, rename or change a
 setting, complete its guide update automatically in the same pull request. Read
 [`docs/spec/settings-guide-export.md`](docs/spec/settings-guide-export.md), the control in
@@ -459,8 +445,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | What is read from a format, or behaviour described in a spec | the spec in `docs/spec/` |
 | What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](docs/decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
-| What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and [`README.md`](README.md) if it shows it |
-| What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |
+| What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and the row of its area in [`README.md`](README.md) › What it does today |
 | A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in this file | this file, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if it repeats it |
 
@@ -473,29 +458,15 @@ extending someone else's sentence. Leave generated files out of the change:
 [`docs/commands.md`](docs/commands.md) (from the command registry) are regenerated on `main` after
 every merge by [`.github/workflows/docs-generated.yml`](.github/workflows/docs-generated.yml), and
 a pull request that edits one of them fails CI rather than losing the edit silently. The same
-workflow writes three more things a pull request leaves alone, so that two pull requests never
-conflict on them:
-
-- the parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) between its
-  `parity:begin` and `parity:end` markers, which `scripts/parity/update_report.py` writes from
-  `scripts/parity/score.py`, `scripts/parity/devices.json` and the command registry. The rest of
-  the report is an ordinary document that a pull request edits freely. CI checks only that the
-  inputs render (`update_report.py --check-inputs`), so marked parts that are stale, or that a pull
-  request regenerated anyway, never fail it;
-- its two figures, rendered from the same numbers;
-- `last_verified` in a document's front matter: after the merge, `python scripts/docs.py stamp`
-  moves it up to the day of the document's last change on `main`.
-
-When a merge of `main` into a branch conflicts inside the marked parts, take `main`'s side there
-(`git checkout --theirs` on the file when the branch changed nothing else in it); the workflow
-writes them again after the merge either way.
+workflow also writes `last_verified` in a document's front matter, which a pull request leaves
+alone: after the merge, `python scripts/docs.py stamp` moves it up to the day of the document's
+last change on `main`.
 
 ```sh
 python scripts/docs.py impact   # documents that cover code you changed but you have not updated
                                 # (a notice only, for files three or more documents cover)
 python scripts/docs.py check    # what CI runs: front matter, covered paths, links and #anchors
 python scripts/docs.py index    # prints the index with your documents in it; writes nothing
-python scripts/parity/update_report.py --check-inputs   # what CI runs for the parity report
 ```
 
 Every file under `docs/` starts with front matter (format in `scripts/docs.py`): `description`,

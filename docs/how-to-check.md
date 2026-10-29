@@ -24,13 +24,6 @@ hear or measure it (a render that sounds different, a file that now loads). No o
 tests, CI and documentation: then the section is one line, "Nothing a user can notice changes:
 <what changed instead>."
 
-The same pull requests update the parity measurement in the same change: the coverage they move in
-`scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or instrument);
-the report's numbers are regenerated on `main` after the merge. One that moves no coverage writes `Parity: no
-change` and the reason in its description, next to this section. [AGENTS.md › Before you finish a
-task](../AGENTS.md#4-before-you-finish-a-task) has the rule, and the *Parity notice* check warns when
-a change to `crates/`, `devices/` or `apps/` does neither.
-
 ## 2. Collect the facts first, never invent them
 
 Every name in the steps must be what the screen shows. Look them up:

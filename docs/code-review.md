@@ -90,7 +90,7 @@ exceptions. Read its golden rules and the rules for the affected paths. In parti
   the shared render path and the out-of-process plug-in boundary;
 - command-based user behaviour, the current device SDK architecture and naming rules;
 - the claim, linked issue and overlapping work under Tasks;
-- meaningful regression coverage, *How to check it*, `Parity:` and updates to documents that
+- meaningful regression coverage, *How to check it* and updates to documents that
   describe the changed behaviour under Before you finish a task;
 - generated files and `last_verified` dates that a pull request must leave alone.
 - a setting added or moved in `settings_rows.rs`: report a row on the wrong page for its task, a

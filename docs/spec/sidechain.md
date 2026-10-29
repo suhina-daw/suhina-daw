@@ -22,9 +22,8 @@ covers:
 
 - **Sources:** Suhina's own design, from the routing model as it is built ([ADR 0001](../decisions/0001-daw-neutral-model.md),
   the device chain in [ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10, the plug-in boundary in
-  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from the gap the parity measurement records
-  ([`docs/research/parity-live-12.md`](../research/parity-live-12.md): chapter 17 lists *sidechain* and *multi-timbral*
-  among what is missing). Nothing here is observed from another program; nothing is implemented yet.
+  [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from what is missing in routing today: a key input
+  (sidechain) and plug-ins with more than one output (multi-timbral). Nothing here is observed from another program; nothing is implemented yet.
 - **Status:** planned. What this document had to choose, it says and why, so work can start without an answer;
   the choices the maintainer can still turn are in *Open questions*, and the split into issues is at the end.
 
@@ -445,14 +444,10 @@ is gone, whose branch no longer exists, or whose plug-in is missing shows *missi
 reference and does nothing. Everything the row does is `device.setKey` / `device.clearKey`; the panel changes
 nothing itself.
 
-## Parity
+## What the documents say when it lands
 
-Chapter 17 (Routing and I/O) counts sidechain and multi-timbral as missing today, at 10 %; chapter 18 (Mixing)
-does not mention a key at all. When the built-in key lands, `scripts/parity/score.py` says so and
-`python scripts/parity/update_report.py` rewrites the marked parts of
-[`docs/research/parity-live-12.md`](../research/parity-live-12.md); the plug-in buses and auxiliary outputs move
-the same numbers in their own pull requests. ROADMAP's *What works now* gains a bullet when a user can hear a
-keyed compressor, and the devices table says which devices read a key.
+ROADMAP's *What works now* gains a bullet when a user can hear a keyed compressor, the devices table says
+which devices read a key, and the README's *Mixing and routing* row names key inputs.
 
 ## Open questions
 
@@ -514,7 +509,7 @@ first slice; the boundary work follows and is independent of it.
    refuses an old region. ADR 0006 › 3 and 7 amended (region and protocol versions, "silent buffers for any other
    bus" replaced), `docs/architecture.md` updated.
 8. **Auxiliary outputs**, then a channel's input can name a plug-in port (`track.setInput` and the same panel
-   row for inputs). ADR 0006 › 7 amended; the parity chapter 17 line on multi-timbral changes here.
+   row for inputs). ADR 0006 › 7 amended.
 9. **A key in a data-only graph device (`.sd`)**, in the device SDK's own pull request: the format and the SDK
    declare a graph's input ports, validation allows one main input plus declared key inputs, the runtime binds
    each input node to its buffer, and the prepared graph is wrapped in a `suhina_device_api::Device` so a graph

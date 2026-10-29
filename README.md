@@ -9,13 +9,26 @@ An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ablet
 
 Suhina was called Loopwerk until October 2026; settings kept under the old name carry over on the first start. <!-- rename_suhina: keep -->
 
-<a href="docs/research/parity-live-12-by-area.png">
-  <img width="700" alt="Parity by area: the share of each area of a reference DAW's manual that Suhina covers today" src="docs/research/parity-live-12-by-area.png">
-</a>
+## What it does today
 
-> How much of that workflow exists today, measured chapter by chapter against a reference DAW's
-> manual: [the report](docs/research/parity-live-12.md), [the order the gap gets closed in](docs/decisions/0016-parity-target.md).
-> Rebuilt on `main` whenever the numbers change.
+| Area | Works now | Planned |
+|---|---|---|
+| Projects and formats | Opens Live Sets (`.als`); saves Suhina's own project file (`.suhina`), with backups and recovery after a crash; several projects in tabs | DAWproject import and export, FL Studio projects |
+| Session view and launching | Clips and scenes, launch quantisation, stop buttons, follow actions, launch modes, legato, computer keys, the metronome | Launching from live MIDI notes |
+| Arrangement view | Clips on lanes, markers, the loop region, split and consolidate, fades, groups inside groups | |
+| Audio clips | Gain, transpose, fades, warping and real-time time-stretching | |
+| MIDI editing | A piano roll with quantise, keyboard editing, ghost notes and clip scales | |
+| Recording | Audio and MIDI recording into clip slots or the arrangement, with count-in; audio inputs with monitoring; MIDI controllers play the armed tracks | |
+| Automation | Envelopes for volume, pan, mute and every built-in device parameter, and for plug-in parameters, drawn in the Arrangement view | |
+| Built-in effects and instruments | FM synth, sampler, EQ, DJ EQ, compressor, limiter, delay, reverb, overdrive, utility, auto-pan, vinyl distortion, amp modeler and cabinet loader, a pitch MIDI effect; device groups | Filter, bus compressor, saturation, multiband dynamics, more instruments ([ROADMAP](ROADMAP.md#built-in-effects-and-instruments)) |
+| Mixing and routing | Channel strips, groups, sends and return tracks, solo, level meters, a cue output, latency compensation | Crossfader, track delay |
+| Plug-ins | CLAP and VST3, sandboxed in their own processes, with their editors, state and automation | ARA clip editing, in progress |
+| Browser and library | Folders, search, pins, recent items, colour tags, a sample map that sorts samples by how they sound | |
+| Export | WAV, FLAC, Ogg Vorbis and MP3 | |
+| Commands and agents | Every action as a command with undo, from the app, the CLI and over MCP | |
+| Audio to MIDI | | Slicing to MIDI, drum, bass, melody and chord detection, stem separation |
+
+What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,

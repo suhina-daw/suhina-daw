@@ -15,13 +15,13 @@ primary platform; Windows and macOS are supported.
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Session and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Session and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
-How far this is from a full clip-launching DAW, and the order the gap is built in: the
-[parity report](docs/research/parity-live-12.md) and
-[ADR 0016](docs/decisions/0016-parity-target.md) (proposed).
+What Suhina aims at, what it leaves out and the order the missing parts are built in:
+[ADR 0016](docs/decisions/0016-scope.md) (proposed). The README's *What it does today* sums up
+each area.
 
 ## Next (order proposed in ADR 0016)
 
-The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-parity-target.md) proposes
+The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-scope.md) proposes
 (its build order has the reasons and sizes):
 
 1. **MIDI note editing:** the piano roll in the detail area and note commands (add, move, resize,
@@ -70,7 +70,7 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
 - **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
   reverb are done); multiband dynamics,
   saturation, the sampler and drum sampler later
-  ([ADR 0016](docs/decisions/0016-parity-target.md)).
+  ([ADR 0016](docs/decisions/0016-scope.md)).
 
 ### The devices
 
@@ -123,7 +123,7 @@ command with undo. Behaviour, detectors and tests: [`docs/spec/audio-to-midi.md`
 ## Later, not ordered
 
 FL Studio projects (`.flp`), MIDI controllers and remote mapping (hardware controllers: scope in
-[ADR 0016](docs/decisions/0016-parity-target.md)), devices of an imported project that
+[ADR 0016](docs/decisions/0016-scope.md)), devices of an imported project that
 Suhina cannot run kept as placeholders and copied along with the project
 ([device import](docs/spec/device-import.md)), bridging Windows plug-ins.
 

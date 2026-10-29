@@ -95,8 +95,7 @@ jobs:
         run: python3 scripts/docs.py impact HEAD^1
       # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml). A pull
       # request that edits one of them would have the edit overwritten on the next merge, silently,
-      # so it is refused here instead and sent to the source of the file. The parity report is not
-      # in this list: it is a normal document whose prose pull requests edit (see the step below).
+      # so it is refused here instead and sent to the source of the file.
       - name: Generated files are not edited by hand
         if: github.event_name == 'pull_request'
         env:
@@ -111,12 +110,6 @@ jobs:
           printf '%s\n' "$edited"
           echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md."
           exit 1
-      # The parity report's marked parts are written on main after every merge
-      # (docs-generated.yml), so a pull request changes only their inputs (score.py,
-      # devices.json). This checks that the inputs render and the markers are whole; it passes
-      # whether the marked parts are stale or were regenerated in the pull request (issue #462).
-      - name: The parity report's inputs render
-        run: python3 scripts/parity/update_report.py --check-inputs
       - name: No hidden or bidirectional Unicode characters
         run: |
           if git grep -nIP '[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]' -- . ':!*.lock'; then
