@@ -94,21 +94,27 @@ pub(crate) fn simplify(old: &[(f64, f64, Curve)], tolerance: f64) -> Option<Vec<
     }
     breaks.push(samples.len().saturating_sub(1));
     breaks.dedup();
+    // A corner stays only where the line needs it: one that a single fit across it follows within
+    // the tolerance, with no more segments than the two sides apart, is smoothed away.
+    let jump = |k: usize| {
+        let x = samples.get(k).map(|p| p.x);
+        [k.checked_sub(1), Some(k + 1)].into_iter().flatten().any(|n| samples.get(n).map(|p| p.x) == x)
+    };
+    let mut k = 1;
+    while k + 1 < breaks.len() {
+        let (i, b, j) = (breaks[k - 1], breaks[k], breaks[k + 1]);
+        if !jump(b) {
+            let apart = piece_fit(&samples, i, b, tolerance).len() + piece_fit(&samples, b, j, tolerance).len();
+            if piece_fit(&samples, i, j, tolerance).len() <= apart {
+                breaks.remove(k);
+                continue;
+            }
+        }
+        k += 1;
+    }
     let mut out: Vec<(P, Curve)> = Vec::new();
     for w in breaks.windows(2) {
-        let (i, j) = (w[0], w[1]);
-        let piece = samples.get(i..=j)?;
-        if piece.len() < 2 {
-            continue;
-        }
-        if (piece[piece.len() - 1].x - piece[0].x).abs() <= NEAR {
-            // The jump itself: its first end, straight to the second.
-            out.push((piece[0], Curve::STRAIGHT));
-            continue;
-        }
-        let t0 = direction(piece, true);
-        let t1 = direction(piece, false);
-        fit(piece, t0, t1, tolerance, &mut out, 0);
+        out.extend(piece_fit(&samples, w[0], w[1], tolerance));
     }
     let end = samples.last()?;
     let to_beat = |p: P| first.0 + p.x / ASPECT * span;
@@ -116,6 +122,19 @@ pub(crate) fn simplify(old: &[(f64, f64, Curve)], tolerance: f64) -> Option<Vec<
         out.into_iter().map(|(p, curve)| Fitted { beat: to_beat(p), place: p.y, curve }).collect();
     fitted.push(Fitted { beat: to_beat(*end), place: end.y, curve: last.2 });
     (fitted.len() < old.len()).then_some(fitted)
+}
+
+/// The fit of the samples from `i` to `j`: each segment's start and curve. A jump (both ends at
+/// one time) is its first end, straight to the second.
+fn piece_fit(samples: &[P], i: usize, j: usize, tolerance: f64) -> Vec<(P, Curve)> {
+    let mut out = Vec::new();
+    let Some(piece) = samples.get(i..=j).filter(|p| p.len() >= 2) else { return out };
+    if (piece[piece.len() - 1].x - piece[0].x).abs() <= NEAR {
+        out.push((piece[0], Curve::STRAIGHT));
+        return out;
+    }
+    fit(piece, direction(piece, true), direction(piece, false), tolerance, &mut out, 0);
+    out
 }
 
 /// Whether the old line keeps point `i` as a corner: a jump starts or ends there, or the line
@@ -299,6 +318,14 @@ mod tests {
         // The jump at 2 is two points at one beat; the peak's corner at 4 is a point.
         assert!(fitted.windows(2).any(|w| (w[0].beat - 2.0).abs() < 1e-9 && (w[1].beat - 2.0).abs() < 1e-9));
         assert!(fitted.iter().any(|f| (f.beat - 4.0).abs() < 1e-9 && (f.place - 0.9).abs() < 1e-9));
+    }
+
+    #[test]
+    fn a_small_sharp_bump_inside_the_tolerance_leaves_no_corner() {
+        // Level, a spike of 0.03 at 2, then a fall: no point of the fit sits at the spike.
+        let old = line(&[(0.0, 0.8), (1.9, 0.8), (2.0, 0.83), (2.1, 0.8), (4.0, 0.8), (6.0, 0.4), (8.0, 0.0)]);
+        let fitted = simplify(&old, 0.05).unwrap();
+        assert!(fitted.iter().all(|f| (f.beat - 2.0).abs() > 1e-6), "{fitted:?}");
     }
 
     #[test]
