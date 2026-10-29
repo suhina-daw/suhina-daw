@@ -879,8 +879,19 @@ fn handle(
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, &control.name));
 }
 
+/// A drawing's colour: one of the SDK's theme tokens takes the theme's custom property (or its
+/// default), keeping the drawing's alpha.
 fn color(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    let [r, g, b, a] = c;
+    if let Some((_, property, default)) = suhina_device_sdk::ui::THEME_TOKENS.iter().find(|(rgb, ..)| *rgb == [r, g, b])
+    {
+        let base = crate::kit::style_class::property(property)
+            .as_deref()
+            .and_then(crate::kit::theme::parse_hex)
+            .map_or(*default, |c| [c.r(), c.g(), c.b()]);
+        return Color32::from_rgba_unmultiplied(base[0], base[1], base[2], a);
+    }
+    Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 fn normalized(p: &GraphParameter, log: bool) -> f64 {
     if log && p.min > 0.0 {

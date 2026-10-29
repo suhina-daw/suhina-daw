@@ -89,7 +89,9 @@ pub mod param {
     pub const SHOWN_BAND: usize = BAND + 3 * PER_BAND;
     /// Band `b` soloed is `SOLO + b`: while any band is soloed, only soloed bands are heard.
     pub const SOLO: usize = SHOWN_BAND + 1;
-    pub(crate) const COUNT: usize = SOLO + 3;
+    /// How many decibels the panel's output meter spans; it changes no sound.
+    pub const METER_RANGE: usize = SOLO + 3;
+    pub(crate) const COUNT: usize = METER_RANGE + 1;
 
     /// The index of band `band`'s parameter `which`.
     pub const fn band(band: usize, which: usize) -> usize {
@@ -185,6 +187,7 @@ const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::toggle("lowSolo", "Low Solo", false),
     ParamInfo::toggle("midSolo", "Mid Solo", false),
     ParamInfo::toggle("highSolo", "High Solo", false),
+    ParamInfo::continuous("meterRange", "Meter Range", (12.0, 96.0), 60.0, Unit::Decibels, Scale::Linear),
 ];
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "multiband", name: "Multiband", role: Role::Effect, params: &PARAMS };

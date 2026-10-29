@@ -461,6 +461,17 @@ pub const READOUT_IDS: [&str; 32] = [
     "#r29", "#r30", "#r31",
 ];
 
+/// Colours a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
+/// CSS custom property's colour, or the default when the theme sets none. Displays (a spectrum's
+/// dark ground), a device's series of bands and a highlight (a gain line) follow the theme so.
+pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 5] = [
+    ([3, 0, 1], "--device-display", [10, 17, 23]),
+    ([3, 0, 2], "--device-series-1", [242, 166, 90]),
+    ([3, 0, 3], "--device-series-2", [95, 211, 192]),
+    ([3, 0, 4], "--device-series-3", [159, 180, 255]),
+    ([3, 0, 5], "--device-highlight", [255, 207, 122]),
+];
+
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
 

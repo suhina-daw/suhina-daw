@@ -202,7 +202,10 @@ Bindings map normalized coordinates to parameter units with optional logarithmic
 Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
 A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
-A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture
+A drawing coloured `[3, 0, 1]` … `[3, 0, 5]` (any alpha) takes a theme token: `--device-display`
+(a display's dark ground, default `#0a1117`), `--device-series-1` … `3` (a device's series, such as
+its bands; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`) and `--device-highlight` (`#ffcf7a`), from
+the theme's CSS custom property of that name or the default, with the drawing's alpha. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`, gesture
 `position`, one binding) draws a line where its parameter is, across its bounds (an X binding: a
 vertical line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 5 points
 of it: dragging sets the value from the pointer as `position` does, a double click resets it, and a

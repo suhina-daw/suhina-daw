@@ -61,9 +61,11 @@ for `low`, `mid` and `high` (shown for `low`).
 
 | 34 | `band` | Band | Low, Mid, High | Mid | choice |
 | 35 + b | `lowSolo` | Low Solo | off, on | off | toggle |
+| 38 | `meterRange` | Meter Range | 12 – 96 dB | 60 dB | decibels, linear |
 
-`b` is the band: 0 low, 1 mid, 2 high (38 parameters). `band` only chooses which band's controls
-the panel shows; it changes no sound and the import leaves it at its default. While any band is
+`b` is the band: 0 low, 1 mid, 2 high (39 parameters). `band` only chooses which band's controls
+the panel shows and `meterRange` how many decibels its output meter spans; neither changes the
+sound and the import leaves both at their defaults. While any band is
 soloed only the soloed bands are heard; a band that is not heard still follows its level, so it
 comes back without a jump.
 
@@ -119,30 +121,33 @@ Per frame, with the left and right sides through the same filters:
 ## Panel
 
 `devices/multiband/panel.json`, written by `scripts/multiband_panel.py` (run it after changing the
-script; the file is its output). The canvases draw from the parameters and from the device's live
-values ([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound.
-Colours are the theme's (text, panel, control, border, accent) but for the three band colours and
-the band view's background, which stays dark in every theme so the signal reads on it.
+script; the file is its output), lays out the design boards D (the device row) and E (the expanded
+view). The canvases draw from the parameters and from the device's live values
+([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound. Every
+colour follows the theme: text, panel, control, border and accent are the theme's, and the display,
+the three band colours and the gain line are theme tokens (`--device-display`,
+`--device-series-1` … `3`, `--device-highlight`; [SDK UI](sdk-custom-ui.md)).
 
-- **Compact** (820 × 168, the device row's height), its sections parted by vertical lines:
-  - the **band view** over a 20 Hz – 20 kHz log axis: each band tinted between the crossovers, the
-    input spectrum as bars, each band's level as a moving line and its gain change as a bar down
-    from the top (a cut) or up from the bottom (a lift) with the change in dB, and a grey veil over
-    a band that is off or not heard because another is soloed. The crossover lines are dragged
-    sideways and each band's above (solid) and below (fainter) threshold up and down, within its
-    own band; a double click resets one. The crossovers are also fields under the view;
-  - tabs Low, Mid, High (the `band` parameter), Peak (RMS while off) and Soft knee; for the chosen
-    band its transfer curve (the below stage, 1 : 1 between, the above stage, with the signal's
-    place on it as a dot and the stages as ratios: `1/s : 1` above, `1 : s` below), its power
-    button, Solo and eight dials (Above, Above slope, Below, Below slope, Attack, Release, Input,
-    Gain);
-  - the OTT quick preset, Amount, Time and Output; the output's peak meters at the right edge.
-  - While the expanded strip is open the band view gives way to the three bands' curves side by
-    side, each with its power button and Solo, and the chosen band's curve beside the dials is left
-    out.
-- **Expanded** (1200 × 160, `strip`: opened from the device's header as a strip over the device
-  row, scaled to its width): the same band view and handles across the whole width, each band's
-  name with its gain change and its two thresholds as fields over it, the crossovers under it.
+- **Band view** (both canvases): the dark display with each band tinted between the crossovers;
+  the input spectrum filled in the accent, the output's (input plus the band's gain change) dotted
+  over it; a 0 dB line near the top with the gain line under it, falling by each band's cut with
+  the area above it shaded; each band's above threshold dashed with a ring in the middle of its
+  band and its below threshold fainter; the crossovers with a grip near the bottom and their
+  frequency; each band's name with its gain change, the chosen band boxed; the frequency axis; and
+  a grey veil over a band that is off or not heard because another is soloed. The crossovers are
+  dragged sideways and the thresholds up and down within their band; a double click resets one.
+- **Compact** (820 × 168, the device row's height): the band view at the left; over the right part
+  a row of Low / Mid / High (the `band` parameter), RMS / Peak, Soft knee, and the Default and OTT
+  quick presets; the chosen band's column (its name, transfer curve with the signal's place as a
+  dot, power button and Solo); its knobs Above, Ratio, Below, Upward, Attack, Release, Input, Gain
+  (Ratio and Upward are the slopes shown as `1/s : 1`); after a divider Amount (large, in the
+  accent), Time and Output; and the output's two meters, dragged up or down to change their range
+  (`meterRange`), with their scale. While the expanded strip is open the band view gives way to the
+  three bands' curves side by side, each with its power button and Solo, and the rest moves left
+  into the chosen band's column.
+- **Expanded** (1200 × 160, `strip`: a strip over the device row scaled to its width, its header
+  with the name and Close): the band view large with its handles and a dB scale.
+- **Quick preset Default**: every sound parameter at its default, in one undo step.
 - **Quick preset OTT**: heavy upward and downward compression on all three bands, in one undo step;
   Suhina's own rounded values (crossovers 90 Hz and 2.5 kHz, input +5 dB, above thresholds
   -34/-30/-35 dB with slopes 0.015/0.015/0, below -41 dB with slope 0.24, attacks 50/22/13 ms,
