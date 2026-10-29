@@ -110,6 +110,9 @@ jobs:
           printf '%s\n' "$edited"
           echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md."
           exit 1
+      # The feature map is valid; its list and figures are written on main (docs-generated.yml).
+      - name: The feature map
+        run: python3 scripts/features.py --check
       - name: No hidden or bidirectional Unicode characters
         run: |
           if git grep -nIP '[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]' -- . ':!*.lock'; then

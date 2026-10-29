@@ -21,8 +21,8 @@
 - **Documentation:** a change that alters how something works updates the documents that
   describe it in the same pull request (architecture, ADRs, specs, ROADMAP); `AGENTS.md` ›
   *Before you finish a task* lists which document covers what. Leave out what `main` writes after
-  the merge: `docs/INDEX.md`, `docs/commands.md` and
-  the `last_verified` line of a document you change (it is stamped with the day of the merge).
+  the merge: `docs/INDEX.md`, `docs/commands.md`, `docs/features.md` and its figures (change
+  `docs/features.json` instead), and the `last_verified` line of a document you change (it is stamped with the day of the merge).
   [`docs/README.md`](docs/README.md) says what an ADR, a spec and a system document each hold and
   how an ADR is amended; `python scripts/docs.py check` checks it.
 - **Settings help:** adding, removing, moving, renaming or changing a setting includes its website

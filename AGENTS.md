@@ -445,7 +445,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | What is read from a format, or behaviour described in a spec | the spec in `docs/spec/` |
 | What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](docs/decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
-| What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and the row of its area in [`README.md`](README.md) › What it does today |
+| What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and the feature's status in [`docs/features.json`](docs/features.json) (a feature of its own when it is new) |
 | A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in this file | this file, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if it repeats it |
 
@@ -455,7 +455,9 @@ A limit or a planned part that a change resolves is removed from the docs in the
 to (ROADMAP's *What works now*, the crate map), add a bullet or a row of your own rather than
 extending someone else's sentence. Leave generated files out of the change:
 [`docs/INDEX.md`](docs/INDEX.md) (from the documents' front matter) and
-[`docs/commands.md`](docs/commands.md) (from the command registry) are regenerated on `main` after
+[`docs/commands.md`](docs/commands.md) (from the command registry) and [`docs/features.md`](docs/features.md)
+with the README's two feature figures (from [`docs/features.json`](docs/features.json),
+`scripts/features.py`) are regenerated on `main` after
 every merge by [`.github/workflows/docs-generated.yml`](.github/workflows/docs-generated.yml), and
 a pull request that edits one of them fails CI rather than losing the edit silently. The same
 workflow also writes `last_verified` in a document's front matter, which a pull request leaves

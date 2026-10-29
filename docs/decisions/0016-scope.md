@@ -25,8 +25,9 @@ then; items that have landed since stay in them as the record of the order.
 Two things follow:
 
 1. **The gap is not uniform**, so "how far along" is not one number; it is a list of areas, each
-   done, partial or missing. The README's *What it does today* keeps that list in Suhina's own
-   areas, and [`ROADMAP.md`](../../ROADMAP.md) the detail.
+   done, partial or missing. [`docs/features.json`](../features.json) keeps that list in Suhina's own
+   areas (shown in the README and in [`features.md`](../features.md)), and
+   [`ROADMAP.md`](../../ROADMAP.md) the detail.
 2. **Some of what a DAW can include is not clip-launching work.** Video, a second programming
    runtime and one vendor's hardware are part of some products, not of the workflow. Leaving them
    out has to be said, or the list of what is missing never ends.

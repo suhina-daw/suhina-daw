@@ -16,8 +16,8 @@ primary platform; Windows and macOS are supported.
 | M8 | **UI:** Session and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Session and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
 What Suhina aims at, what it leaves out and the order the missing parts are built in:
-[ADR 0016](docs/decisions/0016-scope.md) (proposed). The README's *What it does today* sums up
-each area.
+[ADR 0016](docs/decisions/0016-scope.md) (proposed). [`docs/features.md`](docs/features.md),
+written from [`docs/features.json`](docs/features.json), lists what is done in each area.
 
 ## Next (order proposed in ADR 0016)
 
