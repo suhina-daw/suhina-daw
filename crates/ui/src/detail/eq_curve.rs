@@ -7,9 +7,9 @@
 //! and gain, the selected band's Frequency, Gain and Q are strips beside the display, the
 //! bands' type menus and numbered selectors run along the bottom, and the Edit switch picks
 //! which curve the display edits in Left/Right and Mid/Side. While sound plays through the
-//! device, the analyser also draws the spectrum of its output as a grey line behind the curve,
-//! on the display's own vertical scale, from a ring the engine's audio thread keeps in the
-//! meter monitor. Which band is selected and which curve is edited are panel state; every
+//! device, the analyser also draws the spectrum of its output as a filled grey area behind the
+//! curve, on the display's own vertical scale, from a ring the engine's audio thread keeps in
+//! the meter monitor. Which band is selected and which curve is edited are panel state; every
 //! edit is a `device.setParam` command.
 
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -59,6 +59,22 @@ const ANALYSER_BANDS: usize = 64;
 /// sits far below a ±15 dB grid, so on the grid the line would fall below the display and
 /// never show (docs/spec/eq.md › The panel › The analyser).
 const ANALYSER_DB: (f64, f64) = (0.0, -60.0);
+/// The strength of the analyser's filled area's grey, of the theme's secondary grey at its
+/// full value: enough to read the shape at a glance, dim enough to sit behind the curve and
+/// the grid's labels.
+const ANALYSER_FILL: f32 = 0.45;
+
+/// The analyser's filled area's grey: the theme's secondary grey scaled to [`ANALYSER_FILL`] of
+/// its value, opaque, so the area reads as a solid shape over the grid behind it
+/// (`gamma_multiply` would thin it to a veil the grid shows through).
+fn analyser_grey(colors: &crate::kit::theme::Palette) -> Color32 {
+    let [r, g, b, _] = colors.text_secondary.to_array();
+    Color32::from_rgb(
+        (r as f32 * ANALYSER_FILL).round() as u8,
+        (g as f32 * ANALYSER_FILL).round() as u8,
+        (b as f32 * ANALYSER_FILL).round() as u8,
+    )
+}
 
 /// One band of one curve, as the display reads it: its values and the filter sections the
 /// device's own maths ([`band_sections`]) runs for them.
@@ -324,20 +340,18 @@ fn draw_display(
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "EQ response display"));
     painter.rect_filled(display, 2.0, colors.window_background);
     let label = theme::ui_font(9.0);
-    // The dB grid: a line every 6 dB, labelled at the left edge; the 0 dB line brightest.
+    // The dB grid: a line every 6 dB, labelled at the left edge; the 0 dB line brightest. The
+    // labels are drawn after the analyser's filled area, so they stay readable where it
+    // covers the grid.
+    let mut db_labels: Vec<(f32, String)> = Vec::new();
     for db in [-12.0, -6.0, 0.0, 6.0, 12.0] {
         let y = db_y(db, display);
         let color = if db == 0.0 { colors.text_secondary } else { colors.border };
         painter.line_segment([Pos2::new(display.left(), y), Pos2::new(display.right(), y)], Stroke::new(1.0, color));
-        painter.text(
-            Pos2::new(display.left() + 3.0, y),
-            Align2::LEFT_CENTER,
-            if db > 0.0 { format!("+{db}") } else { format!("{db}") },
-            label.clone(),
-            colors.text_secondary,
-        );
+        db_labels.push((y, if db > 0.0 { format!("+{db}") } else { format!("{db}") }));
     }
     // The frequency grid: a line at every decade and a fainter one between, labelled below.
+    let mut frequency_labels: Vec<(f32, String)> = Vec::new();
     for decade in 1..=4 {
         for step in 1..10 {
             let frequency = 10f64.powi(decade) * f64::from(step);
@@ -349,23 +363,19 @@ fn draw_display(
             painter
                 .line_segment([Pos2::new(x, display.top()), Pos2::new(x, display.bottom())], Stroke::new(1.0, color));
             if step == 1 && frequency > FREQUENCY.0 {
-                let text =
-                    if frequency >= 1000.0 { format!("{}k", frequency / 1000.0) } else { format!("{frequency}") };
-                painter.text(
-                    Pos2::new(x, display.bottom() - 4.0),
-                    Align2::CENTER_CENTER,
-                    text,
-                    label.clone(),
-                    colors.text_secondary,
-                );
+                frequency_labels.push((
+                    x,
+                    if frequency >= 1000.0 { format!("{}k", frequency / 1000.0) } else { format!("{frequency}") },
+                ));
             }
         }
     }
-    // The analyser's grey line behind the response curves: the same frequency axis, its own
-    // vertical scale across the display's height, each band by its centre frequency — the
-    // shape of the sound as the EQ shaped it, not a level read against the gain grid.
+    // The analyser's filled grey area behind the response curves: the same frequency axis, its
+    // own vertical scale across the display's height, each band by its centre frequency — the
+    // shape of the sound as the EQ shaped it, filled from its boundary down to the display's
+    // bottom, not a level read against the gain grid.
     if let Some(bands) = spectrum {
-        let points: Vec<Pos2> = bands
+        let boundary: Vec<Pos2> = bands
             .iter()
             .enumerate()
             .map(|(band, &db)| {
@@ -374,7 +384,40 @@ fn draw_display(
                 Pos2::new(frequency_x(centre, display), analyser_y(f64::from(db), display))
             })
             .collect();
-        painter.add(egui::Shape::line(points, Stroke::new(1.0, colors.text_secondary)));
+        let grey = analyser_grey(&colors);
+        // The filled area is a strip of triangles between the boundary and the display's
+        // bottom; a raw mesh has a hard edge, so the boundary is drawn again as a stroke over
+        // it, softening it the way the grid's own lines are softened.
+        let mut mesh = egui::Mesh::default();
+        for point in boundary.iter() {
+            mesh.colored_vertex(*point, grey);
+            mesh.colored_vertex(Pos2::new(point.x, display.bottom()), grey);
+        }
+        for index in 1..boundary.len() as u32 {
+            let top = index * 2;
+            mesh.add_triangle(top - 2, top - 1, top);
+            mesh.add_triangle(top - 1, top, top + 1);
+        }
+        painter.add(egui::Shape::mesh(mesh));
+        painter.add(egui::Shape::line(boundary, Stroke::new(1.0, grey)));
+    }
+    for (y, text) in db_labels {
+        painter.text(
+            Pos2::new(display.left() + 3.0, y),
+            Align2::LEFT_CENTER,
+            text,
+            label.clone(),
+            colors.text_secondary,
+        );
+    }
+    for (x, text) in frequency_labels {
+        painter.text(
+            Pos2::new(x, display.bottom() - 4.0),
+            Align2::CENTER_CENTER,
+            text,
+            label.clone(),
+            colors.text_secondary,
+        );
     }
     let curves: [(&[Band], f32); 2] = [(curve_a, 1.0), (curve_b, 0.5)];
     for (curve, strength) in curves.into_iter().take(usize::from(two_curves) + 1) {

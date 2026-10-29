@@ -169,10 +169,10 @@ command, the same one a generated list writes.
 ### The analyser
 
 While sound plays through the device, the display also draws the spectrum of what the device's
-**output** is at that moment — the sound as the EQ shaped it — as a grey line behind the
-response curve, on the same frequency axis and across the display's height, so the line and the
-curve tell one story: where the curve pulls the sound down, the line follows. With nothing
-playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no line.
+**output** is at that moment — the sound as the EQ shaped it — as a filled grey area behind the
+response curve, on the same frequency axis and across the display's height, so the area and the
+curve tell one story: where the curve pulls the sound down, the area follows. With nothing
+playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no area.
 
 - **The tap.** The chain pass on the audio thread mixes a watched device's output block to mono
   (left and right halved) and appends it to a ring of 2048 samples in the meter monitor
@@ -193,11 +193,12 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   line is drawn on the display's own vertical scale — full scale at the top edge, −60 dB at
   the bottom — not the gain grid: normal material sits far below a ±15 dB grid, so on the grid
   the line falls below the display and never shows (live monitoring at a normal level drew no
-  line at all before the scale had its own range). The bands are drawn in the theme's grey,
-  behind the curve, and nothing about them is history: each frame is the last 2048 samples
-  (about 43 ms), no peak hold, no smoothing. While the engine appends to the ring the panel
-  asks for the next frame (the meters' repaints alone would hold steady with a steady level
-  and freeze the line); when the engine stops, the line holds the last spectrum.
+  line at all before the scale had its own range). The spectrum is drawn as a filled grey area,
+  the theme's grey at less than half strength, from its boundary down to the display's bottom,
+  behind the curve and the grid's labels, and nothing about it is history: each frame is the
+  last 2048 samples (about 43 ms), no peak hold, no smoothing. While the engine appends to the
+  ring the panel asks for the next frame (the meters' repaints alone would hold steady with a
+  steady level and freeze the area); when the engine stops, the area holds the last spectrum.
 
 ## Decisions
 
