@@ -62,7 +62,9 @@ the documents that match your task.
    **Built-in effects and instruments get names of Suhina's own**, and so do branch names and pull
    request titles: a single generic word that says what a device does stays allowed even when
    another product uses it too ("Compressor", "Delay", "Saturator"), but a distinctive name that
-   people recognise as one product's device, a compound or coined name, does not.
+   people recognise as one product's device, a compound or coined name, does not. An issue may
+   name another product's device to say what is wanted (anyone can open one); the work built from
+   it, its branch, its pull request and its device, takes a name of Suhina's own.
    Product terms and set phrases of other DAWs are not used as generic words either: "drum sampler",
    not "drum rack"; "built-in effects and instruments", not "built-in devices". "Device" on its own
    is a generic word and stays (the `device.*` commands, `devices/`). The model, engine, CLI core and

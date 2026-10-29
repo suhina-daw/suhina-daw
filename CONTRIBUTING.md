@@ -40,7 +40,8 @@
 - **Device names:** built-in effects and instruments get names of Suhina's own, and so do branch
   names and pull request titles. A single generic word that says what a device does is fine
   ("Compressor", "Saturator"); a distinctive name that people recognise as another product's
-  device is not. `AGENTS.md` rule 9 has the rule.
+  device is not. An issue may name another product's device to say what is wanted; what is built
+  from it gets Suhina's own name. `AGENTS.md` rule 9 has the rule.
 - **Style:** `cargo fmt`, and `cargo clippy --all-targets -- -D warnings`. Comments explain *why*.
 - **Names:** packages are `suhina-<name>` (`suhina-device-<name>` for devices), used in code as
   `suhina_<name>`; directories have no prefix. `AGENTS.md` › *Crate names* says how a new crate
