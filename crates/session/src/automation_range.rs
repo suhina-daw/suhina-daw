@@ -309,9 +309,6 @@ pub(crate) fn lay_under(
     Ok(())
 }
 
-/// How many places along a segment a fit is checked at.
-const FIT_SAMPLES: usize = 24;
-
 /// The bend, -1 to 1, whose curve is at `share` of its rise `t` of the way along, or `None`
 /// when no bend reaches it.
 fn curve_through(t: f64, share: f64) -> Option<f64> {
@@ -334,70 +331,25 @@ fn curve_through(t: f64, share: f64) -> Option<f64> {
     Some(0.5 * (lo + hi))
 }
 
-/// The curve of one segment from `a` to `b` that follows `line` (the old envelope, as places on
-/// the lane at beats) best, and how far from it the segment goes at worst: the curve passes
-/// through the line half-way along, and the line is checked at [`FIT_SAMPLES`] places.
-fn fit(a: (f64, f64), b: (f64, f64), line: &impl Fn(f64) -> f64) -> (f64, f64) {
-    let ((ta, pa), (tb, pb)) = (a, b);
-    let rise = pb - pa;
-    let curve =
-        if rise.abs() > SAME { curve_through(0.5, (line((ta + tb) / 2.0) - pa) / rise).unwrap_or(0.0) } else { 0.0 };
-    let worst = (1..FIT_SAMPLES)
-        .map(|i| {
-            let t = i as f64 / FIT_SAMPLES as f64;
-            let place = pa + rise * Curve::bend(curve).shape(t);
-            (line(ta + (tb - ta) * t) - place).abs()
-        })
-        .fold(0.0, f64::max);
-    (curve, worst)
-}
-
 /// `automation.simplify {track, device?, param, start, end, tolerance?}`: the points inside the
-/// range thinned to those the line needs: from each kept point, the segment reaches as far as one
-/// bent segment can follow the old line, curves and all, within `tolerance` of the lane's height
-/// (default 2 %), so a sine stays a sine.
+/// range replaced by the fewest bent segments that stay within `tolerance` of the old line, curves
+/// and all, as a share of the lane's height (default 2 %), keeping its jumps and sharp corners
+/// ([`crate::automation_fit`]); so a sine stays a sine.
 pub(crate) fn simplify(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let target = target(session, params)?;
     let (start, end) = range(params)?;
     let tolerance = share(params, "tolerance")?.unwrap_or(0.02);
     let points = points_of(session, &target)?;
     let inside: Vec<AutomationPoint> = points.iter().filter(|p| p.beat >= start && p.beat <= end).copied().collect();
+    let unchanged = json!({ "param": target.param, "points": points.len(), "removed": 0 });
     if inside.len() < 3 || target.stepped() {
-        return Ok(json!({ "param": target.param, "points": points.len(), "removed": 0 }));
+        return Ok(unchanged);
     }
     let lane = Lane { target: &target, session };
-    let line = |beat: f64| value_at(&points, beat, false, &lane).map_or(0.0, |v| lane.position(v));
-    let place = |p: &AutomationPoint| (p.beat, lane.position(p.value));
-    let mut kept: Vec<AutomationPoint> = Vec::new();
-    let mut from = 0;
-    while from + 1 < inside.len() {
-        let Some(anchor) = inside.get(from).copied() else { break };
-        // The farthest point one segment from the anchor can reach and stay on the old line; a
-        // jump (two points at one beat) is never passed.
-        let mut reach = from + 1;
-        let mut curve = anchor.curve;
-        for to in from + 1..inside.len() {
-            let Some(next) = inside.get(to) else { break };
-            if next.beat - anchor.beat <= SAME {
-                break;
-            }
-            let (bent, worst) = fit(place(&anchor), place(next), &line);
-            if to == from + 1 || worst <= tolerance {
-                reach = to;
-                curve = if to == from + 1 { anchor.curve } else { Curve::bend((bent * 1000.0).round() / 1000.0) };
-                if worst > tolerance {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        kept.push(AutomationPoint { curve, ..anchor });
-        from = reach;
-    }
-    if let Some(last) = inside.last() {
-        kept.push(*last);
-    }
+    let old: Vec<(f64, f64, Curve)> = inside.iter().map(|p| (p.beat, lane.position(p.value), p.curve)).collect();
+    let Some(fitted) = crate::automation_fit::simplify(&old, tolerance) else { return Ok(unchanged) };
+    let kept: Vec<AutomationPoint> =
+        fitted.iter().map(|f| AutomationPoint { beat: f.beat, value: lane.value(f.place), curve: f.curve }).collect();
     let mut merged: Vec<AutomationPoint> = points.iter().filter(|p| p.beat < start).copied().collect();
     merged.extend(kept);
     merged.extend(points.iter().filter(|p| p.beat > end).copied());
