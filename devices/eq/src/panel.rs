@@ -71,13 +71,14 @@ fn panel() -> DeviceUi {
     ui
 }
 
-/// A small heading in the globals' column.
+/// A small heading in the globals' column. The label's 11-px font needs 14 px of bounds for its
+/// ink (the sampler's labels give it that too); a shorter box clips the glyphs' bottoms.
 fn caption(ui: &mut DeviceUi, text: &str, y: f32) {
     ui.controls.push(CustomControl {
         id: format!("{text}-caption"),
         name: format!("{text} caption"),
         tooltip: String::new(),
-        bounds: [GLOBALS_X, y, GLOBALS_WIDTH, 11.0],
+        bounds: [GLOBALS_X, y, GLOBALS_WIDTH, 14.0],
         widget: Some(Widget::Label { label: text.into() }),
         gesture: UiGesture::Drag,
         x: None,
