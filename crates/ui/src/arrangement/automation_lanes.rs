@@ -650,10 +650,10 @@ impl Rate {
 }
 
 /// How far from the old line Simplify at `amount` (0 to 1) lets the new one go, as a share of the
-/// lane's height: nothing at 0, a fifth of the lane at 1, finer near 0 where small steps matter.
+/// lane's height: nothing at 0, 4 % of the lane at 1, finer near 0 where small steps matter.
 fn simplify_tolerance(amount: f64) -> f64 {
     let amount = amount.clamp(0.0, 1.0);
-    0.2 * amount * amount
+    0.04 * amount * amount
 }
 
 /// A segment's curve being bent: the segment's first point, the drag along the control points'

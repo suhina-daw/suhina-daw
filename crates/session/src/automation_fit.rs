@@ -19,6 +19,8 @@ const ASPECT: f64 = 4.0;
 const PER_SEGMENT: usize = 24;
 /// How sharp a turn at an old point keeps it as a corner, in degrees.
 const CORNER: f64 = 45.0;
+/// The longest a handle may be, as a share of its segment's chord.
+const MAX_HANDLE: f64 = 0.45;
 /// How deep the splitting goes, a guard against a line that never fits.
 const MAX_DEPTH: usize = 24;
 const NEAR: f64 = 1e-9;
@@ -236,6 +238,9 @@ fn handles(piece: &[P], u: &[f64], t0: P, t1: P) -> (P, P) {
     if l0 < chord * 1e-3 || l1 < chord * 1e-3 {
         (l0, l1) = (chord / 3.0, chord / 3.0);
     }
+    // Long handles pile the whole bend into one end (level, then a sudden turn); kept shorter,
+    // the bend spreads along the segment, and a line it cannot follow so is split instead.
+    (l0, l1) = (l0.min(chord * MAX_HANDLE), l1.min(chord * MAX_HANDLE));
     (a.add(t0.mul(l0)), b.sub(t1.mul(l1)))
 }
 
