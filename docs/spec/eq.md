@@ -195,10 +195,13 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   the line falls below the display and never shows (live monitoring at a normal level drew no
   line at all before the scale had its own range). The spectrum is drawn as a filled grey area,
   the theme's grey at less than half strength, from its boundary down to the display's bottom,
-  behind the curve and the grid's labels, and nothing about it is history: each frame is the
-  last 2048 samples (about 43 ms), no peak hold, no smoothing. While the engine appends to the
-  ring the panel asks for the next frame (the meters' repaints alone would hold steady with a
-  steady level and freeze the area); when the engine stops, the area holds the last spectrum.
+  behind the curve and the grid's labels. Each frame's fresh reading is the last 2048 samples
+  (about 43 ms); each band's shown level rises to it over about 50 ms and falls after it over
+  about 350 ms — the DSP crate's attack/release follower, the compressor's own block, driven
+  once a frame — so the area flows with the music instead of flickering window to window. No
+  peak hold. While the engine appends to the ring the panel asks for the next frame (the
+  meters' repaints alone would hold steady with a steady level and freeze the area); when the
+  engine stops, the area holds the last shown levels.
 
 ## Decisions
 

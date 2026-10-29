@@ -17,7 +17,7 @@ use serde_json::json;
 use std::sync::Arc;
 use suhina_device_api::DEFAULT_SAMPLE_RATE;
 use suhina_device_eq::{BANDS, TYPE_NAMES, band_sections};
-use suhina_dsp::SvfCoefficients;
+use suhina_dsp::{AttackRelease, SvfCoefficients};
 use suhina_engine::MeterMonitor;
 use suhina_engine::model::TrackId;
 use suhina_engine::spectrum::{self, RING};
@@ -63,6 +63,13 @@ const ANALYSER_DB: (f64, f64) = (0.0, -60.0);
 /// full value: enough to read the shape at a glance, dim enough to sit behind the curve and
 /// the grid's labels.
 const ANALYSER_FILL: f32 = 0.45;
+/// How long a band's shown level takes to rise to a louder reading, in seconds: quick enough
+/// that a kick still punches the area up.
+const ANALYSER_ATTACK: f64 = 0.05;
+/// How long a band's shown level takes to fall after a quieter reading, in seconds: the fresh
+/// transform of each 43 ms window flickers window to window, especially on percussive
+/// material, and a slow fall is what turns that flicker into a flowing shape.
+const ANALYSER_RELEASE: f64 = 0.35;
 
 /// The analyser's filled area's grey: the theme's secondary grey scaled to [`ANALYSER_FILL`] of
 /// its value, opaque, so the area reads as a solid shape over the grid behind it
@@ -258,6 +265,8 @@ fn frequency_text(frequency: f64) -> String {
 /// here, so the engine starts appending as soon as the panel shows, and asks for the next
 /// frame while the ring's appended count moves: the meters' repaints alone hold steady with a
 /// steady level, and the line would freeze with them (monitoring with the transport stopped).
+/// The bands it returns are the shown levels, gliding towards each frame's fresh reading with
+/// attack/release ballistics, so the area flows with the music instead of flickering.
 fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f32; ANALYSER_BANDS]> {
     let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::new("eq-spectrum")))?;
     let spectrum = monitor.spectrum();
@@ -289,7 +298,23 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
         .collect();
     plan.process(&mut bins);
     let sum = window.iter().sum::<f32>().max(1.0);
-    Some(fold(&bins, sum, spectrum.sample_rate()))
+    let bands = fold(&bins, sum, spectrum.sample_rate());
+    // The shown levels glide towards the fresh reading, one band at a time: up with the
+    // attack, down with the release — the DSP crate's follower, the compressor's own block,
+    // driven once a frame at the frame's own step. Without it each window's transform redraws
+    // the area from nothing every 30 ms and percussive material reads as a flicker.
+    let shown_id = egui::Id::new(("eq-spectrum-shown", track.0, device));
+    let now = ui.input(|i| i.time);
+    let stored = ui.ctx().data(|d| d.get_temp::<([f32; ANALYSER_BANDS], f64)>(shown_id));
+    let last = stored.map_or(now, |(_, last)| last);
+    let mut shown = stored.map_or(bands, |(shown, _)| shown);
+    let frame = 1.0 / (now - last).clamp(1.0e-3, 1.0);
+    let follower = AttackRelease::new(ANALYSER_ATTACK, ANALYSER_RELEASE, frame);
+    for (shown, target) in shown.iter_mut().zip(bands.iter()) {
+        *shown = follower.rise(f64::from(*shown), f64::from(*target)).clamp(-90.0, 30.0) as f32;
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(shown_id, (shown, now)));
+    Some(shown)
 }
 
 /// The analyser's Hann window over the ring's length.
@@ -983,6 +1008,25 @@ mod tests {
         );
         assert_eq!(analyser_y(6.0, display), display.top(), "above full scale clamps to the top edge");
         assert_eq!(analyser_y(-90.0, display), display.bottom(), "below the floor clamps to the bottom edge");
+    }
+
+    #[test]
+    fn a_band_rises_quickly_and_falls_slowly_across_frames() {
+        // The follower as the panel drives it: one step a frame, 30 ms apart. A band ten frames
+        // into a louder reading is nearly there; ten frames into a quieter one it has fallen
+        // some but is far from down — the fall is what keeps the area flowing.
+        let follower = AttackRelease::new(ANALYSER_ATTACK, ANALYSER_RELEASE, 1.0 / 0.030);
+        let mut shown = -60.0;
+        for _ in 0..10 {
+            shown = follower.rise(shown, -10.0);
+        }
+        assert!(shown > -16.0, "300 ms of rising brings the band near its louder reading, {shown}");
+        let top = shown;
+        for _ in 0..10 {
+            shown = follower.rise(shown, -60.0);
+        }
+        assert!(shown < top - 20.0, "the band did fall, {shown} from {top}");
+        assert!(shown > -45.0, "but 300 ms on it is still well above its quieter reading, {shown}");
     }
 
     #[test]
