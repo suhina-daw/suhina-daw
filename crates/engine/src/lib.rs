@@ -609,6 +609,12 @@ impl Renderer {
         graph.launcher.monitor.running.store(!options.stopped, std::sync::atomic::Ordering::Relaxed);
         let mut meters = meters::MeterWriter::new(sample_rate);
         meters.assign(graph.levels.tracks());
+        // Every chain captures its watched devices' output into the meter monitor's spectrum
+        // rings, on every path that runs its devices (docs/spec/eq.md › The panel › The
+        // analyser).
+        for chain in &mut graph.chains {
+            chain.spectrum = Some(std::sync::Arc::clone(&meters.monitor.spectrum));
+        }
         graph
             .launcher
             .monitor
@@ -1174,11 +1180,10 @@ impl Renderer {
         // answers, while the others are still out (#151). A bus runs after the chains that play
         // into it, in order below.
         let chains = &mut self.graph.chains;
-        let spectrum = &self.meters.monitor.spectrum;
         for chain in chains.iter_mut().filter(|c| !c.is_bus) {
-            chain.advance(frames, &context, spectrum);
+            chain.advance(frames, &context);
         }
-        run_as_answered(chains, frames, &context, spectrum);
+        run_as_answered(chains, frames, &context);
         // In order, so a bus or a return has every chain that plays into it before it runs.
         // With a source render's capture, the source chain's output is mixed into the capture
         // buffer instead of where it plays.

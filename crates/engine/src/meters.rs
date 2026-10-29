@@ -125,14 +125,16 @@ impl Row {
 pub struct MeterMonitor {
     main: Row,
     tracks: Box<[Row]>,
-    pub(crate) spectrum: spectrum::Spectrum,
+    /// Shared with the graph's chains, which capture their watched devices' output into it on
+    /// every path that runs them.
+    pub(crate) spectrum: std::sync::Arc<spectrum::Spectrum>,
 }
 
 impl Default for MeterMonitor {
     fn default() -> Self {
         let tracks: Box<[Row]> =
             (0..MAX_METERED_TRACKS).map(|_| Row { track: AtomicU32::new(NO_TRACK), ..Row::default() }).collect();
-        Self { main: Row::default(), tracks, spectrum: spectrum::Spectrum::new() }
+        Self { main: Row::default(), tracks, spectrum: std::sync::Arc::new(spectrum::Spectrum::new()) }
     }
 }
 

@@ -135,7 +135,11 @@ the bands' type menus and numbered selectors under the display, the globals at t
 Edit switch under them. Everything that follows the selected band is one host-drawn widget
 (`Widget::EqCurve`, `crates/ui/src/detail/eq_curve.rs`); the globals are the SDK's own menu,
 button and value controls. The parameters stay the device's: every edit is one `device.setParam`
-command, the same one a generated list writes.
+command, the same one a generated list writes. The command's `device` is the device's full
+address — the index on the track, or its path through device groups ("2/1/0"), as the other
+panels write it — so an EQ inside a group is edited where it is, not whatever its branch-local
+index would name on the track; the panel's widget ids and its selection state are keyed to that
+path too, so two devices never share either.
 
 - **Display.** The summed magnitude response of the on bands of the curve in use, over the
   parameters' own ranges: frequency 10 Hz – 22 kHz logarithmically, gain ±15 dB, with a dB line
@@ -176,16 +180,22 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
 
 - **The tap.** The chain pass on the audio thread mixes a watched device's output block to mono
   (left and right halved) and appends it to a ring of 2048 samples in the meter monitor
-  (`crates/engine/src/spectrum.rs`), after the device has run and before the next one. The
-  rings are fixed tables of atomics, like the meters': the audio thread only stores, never
-  allocates, locks or waits, and a device whose row nobody watches costs nothing. The watch
-  rows are keyed by the device's index in the chain; a panel claims row `device index mod 16`
-  while it is drawn, and reads the ring only while the watch still names its device (a claim
-  outlives its panel until the next graph swap, so at most that row's mixdown goes on). When
-  two chains of the same track play at once (clips in more than one column), whichever wrote
-  last shows. A device inside a device group's branches is not tapped yet, and its panel
-  claims no watch — its branch-local index would name a top-level device's row — so it draws
-  only the response curve (issue #1050 keys watches by the device's path, which lifts this).
+  (`crates/engine/src/spectrum.rs`), after the device has run and before the next one — on every
+  path that runs the chain's devices, a bus's or a return's included: their chains never run the
+  stages plug-ins share, and their watched devices' output is captured all the same. The rings
+  are fixed tables of atomics, like the meters': the audio thread only stores, never allocates,
+  locks or waits, and a device whose row nobody watches costs nothing. The watch rows are keyed
+  by the device's index in the chain; a panel claims row `device index mod 16` while it is
+  drawn, and reads the ring only while the watch still names its device (a claim outlives its
+  panel until the next graph swap, so at most that row's mixdown goes on). When a row changes
+  owner, it starts from nothing: the new owner's ring holds no sample and no count of the
+  previous owner's, whose panel-claims and in-flight blocks cannot publish under the new
+  owner's name (each block publishes under the watch generation its snapshot took, and a
+  generation that is no longer current resets the count). When two chains of the same track
+  play at once (clips in more than one column), whichever wrote last shows. A device inside a
+  device group's branches is not tapped yet, and its panel claims no watch — its branch-local
+  index would name a top-level device's row — so it draws only the response curve (issue #1050
+  keys watches by the device's path, which lifts this).
 - **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
   already in the tree), and folds the spectrum into 64 bands spaced logarithmically over
   10 Hz – 22 kHz, taking each band's loudest bin. The level is the sine's amplitude against
@@ -201,7 +211,9 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   once a frame — so the area flows with the music instead of flickering window to window. No
   peak hold. While the engine appends to the ring the panel asks for the next frame (the
   meters' repaints alone would hold steady with a steady level and freeze the area); when the
-  engine stops, the area holds the last shown levels.
+  engine stops, the area holds the last shown levels. The monitor a panel reads is its own
+  session's: the frame carries the active session's meter monitor, and none while that session
+  has no player, so a panel never reads the previous session's engine as its own.
 
 ## Decisions
 

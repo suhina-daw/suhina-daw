@@ -41,9 +41,14 @@ fn project() -> Project {
 
 /// The window with the EQ's panel showing in the detail area's device chain.
 fn window() -> Harness<'static, App> {
+    window_with(project())
+}
+
+/// The window with `project`'s selected clip's device chain showing in the detail area.
+fn window_with(project: Project) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
-    app.set_session(Session::new(project()), &[]);
+    app.set_session(Session::new(project), &[]);
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_step_dt(1.0 / 60.0)
@@ -67,6 +72,19 @@ fn parameter(harness: &Harness<'static, App>, id: &str) -> f64 {
         .find(|p| p.id == id)
         .map(|p| p.value)
         .expect("the parameter is on the device")
+}
+
+/// A parameter of the EQ inside the grouped project's group: the group is the track's first
+/// device, the EQ its branch 1's first.
+fn grouped_parameter(harness: &Harness<'static, App>, id: &str) -> f64 {
+    let project = harness.state().session().unwrap().project();
+    let group = project.channels[0].devices[0].as_group().expect("the track's first device is the group");
+    group.branches[0].devices[0]
+        .params
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.value)
+        .expect("the grouped EQ has the parameter")
 }
 
 /// The demo project with an EQ on Drums' channel.
@@ -183,6 +201,57 @@ fn a_grouped_eqs_panel_claims_no_watch() {
     // The grouped EQ's branch-local index is 0: no row may watch it, or a top-level device at
     // index 0 would be tapped into that row and show as the grouped EQ's own spectrum.
     assert!(monitor.spectrum().appended(TrackId(1), 0).is_none(), "the grouped panel claims no watch");
+}
+
+/// A grouped EQ's panel edits the grouped EQ: every `device.setParam` it writes carries the
+/// device's full path ("0/0/0"), not its branch-local index, which would name whatever device
+/// sits at that index on the track instead.
+#[test]
+fn a_grouped_eqs_panel_edits_the_grouped_device() {
+    let mut harness = window_with(grouped_eq_project());
+    assert!(harness.query_by_label("EQ response display").is_some(), "the grouped EQ's panel is drawn");
+    assert!(!grouped_parameter(&harness, "a5On").ge(&0.5), "the grouped EQ's band 5 is off at the defaults");
+    harness.get_by_label("Band 5").click();
+    harness.run();
+    assert!(grouped_parameter(&harness, "a5On").ge(&0.5), "the click switched the grouped EQ's band 5 on");
+    // One undo takes the switching back.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(!grouped_parameter(&harness, "a5On").ge(&0.5), "undo takes the switching back");
+}
+
+/// A session without a player drops the previous session's meter monitor from the frame's
+/// temp data: a monitor belongs to one engine, and a panel of the next session must not read
+/// the previous engine's spectrum as its own.
+#[test]
+fn a_session_without_a_player_drops_the_previous_sessions_monitor() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
+    let mut session = Session::new(eq_project());
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.run();
+    let monitor_id = egui::Id::new("eq-spectrum");
+    assert!(
+        harness.ctx.data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(monitor_id)).is_some(),
+        "the frame carries the player's monitor"
+    );
+    // A session without a player takes over: the previous session's monitor must not stay in
+    // the frame's data for the next session's panels to read as their own.
+    harness.state_mut().set_session(Session::new(eq_project()), &[]);
+    harness.run();
+    assert!(
+        harness.ctx.data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(monitor_id)).is_none(),
+        "the stale monitor is gone"
+    );
 }
 
 #[test]

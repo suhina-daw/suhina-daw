@@ -20,11 +20,21 @@ pub const RING: usize = 2048;
 const NO_WATCH: u32 = u32::MAX;
 
 /// Which device of which track a row watches, as atomics the UI writes and the audio thread
-/// reads.
+/// reads. The generation counts the row's changes of owner: an append may publish only while
+/// its block's watch is still the current one.
 #[derive(Debug)]
 struct Watch {
     track: AtomicU32,
     device: AtomicU32,
+    generation: AtomicU32,
+}
+
+/// One row's watch, as the audio thread's snapshot for a block: the device index it watches
+/// and the watch's generation its appends must still be current to publish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Watched {
+    pub device: usize,
+    pub generation: u32,
 }
 
 /// One row's ring: the mono samples of the watched device's output, as `f32` bits, and the
@@ -47,8 +57,10 @@ pub struct Spectrum {
 }
 
 impl Spectrum {
+    /// The rings and watches, empty and unclaimed: one per row.
     pub(crate) fn new() -> Self {
-        let watch = || Watch { track: AtomicU32::new(NO_WATCH), device: AtomicU32::new(0) };
+        let watch =
+            || Watch { track: AtomicU32::new(NO_WATCH), device: AtomicU32::new(0), generation: AtomicU32::new(0) };
         let ring = || Ring {
             written: AtomicUsize::new(0),
             samples: std::iter::repeat_with(|| AtomicU32::new(0.0f32.to_bits())).take(RING).collect(),
@@ -74,32 +86,61 @@ impl Spectrum {
         }
     }
 
-    /// The UI claims `row` for the device at `device` of `track` while its panel is drawn;
-    /// claiming it again, or another panel claiming the same row, simply overwrites.
-    pub fn watch(&self, row: usize, track: TrackId, device: usize) {
-        let Ok(device) = u32::try_from(device) else { return };
-        if let Some(watch) = self.watches.get(row % ROWS) {
-            watch.track.store(track.0, Ordering::Relaxed);
-            watch.device.store(device, Ordering::Relaxed);
+    /// The UI claims `row` for the device at `device` of `track` while its panel is drawn; a
+    /// claim of a new owner overwrites the row's old one, and the same owner's claim again
+    /// changes nothing. Returns the row's watch generation, which appends published against
+    /// must still be current.
+    ///
+    /// When the owner changes, the row's ring starts from nothing: the last owner's samples
+    /// are not the new owner's, and with the transport stopped no append of the new owner's
+    /// would ever replace them. The identity is stored before the reset, so an append of the
+    /// previous owner in flight either sees its generation gone at once or is wiped by the
+    /// reset's store — whichever lands last, no stale count survives under the new owner
+    /// (the audio thread's append re-checks and puts the count back to zero).
+    pub fn watch(&self, row: usize, track: TrackId, device: usize) -> u32 {
+        let Ok(device) = u32::try_from(device) else { return 0 };
+        let Some(watch) = self.watches.get(row % ROWS) else { return 0 };
+        if watch.track.load(Ordering::Relaxed) == track.0 && watch.device.load(Ordering::Relaxed) == device {
+            return watch.generation.load(Ordering::Relaxed);
         }
+        watch.track.store(track.0, Ordering::Relaxed);
+        watch.device.store(device, Ordering::Relaxed);
+        let generation = watch.generation.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        if let Some(ring) = self.rings.get(row % ROWS) {
+            ring.written.store(0, Ordering::Release);
+        }
+        generation
     }
 
-    /// The device index each row watches of `track`'s chain: the audio thread's snapshot for
-    /// one block. A row that watches another track reads as `None`.
-    pub(crate) fn watched(&self, track: TrackId) -> [Option<usize>; ROWS] {
+    /// The rows that watch devices of `track`'s chain, as the audio thread's snapshot for one
+    /// block: row `i` holds the device it watches and the watch's generation. A row that
+    /// watches another track reads as `None`.
+    pub(crate) fn watched(&self, track: TrackId) -> [Option<Watched>; ROWS] {
         let mut rows = [None; ROWS];
         for (index, watch) in self.watches.iter().enumerate() {
             if watch.track.load(Ordering::Relaxed) == track.0 {
-                rows[index] = usize::try_from(watch.device.load(Ordering::Relaxed)).ok();
+                rows[index] = usize::try_from(watch.device.load(Ordering::Relaxed))
+                    .ok()
+                    .map(|device| Watched { device, generation: watch.generation.load(Ordering::Relaxed) });
             }
         }
         rows
     }
 
     /// The audio thread: `block` (interleaved stereo), the watched device's output this
-    /// block, mixes to mono and appends to `row`'s ring. Never allocates.
-    pub(crate) fn append(&self, row: usize, block: &[f32], frames: usize) {
+    /// block, mixes to mono and appends to `row`'s ring, publishing under `generation` — the
+    /// watch snapshot's. Never allocates.
+    ///
+    /// The append goes out only while the row's watch is still the one the block started
+    /// with: a row claimed by another owner since is skipped, and one claimed mid-append has
+    /// its count put back to zero, so the new owner's ring never holds the previous owner's
+    /// samples under its own name.
+    pub(crate) fn append(&self, row: usize, generation: u32, block: &[f32], frames: usize) {
         let Some(ring) = self.rings.get(row % ROWS) else { return };
+        let Some(watch) = self.watches.get(row % ROWS) else { return };
+        if watch.generation.load(Ordering::Relaxed) != generation {
+            return;
+        }
         let cursor = ring.written.load(Ordering::Relaxed);
         for (index, frame) in block.as_chunks::<2>().0.iter().take(frames).enumerate() {
             let left = frame.first().copied().unwrap_or(0.0);
@@ -111,6 +152,12 @@ impl Spectrum {
             }
         }
         ring.written.store(cursor + frames, Ordering::Release);
+        // The watch may have changed hands while the block was mixed in: the reset in
+        // `watch` carries the new owner's nothing, and this store would bring the previous
+        // owner's count back under the new owner's name.
+        if watch.generation.load(Ordering::Relaxed) != generation {
+            ring.written.store(0, Ordering::Release);
+        }
     }
 
     /// The row that watches `(track, device)`, if any.
@@ -135,11 +182,12 @@ impl Spectrum {
     pub fn samples(&self, track: TrackId, device: usize) -> Option<([f32; RING], usize)> {
         let device = u32::try_from(device).ok()?;
         let ring = self.rings.get(self.row_of(track, device)?)?;
-        let written = ring.written.load(Ordering::Acquire).min(RING);
+        let count = ring.written.load(Ordering::Acquire);
+        let written = count.min(RING);
         if written == 0 {
             return None;
         }
-        let oldest = ring.written.load(Ordering::Acquire) - written;
+        let oldest = count - written;
         let mut out = [0.0; RING];
         for (index, cell) in out.iter_mut().enumerate().skip(RING - written) {
             let at = (oldest + index - (RING - written)) % RING;
@@ -167,7 +215,7 @@ mod tests {
         spectrum.watch(0, TrackId(7), 2);
         assert_eq!(spectrum.watched(TrackId(7)), {
             let mut r = [None; ROWS];
-            r[0] = Some(2);
+            r[0] = Some(Watched { device: 2, generation: 1 });
             r
         });
         assert_eq!(spectrum.watched(TrackId(8)), [None; ROWS]);
@@ -177,7 +225,7 @@ mod tests {
         spectrum.watch(0, TrackId(9), 1);
         assert!(spectrum.samples(TrackId(7), 2).is_none(), "the first claim is gone");
         spectrum.watch(3, TrackId(7), 2);
-        spectrum.append(3, &[0.5, 0.0, 0.5, 0.0], 2);
+        spectrum.append(3, spectrum.watch(3, TrackId(7), 2), &[0.5, 0.0, 0.5, 0.0], 2);
         let (samples, valid) = spectrum.samples(TrackId(7), 2).unwrap();
         assert_eq!(valid, 2, "one block's frames are there");
         assert_eq!(samples[RING - 1], 0.25, "the last frame's mono mix, half of left plus right");
@@ -187,12 +235,12 @@ mod tests {
     #[test]
     fn the_ring_holds_its_last_ring_frames_across_a_wrap() {
         let spectrum = Spectrum::new();
-        spectrum.watch(1, TrackId(7), 0);
+        let generation = spectrum.watch(1, TrackId(7), 0);
         // Three appends of the whole ring: the last append's samples are the newest, and the
         // block's frames alternate the round's level with silence.
         for round in 0..3 {
             let block: Vec<f32> = (0..RING * 2).map(|i| if i / 2 % 2 == 0 { round as f32 } else { 0.0 }).collect();
-            spectrum.append(1, &block, RING);
+            spectrum.append(1, generation, &block, RING);
         }
         let (samples, valid) = spectrum.samples(TrackId(7), 0).unwrap();
         assert_eq!(valid, RING);
@@ -207,13 +255,53 @@ mod tests {
     fn the_count_of_appended_frames_moves_with_every_append() {
         let spectrum = Spectrum::new();
         assert_eq!(spectrum.appended(TrackId(7), 2), None, "nothing watched yet");
-        spectrum.watch(3, TrackId(7), 2);
+        let generation = spectrum.watch(3, TrackId(7), 2);
         assert_eq!(spectrum.appended(TrackId(7), 2), Some(0), "watched, nothing appended yet");
-        spectrum.append(3, &[0.5, 0.5, 0.25, 0.25], 2);
+        spectrum.append(3, generation, &[0.5, 0.5, 0.25, 0.25], 2);
         assert_eq!(spectrum.appended(TrackId(7), 2), Some(2), "one block's frames are counted");
-        spectrum.append(3, &[0.5, 0.5, 0.25, 0.25], 2);
+        spectrum.append(3, generation, &[0.5, 0.5, 0.25, 0.25], 2);
         assert_eq!(spectrum.appended(TrackId(7), 2), Some(4), "the count moves with every append");
         assert_eq!(spectrum.appended(TrackId(8), 2), None, "another track reads nothing");
+    }
+
+    /// A row claimed by a new owner starts from nothing, even though the previous owner
+    /// filled it: the new owner's panel must not show the old owner's spectrum, which with
+    /// the transport stopped no append of its own would ever replace.
+    #[test]
+    fn a_row_claimed_by_a_new_owner_starts_from_nothing() {
+        let spectrum = Spectrum::new();
+        spectrum.append(0, spectrum.watch(0, TrackId(7), 2), &[0.5, 0.5, 0.5, 0.5], 2);
+        assert!(spectrum.samples(TrackId(7), 2).is_some(), "the first owner's output is in the ring");
+        spectrum.watch(0, TrackId(7), 5);
+        assert!(spectrum.samples(TrackId(7), 5).is_none(), "the new owner's ring is empty");
+        assert_eq!(spectrum.appended(TrackId(7), 5), Some(0), "the new owner's count starts at zero");
+        // The previous owner reads nothing: its claim is gone.
+        assert!(spectrum.samples(TrackId(7), 2).is_none());
+        // Claiming the same owner again keeps what the ring holds.
+        spectrum.append(0, spectrum.watch(0, TrackId(7), 5), &[0.25, 0.25, 0.25, 0.25], 2);
+        assert!(spectrum.samples(TrackId(7), 5).is_some());
+        spectrum.watch(0, TrackId(7), 5);
+        assert!(spectrum.samples(TrackId(7), 5).is_some(), "the same owner's claim changes nothing");
+    }
+
+    /// An append of a watch that has since changed hands never publishes: the block's
+    /// snapshot is out of date, and a re-check after the mixing puts the count back to zero,
+    /// so a stale owner's samples never show under the new owner's name.
+    #[test]
+    fn an_append_of_a_stale_watch_publishes_nothing() {
+        let spectrum = Spectrum::new();
+        let generation = spectrum.watch(0, TrackId(7), 2);
+        spectrum.append(0, generation, &[0.5, 0.5, 0.5, 0.5], 2);
+        // The row changes hands; then a block mixed for the previous owner before the change
+        // comes to publish.
+        spectrum.watch(0, TrackId(7), 5);
+        spectrum.append(0, generation, &[1.0, 1.0, 1.0, 1.0], 2);
+        assert!(spectrum.samples(TrackId(7), 5).is_none(), "the stale block did not publish");
+        assert_eq!(spectrum.appended(TrackId(7), 5), Some(0));
+        // And one taken after the change publishes as the new owner's.
+        let new_generation = spectrum.watch(0, TrackId(7), 5);
+        spectrum.append(0, new_generation, &[0.25, 0.25, 0.25, 0.25], 2);
+        assert!(spectrum.samples(TrackId(7), 5).is_some(), "the new owner's own block is there");
     }
 
     #[test]

@@ -164,6 +164,11 @@ pub(crate) struct Chain {
     arranged: u128,
     /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
     scale: Option<Option<MusicalScale>>,
+    /// The meter monitor's spectrum rings, given when the graph is installed on the renderer
+    /// that owns the monitor: the chain captures its watched devices' output into them on
+    /// every path that runs its devices (`advance`, the event overflow's flush and
+    /// `complete`'s rest). `None` while there is no monitor — a source render, a test.
+    pub(crate) spectrum: Option<std::sync::Arc<spectrum::Spectrum>>,
     /// When its first slot is the channel's clip host, the ARA plug-in its clips play through
     /// (ADR 0033 › 2, #990): what scales the host's
     /// output frame by frame and the other clips' sound, added after it.
@@ -492,6 +497,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -543,6 +549,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -680,15 +687,14 @@ impl Chain {
     /// [`Chain::answered`] to tell when its answer is in and [`Chain::collect`] to take it, after
     /// which this goes on from there. Returns false once every device has run (a plug-in that
     /// cannot take a block that way runs as in [`Chain::complete`]).
-    pub(crate) fn advance(&mut self, frames: usize, context: &ProcessContext, spectrum: &spectrum::Spectrum) -> bool {
+    pub(crate) fn advance(&mut self, frames: usize, context: &ProcessContext) -> bool {
         self.context = *context;
         if self.waiting.is_some() {
             return true;
         }
         let to = frames.min(MAX_BLOCK);
-        // The devices whose input the analyser watches, by row: their input blocks are
-        // appended as they pass (docs/spec/eq.md › The panel › The analyser).
-        let watched = spectrum.watched(self.track);
+        let capture =
+            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
         let Self {
             slots,
             buffer,
@@ -717,11 +723,8 @@ impl Chain {
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
                     // The analyser hears the device's output, so its line shows what the
                     // device made of the sound (docs/spec/eq.md › The panel › The analyser).
-                    if let Some(row) =
-                        self.positions.get(*stage).copied().filter(|position| watched.contains(&Some(*position)))
-                    {
-                        let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
-                        spectrum.append(row, output, to - from);
+                    if let Some(capture) = &capture {
+                        capture.append(*stage, buffer, from, to);
                     }
                     *stage += 1;
                 }
@@ -1061,6 +1064,8 @@ impl Chain {
     /// event over at its frame.
     fn run(&mut self, frame: usize) {
         let to = frame.min(MAX_BLOCK);
+        let capture =
+            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
         let Self {
             slots,
             buffer,
@@ -1083,6 +1088,9 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    if let Some(capture) = &capture {
+                        capture.append(index, buffer, from, to);
+                    }
                     index += 1;
                 }
                 Slot::Group(group) => {
@@ -1346,6 +1354,32 @@ impl Chain {
 /// that plug-in wakes it at once, one from another is seen at most this late.
 pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 
+/// The spectrum rings' watched-output capture for one block
+/// (docs/spec/eq.md › The panel › The analyser): the rings themselves and the chain's rows
+/// among them, with each row's watch as the block began. Built once a block starts and
+/// shared by every path that runs the chain's devices — [`Chain::advance`], the event
+/// overflow's flush and `complete`'s rest, whose devices run through [`Chain::run`] — so a
+/// watched device's every span is appended once, on a bus or a return too.
+struct Capture<'a> {
+    watched: [Option<spectrum::Watched>; spectrum::ROWS],
+    spectrum: &'a spectrum::Spectrum,
+}
+
+impl Capture<'_> {
+    /// Appends the device at top-level `position`'s output span `from..to` of `buffer` to its
+    /// row's ring, after `run_device` ran it. Never allocates.
+    fn append(&self, position: usize, buffer: &[f32], from: usize, to: usize) {
+        let row = position % spectrum::ROWS;
+        let Some(watch) =
+            self.watched.get(row).and_then(|watch| watch.as_ref()).filter(|watch| watch.device == position)
+        else {
+            return;
+        };
+        let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+        self.spectrum.append(row, watch.generation, output, to - from);
+    }
+}
+
 /// Takes each chain's block as soon as its plug-in answers and runs that chain on to its next
 /// plug-in, until no chain has a block out (#151): a chain does not wait for the plug-ins of the
 /// other chains, only for its own, and only until the block's deadline. The chains were started
@@ -1353,12 +1387,7 @@ pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 /// for at most [`ANSWER_SLICE`] at a time. Never allocates; returns by the deadline in real time
 /// (a plug-in still out then is a miss), and offline once every plug-in has answered or used up
 /// [`OFFLINE_TIMEOUT`].
-pub(crate) fn run_as_answered(
-    chains: &mut [Chain],
-    frames: usize,
-    context: &ProcessContext,
-    spectrum: &spectrum::Spectrum,
-) {
+pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &ProcessContext) {
     loop {
         let now = crate::clock::now();
         let mut out = false;
@@ -1366,7 +1395,7 @@ pub(crate) fn run_as_answered(
         for chain in chains.iter_mut().filter(|chain| chain.is_waiting()) {
             if chain.answered(now) {
                 chain.collect(frames);
-                chain.advance(frames, context, spectrum);
+                chain.advance(frames, context);
                 moved = true;
             }
             out |= chain.is_waiting();

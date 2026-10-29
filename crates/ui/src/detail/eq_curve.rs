@@ -10,7 +10,8 @@
 //! device, the analyser also draws the spectrum of its output as a filled grey area behind the
 //! curve, on the display's own vertical scale, from a ring the engine's audio thread keeps in
 //! the meter monitor. Which band is selected and which curve is edited are panel state; every
-//! edit is a `device.setParam` command.
+//! edit is a `device.setParam` command, addressed by the device's full path, so a panel works
+//! the same on a device inside a group as on one of the track's own.
 
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use serde_json::json;
@@ -97,11 +98,34 @@ struct Band {
     count: usize,
 }
 impl Band {
+    /// Whether the band's type has a gain to drag: the cuts and the notch have none.
     fn gain_editable(&self) -> bool {
         GAIN_TYPES.contains(&self.kind)
     }
 }
 
+/// How the panel addresses its device: `target` is the `device` parameter of every
+/// `device.setParam` command it writes — the index of the device on the track, or its path
+/// through device groups (`DeviceAt::value`), so a grouped EQ's panel edits the grouped EQ
+/// and not whatever its branch-local index would name on the track. `ids` keys the panel's
+/// widget and state ids to the full path, so a grouped EQ and a top-level one never share
+/// selection state or widget identity.
+struct Address {
+    target: serde_json::Value,
+    ids: egui::Id,
+}
+
+impl Address {
+    /// The address of the device at `at`: its command target and its id key.
+    fn new(track: TrackId, at: &DeviceAt) -> Self {
+        Self { target: at.value(), ids: egui::Id::new(("eq-curve", track.0, &at.0)) }
+    }
+}
+
+/// Draws the panel into `bounds` (the widget's rectangle in the host): the display, the dots,
+/// the strips, the rows and the switch, editing through `device.setParam` actions addressed
+/// to `at` (see [`Address`]) while the analyser claims its watch through the frame's meter
+/// monitor.
 pub(crate) fn show(
     ui: &mut egui::Ui,
     bounds: Rect,
@@ -110,11 +134,11 @@ pub(crate) fn show(
     at: &DeviceAt,
     actions: &mut Vec<Action>,
 ) {
-    let device = at.0.last().copied().unwrap_or(0);
+    let address = Address::new(track, at);
     let display =
         Rect::from_min_size(bounds.min + Vec2::new(DISPLAY[0], DISPLAY[1]), Vec2::new(DISPLAY[2], DISPLAY[3]));
     let mode = value(parameters, "mode").round().min(2.0);
-    let selection_id = egui::Id::new(("eq-curve-selection", track.0, device));
+    let selection_id = address.ids.with("selection");
     let mut selection = ui.ctx().data(|d| d.get_temp::<(usize, usize)>(selection_id)).unwrap_or((0, 0));
     if mode == 0.0 {
         selection.0 = 0;
@@ -128,17 +152,17 @@ pub(crate) fn show(
         1 if curve_b.is_some() => curve_b.as_ref().unwrap_or(&curve_a),
         _ => &curve_a,
     };
-    let analyser = watch_key(at).and_then(|key| analyser_bands(ui, track, key));
+    let analyser = watch_key(at).and_then(|device| analyser_bands(ui, track, device));
 
     draw_display(ui, display, &curve_a, curve_b.as_deref().unwrap_or(&curve_a), mode > 0.0, analyser.as_ref());
-    draw_dots(ui, display, edited, &mut selection, parameters, track, device, actions);
+    draw_dots(ui, display, edited, &mut selection, parameters, track, &address, actions);
     for field in 0..3 {
-        draw_strip(ui, bounds, field, selection, parameters, track, device, actions);
+        draw_strip(ui, bounds, field, selection, parameters, track, &address, actions);
     }
-    draw_type_menus(ui, bounds, edited, selection, parameters, track, device, actions);
-    draw_numbers(ui, bounds, edited, &mut selection, parameters, track, device, actions);
+    draw_type_menus(ui, bounds, edited, selection, parameters, track, &address, actions);
+    draw_numbers(ui, bounds, edited, &mut selection, parameters, track, &address, actions);
     if mode > 0.0 {
-        draw_edit_switch(ui, bounds, &mut selection, track, device);
+        draw_edit_switch(ui, bounds, &mut selection, &address);
     }
     ui.ctx().data_mut(|d| d.insert_temp(selection_id, selection));
 }
@@ -231,12 +255,13 @@ fn curve_points(display: Rect, curve: &[Band]) -> Vec<Pos2> {
 }
 
 /// The edited values as `device.setParam` commands, all but the last one continuous so a drag
-/// is one undo step.
+/// is one undo step. `device` is the panel's address's `target` — the index on the track, or
+/// the path through groups.
 fn push_edits(
     actions: &mut Vec<Action>,
     edits: Vec<(&GraphParameter, f64)>,
     track: TrackId,
-    device: usize,
+    device: &serde_json::Value,
     gesture: &str,
     dragged: bool,
 ) {
@@ -465,7 +490,7 @@ fn draw_dots(
     selection: &mut (usize, usize),
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    address: &Address,
     actions: &mut Vec<Action>,
 ) {
     let colors = theme::palette();
@@ -475,7 +500,7 @@ fn draw_dots(
             frequency_x(band.frequency, display).clamp(display.left() + 8.0, display.right() - 8.0),
             db_y(band.gain, display),
         );
-        let id = egui::Id::new(("eq-dot", track.0, device, selection.0, index));
+        let id = address.ids.with(("eq-dot", selection.0, index));
         let caption = format!(
             "Band {}: {} at {}, {:.2} dB, Q {:.2}",
             index + 1,
@@ -557,7 +582,7 @@ fn draw_dots(
                     edits.push((parameter, band.gain));
                 }
             }
-            push_edits(actions, edits, track, device, "eq-curve-dot", response.dragged());
+            push_edits(actions, edits, track, &address.target, "eq-curve-dot", response.dragged());
         }
         if !held {
             ui.ctx().data_mut(|d| d.remove::<[f32; 2]>(state_id));
@@ -576,7 +601,7 @@ fn draw_strip(
     selection: (usize, usize),
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    address: &Address,
     actions: &mut Vec<Action>,
 ) {
     let field_name = ["Frequency", "Gain", "Q"][field];
@@ -619,7 +644,7 @@ fn draw_strip(
     let response = ui
         .interact(
             Rect::from_min_size(Pos2::new(group.left(), group.top() + 11.0), Vec2::new(group.width(), 28.0)),
-            egui::Id::new(("eq-strip", track.0, device, field)),
+            address.ids.with(("eq-strip", field)),
             Sense::click_and_drag(),
         )
         .on_hover_text(format!(
@@ -681,7 +706,7 @@ fn draw_strip(
     next = (next + f64::from(keys) * 0.01 * fine).clamp(0.0, 1.0);
     if next != at || response.double_clicked() || response.drag_stopped() {
         let value = if response.double_clicked() { parameter.default } else { denormalized(parameter, next) };
-        push_edits(actions, vec![(parameter, value)], track, device, "eq-curve-strip", response.dragged());
+        push_edits(actions, vec![(parameter, value)], track, &address.target, "eq-curve-strip", response.dragged());
     }
     if !held {
         ui.ctx().data_mut(|d| d.remove::<f64>(state_id));
@@ -698,7 +723,7 @@ fn draw_type_menus(
     selection: (usize, usize),
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    address: &Address,
     actions: &mut Vec<Action>,
 ) {
     let colors = theme::palette();
@@ -708,7 +733,7 @@ fn draw_type_menus(
             Vec2::new(BAND_WIDTH - 2.0, ROW_HEIGHT - 2.0),
         );
         let response = ui
-            .interact(rect, egui::Id::new(("eq-type", track.0, device, selection.0, index)), Sense::click())
+            .interact(rect, address.ids.with(("eq-type", selection.0, index)), Sense::click())
             .on_hover_text(format!("Band {}'s type: {}", index + 1, TYPE_NAMES[band.kind]));
         response.widget_info(|| {
             let mut info =
@@ -751,7 +776,7 @@ fn draw_type_menus(
         if let Some(kind) = picked.filter(|kind| *kind != band.kind)
             && let Some(parameter) = parameter_by_field(parameters, selection.0, index, "Type")
         {
-            push_edits(actions, vec![(parameter, kind as f64)], track, device, "eq-curve-type", false);
+            push_edits(actions, vec![(parameter, kind as f64)], track, &address.target, "eq-curve-type", false);
         }
     }
 }
@@ -784,7 +809,7 @@ fn draw_numbers(
     selection: &mut (usize, usize),
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    address: &Address,
     actions: &mut Vec<Action>,
 ) {
     let colors = theme::palette();
@@ -795,7 +820,7 @@ fn draw_numbers(
         );
         let selected = selection.1 == index;
         let response = ui
-            .interact(rect, egui::Id::new(("eq-number", track.0, device, selection.0, index)), Sense::click())
+            .interact(rect, address.ids.with(("eq-number", selection.0, index)), Sense::click())
             .on_hover_text(if band.on {
                 format!("Band {} is on. Click again to switch it off.", index + 1)
             } else {
@@ -829,7 +854,7 @@ fn draw_numbers(
             {
                 edits.push((parameter, 1.0));
             }
-            push_edits(actions, edits, track, device, "eq-curve-number", false);
+            push_edits(actions, edits, track, &address.target, "eq-curve-number", false);
             selection.1 = index;
         }
     }
@@ -837,7 +862,7 @@ fn draw_numbers(
 
 /// The Edit switch in the globals' column: which curve's bands the display edits, in Left/Right
 /// and Mid/Side. Panel state only; the device has no such parameter.
-fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usize), track: TrackId, device: usize) {
+fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usize), address: &Address) {
     let colors = theme::palette();
     let rect = Rect::from_min_size(bounds.min + Vec2::new(EDIT[0], EDIT[1]), Vec2::new(EDIT[2], EDIT[3]));
     let painter = ui.painter_at(rect);
@@ -849,7 +874,7 @@ fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usi
         );
         let selected = selection.0 == index;
         let response = ui
-            .interact(button, egui::Id::new(("eq-edit", track.0, device, index)), Sense::click())
+            .interact(button, address.ids.with(("eq-edit", index)), Sense::click())
             .on_hover_text(format!("Edit curve {letter}'s bands"));
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Edit curve {letter}")));
