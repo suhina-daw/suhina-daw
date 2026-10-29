@@ -4,3 +4,7 @@
 # merge a change here. Everything else follows the usual review and `ready to merge`.
 /.github/ @juhamikael
 /scripts/ @juhamikael
+
+# Parity runs without environment secrets; publishing its output is a separate job.
+# Leave owners empty so parity changes follow the usual review and `ready to merge`.
+/scripts/parity/

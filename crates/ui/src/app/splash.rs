@@ -130,22 +130,7 @@ impl Splash {
         let width = (rect.width() - 2.0 * LOGO_MARGIN).clamp(0.0, LOGO_WIDTH);
         let size = Vec2::new(width, width / crate::kit::logo::aspect());
         let name = Rect::from_center_size(egui::pos2(rect.center().x, rect.center().y - 12.0), size);
-        let pixels = (size * ui.ctx().pixels_per_point()).round();
-        match crate::kit::logo::texture(ui.ctx(), pixels.x as u32, pixels.y as u32, theme::text_primary()) {
-            Some(logo) => {
-                let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                painter.image(logo.id(), name, uv, fade(Color32::WHITE));
-            }
-            None => widgets::text_in(
-                &painter,
-                name,
-                Align2::CENTER_CENTER,
-                "Suhina",
-                theme::ui_font(NAME),
-                fade(theme::text_primary()),
-            ),
-        }
-        name_for_readers(ui, name, "Suhina");
+        crate::kit::logo::paint(ui, &painter, name, theme::ui_font(NAME), opacity);
         let version = line(name.bottom() + 8.0, 16.0);
         let shown = format!("Version {}", self.version);
         widgets::text_in(

@@ -19,6 +19,8 @@ pub(super) enum ClipEdit {
     Warp,
     Mode,
     Transpose,
+    /// A picked clip's row: a click gives it the piano roll's focus (#1054).
+    Focus(usize),
 }
 
 /// The warp modes in the order a click on the Mode row steps through them: the name
@@ -128,6 +130,14 @@ pub(super) fn clip_properties(
             ));
         }
     }
+    // Several MIDI clips picked: a row each, the one with the piano roll's focus marked; a click
+    // on another gives it the focus (#1054).
+    if info.picked.len() > 1 {
+        for (index, (_, _, name, focused)) in info.picked.iter().enumerate() {
+            let label = if *focused { "Editing" } else { "Clip" };
+            rows.push((label, name.clone(), ClipEdit::Focus(index)));
+        }
+    }
     let column = if stacked {
         let height = ROW + PAD * 2.0 + rows.len() as f32 * PARAM_ROW;
         Rect::from_min_size(area.min, Vec2::new(area.width(), height))
@@ -166,7 +176,7 @@ pub(super) fn clip_properties(
         painter,
         name.shrink2(Vec2::new(PAD, 0.0)),
         Align2::LEFT_CENTER,
-        &info.name,
+        &if info.others.is_empty() { info.name.clone() } else { format!("{} selected", info.others.len() + 1) },
         theme::ui_font(theme::TEXT),
         theme::text_primary(),
     );
@@ -250,10 +260,26 @@ pub(super) fn clip_edit_row(
             theme::text_value(),
         );
     };
+    if let ClipEdit::Focus(index) = edit {
+        let response = widgets::button_area(ui, value_rect, id, format!("{label}: {value}"));
+        draw_value(&response, value);
+        if response.clicked()
+            && let Some((track, clip, _, false)) = info.picked.get(index)
+        {
+            actions.push(Action::new("view.focusClip", json!({ "track": track.0, "clip": clip.0 })));
+        }
+        return;
+    }
     if matches!(edit, ClipEdit::Loop | ClipEdit::Warp | ClipEdit::Mode) {
         let response = widgets::button_area(ui, value_rect, id, format!("{label}: {value}"));
         draw_value(&response, value);
         if response.clicked() {
+            // The other selected clips' loops follow this one's.
+            if edit == ClipEdit::Loop {
+                for other in &info.others {
+                    actions.push(Action::new("clip.setLoop", json!({ "clip": other, "loop": !info.looping })));
+                }
+            }
             actions.push(match edit {
                 ClipEdit::Loop => Action::new("clip.setLoop", on_clip(at, json!({ "loop": !info.looping }))),
                 ClipEdit::Warp => Action::new("clip.setAudio", on_clip(at, json!({ "warp": !info.warped }))),

@@ -128,6 +128,8 @@ fn every_message_round_trips() {
         Message::Params { instance: 4, params: Vec::new() },
         Message::SetParam { instance: 5, id: 7, value: -0.5 },
         Message::Param { instance: 5, param: gain() },
+        Message::ParamChanged { instance: 5, id: 7, value: 0.125 },
+        Message::ParamChanged { instance: u32::MAX, id: u32::MAX, value: f64::MAX },
         Message::OpenEditor { instance: 6, owner: None, embedded: false },
         Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true },
         Message::EditorOpened { instance: 6, width: 800, height: 600 },
@@ -174,6 +176,7 @@ fn messages_name_their_instance() {
     assert_eq!(Message::Unload { instance: 4 }.instance(), Some(4));
     assert_eq!(Message::EditorClosed { instance: 2 }.instance(), Some(2));
     assert_eq!(Message::LatencyChanged { instance: 3, latency: 64 }.instance(), Some(3));
+    assert_eq!(Message::ParamChanged { instance: 3, id: 7, value: 0.0 }.instance(), Some(3));
     assert_eq!(Message::Error { instance: Some(1), message: String::new() }.instance(), Some(1));
     assert_eq!(Message::Error { instance: None, message: String::new() }.instance(), None);
     assert_eq!(Message::Ping { id: 1 }.instance(), None);
@@ -205,6 +208,9 @@ fn malformed_lines_are_refused() {
         r#"{"op":"set_param","instance":1,"id":1}"#,
         r#"{"op":"set_param","instance":1,"id":-1,"value":0.5}"#,
         r#"{"op":"set_param","id":1,"value":0.5}"#,
+        r#"{"op":"param_changed","instance":1,"id":1}"#,
+        r#"{"op":"param_changed","instance":1,"id":-1,"value":0.5}"#,
+        r#"{"op":"param_changed","instance":1,"value":0.5}"#,
         r#"{"op":"params","instance":1,"params":[{"id":1}]}"#,
         r#"{"op":"param","instance":1}"#,
         r#"{"op":"editor_opened","instance":1,"width":800}"#,

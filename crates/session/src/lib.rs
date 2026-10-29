@@ -621,7 +621,9 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
-        self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut())
+        let notices = self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut());
+        crate::devices::keep_plugin_params_in_step(self);
+        notices
     }
 
     /// How often the state of each running plug-in is read for backups and the unsaved-changes

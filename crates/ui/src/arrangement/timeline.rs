@@ -492,9 +492,9 @@ impl Timeline {
 
     /// Takes the transport, playhead and play start marker from the engine, leaving the rest as
     /// it was built.
-    /// The headers show what automation plays while the transport runs, the project's values
-    /// otherwise: volume and pan, on returns and Main too (#706). Called every frame, after
-    /// [`Timeline::follow`].
+    /// The headers show what automation plays at the playhead, running or stopped, the project's
+    /// values where nothing is automated: volume and pan, on returns and Main too (#706, #811).
+    /// Called every frame, after [`Timeline::follow`].
     pub fn follow_automation(&mut self, project: &Project) {
         let channel_of = |track: TrackId| {
             let id = project.track(track)?.channel?;
@@ -502,13 +502,12 @@ impl Timeline {
         };
         for lane in &mut self.lanes {
             let Some(channel) = channel_of(lane.track) else { continue };
-            let (volume, pan) =
-                if self.running { crate::interaction::grid::played_mixer(channel, self.beat) } else { (None, None) };
+            let (volume, pan) = crate::interaction::grid::played_mixer(channel, self.beat);
             lane.volume_db = volume.unwrap_or_else(|| gain_to_db(channel.volume));
             lane.pan = pan.unwrap_or(channel.pan);
         }
         if let Some(main) = project.channels.iter().find(|c| c.role == ChannelRole::Master) {
-            let played = if self.running { crate::interaction::grid::played_mixer(main, self.beat).0 } else { None };
+            let played = crate::interaction::grid::played_mixer(main, self.beat).0;
             self.main_volume_db = Some(played.unwrap_or_else(|| gain_to_db(main.volume)));
         }
     }

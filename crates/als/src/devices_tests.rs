@@ -300,9 +300,132 @@ fn pitch_modes_and_bad_values() {
     assert!(params.is_empty(), "{params:?}");
 }
 
+/// Live's EQ Three (`FilterEQ3`) as a freshly loaded preset stores it: the gains as linear
+/// gains, the band switches as bools, the slope as an index where 1 is the steeper setting.
+#[test]
+fn eq_three_takes_every_stored_value() {
+    let xml = [
+        manual_xml("GainLo", "1"),
+        manual_xml("GainMid", "1.99526238"),
+        manual_xml("GainHi", "0.5011872"),
+        manual_xml("LowOn", "false"),
+        manual_xml("MidOn", "true"),
+        manual_xml("HighOn", "true"),
+        manual_xml("FreqLo", "250"),
+        manual_xml("FreqHi", "2500"),
+        manual_xml("Slope", "1"),
+    ]
+    .concat();
+    let (id, params, warnings) = mapped("FilterEQ3", &xml);
+    assert_eq!(id, "dj-eq");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 9);
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-3, "{id}: {got} against {expected}");
+    };
+    near("low", 0.0);
+    near("mid", 6.0);
+    near("high", -6.0);
+    near("lowKill", 1.0);
+    near("midKill", 0.0);
+    near("highKill", 0.0);
+    near("lowFrequency", 250.0);
+    near("highFrequency", 2500.0);
+    near("slope", 1.0);
+    let ids: Vec<&str> = suhina_device_dj_eq::INFO.params.iter().map(|p| p.id).collect();
+    assert!(params.iter().all(|p| ids.contains(&p.id.as_str())), "{params:?}");
+}
+
+/// A stored gain of 0 is silence, and a slope outside its two settings is noted and left out.
+#[test]
+fn eq_three_zero_gains_and_odd_slopes() {
+    let xml = manual_xml("GainLo", "0") + &manual_xml("Slope", "7");
+    let (_, params, warnings) = mapped("FilterEQ3", &xml);
+    assert_eq!(param(&params, "low"), SILENCE_DB);
+    assert!(params.iter().all(|p| p.id != "slope"), "{params:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+/// A slope between two settings is not rounded into one of them: it is noted and left out.
+#[test]
+fn eq_three_fractional_slope_is_not_rounded() {
+    let (_, params, warnings) = mapped("FilterEQ3", &manual_xml("Slope", "1.25"));
+    assert!(params.iter().all(|p| p.id != "slope"), "{params:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+/// A gain past the device's range is held there, whatever the project file says.
+#[test]
+fn eq_three_out_of_range_gains_are_clamped() {
+    let xml = manual_xml("GainHi", "16") + &manual_xml("GainLo", "0.01") + &manual_xml("GainMid", "0.000001");
+    let (_, params, warnings) = mapped("FilterEQ3", &xml);
+    assert_eq!(param(&params, "high"), 6.0, "+24 dB is held at the device's top");
+    assert_eq!(param(&params, "low"), -40.0, "−40 dB is inside the range and is kept");
+    assert_eq!(param(&params, "mid"), SILENCE_DB, "−120 dB is held at silence");
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+/// One band's two parameter sets as a saved set stores them.
+fn eq_band(band: usize, a: [&str; 5], b: [&str; 5]) -> String {
+    let set = |name: &str, v: [&str; 5]| {
+        let fields: String =
+            ["IsOn", "Mode", "Freq", "Gain", "Q"].iter().zip(v).map(|(f, v)| manual_xml(f, v)).collect();
+        format!("<{name}>{fields}</{name}>")
+    };
+    format!("<Bands.{band}>{}{}</Bands.{band}>", set("ParameterA", a), set("ParameterB", b))
+}
+
+#[test]
+fn eq_eight_takes_both_parameter_sets_of_every_band() {
+    // Plain values may come with spaces or as 0.0; they read as numbers.
+    let mut xml = String::from(r#"<Precision Value="0.0" /><Mode Value=" 2" /><EditMode Value="false" />"#);
+    xml += &manual_xml("GlobalGain", "-3.5");
+    xml += &manual_xml("Scale", "-0.5");
+    xml += &manual_xml("AdaptiveQ", "false");
+    for band in 0..8 {
+        let freq = format!("{}", 100 * (band + 1));
+        xml += &eq_band(band, ["true", "3", &freq, "4.5", "2"], ["false", "7", "18000", "0", "0.7071067095"]);
+    }
+    let (id, params, warnings) = mapped("Eq8", &xml);
+    assert_eq!(id, "eq");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 84);
+    let near = |id: &str, expected: f64| {
+        let got = param(&params, id);
+        assert!((got - expected).abs() < 1e-9, "{id}: {got} against {expected}");
+    };
+    near("output", -3.5);
+    near("scale", -0.5);
+    near("adaptiveQ", 0.0);
+    near("mode", 2.0);
+    near("a1On", 1.0);
+    near("a1Type", 3.0);
+    near("a8Frequency", 800.0);
+    near("a3Gain", 4.5);
+    near("a5Q", 2.0);
+    near("b2On", 0.0);
+    near("b7Type", 7.0);
+    near("b8Q", 0.7071067095);
+}
+
+#[test]
+fn eq_eight_odd_values_are_noted() {
+    let xml = format!(
+        r#"<Precision Value="1" /><Mode Value="5" />{}"#,
+        eq_band(0, ["true", "9", "100", "0", "1"], ["true", "1", "x", "0", "1"])
+    );
+    let (_, params, warnings) = mapped("Eq8", &xml);
+    // Oversampling, the mode and band 1's type are noted; the type and the unreadable
+    // frequency are left out.
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(params.iter().all(|p| p.id != "mode" && p.id != "a1Type" && p.id != "b1Frequency"), "{params:?}");
+    assert_eq!(param(&params, "b1Type"), 1.0);
+}
+
 #[test]
 fn other_devices_are_not_mapped() {
-    let doc = roxmltree::Document::parse("<Eq8/>").unwrap_or_else(|e| panic!("{e}"));
+    let doc = roxmltree::Document::parse("<Compressor2/>").unwrap_or_else(|e| panic!("{e}"));
     assert!(builtin(doc.root_element(), &mut |_| {}).is_none());
 }
 

@@ -11,16 +11,16 @@ const RANGE_END: Param = param("end", ParamType::Number, "the range's end, an ar
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "automation.addPoint",
-        label: "Add a point to a parameter's automation (envelope) over the arrangement, making the lane if it has none; the value moves from point to point along each segment's curve",
+        label: "Add a point to a parameter's automation (envelope) over the arrangement, making the lane if it has none; the value moves from point to point along each segment's curve. Without a value the point goes on the envelope and a bent segment is split so it plays as before",
         params: &[
             DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             param("beat", ParamType::Number, "arrangement beat, from 0; a second point at one beat makes a jump"),
-            param(
+            optional(
                 "value",
                 ParamType::AutomationValue,
-                "value in the unit the parameter's set command takes: volume in dB (at most +6; below -150 is silence), pan -1 to 1, mute 0 or 1, a device's as device.setParam",
+                "value in the unit the parameter's set command takes: volume in dB (at most +6; below -150 is silence), pan -1 to 1, mute 0 or 1, a device's as device.setParam; left out, the envelope's value at the beat",
             ),
             CURVE,
             optional(
@@ -79,7 +79,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "how much to change each value by, in the unit of automation.addPoint (dB for the volume, where silence stays silent)",
             ),
-            optional("curve", ParamType::Number, "a curve to give every moved point's segment, -1 to 1"),
+            optional(
+                "curve",
+                ParamType::Curve,
+                "a curve to give every moved point's segment, as for automation.addPoint",
+            ),
         ],
         kind: CommandKind::Edit,
         run: crate::automation::move_points,
@@ -283,7 +287,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "automation.list",
-        label: "List a track's automation: its mixer's lanes and each device's, with their points (beat, value, curve) and whether they play",
+        label: "List a track's automation: its mixer's lanes and each device's, with their points (beat, value, curve as [x1, y1, x2, y2]) and whether they play",
         params: &[DEVICE_TRACK],
         kind: CommandKind::Read,
         run: crate::automation::list,

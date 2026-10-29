@@ -14,10 +14,14 @@ updates:
     commit-message:
       prefix: "Deps"
     groups:
-      # Minor and patch updates together; a major update gets a pull request of its own, since it
-      # can change an API.
+      # Minor and patch updates together, and the major ones together in a second pull request
+      # (for a 0.x crate, 0.14 to 0.15 is major). Every update rewrites Cargo.lock, so two pull
+      # requests in the merge queue at once conflict there; one per kind keeps it to two a week,
+      # and a major update that breaks the build is moved out of the group with exclude-patterns.
       cargo-minor:
         update-types: [minor, patch]
+      cargo-major:
+        update-types: [major]
   - package-ecosystem: github-actions
     directory: /
     schedule:

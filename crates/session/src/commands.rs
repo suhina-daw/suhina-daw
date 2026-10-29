@@ -78,6 +78,7 @@ impl ParamType {
             Self::Track => "track",
             Self::Decibels => "decibels",
             Self::AutomationValue => "automation value",
+            Self::Curve => "curve",
             Self::Text => "text",
             Self::Tracks => "tracks",
             Self::Texts => "texts",
@@ -110,6 +111,7 @@ impl ParamType {
             Self::Track => "a track id or name",
             Self::Decibels => "a number of decibels or \"-inf\"",
             Self::AutomationValue => "a number, \"-inf\", or true or false",
+            Self::Curve => "four numbers from -0.5 to 1.5 or one number from -1 to 1",
             Self::Text => "a text",
             Self::Tracks => "a list of track ids or names",
             Self::Texts | Self::Path(PathKind::Files) => "a list of texts",
@@ -137,6 +139,9 @@ impl ParamType {
             Self::NameOrNumber => value.is_number() || value.is_string(),
             Self::Decibels => value.is_number() || value.is_string(),
             Self::AutomationValue => value.is_number() || value.is_string() || value.is_boolean(),
+            Self::Curve => {
+                value.is_number() || value.as_array().is_some_and(|l| l.len() == 4 && l.iter().all(Value::is_number))
+            }
             Self::Text
             | Self::Path(PathKind::File | PathKind::Folder | PathKind::WriteFile)
             | Self::Path(PathKind::WriteFolder | PathKind::LibraryItem | PathKind::Place) => value.is_string(),
@@ -177,6 +182,8 @@ pub enum ParamType {
     Decibels,
     /// A number, the string "-inf", or a bool: the value of an automation point.
     AutomationValue,
+    /// A segment's curve: four numbers (two control points) or one bend.
+    Curve,
     Text,
     /// A list of tracks, each an id or a name.
     Tracks,
@@ -330,8 +337,8 @@ const POINT: Param =
     param("point", ParamType::Integer, "point index on the lane, from 0 in beat order, as in automation.list");
 const CURVE: Param = optional(
     "curve",
-    ParamType::Number,
-    "shape of the segment to the next point, -1 to 1: 0 a straight line (the default), above 0 fast first, below 0 slow first",
+    ParamType::Curve,
+    "shape of the segment to the next point: [x1, y1, x2, y2], the two control points of a cubic Bezier from (0, 0) to (1, 1) in (share of the time, share of the way), each from 0 to 1 (from -0.5 to 1.5 for the halves of a split, which can lie outside); or one bend from -1 to 1 for the mirrored curve (0 straight, the default; above 0 fast first, below 0 slow first)",
 );
 const MARKER: Param = param("index", ParamType::Integer, "marker index, from 0, as in project.markers");
 /// `clip.delete` takes a list of arrangement clips, or one clip by `track` with `index` or `scene`.
@@ -467,6 +474,7 @@ impl<T> CommandSpec<T> {
                 ParamType::Integer => json!("integer"),
                 ParamType::Bool => json!("boolean"),
                 ParamType::AutomationValue => json!(["number", "string", "boolean"]),
+                ParamType::Curve => json!(["number", "array"]),
                 ParamType::Track | ParamType::Clip | ParamType::DevicePath => json!(["integer", "string"]),
                 ParamType::Decibels | ParamType::NameOrNumber => json!(["number", "string"]),
                 ParamType::Range => json!("object"),

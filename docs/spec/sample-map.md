@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-23
+last_verified: 2026-10-25
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -111,7 +111,7 @@ Before an item can be placed, its audio is analysed. This happens in the backgro
   results are kept on disk, so a library is analysed once.
 - A sample is analysed from its onset (the first moment within 40 dB of its loudest, looked for
   in its first 4 seconds), for 4 seconds; leading silence is skipped. Samples longer than the **map length limit**
-  (Settings › Browser › Map: longest sample: 5, 10, 30 or 60 s, 10 by default;
+  (Settings › Browser › Map sample length limit: 5, 10, 30 or 60 s, 10 by default;
   `soundmap.layout` takes 1–60) are not shown: the map is for one-shots and short loops. The
   length is kept with the analysis, so changing the limit needs no new analysis.
 - The map's top bar says what it holds: "1 240 samples, analysing, 6 760 to go, 12 too long,
@@ -130,7 +130,7 @@ Before an item can be placed, its audio is analysed. This happens in the backgro
   Settings › Browser › Preview volume), kept; moving it also changes the sample playing now
   (`preview.setGain`), gliding there without a click.
 - When the status does not fit its row, it is cut short with "…". Its tooltip has all of it and says why samples are missing, one part each:
-  still to analyse; too long (the limit, and Options › Settings › Browser › Map: longest sample
+  still to analyse; too long (the limit, and Options › Settings › Browser › Map sample length limit
   to change it); could not be read, by reason with the commonest first (the reason as the
   decoder gives it, such as "unsupported codec: …", "read error: …", "silent" or "larger than
   256 MiB", its count and the names of the first three files; at most 12 reasons, the rest
@@ -307,7 +307,7 @@ Every item has a kind. The kinds and the words in names that give them:
 
 | Input | Does |
 |---|---|
-| Pointer over a point | Highlights it and **previews it** (Settings › Browser › Map preview on hover, on by default). Moving across points plays each in turn; a new one stops the one before. A point is played only after the pointer has rested on it for 40 ms, so a fast sweep does not play everything it crosses. |
+| Pointer over a point | Highlights it and **previews it** (Settings › Browser › Preview on map hover, on by default). Moving across points plays each in turn; a new one stops the one before. A point is played only after the pointer has rested on it for 40 ms, so a fast sweep does not play everything it crosses. |
 | Pointer resting on a point | Its tooltip shows the name, the kind, the folder and, after 0.15 s, the file's waveform, read in the background ([waveforms](waveforms.md)). |
 | Click a point | Selects it and previews it (also with preview on hover off) as the button goes down, as in the list. |
 | Ctrl+click, Shift+drag on empty space | Adds to or removes from the selection; Shift+drag draws a rectangle and selects what is in it. |

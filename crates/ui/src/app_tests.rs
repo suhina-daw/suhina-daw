@@ -137,7 +137,7 @@ fn failed_sampler_decode_leaves_the_empty_track_unchanged() {
     let mut app = App::new();
     app.set_session(Session::new(suhina_session::blank_project()), &[]);
     let item = drop::system_file(Path::new("/invalid.wav")).unwrap();
-    let plan = app.plan_drop(&[item], DropTarget::Track(TrackId(1)), false).unwrap();
+    let plan = app.plan_drop(&[item], DropTarget::Chain(TrackId(1)), false).unwrap();
     let before = app.session().unwrap().project().clone();
     for short in [false, true] {
         let (send, decoded) = std::sync::mpsc::channel();
@@ -282,25 +282,25 @@ fn empty_midi_track_drop_adds_sampler_before_loading_source() {
         &[],
     );
     let sample = drop::system_file(Path::new("/test.wav")).unwrap();
-    for target in [
-        DropTarget::Track(TrackId(1)),
-        DropTarget::Slot { track: TrackId(1), scene: 0 },
-        DropTarget::Lane { track: TrackId(1), beat: 0. },
-    ] {
+    // On the track's devices (the detail area): a Sampler that plays it.
+    let plan = app.plan_drop(std::slice::from_ref(&sample), DropTarget::Chain(TrackId(1)), false).unwrap();
+    assert_eq!(
+        plan.commands,
+        vec![
+            ("device.add", json!({"track":1,"id":"sampler"})),
+            ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
+        ]
+    );
+    // On its slot or lane: a clip, as on any track (the empty MIDI track becomes an audio one).
+    for target in [DropTarget::Slot { track: TrackId(1), scene: 0 }, DropTarget::Lane { track: TrackId(1), beat: 0. }] {
         let plan = app.plan_drop(std::slice::from_ref(&sample), target, false).unwrap();
-        assert_eq!(
-            plan.commands,
-            vec![
-                ("device.add", json!({"track":1,"id":"sampler"})),
-                ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
-            ]
-        );
+        assert_eq!(plan.commands[0].0, "clip.addFiles", "{target:?}");
     }
     let stems = drop::system_file(Path::new("/test.stem.mp4")).unwrap();
     let plan = app.plan_drop(&[stems], DropTarget::Lane { track: TrackId(1), beat: 0. }, false).unwrap();
     assert_eq!(plan.commands[0].0, "clip.addFiles");
     app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
-    assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    assert!(app.plan_drop(&[sample], DropTarget::Chain(TrackId(1)), false).is_none());
 }
 
 #[test]

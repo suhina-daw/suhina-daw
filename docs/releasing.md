@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-26
+last_verified: 2026-10-28
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -11,6 +11,9 @@ covers:
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
   - .github/workflows/ready-to-merge.yml
+  - scripts/build_reuse.py
+  - scripts/test_build_reuse.py
+  - scripts/test_merge_approval.py
   - scripts/branch_update.py
   - scripts/macos_app.sh
   - assets/brand/suhina-icon.png
@@ -151,12 +154,23 @@ The version says which pull request and commit it is: `0.0.1-pr.302+abc1234` in 
 bug reports. Test builds use the release profile without LTO and with 16 codegen units, so they
 build faster and run slightly slower than the nightly.
 
+**Repeated build requests reuse available work.** `/test-build` first checks the current head
+and up to ten preceding main-only updates using `scripts/build_reuse.py` from the default branch.
+It reuses a current-head run already building the requested platforms, or a successful run with
+all requested, nonempty, unexpired artifacts. Failed, cancelled, skipped or incomplete builds
+are not reused. Windows-only packages satisfy a Windows-only request, but not an all-platform
+request. Reuse replies link the existing run without changing the `test-build` label. Build lookup
+errors stop the request instead of assuming that no build exists. Main-only reuse is conservative:
+a changed patch or a resolved conflict requires a new build. PR files are never checked out or
+executed during this lookup; only git objects are fetched for comparison.
+
 **A branch update is not built.** A push that only merges `main` into the pull request, as
 *Update branch* does, leaves the pull request's own changes as they were, so the build already
 linked from it is still the one to try. A small first job, *what to build*, asks
 [`scripts/branch_update.py`](../scripts/branch_update.py) whether the new head is a merge commit
 whose first parent is the previous head, whose second parent is on `main`, and whose own diff is
-the same patch as the previous head's (a resolved conflict, or `main` changing lines next to the
+the same patch as the previous head's, ignoring only line numbers and blob hashes, never whitespace
+or file modes (a resolved conflict, or `main` changing lines next to the
 pull request's own, makes it a new patch). It also checks that the previous head's run succeeded,
 so a failed or cancelled build is never kept as the last one. When all hold, the platforms are
 skipped, and `test-build-links.yml`, finding nothing built, leaves the comment linking the last
@@ -218,7 +232,16 @@ skipped jobs show as skipped and `ci` passes.
 **The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
 restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
 saved its own (about 0.8 GB per system), `main`'s were evicted and about half the runs compiled
-every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½.
+every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. Each push to
+`main` runs CI to the end in a concurrency group of its own: the generated-docs commit that
+follows every merge used to cancel it, and as a cancelled run saves no cache, Windows (the slowest)
+never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
+about 10.
+
+The test build follows the same rule: its `cache` job builds the test build's binaries on every
+push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
+and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
+evicted the others.
 
 The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
 merge queue**, with the merge method used today, a group size of about 5 and *Only merge
@@ -232,17 +255,18 @@ pull request without updating it; CI on `main`, which runs on every push, catche
 conflict in meaning between two of them.
 
 **The `ready to merge` label.** A maintainer who has read a pull request adds the label instead of
-coming back to press *Merge when ready* once CI is green.
-[`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, never
-checking out or running the pull request's code) then:
+coming back to press *Merge when ready* once CI is green. That label is their approval of the
+current head, given with a finished test build of it: nothing merges without one, but a build that
+already exists is reused, so a stale review never forces a new packaging run.
+[`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, checking out
+only `main`'s automation for the build lookup, never running the pull request's code) then:
 
 | Event | What happens |
 |---|---|
-| a maintainer adds the label | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
-| the label on a contributor's pull request without `test-build` | queued as usual when a maintainer has approved that same head commit in a review; otherwise the label comes off, with a comment: a maintainer approves the commit they read, or tries its build first |
-| the label on a Dependabot Cargo update (branch `dependabot/cargo/…`) | as for a maintainer's own pull request: no `test-build` needed, the queue's build and tests check the new crate; an update of the Actions still needs `test-build`, since `ci` runs no Rust jobs for a change under `.github/` |
+| a maintainer adds the label and a finished test build of the head exists | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
+| a maintainer adds the label and no finished test build of the head exists | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. This applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build |
 | anyone else adds the label | it comes off |
-| a push by a maintainer | the label stays; the app approves the new head and turns auto-merge on for it |
+| a push by a maintainer | the label stays and the new head goes through the same check: with a finished test build of it (a push that only merged `main` reuses the earlier one) the app approves it and turns auto-merge on for it; without one the label comes off with the same comment |
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
@@ -383,14 +407,16 @@ On macOS the desktop app is an app bundle, `Suhina.app`, which Finder opens with
 and which can be dragged to Applications. [`scripts/macos_app.sh`](../scripts/macos_app.sh), run by
 both `release.yml` and `test-build.yml`, moves the three binaries into `Suhina.app/Contents/MacOS`,
 writes its `Info.plist` (the bundle id `io.github.suhina-daw.suhina`, the version without its
-suffix, macOS 11, and the text macOS shows when Suhina first asks for the microphone, for the
-tracks' audio inputs), signs the bundle ad hoc, and puts a `suhina-cli` link in the package
+suffix, macOS 11, the copyright and licence line, and the text macOS shows when Suhina first asks
+for the microphone, for the tracks' audio inputs) and `Credits.html`, which puts the whole version
+and the licence into Suhina › About Suhina, macOS's own panel ([spec](spec/about.md#on-macos)), signs the bundle ad hoc, and puts a `suhina-cli` link in the package
 folder, so `./suhina-cli` still works from it. The app's icon, `Suhina.icns`, is made from
 [`assets/brand/suhina-icon.png`](../assets/brand/suhina-icon.png) with `sips` and `iconutil`. While
 the app runs, eframe would put its own icon in the Dock over it, so on macOS the desktop app tells
 eframe to leave the Dock alone (`apps/suhina/src/main.rs`, `app_icon`): the Dock keeps the bundle's
-icon, which macOS draws with rounded corners, where an image set at run time is drawn square. On
-the other platforms the app gives its window the same PNG. The ad hoc signature names no developer; it is
+icon, which macOS draws with rounded corners, where an image set at run time is drawn square. Run
+from outside a bundle (`cargo run`), and on the other platforms, the app gives its window the same
+PNG, so the Dock and the About panel still show Suhina's icon. The ad hoc signature names no developer; it is
 there because Apple silicon runs only signed code and because macOS calls an unsigned downloaded
 bundle damaged rather than offering to open it. The icon of the Windows executable file,
 the Linux desktop entry and the `.suhina` file type are still to come ([#607](https://github.com/suhina-daw/suhina-daw/issues/607)). The smoke test runs the VST3 test plug-in built into the host through the

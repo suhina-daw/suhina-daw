@@ -153,13 +153,31 @@ impl ParamInfo {
     /// `value` made valid for this parameter: limited to its range, rounded to a whole number
     /// for toggles, choices and integers, and the default when it is not a finite number.
     pub fn clamp(&self, value: f64) -> f64 {
-        if !value.is_finite() {
-            return self.default;
-        }
-        let value = value.clamp(self.min, self.max);
+        let value = self.limit(value);
         match self.kind {
             ParamKind::Continuous(_) => value,
             ParamKind::Toggle | ParamKind::Choice(_) | ParamKind::Integer => value.round(),
+        }
+    }
+
+    /// `value` limited to the range, not rounded; the default when it is not a finite number.
+    fn limit(&self, value: f64) -> f64 {
+        if value.is_finite() { value.clamp(self.min, self.max) } else { self.default }
+    }
+
+    /// The value the parameter takes when an automation lane gives it `value`: an integer's with
+    /// its fraction cut off toward zero (2.97 takes 2, -2.97 takes -2; a value within 1e-9 of a
+    /// whole number is that number, so a lane's arithmetic does not lose it), otherwise as
+    /// [`Self::clamp`] makes it (`docs/spec/automation.md` › Lanes and points).
+    pub fn played(&self, value: f64) -> f64 {
+        match self.kind {
+            ParamKind::Integer if value.is_finite() => {
+                let whole = value.round();
+                let value = if (value - whole).abs() <= 1e-9 { whole } else { value.trunc() };
+                // Adding zero makes -0 (from -0.94) plain 0.
+                self.limit(value) + 0.0
+            }
+            _ => self.clamp(value),
         }
     }
 
@@ -171,9 +189,10 @@ impl ParamInfo {
         matches!(self.kind, ParamKind::Continuous(Scale::Gain)) && self.min < self.max - GAIN_SLOPE * (1.0 - GAIN_KNEE)
     }
 
-    /// Where `value` sits on the knob, from 0.0 to 1.0.
+    /// Where `value` sits on the knob, from 0.0 to 1.0. An integer's value between two whole
+    /// numbers, which an automation lane can hold, sits where it falls between them, unrounded.
     pub fn to_normalized(&self, value: f64) -> f64 {
-        let value = self.clamp(value);
+        let value = if matches!(self.kind, ParamKind::Integer) { self.limit(value) } else { self.clamp(value) };
         let n = if self.max <= self.min {
             0.0
         } else if self.gain() {
@@ -602,6 +621,25 @@ mod tests {
         assert_eq!(LEVEL.clamp(41.6), 42.0);
         assert_eq!(LEVEL.clamp(120.0), 99.0);
         assert_eq!(LEVEL.from_normalized(0.5), 50.0);
+    }
+
+    #[test]
+    fn an_integer_sits_unrounded_and_plays_cut_toward_zero() {
+        // A lane can hold 40.5: it sits half-way between 40 and 41, not at 41.
+        assert_eq!(LEVEL.to_normalized(49.5), 0.5);
+        assert_eq!(LEVEL.to_normalized(120.0), 1.0);
+        assert_eq!(LEVEL.played(36.98), 36.0);
+        assert_eq!(LEVEL.played(40.5), 40.0);
+        assert_eq!(LEVEL.played(40.999_999_999_99), 41.0);
+        assert_eq!(LEVEL.played(150.0), 99.0);
+        assert_eq!(LEVEL.played(f64::NAN), 99.0);
+        let transpose = ParamInfo::integer("t", "T", (-48, 48), 0, Unit::Semitones);
+        assert_eq!(transpose.played(0.94), 0.0);
+        assert!(transpose.played(-0.94) == 0.0 && transpose.played(-0.94).is_sign_positive());
+        assert_eq!(transpose.played(-2.97), -2.0);
+        // Other kinds play as they are kept.
+        assert_eq!(MODE.played(1.6), 2.0);
+        assert_eq!(GAIN.played(3.25), 3.25);
     }
 
     #[test]

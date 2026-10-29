@@ -193,6 +193,56 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
     ghosts
 }
 
+/// The notes of the other MIDI clips picked with the edited one (`picked`, arrangement clips),
+/// faint where they play in arrangement time, for editing several clips in one piano roll
+/// (#1054): the edited clip's time runs on past its end and over all of them, from where it
+/// starts. Added to `ghosts` (each picked clip once, beside what its source gave).
+pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts: &mut Ghosts) {
+    let Some(edited_clip) = clip_at(project, edited) else { return };
+    let mine = placement(edited, edited_clip);
+    let Some(first) = first_pass(&mine) else { return };
+    let end = picked
+        .iter()
+        .filter_map(|c| clip_at(project, *c).map(|clip| placement(*c, clip)))
+        .map(|p| p.start + p.length)
+        .fold(first.end, f64::max);
+    let window = Window { end, ..first };
+    for clip in picked.iter().copied().filter(|c| *c != edited) {
+        if ghosts.notes.len() >= MAX_GHOSTS {
+            break;
+        }
+        let Some(other) = clip_at(project, clip) else { continue };
+        let track = clip.track();
+        let Some(notes) = notes_of(project, track, other) else { continue };
+        let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
+        let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
+        let rgb = project
+            .tracks
+            .get(position)
+            .map(|track| track_colour(track, position))
+            .unwrap_or_else(|| crate::interaction::grid::to_rgb(theme::midi_clip_default()));
+        let color = Color32::from_rgb(rgb.0, rgb.1, rgb.2);
+        let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
+        let before = ghosts.notes.len();
+        // A clip the source already showed (playing together) is not drawn twice.
+        let at = placement(clip, other);
+        let already = |n: &GhostNote| n.source == source;
+        if ghosts.notes.iter().any(already) && at.start < first.end {
+            continue;
+        }
+        map_notes(&at, notes, window, &mut ghosts.notes, |start, length, key| GhostNote {
+            start,
+            length,
+            key,
+            color,
+            source,
+        });
+        if source == ghosts.sources.len() && ghosts.notes.len() > before {
+            ghosts.sources.push(name);
+        }
+    }
+}
+
 /// The part of the edited clip's time its ghost notes are mapped into: from `start` to `end` in
 /// time, playing content beat `content` at `start`.
 #[derive(Debug, Clone, Copy, PartialEq)]

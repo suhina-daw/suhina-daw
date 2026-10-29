@@ -5,6 +5,7 @@
 //! manual change and on again, and malformed parameters.
 
 use serde_json::json;
+use suhina_model::automation::Curve;
 use suhina_model::*;
 use suhina_session::Session;
 
@@ -46,6 +47,121 @@ fn sd_device() -> Device {
     }
 }
 
+/// A curve is given as two control points; a point added without a value goes on the envelope
+/// and splits a bent segment so that it plays as before.
+#[test]
+fn a_point_added_on_a_bent_segment_splits_it_exactly() {
+    let mut session = Session::new(project());
+    let lopsided = json!([0.1, 0.7, 0.825, 0.525]);
+    for (beat, value) in [(0, -24), (8, 0)] {
+        let point = json!({ "track": 1, "param": "volume", "beat": beat, "value": value, "curve": lopsided });
+        run(&mut session, "automation.addPoint", point).unwrap();
+    }
+    let before = lanes(&session)[0].clone();
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "volume", "beat": 3 })).unwrap();
+    let after = &lanes(&session)[0];
+    assert_eq!(after.points.len(), 3);
+    for beat in [1.0, 3.0, 5.5] {
+        let (old, new) = (
+            before.value_at(beat, false, &automation::VolumeTaper),
+            after.value_at(beat, false, &automation::VolumeTaper),
+        );
+        assert!((old.unwrap() - new.unwrap()).abs() < 1e-9, "{beat}");
+    }
+    let list = run(&mut session, "automation.list", json!({ "track": 1 })).unwrap();
+    assert_eq!(list["mixer"][0]["points"][2]["curve"], lopsided);
+}
+
+/// An S whose points run back in time, split by a point on the envelope, plays as before: its
+/// halves lie outside the unit square, unclamped, and are listed and taken back as they are.
+#[test]
+fn a_split_s_curve_plays_as_before_with_halves_outside_the_square() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, -1.0), (8.0, 1.0)] {
+        let point = json!({ "track": 1, "param": "pan", "beat": beat, "value": value, "curve": [1, 0, 0, 1] });
+        run(&mut session, "automation.addPoint", point).unwrap();
+    }
+    let before = lanes(&session)[0].clone();
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 6 })).unwrap();
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 1 })).unwrap();
+    let after = lanes(&session)[0].clone();
+    assert_eq!(after.points.len(), 4);
+    // The 0.75 cut's first half had x1 = 1.1958; cut again at beat 1, its second half keeps x1
+    // above 1.
+    assert!(after.points[1].curve.x1 > 1.1, "{:?}", after.points[1]);
+    for q in 0..=640 {
+        let beat = q as f64 / 80.0;
+        let (old, new) =
+            (before.value_at(beat, false, &automation::Plain), after.value_at(beat, false, &automation::Plain));
+        // Beat 4 is the S's upright middle, where rounding alone moves the value by about 1e-5.
+        let tolerance = if (beat - 4.0).abs() < 1e-9 { 1e-4 } else { 1e-9 };
+        assert!((old.unwrap() - new.unwrap()).abs() < tolerance, "{beat}: {old:?} against {new:?}");
+    }
+    let list = run(&mut session, "automation.list", json!({ "track": 1 })).unwrap();
+    let listed = list["mixer"][0]["points"][1]["curve"].clone();
+    assert_eq!(listed, json!(after.points[1].curve.to_array()));
+    let back = json!({ "track": 1, "param": "pan", "point": 0, "curve": listed });
+    run(&mut session, "automation.movePoint", back).unwrap();
+    assert_eq!(lanes(&session)[0].points[0].curve, after.points[1].curve);
+}
+
+/// A point added without a value keeps a level or straight segment exactly, holds the value
+/// outside the points and on a step, and at a point's beat takes that point's curve; a lane
+/// without points needs a value.
+#[test]
+fn a_point_added_on_the_envelope_keeps_it_as_it_was() {
+    let mut session = Session::new(project());
+    let add = |session: &mut Session, param: &str, beat: f64| {
+        run(session, "automation.addPoint", json!({ "track": 1, "param": param, "beat": beat })).map(|_| ())
+    };
+    assert!(add(&mut session, "pan", 2.0).unwrap_err().to_string().contains("give a value"));
+    for (param, beat, value, curve) in [
+        ("pan", 0, -1.0, json!(0.6)),
+        ("pan", 8, 1.0, json!(0)),
+        ("mute", 0, 0.0, json!(0)),
+        ("mute", 8, 1.0, json!(0)),
+    ] {
+        let point = json!({ "track": 1, "param": param, "beat": beat, "value": value, "curve": curve });
+        run(&mut session, "automation.addPoint", point).unwrap();
+    }
+    let before = lanes(&session)[0].clone();
+    for beat in [0.0, 12.0] {
+        add(&mut session, "pan", beat).unwrap();
+    }
+    add(&mut session, "mute", 4.0).unwrap();
+    let (pan, mute) = (&lanes(&session)[0], &lanes(&session)[1]);
+    assert_eq!(
+        pan.points.iter().map(|p| (p.beat, p.value)).collect::<Vec<_>>(),
+        [(0.0, -1.0), (0.0, -1.0), (8.0, 1.0), (12.0, 1.0)]
+    );
+    assert_eq!(pan.points[1].curve, Curve::bend(0.6), "the bend stays with the segment");
+    for beat in [1.0, 4.0, 10.0] {
+        assert_eq!(pan.value_at(beat, false, &automation::Plain), before.value_at(beat, false, &automation::Plain));
+    }
+    assert_eq!(mute.points[1], AutomationPoint::new(4.0, 0.0));
+
+    // On a level or straight segment the value is the envelope's and the lane plays as before.
+    let mut session = Session::new(project());
+    for (param, value) in [("pan", 0.5), ("volume", -24.0)] {
+        for beat in [0, 8] {
+            let value = if beat == 8 && param == "volume" { 0.0 } else { value };
+            let point = json!({ "track": 1, "param": param, "beat": beat, "value": value });
+            run(&mut session, "automation.addPoint", point).unwrap();
+        }
+    }
+    let before = lanes(&session).to_vec();
+    add(&mut session, "pan", 3.0).unwrap();
+    add(&mut session, "volume", 2.0).unwrap();
+    assert_eq!(lanes(&session)[0].points[1], AutomationPoint::new(3.0, 0.5));
+    for beat in [1.0, 2.0, 5.0] {
+        let (old, new) = (
+            before[1].value_at(beat, false, &automation::VolumeTaper),
+            lanes(&session)[1].value_at(beat, false, &automation::VolumeTaper),
+        );
+        assert!((old.unwrap() - new.unwrap()).abs() < 1e-12, "{beat}");
+    }
+}
+
 #[test]
 fn mixer_points_are_added_moved_and_deleted_with_undo() {
     let mut session = Session::new(project());
@@ -64,7 +180,10 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 2, "value": -1 })).unwrap();
     let volume = &lanes(&session)[0];
     assert_eq!(volume.param, "volume");
-    assert_eq!(volume.points, [AutomationPoint { beat: 0.0, value: 0.0, curve: 0.5 }, AutomationPoint::new(4.0, 1.0)]);
+    assert_eq!(
+        volume.points,
+        [AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) }, AutomationPoint::new(4.0, 1.0)]
+    );
 
     // Moving the first point past the second puts it second.
     let moved = run(
@@ -76,7 +195,7 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
     assert_eq!(moved["point"], 1);
     assert_eq!(moved["value"], -6.0);
     assert_eq!(lanes(&session)[0].points[1].beat, 8.0);
-    assert_eq!(lanes(&session)[0].points[1].curve, 0.5, "the curve stays");
+    assert_eq!(lanes(&session)[0].points[1].curve, Curve::bend(0.5), "the curve stays");
 
     let list = run(&mut session, "automation.list", json!({ "track": 1 })).unwrap();
     assert_eq!(list["mixer"][0]["points"][1]["value"], -6.0, "the volume in dB");
@@ -95,6 +214,55 @@ fn mixer_points_are_added_moved_and_deleted_with_undo() {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
     assert_eq!(session.project(), &project());
+}
+
+/// A whole-number parameter's lane, placed as the engine places it: a value between two whole
+/// numbers sits where it falls, unrounded.
+struct WholeNumbers(suhina_device_api::ParamInfo);
+
+impl automation::Taper for WholeNumbers {
+    fn position(&self, value: f64) -> f64 {
+        self.0.to_normalized(value)
+    }
+    fn value(&self, position: f64) -> f64 {
+        self.0.min + position * (self.0.max - self.0.min)
+    }
+}
+
+/// A point added without a value on a whole-number lane keeps the envelope: it stores the value
+/// between two numbers (the engine cuts the fraction off only as it plays), and the segments on
+/// either side move toward it, not toward a rounded one.
+#[test]
+fn a_point_added_on_a_whole_number_lane_keeps_the_envelope() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
+    let poly = suhina_device_registry::info("sampler")
+        .and_then(|info| info.params.iter().find(|p| p.id == "poly").copied())
+        .unwrap();
+    assert!(matches!(poly.kind, suhina_device_api::ParamKind::Integer));
+    let taper = WholeNumbers(poly);
+    let point = |beat: f64, value: Option<f64>| {
+        let mut params = json!({ "track": 1, "device": 0, "param": "poly", "beat": beat });
+        if let Some(value) = value {
+            params["value"] = json!(value);
+        }
+        params
+    };
+    for (beat, value) in [(0.0, 1.0), (8.0, 4.0)] {
+        run(&mut session, "automation.addPoint", point(beat, Some(value))).unwrap();
+    }
+    let lane = |session: &Session| session.project().channels[0].devices[0].automation[0].clone();
+    let before = lane(&session);
+    run(&mut session, "automation.addPoint", point(4.0, None)).unwrap();
+    let after = lane(&session);
+    assert_eq!(after.points.iter().map(|p| p.value).collect::<Vec<_>>(), [1.0, 2.5, 4.0]);
+    for beat in [1.0, 2.0, 4.0, 6.0, 7.5] {
+        let (old, new) = (before.value_at(beat, false, &taper), after.value_at(beat, false, &taper));
+        assert!((old.unwrap() - new.unwrap()).abs() < 1e-9, "{beat}: {old:?} against {new:?}");
+    }
+    assert!((after.value_at(2.0, false, &taper).unwrap() - 1.75).abs() < 1e-9);
+    let list = run(&mut session, "automation.list", json!({ "track": 1 })).unwrap();
+    assert_eq!(list["devices"][0]["lanes"][0]["points"][1]["value"], json!(2.5), "{list}");
 }
 
 #[test]
@@ -210,6 +378,14 @@ fn malformed_automation_edits_are_refused_and_change_nothing() {
         ("automation.addPoint", json!({ "track": 1, "param": "volume", "beat": 0, "value": 7 })),
         ("automation.addPoint", json!({ "track": 1, "param": "mute", "beat": 0, "value": 0.5, "curve": 2 })),
         ("automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0, "curve": "round" })),
+        (
+            "automation.addPoint",
+            json!({ "track": 1, "param": "pan", "beat": 0, "value": 0, "curve": [0, 1.6, 0.5, 0.5] }),
+        ),
+        (
+            "automation.addPoint",
+            json!({ "track": 1, "param": "pan", "beat": 0, "value": 0, "curve": [-0.6, 0, 0.5, 0.5] }),
+        ),
         ("automation.addPoint", json!({ "track": 1, "device": 1, "param": "gain", "beat": 0, "value": 0 })),
         ("automation.addPoint", json!({ "track": 1, "device": 0, "param": "volume", "beat": 0, "value": 0 })),
         ("automation.addPoint", json!({ "track": 1, "device": -1, "param": "gain", "beat": 0, "value": 0 })),
@@ -527,7 +703,12 @@ fn a_shape_fills_a_points_segment_and_a_new_points_segment() {
     .unwrap();
     let after: Vec<(f64, f64)> = pan_points(&session).into_iter().filter(|(b, _)| *b >= 4.0).collect();
     assert_eq!(after.last(), Some(&(8.0, -1.0)));
-    assert!(lanes(&session).iter().find(|l| l.param == "pan").is_some_and(|l| l.points.iter().any(|p| p.curve > 0.5)));
+    assert!(
+        lanes(&session)
+            .iter()
+            .find(|l| l.param == "pan")
+            .is_some_and(|l| l.points.iter().any(|p| p.curve.bend_of().is_some_and(|b| b > 0.5)))
+    );
     assert!(
         run(
             &mut session,
@@ -789,4 +970,42 @@ fn silent_volume_points_move_up_with_the_rest() {
     .unwrap();
     let points = volume(&session);
     assert_eq!((points[0].value, points[2].value), (0.0, 0.0));
+}
+
+/// A curve whose points lie beyond the box can overshoot its own points; two halves could not
+/// play as it does there, so a point is not added on it without a value.
+#[test]
+fn a_point_is_not_added_on_a_segment_that_overshoots_its_points() {
+    let mut session = Session::new(project());
+    let overshoot = json!([0.3, 1.5, 0.7, 1.5]);
+    for (beat, value) in [(0, -1), (8, 1)] {
+        let point = json!({ "track": 1, "param": "pan", "beat": beat, "value": value, "curve": overshoot });
+        run(&mut session, "automation.addPoint", point).unwrap();
+    }
+    let before = lanes(&session)[0].clone();
+    let refused = run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 4 }));
+    assert!(refused.is_err());
+    assert_eq!(lanes(&session)[0], before);
+    // A cut before the overshoot is refused too when a half's points would need clamping.
+    let refused = run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 1.925 }));
+    assert!(refused.is_err());
+    assert_eq!(lanes(&session)[0], before);
+    // A value given, or the beat of a point, still works.
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 4, "value": 0 })).unwrap();
+}
+
+/// A half that cannot move is level only if its control points are: a curve that rises before
+/// reaching the cut value of zero is not split into a straight first half.
+#[test]
+fn a_point_is_not_added_where_a_half_would_lose_its_rise() {
+    let mut session = Session::new(project());
+    let dips = json!([0.25, 1.0 / 6.0, 0.75, -0.5]);
+    for (beat, value) in [(0, -1), (8, 1)] {
+        let point = json!({ "track": 1, "param": "pan", "beat": beat, "value": value, "curve": dips });
+        run(&mut session, "automation.addPoint", point).unwrap();
+    }
+    let before = lanes(&session)[0].clone();
+    let refused = run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 4 }));
+    assert!(refused.is_err());
+    assert_eq!(lanes(&session)[0], before);
 }

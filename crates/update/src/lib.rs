@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 pub use github::Build;
 pub use version::BuildKind;
 
-/// Where updates come from (Settings › General › Updates › Channel).
+/// Where updates come from (Settings › Agents and updates › Updates › Channel).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Channel {
     #[default]

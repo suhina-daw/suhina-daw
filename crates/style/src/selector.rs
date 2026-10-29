@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Native element selectors, independent of HTML and bounded at device-panel roots.
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 const MAX_ELEMENTS: usize = 4096;
 const MAX_DEPTH: usize = 32;
@@ -44,6 +44,9 @@ pub struct Element {
     /// Custom properties the host gives this element (a track's colour as `--track-colour`):
     /// inherited by its descendants, below every rule of every sheet.
     pub variables: Vec<(String, String)>,
+    /// Attributes the host gives this element (`color`, `kind`, `selected`), tested by attribute
+    /// selectors and read by `attr()`. Names are lowercase; an attribute without a value is `""`.
+    pub attributes: Vec<(String, String)>,
 }
 
 impl Element {
@@ -55,6 +58,33 @@ impl Element {
         self.id = Some(id.into());
         self
     }
+
+    pub fn with_attribute(mut self, name: &str, value: &str) -> Self {
+        self.attributes.push((name.into(), value.into()));
+        self
+    }
+
+    /// An attribute's value; `data-object` is the element's [`Element::object`].
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        if name == "data-object" {
+            return self.object.as_deref();
+        }
+        self.attributes.iter().find(|(own, _)| own == name).map(|(_, value)| value.as_str())
+    }
+}
+
+/// Most attributes one element may carry.
+pub const MAX_ATTRIBUTES: usize = 32;
+/// Longest attribute value, in bytes.
+pub const MAX_ATTRIBUTE_BYTES: usize = 256;
+
+/// An attribute name as the host and selectors write it: lowercase ASCII letters, digits and
+/// hyphens, starting with a letter.
+pub fn valid_attribute_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// Validated immutable topology. Parents precede their children, preventing cycles.
@@ -63,6 +93,28 @@ pub struct Tree {
     elements: Vec<Element>,
     children: Vec<Vec<usize>>,
     roots: Vec<usize>,
+    /// A detached leaf the style cache styles for a moment: it has a parent, but its parent does
+    /// not list it, and it is its own only sibling.
+    leaf: Option<[usize; 1]>,
+}
+
+fn valid_identity(element: &Element) -> bool {
+    let name_ok = |name: &str| !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control);
+    name_ok(&element.kind)
+        && element.id.as_deref().is_none_or(name_ok)
+        && element.object.as_deref().is_none_or(name_ok)
+        && element.classes.len() <= 32
+        && element.classes.iter().all(|name| name_ok(name))
+        && element.states.len() <= STATES.len()
+        && element.states.iter().all(|state| STATES.contains(&state.as_str()))
+        && element.attributes.len() <= MAX_ATTRIBUTES
+        && element.attributes.iter().enumerate().all(|(at, (name, value))| {
+            valid_attribute_name(name)
+                && name != "data-object"
+                && value.len() <= MAX_ATTRIBUTE_BYTES
+                && !value.chars().any(char::is_control)
+                && !element.attributes[..at].iter().any(|(earlier, _)| earlier == name)
+        })
 }
 
 impl Tree {
@@ -74,15 +126,7 @@ impl Tree {
         let mut roots = Vec::new();
         let mut depths = Vec::with_capacity(elements.len());
         for (index, element) in elements.iter().enumerate() {
-            let name_ok = |name: &str| !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control);
-            if !name_ok(&element.kind)
-                || element.id.as_deref().is_some_and(|id| !name_ok(id))
-                || element.object.as_deref().is_some_and(|object| !name_ok(object))
-                || element.classes.len() > 32
-                || element.classes.iter().any(|name| !name_ok(name))
-                || element.states.len() > STATES.len()
-                || element.states.iter().any(|state| !STATES.contains(&state.as_str()))
-            {
+            if !valid_identity(element) {
                 return Err("Invalid native element identity or state".into());
             }
             let depth = if let Some(parent) = element.parent {
@@ -101,7 +145,37 @@ impl Tree {
             }
             depths.push(depth);
         }
-        Ok(Self { elements, children, roots })
+        Ok(Self { elements, children, roots, leaf: None })
+    }
+
+    /// Adds `element` as a detached leaf under `parent` until [`Tree::pop_leaf`]: sibling and
+    /// child-index selectors see it as an only child, and its parent does not count it.
+    pub(crate) fn push_leaf(&mut self, mut element: Element, parent: usize) -> Result<usize, String> {
+        if self.leaf.is_some() || parent >= self.elements.len() || !valid_identity(&element) {
+            return Err("Invalid native element identity or state".into());
+        }
+        let mut depth = 1;
+        let mut next = self.elements.get(parent).and_then(|element| element.parent);
+        while let Some(index) = next {
+            depth += 1;
+            next = self.elements.get(index).and_then(|element| element.parent);
+        }
+        if depth > MAX_DEPTH {
+            return Err("Style tree exceeds 32 levels".into());
+        }
+        element.parent = Some(parent);
+        let index = self.elements.len();
+        self.elements.push(element);
+        self.children.push(Vec::new());
+        self.leaf = Some([index]);
+        Ok(index)
+    }
+
+    pub(crate) fn pop_leaf(&mut self) {
+        if self.leaf.take().is_some() {
+            self.elements.pop();
+            self.children.pop();
+        }
     }
 
     pub fn elements(&self) -> &[Element] {
@@ -123,7 +197,10 @@ impl Tree {
         if Some(node) == root { None } else { self.elements.get(node)?.parent }
     }
 
-    fn siblings(&self, node: usize) -> &[usize] {
+    pub(crate) fn siblings(&self, node: usize) -> &[usize] {
+        if let Some(leaf) = self.leaf.as_ref().filter(|leaf| leaf[0] == node) {
+            return leaf;
+        }
         self.elements
             .get(node)
             .and_then(|element| element.parent)
@@ -165,8 +242,50 @@ enum Test {
     },
     Only,
     Any(Vec<Selector>, bool),
-    /// `[data-object]` (any object) or `[data-object=name]`.
-    Object(Option<String>),
+    /// `[name]`, or `[name <op> value]` with `i` for an ASCII case-insensitive comparison.
+    Attribute(String, Option<(Operator, String, bool)>),
+}
+
+/// How an attribute selector compares a value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Operator {
+    /// `=`: the whole value.
+    Equals,
+    /// `~=`: one of its whitespace-separated words.
+    Word,
+    /// `|=`: the value, or the value followed by `-`.
+    Prefix,
+    /// `^=`
+    Starts,
+    /// `$=`
+    Ends,
+    /// `*=`
+    Contains,
+}
+
+impl Operator {
+    fn matches(self, actual: &str, expected: &str, fold: bool) -> bool {
+        let (actual, expected) = if fold {
+            (
+                std::borrow::Cow::Owned(actual.to_ascii_lowercase()),
+                std::borrow::Cow::Owned(expected.to_ascii_lowercase()),
+            )
+        } else {
+            (std::borrow::Cow::Borrowed(actual), std::borrow::Cow::Borrowed(expected))
+        };
+        let (actual, expected) = (actual.as_ref(), expected.as_ref());
+        match self {
+            Self::Equals => actual == expected,
+            Self::Word => !expected.is_empty() && actual.split_ascii_whitespace().any(|word| word == expected),
+            Self::Prefix => {
+                actual == expected || actual.strip_prefix(expected).is_some_and(|rest| rest.starts_with('-'))
+            }
+            // An empty value matches nothing, as in CSS.
+            Self::Starts => !expected.is_empty() && actual.starts_with(expected),
+            Self::Ends => !expected.is_empty() && actual.ends_with(expected),
+            Self::Contains => !expected.is_empty() && actual.contains(expected),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -188,8 +307,7 @@ impl Selector {
             return Err("Selector exceeds 2048 bytes".into());
         }
         crate::syntax::validate(source)?;
-        let mut input = ParserInput::new(source);
-        parse_list(&mut Parser::new(&mut input), 0)
+        parse_list(&mut Parser::new(source), 0)
     }
 
     /// A device sheet supplies its panel as `root`, so ancestor and sibling matching
@@ -200,6 +318,37 @@ impl Selector {
         }
         let mut work = MAX_MATCH_WORK;
         self.matches_with_budget(tree, node, root, &mut work)
+    }
+
+    /// Whether some part of this selector, or of one inside it, relates siblings (`+`, `~`), so
+    /// that an element's style can change with a sibling's state.
+    pub(crate) fn relates_siblings(&self) -> bool {
+        self.parts.iter().enumerate().any(|(index, part)| {
+            index > 0 && matches!(part.relation, Relation::Next | Relation::Following)
+                || part.tests.iter().any(|test| match test {
+                    Test::Any(selectors, _) => selectors.iter().any(Selector::relates_siblings),
+                    _ => false,
+                })
+        })
+    }
+
+    /// Whether this is `:root` alone, a rule for the root element whatever its kind.
+    pub fn is_root(&self) -> bool {
+        matches!(self.parts.as_slice(), [part] if matches!(part.tests.as_slice(), [Test::Root]))
+    }
+
+    /// Whether some compound of this selector, or of a selector in its `:is()` or `:where()`,
+    /// names both the element `kind` and the class (`group.lcd`).
+    pub fn styles(&self, kind: &str, class: &str) -> bool {
+        self.parts.iter().any(|part| {
+            let named = |test: &Test| matches!(test, Test::Kind(own) if own == kind);
+            let classed = |test: &Test| matches!(test, Test::Class(own) if own == class);
+            part.tests.iter().any(named) && part.tests.iter().any(classed)
+                || part.tests.iter().any(|test| match test {
+                    Test::Any(selectors, false) => selectors.iter().any(|selector| selector.styles(kind, class)),
+                    _ => false,
+                })
+        })
     }
 
     pub(crate) fn matches_with_budget(&self, tree: &Tree, node: usize, root: Option<usize>, work: &mut usize) -> bool {
@@ -226,8 +375,10 @@ impl Selector {
                 Test::Kind(kind) => &element.kind == kind,
                 Test::Id(id) => element.id.as_ref() == Some(id),
                 Test::Class(class) => element.classes.contains(class),
-                Test::Object(None) => element.object.is_some(),
-                Test::Object(Some(name)) => element.object.as_ref() == Some(name),
+                Test::Attribute(name, None) => element.attribute(name).is_some(),
+                Test::Attribute(name, Some((operator, expected, fold))) => {
+                    element.attribute(name).is_some_and(|actual| operator.matches(actual, expected, *fold))
+                }
                 Test::State(state) => element.states.contains(state),
                 Test::Root => tree.parent(node, root).is_none(),
                 Test::Empty => tree.children.get(node).is_none_or(Vec::is_empty),
@@ -289,7 +440,7 @@ impl Selector {
     }
 }
 
-fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>, String> {
+fn parse_list(parser: &mut Parser<'_>, depth: usize) -> Result<Vec<Selector>, String> {
     if depth > 8 {
         return Err("Selector logic exceeds eight nested functions".into());
     }
@@ -349,11 +500,11 @@ fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>
                 let mut attribute = None;
                 parser
                     .parse_nested_block(|parser| {
-                        attribute = Some(object_attribute(parser));
-                        Ok::<(), cssparser::ParseError<'_, ()>>(())
+                        attribute = Some(attribute_test(parser));
+                        Ok::<(), cssparser::ParseError<()>>(())
                     })
                     .map_err(|e| format!("Attribute: {e:?}"))?;
-                (Test::Object(attribute.ok_or("Missing attribute")??), Specificity(0, 1, 0))
+                (attribute.ok_or("Missing attribute")??, Specificity(0, 1, 0))
             }
             Token::Delim('.') => (
                 Test::Class(parser.expect_ident_cloned().map_err(|e| format!("Class: {e:?}"))?.to_string()),
@@ -377,7 +528,7 @@ fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>
                     parser
                         .parse_nested_block(|parser| {
                             inner = Some(parse_list(parser, depth + 1));
-                            Ok::<(), cssparser::ParseError<'_, ()>>(())
+                            Ok::<(), cssparser::ParseError<()>>(())
                         })
                         .map_err(|e| format!("Selector logic: {e:?}"))?;
                     let selectors = inner.ok_or("Missing selector arguments")??;
@@ -411,25 +562,42 @@ fn parse_list(parser: &mut Parser<'_, '_>, depth: usize) -> Result<Vec<Selector>
     Ok(result)
 }
 
-/// The inside of `[...]`: only `data-object`, the host's stable object name, exists.
-fn object_attribute(parser: &mut Parser<'_, '_>) -> Result<Option<String>, String> {
-    let name = parser.expect_ident_cloned().map_err(|_| "Expected an attribute name")?;
-    if !name.eq_ignore_ascii_case("data-object") {
-        return Err("Only [data-object] is a native attribute".into());
+/// The inside of `[...]`: a name the host can set, then optionally an operator, a value and `i`.
+fn attribute_test(parser: &mut Parser<'_>) -> Result<Test, String> {
+    let name = parser.expect_ident_cloned().map_err(|_| "Expected an attribute name")?.to_ascii_lowercase();
+    if !valid_attribute_name(&name) {
+        return Err(format!("Invalid attribute name {name}"));
     }
     if parser.is_exhausted() {
-        return Ok(None);
+        return Ok(Test::Attribute(name, None));
     }
-    parser.expect_delim('=').map_err(|_| "Only [data-object=name] compares an attribute")?;
+    let operator = match parser.next().map_err(|_| "Expected an attribute operator")?.clone() {
+        Token::Delim('=') => Operator::Equals,
+        Token::IncludeMatch => Operator::Word,
+        Token::DashMatch => Operator::Prefix,
+        Token::PrefixMatch => Operator::Starts,
+        Token::SuffixMatch => Operator::Ends,
+        Token::SubstringMatch => Operator::Contains,
+        _ => return Err("Unsupported attribute operator".into()),
+    };
     let value = match parser.next().map_err(|_| "Expected an attribute value")?.clone() {
         Token::Ident(value) | Token::QuotedString(value) => value.to_string(),
         _ => return Err("Expected an attribute value".into()),
     };
-    parser.expect_exhausted().map_err(|_| "Unexpected attribute suffix")?;
-    if value.is_empty() || value.len() > 128 {
-        return Err("Invalid attribute value".into());
+    if value.len() > MAX_ATTRIBUTE_BYTES {
+        return Err("Attribute value exceeds 256 bytes".into());
     }
-    Ok(Some(value))
+    let fold = if parser.is_exhausted() {
+        false
+    } else {
+        match parser.next().map_err(|_| "Unexpected attribute suffix")?.clone() {
+            Token::Ident(flag) if flag.eq_ignore_ascii_case("i") => true,
+            Token::Ident(flag) if flag.eq_ignore_ascii_case("s") => false,
+            _ => return Err("Unexpected attribute suffix".into()),
+        }
+    };
+    parser.expect_exhausted().map_err(|_| "Unexpected attribute suffix")?;
+    Ok(Test::Attribute(name, Some((operator, value, fold))))
 }
 
 fn finish_part(
@@ -514,17 +682,75 @@ mod tests {
         assert!(quoted.matches(&tree, 1, None));
         assert!(any.matches(&tree, 1, None) && !any.matches(&tree, 3, None));
         assert_eq!(named.specificity, Specificity(0, 1, 1));
-        for bad in ["[href]", "[data-object~=a]", "[data-object=]", "[data-object=a b]"] {
+        for bad in ["[data-object=a b]", "[data-object=]", "[data-object==a]", "[-x]", "[data-object=a q]"] {
             assert!(Selector::parse_list(bad).is_err(), "{bad}");
         }
     }
 
     #[test]
+    fn attribute_selectors_test_and_compare_the_host_s_attributes() {
+        let tree = Tree::new(vec![
+            Element::new("sample-map", None),
+            Element::new("sample-point", Some(0)).with_attribute("kind", "kick").with_attribute("selected", ""),
+            Element::new("sample-point", Some(0))
+                .with_attribute("kind", "snare-top")
+                .with_attribute("tags", "loud short"),
+            Element::new("sample-point", Some(0)).with_attribute("kind", "Kick"),
+        ])
+        .unwrap();
+        let matching = |source: &str| -> Vec<usize> {
+            let selector = &Selector::parse_list(source).unwrap()[0];
+            (0..4).filter(|node| selector.matches(&tree, *node, None)).collect()
+        };
+        assert_eq!(matching("[selected]"), [1]);
+        assert_eq!(matching("sample-point[kind=\"kick\"]"), [1]);
+        assert_eq!(matching("[kind=kick i]"), [1, 3]);
+        assert_eq!(matching("[kind=kick s]"), [1]);
+        assert_eq!(matching("[tags~=short]"), [2]);
+        assert_eq!(matching("[kind|=snare]"), [2]);
+        assert_eq!(matching("[kind^=sn]"), [2]);
+        assert_eq!(matching("[kind$=top]"), [2]);
+        assert_eq!(matching("[kind*=are]"), [2]);
+        assert_eq!(matching("[kind^='']"), Vec::<usize>::new());
+        assert_eq!(matching("[selected='']"), [1]);
+        assert_eq!(matching("[KIND=kick]"), [1]);
+        assert_eq!(matching(":not([kind])"), [0]);
+        assert_eq!(
+            Selector::parse_list("sample-point[kind=kick][selected]").unwrap()[0].specificity,
+            Specificity(0, 2, 1)
+        );
+    }
+
+    #[test]
+    fn hostile_attributes_are_refused_by_the_tree() {
+        for (name, value) in [("Color", "red"), ("", "red"), ("data-object", "a"), ("color", "a\u{7}")] {
+            let element = Element::new("clip", None).with_attribute(name, value);
+            assert!(Tree::new(vec![element]).is_err(), "{name}");
+        }
+        let long = Element::new("clip", None).with_attribute("color", &"a".repeat(MAX_ATTRIBUTE_BYTES + 1));
+        assert!(Tree::new(vec![long]).is_err());
+        let twice = Element::new("clip", None).with_attribute("color", "red").with_attribute("color", "blue");
+        assert!(Tree::new(vec![twice]).is_err());
+        let mut many = Element::new("clip", None);
+        for index in 0..=MAX_ATTRIBUTES {
+            many = many.with_attribute(&format!("a{index}"), "");
+        }
+        assert!(Tree::new(vec![many]).is_err());
+    }
+
+    #[test]
     fn invalid_tree_and_hostile_selectors_are_rejected() {
         assert!(Tree::new(vec![Element::new("knob", Some(0))]).is_err());
-        for source in
-            ["", "> knob", "knob >", "knob,,button", "knob:visitted", "[secret]", "knob::before", "knob:nth-child(NaN)"]
-        {
+        for source in [
+            "",
+            "> knob",
+            "knob >",
+            "knob,,button",
+            "knob:visitted",
+            "[se:cret]",
+            "knob::before",
+            "knob:nth-child(NaN)",
+        ] {
             assert!(Selector::parse_list(source).is_err(), "{source}");
         }
         assert!(Selector::parse_list(&format!("{}knob{}", ":not(".repeat(10), ")".repeat(10))).is_err());

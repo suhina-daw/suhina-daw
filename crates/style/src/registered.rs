@@ -187,8 +187,8 @@ impl Registered {
             match descriptor.as_str() {
                 "syntax" => syntax = Some(Syntax::parse(value)?),
                 "initial-value" => {
-                    if value.contains("var(") || value.len() > 1024 {
-                        return Err(format!("{name}: initial-value may not use var()"));
+                    if value.contains("var(") || crate::variables::mentions_attr(value) || value.len() > 1024 {
+                        return Err(format!("{name}: initial-value may not use var() or attr()"));
                     }
                     registered.initial = Some(value.trim().to_owned());
                 }

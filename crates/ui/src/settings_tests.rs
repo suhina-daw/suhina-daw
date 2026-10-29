@@ -122,6 +122,7 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
 fn settings_survive_a_round_trip() {
     let settings = Settings {
         animations: false,
+        setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),
         graphics: Graphics::OpenGl,
         sample_stacking: true,

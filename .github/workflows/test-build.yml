@@ -34,6 +34,20 @@ on:
       - "Cargo.lock"
       - ".cargo/**"
       - ".github/workflows/test-build.yml"
+  # main builds nothing to try: `cache` compiles the same binaries to save the Rust cache that pull
+  # requests restore. The same paths, so the generated-docs commit after a merge does not run it.
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "crates/**"
+      - "devices/**"
+      - "presets/**"
+      - "third_party/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - ".github/workflows/test-build.yml"
   workflow_dispatch:
     inputs:
       pull_requests:
@@ -58,7 +72,9 @@ jobs:
     name: what to build
     # A maintainer's own pull request on every push; labelled requests are authorized below,
     # and a run by hand (only people who can write to the repository can start one). The
-    # maintainers come from the repository variable MAINTAINERS.
+    # maintainers come from the repository variable MAINTAINERS. A push to main only fills the
+    # cache (`cache` below).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -271,9 +287,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
+      # Restores main's cache (the `cache` job) and saves none: a cache saved here only this pull
+      # request could restore, and at 0.6 to 0.8 GB per system these filled the repository's
+      # 10 GB and evicted main's caches, ci.yml's among them.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: test-build-${{ matrix.name }}
+          shared-key: test-build-${{ matrix.name }}
+          save-if: false
 
       # As release.yml does for the nightly: the version in [workspace.package], and so in every
       # crate and Cargo.lock; nothing is committed.
@@ -356,3 +376,55 @@ jobs:
             echo
             echo "[Download $PACKAGE]($URL) (kept for 7 days)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # On main: the test build's binaries for each system, built only to save the Rust cache that the
+  # pull requests' builds restore. Nothing is packaged or uploaded. The systems, the toolchain
+  # targets, MACOSX_DEPLOYMENT_TARGET and RUSTFLAGS must match `build`, or what is restored does
+  # not match what a pull request compiles.
+  cache:
+    name: cache (${{ matrix.name }})
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - name: windows-x86_64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          - name: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    # One run per system at a time; a merge while one runs waits for it instead of cancelling it,
+    # since a cancelled run saves nothing. A later merge replaces a waiting one.
+    concurrency:
+      group: test-build-cache-${{ matrix.name }}
+      cancel-in-progress: false
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install ALSA headers (cpal)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-build-${{ matrix.name }}
+      - name: Build
+        shell: bash
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+          TARGETS: ${{ matrix.targets }}
+        run: |
+          for target in ${TARGETS//,/ }; do
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+          done

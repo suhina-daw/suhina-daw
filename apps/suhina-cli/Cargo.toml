@@ -31,6 +31,9 @@ suhina-plugins.workspace = true
 hound.workspace = true
 suhina-theme-package.workspace = true
 
+[dev-dependencies]
+suhina-project-file.workspace = true
+
 [build-dependencies]
 winresource.workspace = true
 

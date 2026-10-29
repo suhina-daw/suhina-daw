@@ -24,7 +24,7 @@ use suhina_device_api::{
     check_sample_rate,
 };
 use suhina_dsp::gain::db_to_gain;
-use suhina_dsp::{Smoother, time_constant};
+use suhina_dsp::{AttackRelease, Smoother};
 
 /// How far ahead the limiter looks, in seconds.
 pub const LOOKAHEAD_SECONDS: f64 = 0.0015;
@@ -107,7 +107,8 @@ pub struct Limiter {
     drive: Smoother,
     /// The ceiling as a linear level.
     ceiling: Smoother,
-    release: f64,
+    /// An instant attack, so the gain is never above what the window needs, and the release.
+    dynamics: AttackRelease,
     lookahead: usize,
     /// Delay line for both sides, `lookahead` frames.
     delay: Vec<[f32; 2]>,
@@ -138,7 +139,7 @@ impl Limiter {
             params: ParamBank::new(&PARAMS),
             drive: Smoother::new(1.0, 1),
             ceiling: Smoother::new(1.0, 1),
-            release: 0.0,
+            dynamics: AttackRelease::default(),
             lookahead: 1,
             delay: Vec::new(),
             minimum: SlidingMinimum::new(1),
@@ -170,7 +171,7 @@ impl Limiter {
     }
 
     fn tune(&mut self) {
-        self.release = time_constant(self.value(param::RELEASE), self.sample_rate);
+        self.dynamics = AttackRelease::new(0.0, self.value(param::RELEASE), self.sample_rate);
     }
 
     /// Buffers for the current sample rate. Allocates: only from `new` and `prepare`.
@@ -254,8 +255,7 @@ impl Device for Limiter {
             let needed = if peak > f64::from(ceiling) { f64::from(ceiling) / peak } else { 1.0 };
 
             let smallest = self.minimum.push(self.frame, needed);
-            self.envelope =
-                if smallest < self.envelope { smallest } else { smallest + (self.envelope - smallest) * self.release };
+            self.envelope = self.dynamics.fall(self.envelope, smallest);
             let old = self.gains.get(self.at % window).copied().unwrap_or(1.0);
             if let Some(slot) = self.gains.get_mut(self.at % window) {
                 *slot = self.envelope;

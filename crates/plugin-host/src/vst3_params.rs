@@ -13,6 +13,8 @@ use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{Class, ComPtr, ComWrapper};
 
+use crate::param_notes::Notes;
+
 /// Most parameter changes one block carries; more wait for the next block.
 pub(crate) const MAX_CHANGES: usize = 4096;
 
@@ -124,23 +126,30 @@ pub(crate) struct BlockChanges {
     changes: ComWrapper<Changes>,
     pointer: Option<ComPtr<IParameterChanges>>,
     pending: Pending,
+    /// What the editor changed and a block took in, for the main thread to report to the
+    /// session (which keeps the project's values in step with it).
+    applied: Notes,
+    /// What the engine sent with a block (a panel set, automation): the last value each
+    /// parameter got, for the main thread to give the controller too, so the plug-in's editor
+    /// follows the panel and automation.
+    engine: Notes,
 }
 
 impl BlockChanges {
     /// Made before processing starts; allocates the list for [`MAX_CHANGES`] parameters.
-    pub(crate) fn new(pending: Pending) -> Self {
+    pub(crate) fn new(pending: Pending, applied: Notes, engine: Notes) -> Self {
         let queues: Vec<ComWrapper<Queue>> = (0..MAX_CHANGES).map(|_| ComWrapper::new(Queue::new())).collect();
         let pointers = queues.iter().filter_map(|q| q.to_com_ptr::<IParamValueQueue>()).collect();
         let changes = ComWrapper::new(Changes { queues, pointers, count: Cell::new(0) });
         let pointer = changes.to_com_ptr::<IParameterChanges>();
-        Self { changes, pointer, pending }
+        Self { changes, pointer, pending, applied, engine }
     }
 
     /// Takes what is pending (if the control thread is not using the list right now) and the
     /// block's `extra` changes (id, frame, value, in frame order: a controller moving,
     /// automation), and returns the list for this block, or null when nothing changed. A
     /// parameter changed several times gets each value at its frame. Real-time safe: no
-    /// allocation, and it never waits for the lock.
+    /// allocation, and it never waits for a lock.
     pub(crate) fn take(&mut self, extra: impl Iterator<Item = (ParamID, int32, ParamValue)>) -> *mut IParameterChanges {
         let mut count = 0;
         let mut add = |id: ParamID, offset: int32, value: ParamValue| {
@@ -163,10 +172,20 @@ impl BlockChanges {
             let room = pending.len().min(MAX_CHANGES);
             for (id, value) in pending.drain(..room) {
                 add(id, 0, value);
+                // Past the room the report loses the rest; the next edit reports again.
+                self.applied.note(id, value);
             }
         }
         for (id, offset, value) in extra {
             add(id, offset, value);
+        }
+        // The last value each parameter took in this block, for the controller to show.
+        for queue in self.changes.queues.iter().take(count) {
+            let id = queue.id.get();
+            let last = (0..queue.count.get()).next_back().and_then(|i| queue.points.get(i)).map(|p| p.get().1);
+            if let Some(value) = last {
+                self.engine.note(id, value);
+            }
         }
         self.changes.count.set(count);
         if count == 0 {
@@ -187,6 +206,7 @@ mod tests {
     use vst3::ComRef;
 
     use super::*;
+    use crate::param_notes::ParamNotes;
 
     #[test]
     fn a_parameter_changed_several_times_in_a_block_gets_each_value() {
@@ -194,7 +214,11 @@ mod tests {
         if let Ok(mut list) = pending.lock() {
             list.push((5, 0.1));
         }
-        let mut changes = BlockChanges::new(pending);
+        let applied = Notes::new(ParamNotes::new());
+        let engine = Notes::new(ParamNotes::new());
+        let mut applied_read = ParamNotes::fresh_reads();
+        let mut engine_read = ParamNotes::fresh_reads();
+        let mut changes = BlockChanges::new(pending, applied.clone(), engine.clone());
         // In frame order; a second value at frame 20 replaces the first, and one before the
         // last point is moved to it.
         let extra = [(5, 10, 0.2), (5, 20, 0.4), (5, 20, 0.5), (7, 3, 0.9), (5, 15, 0.6)];
@@ -221,5 +245,8 @@ mod tests {
         changes.done();
         // The next block starts empty.
         assert!(changes.take(std::iter::empty()).is_null());
+        // The editor's edit was reported and the engine's last value recorded.
+        assert_eq!(applied.take(&mut applied_read), [(5, 0.1)]);
+        assert_eq!(engine.take(&mut engine_read).into_iter().find(|(id, _)| *id == 5), Some((5, 0.6)));
     }
 }

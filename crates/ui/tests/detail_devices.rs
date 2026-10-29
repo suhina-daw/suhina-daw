@@ -558,3 +558,35 @@ fn an_expanded_panel_opens_from_the_header_and_edits_the_same_parameters() {
     harness.run();
     assert!(harness.query_by_label("Close expanded panel").is_none());
 }
+
+/// The compact panel stays drawn under an expanded one, and both have a Level dial per operator:
+/// the expanded one must still drag.
+#[test]
+fn a_dial_in_the_expanded_panel_drags_though_the_compact_panel_has_one_of_the_same_id() {
+    let mut project = project();
+    let synth = Device { name: "FM Synth".into(), kind: DeviceKind::Builtin("fm-synth".into()), ..device("Pitch") };
+    project.channels[0].devices = vec![synth];
+    let mut harness = arrangement();
+    harness.state_mut().set_session(Session::new(project), &[]);
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    harness.get_by_label("Expand FM Synth").click();
+    harness.run();
+    let level = harness.get_all_by_label("Level").next().unwrap().rect().center();
+    harness.hover_at(level);
+    harness.run();
+    harness.drag_at(level);
+    harness.step();
+    for i in 1..=40 {
+        harness.hover_at(level + vec2(0.0, i as f32));
+        harness.step();
+    }
+    harness.drop_at(level + vec2(0.0, 40.0));
+    harness.run();
+    let value =
+        project_now(&harness).channels[0].devices[0].params.iter().find(|p| p.id == "op1.level").map(|p| p.value);
+    assert!(value.is_some_and(|v| v < 99.0), "dragging Level down lowers it, got {value:?}");
+}

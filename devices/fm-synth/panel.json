@@ -1,0 +1,6273 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          6.0,
+          2.0
+        ],
+        "text": "Algorithm",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          6.0,
+          42.0
+        ],
+        "text": "Transpose",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      }
+    ],
+    "controls": [
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "algorithm",
+        "name": "algorithm",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          18.0,
+          70.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "algorithm",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "transpose",
+        "name": "transpose",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          58.0,
+          70.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "transpose",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Feedback",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "feedback",
+        "name": "Feedback",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          86.0,
+          0.0,
+          86.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "feedback",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Volume",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "volume",
+        "name": "Volume",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          172.0,
+          0.0,
+          86.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "volume",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 1",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op1.level",
+        "name": "Op 1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 2",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op2.level",
+        "name": "Op 2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          43.3,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 3",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op3.level",
+        "name": "Op 3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          86.6,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 4",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op4.level",
+        "name": "Op 4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          129.9,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 5",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op5.level",
+        "name": "Op 5",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          173.2,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Op 6",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op6.level",
+        "name": "Op 6",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          216.5,
+          84.0,
+          43.3,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "algorithm",
+      "feedback",
+      "glissando",
+      "lfoAmpDepth",
+      "lfoDelay",
+      "lfoKeySync",
+      "lfoPitchDepth",
+      "lfoSpeed",
+      "lfoWave",
+      "op1.ampModSens",
+      "op1.coarse",
+      "op1.detune",
+      "op1.fine",
+      "op1.level",
+      "op1.level1",
+      "op1.level2",
+      "op1.level3",
+      "op1.level4",
+      "op1.mode",
+      "op1.on",
+      "op1.rate1",
+      "op1.rate2",
+      "op1.rate3",
+      "op1.rate4",
+      "op1.rateScaling",
+      "op1.velocitySens",
+      "op2.ampModSens",
+      "op2.coarse",
+      "op2.detune",
+      "op2.fine",
+      "op2.level",
+      "op2.level1",
+      "op2.level2",
+      "op2.level3",
+      "op2.level4",
+      "op2.mode",
+      "op2.on",
+      "op2.rate1",
+      "op2.rate2",
+      "op2.rate3",
+      "op2.rate4",
+      "op2.rateScaling",
+      "op2.velocitySens",
+      "op3.ampModSens",
+      "op3.coarse",
+      "op3.detune",
+      "op3.fine",
+      "op3.level",
+      "op3.level1",
+      "op3.level2",
+      "op3.level3",
+      "op3.level4",
+      "op3.mode",
+      "op3.on",
+      "op3.rate1",
+      "op3.rate2",
+      "op3.rate3",
+      "op3.rate4",
+      "op3.rateScaling",
+      "op3.velocitySens",
+      "op4.ampModSens",
+      "op4.coarse",
+      "op4.detune",
+      "op4.fine",
+      "op4.level",
+      "op4.level1",
+      "op4.level2",
+      "op4.level3",
+      "op4.level4",
+      "op4.mode",
+      "op4.on",
+      "op4.rate1",
+      "op4.rate2",
+      "op4.rate3",
+      "op4.rate4",
+      "op4.rateScaling",
+      "op4.velocitySens",
+      "op5.ampModSens",
+      "op5.coarse",
+      "op5.detune",
+      "op5.fine",
+      "op5.level",
+      "op5.level1",
+      "op5.level2",
+      "op5.level3",
+      "op5.level4",
+      "op5.mode",
+      "op5.on",
+      "op5.rate1",
+      "op5.rate2",
+      "op5.rate3",
+      "op5.rate4",
+      "op5.rateScaling",
+      "op5.velocitySens",
+      "op6.ampModSens",
+      "op6.coarse",
+      "op6.detune",
+      "op6.fine",
+      "op6.level",
+      "op6.level1",
+      "op6.level2",
+      "op6.level3",
+      "op6.level4",
+      "op6.mode",
+      "op6.on",
+      "op6.rate1",
+      "op6.rate2",
+      "op6.rate3",
+      "op6.rate4",
+      "op6.rateScaling",
+      "op6.velocitySens",
+      "oscKeySync",
+      "pitchBendRange",
+      "pitchBendStep",
+      "pitchLevel1",
+      "pitchLevel2",
+      "pitchLevel3",
+      "pitchLevel4",
+      "pitchModSens",
+      "pitchRate1",
+      "pitchRate2",
+      "pitchRate3",
+      "pitchRate4",
+      "portamento",
+      "portamentoTime",
+      "transpose",
+      "volume",
+      "wheelRange"
+    ]
+  },
+  "expanded": {
+    "size": [
+      1066.0,
+      326.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          6.0,
+          4.0
+        ],
+        "text": "Operator 1",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          6.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          138.0,
+          4.0
+        ],
+        "text": "Operator 2",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          138.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          270.0,
+          4.0
+        ],
+        "text": "Operator 3",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          270.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          402.0,
+          4.0
+        ],
+        "text": "Operator 4",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          402.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          534.0,
+          4.0
+        ],
+        "text": "Operator 5",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          534.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          666.0,
+          4.0
+        ],
+        "text": "Operator 6",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          666.0,
+          206.0
+        ],
+        "text": "Envelope",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          798.0,
+          4.0
+        ],
+        "text": "Global",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          798.0,
+          140.0
+        ],
+        "text": "LFO",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          934.0,
+          4.0
+        ],
+        "text": "Pitch EG",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      },
+      {
+        "kind": "text",
+        "align": "left",
+        "format": "number",
+        "position": [
+          934.0,
+          130.0
+        ],
+        "text": "Performance",
+        "color": [
+          236,
+          232,
+          225,
+          255
+        ],
+        "size": 11.0,
+        "parameter": null,
+        "decimals": 0
+      }
+    ],
+    "controls": [
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op1.on",
+        "name": "On",
+        "tooltip": "op1.on: On",
+        "bounds": [
+          6.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op1.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op1.mode",
+        "name": "op1.mode",
+        "tooltip": "",
+        "bounds": [
+          68.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op1.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op1.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op1.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op1.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op1.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.velocitySens",
+        "name": "op1.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.ampModSens",
+        "name": "op1.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          46.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.rateScaling",
+        "name": "op1.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          86.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.rate1",
+        "name": "op1.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.level1",
+        "name": "op1.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.rate2",
+        "name": "op1.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.level2",
+        "name": "op1.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.rate3",
+        "name": "op1.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.level3",
+        "name": "op1.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          6.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.rate4",
+        "name": "op1.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op1.level4",
+        "name": "op1.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          66.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op1.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op2.on",
+        "name": "On",
+        "tooltip": "op2.on: On",
+        "bounds": [
+          138.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op2.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op2.mode",
+        "name": "op2.mode",
+        "tooltip": "",
+        "bounds": [
+          200.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op2.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op2.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op2.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op2.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op2.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.velocitySens",
+        "name": "op2.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.ampModSens",
+        "name": "op2.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          178.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.rateScaling",
+        "name": "op2.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          218.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.rate1",
+        "name": "op2.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.level1",
+        "name": "op2.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.rate2",
+        "name": "op2.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.level2",
+        "name": "op2.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.rate3",
+        "name": "op2.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.level3",
+        "name": "op2.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          138.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.rate4",
+        "name": "op2.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op2.level4",
+        "name": "op2.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          198.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op2.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op3.on",
+        "name": "On",
+        "tooltip": "op3.on: On",
+        "bounds": [
+          270.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op3.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op3.mode",
+        "name": "op3.mode",
+        "tooltip": "",
+        "bounds": [
+          332.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op3.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op3.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op3.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op3.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op3.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.velocitySens",
+        "name": "op3.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.ampModSens",
+        "name": "op3.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          310.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.rateScaling",
+        "name": "op3.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          350.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.rate1",
+        "name": "op3.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.level1",
+        "name": "op3.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.rate2",
+        "name": "op3.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.level2",
+        "name": "op3.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.rate3",
+        "name": "op3.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.level3",
+        "name": "op3.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          270.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.rate4",
+        "name": "op3.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op3.level4",
+        "name": "op3.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          330.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op3.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op4.on",
+        "name": "On",
+        "tooltip": "op4.on: On",
+        "bounds": [
+          402.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op4.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op4.mode",
+        "name": "op4.mode",
+        "tooltip": "",
+        "bounds": [
+          464.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op4.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op4.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op4.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op4.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op4.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.velocitySens",
+        "name": "op4.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.ampModSens",
+        "name": "op4.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          442.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.rateScaling",
+        "name": "op4.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          482.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.rate1",
+        "name": "op4.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.level1",
+        "name": "op4.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.rate2",
+        "name": "op4.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.level2",
+        "name": "op4.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.rate3",
+        "name": "op4.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.level3",
+        "name": "op4.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          402.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.rate4",
+        "name": "op4.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op4.level4",
+        "name": "op4.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          462.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op4.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op5.on",
+        "name": "On",
+        "tooltip": "op5.on: On",
+        "bounds": [
+          534.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op5.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op5.mode",
+        "name": "op5.mode",
+        "tooltip": "",
+        "bounds": [
+          596.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op5.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op5.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op5.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op5.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op5.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.velocitySens",
+        "name": "op5.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.ampModSens",
+        "name": "op5.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          574.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.rateScaling",
+        "name": "op5.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          614.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.rate1",
+        "name": "op5.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.level1",
+        "name": "op5.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.rate2",
+        "name": "op5.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.level2",
+        "name": "op5.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.rate3",
+        "name": "op5.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.level3",
+        "name": "op5.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          534.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.rate4",
+        "name": "op5.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op5.level4",
+        "name": "op5.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          594.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op5.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "On",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "op6.on",
+        "name": "On",
+        "tooltip": "op6.on: On",
+        "bounds": [
+          666.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "op6.on",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "op6.mode",
+        "name": "op6.mode",
+        "tooltip": "",
+        "bounds": [
+          728.0,
+          24.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "op6.mode",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Level",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op6.level",
+        "name": "Level",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Coarse",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op6.coarse",
+        "name": "Coarse",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          48.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.coarse",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Fine",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op6.fine",
+        "name": "Fine",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.fine",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Detune",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "op6.detune",
+        "name": "Detune",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          112.0,
+          60.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.detune",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Vel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.velocitySens",
+        "name": "op6.velocitySens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.velocitySens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.ampModSens",
+        "name": "op6.ampModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          706.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.ampModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "RS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.rateScaling",
+        "name": "op6.rateScaling",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          746.0,
+          180.0,
+          38.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.rateScaling",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.rate1",
+        "name": "op6.rate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.rate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.level1",
+        "name": "op6.level1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.rate2",
+        "name": "op6.rate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          226.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.rate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.level2",
+        "name": "op6.level2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          278.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.rate3",
+        "name": "op6.rate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.rate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.level3",
+        "name": "op6.level3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          666.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.rate4",
+        "name": "op6.rate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          250.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.rate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "op6.level4",
+        "name": "op6.level4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          726.0,
+          302.0,
+          58.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "op6.level4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Alg ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "algorithm",
+        "name": "algorithm",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          798.0,
+          24.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "algorithm",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Tr ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "transpose",
+        "name": "transpose",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          862.0,
+          24.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "transpose",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Feedback",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "feedback",
+        "name": "Feedback",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          798.0,
+          48.0,
+          62.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "feedback",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Volume",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "volume",
+        "name": "Volume",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          860.0,
+          48.0,
+          62.0,
+          62.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "volume",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Osc Sync",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "oscKeySync",
+        "name": "Osc Sync",
+        "tooltip": "oscKeySync: Osc Sync",
+        "bounds": [
+          798.0,
+          114.0,
+          124.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "oscKeySync",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "lfoWave",
+        "name": "lfoWave",
+        "tooltip": "",
+        "bounds": [
+          798.0,
+          160.0,
+          80.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "lfoWave",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "lfoKeySync",
+        "name": "Sync",
+        "tooltip": "lfoKeySync: Sync",
+        "bounds": [
+          882.0,
+          160.0,
+          40.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "lfoKeySync",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Speed ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "lfoSpeed",
+        "name": "lfoSpeed",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          798.0,
+          184.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoSpeed",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Delay ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "lfoDelay",
+        "name": "lfoDelay",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          862.0,
+          184.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoDelay",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "PMD ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "lfoPitchDepth",
+        "name": "lfoPitchDepth",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          798.0,
+          208.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoPitchDepth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "AMD ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "lfoAmpDepth",
+        "name": "lfoAmpDepth",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          862.0,
+          208.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lfoAmpDepth",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "PMS ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchModSens",
+        "name": "pitchModSens",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          798.0,
+          232.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchModSens",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchRate1",
+        "name": "pitchRate1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          24.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchRate1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L1 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchLevel1",
+        "name": "pitchLevel1",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          76.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchLevel1",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchRate2",
+        "name": "pitchRate2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          24.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchRate2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L2 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchLevel2",
+        "name": "pitchLevel2",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          76.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchLevel2",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchRate3",
+        "name": "pitchRate3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          48.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchRate3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L3 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchLevel3",
+        "name": "pitchLevel3",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          100.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchLevel3",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "R4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchRate4",
+        "name": "pitchRate4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          48.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchRate4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "L4 ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchLevel4",
+        "name": "pitchLevel4",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          100.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchLevel4",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Bend ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchBendRange",
+        "name": "pitchBendRange",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          150.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchBendRange",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Step ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "pitchBendStep",
+        "name": "pitchBendStep",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          150.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "pitchBendStep",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Porta",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "portamento",
+        "name": "Porta",
+        "tooltip": "portamento: Porta",
+        "bounds": [
+          934.0,
+          174.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "portamento",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Gliss",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "glissando",
+        "name": "Gliss",
+        "tooltip": "glissando: Gliss",
+        "bounds": [
+          998.0,
+          174.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "glissando",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Time ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "portamentoTime",
+        "name": "portamentoTime",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          934.0,
+          198.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "portamentoTime",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "number",
+          "decimals": 0,
+          "format": "number",
+          "color": [
+            236,
+            232,
+            225,
+            255
+          ],
+          "center": false,
+          "bordered": true,
+          "prefix": "Wheel ",
+          "suffix": ""
+        },
+        "visible_when": null,
+        "id": "wheelRange",
+        "name": "wheelRange",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          998.0,
+          198.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "wheelRange",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "algorithm",
+      "feedback",
+      "glissando",
+      "lfoAmpDepth",
+      "lfoDelay",
+      "lfoKeySync",
+      "lfoPitchDepth",
+      "lfoSpeed",
+      "lfoWave",
+      "op1.ampModSens",
+      "op1.coarse",
+      "op1.detune",
+      "op1.fine",
+      "op1.level",
+      "op1.level1",
+      "op1.level2",
+      "op1.level3",
+      "op1.level4",
+      "op1.mode",
+      "op1.on",
+      "op1.rate1",
+      "op1.rate2",
+      "op1.rate3",
+      "op1.rate4",
+      "op1.rateScaling",
+      "op1.velocitySens",
+      "op2.ampModSens",
+      "op2.coarse",
+      "op2.detune",
+      "op2.fine",
+      "op2.level",
+      "op2.level1",
+      "op2.level2",
+      "op2.level3",
+      "op2.level4",
+      "op2.mode",
+      "op2.on",
+      "op2.rate1",
+      "op2.rate2",
+      "op2.rate3",
+      "op2.rate4",
+      "op2.rateScaling",
+      "op2.velocitySens",
+      "op3.ampModSens",
+      "op3.coarse",
+      "op3.detune",
+      "op3.fine",
+      "op3.level",
+      "op3.level1",
+      "op3.level2",
+      "op3.level3",
+      "op3.level4",
+      "op3.mode",
+      "op3.on",
+      "op3.rate1",
+      "op3.rate2",
+      "op3.rate3",
+      "op3.rate4",
+      "op3.rateScaling",
+      "op3.velocitySens",
+      "op4.ampModSens",
+      "op4.coarse",
+      "op4.detune",
+      "op4.fine",
+      "op4.level",
+      "op4.level1",
+      "op4.level2",
+      "op4.level3",
+      "op4.level4",
+      "op4.mode",
+      "op4.on",
+      "op4.rate1",
+      "op4.rate2",
+      "op4.rate3",
+      "op4.rate4",
+      "op4.rateScaling",
+      "op4.velocitySens",
+      "op5.ampModSens",
+      "op5.coarse",
+      "op5.detune",
+      "op5.fine",
+      "op5.level",
+      "op5.level1",
+      "op5.level2",
+      "op5.level3",
+      "op5.level4",
+      "op5.mode",
+      "op5.on",
+      "op5.rate1",
+      "op5.rate2",
+      "op5.rate3",
+      "op5.rate4",
+      "op5.rateScaling",
+      "op5.velocitySens",
+      "op6.ampModSens",
+      "op6.coarse",
+      "op6.detune",
+      "op6.fine",
+      "op6.level",
+      "op6.level1",
+      "op6.level2",
+      "op6.level3",
+      "op6.level4",
+      "op6.mode",
+      "op6.on",
+      "op6.rate1",
+      "op6.rate2",
+      "op6.rate3",
+      "op6.rate4",
+      "op6.rateScaling",
+      "op6.velocitySens",
+      "oscKeySync",
+      "pitchBendRange",
+      "pitchBendStep",
+      "pitchLevel1",
+      "pitchLevel2",
+      "pitchLevel3",
+      "pitchLevel4",
+      "pitchModSens",
+      "pitchRate1",
+      "pitchRate2",
+      "pitchRate3",
+      "pitchRate4",
+      "portamento",
+      "portamentoTime",
+      "transpose",
+      "volume",
+      "wheelRange"
+    ]
+  },
+  "parameters": {
+    "breathAmp": {
+      "ui": {
+        "link": null,
+        "tooltip": "Breath to Amp",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          504.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "breathEgBias": {
+      "ui": {
+        "link": null,
+        "tooltip": "Breath to EG Bias",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          576.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "breathPitch": {
+      "ui": {
+        "link": null,
+        "tooltip": "Breath to Pitch",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          504.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "breathRange": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Breath Range",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          504.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "footAmp": {
+      "ui": {
+        "link": null,
+        "tooltip": "Foot to Amp",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          504.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "footEgBias": {
+      "ui": {
+        "link": null,
+        "tooltip": "Foot to EG Bias",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          504.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "footPitch": {
+      "ui": {
+        "link": null,
+        "tooltip": "Foot to Pitch",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          432.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "footRange": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Foot Range",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          432.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op1.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 1 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          0.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op1.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 1 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          0.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op1.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 1 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          0.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op1.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 1 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          0.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op1.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 1 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          0.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op2.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 2 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          72.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op2.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 2 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          72.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op2.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 2 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          72.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op2.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 2 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          72.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op2.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 2 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          72.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op3.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 3 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          144.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op3.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 3 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          144.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op3.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 3 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          144.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op3.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 3 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          144.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op3.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 3 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          144.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op4.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 4 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          216.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op4.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 4 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          216.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op4.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 4 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          216.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op4.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 4 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          216.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op4.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 4 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          216.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op5.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 5 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          288.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op5.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 5 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          288.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op5.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 5 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          288.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op5.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 5 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          288.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op5.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 5 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          288.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op6.breakPoint": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 6 Break Point",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          360.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op6.leftCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 6 Left Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          360.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op6.leftDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 6 Left Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          360.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "op6.rightCurve": {
+      "ui": {
+        "link": null,
+        "tooltip": "Op 6 Right Curve",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          360.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "op6.rightDepth": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Op 6 Right Depth",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          360.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "pressureAmp": {
+      "ui": {
+        "link": null,
+        "tooltip": "Pressure to Amp",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          156.0,
+          576.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "pressureEgBias": {
+      "ui": {
+        "link": null,
+        "tooltip": "Pressure to EG Bias",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          208.0,
+          576.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "pressurePitch": {
+      "ui": {
+        "link": null,
+        "tooltip": "Pressure to Pitch",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          576.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "pressureRange": {
+      "control": "knob",
+      "ui": {
+        "link": null,
+        "tooltip": "Pressure Range",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          576.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": true
+      }
+    },
+    "wheelAmp": {
+      "ui": {
+        "link": null,
+        "tooltip": "Wheel to Amp",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          52.0,
+          432.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "wheelEgBias": {
+      "ui": {
+        "link": null,
+        "tooltip": "Wheel to EG Bias",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          104.0,
+          432.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    },
+    "wheelPitch": {
+      "ui": {
+        "link": null,
+        "tooltip": "Wheel to Pitch",
+        "group": "",
+        "options": [],
+        "step": 0.0,
+        "decimals": 0,
+        "size": [
+          52.0,
+          72.0
+        ],
+        "position": [
+          0.0,
+          432.0
+        ],
+        "accent": null,
+        "background": null,
+        "panel_color": null,
+        "text_color": null,
+        "font_size": 10.0,
+        "monospace": false,
+        "corner_radius": 4.0,
+        "shape": "rounded",
+        "label_position": "top",
+        "show_value": false
+      }
+    }
+  }
+}

@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 use suhina_device_api::{DeviceInfo, ParamKind, Role, Unit};
 use suhina_engine::param_id;
-use suhina_model::{AutomationLane, AutomationPoint, Device, DeviceKind, DeviceParam};
+use suhina_model::{AutomationLane, AutomationPoint, Device, DeviceKind, DeviceParam, Project};
 
 use crate::commands::{device_channel, device_channel_read, number, track_or_main_id, with_override};
 use crate::device_groups::{device_path, path_value};
@@ -1206,6 +1206,51 @@ fn set_plugin_param(
     Ok(with_override(json!({ "device": path_value(path), "param": id, "value": value }), off))
 }
 
+/// Keeps the project's plug-in parameters in step with the running plug-ins: what the host
+/// reported the user moved in a plug-in's editor since the last call becomes the device's value.
+/// It is no undo step of its own (the session ran no command for it) and a change since the last
+/// save, so asking whether to save on close and the timed backups notice it.
+pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
+    let edits = session.plugins.take_param_edits();
+    if edits.is_empty() {
+        return false;
+    }
+    if take_in_param_edits(&mut session.project, &edits) {
+        session.history.changes = session.history.changes.wrapping_add(1);
+        true
+    } else {
+        false
+    }
+}
+
+/// Takes the reported editor edits `(device key, parameter id, value)` into `project`'s plug-in
+/// devices: the value becomes the device's stored one (a parameter it has not stored yet gets
+/// one), an edit for a device the project no longer holds is left out, and one whose value the
+/// device already keeps changes nothing. Returns whether any value changed.
+pub(crate) fn take_in_param_edits(project: &mut Project, edits: &[(u64, u32, f64)]) -> bool {
+    let devices = suhina_engine::plugin_devices(project);
+    let mut changed = false;
+    for (key, id, value) in edits {
+        let Some(device) = devices.iter().find(|d| d.key == *key) else { continue };
+        let Some(channel) = project.channels.iter_mut().find(|c| c.id == device.channel) else {
+            continue;
+        };
+        let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &device.path) else { continue };
+        match device.params.iter_mut().find(|p| param_id(&p.id) == Some(*id)) {
+            Some(stored) if stored.value != *value => {
+                stored.value = *value;
+                changed = true;
+            }
+            Some(_) => {}
+            None => {
+                device.params.push(DeviceParam::new(id.to_string(), *value));
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
 /// Most points one automation lane holds.
 const MAX_POINTS: usize = 65_536;
 
@@ -1268,7 +1313,7 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
             }
             None => plugin_value(session, track, &[index], id, value)?,
         };
-        points.push(AutomationPoint { beat, value, curve: 0.0 });
+        points.push(AutomationPoint { beat, value, curve: Default::default() });
     }
     // In beat order; points given at one beat keep their order (a jump).
     points.sort_by(|a, b| a.beat.total_cmp(&b.beat));
@@ -1459,3 +1504,7 @@ pub(crate) fn restart(session: &mut Session, params: &Value) -> Result<Value, Co
     session.plugins.restart(key)?;
     Ok(json!({ "status": "loading" }))
 }
+
+#[cfg(test)]
+#[path = "devices_tests.rs"]
+mod tests;

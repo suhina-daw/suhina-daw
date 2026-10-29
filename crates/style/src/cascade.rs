@@ -113,236 +113,339 @@ fn compute_inner(
         return Err("Invalid style scope root".into());
     }
     let mut result: Vec<ComputedStyle> = Vec::with_capacity(tree.elements().len());
-    let mut work = 2_000_000usize;
-    let mut variable_bytes = 0usize;
+    let mut budget = Budget::default();
     for (node, element) in tree.elements().iter().enumerate() {
         let parent = element.parent.and_then(|parent| result.get(parent));
-        let mut computed = ComputedStyle::default();
-        if let Some(parent) = parent {
-            for property in Property::ALL.iter().filter(|p| p.inherits()) {
-                computed.values.insert(*property, parent.get(*property));
-                if parent.authored(*property) {
-                    computed.authored.insert(*property);
-                }
-            }
-            computed.variables = Arc::clone(&parent.variables);
-        } else {
-            // A registered property's initial value is what the root sees until a rule sets it.
-            let initial: BTreeMap<String, String> = sheets
-                .iter()
-                .flat_map(|applied| applied.sheet.properties.iter())
-                .filter_map(|registered| Some((registered.name.clone(), registered.initial.clone()?)))
-                .collect();
-            if !initial.is_empty() {
-                computed.variables = Arc::new(initial);
-            }
-        }
-        // The host's own values come first, so any rule may replace them.
-        if !element.variables.is_empty() {
-            let mut variables = (*computed.variables).clone();
-            for (name, value) in element.variables.iter().filter(|(name, _)| name.starts_with("--")).take(16) {
-                variables.insert(name.clone(), value.clone());
-            }
-            computed.variables = Arc::new(variables);
-        }
-        let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
-        let mut order = 0usize;
-        for applied in sheets {
-            if applied.root.is_some_and(|root| !tree.contains(node, root)) {
-                continue;
-            }
-            for rule in &applied.sheet.rules {
-                order += 1;
-                work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
-                if !rule.media.iter().all(|media| media.matches(viewport)) {
-                    continue;
-                }
-                let specificity = rule
-                    .selectors
-                    .iter()
-                    .filter_map(|selector| {
-                        selector
-                            .matches_with_budget(tree, node, applied.root, &mut work)
-                            .then_some(selector.specificity)
-                    })
-                    .max();
-                if work == 0 {
-                    return Err("Style selector matching exceeded its work budget".into());
-                }
-                let Some(specificity) = specificity else {
-                    continue;
-                };
-                for declaration in &rule.declarations {
-                    let priority = priority(applied.layer, declaration.important, rule.layer, specificity, order);
-                    if winners.get(declaration.name.as_str()).is_none_or(|(previous, _)| *previous <= priority) {
-                        winners.insert(&declaration.name, (priority, declaration));
-                    }
-                }
-            }
-        }
-        if winners.keys().any(|key| key.starts_with("--")) {
-            let mut variables = (*computed.variables).clone();
-            for (name, (_, declaration)) in winners.iter().filter(|(name, _)| name.starts_with("--")) {
-                match declaration.value.trim() {
-                    "initial" => {
-                        match sheets
-                            .iter()
-                            .rev()
-                            .flat_map(|applied| applied.sheet.properties.iter())
-                            .find(|registered| registered.name == *name)
-                            .and_then(|registered| registered.initial.clone())
-                        {
-                            Some(initial) => variables.insert((*name).into(), initial),
-                            None => variables.remove(*name),
-                        };
-                    }
-                    "inherit" | "unset" => {}
-                    _ => {
-                        variables.insert((*name).into(), declaration.value.clone());
-                    }
-                }
-            }
-            let mut resolved = crate::variables::resolve(&variables)?;
-            // A registered property's value that does not match its syntax is invalid at
-            // computed-value time: the property takes its initial value.
-            for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
-                if let Some(value) = resolved.get(&registered.name)
-                    && !registered.syntax.accepts(value)
-                {
-                    match &registered.initial {
-                        Some(initial) => resolved.insert(registered.name.clone(), initial.clone()),
-                        None => resolved.remove(&registered.name),
-                    };
-                }
-            }
-            variable_bytes = variable_bytes
-                .checked_add(resolved.values().map(String::len).sum::<usize>())
-                .filter(|bytes| *bytes <= 16 * 1024 * 1024)
-                .ok_or("Computed variables exceed 16 MiB")?;
-            computed.variables = Arc::new(resolved);
-        }
-        for (name, (priority, declaration)) in winners {
-            let Some(property) = Property::from_name(name) else {
-                continue;
-            };
-            let value = match crate::variables::substitute(&declaration.value, &computed.variables).and_then(|value| {
-                match declaration.shorthand {
-                    Some(shorthand) => shorthand.part(property, &value),
-                    None => Ok(value),
-                }
-            }) {
-                Ok(value) => value,
-                Err(error) if checked => return Err(error),
-                Err(_) => continue,
-            };
-            let value = match value.trim() {
-                "inherit" => parent.map_or_else(|| property.initial(), |parent| parent.get(property)),
-                "initial" => property.initial(),
-                "unset" if property.inherits() => {
-                    parent.map_or_else(|| property.initial(), |parent| parent.get(property))
-                }
-                "unset" => property.initial(),
-                other => match property.parse(&crate::value::viewport_units(other, viewport.width, viewport.height)) {
-                    Ok(value) => value,
-                    Err(error) if checked => return Err(error),
-                    Err(_) => continue,
-                },
-            };
-            computed.values.insert(property, value);
-            if priority.0 > Layer::Default as u8 {
-                computed.authored.insert(property);
-            }
-        }
-        if let Value::Animations(animations) = computed.get(Property::Animation) {
-            for animation in animations {
-                // The last keyframes rule of that name in the sheets that reach this element.
-                let rule = sheets
-                    .iter()
-                    .rev()
-                    .filter(|applied| applied.root.is_none_or(|root| tree.contains(node, root)))
-                    .find_map(|applied| applied.sheet.keyframes.iter().rev().find(|(name, _)| *name == animation.name));
-                let Some((_, frames)) = rule else { continue };
-                let mut resolved: crate::motion::Frames = Vec::with_capacity(frames.len());
-                for (offset, declarations) in frames {
-                    let mut values = Vec::new();
-                    for declaration in declarations.iter().filter(|d| !d.important) {
-                        work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
-                        let Some(property) = Property::from_name(&declaration.name) else { continue };
-                        let value = crate::variables::substitute(&declaration.value, &computed.variables)
-                            .and_then(|value| match declaration.shorthand {
-                                Some(shorthand) => shorthand.part(property, &value),
-                                None => Ok(value),
-                            })
-                            .and_then(|value| {
-                                property.parse(&crate::value::viewport_units(&value, viewport.width, viewport.height))
-                            });
-                        match value {
-                            Ok(value) => values.push((property, value)),
-                            Err(error) if checked => return Err(error),
-                            Err(_) => {}
-                        }
-                    }
-                    resolved.push((*offset, values));
-                }
-                for (_, values) in &resolved {
-                    for (property, _) in values {
-                        computed.authored.insert(*property);
-                    }
-                }
-                computed.keyframes.push((animation, Arc::new(resolved)));
-            }
-        }
-        // Inherited font size is a computed size, not an em expression to apply
-        // again at each descendant. Other em lengths resolve against this size.
-        let parent_size = match parent.map(|style| style.get(Property::FontSize)) {
-            Some(Value::Length(crate::value::Length::Px(size))) => size,
-            _ => 11.0,
-        };
-        let font_size = match computed.get(Property::FontSize) {
-            Value::Length(crate::value::Length::Px(size)) => size,
-            Value::Length(crate::value::Length::Em(scale) | crate::value::Length::Percent(scale)) => {
-                parent_size * scale
-            }
-            _ => parent_size,
-        }
-        .clamp(1.0, 256.0);
-        computed.values.insert(Property::FontSize, Value::Length(crate::value::Length::Px(font_size)));
-        // Text shadows inherit their computed lengths. Resolve em once at the
-        // authoring element; a child's larger font must not scale them again.
-        for value in computed.values.values_mut() {
-            if let Value::Shadows(shadows) = value {
-                for shadow in shadows {
-                    for length in shadow.offset.iter_mut().chain([&mut shadow.blur, &mut shadow.spread]) {
-                        if let crate::value::Length::Em(scale) = *length {
-                            *length = crate::value::Length::Px(scale * font_size);
-                        }
-                    }
-                }
-            } else if let Value::Gradients(gradients) = value {
-                for gradient in gradients {
-                    for stop in &mut gradient.stops {
-                        if let Some(crate::value::Length::Em(scale)) = stop.position {
-                            stop.position = Some(crate::value::Length::Px(scale * font_size));
-                        }
-                    }
-                }
-            }
-        }
-        let foreground = match computed.get(Property::Color) {
-            Value::Color(Color::Current) => {
-                parent.map_or(Value::Color(Color::Rgba([255; 4])), |parent| parent.get(Property::Color))
-            }
-            other => other,
-        };
-        computed.values.insert(Property::Color, foreground.clone());
-        for value in computed.values.values_mut() {
-            if *value == Value::Color(Color::Current) {
-                *value = foreground.clone();
-            }
-        }
+        let computed = element_style(tree, node, parent, viewport, sheets, checked, &mut budget)?;
         result.push(computed);
     }
     Ok(result)
+}
+
+/// The work and memory one computation may spend, over all the elements it styles.
+pub(crate) struct Budget {
+    work: usize,
+    variable_bytes: usize,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self { work: 2_000_000, variable_bytes: 0 }
+    }
+}
+
+/// The style of one element of `tree`, given its parent's computed style.
+pub(crate) fn element_style(
+    tree: &Tree,
+    node: usize,
+    parent: Option<&ComputedStyle>,
+    viewport: Viewport,
+    sheets: &[AppliedSheet<'_>],
+    checked: bool,
+    budget: &mut Budget,
+) -> Result<ComputedStyle, String> {
+    let element = tree.elements().get(node).ok_or("Invalid style element")?;
+    let Budget { work, variable_bytes } = budget;
+    let mut computed = ComputedStyle::default();
+    if let Some(parent) = parent {
+        for property in Property::ALL.iter().filter(|p| p.inherits()) {
+            computed.values.insert(*property, parent.get(*property));
+            if parent.authored(*property) {
+                computed.authored.insert(*property);
+            }
+        }
+        computed.variables = Arc::clone(&parent.variables);
+    } else {
+        // A registered property's initial value is what the root sees until a rule sets it.
+        let initial: BTreeMap<String, String> = sheets
+            .iter()
+            .flat_map(|applied| applied.sheet.properties.iter())
+            .filter_map(|registered| Some((registered.name.clone(), registered.initial.clone()?)))
+            .collect();
+        if !initial.is_empty() {
+            computed.variables = Arc::new(initial);
+        }
+    }
+    // The host's own values come first, so any rule may replace them.
+    if !element.variables.is_empty() {
+        let mut variables = (*computed.variables).clone();
+        for (name, value) in element.variables.iter().filter(|(name, _)| name.starts_with("--")).take(16) {
+            variables.insert(name.clone(), value.clone());
+        }
+        computed.variables = Arc::new(variables);
+    }
+    let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
+    let mut order = 0usize;
+    for applied in sheets {
+        if applied.root.is_some_and(|root| !tree.contains(node, root)) {
+            continue;
+        }
+        for rule in &applied.sheet.rules {
+            order += 1;
+            *work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
+            if !rule.media.iter().all(|media| media.matches(viewport)) {
+                continue;
+            }
+            let specificity = rule
+                .selectors
+                .iter()
+                .filter_map(|selector| {
+                    selector.matches_with_budget(tree, node, applied.root, work).then_some(selector.specificity)
+                })
+                .max();
+            if *work == 0 {
+                return Err("Style selector matching exceeded its work budget".into());
+            }
+            let Some(specificity) = specificity else {
+                continue;
+            };
+            for declaration in &rule.declarations {
+                let priority = priority(applied.layer, declaration.important, rule.layer, specificity, order);
+                if winners.get(declaration.name.as_str()).is_none_or(|(previous, _)| *previous <= priority) {
+                    winners.insert(&declaration.name, (priority, declaration));
+                }
+            }
+        }
+    }
+    if winners.keys().any(|key| key.starts_with("--")) {
+        let custom = winners.iter().map(|(name, (_, declaration))| (*name, *declaration));
+        let resolved = cascade_variables(&computed.variables, custom, sheets, Some(element), checked)?;
+        *variable_bytes = variable_bytes
+            .checked_add(resolved.values().map(String::len).sum::<usize>())
+            .filter(|bytes| *bytes <= 16 * 1024 * 1024)
+            .ok_or("Computed variables exceed 16 MiB")?;
+        computed.variables = Arc::new(resolved);
+    }
+    for (name, (priority, declaration)) in winners {
+        let Some(property) = Property::from_name(name) else {
+            continue;
+        };
+        let value = match crate::variables::substitute_attributes(&declaration.value, element)
+            .and_then(|value| crate::variables::substitute(&value, &computed.variables))
+            .and_then(|value| match declaration.shorthand {
+                Some(shorthand) => shorthand.part(property, &value),
+                None => Ok(value),
+            }) {
+            Ok(value) => value,
+            Err(error) if checked => return Err(error),
+            Err(_) => continue,
+        };
+        let value = match value.trim() {
+            "inherit" => parent.map_or_else(|| property.initial(), |parent| parent.get(property)),
+            "initial" => property.initial(),
+            "unset" if property.inherits() => parent.map_or_else(|| property.initial(), |parent| parent.get(property)),
+            "unset" => property.initial(),
+            other => match property.parse(&crate::value::viewport_units(other, viewport.width, viewport.height)) {
+                Ok(value) => value,
+                Err(error) if checked => return Err(error),
+                Err(_) => continue,
+            },
+        };
+        computed.values.insert(property, value);
+        if priority.0 > Layer::Default as u8 {
+            computed.authored.insert(property);
+        }
+    }
+    if let Value::Animations(animations) = computed.get(Property::Animation) {
+        for animation in animations {
+            // The last keyframes rule of that name in the sheets that reach this element.
+            let rule = sheets
+                .iter()
+                .rev()
+                .filter(|applied| applied.root.is_none_or(|root| tree.contains(node, root)))
+                .find_map(|applied| applied.sheet.keyframes.iter().rev().find(|(name, _)| *name == animation.name));
+            let Some((_, frames)) = rule else { continue };
+            let mut resolved: crate::motion::Frames = Vec::with_capacity(frames.len());
+            for (offset, declarations) in frames {
+                let mut values = Vec::new();
+                for declaration in declarations.iter().filter(|d| !d.important) {
+                    *work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
+                    let Some(property) = Property::from_name(&declaration.name) else { continue };
+                    let value = crate::variables::substitute_attributes(&declaration.value, element)
+                        .and_then(|value| crate::variables::substitute(&value, &computed.variables))
+                        .and_then(|value| match declaration.shorthand {
+                            Some(shorthand) => shorthand.part(property, &value),
+                            None => Ok(value),
+                        })
+                        .and_then(|value| {
+                            property.parse(&crate::value::viewport_units(&value, viewport.width, viewport.height))
+                        });
+                    match value {
+                        Ok(value) => values.push((property, value)),
+                        Err(error) if checked => return Err(error),
+                        Err(_) => {}
+                    }
+                }
+                resolved.push((*offset, values));
+            }
+            for (_, values) in &resolved {
+                for (property, _) in values {
+                    computed.authored.insert(*property);
+                }
+            }
+            computed.keyframes.push((animation, Arc::new(resolved)));
+        }
+    }
+    // Inherited font size is a computed size, not an em expression to apply
+    // again at each descendant. Other em lengths resolve against this size.
+    let parent_size = match parent.map(|style| style.get(Property::FontSize)) {
+        Some(Value::Length(crate::value::Length::Px(size))) => size,
+        _ => 11.0,
+    };
+    let font_size = match computed.get(Property::FontSize) {
+        Value::Length(crate::value::Length::Px(size)) => size,
+        Value::Length(crate::value::Length::Em(scale) | crate::value::Length::Percent(scale)) => parent_size * scale,
+        _ => parent_size,
+    }
+    .clamp(1.0, 256.0);
+    computed.values.insert(Property::FontSize, Value::Length(crate::value::Length::Px(font_size)));
+    // Text shadows inherit their computed lengths. Resolve em once at the
+    // authoring element; a child's larger font must not scale them again.
+    for value in computed.values.values_mut() {
+        if let Value::Shadows(shadows) = value {
+            for shadow in shadows {
+                for length in shadow.offset.iter_mut().chain([&mut shadow.blur, &mut shadow.spread]) {
+                    if let crate::value::Length::Em(scale) = *length {
+                        *length = crate::value::Length::Px(scale * font_size);
+                    }
+                }
+            }
+        } else if let Value::Gradients(gradients) = value {
+            for gradient in gradients {
+                for stop in &mut gradient.stops {
+                    if let Some(crate::value::Length::Em(scale)) = stop.position {
+                        stop.position = Some(crate::value::Length::Px(scale * font_size));
+                    }
+                }
+            }
+        }
+    }
+    let foreground = match computed.get(Property::Color) {
+        Value::Color(Color::Current) => {
+            parent.map_or(Value::Color(Color::Rgba([255; 4])), |parent| parent.get(Property::Color))
+        }
+        other => other,
+    };
+    computed.values.insert(Property::Color, foreground.clone());
+    for value in computed.values.values_mut() {
+        if *value == Value::Color(Color::Current) {
+            *value = foreground.clone();
+        }
+    }
+    Ok(computed)
+}
+
+/// Applies the winning custom-property declarations to the `inherited` ones and resolves them.
+/// `attr()` reads `element`'s attributes; without an element it makes a declaration invalid.
+fn cascade_variables<'a>(
+    inherited: &BTreeMap<String, String>,
+    winners: impl Iterator<Item = (&'a str, &'a Declaration)>,
+    sheets: &[AppliedSheet<'_>],
+    element: Option<&crate::selector::Element>,
+    checked: bool,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut variables = inherited.clone();
+    for (name, declaration) in winners.filter(|(name, _)| name.starts_with("--")) {
+        match declaration.value.trim() {
+            "initial" => {
+                match sheets
+                    .iter()
+                    .rev()
+                    .flat_map(|applied| applied.sheet.properties.iter())
+                    .find(|registered| registered.name == name)
+                    .and_then(|registered| registered.initial.clone())
+                {
+                    Some(initial) => variables.insert(name.into(), initial),
+                    None => variables.remove(name),
+                };
+            }
+            "inherit" | "unset" => {}
+            value => {
+                let substituted = match element {
+                    Some(element) => crate::variables::substitute_attributes(value, element),
+                    None if crate::variables::mentions_attr(value) => Err("attr() needs an element".into()),
+                    None => Ok(value.to_owned()),
+                };
+                match substituted {
+                    Ok(value) => {
+                        variables.insert(name.into(), value);
+                    }
+                    // Invalid at computed-value time: the inherited value stays.
+                    Err(error) if checked => return Err(error),
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    let mut resolved = crate::variables::resolve(&variables)?;
+    // A registered property's value that does not match its syntax is invalid at
+    // computed-value time: the property takes its initial value.
+    for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
+        if let Some(value) = resolved.get(&registered.name)
+            && !registered.syntax.accepts(value)
+        {
+            match &registered.initial {
+                Some(initial) => resolved.insert(registered.name.clone(), initial.clone()),
+                None => resolved.remove(&registered.name),
+            };
+        }
+    }
+    Ok(resolved)
+}
+
+/// The custom properties the root element sees, from the sheets' registered initial values
+/// and their `:root` rules alone: no element tree, and no other rule is matched. Rules inside
+/// `@media` use `viewport`; sheets scoped to a device panel are left out.
+pub fn root_variables(viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result<BTreeMap<String, String>, String> {
+    if !viewport.valid() || sheets.len() > 32 {
+        return Err("Invalid style viewport or sheet count".into());
+    }
+    let initial: BTreeMap<String, String> = sheets
+        .iter()
+        .flat_map(|applied| applied.sheet.properties.iter())
+        .filter_map(|registered| Some((registered.name.clone(), registered.initial.clone()?)))
+        .collect();
+    let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
+    let mut order = 0usize;
+    for applied in sheets.iter().filter(|applied| applied.root.is_none()) {
+        for rule in &applied.sheet.rules {
+            order += 1;
+            if !rule.media.iter().all(|media| media.matches(viewport)) {
+                continue;
+            }
+            let Some(specificity) =
+                rule.selectors.iter().filter(|selector| selector.is_root()).map(|selector| selector.specificity).max()
+            else {
+                continue;
+            };
+            for declaration in rule.declarations.iter().filter(|declaration| declaration.name.starts_with("--")) {
+                let priority = priority(applied.layer, declaration.important, rule.layer, specificity, order);
+                if winners.get(declaration.name.as_str()).is_none_or(|(previous, _)| *previous <= priority) {
+                    winners.insert(&declaration.name, (priority, declaration));
+                }
+            }
+        }
+    }
+    let custom = winners.iter().map(|(name, (_, declaration))| (*name, *declaration));
+    cascade_variables(&initial, custom, sheets, None, false)
+}
+
+/// Resolves a `<color>` value (a theme's swatch) for the given theme and variant sheets
+/// without applying them: `var()` takes the [`root_variables`]. With no element to read,
+/// `currentColor` and `attr()` are refused, and so is a value that is not a colour.
+pub fn resolve_color(value: &str, viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result<[u8; 4], String> {
+    if crate::variables::mentions_attr(value) {
+        return Err("A colour without an element cannot use attr()".into());
+    }
+    let variables = root_variables(viewport, sheets)?;
+    let substituted = crate::variables::substitute(value, &variables)?;
+    if crate::variables::mentions_attr(&substituted) {
+        return Err("A colour without an element cannot use attr()".into());
+    }
+    match Color::parse(substituted.trim())? {
+        Color::Rgba(rgba) => Ok(rgba),
+        Color::Current => Err("A colour without an element cannot use currentColor".into()),
+    }
 }
 
 #[cfg(test)]

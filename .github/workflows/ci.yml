@@ -18,8 +18,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request cancels its run. Each push to main runs to the end in a group of
+# its own: every merge is followed a minute later by the generated-docs commit
+# (docs-generated.yml), which would cancel it, and a cancelled run saves no cache. Windows takes
+# longest, so main never saved one and every pull request compiled every dependency on Windows.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:

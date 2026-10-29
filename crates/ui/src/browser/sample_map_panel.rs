@@ -338,7 +338,7 @@ impl Panel {
                 heading: format!("{} too long", map.too_long),
                 lines: vec![
                     format!("Longer than {max_seconds} s: the map is for one-shots and short loops."),
-                    "Options › Settings › Browser › Map: longest sample changes the limit (5 to 60 s).".into(),
+                    "Options › Settings › Browser › Map sample length limit changes the limit (5 to 60 s).".into(),
                 ],
             });
         }

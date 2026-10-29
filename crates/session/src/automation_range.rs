@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 use suhina_engine::MAX_START_BEAT;
 use suhina_model::AutomationPoint;
-use suhina_model::automation::{MAX_POINTS, Taper, curve_through, value_at};
+use suhina_model::automation::{Curve, MAX_POINTS, Taper, value_at};
 
 use suhina_model::TrackId;
 
@@ -22,7 +22,7 @@ use crate::{CommandError, Session};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AutomationClip {
     pub(crate) length: f64,
-    pub(crate) points: Vec<(f64, f64, f64)>,
+    pub(crate) points: Vec<(f64, f64, Curve)>,
     /// Copied as picked points, not a range: pasted, they go in among the lane's points without
     /// edge points, replacing only those between the first and the last.
     pub(crate) picked: bool,
@@ -70,11 +70,11 @@ fn slice(points: &[AutomationPoint], start: f64, end: f64, stepped: bool, taper:
     let last = value_at(points, end, stepped, taper).unwrap_or(first);
     let curve_at = |beat: f64| {
         let index = points.partition_point(|p| p.beat <= beat);
-        index.checked_sub(1).and_then(|i| points.get(i)).map_or(0.0, |p| p.curve)
+        index.checked_sub(1).and_then(|i| points.get(i)).map_or(Curve::STRAIGHT, |p| p.curve)
     };
     let mut out = vec![AutomationPoint { beat: start, value: first, curve: curve_at(start) }];
     out.extend(points.iter().filter(|p| p.beat > start && p.beat < end).copied());
-    out.push(AutomationPoint { beat: end, value: last, curve: 0.0 });
+    out.push(AutomationPoint { beat: end, value: last, curve: Curve::STRAIGHT });
     out
 }
 
@@ -91,13 +91,13 @@ fn replace(
     let edges = value_at(points, start, stepped, taper).zip(value_at(points, end, stepped, taper));
     let after_curve = {
         let index = points.partition_point(|p| p.beat <= end);
-        index.checked_sub(1).and_then(|i| points.get(i)).map_or(0.0, |p| p.curve)
+        index.checked_sub(1).and_then(|i| points.get(i)).map_or(Curve::STRAIGHT, |p| p.curve)
     };
     let mut out: Vec<AutomationPoint> = points.iter().filter(|p| p.beat < start).copied().collect();
     if let Some((before, _)) = edges
         && inner.first().is_none_or(|p| p.beat > start || (p.value - before).abs() > SAME)
     {
-        out.push(AutomationPoint { beat: start, value: before, curve: 0.0 });
+        out.push(AutomationPoint { beat: start, value: before, curve: Curve::STRAIGHT });
     }
     let last_inner = inner.last().copied();
     out.extend(inner);
@@ -153,7 +153,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
         let (Some(first), Some(last)) = (picked.first().map(|p| p.beat), picked.last().map(|p| p.beat)) else {
             return Err("points must name at least one point".into());
         };
-        let points: Vec<(f64, f64, f64)> =
+        let points: Vec<(f64, f64, Curve)> =
             picked.iter().map(|p| (p.beat - first, target.position(session, p.value), p.curve)).collect();
         let count = points.len();
         session.clipboards.automation = Some(AutomationClip { length: last - first, points, picked: true });
@@ -166,7 +166,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
     if cut.is_empty() {
         return Err(format!("{} has no automation to copy", target.param).into());
     }
-    let points: Vec<(f64, f64, f64)> =
+    let points: Vec<(f64, f64, Curve)> =
         cut.iter().map(|p| (p.beat - start, target.position(session, p.value), p.curve)).collect();
     let count = points.len();
     session.clipboards.automation = Some(AutomationClip { length: end - start, points, picked: false });
@@ -312,6 +312,28 @@ pub(crate) fn lay_under(
 /// How many places along a segment a fit is checked at.
 const FIT_SAMPLES: usize = 24;
 
+/// The bend, -1 to 1, whose curve is at `share` of its rise `t` of the way along, or `None`
+/// when no bend reaches it.
+fn curve_through(t: f64, share: f64) -> Option<f64> {
+    if !(t > 0.0 && t < 1.0 && share > 0.0 && share < 1.0) {
+        return None;
+    }
+    let (mut lo, mut hi) = (-1.0f64, 1.0f64);
+    if share < Curve::bend(lo).shape(t) || share > Curve::bend(hi).shape(t) {
+        return None;
+    }
+    // A mirrored curve rises with its bend at every `t` inside the segment.
+    for _ in 0..48 {
+        let mid = 0.5 * (lo + hi);
+        if Curve::bend(mid).shape(t) < share {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Some(0.5 * (lo + hi))
+}
+
 /// The curve of one segment from `a` to `b` that follows `line` (the old envelope, as places on
 /// the lane at beats) best, and how far from it the segment goes at worst: the curve passes
 /// through the line half-way along, and the line is checked at [`FIT_SAMPLES`] places.
@@ -323,7 +345,7 @@ fn fit(a: (f64, f64), b: (f64, f64), line: &impl Fn(f64) -> f64) -> (f64, f64) {
     let worst = (1..FIT_SAMPLES)
         .map(|i| {
             let t = i as f64 / FIT_SAMPLES as f64;
-            let place = pa + rise * suhina_model::automation::shape(t, curve);
+            let place = pa + rise * Curve::bend(curve).shape(t);
             (line(ta + (tb - ta) * t) - place).abs()
         })
         .fold(0.0, f64::max);
@@ -362,7 +384,7 @@ pub(crate) fn simplify(session: &mut Session, params: &Value) -> Result<Value, C
             let (bent, worst) = fit(place(&anchor), place(next), &line);
             if to == from + 1 || worst <= tolerance {
                 reach = to;
-                curve = if to == from + 1 { anchor.curve } else { bent };
+                curve = if to == from + 1 { anchor.curve } else { Curve::bend((bent * 1000.0).round() / 1000.0) };
                 if worst > tolerance {
                     break;
                 }
@@ -370,7 +392,7 @@ pub(crate) fn simplify(session: &mut Session, params: &Value) -> Result<Value, C
                 break;
             }
         }
-        kept.push(AutomationPoint { curve: (curve * 1000.0).round() / 1000.0, ..anchor });
+        kept.push(AutomationPoint { curve, ..anchor });
         from = reach;
     }
     if let Some(last) = inside.last() {
@@ -430,8 +452,8 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if d > SAME {
                 let (Some(from), Some(to)) = (at(p.beat - d), at(p.beat + d)) else { break };
                 let middle = lane.value((lane.position(from) + lane.position(to)) / 2.0);
-                out.push(AutomationPoint { beat: p.beat - d, value: from, curve: -bend });
-                out.push(AutomationPoint { beat: p.beat, value: middle, curve: bend });
+                out.push(AutomationPoint { beat: p.beat - d, value: from, curve: Curve::bend(-bend) });
+                out.push(AutomationPoint { beat: p.beat, value: middle, curve: Curve::bend(bend) });
                 out.push(AutomationPoint { beat: p.beat + d, value: to, curve: q.curve });
                 rounded += 1;
                 i += 2;
@@ -441,8 +463,8 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
         // A corner between two straight segments.
         if let (Some(&a), Some(&b)) = (i.checked_sub(1).and_then(|j| points.get(j)), points.get(i + 1))
             && inside(p.beat)
-            && a.curve == 0.0
-            && p.curve == 0.0
+            && a.curve.is_straight()
+            && p.curve.is_straight()
             && p.beat - a.beat > SAME
             && b.beat - p.beat > SAME
             && turns(place(&a), place(&p), place(&b), span)
@@ -451,9 +473,9 @@ pub(crate) fn smooth(session: &mut Session, params: &Value) -> Result<Value, Com
             if let (Some(into), Some(out_of)) = (at(p.beat - d), at(p.beat + d))
                 && d > SAME
             {
-                out.push(AutomationPoint { beat: p.beat - d, value: into, curve: bend });
-                out.push(AutomationPoint { curve: -bend, ..p });
-                out.push(AutomationPoint { beat: p.beat + d, value: out_of, curve: 0.0 });
+                out.push(AutomationPoint { beat: p.beat - d, value: into, curve: Curve::bend(bend) });
+                out.push(AutomationPoint { curve: Curve::bend(-bend), ..p });
+                out.push(AutomationPoint { beat: p.beat + d, value: out_of, curve: Curve::STRAIGHT });
                 rounded += 1;
                 i += 1;
                 continue;
@@ -648,11 +670,11 @@ fn fill(
                 && (last.value - value).abs() < SAME
             {
                 if let Some(last) = inner.last_mut() {
-                    last.curve = curve;
+                    last.curve = Curve::bend(curve);
                 }
                 continue;
             }
-            inner.push(AutomationPoint { beat, value, curve });
+            inner.push(AutomationPoint { beat, value, curve: Curve::bend(curve) });
         }
     }
     let points = points_of(session, target)?;
@@ -732,7 +754,7 @@ mod tests {
     use suhina_model::automation::Plain;
 
     fn p(beat: f64, value: f64) -> AutomationPoint {
-        AutomationPoint { beat, value, curve: 0.0 }
+        AutomationPoint { beat, value, curve: Curve::STRAIGHT }
     }
 
     #[test]

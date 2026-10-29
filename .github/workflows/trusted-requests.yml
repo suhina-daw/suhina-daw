@@ -1,11 +1,13 @@
 name: Trusted requests
 
-# issue_comment uses the default branch. Never check out or execute request/PR code here.
+# issue_comment uses the default branch. Only its automation is checked out; PR objects
+# are fetched for comparison, never checked out or executed.
 on:
   issue_comment:
     types: [created]
 
 permissions:
+  actions: read
   contents: read
   issues: read
   pull-requests: read
@@ -15,10 +17,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  request:
+  check:
     if: github.event.comment.user.type == 'User' && startsWith(github.event.comment.body, '/')
     runs-on: ubuntu-latest
-    environment: suhina-bot
+    outputs:
+      request: ${{ steps.check.outputs.request }}
     steps:
       - name: Check request
         id: check
@@ -73,8 +76,37 @@ jobs:
             }
             core.setOutput('request', JSON.stringify(request));
 
+  request:
+    needs: check
+    if: needs.check.outputs.request != ''
+    runs-on: ubuntu-latest
+    environment: suhina-bot
+    # Only authorized requests enter this group. Coalesce queued build requests for one PR,
+    # so concurrent comments cannot both observe 'no run yet' and dispatch duplicate builds.
+    concurrency:
+      group: trusted-action-${{ fromJSON(needs.check.outputs.request).command == 'test-build' && format('build-{0}', github.event.issue.number) || github.event.comment.id }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out default-branch automation
+        if: fromJSON(needs.check.outputs.request).command == 'test-build'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Find an existing test build
+        if: fromJSON(needs.check.outputs.request).command == 'test-build'
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST: ${{ needs.check.outputs.request }}
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
+        run: |
+          reuse=$(python3 scripts/build_reuse.py)
+          echo "result=$reuse" >> "$GITHUB_OUTPUT"
+
       - name: Token of the suhina-bot App
-        if: steps.check.outputs.request != ''
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -84,15 +116,20 @@ jobs:
           permission-pull-requests: write
 
       - name: Carry out request
-        if: steps.check.outputs.request != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          REQUEST: ${{ steps.check.outputs.request }}
+          REQUEST: ${{ needs.check.outputs.request }}
+          BUILD_REUSE: ${{ steps.reuse.outputs.result }}
+          MAINTAINERS: ${{ vars.MAINTAINERS }}
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const request = JSON.parse(process.env.REQUEST);
             const { command, actor, comment, number } = request;
+            const allowed = [process.env.MAINTAINERS, process.env.TRUSTED_CONTRIBUTORS]
+              .flatMap(value => String(value || '').split(/[\s,]+/).map(s => s.replace(/^@/, '').toLowerCase()));
+            if (!allowed.includes(actor.toLowerCase())) throw new Error('The requester is no longer authorized.');
             const original = context.payload.comment;
             const { data: current } = await github.rest.issues.getComment({
               ...context.repo, comment_id: comment,
@@ -127,6 +164,16 @@ jobs:
               const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
               if (pr.state !== 'open' || pr.head.sha !== request.sha) {
                 throw new Error('The pull request changed; post a new /test-build request.');
+              }
+              const reuse = JSON.parse(process.env.BUILD_REUSE || '{}');
+              if (reuse.head && reuse.head !== request.sha) throw new Error('The build lookup is for another commit.');
+              if (reuse.head === request.sha && ['ready', 'running', 'requested'].includes(reuse.state)) {
+                if (!done) {
+                  const state = {ready: 'Available', running: 'Already running', requested: 'Already requested'}[reuse.state];
+                  await github.rest.issues.createComment({ ...scope,
+                    body: `${state}: [test build](${reuse.url}) for ${reuse.source}. No new build was started.\n\n${attribution}\n\n${marker}` });
+                }
+                return;
               }
               // The proof precedes the label. Both build and link jobs require this exact head.
               const proof = `<!-- trusted-build ${request.sha} ${actor} ${comment} -->`;

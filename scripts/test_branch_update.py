@@ -144,6 +144,16 @@ class OnlyMergesMain(unittest.TestCase):
         self.assertFalse(only)
         self.assertIn("own diff", why)
 
+    def test_whitespace_change_inside_merge_is_built(self):
+        self.repo.on_main(lambda: self.repo.write("main.txt", "newer\n"))
+        before = self.repo.head()
+        self.repo.run("merge", "-q", "--no-commit", "main")
+        # Whitespace can be significant in source strings and indentation. git patch-id
+        # ignores it, so it cannot prove that the existing binary still represents the PR.
+        self.repo.write("pr.txt", "pullrequest\n")
+        head = self.repo.commit("changed inside merge")
+        self.assertFalse(self.repo.check(before, head)[0])
+
     def test_resolved_conflict_is_built(self):
         self.repo.on_main(lambda: self.repo.edit("shared.txt", 4, "line 5 from main\n"))
         before = self.repo.head()

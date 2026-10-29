@@ -9,10 +9,12 @@ name: Ready to merge
 # - Labelled by a maintainer: the app approves the head commit as the event saw it (main's rule
 #   needs one approval, and a maintainer cannot approve their own pull request), then enables
 #   auto-merge with that commit as the expected head, so a commit pushed in between is never what
-#   gets merged. A contributor's pull request also needs `test-build` (a maintainer read the code
-#   and its build) or a maintainer's approving review of that same head commit (they read it, and
-#   `ci` tested it); without either the label comes off with a comment saying why. Dependabot's
-#   Cargo updates need neither: the queue's build and tests are what check a new crate.
+#   gets merged. Adding the label is the maintainer's approval of that head, for any author, but
+#   only with a test build of it: a successful, authorized `test build` run whose artifacts are
+#   still available, for that head or for a head it reaches by merging only main
+#   (scripts/build_reuse.py, the lookup /test-build uses). Without one the label comes off with a
+#   comment asking for /test-build; a build that is still running counts as none yet. A pull
+#   request that changes nothing test-build.yml's paths filter builds needs none.
 # - A push by anyone but a maintainer takes the label off, turns auto-merge off and leaves the
 #   pull request out of the queue: the new commits wait for a maintainer to read them, as the
 #   `test-build` label does (test-build-links.yml, job `unlabel`). main's rule dismisses the
@@ -100,7 +102,29 @@ jobs:
         needs.roles.outputs.sender == 'true')
     runs-on: ubuntu-latest
     environment: docs-bot
+    # Read-only token for the build lookup; writes go through the app's token.
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
     steps:
+      # main's automation only: the pull request's files are never checked out or run here.
+      - name: Check out default-branch automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Find a test build of the head
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST: '{"command": "test-build", "sha": "${{ github.event.pull_request.head.sha }}", "number": ${{ github.event.pull_request.number }}}'
+          TRUSTED_CONTRIBUTORS: ${{ vars.TRUSTED_CONTRIBUTORS }}
+        run: |
+          build=$(python3 scripts/build_reuse.py)
+          echo "result=$build" >> "$GITHUB_OUTPUT"
       - name: Token of the app
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -113,56 +137,31 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           SENDER: ${{ github.event.sender.login }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          HAS_TEST_BUILD: ${{ contains(github.event.pull_request.labels.*.name, 'test-build') }}
+          BUILD: ${{ steps.build.outputs.result }}
         run: |
           eval "$HELPERS"
           is_maintainer() {
             printf '%s' "$MAINTAINERS" | tr ',[:space:]' '\n' | sed 's/^@//' | tr '[:upper:]' '[:lower:]' | grep -Fxq -- "${1,,}"
-          }
-          # Dependabot's Cargo updates need no `test-build`: a new version of a crate is checked by
-          # the build and the tests the queue runs, not by trying the app by hand. Its updates of
-          # the Actions are not: `ci` skips the Rust jobs for a change under .github/, so nothing
-          # in the queue runs the workflows they change. The login is GitHub's own bot account,
-          # which no one else can open a pull request as, and it names its branches by ecosystem.
-          is_dependabot_cargo() {
-            [ "$AUTHOR" = "dependabot[bot]" ] && [ "$AUTHOR_TYPE" = "Bot" ] && [[ "$HEAD_REF" == dependabot/cargo/* ]]
           }
           if ! is_maintainer "$SENDER"; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             echo "::notice::$SENDER is not a maintainer; the label was taken off."
             exit 0
           fi
-          # A maintainer's approving review of the head commit counts as reading it, as `test-build`
-          # does. The commit id is compared, so an approval of an older commit never lets a newer
-          # one through. 0: approved; 1: not approved; 2: the reviews could not be read, which must
-          # not read as "not approved" (that would take the label off a pull request that has it).
-          approved_by_maintainer() {
-            local logins login
-            logins=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \
-              --jq ".[] | select(.state == \"APPROVED\" and .commit_id == \"$SHA\") | .user.login") || return 2
-            for login in $logins; do
-              is_maintainer "$login" && return 0
-            done
-            return 1
-          }
-          approved=0
-          if ! is_maintainer "$AUTHOR" && ! is_dependabot_cargo && [ "$HAS_TEST_BUILD" != "true" ]; then
-            approved_by_maintainer || approved=$?
-          fi
-          if [ "$approved" -eq 2 ]; then
-            echo "::error::The pull request's reviews could not be read; the label stays, add it again to retry."
-            exit 1
-          fi
-          if [ "$approved" -eq 1 ]; then
+          # Nothing merges without a finished test build of this head (or of the head it updated
+          # with main only). A lookup that failed has already failed the job, label kept.
+          state=$(printf '%s' "$BUILD" | jq -r --arg sha "$SHA" 'if .head == $sha then .state // "" else "" end')
+          # no-binary: test-build.yml never runs for this change (documentation, scripts or other
+          # workflows only), so there is no build to wait for.
+          if [ "$state" != "ready" ] && [ "$state" != "no-binary" ]; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-              "\`$LABEL\` needs a maintainer's approval of ${SHA:0:7} or \`test-build\` on a contributor's pull request: approve the commit you read (or add \`test-build\` and try its build), then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
-            echo "::notice::A contributor's pull request without an approval of the head or test-build; the label was taken off."
+              "\`$LABEL\` needs a finished test build of ${SHA:0:7}: comment \`/test-build\`, wait for the build to succeed, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."
+            echo "::notice::No finished test build of ${SHA:0:7}; the label was taken off."
             exit 0
           fi
+          # The maintainer's label approves this exact head. CODEOWNERS and all required checks
+          # still gate the merge queue.
           gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \
             -f commit_id="$SHA" -f event=APPROVE \
             -f body="\`$LABEL\`: a maintainer read ${SHA:0:7}; merge when every check is green." >/dev/null

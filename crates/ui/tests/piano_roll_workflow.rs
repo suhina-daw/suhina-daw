@@ -361,9 +361,9 @@ fn settings_clip_editor_shows_the_workflow_rows() {
     let mut h = piano_app(&mut renderer);
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
-    h.get_by_label("Settings page: Clip editor").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
-    // The workflow rows are on the Clip editor page (scrolling a long page: settings_window.rs).
+    // The workflow rows are on the Keys page (scrolling a long page: settings_window.rs).
     let last = "Double-click on a note: Nothing";
     let rect = h.get_by_label(last).rect();
     assert!(rect.bottom() <= SIZE.1, "the last row is in view: {rect:?}");
@@ -408,7 +408,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
-    h.get_by_label("Settings page: Clip editor").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
     h.render().unwrap().save(out.join("workflow-settings.png")).unwrap();
 }

@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-10-22
+last_verified: 2026-10-28
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -204,6 +204,11 @@ value must be in range. Button widgets show exact-value selection for tabs.
 Click and Space/Enter share the same command and undo path.
 Edits dispatch `device.setParam` with a shared gesture id so a two-axis drag is one undo gesture.
 All bindings reference declared parameter ids, and values use their range/discrete clamping.
+A control's widget id belongs to its canvas, so a compact panel and an expanded one drawn together can
+both have a control of the same id. While a `drag` control moves a discrete parameter (integer, choice,
+toggle), the host keeps the unrounded drag position until the button is released, so a slow drag adds up
+across frames instead of being rounded back to the old value. The pointer is hidden while a `drag`
+control or a knob is dragged. A value that rounds to zero shows no minus sign (`0`, not `-0`).
 
 A canvas may hide stock parameter rows with `hidden_parameters`; this only changes presentation.
 All hidden values remain available through commands and project state. UI resources do not run

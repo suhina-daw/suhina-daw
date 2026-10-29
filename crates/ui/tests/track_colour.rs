@@ -342,7 +342,7 @@ fn named_track_default_can_be_changed_from_settings_search() {
     h.run();
     h.get_by_label("Search settings").type_text("default track size");
     h.run();
-    assert!(h.query_by_label("Advanced track sizes: On").is_some(), "search keeps Advanced visible");
+    assert!(h.query_by_label("Exact track heights").is_some(), "search keeps Advanced visible");
     assert!(h.query_by_label("Medium height").is_some(), "search keeps size tuning visible");
     h.get_by_label("Default track size: Medium").click();
     h.run();
@@ -352,7 +352,7 @@ fn named_track_default_can_be_changed_from_settings_search() {
         64.0,
         "default applies live before closing Settings, even after Resize all"
     );
-    h.get_by_label("Advanced track sizes: On").click();
+    h.get_by_label("Exact track heights").click();
     h.run();
     h.get_by_label("Medium height").click();
     h.run();

@@ -4,7 +4,7 @@
 //! SDK drawing programs are evaluated only on the UI thread.
 use crate::detail::detail_view::GraphParameter;
 use crate::kit::surface::Backgrounds as _;
-use crate::kit::widgets::Action;
+use crate::kit::widgets::{Action, fixed};
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::json;
 use std::{cell::RefCell, sync::Arc};
@@ -925,7 +925,7 @@ fn sample_waveform(
             color(accent_text(sample_marker_color())),
         );
         let response = ui
-            .interact(marker, egui::Id::new(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
+            .interact(marker, ui.id().with(("sample-marker", track.0, device, id)), egui::Sense::click_and_drag())
             .on_hover_text(format!("Drag {}", id.replace('_', " ")))
             .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         if response.double_clicked() {
@@ -1070,7 +1070,7 @@ fn envelope(
             .min_by(|i, j| plot.points[*i].distance_sq(pos).total_cmp(&plot.points[*j].distance_sq(pos)))
     });
     for index in 1..count {
-        let id = egui::Id::new(("sd-envelope", target.0.0, target.1, &control.id, index));
+        let id = ui.id().with(("sd-envelope", target.0.0, target.1, &control.id, index));
         let state_id = id.with("press");
         let state = ui.ctx().data(|data| data.get_temp::<([f64; 4], [f64; 4])>(state_id));
         let sense = if nearest == Some(index) || state.is_some() {
@@ -1361,21 +1361,22 @@ fn paint_scaled(
                         TextFormat::Choice => {
                             p.ui.options.get(p.value.round().max(0.0) as usize).cloned().unwrap_or_default()
                         }
-                        TextFormat::Frequency if p.value >= 1000.0 => format!("{text}{:.2} kHz", p.value / 1000.0),
+                        TextFormat::Frequency if p.value >= 1000.0 => {
+                            format!("{text}{} kHz", fixed(p.value / 1000.0, 2))
+                        }
                         TextFormat::Tempo if p.value <= 0. => format!("{text}Auto"),
-                        TextFormat::Tempo => format!("{text}{:.2} BPM", p.value),
-                        TextFormat::Seconds if p.value < 1. => format!("{text}{:.0} ms", p.value * 1000.),
-                        TextFormat::Seconds => format!("{text}{:.2} s", p.value),
-                        TextFormat::Percent => format!("{text}{:.0}%", p.value * 100.),
-                        TextFormat::Decibels => format!("{text}{:.1} dB", p.value),
+                        TextFormat::Tempo => format!("{text}{} BPM", fixed(p.value, 2)),
+                        TextFormat::Seconds if p.value < 1. => format!("{text}{} ms", fixed(p.value * 1000., 0)),
+                        TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
+                        TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
+                        TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
                         TextFormat::Balance if p.value.abs() < 0.005 => format!("{text}C"),
                         TextFormat::Balance => {
-                            format!("{text}{:.0} {}", p.value.abs() * 100., if p.value < 0. { "L" } else { "R" })
+                            format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
                         }
                         _ => format!(
-                            "{text}{:.*}{}{}",
-                            *decimals,
-                            p.value,
+                            "{text}{}{}{}",
+                            fixed(p.value, *decimals),
                             if p.unit.is_empty() || p.unit == "%" { "" } else { " " },
                             p.unit
                         ),
@@ -1878,7 +1879,8 @@ pub(crate) fn show(
         let response = ui
             .interact(
                 bounds,
-                egui::Id::new(("sd-custom", track.0, device, &control.id)),
+                // Scoped to the canvas: the compact panel under an expanded one has controls of the same ids.
+                ui.id().with(("sd-custom", track.0, device, &control.id)),
                 if control.gesture == UiGesture::Menu { egui::Sense::click() } else { egui::Sense::click_and_drag() },
             )
             .on_hover_text(tooltip);
@@ -2025,6 +2027,14 @@ pub(crate) fn show(
                 }
                 continue;
             }
+            let discrete = matches!(
+                p.control,
+                suhina_device_sdk::ParameterControl::Integer
+                    | suhina_device_sdk::ParameterControl::Toggle
+                    | suhina_device_sdk::ParameterControl::Button
+                    | suhina_device_sdk::ParameterControl::Choice
+                    | suhina_device_sdk::ParameterControl::Radio
+            );
             let old = normalized(p, binding.logarithmic);
             let mut next = old;
             match control.gesture {
@@ -2039,12 +2049,23 @@ pub(crate) fn show(
                 }
                 UiGesture::Drag if response.dragged() => {
                     let delta = response.drag_delta();
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                    // A discrete value is rounded when it is written, so a drag that moves less than half
+                    // a step in a frame would be lost: the unrounded position is kept while the drag lasts.
+                    let position_id = response.id.with(("drag-position", axis));
+                    if discrete && !response.drag_started() {
+                        next = ui.data(|data| data.get_temp::<f64>(position_id)).unwrap_or(old);
+                    }
                     next += if axis == 0 {
                         delta.x as f64 / crate::kit::widgets::PARAMETER_DRAG_PIXELS
                     } else {
                         -delta.y as f64 / crate::kit::widgets::PARAMETER_DRAG_PIXELS
                     } * fine
                         * f64::from(binding.drag_scale);
+                    next = next.clamp(0.0, 1.0);
+                    if discrete {
+                        ui.data_mut(|data| data.insert_temp(position_id, next));
+                    }
                 }
                 UiGesture::Toggle if response.clicked() => next = if old >= 0.5 { 0.0 } else { 1.0 },
                 UiGesture::Set(value) | UiGesture::Tab(value) if response.clicked() || button => {
@@ -2073,14 +2094,6 @@ pub(crate) fn show(
             } else {
                 p.min + next.clamp(0.0, 1.0) * (p.max - p.min)
             };
-            let discrete = matches!(
-                p.control,
-                suhina_device_sdk::ParameterControl::Integer
-                    | suhina_device_sdk::ParameterControl::Toggle
-                    | suhina_device_sdk::ParameterControl::Button
-                    | suhina_device_sdk::ParameterControl::Choice
-                    | suhina_device_sdk::ParameterControl::Radio
-            );
             let step_click = if matches!(control.widget, Some(Widget::Stepper { .. })) && response.clicked() {
                 response
                     .interact_pointer_pos()

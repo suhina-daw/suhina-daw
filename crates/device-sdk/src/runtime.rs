@@ -947,7 +947,7 @@ fn evaluate(
                 };
                 let seconds = if matches!(op.kind, Smooth) || target > state[c] { x[1][c] } else { x[2][c] };
                 let a = coefficient(seconds, sample_rate);
-                state[c] = finite(a * state[c] + (1.0 - a) * target);
+                state[c] = finite(suhina_dsp::follower::approach(state[c], target, a));
                 output[c] = if rms { state[c].max(0.0).sqrt() } else { state[c] };
             }
         }

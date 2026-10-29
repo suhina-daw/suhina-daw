@@ -326,6 +326,12 @@ pub struct ClipInfo {
     /// The Clip / Devices switch at the end of the title row, and which part is on: only for a
     /// clip with an editor (› Where it opens in `docs/spec/ui-clip-editor.md`).
     pub switch: Option<Showing>,
+    /// The other arrangement clips selected with it, by id: the title says how many are
+    /// selected, and a switch (Loop) turns all of them as it turns this one.
+    pub others: Vec<u32>,
+    /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
+    /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
+    pub picked: Vec<(TrackId, ClipId, String, bool)>,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -475,6 +481,8 @@ impl Detail {
                 };
                 for lane in device.automation.iter().filter(|l| l.enabled && !l.points.is_empty()) {
                     let spec = info.and_then(|info| info.params.iter().find(|p| p.id == lane.param));
+                    // On/off and choice parameters hold each point's value until the next, as the
+                    // engine plays them and the lane draws them.
                     // Evenly along the parameter's control, as the engine plays it and the lane
                     // draws it.
                     use crate::arrangement::automation_lanes::Scale;
@@ -493,7 +501,8 @@ impl Detail {
                     };
                     let Some(scale) = scale else { continue };
                     let Some(value) = lane.value_at(beat, scale.stepped(), &scale) else { continue };
-                    let value = spec.map_or(value, |spec| spec.clamp(value));
+                    // A whole-number parameter shows what it plays, the fraction cut off toward zero.
+                    let value = spec.map_or(value, |spec| spec.played(value));
                     for (id, v) in &mut device_box.values {
                         if *id == lane.param {
                             *v = value;
@@ -593,6 +602,8 @@ pub fn build_with(
                 notes,
                 selection: SelectionInfo::default(),
                 switch: None,
+                others: Vec::new(),
+                picked: Vec::new(),
             }),
             chain(project, id, plugins, nam.clone()),
         );

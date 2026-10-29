@@ -436,12 +436,9 @@ impl TrackGrid {
         grid
     }
 
-    /// While the transport runs, the strips show what automation plays: volume and pan, on
-    /// returns and Main too (#706).
+    /// The strips show what automation plays at the playhead, running or stopped: volume and
+    /// pan, on returns and Main too (#706, #811).
     fn follow_automation(&mut self, project: &Project) {
-        if !self.running {
-            return;
-        }
         let channel_of = |track: TrackId| {
             let id = project.track(track)?.channel?;
             project.channel(id)
@@ -530,6 +527,21 @@ mod tests {
         );
         assert!(!grid.running);
         assert!(grid.scenes.iter().all(|s| !s.playing));
+    }
+
+    #[test]
+    fn stopped_strips_show_the_automation_at_the_playhead() {
+        use suhina_engine::model::{AutomationLane, AutomationPoint};
+        let mut project = demo_project();
+        let channel = project.tracks[0].channel.unwrap();
+        project.channel_mut(channel).unwrap().automation.push(AutomationLane {
+            param: "pan".into(),
+            points: vec![AutomationPoint::new(0.0, 1.0)],
+            enabled: true,
+        });
+        let grid = TrackGrid::build(&project, None);
+        assert!(!grid.running);
+        assert_eq!(grid.columns[0].pan, 1.0, "stopped (#811)");
     }
 
     #[test]

@@ -8,6 +8,8 @@
 //! Adding a setting is one entry under its section, most often a `row` whose control is one call:
 //! `cx.on_off(r, |s| &mut s.field)` or `cx.choose(r, &[("Text", value), …], |s| &mut s.field)`.
 
+#[cfg(test)]
+use crate::settings::settings_view::{ADVANCED, Role};
 use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
 use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
@@ -22,12 +24,11 @@ pub(crate) const KEYMAP: &[&str] = &["keymap.json"];
 
 /// Every setting the window shows, page by page.
 pub(crate) static ROWS: &[Entry] = &[
-    // General.
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
-        "When opening a project",
-        "While another is open: ask, open it in a new tab, or replace it",
+        "Open projects in",
+        "What happens when you open a project while another one is open",
         &["open_projects"],
         |cx, r| {
             let options = [("Ask", OnOpen::Ask), ("New tab", OnOpen::NewTab), ("Replace", OnOpen::Replace)];
@@ -35,10 +36,10 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
-        "At start",
-        "With no project given: the start panel, a new one, one from a template, or the last",
+        "Startup project",
+        "What Suhina shows when it starts without a project to open",
         &["at_start"],
         |cx, r| {
             let options = [
@@ -51,10 +52,10 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
         "Projects folder",
-        "Where a new project is saved first",
+        "The folder a new project is saved in unless you choose another",
         &["projects_folder"],
         |cx, r| {
             let default = cx.about.projects_default.clone();
@@ -62,10 +63,10 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
         "Templates folder",
-        "Projects listed under New › From a template, and where Save as template puts one",
+        "The folder that holds the projects you can start a new project from",
         &["templates_folder"],
         |cx, r| {
             let default = cx.about.templates_default.clone();
@@ -74,10 +75,10 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     // Settings folder is named beside the default folder, not in the settings file: no saved key.
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
         "Settings folder",
-        "Where Suhina keeps its settings, keys, recent projects and themes; used from the next start",
+        "The folder Suhina keeps its settings, keys, recent projects and themes in, used from the next start",
         &[],
         |cx, r| {
             let (default, value) = (cx.about.data_default.clone(), cx.settings.data_folder.clone());
@@ -85,10 +86,10 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
-        Page::General,
+        Page::Projects,
         "Projects",
-        "Start template",
-        "The template At start makes a new project from",
+        "Startup template",
+        "The template a new project is made from when Suhina starts with one",
         &["start_template"],
         |cx, r| {
             let hint = "A template's file name, or a path";
@@ -97,178 +98,92 @@ pub(crate) static ROWS: &[Entry] = &[
     )
     .when(|s| s.at_start == AtStart::Template),
     row(
-        Page::General,
-        "NAM",
-        "NAM models folder",
-        "Where the NAM Amp Modeler lists .nam models ([docs/spec/nam-amp-and-cab.md])",
-        &["nam_models_folder"],
-        |cx, r| {
-            let default = cx.about.nam_models_default.clone();
-            cx.folder(r, &default, crate::interaction::pick::PickField::NamModelsFolder, |s| &mut s.nam_models_folder);
-        },
-    ),
-    row(
-        Page::General,
-        "NAM",
-        "IR folder",
-        "Where the NAM Cab Loader lists .wav impulse responses",
-        &["irs_folder"],
-        |cx, r| {
-            let default = cx.about.irs_default.clone();
-            cx.folder(r, &default, crate::interaction::pick::PickField::IrFolder, |s| &mut s.irs_folder);
-        },
-    ),
-    row(
-        Page::General,
+        Page::Projects,
         "Backups",
-        "Backups",
-        "When a copy of each changed project is written to .backup beside it",
+        "Backup interval",
+        "How often Suhina saves a spare copy of each changed project next to it",
         &["backup"],
         |cx, r| {
             let options: Vec<(String, suhina_session::backup::Interval)> =
                 suhina_session::backup::Interval::ALL.iter().map(|i| (i.title(), *i)).collect();
+            let last = cx.about.last_backup.clone();
+            cx.note(format!(
+                "When a copy of each changed project is written to .backup beside it; last backup: {last}"
+            ));
             cx.dropdown(r, &options, |s| &mut s.backup);
         },
     ),
     row(
-        Page::General,
+        Page::Projects,
         "Backups",
-        "Clean up backups",
-        "Keep the newest 20 backups of each project and delete older ones",
+        "Delete old backups",
+        "Suhina keeps the newest 20 spare copies of each project and deletes older ones",
         &["backup_clean_up"],
         |cx, r| cx.on_off(r, |s| &mut s.backup_clean_up),
     ),
-    row(Page::General, "Backups", "Last backup", "The active project's newest backup", &[], |cx, _| {
-        let note = cx.about.last_backup.clone();
-        cx.note(note);
-    }),
-    row(
-        Page::General,
-        "Agents",
-        "Let agents work on open projects",
-        "An agent started with suhina-cli mcp --attach may work on the open projects once you allow it; you see every change and can undo it",
-        &["agents"],
-        |cx, r| cx.on_off(r, |s| &mut s.agents),
-    ),
-    row(
-        Page::General,
-        "Dropping files",
-        "Several files",
-        "Onto one track, or one track each; Ctrl while dropping does the other",
-        &["drop_files"],
-        |cx, r| cx.choose(r, &[("One track", false), ("One each", true)], |s| &mut s.drop_separate),
-    ),
-    row(
-        Page::General,
-        "Dropping files",
-        "Warp mode",
-        "How a sample with a known tempo is stretched to the project's",
-        &["warp_mode"],
-        |cx, r| {
-            let options: Vec<(&str, WarpMode)> = WarpMode::ALL.iter().map(|m| (m.title(), *m)).collect();
-            cx.choose(r, &options, |s| &mut s.warp_mode);
-        },
-    ),
-    row(
-        Page::General,
-        "Updates",
-        "Check for updates",
-        "Once per start, asks GitHub whether a newer build is out; sends nothing about you",
-        &["check_updates"],
-        |cx, r| cx.on_off(r, |s| &mut s.updates.check),
-    ),
-    row(
-        Page::General,
-        "Updates",
-        "Channel",
-        "Which builds an update comes from: the nightly, or in developer mode a pull request's test build",
-        &["update_channel"],
-        |cx, r| {
-            if cx.settings.updates.test_builds_listed() {
-                let options = [("Nightly", Channel::Nightly), ("Test builds", Channel::TestBuilds)];
-                cx.choose(r, &options, |s| &mut s.updates.channel);
-            } else {
-                cx.choose(r, &[("Nightly", Channel::Nightly)], |s| &mut s.updates.channel);
-            }
-        },
-    ),
-    row(
-        Page::General,
-        "Updates",
-        "Developer mode",
-        "Lists test builds of pull requests as an update channel; downloading one needs the GitHub CLI",
-        &["developer_mode"],
-        |cx, r| cx.on_off(r, |s| &mut s.updates.developer),
-    ),
-    // Export.
-    row(
-        Page::Export,
-        "MCP write permissions",
-        "Allow the project's folder",
-        "Includes subfolders; turn off to revoke this default permission",
-        &["mcp_project_folder"],
-        |cx, r| {
-            let note = cx.about.mcp_project_folder.as_deref().unwrap_or("No saved project folder").to_string();
-            cx.note(format!("{note} (including subfolders)"));
-            cx.on_off(r, |s| &mut s.mcp_project_folder);
-        },
-    ),
     block(
-        Page::Export,
-        "MCP write permissions",
-        "MCP allowed write folders",
-        "Add or remove folders; includes subfolders. Applies to MCP writes, not File > Export.",
-        &["mcp_write_folders"],
-        |cx, y| cx.mcp_write_folders(y),
-    ),
-    // Audio.
+        Page::Audio,
+        "Status",
+        "Audio status",
+        "The output and input in use, how long sound takes to come out, and any dropouts",
+        &[],
+        crate::settings::settings_view::audio_now,
+    )
+    .status(),
     block(
         Page::Audio,
         "Output",
-        "Output",
-        "Driver, device, sample rate, buffer size, exclusive mode and the input device",
+        "Audio device",
+        "The sound card Suhina plays through and records from, and how it is set up",
         &["audio_host", "audio_device", "audio_sample_rate", "audio_buffer", "audio_exclusive", "audio_input"],
         crate::settings::settings_view::audio_output,
     ),
     block(
         Page::Audio,
         "Cue",
-        "Cue",
-        "Where previews and cued tracks play, such as headphones, and how loud",
+        "Headphone output",
+        "A second pair of outputs, such as headphones, for previews and cued tracks",
         &["audio_cue_pair", "audio_cue_volume"],
         crate::settings::settings_view::audio_cue,
     ),
     block(
-        Page::Audio,
-        "Now",
-        "Now",
-        "What plays now: the output, its latency and underruns, key to sound, the input",
-        &[],
-        crate::settings::settings_view::audio_now,
-    ),
-    // MIDI.
-    block(
         Page::Midi,
         "MIDI inputs",
         "MIDI inputs",
-        "Each MIDI controller's port, on or off; the ports on play the armed tracks",
+        "The MIDI keyboards and controllers Suhina listens to",
         &["midi_input_off"],
         crate::settings::settings_view::midi_inputs,
     ),
     row(
         Page::Midi,
         "Arming",
-        "Auto-arm the selected track",
-        "Selecting a track arms it, so the MIDI controller plays that track's instrument; a track armed by hand stays armed",
+        "Arm selected track",
+        "Selecting a track gets it ready to record, so your MIDI keyboard plays its instrument",
         &["auto_arm"],
         |cx, r| cx.on_off(r, |s| &mut s.auto_arm),
     ),
-    // Plug-ins.
+    block(
+        Page::Plugins,
+        "Actions",
+        "Plug-in actions",
+        "Look for new plug-ins, or open the list of every plug-in Suhina found",
+        &[],
+        crate::settings::settings_view::plugin_buttons,
+    )
+    .actions(),
+    block(
+        Page::Plugins,
+        "Folders",
+        "Plug-in folders",
+        "The folders Suhina looks in for plug-ins",
+        &[],
+        crate::settings::settings_view::plugin_library,
+    ),
     row(
         Page::Plugins,
         "Editors",
-        "Editors",
-        "In a window above Suhina, or inside the device panel as part of the chain",
+        "Plug-in editors open in",
+        "Whether a plug-in opens in a window of its own or inside the device panel",
         &["plugin_editors"],
         |cx, r| {
             if !cx.about.editors_embeddable {
@@ -278,92 +193,173 @@ pub(crate) static ROWS: &[Entry] = &[
             cx.choose(r, &options, |s| &mut s.plugin_editors);
         },
     ),
-    block(
-        Page::Plugins,
-        "Library",
-        "Plug-in library",
-        "The folders plug-ins are looked for in, each on or off and for a format, scanning them, and the plug-in manager",
-        &[],
-        crate::settings::settings_view::plugin_library,
+    row(
+        Page::Devices,
+        "NAM",
+        "Amp models folder",
+        "The folder the NAM Amp Modeler lists its amp models from",
+        &["nam_models_folder"],
+        |cx, r| {
+            let default = cx.about.nam_models_default.clone();
+            cx.folder(r, &default, crate::interaction::pick::PickField::NamModelsFolder, |s| &mut s.nam_models_folder);
+        },
     ),
-    // Arrangement.
+    row(
+        Page::Devices,
+        "NAM",
+        "Cabinet sounds folder",
+        "The folder the NAM Cab Loader lists its speaker cabinet recordings from",
+        &["irs_folder"],
+        |cx, r| {
+            let default = cx.about.irs_default.clone();
+            cx.folder(r, &default, crate::interaction::pick::PickField::IrFolder, |s| &mut s.irs_folder);
+        },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
+        "Device chain layout",
+        "Whether a track's devices sit in a row under the view or in a column beside it",
+        &["device_chain"],
+        |cx, r| {
+            let options = [("Row", DeviceLayout::Row), ("Stack", DeviceLayout::Stack)];
+            cx.choose(r, &options, |s| &mut s.device_layout);
+        },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
+        "Detail area width",
+        "Whether the area under the view stops at the browser or spans the whole window",
+        &["detail_layout"],
+        |cx, r| {
+            let options = [("Beside", DetailLayout::Beside), ("Full width", DetailLayout::FullWidth)];
+            cx.choose(r, &options, |s| &mut s.view.detail_layout);
+        },
+    ),
+    row(
+        Page::Importing,
+        "Dropping files",
+        "Tracks for dropped files",
+        "Whether files you drop together go on one track or each on a track of its own",
+        &["drop_files"],
+        |cx, r| cx.choose(r, &[("One track", false), ("One each", true)], |s| &mut s.drop_separate),
+    ),
+    row(
+        Page::Importing,
+        "Dropping files",
+        "Warp mode for samples",
+        "How a dropped sample with a known tempo is sped up or slowed down to match the project",
+        &["warp_mode"],
+        |cx, r| {
+            let options: Vec<(&str, WarpMode)> = WarpMode::ALL.iter().map(|m| (m.title(), *m)).collect();
+            cx.choose(r, &options, |s| &mut s.warp_mode);
+        },
+    ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Allow sample stacking",
-        "Audio clips moved over others all play, instead of replacing them",
+        "Clip editing",
+        "Let audio clips overlap",
+        "An audio clip moved over others plays along with them instead of replacing them",
         &["sample_stacking"],
         |cx, r| cx.on_off(r, |s| &mut s.sample_stacking),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Allow MIDI stacking",
-        "MIDI clips moved over others all play, instead of replacing them",
+        "Clip editing",
+        "Let MIDI clips overlap",
+        "A MIDI clip moved over others plays along with them instead of replacing them",
         &["midi_stacking"],
         |cx, r| cx.on_off(r, |s| &mut s.midi_stacking),
     ),
     row(
         Page::Arrangement,
-        "Clips",
+        "Clip editing",
         "Double-click makes a clip",
-        "On an empty slot or an empty spot of a lane",
+        "Double-clicking an empty place in a lane or an empty slot makes a new clip there",
         &["double_click_clip"],
         |cx, r| cx.on_off(r, |s| &mut s.view.double_click_clip),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Name field in clip menus",
-        "A clip's right-click menu carries its name to edit; off, Rename (Ctrl+R) edits the name on the clip",
+        "Clip editing",
+        "Clip menu name field",
+        "A clip's right-click menu has a field for its name",
         &["menu_name_field"],
         |cx, r| cx.on_off(r, |s| &mut s.view.menu_name_field),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Moved notes replace the notes under them",
-        "In the piano roll, a note moved onto another of the same key and start takes its place; off, both play",
-        &["notes_replace"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.notes_replace),
-    ),
-    row(
-        Page::Arrangement,
-        "Clips",
-        "Ctrl+drag selects time over clips",
-        "On, a plain drag moves clips and Ctrl+drag selects time; off, a drag from a lane's or a clip's upper half paints time and from the lower half moves clips or picks them. A drag on the ruler always selects time",
-        &["time_select"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.time_select_ctrl),
-    ),
-    row(
-        Page::Arrangement,
-        "Clips",
-        "Moving a clip",
-        "Name bar: a clip moves by the bar with its name and is picked whole there (play then starts from its start), its body selects time and a click there sets where play starts; Mirror: its lower half moves it and its upper half selects time",
+        "Clip editing",
+        "Clip drag handle",
+        "Which part of a clip you drag to move it, while dragging the rest of it selects time",
         &["clip_drag"],
-        |cx, r| cx.choose(r, &[("Name bar", false), ("Mirror", true)], |s| &mut s.view.clip_halves),
+        |cx, r| cx.choose(r, &[("Name bar", false), ("Lower half", true)], |s| &mut s.view.clip_halves),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Grid in clips",
-        "The grid's lines show through the clips, faintly, so a clip's beats and bars are seen on it",
+        "Clip editing",
+        "Paste replaces clip",
+        "Pasting onto a selected clip puts the copy in its place instead of after it",
+        &["replace_clip"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.replace_clip),
+    ),
+    row(
+        Page::Arrangement,
+        "Time and play",
+        "Select time with",
+        "How a drag over a clip selects time instead of moving the clip",
+        &["time_select"],
+        |cx, r| cx.choose(r, &[("Ctrl+drag", true), ("Upper half", false)], |s| &mut s.view.time_select_ctrl),
+    ),
+    row(
+        Page::Arrangement,
+        "Time and play",
+        "Start marker follows selection",
+        "While stopped, selecting a clip moves the play start marker to the clip's start",
+        &["play_from_selected_clip"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.play_from_clip),
+    ),
+    row(
+        Page::Arrangement,
+        "Time and play",
+        "Play from",
+        "Where playback starts when you press Play",
+        &["play_start"],
+        |cx, r| {
+            let options = [("Marker", PlayFrom::Marker), ("Selected clip", PlayFrom::Clip)];
+            cx.choose(r, &options, |s| &mut s.play_from);
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Time and play",
+        "Playhead after Stop",
+        "Where the playhead goes when you press Stop",
+        &["stop"],
+        |cx, r| cx.choose(r, &[("Marker", StopReturn::Marker), ("Stay", StopReturn::Here)], |s| &mut s.stop),
+    ),
+    row(
+        Page::Arrangement,
+        "View",
+        "Grid inside clips",
+        "The beat and bar lines show faintly through clips",
         &["clip_grid"],
         |cx, r| cx.on_off(r, |s| &mut s.view.grid_in_clips),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Waveform zoom",
-        "How much larger audio clips' waveforms are drawn, the sound unchanged; also the thin slider beside the ruler, Ctrl+Alt+Up and Ctrl+Alt+Down",
+        "View",
+        "Waveform size",
+        "How large audio clips' waveforms are drawn, without changing the sound",
         &["waveform_zoom"],
         |cx, r| cx.choose(r, &[("×1", 100), ("×2", 200), ("×4", 400), ("×8", 800)], |s| &mut s.view.waveform_zoom),
     ),
     row(
         Page::Arrangement,
-        "Clips",
+        "View",
         "Waveform and note colour",
-        "Theme uses the theme's colour (dark when it gives none); Auto follows each clip's brightness; Light, Dark and Custom use one colour for waveforms, MIDI notes and ARA notes",
+        "The colour waveforms and notes are drawn in on clips",
         &["waveform_colour"],
         |cx, r| {
             cx.choose(
@@ -381,50 +377,26 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Custom waveform and note colour",
-        "Choose the waveform and note colour; applies immediately",
+        "View",
+        "Custom waveform colour",
+        "The colour waveforms and notes take when their colour is Custom",
         &["waveform_custom_colour"],
         |cx, r| cx.waveform_colour(r),
     )
     .when(|s| s.view.waveform.mode == WaveformColour::Custom),
     row(
         Page::Arrangement,
-        "Clips",
+        "View",
         "Audio clip colour strength",
-        "How strongly audio clips show their original colour; applies immediately",
+        "How strongly audio clips show their own colour",
         &["audio_clip_colour_strength"],
         |cx, r| cx.colour_strength(r, |s| &mut s.view.audio_colour_strength),
     ),
     row(
         Page::Arrangement,
-        "Clips",
-        "Shift-drag on an edge stretches audio",
-        "An audio clip's edge dragged with Shift held (Shift and Alt: off the grid; Ctrl and Alt as well) time-stretches its audio to the new length, its pitch kept, past where its audio ends; off, it moves the edge as a plain drag does",
-        &["stretch_alt_drag"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.stretch_alt),
-    ),
-    row(
-        Page::Arrangement,
-        "Clips",
-        "Ctrl+R renames every selected clip",
-        "With several clips selected, the name typed after Ctrl+R goes to all of them, as one undo step; off, only the clip clicked last is renamed",
-        &["rename_selected_clips"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.rename_selected),
-    ),
-    row(
-        Page::Arrangement,
-        "Clips",
-        "Play from the selected clip",
-        "Clips picked while stopped move the play start marker to the first one's start, so play starts there; off, a click on a clip puts it where it was clicked",
-        &["play_from_selected_clip"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.play_from_clip),
-    ),
-    row(
-        Page::Arrangement,
         "Tracks",
         "New track colour",
-        "By clip type: MIDI and audio tracks use their theme defaults. One colour: all new tracks use the MIDI default. Existing custom colours stay unchanged",
+        "Whether new tracks take the theme's colour for their kind or all take the same colour",
         &["new_track_colour"],
         |cx, r| cx.choose(r, &[("By clip type", false), ("One colour", true)], |s| &mut s.view.fixed_track_colour),
     ),
@@ -432,7 +404,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Tracks",
         "New clip colour",
-        "Track colour: a new clip takes the colour its track has now. Theme default: MIDI and audio clips use the theme's clip defaults. Existing clips keep their colours",
+        "Whether a new clip takes its track's colour or the theme's clip colour",
         &["new_clip_colour"],
         |cx, r| {
             cx.choose(r, &[("Track colour", true), ("Theme default", false)], |s| &mut s.view.new_clip_track_colour)
@@ -442,15 +414,15 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Tracks",
         "Track header colour strength",
-        "How strongly track headers show their original colour; applies immediately",
+        "How strongly track headers show their own colour",
         &["track_header_colour_strength"],
         |cx, r| cx.colour_strength(r, |s| &mut s.view.header_colour_strength),
     ),
     row(
         Page::Arrangement,
         "Tracks",
-        "Track headers",
-        "Which side of the timeline they are on",
+        "Track header side",
+        "Which side of the timeline the track names and controls are on",
         &["track_headers"],
         |cx, r| {
             cx.choose(r, &[("Theme", None), ("Left", Some(Side::Left)), ("Right", Some(Side::Right))], |s| {
@@ -462,7 +434,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Tracks",
         "Return tracks",
-        "Whether the Arrangement shows the return tracks' rows along the bottom; its Hide returns button by the ruler switches it too",
+        "The return tracks' rows show along the bottom of the Arrangement view",
         &["arrangement_returns"],
         |cx, r| cx.choose(r, &[("Shown", false), ("Hidden", true)], |s| &mut s.view.returns_hidden),
     ),
@@ -496,7 +468,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Track sizes",
         "Default track size",
-        "Named height for ordinary Arrangement tracks",
+        "The named height ordinary tracks are drawn at",
         &["arrangement_track_size"],
         |cx, r| {
             cx.choose(
@@ -516,7 +488,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Track sizes",
         "Default return size",
-        "Return tracks have their own default size",
+        "The named height return tracks are drawn at",
         &["arrangement_return_size"],
         |cx, r| {
             cx.choose(
@@ -535,35 +507,10 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Track sizes",
-        "Advanced track sizes",
-        "Show exact heights in pixels; all sizes stay ordered",
-        &["arrangement_sizes_advanced"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.track_sizes.advanced),
-    ),
-    row(
-        Page::Arrangement,
-        "Track sizes",
         "Tiny height",
-        "Adjust the smallest row; always below Compact",
+        "The height of the smallest track size, always below Compact",
         &["arrangement_size_heights"],
         |cx, r| cx.track_size_height(r, TrackSize::Tiny),
-    ),
-    row(Page::Arrangement, "Track sizes", "Compact height", "Adjust Compact between Tiny and Small", &[], |cx, r| {
-        cx.track_size_height(r, TrackSize::Compact)
-    }),
-    row(Page::Arrangement, "Track sizes", "Small height", "Adjust Small between Compact and Medium", &[], |cx, r| {
-        cx.track_size_height(r, TrackSize::Small)
-    }),
-    row(Page::Arrangement, "Track sizes", "Medium height", "Adjust Medium between Small and Large", &[], |cx, r| {
-        cx.track_size_height(r, TrackSize::Medium)
-    }),
-    row(
-        Page::Arrangement,
-        "Track sizes",
-        "Large height",
-        "Adjust the largest named row; always above Medium",
-        &[],
-        |cx, r| cx.track_size_height(r, TrackSize::Large),
     ),
     row(
         Page::Arrangement,
@@ -603,40 +550,86 @@ pub(crate) static ROWS: &[Entry] = &[
         &["automation_click"],
         |cx, r| cx.on_off(r, |s| &mut s.view.automation_click_anywhere),
     ),
-    // Launcher view and mixer.
     row(
         Page::Arrangement,
-        "Pasting",
-        "Replace clip",
-        "Paste onto a selected clip at its start and remove that destination clip; off pastes after it",
-        &["replace_clip"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.replace_clip),
+        "Track sizes",
+        "Compact height",
+        "The height of Compact, between Tiny and Small",
+        &[],
+        |cx, r| cx.track_size_height(r, TrackSize::Compact),
+    ),
+    row(
+        Page::Arrangement,
+        "Track sizes",
+        "Small height",
+        "The height of Small, between Compact and Medium",
+        &[],
+        |cx, r| cx.track_size_height(r, TrackSize::Small),
+    ),
+    row(
+        Page::Arrangement,
+        "Track sizes",
+        "Medium height",
+        "The height of Medium, between Small and Large",
+        &[],
+        |cx, r| cx.track_size_height(r, TrackSize::Medium),
+    ),
+    row(
+        Page::Arrangement,
+        "Track sizes",
+        "Large height",
+        "The height of the largest track size, always above Medium",
+        &[],
+        |cx, r| cx.track_size_height(r, TrackSize::Large),
+    ),
+    row(
+        Page::Arrangement,
+        "Advanced",
+        "Edge drag stretches audio",
+        "Dragging an audio clip's edge with Ctrl and Alt held stretches its sound to the new length",
+        &["stretch_alt_drag"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.stretch_alt),
+    ),
+    row(
+        Page::Arrangement,
+        "Advanced",
+        "Rename all selected clips",
+        "Renaming a clip while several are selected gives them all the new name",
+        &["rename_selected_clips"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.rename_selected),
+    ),
+    row(
+        Page::Arrangement,
+        "Advanced",
+        "Exact track heights",
+        "The track size heights are typed in pixels instead of set with sliders",
+        &["arrangement_sizes_advanced"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.track_sizes.advanced),
     ),
     row(
         Page::Session,
         "Launching",
-        "Select on launch",
-        "Launching a clip in the Launcher view shows it in the detail area",
+        "Select launched clip",
+        "Starting a clip in the Launcher view also selects it and shows it in the detail area",
         &["select_on_launch"],
         |cx, r| cx.on_off(r, |s| &mut s.select_on_launch),
     ),
     row(
         Page::Session,
         "Mixer",
-        "Mixer controls",
-        "A track's volume and pan as a field, or as a knob: the wheel over either changes it",
+        "Mixer control style",
+        "Whether each track's volume and pan show as numbers or as knobs",
         &["mixer_controls"],
         |cx, r| {
             let options = [("Field", MixerControls::Field), ("Knob", MixerControls::Knob)];
             cx.choose(r, &options, |s| &mut s.mixer_controls);
         },
     ),
-    // Clip editor.
     row(
         Page::ClipEditor,
         "Piano roll",
-        "Pulled to the top",
-        "What stays above the piano roll when its splitter is dragged all the way up",
+        "Full-height piano roll covers",
+        "What the piano roll covers when you drag its divider all the way up",
         &["piano_roll_top"],
         |cx, r| {
             let options = [("Edited track", PianoRollTop::Track), ("Whole window", PianoRollTop::Window)];
@@ -646,74 +639,30 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::ClipEditor,
         "Piano roll",
-        "Piano roll grid",
-        "Its own grid value, or the one in the control bar, which otherwise sets the Arrangement view's only",
+        "Piano roll grid source",
+        "Whether the piano roll has its own grid or follows the one in the control bar",
         &["piano_roll_grid"],
         |cx, r| cx.choose(r, &[("Its own", false), ("Control bar", true)], |s| &mut s.piano_grid_follows),
     ),
     row(
         Page::ClipEditor,
         "Piano roll",
-        "Toolbar size",
-        "The toolbar's box, its gaps and the icon strokes inside it, scaled together",
+        "Piano roll toolbar size",
+        "How large the piano roll's toolbar buttons are",
         &["piano_roll_toolbar"],
         |cx, r| {
             let options: Vec<(&str, ToolbarSize)> = ToolbarSize::ALL.iter().map(|s| (s.name(), *s)).collect();
             cx.choose(r, &options, |s| &mut s.toolbar_size);
         },
     ),
-    block(
+    row(
         Page::ClipEditor,
-        "Workflow",
-        "Workflow settings",
-        "Click and double-click on the grid and on notes, the right and Alt+right buttons, the duplicate key",
-        KEYMAP,
-        crate::settings::settings_view::mouse_switches,
+        "Piano roll",
+        "Moved notes replace notes",
+        "A note moved onto another at the same pitch and time takes its place",
+        &["notes_replace"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.notes_replace),
     ),
-    // Transport.
-    row(
-        Page::Transport,
-        "Play and stop",
-        "Play from",
-        "Where Play starts: the play start marker, or the start of the clip selected in the Arrangement view",
-        &["play_start"],
-        |cx, r| {
-            let options = [("Marker", PlayFrom::Marker), ("Selected clip", PlayFrom::Clip)];
-            cx.choose(r, &options, |s| &mut s.play_from);
-        },
-    ),
-    row(
-        Page::Transport,
-        "Play and stop",
-        "Stop",
-        "Back to the play start marker, or stay where it stopped; stop again for the start",
-        &["stop"],
-        |cx, r| cx.choose(r, &[("Marker", StopReturn::Marker), ("Stay", StopReturn::Here)], |s| &mut s.stop),
-    ),
-    // Detail area.
-    row(
-        Page::DetailArea,
-        "Devices",
-        "Device chain",
-        "In a row under the view, or stacked in a column beside it",
-        &["device_chain"],
-        |cx, r| {
-            let options = [("Row", DeviceLayout::Row), ("Stack", DeviceLayout::Stack)];
-            cx.choose(r, &options, |s| &mut s.device_layout);
-        },
-    ),
-    row(
-        Page::DetailArea,
-        "Devices",
-        "Detail area layout",
-        "Beside the browser, or across the whole window under it",
-        &["detail_layout"],
-        |cx, r| {
-            let options = [("Beside", DetailLayout::Beside), ("Full width", DetailLayout::FullWidth)];
-            cx.choose(r, &options, |s| &mut s.view.detail_layout);
-        },
-    ),
-    // Browser.
     row(
         Page::Browser,
         "Browser",
@@ -725,8 +674,8 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Browser,
         "Browser",
-        "Recent's kinds",
-        "Indented: Samples, MIDI and the other kinds of recent items are items under Recent in the sidebar; chips: they are chips over the list while Recent is chosen",
+        "Recent item kinds layout",
+        "Whether the kinds of recent items show in the sidebar or as buttons above the list",
         &["browser_recent"],
         |cx, r| cx.choose(r, &[("Indented", false), ("Chips", true)], |s| &mut s.view.recent_chips),
     ),
@@ -745,8 +694,8 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Browser,
         "Previews",
-        "Auto-play",
-        "Selecting a sample or MIDI file previews it",
+        "Preview selected file",
+        "Selecting a sample or MIDI file plays it",
         &["preview_autoplay"],
         |cx, r| cx.on_off(r, |s| &mut s.preview_autoplay),
     ),
@@ -754,7 +703,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Browser,
         "Previews",
         "Preview volume",
-        "How loud previews play, after the main channel",
+        "How loud samples play when you preview them",
         &["preview_volume"],
         |cx, r| {
             let options = [("-18 dB", -18), ("-12 dB", -12), ("-6 dB", -6), ("0 dB", 0)];
@@ -764,24 +713,24 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Browser,
         "Sample map",
-        "Map layout",
-        "The sample map as a free cloud or snapped to a grid",
+        "Sample map layout",
+        "Whether the sample map shows its points as a free cloud or on a grid",
         &["map_layout"],
         |cx, r| cx.choose(r, &[("Cloud", false), ("Grid", true)], |s| &mut s.map_grid),
     ),
     row(
         Page::Browser,
         "Sample map",
-        "Map preview on hover",
-        "Pointing at a sample on the map previews it",
+        "Preview on map hover",
+        "Pointing at a sample on the sample map plays it",
         &["map_hover_preview"],
         |cx, r| cx.on_off(r, |s| &mut s.map_hover_preview),
     ),
     row(
         Page::Browser,
         "Sample map",
-        "Map: longest sample",
-        "Longer samples are left off the map",
+        "Map sample length limit",
+        "Samples longer than this are left off the sample map",
         &["map_max_seconds"],
         |cx, r| {
             let options = [("5 s", 5u32), ("10 s", 10), ("30 s", 30), ("60 s", 60)];
@@ -799,16 +748,63 @@ pub(crate) static ROWS: &[Entry] = &[
             cx.choose(r, &options, |s| &mut s.map_label_size);
         },
     ),
-    row(Page::Browser, "Tags", "Tag limit", "The most colour tags there may be", &[], |cx, r| {
+    row(Page::Browser, "Tags", "Colour tag limit", "How many colour tags you can make in the browser", &[], |cx, r| {
         let options = [("64", 64usize), ("128", 128), ("256", 256), ("1024", 1024)];
         cx.tag_limit(r, &options);
     }),
-    // Appearance.
+    block(
+        Page::Keys,
+        "Mouse and key behaviour",
+        "Piano roll mouse behaviour",
+        "What clicks, double-clicks and right-clicks do to notes in the piano roll",
+        KEYMAP,
+        crate::settings::settings_view::mouse_switches,
+    ),
+    block(
+        Page::Keys,
+        "Shortcuts",
+        "Shortcuts",
+        "The keys for every action",
+        KEYMAP,
+        crate::settings::settings_view::shortcuts_block,
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Window zoom",
+        "How large everything in the window is drawn",
+        &["zoom"],
+        |cx, r| cx.zoom(r),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Animations",
+        "Things fade and slide briefly when they change",
+        &["animations"],
+        |cx, r| cx.on_off(r, |s| &mut s.animations),
+    ),
+    row(
+        Page::Appearance,
+        "Window",
+        "Menu bar in window",
+        "The menus show at the top of the window, and on macOS in the screen's menu bar too",
+        &["menu_bar"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.menu_bar),
+    ),
+    row(
+        Page::Appearance,
+        "Waveforms",
+        "Waveform scale",
+        "Whether waveforms are drawn to show quiet parts larger or as they are",
+        &["waveform_scale"],
+        |cx, r| cx.choose(r, &[("Linear", false), ("dB", true)], |s| &mut s.waveform_db),
+    ),
     row(
         Page::Appearance,
         "Background",
         "Background image",
-        "Choose your own PNG; desktop icons and other windows are never captured. Empty removes the image",
+        "A picture of your own, a PNG file, drawn behind the window's panels",
         &["background_image"],
         |cx, r| {
             cx.folder(r, "No image", crate::interaction::pick::PickField::BackgroundImage, |s| &mut s.background_image)
@@ -818,7 +814,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Background",
         "Surface opacity",
-        "Tint over the background image; 100% makes neutral panels solid",
+        "How much the panels cover the background image",
         &["background_tint"],
         |cx, r| cx.colour_strength(r, |s| &mut s.view.background_tint),
     ),
@@ -826,7 +822,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Background",
         "Background blur",
-        "Blur the chosen image; no live desktop capture",
+        "How much the background image is blurred",
         &["background_blur"],
         |cx, r| cx.background_blur(r),
     ),
@@ -834,7 +830,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Application bar",
         "Application name position",
-        "Suhina is always shown",
+        "Where the name Suhina sits in the bar at the top of the window",
         &["app_name_centered"],
         |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.app_name_centered),
     ),
@@ -842,7 +838,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Application bar",
         "Show project name",
-        "Show the active project and its unsaved marker",
+        "The bar at the top of the window shows the open project's name and whether it has unsaved changes",
         &["bar_project_name"],
         |cx, r| cx.on_off(r, |s| &mut s.view.bar_project_name),
     ),
@@ -850,7 +846,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Application bar",
         "Show project timing",
-        "Show the active project's tempo and time signature",
+        "The bar at the top of the window shows the open project's tempo and time signature",
         &["bar_project_timing"],
         |cx, r| cx.on_off(r, |s| &mut s.view.bar_project_timing),
     ),
@@ -858,63 +854,15 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Application bar",
         "Project information position",
-        "Fields sharing the same position appear together",
+        "Where the project's name and timing sit in the bar at the top of the window",
         &["bar_project_centered"],
         |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.bar_project_centered),
     ),
     row(
         Page::Appearance,
-        "Liquid (experimental)",
-        "Panel liquid",
-        "Settings backdrop transparency; 0% is solid. Requires GPU renderer and Animations on",
-        &["liquid_panel_strength"],
-        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.panels),
-    ),
-    row(
-        Page::Appearance,
-        "Liquid (experimental)",
-        "Track liquid",
-        "Reflection on MIDI and audio track headers; 0% is flat. Requires GPU renderer and Animations on",
-        &["liquid_track_strength"],
-        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.tracks),
-    ),
-    row(
-        Page::Appearance,
-        "Liquid (experimental)",
-        "Clip liquid",
-        "Reflection on clip backgrounds; notes and waveforms stay sharp. 0% is flat; requires GPU and Animations on",
-        &["liquid_clip_strength"],
-        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.clips),
-    ),
-    row(
-        Page::Appearance,
-        "Window",
-        "Zoom",
-        "The size of the whole window; Ctrl and + or -, Ctrl and 0 for 100 %",
-        &["zoom"],
-        |cx, r| cx.zoom(r),
-    ),
-    row(
-        Page::Appearance,
-        "Window",
-        "Animations",
-        "Short fades and slides when things change",
-        &["animations"],
-        |cx, r| cx.on_off(r, |s| &mut s.animations),
-    ),
-    row(
-        Page::Appearance,
-        "Waveforms",
-        "Waveform scale",
-        "Linear, or decibels so quiet parts show; clips, previews and the map",
-        &["waveform_scale"],
-        |cx, r| cx.choose(r, &[("Linear", false), ("dB", true)], |s| &mut s.waveform_db),
-    ),
-    row(
-        Page::Appearance,
-        "Graphics",
-        "Renderer",
-        "How the window is drawn; OpenGL can resize more smoothly on some systems",
+        "Advanced",
+        "Graphics renderer",
+        "Whether the window is drawn with GPU or OpenGL, used from the next start",
         &["renderer"],
         |cx, r| {
             if cx.about.graphics_now.is_some_and(|now| now != cx.settings.graphics) {
@@ -925,13 +873,28 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Appearance,
-        "Menu bar",
-        "Menu bar in the window",
-        "Show the menus at the top of the window; on macOS the bar at the top of the screen has them too",
-        &["menu_bar"],
-        |cx, r| cx.on_off(r, |s| &mut s.view.menu_bar),
+        "Advanced",
+        "Panel liquid",
+        "How see-through the Settings window's backdrop is, with the GPU renderer and animations on",
+        &["liquid_panel_strength"],
+        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.panels),
     ),
-    // Theme.
+    row(
+        Page::Appearance,
+        "Advanced",
+        "Track liquid",
+        "How much light track headers reflect, with the GPU renderer and animations on",
+        &["liquid_track_strength"],
+        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.tracks),
+    ),
+    row(
+        Page::Appearance,
+        "Advanced",
+        "Clip liquid",
+        "How much light clip backgrounds reflect, with the GPU renderer and animations on",
+        &["liquid_clip_strength"],
+        |cx, r| cx.liquid_strength(r, |s| &mut s.view.liquid.clips),
+    ),
     block(
         Page::Theme,
         "Theme",
@@ -944,89 +907,67 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Theme,
         "Folder",
         "Themes folder",
-        "Where themes are kept and read from; empty for the folder in Suhina's data",
+        "The folder themes are kept in and read from",
         &["themes_folder"],
         |cx, r| {
             let (default, value) = (cx.about.themes_default.clone(), cx.settings.themes_folder.clone());
             cx.moved_folder(r, &default, crate::interaction::pick::PickField::ThemesFolder, &value);
         },
     ),
-    // Shortcuts.
+    row(
+        Page::Agents,
+        "Agents",
+        "AI agents edit projects",
+        "An AI agent you start can change your open projects, and you can undo each change",
+        &["agents"],
+        |cx, r| cx.on_off(r, |s| &mut s.agents),
+    ),
+    row(
+        Page::Agents,
+        "MCP write permissions",
+        "Project folder for agents",
+        "An AI agent can save files in the open project's folder and the folders inside it",
+        &["mcp_project_folder"],
+        |cx, r| {
+            let note = cx.about.mcp_project_folder.as_deref().unwrap_or("No saved project folder").to_string();
+            cx.note(format!("{note} (including subfolders)"));
+            cx.on_off(r, |s| &mut s.mcp_project_folder);
+        },
+    ),
     block(
-        Page::Shortcuts,
-        "Keys",
-        "Shortcuts",
-        "Every action's keys and the preset they come from",
-        KEYMAP,
-        crate::settings::settings_view::shortcuts_block,
+        Page::Agents,
+        "MCP write permissions",
+        "More agent write folders",
+        "More folders an AI agent can save files in, with the folders inside them",
+        &["mcp_write_folders"],
+        |cx, y| cx.mcp_write_folders(y),
+    ),
+    row(
+        Page::Agents,
+        "Updates",
+        "Check for updates",
+        "Each time Suhina starts it asks whether a newer version is out, sending nothing about you",
+        &["check_updates"],
+        |cx, r| cx.on_off(r, |s| &mut s.updates.check),
+    ),
+    row(Page::Agents, "Updates", "Update channel", "Which builds Suhina updates to", &["update_channel"], |cx, r| {
+        if cx.settings.updates.test_builds_listed() {
+            let options = [("Nightly", Channel::Nightly), ("Test builds", Channel::TestBuilds)];
+            cx.choose(r, &options, |s| &mut s.updates.channel);
+        } else {
+            cx.choose(r, &[("Nightly", Channel::Nightly)], |s| &mut s.updates.channel);
+        }
+    }),
+    row(
+        Page::Agents,
+        "Advanced",
+        "Developer mode",
+        "Test builds of changes still under review can be chosen as updates",
+        &["developer_mode"],
+        |cx, r| cx.on_off(r, |s| &mut s.updates.developer),
     ),
 ];
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::settings::Settings;
-
-    /// Kept in `settings.json` but changed outside the Settings window: the browser and the map
-    /// window as they were left.
-    const NOT_IN_THE_WINDOW: [&str; 7] = [
-        "browser",
-        "browser_width",
-        "map_dot_size",
-        "map_window",
-        "map_window_rect",
-        "session_mixer_height",
-        "session_strip_fader",
-    ];
-
-    fn saved_keys() -> Vec<String> {
-        let settings = Settings { midi_inputs_off: vec!["Keys".into()], ..Settings::default() };
-        settings
-            .to_text()
-            .lines()
-            .filter(|line| !line.starts_with('#'))
-            .filter_map(|line| line.split_once('=').map(|(key, _)| key.trim().to_string()))
-            .collect()
-    }
-
-    #[test]
-    fn every_saved_setting_is_on_exactly_one_page() {
-        for key in saved_keys() {
-            let on: Vec<&str> = ROWS.iter().filter(|e| e.keys.contains(&key.as_str())).map(|e| e.name).collect();
-            if NOT_IN_THE_WINDOW.contains(&key.as_str()) {
-                assert!(on.is_empty(), "{key} is changed outside the window, yet shown by {on:?}");
-            } else {
-                assert_eq!(on.len(), 1, "{key} is shown by {on:?}");
-            }
-        }
-        // And every key an entry names is one the settings file has, or the keymap.
-        let saved = saved_keys();
-        for entry in ROWS {
-            for key in entry.keys {
-                assert!(saved.iter().any(|k| k == key) || KEYMAP.contains(key), "{}: no saved key {key}", entry.name);
-            }
-        }
-    }
-
-    #[test]
-    fn every_entry_has_a_name_of_its_own_and_its_sections_stay_together() {
-        let mut names: Vec<&str> = ROWS.iter().map(|e| e.name).collect();
-        names.sort_unstable();
-        let count = names.len();
-        names.dedup();
-        assert_eq!(names.len(), count, "two entries share a name");
-        // A page's sections and the pages themselves come in one run each, in the list's order.
-        let mut seen: Vec<(Page, &str)> = Vec::new();
-        for entry in ROWS {
-            let here = (entry.page, entry.section);
-            if seen.last() != Some(&here) {
-                assert!(!seen.contains(&here), "{} › {} is split in two", entry.page.name(), entry.section);
-                seen.push(here);
-            }
-        }
-        let order: Vec<Page> = Page::ALL.iter().map(|(page, _)| *page).collect();
-        let mut pages: Vec<Page> = seen.iter().map(|(page, _)| *page).collect();
-        pages.dedup();
-        assert_eq!(pages, order, "every page has settings, in the order of the list");
-    }
-}
+#[path = "settings_rows_tests.rs"]
+mod tests;

@@ -9,7 +9,7 @@ pub(super) fn format_value(value: f64) -> String {
     if !value.is_finite() {
         return "-".into();
     }
-    let text = format!("{value:.2}");
+    let text = widgets::fixed(value, 2);
     text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -151,7 +151,7 @@ pub(super) fn value_text(parameter: &GraphParameter, value: f64) -> String {
     } else if !parameter.text.is_empty() && value == parameter.value {
         parameter.text.clone()
     } else {
-        format!("{:.*} {}", parameter.ui.decimals, value, parameter.unit).trim().to_owned()
+        format!("{} {}", widgets::fixed(value, parameter.ui.decimals), parameter.unit).trim().to_owned()
     }
 }
 
@@ -335,7 +335,7 @@ fn themed_slider_widget(
     response
 }
 
-/// A knob in `rect`, logarithmic for a `LogKnob`: dragged up and down (finer with Shift),
+/// A knob in `rect`, logarithmic for a `LogKnob`: dragged up and down (finer with Shift, with the pointer hidden),
 /// stepped by the arrow keys once clicked, back to its default on a double click.
 pub(super) fn knob(
     ui: &mut Ui,
@@ -375,6 +375,7 @@ pub(super) fn knob(
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
     if response.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let delta = f64::from(response.drag_delta().y) / widgets::PARAMETER_DRAG_PIXELS * fine;
         position = (position - delta).clamp(0.0, 1.0);

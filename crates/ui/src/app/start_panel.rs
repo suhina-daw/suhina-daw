@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The start panel: what the window shows right of the browser while no project is open (at
-//! start, as Settings › General › At start › Panel says, and after the last project closes). A
+//! start, as Settings › Projects and backups › Startup project › Panel says, and after the last project closes). A
 //! new project, one from a template, or a recent project, found by name and listed with when it
 //! was last saved; the audio output at a glance; the version. Files dropped on it open as they
 //! do anywhere on the window.
@@ -323,7 +323,10 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         Tab::Templates => {
             let rows: Vec<&PathBuf> = lists.templates.iter().filter(|p| found(p)).collect();
             let note = Rect::from_min_max(Pos2::new(list.left(), list.bottom() - LINE), list.max);
-            let folder = format!("Templates in {}; the folder is set in Settings › General", lists.templates_folder);
+            let folder = format!(
+                "Templates in {}; the folder is set in Settings › Projects and backups",
+                lists.templates_folder
+            );
             widgets::text_in(&painter, note, Align2::LEFT_CENTER, &folder, small.clone(), theme::text_hint());
             let list = Rect::from_min_max(list.min, Pos2::new(list.right(), note.top() - 4.0));
             if rows.is_empty() {

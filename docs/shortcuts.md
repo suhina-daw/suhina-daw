@@ -3,7 +3,7 @@ description: Keyboard shortcuts in the desktop app: the default keys, the keymap
 read_when: shortcuts, keys, keymap, Ctrl+drag copies notes, Alt+drag velocity, left edge, keymap.json, keymap preset, workflow mode, workflow menu, workflow settings, Custom mode, double-click, Draw-first, Select-first, Mouse-first, mouse switches, right click deletes, left click draws, Alt right plays, rebind, cut copy paste, duplicate, mute clips, hotkeys, quantise, Ctrl+U, piano roll keys, tool keys, number keys choose a tool, arrow keys, select all, mute tool key, grid keys, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, narrow grid, widen grid, triplet grid, snap to grid, Z, Shift+Z, zoom to selection, zoom to clip, ruler zoom
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -28,7 +28,7 @@ Only a text field keeps the keys while it is being typed in.
 
 ## Changing keys
 
-Options › Settings › **Shortcuts** lists every action with its keys. **Change** waits for the next
+Options › Settings › **Keys** lists every action with its keys. **Change** waits for the next
 key pressed, with its modifiers, and makes it the action's key (Escape cancels); **Clear** unbinds
 the action; **Reset all** goes back to the defaults. A key bound to two actions is shown in red
 above the list.
@@ -49,7 +49,7 @@ can be changed while editing ([spec](spec/ui-clip-editor.md) › Workflow modes)
 | **Mouse-first** | working with the mouse | the four mouse switches below are all on, so the left button draws in the Select tool, the right button deletes a note (a drag deletes the notes it passes over), Shift+right slices the notes under a short drag, and Alt (Option on macOS) with the right button held plays the clip from the point under the pointer; duplicate is **Ctrl+D** |
 
 Every behaviour that differs between the presets is a **workflow setting** of its own, a row in
-Settings › Clip editor › Workflow and an entry in the toolbar's workflow menu: **Click on empty
+Settings › Keys › Mouse and key behaviour and an entry in the toolbar's workflow menu: **Click on empty
 grid**, **Right click on a note**, **Shift+right drag**, **Alt+right button**, **Duplicate key**,
 **Double-click on empty grid** and **Double-click on a note**. Changing one makes the mode
 **Custom** and keeps the others; choosing a preset again fills them all in. They are kept in
@@ -93,7 +93,7 @@ status bar.
 
 | Action | Keys |
 |---|---|
-| Play or stop (`transport.toggle`; Play starts from the play start marker or the selected clip, as Settings › Transport › Play from says; Stop goes back to the marker or stays, as Settings › Transport › Stop says) | Space |
+| Play or stop (`transport.toggle`; Play starts from the play start marker or the selected clip, as Settings › Arrangement › Time and play › Play from says; Stop goes back to the marker or stays, as Settings › Arrangement › Time and play › Playhead after Stop says) | Space |
 | Play from the start of the clip selected in the Arrangement view, whatever the setting (`transport.playFromSelection`; from the marker when no clip is selected) | Shift+Space |
 | Switch between Launcher and Arrangement (`view.toggle`) | Tab |
 | Show or hide the detail area (`view.detail`) | Shift+Tab |

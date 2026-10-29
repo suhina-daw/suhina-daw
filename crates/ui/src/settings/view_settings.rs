@@ -150,7 +150,7 @@ pub struct ViewSettings {
     /// Ctrl+drag over a clip selects time; off (the default), a drag from a clip's upper half
     /// does.
     pub time_select_ctrl: bool,
-    /// Mirror: a clip's lower half moves it and its upper half selects time; off (the
+    /// Lower half: a clip's lower half moves it and its upper half selects time; off (the
     /// default), its name bar moves it and its body selects time.
     pub clip_halves: bool,
     /// The grid shows through the clips in the Arrangement view (on by default).

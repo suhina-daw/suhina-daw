@@ -24,6 +24,7 @@ use suhina_device_api::{
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::lfo::{Shape, wander, wave};
+use suhina_dsp::sync::{LfoClock, RateMode};
 use suhina_dsp::{Biquad, Coefficients, DelayLine, OnePole, Smoother, time_constant};
 
 /// Ramp for feedback, mix, freeze and filter changes.
@@ -156,7 +157,7 @@ const fn names<const N: usize>(table: [(&'static str, f64); N]) -> [&'static str
 /// How the delay time can follow a change, in [`Transition`] order.
 const TRANSITIONS: [&str; 3] = ["Repitch", "Fade", "Jump"];
 /// How the LFO's speed can be set.
-const LFO_MODES: [&str; 6] = ["Rate", "Time", "Synced", "Triplet", "Dotted", "Sixteenths"];
+const LFO_MODES: [&str; 6] = RateMode::NAMES;
 /// The LFO's waveforms.
 const LFO_SHAPES: [&str; 7] = ["Sine", "Triangle", "Ramp Up", "Ramp Down", "Square", "Sample and Hold", "Wander"];
 
@@ -565,20 +566,14 @@ impl Delay {
     /// The LFO's length of one cycle in beats when it follows the tempo, or `None` when it runs in
     /// hertz or seconds.
     fn lfo_beats(&self) -> Option<f64> {
-        let synced = || SYNCED_RATES.get(self.value(param::LFO_SYNCED) as usize).map_or(4.0, |r| r.1 * 4.0);
-        match self.value(param::LFO_MODE) as usize {
-            2 => Some(synced()),
-            3 => Some(synced() * 2.0 / 3.0),
-            4 => Some(synced() * 1.5),
-            5 => Some(self.value(param::LFO_SIXTEENTHS) * 0.25),
-            _ => None,
-        }
+        let synced = SYNCED_RATES.get(self.value(param::LFO_SYNCED) as usize).map_or(4.0, |r| r.1 * 4.0);
+        RateMode::from_value(self.value(param::LFO_MODE)).cycle_beats(synced, self.value(param::LFO_SIXTEENTHS))
     }
 
     /// The LFO's speed in hertz when it runs free of the tempo.
     fn lfo_hertz(&self) -> f64 {
-        match self.value(param::LFO_MODE) as usize {
-            1 => 1.0 / self.value(param::LFO_TIME).max(1e-3),
+        match RateMode::from_value(self.value(param::LFO_MODE)) {
+            RateMode::Time => 1.0 / self.value(param::LFO_TIME).max(1e-3),
             _ => self.value(param::LFO_RATE),
         }
     }
@@ -659,11 +654,10 @@ impl Device for Delay {
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         let sr = self.sample_rate;
         let tempo = context.tempo_or_default();
-        let beats_per_frame = tempo / 60.0 / sr;
-        let lfo_beats = self.lfo_beats();
+        let clock =
+            LfoClock::new(tempo, sr, self.lfo_beats(), self.lfo_hertz()).following(context.playing, context.beat);
         let lfo_wave = self.lfo();
-        let follows_song = lfo_beats.is_some() && context.playing && context.beat.is_finite();
-        let cycles_per_frame = lfo_beats.map_or(self.lfo_hertz() / sr, |beats| beats_per_frame / beats.max(1e-6));
+        let cycles_per_frame = clock.cycles_per_frame();
         let bases = [self.base_seconds(false, tempo) * sr, self.base_seconds(true, tempo) * sr];
         let transition = self.transition();
         let ping_pong = self.on(param::PING_PONG);
@@ -671,10 +665,7 @@ impl Device for Delay {
         let mut law = MixLaw::new();
 
         for (n, frame) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
-            let cycles = match lfo_beats {
-                Some(beats) if follows_song => (context.beat + n as f64 * beats_per_frame) / beats.max(1e-6),
-                _ => self.lfo_cycles as f64 + self.lfo_phase,
-            };
+            let cycles = clock.song_cycles(n).unwrap_or(self.lfo_cycles as f64 + self.lfo_phase);
             let raw = lfo_wave.at(cycles);
             if self.fresh {
                 self.lfo_edge.reset(raw);
@@ -718,7 +709,7 @@ impl Device for Delay {
 
             self.fresh = false;
             self.frame = self.frame.wrapping_add(1);
-            if follows_song {
+            if clock.follows_song() {
                 // Carry the song's position over, so stopping the transport runs on from here.
                 let next = cycles + cycles_per_frame;
                 if next.is_finite() {

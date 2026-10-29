@@ -18,6 +18,7 @@ use suhina_device_api::{
     check_sample_rate,
 };
 use suhina_dsp::lfo::{Shape, wave};
+use suhina_dsp::sync::LfoClock;
 use suhina_dsp::{OnePole, Smoother};
 
 /// Ramp for changes of the amount.
@@ -183,20 +184,19 @@ impl Device for AutoPan {
     }
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        let tempo = context.tempo_or_default();
-        let beats_per_frame = tempo / 60.0 / self.sample_rate;
         let synced = self.value(param::SYNC) >= 0.5;
-        let follows_song = synced && context.playing && context.beat.is_finite();
-        let cycles_per_frame =
-            if synced { beats_per_frame / self.synced_beats() } else { self.value(param::RATE) / self.sample_rate };
+        let clock = LfoClock::new(
+            context.tempo_or_default(),
+            self.sample_rate,
+            synced.then(|| self.synced_beats()),
+            self.value(param::RATE),
+        )
+        .following(context.playing, context.beat);
+        let cycles_per_frame = clock.cycles_per_frame();
         let (shape, offset, phase) = (self.shape(), self.value(param::OFFSET), self.value(param::PHASE));
 
         for (n, [left, right]) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
-            let position = if follows_song {
-                (context.beat + n as f64 * beats_per_frame) / self.synced_beats()
-            } else {
-                self.free_cycles as f64 + self.free_phase
-            };
+            let position = clock.song_cycles(n).unwrap_or(self.free_cycles as f64 + self.free_phase);
             let amount = f64::from(self.amount.next_value());
             let targets = [
                 1.0 - amount * self.depth(shape, position + offset),
@@ -212,7 +212,7 @@ impl Device for AutoPan {
             *left *= edge_left.process(targets[0]) as f32;
             *right *= edge_right.process(targets[1]) as f32;
 
-            if !follows_song {
+            if !clock.follows_song() {
                 self.free_phase += cycles_per_frame;
                 if self.free_phase >= 1.0 {
                     self.free_cycles = self.free_cycles.wrapping_add(self.free_phase as u64) % (1 << 32);

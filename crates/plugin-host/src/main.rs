@@ -30,9 +30,13 @@ mod ara;
     clippy::all,
     clippy::pedantic
 )]
+// The ARA headers pack structs to 1 byte on x86 and to 8 on ARM: each CPU has bindings of its own.
+#[cfg_attr(target_arch = "aarch64", path = "ara_sys/arm.rs")]
+#[cfg_attr(not(target_arch = "aarch64"), path = "ara_sys/x86.rs")]
 mod ara_sys;
 mod audio;
 mod clap;
+mod param_notes;
 mod processors;
 mod run_loop;
 mod test_clap;
@@ -403,11 +407,14 @@ impl Loaded {
         }
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) -> Vec<(u32, f64)> {
         match self {
+            // What a CLAP plug-in changed itself comes out with the blocks as output parameter
+            // events, which its audio thread hands over here; its listing still read its values
+            // again as they stand.
             Self::Clap(plugin) => plugin.tick(),
             Self::Vst3(plugin) => plugin.tick(),
-            Self::Test { .. } => {}
+            Self::Test { .. } => Vec::new(),
         }
     }
 
@@ -694,7 +701,9 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
             last_memory = Instant::now();
         }
         for (instance, loaded) in &mut instances {
-            loaded.tick();
+            for (id, value) in loaded.tick() {
+                send(&mut writer, &Message::ParamChanged { instance: *instance, id, value })?;
+            }
             for (region, notes, truncated) in loaded.take_ara_notes() {
                 send(&mut writer, &Message::AraNotes { instance: *instance, region, notes, truncated })?;
             }
@@ -764,7 +773,7 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
         if suhina_plugins::trace::on() {
             suhina_plugins::trace!("host gets {}", traced(&message, 400));
         }
-        if let Some(reply) = answer(&mut instances, message) {
+        if let Some(reply) = answer(&mut instances, &writer, message) {
             send(&mut writer, &reply)?;
         }
     }
@@ -777,8 +786,8 @@ fn run(address: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// The reply to one message from the engine (anything but `quit`); `None` for a message that
-/// takes no reply (`place_editor`).
-fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
+/// takes no reply (`place_editor`). `writer` is the connection the unasked messages go out on.
+fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Message) -> Option<Message> {
     let failed = |instance: u32, message: String| Message::Error { instance: Some(instance), message };
     let missing = |instance: u32| Message::Error { instance: Some(instance), message: "no such instance".into() };
     Some(match message {
@@ -801,9 +810,17 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
             }
         }
         Message::Unload { instance } => {
-            if let Some(loaded) = instances.remove(&instance) {
+            if let Some(mut loaded) = instances.remove(&instance) {
                 let began = std::time::Instant::now();
                 suhina_plugins::trace!("host unloads {instance}");
+                // What its audio thread took in but the session has not heard of yet goes out
+                // first, so an edit made just before the unload is not lost with the plug-in.
+                // A write that fails here is the connection ending; the loop's next send says
+                // so.
+                let mut writer = writer.clone();
+                for (id, value) in loaded.tick() {
+                    let _ = send(&mut writer, &Message::ParamChanged { instance, id, value });
+                }
                 loaded.unload();
                 suhina_plugins::trace!("host unloaded {instance} in {:?}", began.elapsed());
             }

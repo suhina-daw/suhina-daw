@@ -324,7 +324,7 @@ pub struct ArrangementViewState {
     /// too, but play starts where it was clicked, as the insert marker shows.
     pub picked_whole: bool,
     /// A clip moves by its name bar and selects time from its body (the default); off
-    /// (Mirror), its lower half moves it and its upper half selects time.
+    /// (Lower half), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
     /// The grid's lines show through the clips' bodies, faintly (Settings › Arrangement ›
     /// TimelineGrid in clips; on by default).
@@ -500,6 +500,14 @@ impl ArrangementViewState {
     }
 
     /// Selects every clip in `keys`, as Ctrl+A does.
+    /// Gives `key`, one of the picked clips, the piano roll's focus: it is the clip shown and
+    /// edited, the others staying picked (#1054).
+    pub fn focus_clip(&mut self, key: (TrackId, ClipId)) {
+        if self.selected.contains(&key) {
+            self.anchor = Some(key);
+        }
+    }
+
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
         self.track_focus = false;
         self.picked_whole = true;

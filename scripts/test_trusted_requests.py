@@ -42,6 +42,7 @@ const core = {setOutput: (k,v) => outputs[k]=v, info: () => {}};
 process.env.MAINTAINERS = input.maintainers ?? 'Maintainer';
 process.env.TRUSTED_CONTRIBUTORS = input.trusted ?? 'other, @TRUSTED';
 process.env.REQUEST = JSON.stringify(input.request || {command:'close',actor:'Trusted',comment:12,number:4});
+process.env.BUILD_REUSE = JSON.stringify(input.reuse || {});
 const comments = (input.comments || []).map(c => ({user:bot, ...c}));
 const record = name => async args => { calls.push({name,args}); return {data:{number:99}}; };
 const github = {rest:{issues:{
@@ -193,6 +194,24 @@ class TrustedRequests(unittest.TestCase):
         self.assertEqual(self.act(request=request,pr={'state':'closed'})['calls'], [])
         old = {'body':'<!-- trusted-build '+ 'b'*40 +' Trusted 12 -->'}
         self.assertEqual(self.act(request=request,comments=[old])['calls'], [])
+
+    def test_repeated_build_request_reuses_ready_or_running_build(self):
+        request = {'command':'test-build','actor':'Trusted','comment':12,'number':4,'sha':'a'*40}
+        for state in ['ready', 'running', 'requested']:
+            with self.subTest(state=state):
+                reuse = {'head':'a'*40, 'source':'a'*40, 'state':state,
+                         'url':'https://github.com/owner/repo/actions/runs/123'}
+                result = self.act(request=request, reuse=reuse)
+                self.assertIsNone(result['error'])
+                self.assertEqual([c['name'] for c in result['calls']], ['comment'])
+                self.assertIn(reuse['url'], result['calls'][0]['args']['body'])
+                self.assertNotIn('<!-- trusted-build ', result['calls'][0]['args']['body'])
+
+    def test_reuse_never_borrows_another_heads_result(self):
+        request = {'command':'test-build','actor':'Trusted','comment':12,'number':4,'sha':'a'*40}
+        result = self.act(request=request, reuse={'head':'b'*40, 'state':'ready'})
+        self.assertIsNotNone(result['error'])
+        self.assertEqual(result['calls'], [])
 
     def test_build_proof_in_both_workflows(self):
         sources = [script('test-build.yml','- name: Authorize the labelled commit'),

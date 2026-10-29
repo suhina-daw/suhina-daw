@@ -248,8 +248,11 @@ pub fn show(
     state.view_width = grid_rect.width();
     let rows_height = rows.len() as f32 * state.key_height;
     state.scroll.y = state.scroll.y.clamp(0.0, (rows_height - grid_rect.height()).max(0.0));
+    // The view goes on past the clip over the ghost notes, so the other picked clips' notes can
+    // be reached (#1054).
+    let ghosts_end = clip.ghosts.notes.iter().map(|n| n.start + n.length).fold(0.0, f64::max);
     let most = crate::arrangement::arrangement_view::most_scroll_x(
-        clip.length + clip.bar_beats * 4.0,
+        clip.length.max(ghosts_end) + clip.bar_beats * 4.0,
         state.zoom_reach,
         state.beat_width,
         grid_rect.width(),

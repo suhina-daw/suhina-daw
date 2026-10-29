@@ -10,7 +10,7 @@ Use this guide when creating, editing, explaining or sharing a theme, including 
 asking an AI assistant to modify one. Inspect the supplied files before making changes.
 
 The themes folder is `themes` in Suhina's data folder (`%APPDATA%\Suhina\data` on
-Windows) unless you choose another: **Settings › Theme › Themes folder** (Browse, or empty for
+Windows) unless you choose another: **Settings › Themes › Themes folder** (Browse, or empty for
 the default), the `SUHINA_THEMES` environment variable (which wins over the setting), or
 `suhina --data-dir <folder>` / `SUHINA_DATA`, which moves all of Suhina's data for a portable
 or test install. Programs installed from the Microsoft Store (MSIX), such as some editors and
@@ -752,7 +752,7 @@ control with no room left is not drawn, without a notice: check narrow tracks an
 - **MIDI tools:** `.midi-tools { --suhina-gap: 2px }` and `.midi-tools .button { height }`.
 - **Low tracks:** `.arrangement { --suhina-compact-below: 48px }`: a track lower than that keeps
   Suhina's own header layout instead of the placements, so nothing overlaps.
-- **Settings folder:** Settings › General › Projects › Settings folder moves all of Suhina's
+- **Settings folder:** Settings › Projects and backups › Projects › Settings folder moves all of Suhina's
   data. Changing it or the themes folder asks first, backs the files up beside the old folder
   and moves them.
 - **A copy of a theme** says how many placed controls it keeps in its `layout.css`.

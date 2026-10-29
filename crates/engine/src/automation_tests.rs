@@ -70,6 +70,45 @@ fn a_device_lane_moves_evenly_along_its_parameters_knob() {
     assert!((middle - want).abs() < 1e-9 && middle > -20.0, "{middle} against {want}");
 }
 
+/// A whole-number parameter takes the lane's value with its fraction cut off toward zero
+/// (`docs/spec/automation.md` › Lanes and points): not rounded, not floored.
+#[test]
+fn a_whole_number_lane_cuts_its_fraction_toward_zero() {
+    // Eight frames a beat: one frame is the measurement's 0.125-beat step.
+    let transpose = ParamInfo::integer("t", "T", (-48, 48), 0, suhina_device_api::Unit::Semitones);
+    let read = |points: &[(f64, f64)], beat: f64| {
+        let envelope = Envelope::new(&lane("t", points), 8.0, false, Position::Param(transpose)).unwrap();
+        envelope.value_at((beat * 8.0) as u64)
+    };
+    let through_zero = [(0.0, 3.0), (12.0, -3.0)];
+    // 2.94 at the first step plays 2; 0.94 at beat 4.125 plays 0, until -1.0 at beat 8.
+    let plays: Vec<f64> =
+        [0.0, 0.125, 4.0, 4.125, 6.0, 7.875, 8.0, 11.875, 12.0].iter().map(|&b| read(&through_zero, b)).collect();
+    assert_eq!(plays, [3.0, 2.0, 1.0, 0.0, 0.0, 0.0, -1.0, -2.0, -3.0]);
+    // Twice as long on 0 as on any other number less one step: 0.94 to -0.94 against 1.94 to 1.
+    let steps_on = |n: f64| (0..=96).filter(|&s| read(&through_zero, f64::from(s) / 8.0) == n).count();
+    assert_eq!((steps_on(0.0), steps_on(1.0), steps_on(-1.0)), (31, 16, 16));
+    // Nothing is rounded to the nearest: 40 to 41 stays at 40 until the last point, 41 to 40
+    // plays 40 from the first step, and 40.5 held plays 40.
+    assert_eq!(read(&[(0.0, 40.0), (8.0, 41.0)], 7.875), 40.0);
+    assert_eq!(read(&[(0.0, 40.0), (8.0, 41.0)], 8.0), 41.0);
+    assert_eq!(read(&[(0.0, 41.0), (8.0, 40.0)], 0.125), 40.0);
+    assert_eq!(read(&[(0.0, 40.0), (8.0, 40.5)], 8.0), 40.0);
+    assert_eq!(read(&[(0.0, 40.5)], 3.0), 40.0);
+
+    // What a device gets: the pitch MIDI effect's semitones, cut toward zero.
+    let device = suhina_device_registry::create("pitch").unwrap();
+    let mut lanes = DeviceLanes::none();
+    lanes.add(0, device.as_ref(), &[lane("pitch", &[(0.0, 3.0), (12.0, -3.0)])], 8.0);
+    let index = device.info().param_index("pitch").unwrap();
+    let mut got = |frame: u64| {
+        lanes.plan(Some(frame), 1);
+        lanes.changes(0, 0, 1).find(|c| c.param == index).map(|c| c.value)
+    };
+    assert_eq!(got(33), Some(0.0), "0.94 at beat 4.125 plays 0");
+    assert_eq!(got(79), Some(-1.0), "-1.94 at beat 9.875 plays -1, not -2");
+}
+
 #[test]
 fn hostile_device_lanes_stay_within_bounds() {
     let device = suhina_device_registry::create("utility").unwrap();
@@ -180,4 +219,41 @@ fn a_neutral_project_has_the_automated_mixer_parameters_at_rest() {
     let n = neutral(&project).unwrap();
     let c = &n.channels[0];
     assert_eq!((c.volume, c.pan, c.mute), (1.0, 0.5, false));
+}
+
+/// An S whose points run back, split so its halves lie outside the unit square, plays as the
+/// whole did, frame by frame; a curve whose time runs back (a hostile file) plays finite values
+/// between its points.
+#[test]
+fn a_split_s_curve_plays_as_the_whole_did() {
+    use suhina_model::automation::Curve;
+    for [x1, y1, x2, y2] in [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 1.0, 0.0]] {
+        let c = Curve { x1, y1, x2, y2 };
+        let mut whole = lane("gain", &[(0.0, -1.0), (8.0, 1.0)]);
+        whole.points[0].curve = c;
+        let mut split = whole.clone();
+        // Cut at 0.75, then the first half again at a third of it (beat 2).
+        let cut = c.split(0.75).unwrap();
+        assert!(cut.before.to_array().iter().any(|v| !(0.0..=1.0).contains(v)), "{cut:?}");
+        let again = cut.before.split(1.0 / 3.0).unwrap();
+        split.points[0].curve = again.before;
+        split
+            .points
+            .insert(1, AutomationPoint { beat: 2.0, value: -1.0 + 2.0 * cut.share * again.share, curve: again.after });
+        split.points.insert(2, AutomationPoint { beat: 6.0, value: -1.0 + 2.0 * cut.share, curve: cut.after });
+        let (old, new) = (
+            Envelope::new(&whole, 1000.0, false, Position::Value).unwrap(),
+            Envelope::new(&split, 1000.0, false, Position::Value).unwrap(),
+        );
+        for frame in 0..=8000 {
+            // Frame 4000 is the S's upright middle, where rounding alone moves the value by 1e-5.
+            let tolerance = if frame == 4000 { 1e-4 } else { 1e-9 };
+            let (a, b) = (old.value_at(frame), new.value_at(frame));
+            assert!((a - b).abs() < tolerance, "{c:?} at frame {frame}: {a} against {b}");
+        }
+    }
+    let mut hostile = lane("gain", &[(0.0, -1.0), (8.0, 1.0)]);
+    hostile.points[0].curve = Curve { x1: 1.5, y1: -0.5, x2: -0.5, y2: 1.5 };
+    let envelope = Envelope::new(&hostile, 1000.0, false, Position::Value).unwrap();
+    assert!((0..=8000).all(|f| (-1.0..=1.0).contains(&envelope.value_at(f))));
 }

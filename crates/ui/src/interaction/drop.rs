@@ -156,8 +156,11 @@ pub enum DropTarget {
     Lane { track: TrackId, beat: f64 },
     /// A clip slot (scene from 0).
     Slot { track: TrackId, scene: usize },
-    /// A track as a whole: its header, or the detail area showing its devices.
+    /// A track as a whole: its header.
     Track(TrackId),
+    /// The detail area showing a track's devices: a sample dropped there on a MIDI track with no
+    /// devices becomes a Sampler playing it; elsewhere it is a clip.
+    Chain(TrackId),
     /// The empty space after the tracks: new tracks, at a beat (Arrangement) or from a scene
     /// (Session).
     NewTracks { beat: Option<f64>, scene: Option<usize> },
@@ -290,7 +293,7 @@ pub fn plan(
                 params["scene"] = json!(scene + 1);
                 label.push(spread(&count, files.len(), separate, &track_name(track)));
             }
-            DropTarget::Track(_) | DropTarget::Sampler { .. } => return None,
+            DropTarget::Track(_) | DropTarget::Chain(_) | DropTarget::Sampler { .. } => return None,
             DropTarget::NewTracks { beat, scene } => {
                 match (beat, scene) {
                     (_, Some(scene)) => params["scene"] = json!(scene + 1),
@@ -339,6 +342,7 @@ pub fn plan(
             DropTarget::Lane { track, .. }
             | DropTarget::Slot { track, .. }
             | DropTarget::Track(track)
+            | DropTarget::Chain(track)
             | DropTarget::Sampler { track, .. } => {
                 params["track"] = json!(track.0);
                 commands.push((id, params));

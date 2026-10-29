@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-10-26
+last_verified: 2026-10-28
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -536,10 +536,14 @@ implements what the bundled themes and the editor's examples use:
   `prefers-color-scheme` and `prefers-reduced-motion`, custom properties with fallbacks,
   `inherit`/`initial`/`unset`, specificity and source order.
 - **Selectors:** type, `#id`, `.class`, `*`, descendant, `>`, `+`, `~`, `:is()`, `:not()`,
-  `:where()`, structural pseudo-classes, the native states, and `[data-object]` /
-  `[data-object=name]` for named project objects.
+  `:where()`, structural pseudo-classes, the native states, and attribute selectors on the
+  attributes the host gives an element: `[name]`, `[name=value]`, `~=`, `|=`, `^=`, `$=`,
+  `*=` and the `i` flag. `[data-object]` / `[data-object=name]` select named project objects.
 - **Values:** hex, `rgb()`, `hsl()`, named colours, `color-mix()` in srgb, srgb-linear,
-  oklab, hsl and oklch (shorter hue arc); `calc()`, `min()`, `max()`, `clamp()` of one
+  oklab, hsl and oklch (shorter hue arc); `contrast-color()` (white or black, whichever
+  contrasts more); `attr(name type(<color>), fallback)` reading the element's own attribute,
+  which a custom property passes on to its children (`--track: attr(color type(<color>))`);
+  `calc()`, `min()`, `max()`, `clamp()` of one
   unit; `px`, `em`, `%`, `fr` and viewport units (`vw`, `vh`, `vmin`, `vmax`).
 - **Paint:** colours, opacity, radii (the top-left radius is drawn), the `background`
   shorthand, linear/radial/conic and repeating gradients in sRGB, up to 32 parsed and 4
@@ -548,6 +552,8 @@ implements what the bundled themes and the editor's examples use:
   justify/align, `grid-template-columns`/`-rows` with `minmax()` and `repeat()`,
   `grid-column`/`grid-row` lines and spans, sizes with min/max, margins (auto, negative),
   padding, gaps and `visibility`; `gap`, `padding`, `margin` and `flex` are shorthands.
+- **At-rules:** `@group-class lcd { label: "LCD display"; }` declares a toolbar group class;
+  a declared class that no `group.<class>` rule styles is reported.
 - **Motion:** `transition` (colours, opacity, radius and font size; durations, easing
   keywords, `cubic-bezier()`, `steps()`, delays) and `@keyframes` with `animation`
   (count, direction, fill, play state), interpolating colours, numbers, lengths and
@@ -734,7 +740,12 @@ Theme backups (`suhina-themes-<local date and time>.zip`) leave Suhina's own cop
 
 Before an SVG is rasterised, `var(--name)` and `var(--name, fallback)` are replaced by the
 theme's resolved root variables (its `:root` with the chosen variant above it); an unknown
-name without a fallback is left as written. The texture cache keys on the substituted
+name without a fallback is left as written. A fallback may hold brackets and further `var()`
+(`var(--x, rgb(0 0 0))`), and a value that is a colour (`color-mix()`, `contrast-color()`, a
+name) goes in as its computed `#rrggbb` or `#rrggbbaa`, since the renderer reads plain colours.
+A theme's swatch colour is resolved the same way for each variant, from the `:root` rules and
+registered initial values alone, without applying the sheet; `currentColor` and `attr()` are
+refused there. The texture cache keys on the substituted
 source, so a variant switch redraws the artwork. `<text>` renders with the bundled typefaces:
 Manrope for the default, sans-serif and serif families, IBM Plex Mono for monospace; system
 fonts are never loaded.
@@ -836,7 +847,7 @@ of bars, and a slider id per parameter.
   `--window-background` has alpha below 255; the window otherwise clears to an opaque colour and
   every fill blends. A clip's body, the focused track's lane highlight and a control's surface
   (`native_css::surface`) blend in every theme.
-- **Themes folder:** Settings › Theme › Themes folder (`themes_folder`), `SUHINA_THEMES` over
+- **Themes folder:** Settings › Themes › Themes folder (`themes_folder`), `SUHINA_THEMES` over
   it, or `--data-dir` / `SUHINA_DATA` for the whole data folder. Changing the setting reads the
   new folder at once; a folder that does not exist is not read. A theme's own folder may be a
   link to a folder (a junction on Windows); links below it are refused.

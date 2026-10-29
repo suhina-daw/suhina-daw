@@ -45,6 +45,13 @@ done
 iconutil --convert icns --output "$app/Contents/Resources/Suhina.icns" "$iconset"
 rm -rf "$(dirname "$iconset")"
 
+# Suhina › About Suhina is macOS's own panel: the icon, the name, CFBundleShortVersionString and
+# NSHumanReadableCopyright, with this file between them. It carries the whole version, as Help ›
+# About Suhina does (docs/spec/about.md).
+cat > "$app/Contents/Resources/Credits.html" <<EOF
+<p style="text-align: center; font-family: -apple-system, sans-serif; font-size: 11px">Version $version<br>GPL-3.0-or-later, free software</p>
+EOF
+
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,6 +83,8 @@ cat > "$app/Contents/Info.plist" <<EOF
 	<string>${MACOSX_DEPLOYMENT_TARGET:-11.0}</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 The Suhina contributors. GPL-3.0-or-later, free software.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Suhina records and monitors the audio inputs of its tracks.</string>
 </dict>

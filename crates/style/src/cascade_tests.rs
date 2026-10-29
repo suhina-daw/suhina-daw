@@ -231,3 +231,76 @@ fn a_host_variable_is_inherited_and_a_rule_may_replace_it() {
     .unwrap();
     assert_eq!(styles[1].get(Property::Color), Value::Color(crate::value::Color::Rgba([0xff, 0x88, 0, 0xff])));
 }
+
+#[test]
+fn attr_colours_a_track_and_its_children_through_a_variable() {
+    let sheet = Sheet::parse(
+        "track-header { --track: attr(color type(<color>)); \
+           background-color: color-mix(in srgb, attr(color type(<color>)), black 50%); \
+           color: contrast-color(attr(color type(<color>))); } \
+         track-name { border-color: var(--track); } \
+         clip { border-color: attr(color type(<color>), #00ff00); } \
+         sample-point[kind='kick'] { color: red; }",
+    )
+    .unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+    let tree = Tree::new(vec![
+        Element::new("window", None),
+        Element::new("track-header", Some(0)).with_attribute("color", "#ffff00"),
+        Element::new("track-name", Some(1)),
+        Element::new("track-header", Some(0)).with_attribute("color", "not a colour"),
+        Element::new("track-name", Some(3)),
+        Element::new("clip", Some(0)),
+        Element::new("sample-point", Some(0)).with_attribute("kind", "kick"),
+    ])
+    .unwrap();
+    let styles =
+        compute(&tree, viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }]).unwrap();
+    let rgba = |rgba| Value::Color(Color::Rgba(rgba));
+    assert_eq!(styles[1].get(Property::BackgroundColor), rgba([128, 128, 0, 255]));
+    assert_eq!(styles[1].get(Property::Color), rgba([0, 0, 0, 255]));
+    // A child reads its parent's attribute only through the variable the parent set.
+    assert_eq!(styles[2].get(Property::BorderColor), rgba([255, 255, 0, 255]));
+    assert_eq!(styles[2].variable("--track"), Some("#ffff00"));
+    // An attribute that is not a colour leaves the declarations that read it invalid.
+    assert_eq!(styles[3].get(Property::BackgroundColor), Property::BackgroundColor.initial());
+    assert_eq!(styles[4].variable("--track"), None);
+    assert_eq!(styles[5].get(Property::BorderColor), rgba([0, 255, 0, 255]));
+    assert_eq!(styles[6].get(Property::Color), rgba([255, 0, 0, 255]));
+    let checked =
+        compute_checked(&tree, viewport(800.0), &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }]);
+    assert!(checked.is_err());
+}
+
+#[test]
+fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
+    let theme = Sheet::parse(
+        "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \
+         :root { --background: #000000; --ink: currentColor; --tag: attr(color type(<color>), red); } \
+         window { --background: #ffffff; } \
+         @media (max-width: 500px) { :root { --background: #222222; } }",
+    )
+    .unwrap();
+    assert!(theme.notices.is_empty(), "{:?}", theme.notices);
+    let light = Sheet::parse(":root { --background: #ffffff; --accent: #ff0000; }").unwrap();
+    let wrong = Sheet::parse(":root { --accent: 12px; }").unwrap();
+    let swatch = "color-mix(in srgb, var(--background), var(--accent) 50%)";
+    let with = |variant: Option<&Sheet>, width: f32, value: &str| {
+        let mut sheets = vec![AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }];
+        sheets.extend(variant.map(|sheet| AppliedSheet { sheet, layer: Layer::Variant, root: None }));
+        resolve_color(value, viewport(width), &sheets)
+    };
+    assert_eq!(with(None, 800.0, swatch), Ok([0, 0, 128, 255]));
+    assert_eq!(with(None, 400.0, swatch), Ok([17, 17, 145, 255]));
+    assert_eq!(with(Some(&light), 800.0, swatch), Ok([255, 128, 128, 255]));
+    // A variant's value that does not match the registered syntax falls back to the initial value.
+    assert_eq!(with(Some(&wrong), 800.0, "var(--accent)"), Ok([0, 0, 255, 255]));
+    assert_eq!(with(None, 800.0, "contrast-color(var(--background))"), Ok([255, 255, 255, 255]));
+    for refused in ["currentColor", "var(--ink)", "attr(color type(<color>))", "var(--tag)", "var(--missing)", "12px"] {
+        assert!(with(None, 800.0, refused).is_err(), "{refused}");
+    }
+    let variables =
+        root_variables(viewport(800.0), &[AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }]).unwrap();
+    assert_eq!(variables.get("--background").map(String::as_str), Some("#000000"));
+    assert!(!variables.contains_key("--tag"));
+}

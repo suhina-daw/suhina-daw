@@ -44,7 +44,7 @@ fn the_volume_follows_its_lane() {
     let out = render_offline(&p, SR, 512).unwrap();
     // Evenly along the fader, from its bottom to 0 dB at 0.85 of it. The sine peaks at a
     // quarter: within half a percent of it everywhere.
-    use suhina_model::automation::{Taper, VolumeTaper, shape};
+    use suhina_model::automation::{Curve, Taper, VolumeTaper};
     let fader = |share: f64| VolumeTaper.value(0.85 * share.clamp(0.0, 1.0));
     let worst = off_by(&out[..plain.len()], &plain, |beat| (fader(beat / 4.0), fader(beat / 4.0)));
     assert!(worst < 0.25 * 0.005, "{worst}");
@@ -52,12 +52,12 @@ fn the_volume_follows_its_lane() {
     assert!(fader(0.25) < 0.05);
     // A curve bends the rise, in the fader's position.
     let mut bent = p.clone();
-    bent.channels[0].automation[0].points[0].curve = -1.0;
+    bent.channels[0].automation[0].points[0].curve = Curve::bend(-1.0);
     let bent = render_offline(&bent, SR, 512).unwrap();
     // Leaving out the last tenth of a beat, where a full bend rises almost straight up and the
     // gains' steps cut across it.
     let worst = off_by(&bent[..plain.len()], &plain, |beat| {
-        let v = fader(shape(beat / 4.0, -1.0));
+        let v = fader(Curve::bend(-1.0).shape(beat / 4.0));
         if (3.9..4.0).contains(&beat) { (f64::NAN, f64::NAN) } else { (v, v) }
     });
     assert!(worst < 0.25 * 0.01, "{worst}");
@@ -136,7 +136,7 @@ fn automation_sounds_the_same_in_any_block_size() {
         vec![lane("volume", &[(0.0, 1.0), (3.1, 0.2)]), lane("pan", &[(0.5, 0.7), (2.0, -0.4)])],
         vec![utility],
     );
-    p.channels[0].automation[0].points[0].curve = 0.6;
+    p.channels[0].automation[0].points[0].curve = suhina_model::automation::Curve::bend(0.6);
     let reference = render_offline(&p, SR, 512).unwrap();
     for size in [1, 64, 333, 4_096] {
         let other = render_offline(&p, SR, size).unwrap();

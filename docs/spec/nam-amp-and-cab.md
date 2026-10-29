@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-10-20
+last_verified: 2026-10-24
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
@@ -178,8 +178,8 @@ Projects folder row (a field on the right, the default shown when the setting is
 
 | Section | Row | Note | Key |
 |---|---|---|---|
-| NAM | **NAM models folder** | Where the Amp Modeler lists .nam models | `nam_models_folder` |
-| NAM | **IR folder** | Where the Cab Loader lists .wav impulse responses | `irs_folder` |
+| NAM | **Amp models folder** | The folder the NAM Amp Modeler lists its amp models from | `nam_models_folder` |
+| NAM | **Cabinet sounds folder** | The folder the NAM Cab Loader lists its speaker cabinet recordings from | `irs_folder` |
 
 - **Defaults:** `Suhina/NAM models` and `Suhina/IRs` in the user's documents folder — beside the
   default Projects and Templates folders, with the same old-folder fallback. The desktop app

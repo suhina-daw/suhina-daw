@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-10-28
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -35,52 +35,67 @@ have no opaque background: only selected/hovered rows add a translucent tint.
 
 ## Sources
 
-Suhina's own layout: no other program was observed for it. The grouping follows what the user is
-doing when they look for a setting (setting up audio, editing in the piano roll, browsing
-samples), not which part of the code reads it.
+Suhina's own layout, shaped by public design guidance on settings screens (Apple's and Microsoft's
+settings guidelines, and articles on settings UX; the wording rule in *Adding a setting* follows [Microsoft's guidelines for app settings](https://learn.microsoft.com/windows/apps/design/app-settings/guidelines-for-app-settings) and [Toptal's settings UX article](https://www.toptal.com/designers/ux/settings-ux)) and by how three other programs arrange theirs,
+all summarised in [#868](https://github.com/suhina-daw/suhina-daw/issues/868) in our own words: group by what the
+user is doing, small groups, the most used first, no status or commands among settings, a change
+applies at once. The grouping follows what the user is doing when they look for a setting (setting
+up audio, editing clips, browsing samples), not which part of the code reads it.
 
-## Pages and sections
+## Pages and groups
 
-The list on the left shows the pages in this order. Each page has headed sections; every setting
-is on exactly one page, under one heading.
+The list on the left shows the pages in this order. Each page has headed groups; every setting is
+on exactly one page, under one heading. A group that holds rarely changed settings is called
+**Advanced**, comes last on its page and is folded until its heading is clicked (a search shows
+what is inside it).
 
-| Page | Section | Settings |
+| Page | Group | Settings |
 |---|---|---|
-| General | Projects | When opening a project, At start, Projects folder, Templates folder, Start template (shown with At start › Template) |
-| General | NAM | NAM models folder, IR folder — where the two NAM devices' dropdowns list their files ([nam spec](nam-amp-and-cab.md) › Folders) |
-| General | Backups | Backups, Clean up backups, Last backup (read only) |
-| General | Agents | Let agents work on open projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
-| General | Dropping files | Several files, Warp mode |
-| General | Updates | Check for updates, Channel (Test builds only in developer mode), Developer mode ([spec](updates.md)) |
-| Export | MCP write permissions | Allow the project's folder (on by default, with the active folder shown), MCP allowed write folders (Add folder… and Remove); all grants include subfolders |
-| Audio | Output | Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
-| Audio | Cue | Cue output, Cue volume |
-| Audio | Now | Output, Latency, Key to sound, Input now (read only), List devices again |
-| MIDI | MIDI inputs | Each MIDI input port, On or Off |
-| MIDI | Arming | Auto-arm the selected track, On or Off (Off by default) |
-| Plug-ins | Editors | Editors (Window, Device view) |
-| Plug-ins | Library | Folders (each on or off, with its format; add with a format, remove), Scan and Rescan all with a count of what was found, Plug-in manager (opens the [plug-in manager](plugin-manager.md)) |
-| Arrangement | Clips | Allow sample stacking, Allow MIDI stacking, Waveform and note colour (Auto, Light, Dark, Custom), Custom waveform and note colour, Audio clip colour strength |
-| Arrangement | Tracks | Track headers, Track header colour strength, Return tracks, Returns in new projects (A and B, or None, #898) |
-| Arrangement | Track sizes | Default track size, Default return size, Advanced track sizes, Tiny height, Compact height, Small height, Medium height, Large height |
-| Arrangement | Tools | Toolbar (On or Off, Off by default, #991) |
+| Projects and backups | Projects | Open projects in, Startup project, Projects folder, Templates folder, Settings folder (used from the next start; changing it asks, backs up and moves the files), Startup template (shown with Startup project › Template) |
+| Projects and backups | Backups | Backup interval (the note names the newest backup of the active project), Delete old backups |
+| Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, List devices again (a panel, not a setting) |
+| Audio | Output | Audio device: Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input |
+| Audio | Cue | Headphone output: Cue output, Cue volume |
+| MIDI | MIDI inputs | Each MIDI input port, on or off |
+| MIDI | Arming | Arm selected track |
+| Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
+| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, remove) |
+| Plug-ins | Editors | Plug-in editors open in (Window, Device view) |
+| Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
+| Devices | Device panels | Device chain layout, Detail area width |
+| Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
+| Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
+| Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
+| Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
+| Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Copy names, Alt+wheel changes the height of |
+| Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
 | Arrangement | Automation | A click anywhere adds a point (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere) |
-| Launcher and mixer | Launching | Select on launch |
-| Launcher and mixer | Mixer | Mixer controls |
-| Clip editor | Piano roll | Pulled to the top, Piano roll grid, Toolbar size |
-| Clip editor | Mouse | Left click draws, Right click deletes a note, Shift+right click splits, Alt+right plays from the point |
-| Transport | Play and stop | Play from, Stop |
-| Detail area | Devices | Device chain |
-| Browser | Browser | Browser side |
-| Browser | Previews | Auto-play, Preview volume |
-| Browser | Sample map | Map layout, Map preview on hover, Map: longest sample, Map labels |
-| Browser | Tags | Tag limit |
-| Appearance | Liquid (experimental) | Panel liquid, Track liquid, Clip liquid: independent 0–100% strengths, 0% off |
-| Appearance | Window | Zoom, Animations |
+| Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
+| Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights |
+| Launcher and mixer | Launching | Select launched clip |
+| Launcher and mixer | Mixer | Mixer control style |
+| Clip editor | Piano roll | Full-height piano roll covers, Piano roll grid source, Piano roll toolbar size, Moved notes replace notes |
+| Browser | Browser | Browser side, Recent item kinds layout, Samples dropped on a folder |
+| Browser | Previews | Preview selected file, Preview volume |
+| Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
+| Browser | Tags | Colour tag limit |
+| Keys | Mouse and key behaviour | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
+| Keys | Shortcuts | The preset, every action's keys, Reset all |
+| Appearance | Window | Window zoom, Animations, Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
-| Appearance | Graphics | Renderer |
-| Themes (under Appearance) | Theme | Two-column preview gallery; click applies immediately; Edit current theme opens grouped colours |
-| Shortcuts | Keys | The preset, every action's keys, Reset all |
+| Appearance | Background | Background image, Surface opacity, Background blur |
+| Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |
+| Appearance | Advanced | Graphics renderer, Panel liquid, Track liquid, Clip liquid (experimental) |
+| Themes | Theme | The themes, their variants, the theme in use and its settings; Edit current theme |
+| Themes | Folder | Themes folder (changing it asks, backs up and moves the themes) |
+| Agents and updates | Agents | AI agents edit projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
+| Agents and updates | MCP write permissions | Project folder for agents (on by default, with the active folder shown), More agent write folders (Add folder… and Remove); all grants include subfolders |
+| Agents and updates | Updates | Check for updates, Update source (Test builds only in developer mode) ([spec](updates.md)) |
+| Agents and updates | Advanced | Developer mode |
+
+The Settings window opens on the page used last in the session. Descriptions are shown whole: they
+wrap under the setting's name. A yes/no setting is a switch; a choice of up to five is a row of
+option buttons, each as wide as its text needs; more than five is a drop-down.
 
 Where a setting is shown never changes how it is saved: each keeps the key it has in
 `settings.json` (or `keymap.json` for keys and the mouse switches), so a settings file written
@@ -206,7 +221,7 @@ setting matches when every word typed is in its name, its note, its section or i
 does not matter). While the field has text, the page shows only the matching settings, from
 every page, under headings that name the page and section ("Browser › Previews"), and no page
 in the list is lit; "No setting matches" when none does. Clicking a page empties the field and
-shows that page; Escape in the field empties it (a second Escape closes Settings).
+shows that page; Escape in the field empties it (a second Escape closes Settings). Advanced groups are searched while folded.
 
 ## The table
 
@@ -218,19 +233,63 @@ few are a block that draws several rows or a list (the audio output, the themes,
 Adding a setting to the window is adding its entry under its section; moving one is changing its
 page and section. Tests check that every saved setting is on exactly one page.
 
+## Adding a setting
+
+The pages stay tidy only if each new setting follows these rules; a test in `settings_rows.rs`
+checks the ones a machine can check and names this section when one fails.
+
+1. **Pick the page by task**, from the table above: the page where someone doing that task would
+   look. Do not add to a page because the code that reads the setting is near it. A new kind of task
+   gets a new page, added to `Page::ALL` and to this table.
+2. **Keep groups small:** at most seven entries in a group outside Advanced. Start a new group
+   (with a heading that names the sub-task) rather than extending a full one. Rare or expert
+   settings go under the page's **Advanced** group, last on the page.
+3. **Settings only.** A readout of what is happening (latency, what is playing) is a status panel
+   first on its page (`.status()`); buttons that do something once (Scan) are a row of actions
+   first on its page (`.actions()`). Neither sits among the settings.
+4. **Two columns, words a newcomer reads at once.** Names sit in the first column and every
+   control starts at the second (`CONTROL_COLUMN` in `settings_view.rs`), so both run straight down
+   the page; a row is its name and its control, with a second line only for what the setting
+   reports now (the last backup). The wording follows (the Microsoft and Toptal guidance in Sources: plain words that
+   say what a setting does, short, no jargon):
+   - The **name** says exactly what the setting does, in one to four words, so that with its value it
+     reads as one line (*Playhead after Stop: Marker*, *Arm selected track: on*, *Warp mode for
+     samples: Rhythmic*). A noun for a choice, what it makes happen for a switch; not a sentence cut
+     off before its buttons (*Grab a clip by*), not only the topic (*Moving clips*).
+   - The **description** is one whole sentence that says what changes when the setting is on or
+     chosen. How it is shown is chosen in **Help**, the button beside Close at the top of the window: as
+     the name's tooltip (the default), as a ? after the name to point at, or under the name. The
+     choice is kept as `setting_descriptions` (`tooltip`, `icon`, `shown`). It holds one thought: no semicolon, no second clause about the off state
+     (the switch shows that), no shortcut keys (the Keys page lists them), and it does not end with
+     a full stop.
+   - **Plain words:** the effect, not the mechanism. Not *underruns* but dropouts, not *IR* but
+     speaker cabinet recordings, not *MCP* but AI agent; a technical word may follow in the
+     setting's options or help when someone needs it. No file paths into the docs, no ADR or issue
+     numbers, no code names.
+5. **One control per kind of choice:** a switch (`cx.on_off`) for yes/no, option buttons
+   (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that
+   (`cx.choose` switches by itself). No text is cut off.
+6. **The stored key never changes** when a setting moves: it keeps its key in `settings.json`
+   (`keymap.json` for keys and the mouse switches). A new setting gets a new key, listed in the
+   entry's keys.
+7. **Application settings apart from project settings.** What belongs to one project (its tempo,
+   loop, a project's own defaults) lives with the project, not in Settings.
+8. Update the table above and `docs/guide-data/settings-help.json`, and run
+   `python scripts/settings_guide.py` for the website guide.
+
 Named row sizes and their ordering, live application and persistence are specified in
 [Arrangement editing](arrangement-editing.md#named-row-sizes). Pixel values are hidden until
-Advanced track sizes is enabled; the same bounded controls remain editable in both modes.
+Arrangement › Advanced › Exact track heights is on; the same bounded controls remain editable in both modes.
 
 Track sizes is an interdependent search group: a match on any of its settings shows the whole
-section, so searching for the default also exposes Advanced and per-size tuning. Default changes
+group and Exact track heights, so searching for the default also shows the per-size tuning. Default changes
 and tuning apply on the next frame, including while Settings is open. Changing a default replaces
 height overrides for that kind of row (regular tracks or returns); preset tuning preserves manual
 heights that do not match a named size.
 
 ## Experimental surface materials
 
-Appearance › Liquid (experimental) has three independent percentage sliders: Panel liquid,
+Appearance › Advanced has three experimental independent percentage sliders: Panel liquid,
 Track liquid and Clip liquid. All default to 0 (solid/flat), update the material on the next
 frame and persist as `liquid_panel_strength`, `liquid_track_strength` and
 `liquid_clip_strength`. Input is clamped to 100; invalid values preserve the default and
@@ -246,7 +305,7 @@ The renderer is described in [Glass rendering experiment](../design/glass-render
 
 Controls remain editable and save their values even in a host without the GPU provider.
 The theme editor explains when preview is unavailable; global controls also show this
-explanation on hover. Selecting GPU in Renderer requires restarting the app if it is
+explanation on hover. Selecting GPU in Graphics renderer requires restarting the app if it is
 currently running on OpenGL. Disabled animations or
 the built-in high-contrast theme keep the material off without erasing saved strengths.
 The feature remains experimental: full playback performance qualification is not complete.
@@ -277,21 +336,21 @@ sources keep the optical gradient/rim fallback.
 
 ### Menu bar
 
-Appearance > Menu bar in the window shows File, Edit, View, Projects, Options and Help under the
+Appearance › Window › Menu bar in window shows File, Edit, View, Projects, Options and Help under the
 title bar. It is off by default on macOS, whose menu bar at the top of the screen has the same
 menus and items, and on by default on Windows and Linux, where it is the only one. Keys work
 whether it shows or not.
 
 ### Application bar and private background
 
-Appearance > Application bar keeps Suhina visible, with Left or Centre placement.
+Appearance › Application bar keeps Suhina visible, with Left or Centre placement.
 Project name (including its unsaved marker) and project timing (tempo and time signature)
 are optional and share a separate Left/Centre position. Long names are clipped inside
 non-overlapping cells. On Windows this bar replaces native decorations; dragging, double-click
 maximise, minimise, close and all eight edge/corner resize directions remain available.
 Other platforms keep the system's title bar and show no application bar, so these settings change nothing there.
 
-Appearance > Background accepts a user-owned PNG, limited to 32 MiB and 8192 pixels per
+Appearance › Background accepts a user-owned PNG, limited to 32 MiB and 8192 pixels per
 axis. Loading and image blur run away from the UI thread; the displayed image is reduced
 to at most 1600 pixels per axis. The decoded image is cached separately from filtering. After a failed load, selecting the repaired file again with Browse retries it; ordinary frames do not retry failures.
 Only one image job runs at a time; obsolete results are discarded before publication.

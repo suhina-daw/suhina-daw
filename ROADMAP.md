@@ -96,7 +96,8 @@ exists in `devices/`, passes its tests and runs in track chains.
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
 | multi-stage saturation | own, oversampled | planned |
-| EQ, filter | own (`dsp` filters) | planned |
+| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
+| filter | own (`dsp` filters) | planned |
 | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine (32 algorithms) done; more waveforms and a filter planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
@@ -175,7 +176,7 @@ refused or suspended, never by losing its edits.
   control-group coordinates simplify panels without changing their saved format or runtime.
 
 - Every built-in effect, instrument and MIDI effect has editable controls in the device panel:
-  its layout (the Sampler's), or a parameter list generated from the device's own parameters,
+  its layout (in Rust, or as `devices/<name>/panel.json`: dials, buttons and band graphs in the compact panel, an expanded panel where a device has many parameters, and a generated list below the compact panel for parameters the compact layout does not place), or a parameter list generated from the device's own parameters,
   260 px wide and at most 168 px high, scrolling past that. Each change is `device.setParam`, so it
   is one undo step and an automation lane takes it over. Built-ins are native code with a layout
   loaded by their id, not `.sd` files ([ADR 0021](docs/decisions/0021-device-graph-files.md) ›
@@ -184,8 +185,9 @@ refused or suspended, never by losing its edits.
   built-in's layout) has a button in its header that opens it over the main area; Escape or its
   close button closes it. Both panels change the same parameters.
 - A running plug-in's device panel lists its parameters under its editor button, as a generated
-  list that sets them by id (hidden and read-only ones left out), and follows changes made in
-  its own editor every two seconds.
+  list that sets them by id (hidden and read-only ones left out), and stays in step both ways
+  with the plug-in: what was changed in its own editor becomes the device's value with the
+  next block, and the plug-in's editor follows the panel and automation.
 
 - **Sampler:** single-source polyphonic sample and granular playback with an editable
   waveform, SDK controls, browser/system sample drops and recording from the armed
@@ -231,6 +233,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
   [import](docs/spec/device-import.md))
 - the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
+- an eight-band EQ; the matching device in a Live Set comes in as it with both curves of every
+  band, its mode, Scale and Adaptive Q; its oversampling option is noted and not used
+  ([EQ](docs/spec/eq.md), [import](docs/spec/device-import.md))
 - a MIDI clip's scale (root and mode), which Pitch follows; a scale Suhina has no mode for comes
   in as none, with a warning
 - anything not understood yet is skipped with a warning; the project still opens
@@ -322,7 +327,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   critical operations (closing, quitting, relinking, adding files, loading a plug-in, deleting a
   track) or never, written on a background thread, the newest 20 kept; after a crash the
   next start offers the backup back, to open as an unsaved project tied to its file
-  (`project.autosave`, Settings › General › Backups, [spec](docs/spec/backups.md)).
+  (`project.autosave`, Settings › Projects and backups › Backups, [spec](docs/spec/backups.md)).
 - Clips, arrangement lanes and scenes have ids that stay the same when they are moved or edited and
   are never used twice; commands name a clip by its id (`clip`), so an agent's target does not move
   when other clips do, and the positional `index` is deprecated
@@ -427,7 +432,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The device panel shows each plug-in's state (loading, running, missing, crashed) with Open
   editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
   closes the shown track's plug-in's editor (the device the chain panel selects, else the
-  track's first running one; mappable, Settings › Shortcuts). Editors float
+  track's first running one; mappable, Settings › Keys). Editors float
   above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
   (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
   the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
@@ -473,7 +478,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A **splash** while Suhina starts: a 300 × 200 px panel centred in the window with the logo and
   the version, shown while the browser's library, the sample map and the project asked for start,
   then fading into the ready window ([components](docs/design/components.md#splash)).
-- **At start** (Settings › General): with no project given, Suhina opens the start panel,
+- **At start** (Settings › Projects and backups): with no project given, Suhina opens the start panel,
   a new blank project, a new one from a chosen template, or the project opened last
   ([ADR 0010](docs/decisions/0010-project-files.md)).
 - A **start panel** while no project is open: New, a template or Open, the recent projects with
@@ -494,10 +499,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   [#313](https://github.com/suhina-daw/suhina-daw/issues/313)).
 - A click on the ruler sets where playback starts (`transport.setPosition`, on the clip grid,
   Alt for free), shown as a marker; while playing, playback jumps there. Stop returns to the
-  marker, or stays where it stopped (Settings › Transport › Stop); a second Stop goes to the
+  marker, or stays where it stopped (Settings › Arrangement › Time and play › Stop); a second Stop goes to the
   beginning ([spec](docs/spec/arrangement-editing.md)).
 - **Play from the selected clip:** Shift+Space plays from the start of the clip selected in the
-  Arrangement view, and the setting Settings › Transport › Play from (**Marker** or **Selected
+  Arrangement view, and the setting Settings › Arrangement › Time and play › Play from (**Marker** or **Selected
   clip**) makes Play and Space do the same; the marker moves to the clip's start, so Stop returns
   there (`transport.play {from: "clip", track, index}`, `play <track> <i>` in
   `suhina-cli play --launcher`; [spec](docs/spec/arrangement-editing.md) › Play position).
@@ -523,7 +528,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Save as template writes a copy to the templates folder. The tab and window title mark unsaved
   changes with a dot, and closing a project, opening another in its place or quitting with
   unsaved changes asks whether to save them.
-- **MCP export permissions:** Settings › Export lists allowed write folders, including the
+- **MCP export permissions:** Settings › Agents and updates lists allowed write folders, including the
   optional project-folder grant. The person adds or revokes folders; agents cannot grant
   themselves permission. Attached exports prepare across frames and render off the window
   thread, including exports in batches.
@@ -816,7 +821,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   before anything falls back.
 - Settings › Plug-ins: the folders scanned (add with a format, remove, switch off), Scan and
   Rescan all in the background, and the plug-in manager.
-- Every key is the user's to change: Settings › Shortcuts and `keymap.json` bind any command
+- Every key is the user's to change: Settings › Keys and `keymap.json` bind any command
   that needs no parameters, the actions on the selection (copy, cut, paste, duplicate, delete,
   group) and the window's own ([shortcuts](docs/shortcuts.md)).
 - A first **piano roll** ([#200](https://github.com/suhina-daw/suhina-daw/issues/200),
@@ -854,7 +859,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   column on the left (nothing floats over the grid) and Ctrl+U still quantises at once; the key
   column plays through the track's instrument while a key is held (`preview.noteOn`,
   `preview.noteOff`), with Ctrl+click and Ctrl+drag selecting the notes of a pitch or a range of
-  them; and Settings › Shortcuts has the presets **Select-first** (Ctrl+D duplicates) and
+  them; and Settings › Keys has the presets **Select-first** (Ctrl+D duplicates) and
   **Draw-first** (Ctrl+B duplicates, a right-click in Draw and Paint deletes), kept in
   `keymap.json`.
 - **Piano roll, step 4** ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)): the toolbar
@@ -867,7 +872,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   velocity Randomise and Ramp, each one command (`note.humanize`, `.fitToScale`, `.invert`,
   `.reverse`, `.legato`, `.stretch`, `.randomizeVelocity`, `.rampVelocity`) and one undo step; the
   clip column lists what is selected (Notes "N of M", From, To, Pitch, Velocity); and
-  Settings › Shortcuts gains the **Mouse-first** preset, which gives the mouse the four jobs
+  Settings › Keys gains the **Mouse-first** preset, which gives the mouse the four jobs
   (left draws, right deletes, Shift+right slices, Alt+right plays from the point) as switches of
   their own, kept in `keymap.json`.
 - **Piano roll workflow modes** ([#490](https://github.com/suhina-daw/suhina-daw/issues/490)): a
@@ -923,7 +928,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   splitter down, by the **×** at the end of its toolbar or by **View › Hide editor**
   (Ctrl+Shift+E), and selecting a clip opens it again. A click on an empty spot of the Arrangement
   view clears the clip selection, and a lane pulled up with the piano roll shows its clip's notes.
-- A **detail area** under the view (or a column beside it, Settings › Detail area) shows the selected
+- A **detail area** under the view (or a column beside it, Settings › Devices › Device panels) shows the selected
   clip's properties or the selected track's devices with their parameters, and each plug-in's
   state with a button that opens its editor or restarts it; Shift+Tab hides it.
   Every change from it is a device command (`device.add`, `device.remove`, `device.setParam`, …).

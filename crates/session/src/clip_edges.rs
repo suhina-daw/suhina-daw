@@ -55,7 +55,8 @@ fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usi
 }
 
 /// `clip.trimMany {clips, edge, by, stack?}`: the same edge of every clip moved by `by` beats as
-/// `clip.trim` moves it, each stopping at its own limits, in one undo step (#956). Each clip is
+/// `clip.trim` moves it, each stopping at its own limits and at the next clip of the selection on
+/// its lane, in one undo step (#956). Each clip is
 /// found by its id when its turn comes, as an earlier one may have changed where the others are.
 pub(crate) fn trim_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let edge = match params.get("edge").and_then(Value::as_str) {
@@ -73,16 +74,46 @@ pub(crate) fn trim_clips(session: &mut Session, params: &Value) -> Result<Value,
             p.arrangement.lanes.iter().find(|l| l.track == Some(track)).and_then(|l| l.clips.get(index)).map(|c| c.id.0)
         })
         .collect();
+    // Where each clip of the selection starts and ends before any moves, by id, on its lane: an
+    // edge moved outward stops where the next clip of the same selection on that lane begins
+    // (or the one before ends), so stretching the last of two clips side by side does not run
+    // the first over it and cut it short.
+    let before: Vec<(u32, usize, f64, f64)> = session
+        .project
+        .arrangement
+        .lanes
+        .iter()
+        .enumerate()
+        .flat_map(|(lane, l)| {
+            l.clips.iter().filter(|c| ids.contains(&c.id.0)).map(move |c| (c.id.0, lane, c.start, c.start + c.length))
+        })
+        .collect();
     for id in &ids {
         let p = &session.project;
-        let Some((track, index, clip)) = p.arrangement.lanes.iter().find_map(|l| {
+        let Some((lane, track, index, clip)) = p.arrangement.lanes.iter().enumerate().find_map(|(lane, l)| {
             let index = l.clips.iter().position(|c| c.id.0 == *id)?;
-            Some((l.track?, index, l.clips.get(index)?.clone()))
+            Some((lane, l.track?, index, l.clips.get(index)?.clone()))
         }) else {
             continue;
         };
         let at = if edge == "start" { clip.start } else { clip.start + clip.length };
-        trim_clip(session, &json!({ "track": track.0, "index": index, edge: at + by, "stack": stack }))?;
+        let mut to = at + by;
+        let others = before.iter().filter(|(other, l, ..)| *other != *id && *l == lane);
+        if edge == "end" && by > 0.0 {
+            let next = others
+                .filter(|(.., start, _)| *start >= at - 1e-9)
+                .map(|(.., start, _)| *start)
+                .fold(f64::INFINITY, f64::min);
+            to = to.min(next.max(at));
+        } else if edge == "start" && by < 0.0 {
+            let previous =
+                others.filter(|(.., end)| *end <= at + 1e-9).map(|(.., end)| *end).fold(f64::NEG_INFINITY, f64::max);
+            to = to.max(previous.min(at));
+        }
+        if (to - at).abs() < 1e-9 {
+            continue;
+        }
+        trim_clip(session, &json!({ "track": track.0, "index": index, edge: to, "stack": stack }))?;
     }
     Ok(json!({ "clips": ids.len() }))
 }

@@ -806,34 +806,10 @@ pub fn meter_frame(painter: &Painter, rect: Rect, state: State, level: f32) -> b
     paint_variant(painter, rect, "meter", state, Color32::WHITE, 0.0, 0.0, super::artwork::current_color(), Some(level))
 }
 
-/// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values; an
-/// unknown name without a fallback stays as written.
+/// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values, colours
+/// as computed colours; an unknown name without a fallback stays as written.
 pub fn substitute_variables<'a>(source: &'a str, variables: &BTreeMap<String, String>) -> std::borrow::Cow<'a, str> {
-    if !source.contains("var(--") {
-        return std::borrow::Cow::Borrowed(source);
-    }
-    let mut out = String::with_capacity(source.len());
-    let mut rest = source;
-    while let Some(start) = rest.find("var(--") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 4..];
-        let Some(end) = after.find(')') else {
-            out.push_str(&rest[start..]);
-            return std::borrow::Cow::Owned(out);
-        };
-        let inner = &after[..end];
-        let (name, fallback) = match inner.split_once(',') {
-            Some((name, fallback)) => (name.trim(), Some(fallback.trim())),
-            None => (inner.trim(), None),
-        };
-        match variables.get(name).map(String::as_str).or(fallback) {
-            Some(value) => out.push_str(value),
-            None => out.push_str(&rest[start..start + 4 + end + 1]),
-        }
-        rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    std::borrow::Cow::Owned(out)
+    suhina_style::artwork::substitute(source, variables)
 }
 
 #[allow(clippy::too_many_arguments)]

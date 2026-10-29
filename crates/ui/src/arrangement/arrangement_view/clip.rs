@@ -58,6 +58,27 @@ pub(super) fn edge_by(clip: &ClipBox, grab: EdgeGrab, by: f64, grid: &TimelineGr
     edge_extent(clip, drag, grid, true, false)
 }
 
+/// `extent` (a clip's new start and end) kept off the other selected clips of its lane, as
+/// `clip.trimMany` keeps it: an end moved on stops where the next of them begins, a start moved
+/// back where the one before ends.
+pub(super) fn off_the_selection(
+    extent: (f64, f64),
+    clip: &ClipBox,
+    lane: &Lane,
+    selected: &[(TrackId, ClipId)],
+) -> (f64, f64) {
+    let end = clip.start + clip.length;
+    let others = || lane.clips.iter().filter(|c| c.id != clip.id && selected.contains(&(lane.track, c.id)));
+    let next = others().filter(|c| c.start >= end - 1e-9).map(|c| c.start).fold(f64::INFINITY, f64::min);
+    let previous = others()
+        .filter(|c| c.start + c.length <= clip.start + 1e-9)
+        .map(|c| c.start + c.length)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let to = if extent.1 > end { extent.1.min(next.max(end)) } else { extent.1 };
+    let from = if extent.0 < clip.start { extent.0.max(previous.min(clip.start)) } else { extent.0 };
+    (from, to)
+}
+
 /// A fade's length after a drag of `raw` beats: its end on the grid (unless `grid` is `None`,
 /// Alt held, or a grid that does not snap), and no longer than the clip leaves beside the other
 /// fade. No fade and all the room
@@ -215,7 +236,7 @@ pub(super) fn clip_box<'a>(
     // starts.
     let on_bar = |y: f32| clip_name_bar(visible).is_some_and(|bar| y < bar.bottom());
     // Where a plain drag selects time: the body under the name bar (the default, the name bar
-    // moving the clip), or the upper half (Mirror, the lower half moving it); with Ctrl held
+    // moving the clip), or the upper half (Lower half, the lower half moving it); with Ctrl held
     // instead when that setting is on.
     let bar_moves = state.name_bar_moves && clip_name_bar(visible).is_some();
     let selects_at = |y: f32| {
@@ -541,6 +562,7 @@ pub(super) fn clip_box<'a>(
         .edge_drag
         .filter(|d| d.key != key && state.selected.len() > 1 && state.is_selected(d.key) && state.is_selected(key))
         .map(|d| edge_by(clip, d.grab, grid.place(d.raw, edge_keys(ui).0, false) - d.from, &grid))
+        .map(|extent| off_the_selection(extent, clip, lane, &state.selected))
         .or(settled.filter(|s| !s.moved).map(|s| (s.from, s.to)));
     let released = released.or(others_edge);
     // Copying leaves the clip where it is: its handles stay on it; moving takes them along.
@@ -549,7 +571,12 @@ pub(super) fn clip_box<'a>(
     let (live_start, live_length) = match state.edge_drag.filter(|d| d.key == key) {
         Some(edge) => {
             let stretching = edge_keys(ui).1 && state.stretch_alt && clip.audio;
-            let (from, to) = edge_extent(clip, edge, &grid, edge_keys(ui).0, stretching);
+            let mut extent = edge_extent(clip, edge, &grid, edge_keys(ui).0, stretching);
+            // One of several selected clips: it stops at the next of them, as the command does.
+            if !stretching && state.selected.len() > 1 && state.is_selected(key) {
+                extent = off_the_selection(extent, clip, lane, &state.selected);
+            }
+            let (from, to) = extent;
             (from, to - from)
         }
         None => released.map_or((base, clip.length), |(from, to)| (from, to - from)),
@@ -699,7 +726,12 @@ pub(super) fn clip_box<'a>(
                                 .find(|l| l.track == track)
                                 .and_then(|l| l.clips.iter().find(|c| c.id == id))
                             {
-                                let (from, to) = edge_by(c, grab, beat - old, &grid);
+                                let (from, to) = match timeline.lanes.iter().find(|l| l.track == track) {
+                                    Some(l) => {
+                                        off_the_selection(edge_by(c, grab, beat - old, &grid), c, l, &state.selected)
+                                    }
+                                    None => edge_by(c, grab, beat - old, &grid),
+                                };
                                 state.settling.push(Settling { key: (track, id), from, to, moved: false, until });
                             }
                         }

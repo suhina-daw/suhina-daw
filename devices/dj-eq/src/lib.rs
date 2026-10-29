@@ -4,11 +4,14 @@
 //! DJ EQ: three bands split by Linkwitz-Riley crossovers, each with a gain and a kill switch.
 //!
 //! Each side is split at the low frequency into low and the rest, and the rest at the high
-//! frequency into mid and high. The low band also goes through the high crossover's all-pass,
-//! so with every gain at 0 dB the three bands add back up to a flat magnitude response (the
-//! phase turns as with any crossover). A kill takes its band to silence; a gain at its minimum
-//! does the same. Gains, kills and crossover frequencies are all smoothed, so they can be
-//! turned and automated while playing. The high frequency never goes below the low one.
+//! frequency into mid and high. The low band is the low crossover's low-pass alone: no all-pass
+//! is added anywhere, so with every gain at 0 dB the three bands keep a small dip at the low
+//! crossover (−0.75 dB at most in the 24 dB setting, −2.14 dB in the 48 dB one, measured with
+//! crossovers at 500 Hz and 2 kHz) instead of summing flat. A kill takes its band to silence; a
+//! gain at its minimum does the same. Gains run from silence up to +6 dB. Gains, kills and
+//! crossover frequencies are all smoothed, so they can be turned and automated while playing.
+//! The crossovers are independent: a low frequency above the high one leaves the mid band
+//! almost empty and the sum flat, as measured.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
@@ -38,7 +41,8 @@ pub mod param {
     pub(crate) const COUNT: usize = 9;
 }
 
-const GAIN_RANGE: (f64, f64) = (SILENCE_DB as f64, 12.0);
+/// Band gains run from silence up to +6 dB.
+pub const GAIN_RANGE: (f64, f64) = (SILENCE_DB as f64, 6.0);
 
 const PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("low", "Low", GAIN_RANGE, 0.0, Unit::Decibels, Scale::Linear),
@@ -61,13 +65,11 @@ const PARAMS: [ParamInfo; param::COUNT] = [
 
 pub const INFO: DeviceInfo = DeviceInfo { id: "dj-eq", name: "DJ EQ", role: Role::Effect, params: &PARAMS };
 
-/// The three filters of one side.
+/// The two filters of one side.
 #[derive(Clone, Copy)]
 struct Side {
     low_split: LinkwitzRiley,
     high_split: LinkwitzRiley,
-    /// The high crossover's all-pass, for the low band.
-    low_allpass: LinkwitzRiley,
 }
 
 impl Side {
@@ -75,26 +77,25 @@ impl Side {
         Self {
             low_split: LinkwitzRiley::with_slope(sample_rate, low, slope),
             high_split: LinkwitzRiley::with_slope(sample_rate, high, slope),
-            low_allpass: LinkwitzRiley::with_slope(sample_rate, high, slope),
         }
     }
 
-    fn filters(&mut self) -> [&mut LinkwitzRiley; 3] {
-        [&mut self.low_split, &mut self.high_split, &mut self.low_allpass]
+    fn filters(&mut self) -> [&mut LinkwitzRiley; 2] {
+        [&mut self.low_split, &mut self.high_split]
     }
 
     fn tune(&mut self, sample_rate: f64, low: f64, high: f64) {
         self.low_split.set_frequency(sample_rate, low);
         self.high_split.set_frequency(sample_rate, high);
-        self.low_allpass.set_frequency(sample_rate, high);
     }
 
-    /// The (low, mid, high) bands of `x`.
+    /// The (low, mid, high) bands of `x`: the low band is the low crossover's low-pass alone,
+    /// the mid and high bands carry its high-pass.
     #[inline]
     fn bands(&mut self, x: f64) -> (f64, f64, f64) {
         let (low, rest) = self.low_split.split(x);
         let (mid, high) = self.high_split.split(rest);
-        (self.low_allpass.allpass(low), mid, high)
+        (low, mid, high)
     }
 }
 
@@ -137,10 +138,10 @@ impl DjEq {
         if self.value(param::SLOPE) >= 0.5 { Slope::Db48 } else { Slope::Db24 }
     }
 
-    /// Crossover targets in log2 hertz; the high one is never below the low one.
+    /// Crossover targets in log2 hertz.
     fn frequency_targets(&self) -> [f32; 2] {
         let low = self.value(param::LOW_FREQUENCY);
-        let high = self.value(param::HIGH_FREQUENCY).max(low);
+        let high = self.value(param::HIGH_FREQUENCY);
         [low.log2() as f32, high.log2() as f32]
     }
 

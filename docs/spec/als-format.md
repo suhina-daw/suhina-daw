@@ -3,7 +3,7 @@ description: The Live Set (.als) format as observed: container, tracks, clips, n
 read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-10-23
 covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
@@ -300,7 +300,7 @@ points at the default preset the device was loaded from. The importer keeps them
 placeholders, except the ones that have a Suhina counterpart: those become Suhina devices
 with their parameters mapped (`crates/als/src/devices.rs`: the Utility, below, Simpler and a one-sample Sampler (below), racks as device groups (below), the
 Delay and Reverb, whose element tables are in [`delay.md`](delay.md) › Import and
-[`reverb.md`](reverb.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
+[`reverb.md`](reverb.md) › Import, EQ Eight, `Eq8`, in [`eq.md`](eq.md) › Import, and the MIDI effect Pitch, `MidiPitcher`, whose element
 table is in [`pitch.md`](pitch.md) › Import). A MIDI track's MIDI effects come first in its
 `Devices`, before the instrument.
 

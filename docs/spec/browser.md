@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -24,7 +24,10 @@ covers:
 A single sample dropped on a Sampler waveform replaces that instrument's source
 through `device.loadSample`; it creates no clip or track. This applies to browser
 items and files dragged from the operating system. MIDI and multi-file drops are
-not accepted by the waveform. Other drop targets keep their existing behavior.
+not accepted by the waveform. A single sample dropped on the devices of a MIDI track that has
+none (the detail area showing its chain) adds a Sampler that plays it; dropped on that track's
+lane, header or slot it is a clip, as on any track, and the empty MIDI track becomes an audio
+track for it (#945). Other drop targets keep their existing behavior.
 
 The panel at the side of the main window where samples, MIDI files, presets, built-in
 instruments and effects and installed plug-ins are found, previewed and dragged into the
@@ -155,7 +158,7 @@ selected or under the pointer; clicking it previews the sample (a second click s
 
 **Double-click or Enter** (in the search field) on an item adds it to the selected track (see
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
-window does (Settings › General › When opening a project).
+window does (Settings › Projects and backups › Open projects in).
 
 **Right-click menu:** Pin or Unpin; Tag ▸ (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
 click anywhere on the entry sets or clears it; a *New tag…* field that
@@ -181,7 +184,7 @@ The preview strip shows the selected sample or MIDI file: a play button, the nam
 tempo (BPM) and key when known, and a waveform (a sample) or a strip of the notes (a MIDI file),
 with the part played so far brighter and a playhead.
 
-- **Auto-play** (Settings › Browser › Auto-play, on by default): selecting a sample
+- **Preview selected file** (Settings › Browser › Preview selected file, on by default): selecting a sample
   or MIDI file previews it. Off, previewing takes the play button or a click on the waveform.
 - **Clicking the waveform** previews from there. The waveform is drawn as
   [waveforms](waveforms.md) says: the whole file across the strip, both channels when there is
@@ -252,7 +255,7 @@ in the Arrangement each starts where the one before ends; in the Launcher they g
 track's slots from the slot they were dropped on. With **Ctrl** held when releasing, they go
 onto **one track each**, side by side: in the Arrangement all at the dropped beat, in the
 Launcher all in the dropped scene, the first on the track it was dropped on and the others on
-new tracks after it. Settings › General › Dropping files › Several files flips this (one track each
+new tracks after it. Settings › Importing › Dropping files › Several files flips this (one track each
 without Ctrl). While they hover, the label says which (`Add 3 clips, one track each: Bass and 2 new
 tracks`) and, in the Arrangement, the empty space below the tracks is outlined from the dropped
 beat, where the new tracks come. Files dragged in from the system (Explorer, Finder) show the same
@@ -281,7 +284,7 @@ Launcher, at its left in the Arrangement), which add an empty track of that kind
 either works like a drop on the empty area.
 
 **Warping.** A sample whose tempo is known (see *Tempo and key*) is warped: it plays at the
-project's tempo, stretched with the stretch mode in Settings › General › Warp mode (Rhythmic by
+project's tempo, stretched with the stretch mode in Settings › Importing › Warp mode (Rhythmic by
 default, the `rhythmic` stretch mode), and its length in beats comes from its own tempo. A
 sample without a known tempo is not warped: it plays at its own speed, and its length in beats
 is its duration at the project's tempo when it is dropped.

@@ -1,0 +1,325 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Amount",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "amount",
+        "name": "Amount",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          0.0,
+          65.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "amount",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Rate",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "sync",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 0.0
+        },
+        "id": "rate",
+        "name": "Rate",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          65.0,
+          0.0,
+          65.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "rate",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Rate"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "sync",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "synced_rate_caption",
+        "name": "Rate",
+        "tooltip": "",
+        "bounds": [
+          65.0,
+          14.0,
+          65.0,
+          16.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": {
+          "op": "equal",
+          "a": {
+            "op": "parameter",
+            "parameter": "sync",
+            "normalized": false,
+            "logarithmic": false
+          },
+          "b": 1.0
+        },
+        "id": "syncedRate",
+        "name": "syncedRate",
+        "tooltip": "",
+        "bounds": [
+          67.0,
+          34.0,
+          61.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "syncedRate",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Phase",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "phase",
+        "name": "Phase",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          130.0,
+          0.0,
+          65.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "phase",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Offset",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "offset",
+        "name": "Offset",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          195.0,
+          0.0,
+          65.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "offset",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Shaping",
+          "decimals": 2,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "shaping",
+        "name": "Shaping",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          0.0,
+          84.0,
+          65.0,
+          84.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "shaping",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Sync",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "sync",
+        "name": "Sync",
+        "tooltip": "sync: Sync",
+        "bounds": [
+          70.0,
+          92.0,
+          90.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "sync",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Invert",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "invert",
+        "name": "Invert",
+        "tooltip": "invert: Invert",
+        "bounds": [
+          165.0,
+          92.0,
+          90.0,
+          20.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "invert",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Shape"
+        },
+        "visible_when": null,
+        "id": "shape_caption",
+        "name": "Shape",
+        "tooltip": "",
+        "bounds": [
+          70.0,
+          124.0,
+          60.0,
+          20.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "shape",
+        "name": "shape",
+        "tooltip": "",
+        "bounds": [
+          134.0,
+          124.0,
+          121.0,
+          20.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "shape",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "amount",
+      "sync",
+      "rate",
+      "syncedRate",
+      "shape",
+      "phase",
+      "offset",
+      "shaping",
+      "invert"
+    ]
+  }
+}

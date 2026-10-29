@@ -418,10 +418,9 @@ pub struct AutomationLane {
 pub struct AutomationPoint {
     pub beat: f64,
     pub value: f64,
-    /// The shape of the segment from this point to the next, -1 to 1: 0 is a straight line,
-    /// above 0 it moves fast first and slow later, below 0 slow first (see
-    /// [`automation::shape`]).
-    pub curve: f64,
+    /// The shape of the segment from this point to the next: two control points of a cubic
+    /// Bezier ([`automation::Curve`]), straight by default.
+    pub curve: automation::Curve,
 }
 
 /// One parameter value of a built-in effect or instrument, by the parameter's stable id (ADR 0004). The value

@@ -24,7 +24,7 @@ use suhina_device_api::{
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::{db_to_gain, db_to_gain_f64};
-use suhina_dsp::{Biquad, Coefficients, Smoother, time_constant};
+use suhina_dsp::{AttackRelease, Biquad, Coefficients, Smoother};
 
 /// Ramp for gain, threshold, ratio, knee and mix changes.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -94,8 +94,7 @@ pub struct Compressor {
     knee: Smoother,
     output: Smoother,
     mix: Smoother,
-    attack: f64,
-    release: f64,
+    dynamics: AttackRelease,
     detectors: [Biquad; 2],
     /// Smoothed gain reduction in decibels, zero or positive.
     reduction: f64,
@@ -118,8 +117,7 @@ impl Compressor {
             knee: Smoother::new(0.0, 1),
             output: Smoother::new(1.0, 1),
             mix: Smoother::new(1.0, 1),
-            attack: 0.0,
-            release: 0.0,
+            dynamics: AttackRelease::default(),
             detectors: [Biquad::default(); 2],
             reduction: 0.0,
         };
@@ -155,8 +153,7 @@ impl Compressor {
     /// Attack and release coefficients and the detector filter from the parameters.
     fn tune(&mut self) {
         let sr = self.sample_rate;
-        self.attack = time_constant(self.value(param::ATTACK), sr);
-        self.release = time_constant(self.value(param::RELEASE), sr);
+        self.dynamics = AttackRelease::new(self.value(param::ATTACK), self.value(param::RELEASE), sr);
         let high_pass = Coefficients::highpass(sr, self.value(param::SIDECHAIN_HIGH_PASS), BUTTERWORTH_Q);
         for detector in &mut self.detectors {
             detector.set(high_pass);
@@ -221,8 +218,7 @@ impl Device for Compressor {
             let level_db = 20.0 * level.clamp(LEVEL_FLOOR, 1e30).log10();
             let slope = 1.0 - 1.0 / ratio.max(1.0);
             let wanted = (-gain_change(level_db, threshold, slope, knee)).clamp(0.0, MAX_REDUCTION_DB);
-            let coefficient = if wanted > self.reduction { self.attack } else { self.release };
-            let reduction = wanted + (self.reduction - wanted) * coefficient;
+            let reduction = self.dynamics.rise(self.reduction, wanted);
             self.reduction = if reduction > 1e-9 { reduction.min(MAX_REDUCTION_DB) } else { 0.0 };
             let gain = db_to_gain_f64(-self.reduction);
             let applied = output * (1.0 + mix * (gain - 1.0));

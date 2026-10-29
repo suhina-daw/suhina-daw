@@ -21,7 +21,7 @@
 //! sound does not depend on the block size. Nothing here allocates after the graph is built.
 
 use suhina_device_api::{Device, ParamInfo, ParamKind};
-use suhina_model::automation::{self as model, MAX_POINTS, MUTE, PAN, Taper, VOLUME, VolumeTaper, shape};
+use suhina_model::automation::{self as model, Curve, MAX_POINTS, MUTE, PAN, Taper, VOLUME, VolumeTaper};
 use suhina_model::{AutomationLane, Channel, Project, TrackId};
 
 /// Frames between the values a moving lane gives (1.3 ms at 48 kHz).
@@ -66,6 +66,15 @@ impl Position {
             Self::Value
         }
     }
+
+    /// What the parameter takes when the lane is at `value`: a whole-number parameter's value
+    /// with its fraction cut off toward zero (`ParamInfo::played`), anything else as it is.
+    fn played(&self, value: f64) -> f64 {
+        match self {
+            Self::Param(info) if matches!(info.kind, ParamKind::Integer) => info.played(value),
+            _ => value,
+        }
+    }
 }
 
 impl Taper for Position {
@@ -81,7 +90,7 @@ impl Taper for Position {
         match self {
             Self::Value => position,
             Self::Volume => VolumeTaper.value(position),
-            // A whole-number parameter moves along the line and the device rounds.
+            // A whole-number parameter moves along the line; `played` cuts the fraction off.
             Self::Param(info) if matches!(info.kind, ParamKind::Integer) => {
                 info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
             }
@@ -104,7 +113,7 @@ struct Point {
     value: f64,
     /// Where `value` sits on its control (`Position`).
     position: f64,
-    curve: f64,
+    curve: Curve,
 }
 
 impl Envelope {
@@ -125,7 +134,7 @@ impl Envelope {
                 frame: (p.beat.max(0.0) * frames_per_beat).round() as u64,
                 value: p.value,
                 position: taper.position(p.value),
-                curve: if p.curve.is_finite() { p.curve.clamp(-1.0, 1.0) } else { 0.0 },
+                curve: p.curve.held(),
             })
             .collect();
         // Stable, so two points at one beat keep their order (a jump).
@@ -136,18 +145,20 @@ impl Envelope {
     /// Straight lines through `(frame, value)` points, for tests.
     #[cfg(test)]
     pub(crate) fn linear(points: &[(u64, f64)]) -> Option<Self> {
-        let points: Vec<Point> =
-            points.iter().map(|&(frame, value)| Point { frame, value, position: value, curve: 0.0 }).collect();
+        let points: Vec<Point> = points
+            .iter()
+            .map(|&(frame, value)| Point { frame, value, position: value, curve: Curve::STRAIGHT })
+            .collect();
         (!points.is_empty()).then_some(Self { points, stepped: false, taper: Position::Value })
     }
 
     /// The value at arrangement frame `time`: the first point's before it, the last's after it,
     /// along the curve of the segment between, evenly in position; at a frame with two points,
-    /// the later one's.
+    /// the later one's. A whole-number parameter takes it with its fraction cut off toward zero.
     pub(crate) fn value_at(&self, time: u64) -> f64 {
         let after = self.points.partition_point(|p| p.frame <= time);
         let before = after.checked_sub(1).and_then(|i| self.points.get(i));
-        match (before, self.points.get(after)) {
+        let value = match (before, self.points.get(after)) {
             (None, next) => next.map_or(0.0, |p| p.value),
             (Some(a), None) => a.value,
             (Some(a), Some(_)) if self.stepped => a.value,
@@ -155,9 +166,10 @@ impl Envelope {
             (Some(a), Some(b)) => {
                 // b.frame > time >= a.frame.
                 let t = (time - a.frame) as f64 / (b.frame - a.frame) as f64;
-                self.taper.value(a.position + (b.position - a.position) * shape(t, a.curve))
+                self.taper.value(a.position + (b.position - a.position) * a.curve.shape(t))
             }
-        }
+        };
+        self.taper.played(value)
     }
 
     /// The position (`Position`) at arrangement frame `time`, as [`Self::value_at`] moves.
@@ -170,7 +182,7 @@ impl Envelope {
             (Some(a), Some(_)) if self.stepped => a.position,
             (Some(a), Some(b)) => {
                 let t = (time - a.frame) as f64 / (b.frame - a.frame) as f64;
-                a.position + (b.position - a.position) * shape(t, a.curve)
+                a.position + (b.position - a.position) * a.curve.shape(t)
             }
         }
     }
@@ -200,7 +212,7 @@ impl Envelope {
             position += (b.position - a.position) * (ramp - done);
             moved = true;
         }
-        if moved { self.taper.value(position) } else { self.value_at(time) }
+        if moved { self.taper.played(self.taper.value(position)) } else { self.value_at(time) }
     }
 
     /// The index of the first point after arrangement frame `time`.

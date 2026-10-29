@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-28
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -56,8 +56,8 @@ From top to bottom:
    - key and scale
    - transport: arrangement position, play, stop, record, overdub, automation arm, loop region
      start, punch, loop, loop length. **Suhina:** play starts from the play start marker, or
-     from the selected Arrangement clip as Settings › Transport › Play from says, and stop
-     returns to it or stays, as Settings › Transport › Stop says
+     from the selected Arrangement clip as Settings › Arrangement › Time and play › Play from says, and stop
+     returns to it or stays, as Settings › Arrangement › Time and play › Stop says
      ([arrangement editing](arrangement-editing.md) › Play position)
    - **Suhina:** record, right of stop, records the armed tracks into the arrangement, and a
      Count-in menu right of the launch quantisation; an armed track's empty slots show a record
@@ -86,8 +86,8 @@ From top to bottom:
      dragging into the project) is in [`browser.md`](browser.md).
    - **Groove pool** under the browser (collapsible).
    - **Launcher view** (or Arrangement view; Tab switches).
-4. **Detail area** (collapsible), across the full width: the selected track's device chain, or
-   the selected clip's editor. **Suhina:** Settings › Detail area › **Detail area layout** puts it
+4. **Detail area width** (collapsible), across the full width: the selected track's device chain, or
+   the selected clip's editor. **Suhina:** Settings › Devices › **Detail area width** puts it
    **Beside the browser** (the default: it starts right of the browser, which runs down to the
    status bar) or **Full width** (it spans the whole window, under the browser too, which ends
    above it); with the device chain stacked in a column beside the view the layout does not
@@ -359,7 +359,8 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   wheel scrolls it when it holds more than fits. A click selects the track and shows its devices
   in the detail area, opening the detail area if it was hidden; the clicked row stays lit.
   A row dragged up or down its own list moves the device there (`device.move`), a line showing
-  where it goes; dragged onto another track it moves there, with Ctrl it is copied.
+  where it goes; dragged onto another track it moves there, with Ctrl it is copied, and that track
+  is selected with its chain shown, so the editor opened next is the moved or copied device's.
 - **A double-click on the strip** itself (its background or its name, not a fader, knob,
   button or device row) does the same for the whole track: it selects the track and shows its
   devices in the detail area, opening the detail area if it was hidden. A single click there does

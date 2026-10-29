@@ -437,7 +437,7 @@ impl Shared {
         // SAFETY: a table of null function pointers and a zero size is a valid value.
         let mut interface: ARADocumentControllerInterface = unsafe { std::mem::zeroed() };
         // SAFETY: the plug-in's table, valid as long as the instance; its first field is its
-        // size, read unaligned as the struct is packed.
+        // size, read unaligned as the struct is packed on x86.
         let size = unsafe { table.cast::<usize>().read_unaligned() };
         let size = size.min(size_of::<ARADocumentControllerInterface>());
         // SAFETY: `size` bytes of the plug-in's table, no more than either struct holds.

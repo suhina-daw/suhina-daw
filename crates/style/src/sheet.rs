@@ -3,7 +3,7 @@
 
 //! Bounded style rules with source locations and explicit native support diagnostics.
 use crate::{media::Media, property::Property, selector::Selector};
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notice {
@@ -105,8 +105,7 @@ impl Shorthand {
 /// Positions, sizes, repeats and URLs are not drawn natively and are an error.
 pub(crate) fn background_part(property: Property, value: &str) -> Result<String, String> {
     crate::syntax::validate(value)?;
-    let mut input = ParserInput::new(value);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(value);
     let mut images: Vec<String> = Vec::new();
     let mut color: Option<String> = None;
     let mut layer_has_image = false;
@@ -189,7 +188,24 @@ pub struct Sheet {
     pub(crate) keyframes: Vec<(String, KeyframeRule)>,
     /// `@property` rules in source order; a later rule for the same name replaces an earlier one.
     pub properties: Vec<crate::registered::Registered>,
+    /// `@group-class` rules in source order; a later rule for the same name replaces an earlier one.
+    pub group_classes: Vec<GroupClass>,
 }
+
+/// A toolbar group class a theme offers in the toolbar editor:
+///
+/// ```css
+/// @group-class lcd { label: "LCD display"; }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupClass {
+    pub name: String,
+    /// What the editor shows; the name when the rule gives none.
+    pub label: Option<String>,
+}
+
+/// Most `@group-class` rules one sheet may hold.
+pub const MAX_GROUP_CLASSES: usize = 64;
 
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
 /// alone without a notice. Read by the app, not the engine: artwork, the name, the background material, and the
@@ -225,11 +241,22 @@ impl Sheet {
                 })
             })
     }
+    /// Classes the sheet declares with `@group-class` but no rule styles as `group.<class>`:
+    /// probably a typo, which an import warns about.
+    pub fn unstyled_group_classes(&self) -> Vec<&str> {
+        self.group_classes
+            .iter()
+            .map(|class| class.name.as_str())
+            .filter(|class| {
+                !self.rules.iter().any(|rule| rule.selectors.iter().any(|selector| selector.styles("group", class)))
+            })
+            .collect()
+    }
+
     pub fn parse(source: &str) -> Result<Self, String> {
         crate::syntax::validate(source)?;
-        let mut input = ParserInput::new(source);
         let mut sheet = Self::default();
-        rules(&mut Parser::new(&mut input), source, &Scope::default(), &mut sheet, 0)?;
+        rules(&mut Parser::new(source), source, &Scope::default(), &mut sheet, 0)?;
         sheet.rank_layers();
         Ok(sheet)
     }
@@ -298,20 +325,20 @@ impl Sheet {
 }
 
 pub(crate) fn nested<T>(
-    parser: &mut Parser<'_, '_>,
-    read: impl FnOnce(&mut Parser<'_, '_>) -> Result<T, String>,
+    parser: &mut Parser<'_>,
+    read: impl FnOnce(&mut Parser<'_>) -> Result<T, String>,
 ) -> Result<T, String> {
     let mut outcome = None;
     parser
         .parse_nested_block(|inner| {
             outcome = Some(read(inner));
-            Ok::<(), cssparser::ParseError<'_, ()>>(())
+            Ok::<(), cssparser::ParseError<()>>(())
         })
         .map_err(|e| format!("CSS block: {e:?}"))?;
     outcome.ok_or("Missing CSS block")?
 }
 
-pub(crate) fn consume(parser: &mut Parser<'_, '_>) -> Result<(), String> {
+pub(crate) fn consume(parser: &mut Parser<'_>) -> Result<(), String> {
     while !parser.is_exhausted() {
         let token = parser.next_including_whitespace_and_comments().map_err(|e| format!("CSS: {e:?}"))?.clone();
         if matches!(
@@ -322,6 +349,53 @@ pub(crate) fn consume(parser: &mut Parser<'_, '_>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The `name: value;` pairs of an at-rule's block, without comments; names lowercase.
+fn descriptors(parser: &mut Parser<'_>, source: &str) -> Result<Vec<(String, String)>, String> {
+    let body = nested(parser, |inner| {
+        let start = inner.position().byte_index();
+        consume(inner)?;
+        Ok(source.get(start..inner.position().byte_index()).unwrap_or_default().to_owned())
+    })?;
+    let mut text = String::new();
+    let mut rest = body.as_str();
+    while let Some(open) = rest.find("/*") {
+        text.push_str(&rest[..open]);
+        rest = rest[open..].find("*/").map_or("", |close| &rest[open + close + 2..]);
+    }
+    text.push_str(rest);
+    Ok(text
+        .split(';')
+        .filter_map(|d| d.split_once(':'))
+        .map(|(d, v)| (d.trim().to_ascii_lowercase(), v.trim().to_owned()))
+        .collect())
+}
+
+fn group_class_rule(name: &str, descriptors: &[(String, String)]) -> Result<GroupClass, String> {
+    let valid = !name.is_empty()
+        && name.len() <= 64
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        && !name.starts_with(|c: char| c.is_ascii_digit() || c == '-');
+    if !valid {
+        return Err(format!("Invalid group class name {name}"));
+    }
+    let mut class = GroupClass { name: name.to_owned(), label: None };
+    for (descriptor, value) in descriptors {
+        match descriptor.as_str() {
+            "label" => {
+                let inner = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                    .filter(|inner| inner.chars().count() <= 64 && !inner.chars().any(char::is_control))
+                    .ok_or("@group-class label: a quoted string of at most 64 characters")?;
+                class.label = Some(inner.to_owned());
+            }
+            other => return Err(format!("Unknown @group-class descriptor {other}")),
+        }
+    }
+    Ok(class)
 }
 
 /// The conditions a nested group puts on its rules: media queries and the cascade layer.
@@ -344,13 +418,7 @@ fn layer_name(text: &str) -> Option<&str> {
     .then_some(text)
 }
 
-fn rules(
-    parser: &mut Parser<'_, '_>,
-    source: &str,
-    scope: &Scope,
-    sheet: &mut Sheet,
-    depth: usize,
-) -> Result<(), String> {
+fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet, depth: usize) -> Result<(), String> {
     let media = scope.media.as_slice();
     if depth > 16 {
         return Err("Style rules exceed sixteen nested groups".into());
@@ -389,24 +457,22 @@ fn rules(
                     header.strip_prefix("@keyframes").filter(|s| s.starts_with(char::is_whitespace)).map(str::trim);
                 let property =
                     header.strip_prefix("@property").filter(|s| s.starts_with(char::is_whitespace)).map(str::trim);
-                if let Some(name) = property {
-                    let body = nested(parser, |inner| {
-                        let start = inner.position().byte_index();
-                        consume(inner)?;
-                        Ok(source.get(start..inner.position().byte_index()).unwrap_or_default().to_owned())
-                    })?;
-                    let mut text = String::new();
-                    let mut rest = body.as_str();
-                    while let Some(open) = rest.find("/*") {
-                        text.push_str(&rest[..open]);
-                        rest = rest[open..].find("*/").map_or("", |close| &rest[open + close + 2..]);
+                let group_class =
+                    header.strip_prefix("@group-class").filter(|s| s.starts_with(char::is_whitespace)).map(str::trim);
+                if let Some(name) = group_class {
+                    let descriptors = descriptors(parser, source)?;
+                    match group_class_rule(name, &descriptors) {
+                        Ok(class) => {
+                            sheet.group_classes.retain(|existing| existing.name != class.name);
+                            if sheet.group_classes.len() >= MAX_GROUP_CLASSES {
+                                return Err("Style sheet exceeds 64 @group-class rules".into());
+                            }
+                            sheet.group_classes.push(class);
+                        }
+                        Err(message) => sheet.notice(location, message),
                     }
-                    text.push_str(rest);
-                    let descriptors: Vec<(String, String)> = text
-                        .split(';')
-                        .filter_map(|d| d.split_once(':'))
-                        .map(|(d, v)| (d.trim().to_ascii_lowercase(), v.trim().to_owned()))
-                        .collect();
+                } else if let Some(name) = property {
+                    let descriptors = descriptors(parser, source)?;
                     match crate::registered::Registered::from_descriptors(name, &descriptors) {
                         Ok(registered) => {
                             sheet.properties.retain(|p| p.name != registered.name);
@@ -511,11 +577,7 @@ fn rules(
 }
 
 /// The inside of `@keyframes`: offset lists (`from`, `to`, percentages) and declarations.
-fn frames(
-    parser: &mut Parser<'_, '_>,
-    source: &str,
-    sheet: &mut Sheet,
-) -> Result<Vec<(f32, Vec<Declaration>)>, String> {
+fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Vec<(f32, Vec<Declaration>)>, String> {
     let mut result: Vec<(f32, Vec<Declaration>)> = Vec::new();
     let mut start = None;
     while !parser.is_exhausted() {
@@ -562,7 +624,7 @@ fn frames(
     Ok(result)
 }
 
-fn declarations(parser: &mut Parser<'_, '_>, source: &str, sheet: &mut Sheet) -> Result<Vec<Declaration>, String> {
+fn declarations(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Vec<Declaration>, String> {
     let mut declarations = Vec::new();
     while !parser.is_exhausted() {
         parser.skip_whitespace();
@@ -573,7 +635,7 @@ fn declarations(parser: &mut Parser<'_, '_>, source: &str, sheet: &mut Sheet) ->
         let property = parser.try_parse(|parser| {
             let name = parser.expect_ident_cloned()?.to_string();
             parser.expect_colon()?;
-            Ok::<_, cssparser::BasicParseError<'_>>(name)
+            Ok::<_, cssparser::BasicParseError>(name)
         });
         let value_start = parser.position().byte_index();
         let mut value_end = value_start;
@@ -608,7 +670,10 @@ fn declarations(parser: &mut Parser<'_, '_>, source: &str, sheet: &mut Sheet) ->
         if let Some(shorthand) = Shorthand::from_name(&name) {
             let raw = source.get(value_start..value_end).ok_or("Invalid value span")?.trim();
             let (value, important) = raw.strip_suffix("!important").map_or((raw, false), |s| (s.trim_end(), true));
-            if !value.contains("var(") && !matches!(value, "inherit" | "initial" | "unset") {
+            if !value.contains("var(")
+                && !crate::variables::mentions_attr(value)
+                && !matches!(value, "inherit" | "initial" | "unset")
+            {
                 let failure = shorthand.longhands().iter().find_map(|property| {
                     shorthand
                         .part(*property, value)
@@ -653,6 +718,7 @@ fn declarations(parser: &mut Parser<'_, '_>, source: &str, sheet: &mut Sheet) ->
         }
         if !name.starts_with("--")
             && !value.contains("var(")
+            && !crate::variables::mentions_attr(value)
             && !matches!(value, "inherit" | "initial" | "unset")
             && let Some(property) = Property::from_name(&name)
             && let Err(message) = property.parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
@@ -663,4 +729,35 @@ fn declarations(parser: &mut Parser<'_, '_>, source: &str, sheet: &mut Sheet) ->
         declarations.push(Declaration { name, value: value.into(), important, shorthand: None });
     }
     Ok(declarations)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_classes_are_declared_with_a_label_and_checked_for_a_rule() {
+        let sheet = Sheet::parse(
+            "@group-class lcd { label: \"LCD display\"; } \
+             @group-class pill { /* no label */ } \
+             @group-class typo { label: 'Typo'; } \
+             @group-class lcd { label: \"LCD\"; } \
+             @group-class 9lives { label: \"Bad\"; } \
+             @group-class bad { colour: red; } \
+             toolbar group.lcd { background-color: #1a2a1a; } \
+             :is(group.pill, button) { radius: 9px; } \
+             group.helper { radius: 2px; }",
+        )
+        .unwrap();
+        assert_eq!(
+            sheet.group_classes,
+            [
+                GroupClass { name: "pill".into(), label: None },
+                GroupClass { name: "typo".into(), label: Some("Typo".into()) },
+                GroupClass { name: "lcd".into(), label: Some("LCD".into()) },
+            ]
+        );
+        assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
+        assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
+    }
 }

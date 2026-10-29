@@ -72,7 +72,7 @@ in the undo history of its tab (edit.undo reverts the last step, theirs or yours
 command ids and parameters with command_list, and change projects with command_run or command_batch; project.list, \
 project.switch and the `project` argument act on the window's tabs. Tool calls wait until the person allows the \
 connection. You cannot open projects from disk or close tabs, and you cannot change the app's settings. You may write \
-inside folders allowed by the person in Settings > Export (by default the project's folder), and read the project's folder and the \
+inside folders allowed by the person in Settings > Agents and updates (by default the project's folder), and read the project's folder and the \
 browser's library folders. Transport commands play on the window's audio output.";
 
 #[derive(Debug, Deserialize, JsonSchema)]

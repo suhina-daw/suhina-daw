@@ -12,12 +12,13 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 14] = [
+pub const DEVICES: [&DeviceInfo; 15] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
     &suhina_device_auto_pan::INFO,
     &suhina_device_dj_eq::INFO,
+    &suhina_device_eq::INFO,
     &suhina_device_vinyl_distortion::INFO,
     &suhina_device_overdrive::INFO,
     &suhina_device_compressor::INFO,
@@ -45,7 +46,18 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
 }
 
 /// The layouts kept as JSON next to a device crate, by device id.
-pub const LAYOUT_FILES: &[(&str, &str)] = &[];
+pub const LAYOUT_FILES: &[(&str, &str)] = &[
+    ("compressor", include_str!("../../../devices/compressor/panel.json")),
+    ("overdrive", include_str!("../../../devices/overdrive/panel.json")),
+    ("reverb", include_str!("../../../devices/reverb/panel.json")),
+    ("limiter", include_str!("../../../devices/limiter/panel.json")),
+    ("dj-eq", include_str!("../../../devices/dj-eq/panel.json")),
+    ("auto-pan", include_str!("../../../devices/auto-pan/panel.json")),
+    ("vinyl-distortion", include_str!("../../../devices/vinyl-distortion/panel.json")),
+    ("delay", include_str!("../../../devices/delay/panel.json")),
+    ("pitch", include_str!("../../../devices/pitch/panel.json")),
+    ("fm-synth", include_str!("../../../devices/fm-synth/panel.json")),
+];
 
 /// The panel of the device with this id: its parameters from its `DeviceInfo`, laid out by its
 /// layout, or the generated parameter list when it has none or its layout does not load.
@@ -78,6 +90,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "utility" => Box::new(suhina_device_utility::Utility::new()),
         "auto-pan" => Box::new(suhina_device_auto_pan::AutoPan::new()),
         "dj-eq" => Box::new(suhina_device_dj_eq::DjEq::new()),
+        "eq" => Box::new(suhina_device_eq::Eq::new()),
         "vinyl-distortion" => Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
         "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
         "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
@@ -166,82 +179,8 @@ fn read_voices(data: &[u8]) -> Result<suhina_device_fm_synth::patch::Voices, Str
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_dx7_voice_is_a_preset_for_the_fm_synth() {
-        use suhina_device_fm_synth::patch::{Patch, write_bank, write_voice};
-        let mut patch = Patch::default();
-        patch.set_name("GLASS BELL");
-        patch.set(134, 21); // algorithm 22
-        let single = write_voice(&patch);
-        let preset = preset(&single, 1).unwrap();
-        assert_eq!((preset.device, preset.name.as_str()), ("fm-synth", "GLASS BELL"));
-        assert_eq!(preset.params.len(), suhina_device_fm_synth::INFO.params.len());
-        let mut synth = suhina_device_fm_synth::FmSynth::new();
-        synth.load_patch(&patch);
-        for (i, (id, value)) in preset.params.iter().enumerate() {
-            assert_eq!(Some(*value), synth.param(i), "{id}");
-        }
-        assert_eq!(preset_voices(&single).unwrap(), vec![(1, "GLASS BELL".to_string())]);
-
-        let bank = write_bank(&vec![patch; 32]);
-        assert_eq!(preset_voices(&bank).unwrap().len(), 32);
-        assert_eq!(super::preset(&bank, 32).unwrap().name, "GLASS BELL");
-        assert!(super::preset(&bank, 33).is_err());
-        assert!(super::preset(&bank, 0).is_err());
-        assert!(super::preset(b"not a preset", 1).is_err());
-        assert!(super::preset(&vec![0u8; MAX_PRESET_BYTES + 1], 1).is_err());
-    }
-
-    #[test]
-    fn every_layout_loads_and_names_only_its_devices_parameters() {
-        // A layout that names a parameter id its device lacks fails here, rather than falling
-        // back to the generated list unnoticed.
-        for info in DEVICES {
-            if let Some(layout) = layout(info.id) {
-                let panel = layout.and_then(|l| l.panel(info)).unwrap_or_else(|e| panic!("{}: {e}", info.id));
-                assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>());
-            }
-        }
-        for (id, _) in LAYOUT_FILES {
-            assert!(super::info(id).is_some(), "panel.json for unknown device {id}");
-        }
-        assert!(layout("sampler").is_some(), "the sampler has its own layout");
-    }
-
-    #[test]
-    fn every_device_has_a_panel_with_its_parameters() {
-        for info in DEVICES {
-            let panel = panel(info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));
-            assert_eq!(panel_ids(panel), info.params.iter().map(|p| p.id).collect::<Vec<_>>(), "{}", info.id);
-            for (parameter, native) in panel.parameters.iter().zip(info.params) {
-                assert_eq!((parameter.min, parameter.max, parameter.default), (native.min, native.max, native.default));
-            }
-        }
-        // MIDI effects get one too: the generated list.
-        assert!(panel("pitch").is_some_and(|p| p.ui.is_none()));
-        assert!(panel("sampler").is_some_and(|p| p.ui.is_some()));
-        assert!(panel("no-such-device").is_none());
-    }
-
-    fn panel_ids(panel: &Panel) -> Vec<&str> {
-        panel.parameters.iter().map(|p| p.id.as_str()).collect()
-    }
-
-    #[test]
-    fn every_listed_device_can_be_made_and_ids_are_unique() {
-        for (i, info) in DEVICES.iter().enumerate() {
-            let device = create(info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
-            assert_eq!(device.info(), *info);
-            assert_eq!(super::info(info.id), Some(*info));
-            assert!(DEVICES.iter().skip(i + 1).all(|other| other.id != info.id), "{} twice", info.id);
-        }
-        assert!(create("no-such-device").is_none());
-        assert!(info("").is_none());
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;
 
 /// Prepare a data-only graph using only registered, zero-latency built-in effects.
 /// Unknown ids fail before the graph reaches the audio thread.

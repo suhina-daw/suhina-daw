@@ -362,7 +362,7 @@ pub struct Keymap {
     workflow: Workflow,
 }
 
-/// A set of keys for a way of working, chosen in Settings › Shortcuts (› Keymap presets in
+/// A set of keys for a way of working, chosen in Settings › Keys (› Keymap presets in
 /// `docs/spec/ui-clip-editor.md`). The names describe the habit, not another program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Preset {
@@ -407,7 +407,7 @@ impl Preset {
             Self::SelectFirst => "Duplicate is Ctrl+D; a right-click on a note does nothing",
             Self::DrawFirst => "Duplicate is Ctrl+B; in Draw and Paint a right-click on a note deletes it",
             Self::MouseFirst => "Every mouse switch is on; the left button draws in Select",
-            Self::Custom => "Each behaviour set on its own, in the toolbar's menu or Settings › General",
+            Self::Custom => "Each behaviour set on its own, in the toolbar's menu or Settings › Keys",
         }
     }
 

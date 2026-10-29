@@ -370,6 +370,42 @@ fn several_clips_move_the_same_edge_by_as_much_in_one_step() {
     assert!(run(&mut session, "clip.trimMany", json!({ "clips": clips, "edge": "middle", "by": 1.0 })).is_err());
 }
 
+/// Two MIDI clips side by side, both selected, the later one's end dragged a bar on: the earlier
+/// one stops where the later begins, so it does not run over it and cut it short.
+#[test]
+fn a_selected_clip_does_not_grow_over_the_next_one_of_the_selection() {
+    let mut session = Session::new(suhina_test_support::with_ids(project()));
+    let a = first(&session, 1);
+    run(&mut session, "clip.create", json!({ "track": 1, "start": a.start + a.length })).unwrap();
+    let lane = |s: &Session| {
+        let mut clips: Vec<(f64, f64)> = s
+            .project()
+            .arrangement
+            .lanes
+            .iter()
+            .find(|l| l.track == Some(suhina_engine::model::TrackId(1)))
+            .map(|l| l.clips.iter().map(|c| (c.start, c.length)).collect())
+            .unwrap_or_default();
+        clips.sort_by(|x, y| x.0.total_cmp(&y.0));
+        clips
+    };
+    let before = lane(&session);
+    assert_eq!(before.len(), 2);
+    let ids: Vec<serde_json::Value> = session
+        .project()
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(suhina_engine::model::TrackId(1)))
+        .map(|l| l.clips.iter().map(|c| json!({ "clip": c.id.0 })).collect())
+        .unwrap_or_default();
+    run(&mut session, "clip.trimMany", json!({ "clips": ids, "edge": "end", "by": 4.0 })).unwrap();
+    let after = lane(&session);
+    assert_eq!(after.len(), 2, "both clips are still there: {after:?}");
+    assert_eq!(after[0], before[0], "the earlier clip stops at the later one");
+    assert_eq!((after[1].0, after[1].1), (before[1].0, before[1].1 + 4.0), "the later one grows a bar");
+}
+
 /// A MIDI clip's left edge goes on before its notes (#832): the clip starts earlier with empty
 /// time, its note stays where it plays, and a content another clip plays is copied first.
 #[test]

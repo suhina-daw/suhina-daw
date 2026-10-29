@@ -3,7 +3,7 @@ description: How to review pull requests for requirements, correctness, performa
 read_when: code review, reviewing a pull request, review feedback, contributor changes, security review, performance review, approval readiness, Codex review
 type: howto
 status: current
-last_verified: 2026-10-22
+last_verified: 2026-10-24
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
@@ -93,6 +93,9 @@ exceptions. Read its golden rules and the rules for the affected paths. In parti
 - meaningful regression coverage, *How to check it*, `Parity:` and updates to documents that
   describe the changed behaviour under Before you finish a task;
 - generated files and `last_verified` dates that a pull request must leave alone.
+- a setting added or moved in `settings_rows.rs`: report a row on the wrong page for its task, a
+  group past about seven entries outside Advanced, or a status readout or command among the
+  settings, against [Adding a setting](spec/ui-settings.md#adding-a-setting).
 
 Use CI for deterministic checks such as formatting and licence headers. Inspect their results
 and flag a substantive bypass or a material policy conflict; do not duplicate every lint in

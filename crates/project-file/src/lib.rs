@@ -426,10 +426,10 @@ fn lanes_value(lanes: &[AutomationLane]) -> Value {
                 .iter()
                 .map(|p| {
                     let mut point = json!({ "beat": number(p.beat), "value": number(p.value) });
-                    if p.curve != 0.0
+                    if !p.curve.is_straight()
                         && let Some(map) = point.as_object_mut()
                     {
-                        map.insert("curve".into(), json!(number(p.curve)));
+                        map.insert("curve".into(), json!(p.curve.to_array().map(number)));
                     }
                     point
                 })
@@ -1172,7 +1172,8 @@ fn read_channel(value: &Value, at: &str) -> Result<Channel, ProjectFileError> {
 }
 
 /// The `automation` lanes of a device or channel: points in beat order (those at one beat keep
-/// their order), a curve from -1 to 1, at most `MAX_POINTS` points a lane.
+/// their order), a curve as its two control points (from version 4) or one bend from -1 to 1 (the
+/// mirrored curve, as earlier versions wrote it), at most `MAX_POINTS` points a lane.
 fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileError> {
     let mut automation = Vec::new();
     for (i, v) in list(map, "automation", at)?.iter().enumerate() {
@@ -1186,10 +1187,7 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
         for (j, p) in listed.iter().enumerate() {
             let at = format!("{at}.points[{j}]");
             let p = object(p, &at)?;
-            let curve = float_or(p, "curve", 0.0, &at)?;
-            if !(-1.0..=1.0).contains(&curve) {
-                return Err(format!("{at}.curve: must be from -1 to 1, got {curve}").into());
-            }
+            let curve = read_curve(p, &at)?;
             points.push(AutomationPoint { beat: float(p, "beat", &at)?, value: float(p, "value", &at)?, curve });
         }
         // In beat order, as the model keeps them; points at the same beat keep their order.
@@ -1201,6 +1199,29 @@ fn read_lanes(map: &Obj, at: &str) -> Result<Vec<AutomationLane>, ProjectFileErr
         });
     }
     Ok(automation)
+}
+
+/// A point's `curve`: four numbers (x1, y1, x2, y2), each from -0.5 to 1.5 (a split's halves can
+/// lie outside 0 to 1, `automation::CONTROL_MIN`, `CONTROL_MAX`), or before version 4 one bend
+/// from -1 to 1; straight when left out.
+fn read_curve(p: &Obj, at: &str) -> Result<automation::Curve, ProjectFileError> {
+    let bad =
+        || ProjectFileError(format!("{at}.curve: expected four numbers from -0.5 to 1.5, or a number from -1 to 1"));
+    match p.get("curve") {
+        None | Some(Value::Null) => Ok(automation::Curve::STRAIGHT),
+        Some(Value::Array(list)) => {
+            let values: Option<Vec<f64>> = list.iter().map(Value::as_f64).collect();
+            let values: [f64; 4] = values.and_then(|v| v.try_into().ok()).ok_or_else(bad)?;
+            automation::Curve::from_array(values).ok_or_else(bad)
+        }
+        Some(_) => {
+            let bend = float(p, "curve", at)?;
+            if !(-1.0..=1.0).contains(&bend) {
+                return Err(bad());
+            }
+            Ok(automation::Curve::bend(bend))
+        }
+    }
 }
 
 fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {

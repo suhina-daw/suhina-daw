@@ -77,7 +77,7 @@ fn live_set() -> String {
       </AudioTrack>
       <ReturnTrack Id="2">
         <Name><EffectiveName Value="A-Reverb"/></Name><TrackGroupId Value="-1"/>
-        <DeviceChain>{mixer_return}<DeviceChain><Devices><Eq8 Id="0"/></Devices></DeviceChain></DeviceChain>
+        <DeviceChain>{mixer_return}<DeviceChain><Devices><AutoFilter Id="0"/></Devices></DeviceChain></DeviceChain>
       </ReturnTrack>
     </Tracks>
     <MainTrack>
@@ -257,7 +257,7 @@ fn reads_scenes_and_session_slots() {
 fn unsupported_content_becomes_warnings() {
     let import = read_xml(&live_set()).unwrap();
     assert!(import.warnings.iter().any(|w| w.contains("has no file")), "{:?}", import.warnings);
-    assert!(import.warnings.iter().any(|w| w.contains("Eq8")), "{:?}", import.warnings);
+    assert!(import.warnings.iter().any(|w| w.contains("AutoFilter")), "{:?}", import.warnings);
     assert!(import.project.launcher.columns[1].slots[0].clip.is_none());
 }
 
@@ -320,14 +320,14 @@ fn reads_plugins_and_placeholders() {
             <Uid><Fields.0 Value="1448301683"/><Fields.1 Value="-1"/><Fields.2 Value="0"/><Fields.3 Value="16"/></Uid>
           </Vst3PluginInfo></PluginDesc>
         </PluginDevice>
-        <Eq8 Id="2"><On><Manual Value="false"/></On><UserName Value=""/></Eq8>"#;
+        <AutoFilter Id="2"><On><Manual Value="false"/></On><UserName Value=""/></AutoFilter>"#;
     let xml = format!(
         r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="M"/></Name>
            <DeviceChain><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
     );
     let import = read_xml(&xml).unwrap();
     let channel = import.project.channels.iter().find(|c| c.name == "M").unwrap();
-    let [vst2, odd, vst3, eq] = channel.devices.as_slice() else {
+    let [vst2, odd, vst3, filter] = channel.devices.as_slice() else {
         panic!("expected four devices: {:?}", channel.devices)
     };
 
@@ -352,8 +352,8 @@ fn reads_plugins_and_placeholders() {
     assert_eq!(vst3.state.as_deref(), Some(&[1, 2][..]));
     assert!(import.warnings.iter().any(|w| w.contains("ControllerState is not valid hex")));
 
-    assert_eq!(eq.kind, DeviceKind::Foreign { format: "als".into(), id: "Eq8".into() });
-    assert!(!eq.enabled);
+    assert_eq!(filter.kind, DeviceKind::Foreign { format: "als".into(), id: "AutoFilter".into() });
+    assert!(!filter.enabled);
 }
 
 /// MIDI effects come before the instrument and keep that order: Pitch becomes Suhina's pitch, a

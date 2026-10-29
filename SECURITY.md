@@ -28,7 +28,7 @@ The desktop app can serve MCP for its open projects
 ([ADR 0028](docs/decisions/0028-mcp-in-the-running-app.md)). What it relies on, so a report can say
 which part failed:
 
-- It is off by default (Settings › General › Agents) and nothing listens until it is turned on.
+- It is off by default (Settings › Agents and updates › Agents) and nothing listens until it is turned on.
 - The endpoint is local only: a named pipe that refuses remote clients on Windows, a Unix domain
   socket with 0600 permissions in a 0700 folder elsewhere; no network port. Only the user running
   Suhina (and, on Windows, administrators and the system) can open it for writing.

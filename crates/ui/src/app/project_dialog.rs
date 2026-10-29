@@ -23,6 +23,8 @@ const HEIGHT: f32 = 380.0;
 pub(crate) const SAVE_WIDTH: f32 = 420.0;
 pub(crate) const LINE: f32 = 20.0;
 pub(crate) const BUTTON: Vec2 = Vec2::new(96.0, 18.0);
+/// The logo's width at the top of Help › About Suhina, the splash's own.
+const ABOUT_LOGO_WIDTH: f32 = 200.0;
 
 /// What the project dialog keeps between frames.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -124,7 +126,8 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
             }
         });
     }
-    let folder = format!("Templates in {}; the folder is set in Settings › General", lists.templates_folder);
+    let folder =
+        format!("Templates in {}; the folder is set in Settings › Projects and backups", lists.templates_folder);
     let lines = widgets::fitted(&painter, &folder, small.clone(), theme::text_hint(), note.width());
     widgets::paint_text(
         &painter,
@@ -307,7 +310,7 @@ pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<Unsa
 /// `0.0.1-nightly.20261013+a15ad35` (docs/releasing.md › Nightly).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// What this build was, from `build.rs`: `2026_10_16_a15ad35`, the checked-out commit's date and
+/// What this build was, from `build.rs`: `20261016+a15ad35`, the checked-out commit's date and
 /// abbreviated hash; a build with no git says `unknown` unless the release set the environment.
 pub const BUILD: &str = env!("SUHINA_BUILD");
 
@@ -320,7 +323,7 @@ pub enum AboutChoice {
 }
 
 /// One line that names this build, to paste into a bug report:
-/// `Suhina 0.0.1 build 2026_10_16_a15ad35 (linux x86_64)`.
+/// `Suhina 0.0.1 build 20261016+a15ad35 (linux x86_64)`.
 pub fn version_line() -> String {
     format!("Suhina {VERSION} build {BUILD} ({})", platform())
 }
@@ -354,13 +357,21 @@ fn draw_about(ui: &mut Ui, area: Rect) -> Option<AboutChoice> {
         ("Platform", platform.as_str()),
         ("Licence", "GPL-3.0-or-later, free software"),
     ];
-    let height = ROW + facts.len() as f32 * LINE + BUTTON.y + 3.0 * PAD;
+    let logo_height = ABOUT_LOGO_WIDTH / crate::kit::logo::aspect();
+    let facts_top = ROW + 2.0 * PAD + logo_height + PAD;
+    let height = facts_top + facts.len() as f32 * LINE + BUTTON.y + 2.0 * PAD;
     let panel = panel(ui, area, Vec2::new(SAVE_WIDTH, height), "About Suhina", &mut closed);
     let painter = ui.painter_at(area);
+    // The logo, as on the splash, above what names the build.
+    let logo = Rect::from_center_size(
+        Pos2::new(panel.center().x, panel.top() + ROW + 2.0 * PAD + logo_height / 2.0),
+        Vec2::new(ABOUT_LOGO_WIDTH, logo_height),
+    );
+    crate::kit::logo::paint(ui, &painter, logo, theme::ui_font(theme::TEXT + 2.0), 1.0);
     let font = theme::ui_font(theme::TEXT);
     for (i, (name, value)) in facts.iter().enumerate() {
         let line = Rect::from_min_size(
-            Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + i as f32 * LINE),
+            Pos2::new(panel.left() + PAD, panel.top() + facts_top + i as f32 * LINE),
             Vec2::new(panel.width() - 2.0 * PAD, LINE),
         );
         widgets::text_in(&painter, line, Align2::LEFT_CENTER, name, font.clone(), theme::text_hint());

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Token-level budgets shared by parsing and source editing.
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 /// Validate syntax structure before recursing into selectors or values. This does
 /// not advertise property support; that belongs to the native property registry.
@@ -10,11 +10,10 @@ pub fn validate(source: &str) -> Result<(), String> {
     if source.len() > crate::MAX_SOURCE_BYTES {
         return Err("Style sheet exceeds 128 KiB".into());
     }
-    let mut input = ParserInput::new(source);
-    walk(&mut Parser::new(&mut input), 0)
+    walk(&mut Parser::new(source), 0)
 }
 
-fn walk(parser: &mut Parser<'_, '_>, depth: usize) -> Result<(), String> {
+fn walk(parser: &mut Parser<'_>, depth: usize) -> Result<(), String> {
     if depth > crate::MAX_NESTING {
         return Err("Style sheet exceeds 64 nested blocks or functions".into());
     }
@@ -31,7 +30,7 @@ fn walk(parser: &mut Parser<'_, '_>, depth: usize) -> Result<(), String> {
                 parser
                     .parse_nested_block(|nested| {
                         result = walk(nested, depth + 1);
-                        Ok::<(), cssparser::ParseError<'_, ()>>(())
+                        Ok::<(), cssparser::ParseError<()>>(())
                     })
                     .map_err(|e| format!("CSS block: {e:?}"))?;
                 result?;

@@ -230,10 +230,7 @@ fn a_selected_track_shows_its_devices() {
 #[test]
 fn a_built_ins_generated_list_fits_the_compact_panel() {
     let mut project = demo_project();
-    project.channels[0].devices = vec![
-        Device::new("Utility", DeviceKind::Builtin("utility".into())),
-        Device::new("Pitch", DeviceKind::Builtin("pitch".into())),
-    ];
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
     let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
     for device in &chain.devices {
         let graph = device.graph.as_ref().unwrap_or_else(|| panic!("{} has a panel", device.name));
@@ -525,7 +522,7 @@ fn a_running_plug_in_shows_the_parameters_it_lists_as_a_generated_list() {
 fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = with_plugin();
-    let point = |beat, value| AutomationPoint { beat, value, curve: 0.0 };
+    let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
     project.channels[0].devices[0].automation = vec![
         AutomationLane { param: "1".into(), points: vec![point(0.0, 0.75), point(8.0, 0.75)], enabled: true },
         AutomationLane { param: "2".into(), points: vec![point(0.0, 3.0), point(8.0, 3.0)], enabled: true },
@@ -839,4 +836,23 @@ fn a_theme_lays_a_generated_list_side_by_side() {
     let lefts: Vec<f32> = cells.iter().take(4).map(|c| c.left()).collect();
     assert_eq!(lefts, [0.0, 100.0, 200.0, 0.0], "three to a line, then the next line");
     assert!(cells[0].height() >= 48.0 && cells[3].top() >= 48.0, "{cells:?}");
+}
+
+#[test]
+fn stock_value_text_drops_the_minus_of_a_negative_that_rounds_to_zero() {
+    let mut parameter = GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: suhina_device_sdk::ParameterControl::Knob,
+        unit: "dB".into(),
+        id: "gain".into(),
+        name: "Gain".into(),
+        min: -1.0,
+        max: 1.0,
+        value: 0.0,
+        ui: suhina_device_sdk::ParameterUi::default(),
+    };
+    parameter.ui.decimals = 2;
+    assert_eq!(super::parameters::value_text(&parameter, -0.004), "0.00 dB");
+    assert_eq!(super::parameters::value_text(&parameter, -0.014), "-0.01 dB");
 }

@@ -3,7 +3,7 @@
 
 //! Bounded native linear, radial and conic gradients, with premultiplied sRGB interpolation.
 use crate::value::{Color, Length};
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
@@ -78,8 +78,7 @@ pub fn parse(source: &str) -> Result<Vec<Linear>, String> {
     if source.trim().eq_ignore_ascii_case("none") {
         return Ok(Vec::new());
     }
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let mut layers = Vec::new();
     loop {
         if layers.len() >= 4 {
@@ -170,8 +169,7 @@ fn parse_direction(source: &str) -> Result<Direction, String> {
         return Ok(Direction::Angle(std::f32::consts::PI));
     }
     let source = source.strip_suffix(" in srgb").unwrap_or(source).trim_end();
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     if parser.try_parse(|p| p.expect_ident_matching("to")).is_ok() {
         let mut x = 0.0f32;
         let mut y = 0.0f32;
@@ -323,8 +321,7 @@ fn parse_conic(source: &str) -> Result<Shape, String> {
 }
 
 fn angle_radians(source: &str) -> Result<f32, String> {
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let radians = match parser.next().map_err(|_| "Expected an angle")? {
         Token::Dimension { value, unit, .. } if value.is_finite() && value.abs() <= 1_000_000.0 => {
             match unit.as_ref() {
@@ -343,8 +340,7 @@ fn angle_radians(source: &str) -> Result<f32, String> {
 }
 
 fn parse_stop(source: &str, conic: bool) -> Result<Vec<Stop>, String> {
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let start = parser.position();
     if matches!(parser.next().map_err(|_| "Missing gradient colour")?, Token::Function(_)) {
         crate::sheet::nested(&mut parser, crate::sheet::consume)?;

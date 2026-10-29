@@ -229,6 +229,31 @@ fn a_sample_with_a_tempo_in_its_name_is_warped_to_the_project() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A loop of known tempo stretched with warp off, then warped again, is back at its own tempo:
+/// warp on sets it to the file's tempo, not to the stretch.
+#[test]
+fn warp_on_sets_a_loop_of_known_tempo_back_to_its_own_tempo() {
+    let dir = temp_dir("warp-back");
+    let looped = wav(&dir, "loop 60bpm.wav", 2.0, 0.5);
+    let mut session = Session::new(blank_project());
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&looped)], "track": 3, "start": 0.0 })).unwrap();
+    let clip = |s: &Session| {
+        let p = s.project();
+        p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap().clips[0].clone()
+    };
+    let id = clip(&session).id.0;
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.stretch", json!({ "clip": id, "end": 3.0 })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": true })).unwrap();
+    let c = clip(&session);
+    let p = session.project();
+    let LaneData::Audio(region) = &p.content(c.content).unwrap().lanes[0].data else { panic!() };
+    assert!(region.warped);
+    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The slot clip in `scene` (from 1) of `track`.
 fn slot_clip(p: &Project, track: u32, scene: usize) -> &Clip {
     let column = p.launcher.columns.iter().find(|c| c.track == TrackId(track)).unwrap();

@@ -3,6 +3,16 @@
 
 use super::*;
 
+/// The bindings follow the CPU's packing: 8 bytes on ARM, 1 on x86. With x86's on ARM, a
+/// plug-in read the region sequence's musical context 4 bytes late and crashed (PitchNet on an
+/// Apple silicon Mac, on any track with audio).
+#[test]
+fn the_bindings_lay_structs_out_as_the_headers_do_on_this_cpu() {
+    let (context, region_start) = if cfg!(target_arch = "aarch64") { (24, 16) } else { (20, 12) };
+    assert_eq!(std::mem::offset_of!(ARARegionSequenceProperties, musicalContextRef), context);
+    assert_eq!(std::mem::offset_of!(ARAPlaybackRegionProperties, startInModificationTime), region_start);
+}
+
 /// A plug-in's source ref for the tests, never read.
 fn source_ref(n: usize) -> ARAAudioSourceRef {
     std::ptr::without_provenance_mut(n)

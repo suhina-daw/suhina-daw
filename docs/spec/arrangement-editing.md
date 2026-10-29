@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-10-25
+last_verified: 2026-10-28
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -186,7 +186,7 @@ headers are tinted with their track's colour, deeper while selected.
 A clip on a lane at least 36 px tall has a name bar along its top. By default (Settings ›
 Arrangement › *Moving a clip*: **Name bar**, `clip_drag = name_bar`) a drag from the name bar
 moves the clip (a hand cursor) and a drag from its body below paints a time selection (a text
-cursor) over the tracks it crosses. **Mirror** (`clip_drag = halves`) splits the clip in two
+cursor) over the tracks it crosses. **Lower half** (`clip_drag = halves`) splits the clip in two
 instead: its upper half paints time and its lower half moves it. An empty spot of a lane is split
 in two either way: its upper half paints time, its lower half draws a rectangle that picks whole
 clips and paints no time. A clip on a lane under 36 px moves from its lower half.
@@ -282,7 +282,7 @@ not on whole clips. It is made by:
 - a drag on the ruler: that time over every track;
 - over a clip, as Settings › Arrangement › *Moving a clip* and *Ctrl+drag selects time over
   clips* say: off (the default) a drag from the clip's body selects time and the clip moves by
-  its name bar (with **Mirror**, from its upper and lower half); on, a drag with Ctrl held
+  its name bar (with **Lower half**, from its upper and lower half); on, a drag with Ctrl held
   selects time anywhere and a plain drag moves the clip.
 
 Its edges are on the grid (Alt: free). A click on a clip, or moving one, ends it, so clicked
@@ -628,12 +628,12 @@ pointer, on [the grid](#the-grid) (Alt held, or the grid `none`: free, to a thou
 The marker is a small triangle hanging from the ruler's lower edge; the playhead is a line through
 the ruler and the lanes, at the marker while stopped (measurements in
 [components](../design/components.md) › Arrangement view). The Stop button and the play/stop key
-pass the setting **Stop** (Settings › General): **Marker** (default) or **Stay**, saved as
+pass the setting **Stop** (Settings › Arrangement › Time and play): **Marker** (default) or **Stay**, saved as
 `stop = marker | here`.
 
 **Playing from the selected clip.** A clip's start is often where one wants to listen from;
 moving the marker there by hand first is a step too many. **Suhina:** the play/stop key and the
-Play button pass the setting **Play from** (Settings › General): **Selected clip** (default) or
+Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
@@ -943,7 +943,7 @@ Row height is view state, not an edit to the music project.
 Settings › Arrangement › Track sizes chooses independent named defaults for ordinary tracks
 and returns: Tiny, Compact, Small, Medium and Large. Initial heights are 14, 20, 40, 64 and 104 px,
 respectively; the defaults are Small for tracks and Compact for returns. Sliders customize each
-size without showing units. Advanced track sizes replaces the sliders with directly editable pixel fields.
+size without showing units. Arrangement › Advanced › Exact track heights replaces the sliders with directly editable pixel fields.
 Sizes are strictly ordered and bounded to 14–400 px, including when loading hand-edited settings.
 Tiny keeps a single 12 px control row with 1 px padding; automation, volume and track controls
 remain accessible. Existing four-size settings retain their heights and gain Tiny at 14 px.

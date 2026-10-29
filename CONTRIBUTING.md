@@ -101,9 +101,13 @@ cargo deny check
 **Dependabot** opens the updates: a security update as soon as a RustSec or GitHub advisory
 names a crate Suhina uses, and on Mondays the week's version updates
 ([`.github/dependabot.yml`](.github/dependabot.yml)): minor and patch updates of the Cargo
-workspace grouped in one pull request, a major update in a pull request of its own, and the GitHub
-Actions the workflows use. They go through CI and review like any other pull request; a major
-update that changes an API needs the code changed in the same pull request.
+workspace grouped in one pull request, the major updates (for a 0.x crate, 0.14 to 0.15) in a
+second one, and the GitHub Actions the workflows use. Every update rewrites `Cargo.lock`, so two
+of them in the merge queue at once conflict; queue one, and after it merges ask the other to rebase
+(`@dependabot rebase`). They go through CI and review like any other pull request; a major
+update that changes an API needs the code changed in the same pull request. One that cannot be
+fixed there goes in the `cargo-major` group's `exclude-patterns` in `.github/dependabot.yml`, so it
+comes in a pull request of its own and the rest of the group can merge.
 
 When it rejects a licence, prefer another crate. Add an exception only for a licence that is
 GPLv3-compatible, for the crate that needs it, with a comment saying what the crate is for and
@@ -208,12 +212,27 @@ blocks nothing (`AGENTS.md` › Tasks has the commands). The rules in
 [AI-assisted contributions](#ai-assisted-contributions) apply to what the agent wrote.
 
 **No elevated access just to post.** These bot workflows require existing repository write
-access, not admin access. Without it, an agent uses the user's authenticated account to post
-ordinary issues and PR comments, within the user's authorization, and identifies agent-written
-feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
+access, not admin access. An agent checks that access first
+(`gh api repos/suhina-daw/suhina-daw --jq .permissions.push`, or
+[`scripts/agent_post.py`](scripts/agent_post.py), which checks and posts either way); without it,
+or when a dispatch is answered with a 403 (whose message wrongly asks for admin rights), it uses
+the user's authenticated account to post ordinary issues and PR comments, within the user's
+authorization, names in an issue's body the labels and parent it could not set, and identifies
+agent-written feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
 not request admin/write access, broader token scopes or App secrets to follow the bot posting
 convention. Connector restrictions still apply: if no authorized posting route is available,
 explain the limit and give the user the prepared text.
+
+With triage access, the helper checks repository labels before creating an issue, applies only
+available labels and names missing ones in the body for a maintainer. A failed label lookup stops
+before creation; a failed create is never retried.
+
+The helper checks a supplied parent is an open epic before opening an issue under the user's
+account, and adds the AI-assisted note to both issues and comments. If a workflow posts but its
+successful completion cannot be confirmed, the helper reports an error with the created item's
+marker and the run id: inspect the run and finish any missing follow-up without posting again.
+If no marker can be read, the posting outcome is unknown and the workflow may still post;
+inspect the named run instead of starting another request.
 
 **Trusted bot actions.** Contributors listed in `TRUSTED_CONTRIBUTORS` may ask `suhina-bot`
 to create issues with `/open-issue`, close/reopen issues with `/close` and `/reopen`, and request
@@ -235,7 +254,10 @@ Windows, macOS and Linux ([`docs/releasing.md` › Test builds](docs/releasing.m
 links the downloads from the pull request in a comment, updated with every new build. A maintainer's own pull requests are
 built on every push. A contributor's pull request is built once a maintainer has read the diff and
 added the `test-build` label, or a trusted contributor requests it with `/test-build`; a later
-push takes the label off, and the new commits need a new request.
+push takes the label off, and the new commits need a new request. `/test-build` first reuses a
+running build of that commit or a successful build whose requested packages are still available.
+A verified main-only update can reuse the previous build. It starts another build only when no
+suitable build is available.
 
 ## Merging many pull requests
 
@@ -250,18 +272,25 @@ says how the queue is set up and what runs in it.
 **The `ready to merge` label** does the waiting for you. A maintainer who has read a pull request
 adds it, and [`ready-to-merge.yml`](.github/workflows/ready-to-merge.yml) approves the commit it was
 added on and turns on *Merge when ready* for that commit: the queue takes the pull request once
-`ci` is green and every review thread is resolved (CodeRabbit's too), and a red check stops it. A
-contributor's pull request also needs a maintainer's approving review of the same head commit, or
-`test-build` so its build was tried first; Dependabot's Cargo updates need neither, since the queue's build and tests check them (its updates of the Actions do). A push by anyone
+`ci` is green and every review thread is resolved (CodeRabbit's too), and a red check stops it.
+Adding the label is the maintainer's approval of that exact commit, regardless of the author, and
+it needs a finished test build of that commit: a successful `/test-build` run whose packages are
+still available, or one of an earlier head the branch has only merged `main` into since. Without
+one the label comes off with a comment asking for `/test-build`; an existing build is reused, so
+asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build. Code-owner approval is still required for
+protected paths. A push by anyone
 but a maintainer takes the label off, so new commits are never merged unread; taking the label off
 by hand stops the merge. Only a maintainer adds it: an agent never adds `ready to merge`, also not
 when asked to finish a pull request.
 
-**Workflows and scripts need the owner's review.** A pull request that changes `.github/` or
-`scripts/` runs with the repository's secrets once it is on `main`, so
-[`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for them and the main
-ruleset requires a code owner's approval: `ready to merge` alone does not merge such a change, also
-not one from another maintainer.
+**Workflows and scripts need the owner's review.** To protect code that runs with the
+repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repository owner for
+`.github/` and `scripts/`, except `scripts/parity/`. The main ruleset requires a code owner's
+approval for the protected paths: `ready to merge` alone does not merge such a change, also
+not one from another maintainer. Parity scripts run without environment secrets; the generated
+documentation is published in a separate job that does not execute them. Changes confined to
+`scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
+code out of jobs that use environment secrets.
 
 ## Clean-room
 

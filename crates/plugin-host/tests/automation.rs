@@ -47,7 +47,10 @@ fn gain(id: &str, points: &[(f64, f64)]) -> Device {
     Device {
         automation: vec![AutomationLane {
             param: "0".into(),
-            points: points.iter().map(|&(beat, value)| AutomationPoint { beat, value, curve: 0.0 }).collect(),
+            points: points
+                .iter()
+                .map(|&(beat, value)| AutomationPoint { beat, value, curve: Default::default() })
+                .collect(),
             enabled: true,
         }],
         ..Device::new(format!("Test {id}"), DeviceKind::Clap { id: id.into() })

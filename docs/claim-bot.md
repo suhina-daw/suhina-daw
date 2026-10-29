@@ -3,10 +3,12 @@ description: How the claim bot moves an issue's card on the project board, holds
 read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-10-28
 covers:
   - .github/workflows/trusted-requests.yml
   - scripts/test_trusted_requests.py
+  - scripts/build_reuse.py
+  - scripts/test_build_reuse.py
   - .github/workflows/claim.yml
   - scripts/claim_bot_test.py
   - .github/workflows/depends-on.yml
@@ -103,7 +105,7 @@ or whitespace; an optional `@` is accepted.
 |---|---|---|
 | `/close` | An issue | Close it |
 | `/reopen` | An issue | Reopen it |
-| `/test-build` | An open pull request | Request a build of its current commit; a new commit needs a new comment |
+| `/test-build` | An open pull request | Reuse a suitable existing build or request one for the current commit; a new commit needs a new comment |
 | `/open-issue` followed by JSON | An existing issue or pull request | Create a new issue as the bot and reply with its number |
 
 Post a **new comment**, with the command on its own first line. Editing a comment does not
@@ -114,9 +116,17 @@ cannot cancel a write already starting. Close/reopen and test-build take no argu
 close/reopen never act on pull requests.
 A completed request is not repeated when its Actions run is rerun. Issue creation recovers an
 issue created before a failed reply. A partially failed test-build request may repeat a label
-event for the same commit, but cannot authorize another commit. A test-build request gets one
-reply, which also carries the proof the build checks (its last line). Runs for the same comment are
-serialized; separate comments are independent requests.
+event for the same commit, but cannot authorize another commit. A new build request gets one
+reply carrying the proof the build checks (its last line). A reuse reply links the existing run
+and grants no new build or merge authorization.
+
+Authorized test-build requests for the same PR run one at a time; a newer pending request replaces
+an older pending one. Repeated comments reuse an active build for the same head, or a successful
+build with all requested packages still available. Verified main-only updates can reuse a
+successful ancestor build ([Test builds](releasing.md#test-builds)). A five-minute dispatch window
+also prevents duplicate requests before a newly requested run becomes visible. After a failed
+build or expired packages, a new comment requests another build. Other commands remain independent
+per comment. Membership and the source comment are checked again before writing.
 
 For example, comment on the issue that prompted the new work:
 
@@ -133,7 +143,9 @@ as for other issues. GitHub's ordinary **New issue** remains available.
 This uses the existing `suhina-bot` environment and App secrets described in
 [open-issue.yml](../.github/workflows/open-issue.yml), with Issues and Pull requests write
 permissions scoped to this repository. No Actions write permission is needed: the App's label
-event starts the build. The privileged workflow never checks out request or PR code.
+event starts the build. The read-only workflow token lists runs, jobs and artifacts; the App
+needs no extra permissions. Only default-branch automation is checked out. PR git objects are
+fetched for patch comparisons, but PR files are never checked out or executed.
 A rejected request fails in **Actions → Trusted requests** without changing the issue;
 the log explains the refusal. Workflow dispatch still requires GitHub write access; trusted
 contributors use the comment commands instead.

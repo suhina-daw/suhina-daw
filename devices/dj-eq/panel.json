@@ -1,0 +1,281 @@
+{
+  "ui": {
+    "size": [
+      260.0,
+      168.0
+    ],
+    "viewport_size": null,
+    "background": [
+      37,
+      36,
+      33,
+      255
+    ],
+    "assets": [],
+    "layers": [],
+    "controls": [
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Low",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "low",
+        "name": "Low",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          4.0,
+          4.0,
+          52.0,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "low",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Kill",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "lowKill",
+        "name": "Kill",
+        "tooltip": "lowKill: Kill",
+        "bounds": [
+          4.0,
+          132.0,
+          52.0,
+          22.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "lowKill",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Mid",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "mid",
+        "name": "Mid",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          64.0,
+          4.0,
+          52.0,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "mid",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Kill",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "midKill",
+        "name": "Kill",
+        "tooltip": "midKill: Kill",
+        "bounds": [
+          64.0,
+          132.0,
+          52.0,
+          22.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "midKill",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "High",
+          "decimals": 1,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "high",
+        "name": "High",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          124.0,
+          4.0,
+          52.0,
+          120.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "high",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "button",
+          "label": "Kill",
+          "off_label": null,
+          "indicator": false
+        },
+        "visible_when": null,
+        "id": "highKill",
+        "name": "Kill",
+        "tooltip": "highKill: Kill",
+        "bounds": [
+          124.0,
+          132.0,
+          52.0,
+          22.0
+        ],
+        "gesture": "toggle",
+        "x": {
+          "parameter": "highKill",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "Low Freq",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "lowFrequency",
+        "name": "Low Freq",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          180.0,
+          0.0,
+          80.0,
+          60.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "lowFrequency",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "dial",
+          "label": "High Freq",
+          "decimals": 0,
+          "format": "number"
+        },
+        "visible_when": null,
+        "id": "highFrequency",
+        "name": "High Freq",
+        "tooltip": "Drag vertically; Shift for precision; double click resets",
+        "bounds": [
+          180.0,
+          60.0,
+          80.0,
+          60.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": {
+          "parameter": "highFrequency",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "label",
+          "label": "Slope"
+        },
+        "visible_when": null,
+        "id": "slope_caption",
+        "name": "Slope",
+        "tooltip": "",
+        "bounds": [
+          184.0,
+          120.0,
+          72.0,
+          14.0
+        ],
+        "gesture": "drag",
+        "x": null,
+        "y": null,
+        "drawing": []
+      },
+      {
+        "widget": {
+          "kind": "menu"
+        },
+        "visible_when": null,
+        "id": "slope",
+        "name": "slope",
+        "tooltip": "",
+        "bounds": [
+          184.0,
+          136.0,
+          72.0,
+          22.0
+        ],
+        "gesture": "menu",
+        "x": {
+          "parameter": "slope",
+          "logarithmic": false,
+          "drag_scale": 1.0
+        },
+        "y": null,
+        "drawing": []
+      }
+    ],
+    "hidden_parameters": [
+      "low",
+      "mid",
+      "high",
+      "lowKill",
+      "midKill",
+      "highKill",
+      "lowFrequency",
+      "highFrequency",
+      "slope"
+    ]
+  }
+}

@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_device_api::{ParamInfo, ParamKind, Unit};
-use suhina_engine::model::automation::{self, MUTE, PAN, Taper, VOLUME};
+use suhina_engine::model::automation::{self, Curve, MUTE, PAN, Taper, VOLUME};
 use suhina_engine::model::{AutomationLane, AutomationPoint, ClipId, DeviceKind, Project, Rgb, TrackId};
 
 use crate::interaction::timeline_grid::TimelineGrid;
@@ -45,10 +45,12 @@ fn segment_hit(plot: Rect) -> f32 {
     SEGMENT_HIT.max(plot.height() * SEGMENT_HIT_SHARE)
 }
 /// How much a point of vertical drag bends a segment's curve.
-const CURVE_PER_POINT: f64 = 0.01;
 /// The curve handle's radius, and how wide a segment must be on screen to show one.
 const CURVE_HANDLE: f32 = 3.0;
 const CURVE_HANDLE_MIN: f32 = 28.0;
+/// Points of vertical drag per step of a curve drag (`automation::CurveDrag`): the mirrored
+/// family's whole range, 128 steps, is 192 points.
+const POINTS_PER_STEP: f32 = 1.5;
 /// How strongly a lane without points draws its parameter's value.
 const LEVEL_ALPHA: f32 = 0.4;
 /// Most points one segment of an envelope is drawn with.
@@ -147,16 +149,6 @@ impl Scale {
             Self::Volume if value <= 0.0 => json!("-inf"),
             Self::Volume => json!(gain_to_db(value).min(6.0)),
             _ => json!(value),
-        }
-    }
-
-    /// Whether `automation.addPoint` keeps `value` as it is: a whole-number parameter (an integer,
-    /// a toggle, a choice) rounds it, which would move a point spliced onto a slope.
-    fn keeps(&self, value: f64) -> bool {
-        match self {
-            Self::Device(info) => info.clamp(value) == value,
-            Self::Sd(parameter) => parameter.clamp(value) == value,
-            Self::Volume | Self::Pan | Self::Mute => true,
         }
     }
 
@@ -270,8 +262,9 @@ impl Scale {
                 ParamKind::Choice(options) => {
                     options.get(info.clamp(value) as usize).map_or_else(String::new, |o| (*o).to_string())
                 }
+                // What the parameter plays: a lane between two numbers cuts the fraction off.
                 ParamKind::Integer => {
-                    let value = info.clamp(value);
+                    let value = info.played(value);
                     match info.unit {
                         Unit::Semitones => format!("{value:+} st"),
                         Unit::ScaleDegrees => format!("{value:+} sd"),
@@ -612,13 +605,16 @@ struct Smoothed {
     amount: f64,
 }
 
-/// A segment's curve being bent: the segment's first point and its curve so far.
+/// A segment's curve being bent: the segment's first point, the drag along the control points'
+/// paths, how far the pointer has moved and the curve that gives.
 #[derive(Debug, Clone, PartialEq)]
 struct CurveDrag {
     track: TrackId,
     key: LaneKey,
     point: usize,
-    curve: f64,
+    paths: automation::CurveDrag,
+    moved: f32,
+    curve: Curve,
 }
 
 /// A box drawn over a lane to select the points in it, from where it started to the pointer.
@@ -1199,10 +1195,11 @@ fn envelope(points: &[AutomationPoint], scale: &Scale, plot: Rect, geometry: &Ge
             // Evenly in the lane's position, as the engine plays it: a straight segment is a
             // straight line; a bent one is sampled along its curve.
             let (ya, yb) = (scale.position(a.value), scale.position(b.value));
-            let steps = if a.curve == 0.0 { 1 } else { (((xb - xa) / 2.0).ceil() as usize).clamp(2, SEGMENT_POINTS) };
+            let steps =
+                if a.curve.is_straight() { 1 } else { (((xb - xa) / 2.0).ceil() as usize).clamp(2, SEGMENT_POINTS) };
             for step in 1..steps {
                 let t = step as f64 / steps as f64;
-                let shaped = suhina_engine::model::automation::shape(t, a.curve);
+                let shaped = a.curve.shape(t);
                 let x = geometry.x_of(a.beat + (b.beat - a.beat) * t);
                 line.push(Pos2::new(x, y_of(plot, ya + (yb - ya) * shaped)));
             }
@@ -1221,8 +1218,8 @@ impl automation::Taper for Scale {
         Scale::position(self, value)
     }
     fn value(&self, position: f64) -> f64 {
-        // A whole-number parameter moves along the line between its points and the device
-        // rounds, as the engine plays it.
+        // A whole-number parameter moves along the line between its points, through values
+        // between its numbers, as the engine moves it (it plays them with the fraction cut off).
         match self {
             Self::Device(info) if matches!(info.kind, ParamKind::Integer) => {
                 info.min + position.clamp(0.0, 1.0) * (info.max - info.min)
@@ -1249,27 +1246,6 @@ fn distance_to(line: &[Pos2], pos: Pos2) -> f32 {
             _ => None,
         })
         .fold(f32::INFINITY, f32::min)
-}
-
-/// A point at `beat` that leaves the envelope of `points` (on `scale`) as it is: the envelope's
-/// value there, and the curve of the segment it starts. The segment before it keeps its curve and
-/// the one after it gets the curve through the old segment's middle: exact for a straight or
-/// level segment, close for a bent one (a bend cut in two is not two bends of the same kind).
-/// `None` for no points.
-fn splice(points: &[AutomationPoint], beat: f64, scale: &Scale) -> Option<(f64, f64)> {
-    use suhina_engine::model::automation::{curve_through, shape, value_at};
-    let stepped = scale.stepped();
-    let value = value_at(points, beat, stepped, scale)?;
-    let index = points.partition_point(|p| p.beat <= beat).checked_sub(1);
-    let segment = index.and_then(|i| Some((points.get(i)?, points.get(i + 1)?)));
-    let Some((a, b)) = segment.filter(|(a, b)| !stepped && a.curve != 0.0 && b.beat > a.beat) else {
-        return Some((value, 0.0));
-    };
-    let t = (beat - a.beat) / (b.beat - a.beat);
-    let start = shape(t, a.curve);
-    let middle = (shape(t + (1.0 - t) / 2.0, a.curve) - start) / (1.0 - start);
-    let curve = curve_through(0.5, middle).map_or(0.0, |c| round(c.clamp(-1.0, 1.0), 1000.0));
-    Some((value, curve))
 }
 
 /// The segment of `points` under `pos`, near enough to its line to bend it: the index of its
@@ -1337,19 +1313,13 @@ fn lane(
         let beat = geometry.snap(geometry.beat_of(pos.x), free);
         let mut params = key.params(track);
         params["beat"] = json!(beat);
-        match splice(&level, beat, &param.scale).filter(|(value, _)| param.scale.keeps(*value)) {
-            Some((value, curve)) => {
-                params["value"] = param.scale.exact(value);
-                if curve != 0.0 {
-                    params["curve"] = json!(curve);
-                }
-            }
-            None => {
-                let value =
-                    suhina_engine::model::automation::value_at(&level, beat, param.scale.stepped(), &param.scale)
-                        .unwrap_or(param.current);
-                params["value"] = param.scale.command(value);
-            }
+        // On the line the point goes on the envelope, and the command splits a bent segment so it
+        // plays as before (on a whole-number lane it keeps a value between two numbers); a lane
+        // without points takes the faint line's value.
+        if param.points.is_empty() {
+            let value =
+                automation::value_at(&level, beat, param.scale.stepped(), &param.scale).unwrap_or(param.current);
+            params["value"] = param.scale.exact(value);
         }
         if let Some(shape) = state.new_shape {
             params["shape"] = json!(shape);
@@ -1392,14 +1362,12 @@ fn lane(
             params["beat"] = json!(beat);
             // On a whole-number lane a value between two numbers cannot be kept: the point goes
             // where the pointer is, as off the line.
-            match splice(&level, beat, &param.scale).filter(|(value, _)| near && param.scale.keeps(*value)) {
-                Some((value, curve)) => {
-                    params["value"] = param.scale.exact(value);
-                    if curve != 0.0 {
-                        params["curve"] = json!(curve);
-                    }
-                }
-                None => params["value"] = param.scale.command(param.scale.value_at(position_of(plot, pos.y))),
+            if !near {
+                params["value"] = param.scale.command(param.scale.value_at(position_of(plot, pos.y)));
+            } else if param.points.is_empty() {
+                let value =
+                    automation::value_at(&level, beat, param.scale.stepped(), &param.scale).unwrap_or(param.current);
+                params["value"] = param.scale.exact(value);
             }
             if let Some(shape) = state.new_shape {
                 params["shape"] = json!(shape);
@@ -1452,8 +1420,12 @@ fn lane(
             // The press made a point: the drag moves it.
             _ if state.new_point.as_ref().is_some_and(|d| d.track == track && &d.key == key) => {}
             Some(point) if alt => {
-                let curve = param.points.get(point).map_or(0.0, |p| p.curve);
-                state.curve_drag = Some(CurveDrag { track, key: key.clone(), point, curve });
+                let curve = param.points.get(point).map_or(Curve::STRAIGHT, |p| p.curve);
+                // A drag first holds a split half's control points in the unit square, so even one
+                // shorter than a step changes a curve that lay outside it.
+                let paths = automation::CurveDrag::new(&curve);
+                let curve = paths.dragged(0);
+                state.curve_drag = Some(CurveDrag { track, key: key.clone(), point, paths, moved: 0.0, curve });
             }
             Some(point) if shift => {
                 let grab = (geometry.beat_of(pos.x), position_of(plot, pos.y));
@@ -1494,13 +1466,14 @@ fn lane(
     if body.dragged_by(egui::PointerButton::Primary) {
         let dy = body.drag_delta().y;
         if let Some(drag) = state.curve_drag.as_mut().filter(|d| d.track == track && &d.key == key) {
-            // Up bends the line up: a rising segment moves fast first, a falling one late.
+            // Up bends the line up: on a rising segment that moves the curve earlier, on a falling
+            // one later.
             let rising = match (param.points.get(drag.point), param.points.get(drag.point + 1)) {
                 (Some(a), Some(b)) => param.scale.position(b.value) >= param.scale.position(a.value),
                 _ => true,
             };
-            let sign = if rising { 1.0 } else { -1.0 };
-            drag.curve = (drag.curve - f64::from(dy) * CURVE_PER_POINT * sign).clamp(-1.0, 1.0);
+            drag.moved += if rising { dy } else { -dy };
+            drag.curve = drag.paths.dragged((drag.moved / POINTS_PER_STEP).round() as i32);
         }
         if let Some(drag) = state.box_drag.as_mut().filter(|d| d.track == track && &d.key == key)
             && let Some(pos) = body.interact_pointer_pos()
@@ -1566,19 +1539,10 @@ fn lane(
             if ui.button("Add value").clicked() {
                 let mut params = key.params(track);
                 params["beat"] = json!(at);
-                match splice(&level, at, &param.scale).filter(|(value, _)| param.scale.keeps(*value)) {
-                    Some((value, curve)) => {
-                        params["value"] = param.scale.exact(value);
-                        if curve != 0.0 {
-                            params["curve"] = json!(curve);
-                        }
-                    }
-                    None => {
-                        let value =
-                            suhina_engine::model::automation::value_at(&level, at, param.scale.stepped(), &param.scale)
-                                .unwrap_or(param.current);
-                        params["value"] = param.scale.command(value);
-                    }
+                // Without a value the command splits a bent segment so it plays as before; a lane
+                // without points takes the faint line's value.
+                if param.points.is_empty() {
+                    params["value"] = param.scale.command(param.current);
                 }
                 if let Some(shape) = state.new_shape {
                     params["shape"] = json!(shape);
@@ -1635,11 +1599,11 @@ fn lane(
     if body.drag_stopped_by(egui::PointerButton::Primary)
         && let Some(drag) = state.curve_drag.take_if(|d| d.track == track && &d.key == key)
     {
-        let before = param.points.get(drag.point).map_or(0.0, |p| p.curve);
-        if (drag.curve - before).abs() > 1e-6 {
+        let before = param.points.get(drag.point).map_or(Curve::STRAIGHT, |p| p.curve);
+        if drag.curve != before {
             let mut params = key.params(track);
             params["point"] = json!(drag.point);
-            params["curve"] = json!(round(drag.curve, 1000.0));
+            params["curve"] = json!(drag.curve.to_array());
             actions.push(Action::new("automation.movePoint", params));
         }
     }
@@ -1737,25 +1701,27 @@ fn lane(
                 params["curve"] = json!(0.0);
                 actions.push(Action::new("automation.movePoint", params));
             } else if response.drag_started_by(egui::PointerButton::Primary) {
-                let curve = param.points.get(index).map_or(0.0, |p| p.curve);
-                state.curve_drag = Some(CurveDrag { track, key: key.clone(), point: index, curve });
+                let curve = param.points.get(index).map_or(Curve::STRAIGHT, |p| p.curve);
+                let paths = suhina_engine::model::automation::CurveDrag::new(&curve);
+                let curve = paths.dragged(0);
+                state.curve_drag = Some(CurveDrag { track, key: key.clone(), point: index, paths, moved: 0.0, curve });
             }
             if response.dragged_by(egui::PointerButton::Primary)
                 && let Some(drag) =
                     state.curve_drag.as_mut().filter(|d| d.track == track && &d.key == key && d.point == index)
             {
-                let sign = if rising { 1.0 } else { -1.0 };
-                drag.curve =
-                    (drag.curve - f64::from(response.drag_delta().y) * CURVE_PER_POINT * sign).clamp(-1.0, 1.0);
+                let dy = response.drag_delta().y;
+                drag.moved += if rising { dy } else { -dy };
+                drag.curve = drag.paths.dragged((drag.moved / POINTS_PER_STEP).round() as i32);
             }
             if response.drag_stopped_by(egui::PointerButton::Primary)
                 && let Some(drag) = state.curve_drag.take_if(|d| d.track == track && &d.key == key && d.point == index)
             {
-                let before = param.points.get(index).map_or(0.0, |p| p.curve);
-                if (drag.curve - before).abs() > 1e-6 {
+                let before = param.points.get(index).map_or(Curve::STRAIGHT, |p| p.curve);
+                if drag.curve != before {
                     let mut params = key.params(track);
                     params["point"] = json!(index);
-                    params["curve"] = json!(round(drag.curve, 1000.0));
+                    params["curve"] = json!(drag.curve.to_array());
                     actions.push(Action::new("automation.movePoint", params));
                 }
             }
@@ -2146,10 +2112,11 @@ fn shape_icon(name: &str, rect: Rect) -> Vec<Pos2> {
     let mut line = Vec::new();
     for pair in points.windows(2) {
         let (&(t0, v0, curve), &(t1, v1, _)) = (&pair[0], &pair[1]);
-        let steps = if curve == 0.0 { 1 } else { 8 };
+        let curve = Curve::bend(curve);
+        let steps = if curve.is_straight() { 1 } else { 8 };
         for i in 0..=steps {
             let f = f64::from(i) / f64::from(steps);
-            let v = v0 + (v1 - v0) * suhina_engine::model::automation::shape(f, curve);
+            let v = v0 + (v1 - v0) * curve.shape(f);
             line.push(at(t0 + (t1 - t0) * f, v));
         }
     }

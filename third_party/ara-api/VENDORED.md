@@ -10,6 +10,7 @@ Licence: Apache License 2.0 (`LICENSE.txt`), compatible with Suhina's GPL-3.0-or
 a derived work.
 
 They are not compiled. `scripts/ara_bindings.sh` turns `ARAInterface.h` into
-`crates/plugin-host/src/ara_sys.rs` with bindgen; the three COM interfaces of `ARAVST3.h` are
+`crates/plugin-host/src/ara_sys/` with bindgen, once for x86 and once for ARM (the headers
+pack structs differently on each); the three COM interfaces of `ARAVST3.h` are
 written by hand in `crates/plugin-host/src/ara.rs`. See
 [ADR 0028](../../docs/decisions/0028-ara-hosting.md).

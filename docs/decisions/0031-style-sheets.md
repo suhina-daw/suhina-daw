@@ -3,7 +3,7 @@ description: Themes become style sheets in a CSS dialect of Suhina's own (elemen
 read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taffy, glass, blur, transparent window, artwork, SVG controls, meter style, edit interface, theme package
 type: decision
 status: draft
-last_verified: 2026-10-25
+last_verified: 2026-10-29
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -260,7 +260,9 @@ Selectors are CSS's own, without the HTML-only parts:
 - logic: `:not()`, `:is()`, `:where()`;
 - combinators: descendant, `>`, `+`, `~`; comma lists.
 
-Not supported: attribute selectors, pseudo-elements, and pseudo-classes about documents and links
+Attribute selectors test the attributes the host gives an element (`[selected]`,
+`[kind="kick"]`, with `=`, `~=`, `|=`, `^=`, `$=`, `*=` and the `i` flag); `attr()` reads them
+(issue 1017). Not supported: pseudo-elements, and pseudo-classes about documents and links
 (`:link`, `:visited`, `:target` and the like). Specificity, `!important`, source order and the
 layers decide between rules as in CSS.
 
@@ -350,7 +352,7 @@ style: `piano-roll note:selected { radius: 2px }`, `session track { width: 86px 
 `session slot { height: 18px }`, `arrangement track { height: 20px }`. Rendering, scrolling, hit
 testing and drop targets read the same metrics, so they always agree.
 
-Settings that change the layout today (Settings › Detail area › Detail area layout, the browser
+Settings that change the layout today (Settings › Devices › Detail area width, the browser
 shown or hidden) become classes on `window` (`window.detail-full-width`, `window.browser-hidden`),
 so the default style sheet states every layout in one place. Splitters stay: a drag stores a size
 for the grid track or element it moves, in the UI state (serialisable, ADR 0009 decision 5), which
@@ -538,8 +540,12 @@ The style crate takes text and returns values, so parser, cascade, media queries
 editing and the glass arithmetic are tested without a window. The UI module is the only place that
 knows egui; the render module the only one that knows wgpu. A view never reads a property by name:
 it declares an element, gets a `ComputedStyle`, and either hands it to `paint` and `text` or reads
-typed metrics from it. Resolved styles are cached per frame by element path, state, matching media
-and style-sheet generation, so an immediate-mode repaint costs a hash lookup per element.
+typed metrics from it. Resolved styles are kept until the element tree, the viewport or the sheets
+change. What is drawn in bulk (notes, clips, grid lines) is not in the tree: a drawn element is
+styled by its parent and its identity (kind, classes, states, attributes such as a clip's `color`),
+once per distinct identity, so a repaint costs a hash lookup per note. Such an element is styled as
+its parent's only child. A new tree of the same structure drops only the cached styles under the
+elements that changed.
 
 `theme::panel_background()` and the other token functions stay during the move and read the
 variables, so views move over one at a time and the snapshots must not change on the way.

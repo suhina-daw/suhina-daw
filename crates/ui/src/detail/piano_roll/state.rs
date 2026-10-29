@@ -554,7 +554,7 @@ pub(super) fn tool_of(action: &str) -> Option<Tool> {
 /// What the window tells the piano roll about the settings that change what it does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Options {
-    /// How large the toolbar is drawn: Settings › Clip editor › Piano roll › Toolbar size.
+    /// How large the toolbar is drawn: Settings › Clip editor › Piano roll › Piano roll toolbar size.
     pub toolbar_size: ToolbarSize,
     /// The workflow settings: what clicks, right-clicks and double-clicks do (› Workflow modes in
     /// `docs/spec/ui-clip-editor.md`).

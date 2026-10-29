@@ -3,7 +3,7 @@
 
 //! Toolkit-independent paint values. Parsing and resolution stay off the audio thread.
 use crate::value::{Color, Length};
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shadow {
@@ -55,8 +55,7 @@ pub fn shadows(source: &str, text: bool) -> Result<Vec<Shadow>, String> {
     if source.trim().eq_ignore_ascii_case("none") {
         return Ok(Vec::new());
     }
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let mut result = Vec::new();
     loop {
         if result.len() >= MAX_SHADOW_LAYERS {

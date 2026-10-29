@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Typed native values. No renderer, pixels, or toolkit-specific colour types.
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Color {
@@ -12,8 +12,7 @@ pub enum Color {
 
 impl Color {
     pub fn parse(source: &str) -> Result<Self, String> {
-        let mut input = ParserInput::new(source);
-        let mut parser = Parser::new(&mut input);
+        let mut parser = Parser::new(source);
         let color = match parser.next().map_err(|_| "Expected colour")?.clone() {
             Token::Hash(hex) | Token::IDHash(hex) => {
                 let (r, g, b, a) =
@@ -32,7 +31,7 @@ impl Color {
                 parser
                     .parse_nested_block(|parser| {
                         value = Some(rgb(parser));
-                        Ok::<(), cssparser::ParseError<'_, ()>>(())
+                        Ok::<(), cssparser::ParseError<()>>(())
                     })
                     .map_err(|_| "Invalid rgb()")?;
                 Self::Rgba(value.ok_or("Empty rgb()")??)
@@ -43,6 +42,9 @@ impl Color {
             Token::Function(name) if name.eq_ignore_ascii_case("color-mix") => {
                 Self::Rgba(crate::sheet::nested(&mut parser, mix)?)
             }
+            Token::Function(name) if name.eq_ignore_ascii_case("contrast-color") => {
+                Self::Rgba(crate::sheet::nested(&mut parser, contrast)?)
+            }
             _ => return Err("Unsupported colour value".into()),
         };
         parser.expect_exhausted().map_err(|_| "Unexpected colour suffix")?;
@@ -50,7 +52,7 @@ impl Color {
     }
 }
 
-fn hsl(parser: &mut Parser<'_, '_>) -> Result<[u8; 4], String> {
+fn hsl(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     let hue = match parser.next().map_err(|_| "Missing hue")? {
         Token::Number { value, .. } => *value,
         Token::Dimension { value, unit, .. } => match unit.as_ref() {
@@ -63,7 +65,7 @@ fn hsl(parser: &mut Parser<'_, '_>) -> Result<[u8; 4], String> {
         _ => return Err("Expected a hue".into()),
     };
     let comma = parser.try_parse(|p| p.expect_comma()).is_ok();
-    let percent = |parser: &mut Parser<'_, '_>| -> Result<f32, String> {
+    let percent = |parser: &mut Parser<'_>| -> Result<f32, String> {
         match parser.next().map_err(|_| "Missing hsl component")? {
             Token::Percentage { unit_value, .. } => Ok(*unit_value),
             Token::Number { value, .. } => Ok(*value / 100.0),
@@ -209,8 +211,23 @@ impl Space {
     }
 }
 
+/// `contrast-color(<colour>)`: white or black, whichever has the higher WCAG 2 contrast with the
+/// colour; white on a tie. Alpha is ignored, as a colour behind the text is not known here.
+fn contrast(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
+    let start = parser.position();
+    crate::sheet::consume(parser)?;
+    let Color::Rgba([r, g, b, _]) = Color::parse(parser.slice_from(start).trim())? else {
+        return Err("currentColor in contrast-color is not supported natively".into());
+    };
+    let channel = |c: u8| linear(f32::from(c) / 255.0);
+    let luminance = 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    let white = 1.05 / (luminance + 0.05);
+    let black = (luminance + 0.05) / 0.05;
+    Ok(if white >= black { [255, 255, 255, 255] } else { [0, 0, 0, 255] })
+}
+
 /// `color-mix(in <space>, <colour> [<p>%], <colour> [<p>%])` for literal colours.
-fn mix(parser: &mut Parser<'_, '_>) -> Result<[u8; 4], String> {
+fn mix(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     parser.expect_ident_matching("in").map_err(|_| "color-mix needs an interpolation space")?;
     let space = match parser.expect_ident().map_err(|_| "Expected a colour space")?.to_ascii_lowercase().as_str() {
         "srgb" => Space::Srgb,
@@ -294,8 +311,8 @@ fn mix(parser: &mut Parser<'_, '_>) -> Result<[u8; 4], String> {
     Ok([byte(rgb[0]), byte(rgb[1]), byte(rgb[2]), byte(mixed_alpha * scale)])
 }
 
-fn rgb(parser: &mut Parser<'_, '_>) -> Result<[u8; 4], String> {
-    let component = |parser: &mut Parser<'_, '_>, alpha: bool| -> Result<u8, String> {
+fn rgb(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
+    let component = |parser: &mut Parser<'_>, alpha: bool| -> Result<u8, String> {
         let value = match parser.next().map_err(|_| "Missing rgb component")? {
             Token::Number { value, .. } => *value * if alpha { 255.0 } else { 1.0 },
             Token::Percentage { unit_value, .. } => *unit_value * 255.0,
@@ -342,7 +359,7 @@ pub fn viewport_units(source: &str, width: f32, height: f32) -> String {
     if !source.contains("vw") && !source.contains("vh") && !source.contains("vmin") && !source.contains("vmax") {
         return source.to_owned();
     }
-    fn walk(parser: &mut Parser<'_, '_>, out: &mut String, width: f32, height: f32, depth: usize) {
+    fn walk(parser: &mut Parser<'_>, out: &mut String, width: f32, height: f32, depth: usize) {
         while let Ok(token) = parser.next_including_whitespace_and_comments().cloned() {
             match token {
                 Token::Dimension { value, ref unit, .. }
@@ -368,7 +385,7 @@ pub fn viewport_units(source: &str, width: f32, height: f32) -> String {
                     out.push_str(&open);
                     let _ = parser.parse_nested_block(|inner| {
                         walk(inner, out, width, height, depth + 1);
-                        Ok::<(), cssparser::ParseError<'_, ()>>(())
+                        Ok::<(), cssparser::ParseError<()>>(())
                     });
                     out.push(close);
                 }
@@ -376,8 +393,7 @@ pub fn viewport_units(source: &str, width: f32, height: f32) -> String {
             }
         }
     }
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let mut out = String::with_capacity(source.len());
     walk(&mut parser, &mut out, width, height, 0);
     out
@@ -392,12 +408,7 @@ enum Unit {
     Percent,
 }
 
-fn math_function(
-    parser: &mut Parser<'_, '_>,
-    name: &str,
-    depth: usize,
-    work: &mut usize,
-) -> Result<(f32, Unit), String> {
+fn math_function(parser: &mut Parser<'_>, name: &str, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
     match name {
         "calc" => crate::sheet::nested(parser, |p| sum(p, depth + 1, work)),
         "min" | "max" | "clamp" => crate::sheet::nested(parser, |p| {
@@ -426,7 +437,7 @@ fn math_function(
     }
 }
 
-fn operand(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
+fn operand(parser: &mut Parser<'_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
     if depth > 16 {
         return Err("calc() nests too deeply".into());
     }
@@ -449,7 +460,7 @@ fn operand(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Resul
     }
 }
 
-fn product(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
+fn product(parser: &mut Parser<'_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
     let mut left = operand(parser, depth, work)?;
     loop {
         let state = parser.state();
@@ -477,7 +488,7 @@ fn product(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Resul
     }
 }
 
-fn sum(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
+fn sum(parser: &mut Parser<'_>, depth: usize, work: &mut usize) -> Result<(f32, Unit), String> {
     let mut left = product(parser, depth, work)?;
     loop {
         let state = parser.state();
@@ -503,8 +514,7 @@ fn sum(parser: &mut Parser<'_, '_>, depth: usize, work: &mut usize) -> Result<(f
 
 impl Length {
     pub fn parse(source: &str) -> Result<Self, String> {
-        let mut input = ParserInput::new(source);
-        let mut parser = Parser::new(&mut input);
+        let mut parser = Parser::new(source);
         let lowered = source.trim_start().to_ascii_lowercase();
         if ["calc(", "min(", "max(", "clamp("].iter().any(|name| lowered.starts_with(name)) {
             let mut work = 256;
@@ -614,6 +624,30 @@ mod tests {
         }
         let deep = format!("{}1px{}", "calc(".repeat(40), ")".repeat(40));
         assert!(Length::parse(&deep).is_err());
+    }
+
+    #[test]
+    fn contrast_color_picks_white_or_black() {
+        let white = Ok(Color::Rgba([255, 255, 255, 255]));
+        let black = Ok(Color::Rgba([0, 0, 0, 255]));
+        assert_eq!(Color::parse("contrast-color(#000)"), white);
+        assert_eq!(Color::parse("contrast-color(navy)"), white);
+        assert_eq!(Color::parse("contrast-color(#ffff00)"), black);
+        assert_eq!(Color::parse("contrast-color(rgb(0 0 255 / 10%))"), white);
+        // Black and white contrast equally at a luminance of 0.179, between greys 117 and 118.
+        assert_eq!(Color::parse("contrast-color(#757575)"), white);
+        assert_eq!(Color::parse("contrast-color(#767676)"), black);
+        assert_eq!(Color::parse("contrast-color(#808080)"), black);
+        assert_eq!(Color::parse("contrast-color(color-mix(in oklab, white, black 10%))"), black);
+        assert_eq!(
+            Color::parse("color-mix(in srgb, contrast-color(white), white)"),
+            Ok(Color::Rgba([128, 128, 128, 255]))
+        );
+        for bad in
+            ["contrast-color()", "contrast-color(currentColor)", "contrast-color(red, blue)", "contrast-color(1px)"]
+        {
+            assert!(Color::parse(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

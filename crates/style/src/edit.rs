@@ -4,7 +4,7 @@
 //! Source-preserving native declaration edits. Conditional rules remain authored text.
 use std::ops::Range;
 
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 #[derive(Debug)]
 struct Declaration {
@@ -14,7 +14,7 @@ struct Declaration {
     whole: Range<usize>,
 }
 
-fn consume_block(parser: &mut Parser<'_, '_>) -> Result<(), String> {
+fn consume_block(parser: &mut Parser<'_>) -> Result<(), String> {
     // inspect() has already bounded nesting. Explicitly consume blocks so their
     // delimiters and semicolons never become declarations of the containing rule.
     while !parser.is_exhausted() {
@@ -39,15 +39,12 @@ fn consume_block(parser: &mut Parser<'_, '_>) -> Result<(), String> {
     Ok(())
 }
 
-fn nested<T>(
-    parser: &mut Parser<'_, '_>,
-    read: impl FnOnce(&mut Parser<'_, '_>) -> Result<T, String>,
-) -> Result<T, String> {
+fn nested<T>(parser: &mut Parser<'_>, read: impl FnOnce(&mut Parser<'_>) -> Result<T, String>) -> Result<T, String> {
     let mut outcome = None;
     parser
         .parse_nested_block(|inner| {
             outcome = Some(read(inner));
-            Ok::<(), cssparser::ParseError<'_, ()>>(())
+            Ok::<(), cssparser::ParseError<()>>(())
         })
         .map_err(|e| format!("CSS block: {e:?}"))?;
     outcome.ok_or("Missing CSS block")?
@@ -55,8 +52,7 @@ fn nested<T>(
 
 fn declarations(source: &str) -> Result<Vec<Declaration>, String> {
     crate::syntax::validate(source)?;
-    let mut input = ParserInput::new(source);
-    let mut parser = Parser::new(&mut input);
+    let mut parser = Parser::new(source);
     let mut result = Vec::new();
     let mut start = None;
     while !parser.is_exhausted() {

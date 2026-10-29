@@ -3,7 +3,7 @@ description: Suhina's own project file (.suhina): versioned JSON of the model, w
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -81,7 +81,7 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    found next to the template.
 9. **The window** offers New or open (Ctrl+T): a new blank project, one from a template in the
    templates folder, or a project to open from a typed path or the recent list (kept in
-   `recent.txt`). Started without a project given, it opens what Settings › General › At start
+   `recent.txt`). Started without a project given, it opens what Settings › Projects and backups › Startup project
    says (`at_start` in `settings.txt`, #234): the start panel (the default, `panel`; #318),
    a new blank project, a new one from the start template (`start_template`: a name in the
    templates folder or a path), or the project opened last (the newest in `recent.txt`); a
@@ -109,7 +109,7 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
     `project.save` without a path, or a path that ends in `.locr`), so no file is renamed
     behind the user's back. Save as offers `.suhina`; the file saved then names the format
     `"suhina"`, which a Suhina from before the change does not read.
-11. **Backups** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
+11. **Backup interval** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
     setting writes a backup of each project with unsaved changes before every critical operation,
     every 1, 5 (the default), 10, 15, 30 or 60 minutes, every 4 hours, or never; a timed backup is
     written only when the project changed since the last one. Backups go to `.backup/` beside the

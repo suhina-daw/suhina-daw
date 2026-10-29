@@ -81,7 +81,7 @@ pub struct SessionViewState {
     /// A clip slot whose drag started this frame (track, scene from 0): the window carries the
     /// clip from there (`docs/spec/ui-session-view.md` › Between the views).
     pub slot_drag: Option<(TrackId, usize)>,
-    /// Launching a clip leaves the selection as it is (Settings › Detail area › Select on
+    /// Launching a clip leaves the selection as it is (Settings › Session and mixer › Select on
     /// launch is off); by default a launch selects the clip.
     pub keep_selection_on_launch: bool,
     /// The middle button is held after being pressed over the view: the view follows the

@@ -10,6 +10,12 @@ impl App {
     pub(super) fn files_into_folder(&mut self, files: Vec<PathBuf>, folder: &Path, copy: bool) {
         let items: Vec<String> = files.iter().map(|p| p.display().to_string()).collect();
         let params = json!({ "items": items, "folder": folder.display().to_string() });
+        suhina_plugins::trace!(
+            "browser: {} {} files into {}",
+            if copy { "copy" } else { "move" },
+            items.len(),
+            folder.display()
+        );
         self.status = if copy {
             copied_status(self.projects.execute("library.copyTo", &params))
         } else {
@@ -102,6 +108,13 @@ impl App {
             self.browser.drag = None;
             self.map_window.drag = None;
             let files = drag_out_files(&items);
+            suhina_plugins::trace!(
+                "browser: {} items dropped on folder {} ({} files), setting {:?}",
+                items.len(),
+                folder.display(),
+                files.len(),
+                self.settings.view.folder_drop
+            );
             if files.is_empty() {
                 return;
             }
@@ -161,7 +174,10 @@ impl App {
     /// on an audio track, that holds clips. An empty track takes their kind instead.
     pub(super) fn refused_drop(&self, items: &[BrowserItem], target: Option<DropTarget>) -> Option<String> {
         let track = match target? {
-            DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => t,
+            DropTarget::Track(t)
+            | DropTarget::Chain(t)
+            | DropTarget::Lane { track: t, .. }
+            | DropTarget::Slot { track: t, .. } => t,
             _ => return None,
         };
         let session = self.session()?;
@@ -214,9 +230,12 @@ impl App {
             View::Arrangement => self.arrangement.drop.as_ref().and_then(|p| p.target),
         };
         let to = match target {
-            Some(DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. }) => {
-                Some(t).filter(|t| *t != from)
-            }
+            Some(
+                DropTarget::Track(t)
+                | DropTarget::Chain(t)
+                | DropTarget::Lane { track: t, .. }
+                | DropTarget::Slot { track: t, .. },
+            ) => Some(t).filter(|t| *t != from),
             _ => None,
         };
         let session = self.session();
@@ -266,6 +285,12 @@ impl App {
                 "device.moveToTrack",
                 json!({ "track": from.0, "device": index, "toTrack": to.0, "copy": copy }),
             ));
+            // The track it went to is selected and its chain shown, so the editor opened next is
+            // the moved or copied device's, not the one left on the track it came from.
+            self.selected_device = None;
+            self.device_picks.clear();
+            self.select_tracks(vec![to]);
+            self.detail_showing = detail_view::Showing::Devices;
         }
     }
 
@@ -312,7 +337,7 @@ impl App {
                 if detail.contains(pointer)
                     && items.iter().any(|i| i.kind.is_device() || i.kind == drop::ItemKind::Sample) =>
             {
-                Some(DropTarget::Track(track))
+                Some(DropTarget::Chain(track))
             }
             _ => target,
         }
@@ -590,10 +615,9 @@ impl App {
         if let [sample] = items
             && sample.kind == drop::ItemKind::Sample
             && sample.path().is_some_and(|path| !suhina_media::stems::is_stems_path(&path))
-            && let Some(track_id) = match target {
-                DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
-                _ => None,
-            }
+            // Only on the track's devices (the detail area): on its lane, header or slot the sample
+            // is a clip, and an empty MIDI track becomes an audio track for it (#945).
+            && let DropTarget::Chain(track_id) = target
             && let Some(track) = project.track(track_id)
             && track.content.notes
             && !track.content.audio

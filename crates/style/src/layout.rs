@@ -8,7 +8,7 @@ use crate::{
     selector::Tree,
     value::{Layout, Length, Value},
 };
-use cssparser::{Parser, ParserInput};
+use cssparser::Parser;
 use std::collections::BTreeMap;
 use taffy::prelude::*;
 
@@ -28,8 +28,7 @@ pub struct Areas {
 
 impl Areas {
     pub fn parse(source: &str) -> Result<Self, String> {
-        let mut input = ParserInput::new(source);
-        let mut parser = Parser::new(&mut input);
+        let mut parser = Parser::new(source);
         let mut cells: Vec<Vec<String>> = Vec::new();
         while !parser.is_exhausted() {
             let row = parser.expect_string_cloned().map_err(|_| "Area rows must be quoted")?;
@@ -446,9 +445,9 @@ pub fn compute(tree: &Tree, styles: &[ComputedStyle], viewport: [f32; 2]) -> Res
                 top: margin(computed, Property::MarginTop),
                 bottom: margin(computed, Property::MarginBottom),
             },
-            justify_content: content(keyword(computed, Property::JustifyContent)),
-            align_content: content(keyword(computed, Property::AlignContent)),
-            align_items: items(keyword(computed, Property::AlignItems)),
+            justify_content: content(keyword(computed, Property::JustifyContent)).unwrap_or(AlignContent::NORMAL),
+            align_content: content(keyword(computed, Property::AlignContent)).unwrap_or(AlignContent::NORMAL),
+            align_items: items(keyword(computed, Property::AlignItems)).unwrap_or(AlignItems::NORMAL),
             align_self: items(keyword(computed, Property::AlignSelf)),
             grid_template_columns: template(computed, Property::GridTemplateColumns)
                 .unwrap_or_else(|| grid_tracks(computed, Property::Columns)),

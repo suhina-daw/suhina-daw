@@ -516,7 +516,7 @@ pub struct App {
     saved_path: Option<PathBuf>,
     /// Where projects are saved and templates kept when the settings leave them empty.
     default_folders: (PathBuf, PathBuf),
-    /// The themes folder used while Settings › Theme › Themes folder is empty.
+    /// The themes folder used while Settings › Themes › Themes folder is empty.
     themes_default_folder: PathBuf,
     /// Suhina's default data folder, shown while Settings folder is empty.
     data_default_folder: PathBuf,
@@ -1354,24 +1354,24 @@ impl App {
     }
 
     /// The folder templates are kept in: the setting, or the default.
-    /// The themes folder used while Settings › Theme › Themes folder is empty.
+    /// The themes folder used while Settings › Themes › Themes folder is empty.
     pub fn set_default_themes_folder(&mut self, folder: PathBuf) {
         self.themes_default_folder = folder;
     }
 
-    /// Suhina's default data folder, shown while Settings › General › Settings folder is empty.
+    /// Suhina's default data folder, shown while Settings › Projects and backups › Settings folder is empty.
     pub fn set_default_data_folder(&mut self, folder: PathBuf) {
         self.data_default_folder = folder;
     }
 
-    /// Settings › General › Settings folder back to `folder` after a move to another one failed
+    /// Settings › Projects and backups › Settings folder back to `folder` after a move to another one failed
     /// or was refused, so the field shows where the data is and no later change of settings
     /// tries the move again.
     pub fn revert_data_folder(&mut self, folder: String) {
         self.settings.data_folder = folder;
     }
 
-    /// Where themes are kept: Settings › Theme › Themes folder, or the default.
+    /// Where themes are kept: Settings › Themes › Themes folder, or the default.
     pub fn themes_folder(&self) -> PathBuf {
         match self.settings.themes_folder.trim() {
             "" => self.themes_default_folder.clone(),
@@ -1396,7 +1396,7 @@ impl App {
         self.project_lists.new_returns = self.settings.view.new_returns;
     }
 
-    /// Opens what Settings › General › At start says, for Suhina started without a project:
+    /// Opens what Settings › Projects and backups › Startup project says, for Suhina started without a project:
     /// the start panel, or asks for a new project, one from the start template, or the project
     /// opened last (`last`), which the app takes up as it does the user's own requests
     /// ([`App::take_new_request`], [`App::take_open_request`]). A template or last project that
@@ -1414,7 +1414,9 @@ impl App {
                     return;
                 }
                 Some(path) => Some(format!("The template to start from is not there: {}", path.display())),
-                None => Some("No template is chosen to start from (Settings › General › Start template)".into()),
+                None => Some(
+                    "No template is chosen to start from (Settings › Projects and backups › Startup template)".into(),
+                ),
             },
             AtStart::Last => match last {
                 Some(path) => {
@@ -1430,7 +1432,7 @@ impl App {
         }
     }
 
-    /// Checks for updates as Settings › General › Updates says; the desktop app calls it once
+    /// Checks for updates as Settings › Agents and updates › Updates says; the desktop app calls it once
     /// the window is up, tests never do (`docs/spec/updates.md`).
     pub fn check_updates_at_start(&mut self, ctx: &egui::Context) {
         self.updates.at_start(ctx, &self.settings.updates);
@@ -1502,7 +1504,7 @@ impl App {
         }
     }
 
-    /// The template At start makes a new project from: its path, a name in the templates folder.
+    /// The template a new project is made from when Suhina starts with one: its path, a name in the templates folder.
     fn start_template(&self) -> Option<PathBuf> {
         match self.settings.start_template.trim() {
             "" => None,
@@ -2815,7 +2817,7 @@ impl App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.missing.bar(ui, prompt));
             }
             // With the detail area across the full width, the browser takes its side of what is
-            // left above it (Settings › Detail area › Detail area layout).
+            // left above it (Settings › Devices › Detail area width).
             let full_width = grid.is_some()
                 && self.settings.view.detail_layout == crate::settings::view_settings::DetailLayout::FullWidth
                 && self.settings.device_layout != DeviceLayout::Stack;
@@ -3262,6 +3264,15 @@ impl App {
                 .flatten();
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
+            }
+            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
+            if action.id == "view.focusClip" {
+                let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
+                    self.piano_roll.selected.clear();
+                }
+                continue;
             }
             // The ARA editor's Float and Dock: the window's own, not an undo step.
             if action.id == "view.araFloat" {

@@ -212,6 +212,13 @@ impl App {
         if let (Some(piano), Some(clip), Some(session)) = (piano.as_mut(), clip, self.session()) {
             piano.ghosts =
                 crate::detail::piano_roll_ghosts::ghosts(session.project(), clip, self.piano_roll.ghost_source);
+            // Several MIDI clips picked: the others' notes faint where they play, the edited one
+            // (the focus) the one picked last or chosen in the clip column (#1054).
+            if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                let picked: Vec<ClipRef> =
+                    self.arrangement.selected_clips().iter().map(|(t, c)| ClipRef::Arrangement(*t, *c)).collect();
+                crate::detail::piano_roll_ghosts::add_picked(session.project(), clip, &picked, &mut piano.ghosts);
+            }
         }
         // An audio clip on a track whose plug-in edits clips (ARA) has that plug-in's editor in
         // the piano roll's place: the plug-in is told the clip is selected, and its editor opens
@@ -388,12 +395,11 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
-        // Automated parameters show what plays, while it plays (#706).
-        if let Some(session) = self.session()
-            && let Some(monitor) = session.player().map(suhina_session::Player::monitor)
-            && monitor.running()
-        {
-            shown.follow_automation(session.project(), monitor.beat());
+        // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
+        // without a player, at the start.
+        if let Some(session) = self.session() {
+            let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+            shown.follow_automation(session.project(), beat);
         }
         self.expanded_panel = detail_view::expanded_device(ui.ctx(), &shown);
         if let Some(session) = self.session() {
@@ -475,6 +481,45 @@ impl App {
         }
         if let detail_view::Detail::Clip(info, _) = &mut shown {
             info.switch = switch;
+            // Several arrangement clips picked: the column says how many, and its switches turn
+            // them all.
+            if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                let this = match info.at {
+                    Some(detail_view::ClipRef::Arrangement(_, clip)) => Some(clip),
+                    _ => None,
+                };
+                info.others = self
+                    .arrangement
+                    .selected_clips()
+                    .iter()
+                    .filter(|(_, id)| Some(*id) != this)
+                    .map(|(_, id)| id.0)
+                    .collect();
+                // The picked MIDI clips, each a row that gives it the piano roll's focus (#1054).
+                if !info.audio
+                    && let Some(session) = self.session()
+                {
+                    let p = session.project();
+                    info.picked = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter_map(|&(track, id)| {
+                            let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(track))?;
+                            let clip = lane.clips.iter().find(|c| c.id == id)?;
+                            let content = p.content(clip.content)?;
+                            let notes = content
+                                .lanes
+                                .iter()
+                                .any(|l| matches!(l.data, suhina_engine::model::LaneData::Notes(_)));
+                            notes.then(|| {
+                                let name = format!("{} - {}", p.shown_track_name(track), content.name);
+                                (track, id, name, Some(id) == this)
+                            })
+                        })
+                        .collect();
+                }
+            }
         }
         // A selected slot clip's follow action comes first, the rest of the detail beside or
         // under it.

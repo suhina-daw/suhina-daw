@@ -5,6 +5,7 @@
 //! together.
 
 use super::*;
+use suhina_model::automation::Curve;
 
 /// A project with every kind of thing the model holds: a group, an audio and a note track, a
 /// return, sends, built-in and plug-in devices with state, shared and audio contents, loops,
@@ -45,7 +46,10 @@ fn everything() -> Project {
     keys.automation = vec![
         AutomationLane {
             param: "volume".into(),
-            points: vec![AutomationPoint { beat: 0.0, value: 0.0, curve: 0.5 }, AutomationPoint::new(8.0, 1.25)],
+            points: vec![
+                AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::bend(0.5) },
+                AutomationPoint::new(8.0, 1.25),
+            ],
             enabled: true,
         },
         AutomationLane { param: "mute".into(), points: vec![AutomationPoint::new(2.0, 1.0)], enabled: false },
@@ -55,7 +59,10 @@ fn everything() -> Project {
             params: vec![DeviceParam::new("volume", -6.0)],
             automation: vec![AutomationLane {
                 param: "volume".into(),
-                points: vec![AutomationPoint { beat: 1.0, value: -12.0, curve: -0.75 }, AutomationPoint::new(3.5, 0.0)],
+                points: vec![
+                    AutomationPoint { beat: 1.0, value: -12.0, curve: Curve::bend(-0.75) },
+                    AutomationPoint::new(3.5, 0.0),
+                ],
                 enabled: false,
             }],
             ..Device::new("FM", DeviceKind::Builtin("fm-synth".into()))
@@ -92,9 +99,16 @@ fn everything() -> Project {
             automation: vec![AutomationLane {
                 param: "3".into(),
                 points: vec![
-                    AutomationPoint { beat: 0.0, value: 0.0, curve: 0.0 },
-                    AutomationPoint { beat: 4.0, value: 1.0, curve: 0.0 },
-                    AutomationPoint { beat: 4.0, value: 0.5, curve: 0.0 },
+                    // Two control points outside the mirrored family: from version 4.
+                    AutomationPoint { beat: 0.0, value: 0.0, curve: Curve { x1: 0.1, y1: 0.7, x2: 0.825, y2: 0.525 } },
+                    AutomationPoint::new(4.0, 1.0),
+                    // A split's half, outside the unit square (version 4 too); the last point's
+                    // curve plays nothing but is kept.
+                    AutomationPoint {
+                        beat: 4.0,
+                        value: 0.5,
+                        curve: Curve { x1: 1.195_800_350_656_066_6, y1: 0.0, x2: 0.5, y2: -0.293_128_413_857_272_2 },
+                    },
                 ],
                 enabled: true,
             }],
@@ -484,6 +498,11 @@ fn hostile_values_are_errors_not_crashes() {
         r#"{ "channels": [ { "id": 1, "devices": [ { "kind": { "type": "clap", "id": "x" }, "automation": 5 } ] } ] }"#,
         r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": 1.5 } ] } ] } ] }"#,
         r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": "bent" } ] } ] } ] }"#,
+        r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": [0, 1.6, 0.5, 0.5] } ] } ] } ] }"#,
+        r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": [-0.51, 0, 0.5, 0.5] } ] } ] } ] }"#,
+        r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": [0, 1e300, 0.5, 0.5] } ] } ] } ] }"#,
+        r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": [0, 0.5, 0.5] } ] } ] } ] }"#,
+        r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "points": [ { "beat": 0, "value": 0, "curve": [0, "x", 0.5, 0.5] } ] } ] } ] }"#,
         r#"{ "channels": [ { "id": 1, "automation": [ { "param": "pan", "enabled": "yes", "points": [] } ] } ] }"#,
         r#"{ "channels": [ { "id": 1, "automation": { "param": "pan" } } ] }"#,
         r#"{ "channels": [ { "id": 1, "devices": [ { "kind": { "type": "vst3", "id": "x" }, "state": "***" } ] } ] }"#,
@@ -1118,6 +1137,18 @@ fn a_file_of_every_version_reads() {
         if version < 4 {
             // Take lanes came with version 4.
             expected.arrangement.takes.clear();
+            // A curve outside the mirrored family needs two control points.
+            for point in expected
+                .channels
+                .iter_mut()
+                .flat_map(|c| &mut c.devices)
+                .flat_map(|d| &mut d.automation)
+                .flat_map(|l| &mut l.points)
+            {
+                if point.curve.bend_of().is_none() {
+                    point.curve = Curve::STRAIGHT;
+                }
+            }
         }
         if version < 5 {
             expected.channels[0].devices[0].clear_sample_edits();

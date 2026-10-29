@@ -555,6 +555,21 @@ pub fn show_ara_editor(
             Action::new("view.araFloat", params),
             actions,
         );
+        // At the row's right end the ×, which hides the editor, as the piano roll's does.
+        let hide =
+            Rect::from_min_size(Pos2::new(area.right() - PAD - BUTTON_HEIGHT, float.top()), Vec2::splat(BUTTON_HEIGHT));
+        let response = crate::kit::widgets::button_area(ui, hide, egui::Id::new(("ara-hide", track.0)), "Hide editor")
+            .on_hover_text("Hide editor");
+        let fill = crate::kit::motion::mix(
+            theme::control_background(),
+            theme::control_hover(),
+            crate::kit::widgets::hover(ui, &response),
+        );
+        painter.rect_filled(hide, 0.0, fill);
+        crate::detail::piano_roll::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        if response.clicked() {
+            actions.push(Action::new("view.editor", json!({})));
+        }
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, float.bottom() + PAD), size);
         let mut place = editor_place(ui, area, rect.expand(PAD), size, track, device, rect.min);
         // The editor is asked to take the room under Float, as a piano roll fills it.

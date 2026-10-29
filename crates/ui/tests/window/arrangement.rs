@@ -315,9 +315,9 @@ fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
     // With Stop set to stay, the marker moves to where it stopped.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Transport").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
-    harness.get_by_label("Stop: Stay").click();
+    harness.get_by_label("Playhead after Stop: Stay").click();
     harness.run();
     assert_eq!(
         harness.state_mut().take_changed_settings().map(|s| s.stop),
@@ -350,7 +350,7 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
         render_a_block(renderer);
     };
 
-    // By default Play starts from the selected clip: picked whole, by its name bar.
+    // By default Where Play starts the selected clip: picked whole, by its name bar.
     click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
     harness.get_by_label("Play").click();
     harness.run_steps(2);
@@ -372,7 +372,7 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     // With Play from set to the selected clip, Space and the Play button start there too.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Transport").click();
+    harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
     harness.get_by_label("Play from: Marker").click();
     harness.run();
@@ -412,7 +412,7 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 72.0));
     stop(&mut harness, &mut renderer);
 
-    // In the Launcher view the selection is not shown, so Play starts from the marker; stopping
+    // In the Launcher view the selection is not shown, so Where Play starts the marker; stopping
     // again first puts the marker at the beginning.
     stop(&mut harness, &mut renderer);
     assert_eq!(monitor.start_beat(), 0.0);
@@ -1978,4 +1978,29 @@ fn a_take_lanes_header_buttons_solo_promote_and_delete_it() {
     harness.get_by_label("Delete Drums Take 1").click();
     harness.run();
     assert!(harness.state().session().is_some_and(|s| s.project().arrangement.takes.is_empty()));
+}
+
+/// A track header's volume and pan, clicked, take a typed number with Enter.
+#[test]
+fn a_header_volume_and_pan_take_a_typed_number() {
+    let mut harness = arrangement_app();
+    let channel = |h: &Harness<'static, App>| h.state().session().unwrap().project().channels[0].clone();
+    let name = harness.state().session().unwrap().project().tracks[0].name.clone();
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.event(egui::Event::Text("-12".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let db = 20.0 * channel(&harness).volume.log10();
+    assert!((db + 12.0).abs() < 0.05, "volume typed: {db}");
+    harness.run_steps(60);
+    harness.get_by_label(&format!("{name} pan")).click();
+    harness.run();
+    // The pan's own scale: 50L to 50R, so -25 is half left.
+    harness.event(egui::Event::Text("-25".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((channel(&harness).pan + 0.5).abs() < 0.01, "pan typed: {}", channel(&harness).pan);
 }

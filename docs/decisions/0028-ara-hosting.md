@@ -3,7 +3,7 @@ description: How ARA plug-ins (audio editors such as pitch editors) are hosted o
 read_when: ARA, ARA2, Melodyne, pitch editor, audio random access, playback region, audio source, audio modification, region sequence, document controller, overlapping audio clips, audio overlap, arrangement.audioOverlaps, stacked clips and ARA
 type: decision
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 covers:
   - crates/model/src/overlap.rs
   - crates/session/src/commands.rs
@@ -13,7 +13,7 @@ covers:
   - crates/ipc/src/source.rs
   - crates/ipc/src/events.rs
   - crates/plugin-host/src/ara.rs
-  - crates/plugin-host/src/ara_sys.rs
+  - crates/plugin-host/src/ara_sys
   - crates/session/src/ara.rs
   - crates/session/src/rack.rs
   - crates/session/src/devices.rs
@@ -195,11 +195,11 @@ the list below, in a first form). Where it differs from the decisions above it i
 
 - **Bindings.** The ARA headers (2.3, Apache-2.0) are vendored in `third_party/ara-api`
   (`VENDORED.md` names the commit). `scripts/ara_bindings.sh` generates
-  `crates/plugin-host/src/ara_sys.rs` from them with bindgen, with its layout checks, so a
+  `crates/plugin-host/src/ara_sys/` from them with bindgen, with its layout checks, so a
   struct that does not match the C headers fails to compile. The three VST3 interfaces of
   `ARAVST3.h` are declared by hand in `crates/plugin-host/src/ara.rs`. The headers pack structs
-  to 1 byte on x86 and to 8 on ARM; the bindings are generated for x86-64, and an ARM build
-  needs them generated there.
+  to 1 byte on x86 and to 8 on ARM, so the bindings are generated once for each (`x86.rs`,
+  `arm.rs`) and the host builds with the one for its CPU.
 - **Model updates.** The host calls the document controller's `notifyModelUpdates` every 250 ms
   while it is not editing, right after every edit and restore, and before storing the edits, as
   the API asks ("periodically by the host whenever not editing"). Without it a plug-in sends what

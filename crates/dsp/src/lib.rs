@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
-//! conversions, the pan law, parameter smoothing, filters, crossovers, LFO waveforms, waveshapers, oversampling,
-//! delay lines and allpasses.
+//! conversions, the pan law, parameter smoothing, attack/release followers, filters, crossovers,
+//! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
@@ -17,6 +17,7 @@ pub mod crossover;
 pub mod dc;
 pub mod delay;
 pub mod first_order;
+pub mod follower;
 pub mod gain;
 pub mod lfo;
 pub mod oversample;
@@ -24,6 +25,8 @@ pub mod pan;
 pub mod resampler;
 pub mod shape;
 pub mod smooth;
+pub mod svf;
+pub mod sync;
 pub mod trim_delay;
 
 pub use biquad::{Biquad, Coefficients};
@@ -32,9 +35,11 @@ pub use crossover::{LinkwitzRiley, Slope};
 pub use dc::DcBlocker;
 pub use delay::{Allpass, DelayLine};
 pub use first_order::{FirstOrder, FirstOrderCoefficients};
+pub use follower::AttackRelease;
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{Glide, OnePole, Smoother, time_constant};
+pub use svf::{Svf, SvfCoefficients};
 pub use trim_delay::TrimDelay;
 
 /// Highest filter frequency as a fraction of the sample rate; keeps coefficients stable just

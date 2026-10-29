@@ -270,7 +270,7 @@ mod tests {
                 .iter()
                 .map(|(param, points)| AutomationLane {
                     param: (*param).into(),
-                    points: points.iter().map(|&(beat, value)| AutomationPoint { beat, value, curve: 0.0 }).collect(),
+                    points: points.iter().map(|&(beat, value)| AutomationPoint::new(beat, value)).collect(),
                     enabled: true,
                 })
                 .collect(),
