@@ -654,8 +654,7 @@
         },
         {
           "name": "Vinyl distortion",
-          "status": "done",
-          "ref": "#1060"
+          "status": "done"
         },
         {
           "name": "NAM amp modeler and cabinet loader",

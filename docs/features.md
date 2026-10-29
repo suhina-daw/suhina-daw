@@ -2,7 +2,7 @@
 
 # What Suhina does today
 
-In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 198 done, 30 in progress and 191 planned, counted from the issues of each area's `area:` label and the features without an issue in [features.json](features.json); 57 open bugs besides. The order the planned ones are built in is in [ROADMAP.md](../ROADMAP.md).
+In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 199 done, 30 in progress and 190 planned, counted from the issues of each area's `area:` label and the features without an issue in [features.json](features.json); 57 open bugs besides. The order the planned ones are built in is in [ROADMAP.md](../ROADMAP.md).
 
 | Area | Done | In progress | Planned | Open bugs |
 |---|---|---|---|---|
@@ -16,7 +16,7 @@ In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 198 done, 30 
 | [Automation](#automation) | 3 | 2 | 4 | 2 |
 | [Mixing and routing](#mixing-and-routing) | 10 | 3 | 8 | 4 |
 | [Devices as a system](#devices-as-a-system) | 14 | 1 | 20 | 3 |
-| [Built-in effects](#built-in-effects) | 9 | 3 | 27 | 0 |
+| [Built-in effects](#built-in-effects) | 10 | 3 | 26 | 0 |
 | [Instruments and MIDI effects](#instruments-and-midi-effects) | 5 | 1 | 20 | 0 |
 | [Plug-ins](#plug-ins) | 24 | 3 | 24 | 8 |
 | [Browser and library](#browser-and-library) | 11 | 2 | 6 | 7 |
@@ -444,7 +444,6 @@ Issues: [`area: effects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 
 **Planned**
 
-- [#1060](https://github.com/suhina-daw/suhina-daw/issues/1060) Device: give the vinyl-distortion effect a name of its own (Vinyl Wear)
 - [#1059](https://github.com/suhina-daw/suhina-daw/issues/1059) Device: give the auto-pan effect a name of its own (Pan & Tremolo)
 - [#1050](https://github.com/suhina-daw/suhina-daw/issues/1050) EQ: the analyser also taps devices inside device groups
 - [#986](https://github.com/suhina-daw/suhina-daw/issues/986) Device: Clipper, hard or soft clipping with oversampling
@@ -478,6 +477,7 @@ Issues: [`area: effects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - Limiter
 - Overdrive
 - Utility
+- Vinyl distortion
 - [#907](https://github.com/suhina-daw/suhina-daw/issues/907) Import: Live's EQ Three as the DJ EQ, on the measured band split
 - [#489](https://github.com/suhina-daw/suhina-daw/issues/489) NAM device :)
 - [#384](https://github.com/suhina-daw/suhina-daw/issues/384) Device: algorithmic reverb (Dragonfly Reverb port as a native block, Suhina reverb as a .sd device)
