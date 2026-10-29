@@ -4889,6 +4889,7 @@ name = "suhina-device-eq"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-device-sdk",
  "suhina-dsp",
 ]
 
@@ -5258,12 +5259,15 @@ dependencies = [
  "image",
  "memory-stats",
  "resvg",
+ "rustfft",
  "serde_json",
  "suhina-device-api",
+ "suhina-device-eq",
  "suhina-device-nam-amp-modeler",
  "suhina-device-nam-cab-loader",
  "suhina-device-registry",
  "suhina-device-sdk",
+ "suhina-dsp",
  "suhina-engine",
  "suhina-library",
  "suhina-media",

@@ -2686,6 +2686,20 @@ impl App {
             self.arrangement.drop = probe;
             let meters =
                 crate::kit::meter::Meters::read(self.session().and_then(|s| s.player()).map(|p| p.meter_monitor()));
+            // The EQ panel's analyser reads the meter monitor's spectrum rings; the monitor's
+            // arc goes to the panels through the frame's temp data (docs/spec/eq.md › The
+            // panel › The analyser). A session without a player drops the last one's: a
+            // monitor belongs to one engine, and a panel of the next session must not read
+            // the previous session's spectrum as its own.
+            let monitor = self.session().and_then(|s| s.player()).map(|p| p.meter_monitor_arc());
+            ui.ctx().data_mut(|d| match monitor {
+                Some(monitor) => {
+                    d.insert_temp(egui::Id::new("eq-spectrum"), monitor);
+                }
+                None => {
+                    d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum"));
+                }
+            });
             // Meters fall for a moment after the sound stops: drawn again at once while they
             // move, and looked at again soon after they last moved, as the engine renders in
             // blocks that can be longer than a frame. An engine that stopped rendering leaves

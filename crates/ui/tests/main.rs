@@ -16,6 +16,7 @@ mod automation_lanes;
 mod browser;
 mod browser_preview;
 mod detail_devices;
+mod detail_eq_panel;
 mod follow;
 mod launch_keys;
 mod meters;

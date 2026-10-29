@@ -499,6 +499,12 @@ impl Controller {
     pub fn meter_monitor(&self) -> &crate::meters::MeterMonitor {
         &self.meter_monitor
     }
+
+    /// The level meters' monitor by its own arc, so a front end can keep it in frame data
+    /// (the EQ panel's analyser, docs/spec/eq.md › The panel › The analyser).
+    pub fn meter_monitor_arc(&self) -> Arc<crate::meters::MeterMonitor> {
+        Arc::clone(&self.meter_monitor)
+    }
 }
 
 /// A note of a launch clip, in content beats, with its mix resolved.

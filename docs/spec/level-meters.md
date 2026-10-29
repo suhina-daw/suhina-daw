@@ -28,6 +28,9 @@ without changing the scale, ballistics or clip reset behaviour.
   does not move a track's meter; turning the track itself down does.
 - **A group** shows the sum of what plays into it, after the group's own volume (and after its
   devices, when it has them). A group's pan does not apply, as when it is mixed.
+
+The meter monitor also carries the device-spectrum rings the EQ panel's analyser reads
+([docs/spec/eq.md](eq.md) › The panel › The analyser).
 - **A return track** is measured like a track, from what plays on it.
 - **A track that is not heard** (turned off, or not soloed while others are) reads silence.
 - **The main output** is what the engine hands the audio device: every track through the main

@@ -160,6 +160,12 @@ impl Player {
         self.controller.meter_monitor()
     }
 
+    /// The level meters' monitor by its own arc, for a front end's frame data (the EQ panel's
+    /// analyser, docs/spec/eq.md › The panel › The analyser).
+    pub fn meter_monitor_arc(&self) -> std::sync::Arc<suhina_engine::MeterMonitor> {
+        self.controller.meter_monitor_arc()
+    }
+
     pub(crate) fn controller_mut(&mut self) -> &mut Controller {
         &mut self.controller
     }

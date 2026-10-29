@@ -6,7 +6,7 @@
 use suhina_model::*;
 
 use crate::chain_tests::{SR, blocks, device, left, max_diff, note, peak};
-use crate::{Renderer, render_offline};
+use crate::{RenderInputs, RenderOptions, Renderer, render_offline};
 
 /// Tracks 1 and 2 each play an A4 for a beat into group track 3 (channel 3), whose channel
 /// holds `group_devices`; track 4 plays the same note straight to the output, unless `outside`
@@ -176,6 +176,26 @@ fn a_bus_does_not_depend_on_the_block_size() {
     let mut renderer = Renderer::new(&project, SR).unwrap();
     let live = blocks(&mut renderer, reference.len() / 2 / 300 + 1, 300);
     assert!(max_diff(&live[..reference.len()], &reference) < 1e-6);
+}
+
+/// A watched device on a bus fills its ring like one on a track: the bus's chain never runs
+/// through `advance` (the stages plug-ins share), only through `complete`, and the capture
+/// follows it there too (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_device_on_a_bus_fills_its_ring() {
+    let project = grouped(vec![device("utility", &[])], true);
+    let mut renderer =
+        Renderer::build(&project, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(3), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone reaches the output through the bus");
+    let (samples, valid) = spectrum.samples(TrackId(3), 0).expect("the bus's watched device has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(ring > 0.01, "the bus device's output is in the ring, peak {ring}");
 }
 
 /// A device that follows the song position (auto-pan synced to the beat) gets the block's own

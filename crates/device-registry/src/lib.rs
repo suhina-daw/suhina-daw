@@ -42,6 +42,9 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
     if id == "sampler" {
         return Some(Ok(suhina_device_sampler::layout()));
     }
+    if id == "eq" {
+        return Some(Ok(suhina_device_eq::panel::layout()));
+    }
     LAYOUT_FILES.iter().find(|(file_id, _)| *file_id == id).map(|(_, text)| Layout::from_json(text))
 }
 

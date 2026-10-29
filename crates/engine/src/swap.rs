@@ -273,6 +273,12 @@ impl Renderer {
         }
         self.graph.direct_delay.adopt(&mut old.direct_delay);
         self.meters.assign(self.graph.levels.tracks());
+        // The new graph's chains capture their watched devices' output into the meter
+        // monitor's spectrum rings, on every path that runs them
+        // (docs/spec/eq.md › The panel › The analyser).
+        for chain in &mut self.graph.chains {
+            chain.spectrum = Some(Arc::clone(&self.meters.monitor.spectrum));
+        }
         // Parameter messages newer than the new graph's project apply to it again, in order.
         let mut newer = [usize::MAX; RECENT_PARAMS];
         let mut count = 0;

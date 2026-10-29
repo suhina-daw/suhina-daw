@@ -334,6 +334,43 @@ fn stopping_the_transport_releases_an_instruments_notes() {
     assert!(peak(&after[24_000..]) < 1e-4, "{}", peak(&after[24_000..]));
 }
 
+/// A watched device's output lands in its spectrum ring, after the device's own controls, and
+/// only the watched device's ring has it (docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_watched_devices_ring_holds_its_output() {
+    let loud = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[])]);
+    let mut renderer =
+        Renderer::build(&loud, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    let spectrum = monitor.spectrum();
+    spectrum.watch(0, TrackId(1), 0);
+    let out = blocks(&mut renderer, 4, 480);
+    assert!(peak(&out) > 0.05, "the tone plays");
+    let (samples, valid) = spectrum.samples(TrackId(1), 0).expect("the watched device has output");
+    assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
+    let loud_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(loud_ring > 0.01, "the tone's output is in the ring, peak {loud_ring}");
+    assert!(
+        (loud_ring - peak(&out)).abs() < 0.02,
+        "the ring is the device's output, {loud_ring} against {}",
+        peak(&out)
+    );
+    assert!(spectrum.samples(TrackId(1), 1).is_none(), "another device's ring reads nothing");
+
+    // With the utility 12 dB down, the ring is 12 dB down with it: it is what the device
+    // made of the sound, not what went in.
+    let quiet = project(vec![note(0.0, 8.0, 60)], 8.0, vec![device("utility", &[("gain", -12.0)])]);
+    let mut renderer =
+        Renderer::build(&quiet, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+            .unwrap();
+    let monitor = renderer.controller().meter_monitor_arc();
+    monitor.spectrum().watch(0, TrackId(1), 0);
+    blocks(&mut renderer, 4, 480);
+    let (samples, _) = monitor.spectrum().samples(TrackId(1), 0).expect("the watched device has output");
+    let quiet_ring = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!((quiet_ring - loud_ring * 0.25).abs() < 0.02, "the ring heard the gain, {quiet_ring} against {loud_ring}");
+}
+
 #[test]
 fn an_edit_keeps_a_chain_playing_and_takes_its_new_values() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[]), device("utility", &[])]);

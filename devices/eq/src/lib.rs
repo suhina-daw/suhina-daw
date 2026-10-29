@@ -261,6 +261,24 @@ fn shelf_q(q: f64) -> f64 {
     SHELF_Q_OFFSET + SHELF_Q_SLOPE * (q / SHELF_Q_KNEE).ln_1p()
 }
 
+/// The filter sections the band with these values runs, for a panel drawing the response
+/// curve (docs/spec/eq.md › Behaviour): the type's index in [`TYPE_NAMES`] order, the
+/// frequency in Hz, the gain in decibels before Scale, the Q, the Scale factor (1 is 100 %)
+/// and whether Adaptive Q is on. The first `count` of the sections are the band's filters;
+/// the rest are identity. The panel multiplies the sections' magnitudes to draw the band's
+/// response, so the curve is the device's own maths, never a second copy of it.
+pub fn band_sections(
+    type_index: usize,
+    sample_rate: f64,
+    frequency: f64,
+    gain_db: f64,
+    q: f64,
+    scale: f64,
+    adaptive: bool,
+) -> ([SvfCoefficients; 4], usize) {
+    Kind::from_index(type_index as f64).sections(sample_rate, frequency, gain_db * scale, q, adaptive)
+}
+
 /// One band of one curve: what it is now and its smoothed controls.
 #[derive(Clone, Copy)]
 struct Band {
@@ -642,5 +660,6 @@ impl Device for Eq {
 
 #[cfg(test)]
 mod golden_tests;
+pub mod panel;
 #[cfg(test)]
 mod tests;

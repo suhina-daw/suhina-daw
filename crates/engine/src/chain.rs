@@ -40,6 +40,7 @@ use crate::plugin::{
 use crate::plugin_params::SlotParams;
 use crate::sends::SendOut;
 use crate::sine::{self, SineTones};
+use crate::spectrum;
 
 /// The most frames one block of a chain holds; the renderer splits longer blocks.
 pub(crate) const MAX_BLOCK: usize = 1024;
@@ -160,6 +161,11 @@ pub(crate) struct Chain {
     next_off: u64,
     /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
     scale: Option<Option<MusicalScale>>,
+    /// The meter monitor's spectrum rings, given when the graph is installed on the renderer
+    /// that owns the monitor: the chain captures its watched devices' output into them on
+    /// every path that runs its devices (`advance`, the event overflow's flush and
+    /// `complete`'s rest). `None` while there is no monitor — a source render, a test.
+    pub(crate) spectrum: Option<std::sync::Arc<spectrum::Spectrum>>,
 }
 
 /// The identity of built-in device `id` for graph swaps: a device that holds a file changes with
@@ -433,6 +439,7 @@ impl Chain {
             held: [NOT_HELD; 128],
             next_off: NOT_HELD,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -481,6 +488,7 @@ impl Chain {
             held: [NOT_HELD; 128],
             next_off: NOT_HELD,
             scale: None,
+            spectrum: None,
             built_volume: None,
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
@@ -610,6 +618,8 @@ impl Chain {
             return true;
         }
         let to = frames.min(MAX_BLOCK);
+        let capture =
+            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
         let Self {
             slots,
             buffer,
@@ -634,6 +644,11 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    // The analyser hears the device's output, so its line shows what the
+                    // device made of the sound (docs/spec/eq.md › The panel › The analyser).
+                    if let Some(capture) = &capture {
+                        capture.append(*stage, buffer, from, to);
+                    }
                     *stage += 1;
                 }
                 Slot::Group(group) => {
@@ -887,6 +902,8 @@ impl Chain {
     /// event over at its frame.
     fn run(&mut self, frame: usize) {
         let to = frame.min(MAX_BLOCK);
+        let capture =
+            self.spectrum.as_deref().map(|spectrum| Capture { watched: spectrum.watched(self.track), spectrum });
         let Self {
             slots,
             buffer,
@@ -907,6 +924,9 @@ impl Chain {
             match slot {
                 Slot::Device(device) => {
                     run_device(device, index, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    if let Some(capture) = &capture {
+                        capture.append(index, buffer, from, to);
+                    }
                     index += 1;
                 }
                 Slot::Group(group) => {
@@ -1160,6 +1180,32 @@ impl Chain {
 /// answered, before it looks at all of them again (see [`run_as_answered`]): an answer from
 /// that plug-in wakes it at once, one from another is seen at most this late.
 pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
+
+/// The spectrum rings' watched-output capture for one block
+/// (docs/spec/eq.md › The panel › The analyser): the rings themselves and the chain's rows
+/// among them, with each row's watch as the block began. Built once a block starts and
+/// shared by every path that runs the chain's devices — [`Chain::advance`], the event
+/// overflow's flush and `complete`'s rest, whose devices run through [`Chain::run`] — so a
+/// watched device's every span is appended once, on a bus or a return too.
+struct Capture<'a> {
+    watched: [Option<spectrum::Watched>; spectrum::ROWS],
+    spectrum: &'a spectrum::Spectrum,
+}
+
+impl Capture<'_> {
+    /// Appends the device at top-level `position`'s output span `from..to` of `buffer` to its
+    /// row's ring, after `run_device` ran it. Never allocates.
+    fn append(&self, position: usize, buffer: &[f32], from: usize, to: usize) {
+        let row = position % spectrum::ROWS;
+        let Some(watch) =
+            self.watched.get(row).and_then(|watch| watch.as_ref()).filter(|watch| watch.device == position)
+        else {
+            return;
+        };
+        let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+        self.spectrum.append(row, watch.generation, output, to - from);
+    }
+}
 
 /// Takes each chain's block as soon as its plug-in answers and runs that chain on to its next
 /// plug-in, until no chain has a block out (#151): a chain does not wait for the plug-ins of the
