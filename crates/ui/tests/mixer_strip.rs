@@ -608,7 +608,14 @@ fn a_device_inside_a_group_is_picked_and_ctrl_a_picks_the_whole_chain() {
     harness.run();
     harness.get_by_label("Show Group on Drums").click();
     harness.run();
-    harness.get_by_label("Device Limiter").click();
+    // On the panel's header, clear of the controls that take a click in its middle.
+    let panel = harness.get_by_label("Device Limiter").rect();
+    let header = Pos2::new(panel.left() + panel.width() / 2.0, panel.top() + 8.0);
+    harness.hover_at(header);
+    harness.run();
+    harness.drag_at(header);
+    harness.run();
+    harness.drop_at(header);
     harness.run();
     harness.key_press(Key::Delete);
     harness.run();

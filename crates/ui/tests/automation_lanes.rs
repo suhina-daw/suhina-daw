@@ -1409,7 +1409,9 @@ fn a_click_on_a_whole_number_slope_adds_a_point_between_numbers() {
     let lane = harness.get_by_label("FM Synth: Op 1 Rate 1 automation on Drums").rect();
     let a = harness.get_by_label("FM Synth: Op 1 Rate 1 point 1 on Drums").rect().center();
     let b = harness.get_by_label("FM Synth: Op 1 Rate 1 point 2 on Drums").rect().center();
-    let x = (a.x + b.x) / 2.0;
+    // A quarter of the way along, clear of the curve handle in the middle; the point snaps to
+    // the grid at beat 4.
+    let x = a.x + (b.x - a.x) / 4.0;
     let y = envelope_y_at(&harness, lane, x).expect("the envelope is drawn");
     click_at(&mut harness, Pos2::new(x, y));
     let points = rate(&harness);
