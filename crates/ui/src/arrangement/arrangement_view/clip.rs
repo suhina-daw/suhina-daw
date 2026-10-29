@@ -239,11 +239,12 @@ pub(super) fn clip_box<'a>(
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
-    // lower half on a lane tall enough to have one, as the setting says.
-    let selects_time = response.drag_started_by(egui::PointerButton::Primary)
-        && ui
-            .input(|i| i.pointer.press_origin())
-            .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) });
+    // lower half on a lane tall enough to have one, as the setting says. The press's own place
+    // decides, so a held press knows before the drag is what it is holding.
+    let press_selects_time = ui
+        .input(|i| i.pointer.press_origin())
+        .is_some_and(|origin| if state.time_select_ctrl { command } else { selects_at(origin.y) });
+    let selects_time = response.drag_started_by(egui::PointerButton::Primary) && press_selects_time;
     if selects_time {
         state.marquee = ui.input(|i| i.pointer.press_origin());
         state.marquee_scroll = state.scroll;
@@ -286,6 +287,13 @@ pub(super) fn clip_box<'a>(
     if response.clicked() || (response.drag_started_by(egui::PointerButton::Primary) && !selects_time) {
         // The track being worked on: a folded group shows this track while it is one of its own.
         state.targeted = Some(lane.track);
+    }
+    // A press held on the clip before the pointer has moved enough for the drag to be decided:
+    // the view may switch under it (Tab), and the press then carries the clip like a drag. A
+    // time-selection's press grabs no clip: its origin said so above. A press that is let go
+    // dies at the frame's start (`begin_clip_carry`), even when this widget is gone by then.
+    if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) && !press_selects_time {
+        state.pressed_clip = Some(key);
     }
     if response.drag_started_by(egui::PointerButton::Primary) && !selects_time {
         state.clip_drag = Some(ClipDrag {

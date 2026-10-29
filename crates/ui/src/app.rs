@@ -1019,6 +1019,11 @@ impl App {
         self.arrangement.selected_clip()
     }
 
+    /// The slot selected in the Session view: its track and scene (from 0).
+    pub fn selected_slot(&self) -> Option<(TrackId, usize)> {
+        self.view.selected_slot
+    }
+
     /// The Arrangement view's state: what is selected, how far it is scrolled and which groups are
     /// folded. The view draws itself from it, and the window's tests read it.
     pub fn arrangement(&self) -> &ArrangementViewState {
@@ -2661,6 +2666,9 @@ impl App {
             }
             self.frame_trace.mark("browser");
             let _main_style = crate::kit::style_class::enter_named("workspace-panel", "panel-main");
+            // A clip whose drag or held press the view switch carried becomes the carry first,
+            // so the probe below reads it on the switch's first frame.
+            self.begin_clip_carry(ui.ctx());
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));

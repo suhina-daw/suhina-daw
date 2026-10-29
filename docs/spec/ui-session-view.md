@@ -211,7 +211,10 @@ a slot to the arrangement, in two ways. **Suhina** decisions, our own design:
 - **Dragging.** While a clip is dragged, holding it over the other view's name in the control bar
   for half a second switches the view, and the drag goes on there: let go over a slot and the clip
   is copied into it; over a track's lane and it is copied there, at the beat under the pointer on
-  the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** a slot's
+  the grid (Alt for free), stacking when the setting for its kind says so. **Suhina:** Tab does the
+  same while a clip is dragged — or a press is held on it, before the pointer has moved — the view
+  switches at once, and the drag goes on there as a carry (#1063). A press held on a slot's clip
+  selects the slot at once, as the click will. A slot's
   clip dragged to another slot in the Session view **moves** — the target's slot takes it and
   the source's empties; the two slots **swap** when the target has a clip, so nothing is lost
   (`clip.moveSlot`, one undo step). Ctrl (Cmd on macOS) held on the drop copies instead. A label
