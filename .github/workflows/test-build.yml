@@ -315,8 +315,13 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
           TARGETS: ${{ matrix.targets }}
         run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
           for target in ${TARGETS//,/ }; do
-            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
 
       - name: Collect and smoke-test the package
@@ -340,6 +345,10 @@ jobs:
           cp devices/fm-synth/LICENSE-APACHE crates/stretch/LICENSE-signalsmith.txt "dist/$PACKAGE/"
           exe="dist/$PACKAGE/suhina-cli"
           if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$exe" audio devices > audio-devices.json
+            jq -e '.hosts | any(.name == "ASIO")' audio-devices.json
+          fi
           output=$("$exe" --version)
           echo "$output"
           if [ "$output" != "suhina-cli $VERSION" ]; then
@@ -425,6 +434,11 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
           TARGETS: ${{ matrix.targets }}
         run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
           for target in ${TARGETS//,/ }; do
-            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done

@@ -477,7 +477,9 @@ impl Window {
         }
         if let Some(offer) = self.app.take_recovery_request() {
             match Session::recover(&offer.backup, offer.file.as_deref()) {
-                Ok((session, warnings)) => self.show_session(session, warnings, OpenAs::NewTab),
+                Ok((session, warnings)) => {
+                    self.show_session(session, warnings, OpenAs::NewTab);
+                }
                 Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
             }
         }
@@ -649,8 +651,9 @@ impl Window {
         }
         match Session::open(path) {
             Ok((session, warnings)) => {
-                self.show_session(session, warnings, how);
-                self.remember(path);
+                if self.show_session(session, warnings, how) {
+                    self.remember(path);
+                }
             }
             Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
         }
@@ -663,13 +666,19 @@ impl Window {
             NewProject::Template(path) => Session::from_template(&path),
         };
         match made {
-            Ok((session, warnings)) => self.show_session(session, warnings, OpenAs::NewTab),
+            Ok((session, warnings)) => {
+                self.show_session(session, warnings, OpenAs::NewTab);
+            }
             Err(e) => self.app.set_status(Status::Error(e.message().to_owned())),
         }
     }
 
     /// Decodes a session's audio, starts it playing (stopped) and shows it.
-    fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) {
+    fn show_session(&mut self, mut session: Session, mut warnings: Vec<String>, how: OpenAs) -> bool {
+        if let Err(error) = self.app.projects().ensure_output_can_close() {
+            self.app.set_status(Status::Error(error.to_string()));
+            return false;
+        }
         let folder = session.audio_folder().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
         // Outside the project's folder only the person's own saved files and library folders
         // are read (`docs/spec/missing-files.md` › Project file boundaries).
@@ -685,11 +694,13 @@ impl Window {
         self.app.projects_mut().close_preview_output();
         let (session, output_warnings) = with_audio(session, &choice);
         warnings.extend(output_warnings);
-        if self.app.open_project(session, &warnings, how).is_some() {
+        let opened = self.app.open_project(session, &warnings, how).is_some();
+        if opened {
             self.app.set_waveforms(waveforms);
         }
         let _closed = self.app.take_closed();
         self.share_about();
+        opened
     }
 
     /// Puts a project opened or saved first among the recent ones.
@@ -1140,3 +1151,6 @@ mod tests {
         assert!(!is_bundle_program(Path::new("suhina")));
     }
 }
+
+#[cfg(test)]
+mod open_tests;

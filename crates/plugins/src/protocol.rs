@@ -4,9 +4,9 @@
 //! The control messages between the engine and a plug-in host process (ADR 0006): one JSON
 //! object per line over a local socket. Audio does not go here; it goes through `suhina-ipc`.
 //!
-//! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
+//! Every message has an `op`. Engine to host: `hello`, `load`, `reconfigure`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
 //! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
 //! `ara_select` and `quit` (so the engine never waits on them).
@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 13;
+pub const VERSION: u64 = 14;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -342,6 +342,16 @@ pub enum AraPlayback {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    /// Reconfigure a quiescent instance without destroying it. The shared audio link's
+    /// maximum block capacity stays unchanged. Answered only after reactivation.
+    Reconfigure {
+        instance: u32,
+        sample_rate: f64,
+    },
+    Reconfigured {
+        instance: u32,
+        latency: u32,
+    },
     Hello {
         version: u64,
     },
@@ -544,6 +554,8 @@ impl Message {
     pub fn instance(&self) -> Option<u32> {
         match self {
             Self::Load { instance, .. }
+            | Self::Reconfigure { instance, .. }
+            | Self::Reconfigured { instance, .. }
             | Self::Loaded { instance, .. }
             | Self::Unload { instance }
             | Self::Unloaded { instance }
@@ -597,6 +609,12 @@ impl Message {
             }
             Self::Loaded { instance, latency, edits_clips } => {
                 json!({ "op": "loaded", "instance": instance, "latency": latency, "edits_clips": edits_clips })
+            }
+            Self::Reconfigure { instance, sample_rate } => {
+                json!({ "op": "reconfigure", "instance": instance, "sample_rate": sample_rate })
+            }
+            Self::Reconfigured { instance, latency } => {
+                json!({ "op": "reconfigured", "instance": instance, "latency": latency })
             }
             Self::Unload { instance } => json!({ "op": "unload", "instance": instance }),
             Self::Unloaded { instance } => json!({ "op": "unloaded", "instance": instance }),
@@ -693,6 +711,14 @@ impl Message {
         let instance = || small("instance");
         Some(match value.get("op")?.as_str()? {
             "hello" => Self::Hello { version: number("version")? },
+            "reconfigure" => Self::Reconfigure {
+                instance: instance()?,
+                sample_rate: value
+                    .get("sample_rate")
+                    .and_then(Value::as_f64)
+                    .filter(|r| r.is_finite() && *r > 0.0 && *r <= 768_000.0)?,
+            },
+            "reconfigured" => Self::Reconfigured { instance: instance()?, latency: small("latency")? },
             "load" => Self::Load {
                 instance: instance()?,
                 plugin: text("plugin")?,

@@ -799,6 +799,18 @@ fn answer(instances: &mut Instances, message: Message) -> Option<Message> {
                 Err(message) => failed(instance, message),
             }
         }
+        Message::Reconfigure { instance, sample_rate } => {
+            let result = match instances.get_mut(&instance) {
+                Some(Loaded::Clap(plugin)) => plugin.reconfigure(sample_rate),
+                Some(Loaded::Vst3(plugin)) => plugin.reconfigure(sample_rate),
+                Some(Loaded::Test { .. }) => Err("this test processor cannot reconfigure".into()),
+                None => return Some(missing(instance)),
+            };
+            match result {
+                Ok(latency) => Message::Reconfigured { instance, latency },
+                Err(why) => failed(instance, why),
+            }
+        }
         Message::Unload { instance } => {
             if let Some(loaded) = instances.remove(&instance) {
                 let began = std::time::Instant::now();

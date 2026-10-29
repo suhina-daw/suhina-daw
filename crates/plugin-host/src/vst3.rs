@@ -799,6 +799,19 @@ impl Vst3Plugin {
     /// thread on the same link; returns the latency it reports then. An audio thread stuck in
     /// the plug-in is left as it is, and so is the plug-in.
     fn reactivate(&mut self) -> Result<u32, String> {
+        self.reactivate_at(None)
+    }
+
+    pub(crate) fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
+        if self.sample_rate == sample_rate {
+            return Ok(self.latency);
+        }
+        let latency = self.reactivate_at(Some(sample_rate))?;
+        self.latency = latency;
+        Ok(latency)
+    }
+
+    fn reactivate_at(&mut self, sample_rate: Option<f64>) -> Result<u32, String> {
         self.flush.store(true, Ordering::Release);
         if !self.stop_audio(crate::UNLOAD_WAIT) {
             return Err("its audio thread does not stop".into());
@@ -808,6 +821,20 @@ impl Vst3Plugin {
         let processor = self.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
         // SAFETY: a live component; processing has stopped.
         let _ = unsafe { self.component.setActive(0) };
+        if let Some(sample_rate) = sample_rate {
+            let mut setup = ProcessSetup {
+                processMode: ProcessModes_::kRealtime as int32,
+                symbolicSampleSize: SymbolicSampleSizes_::kSample32 as int32,
+                maxSamplesPerBlock: served.max_frames() as int32,
+                sampleRate: sample_rate,
+            };
+            // SAFETY: the audio thread has joined and the live component is inactive;
+            // setup is borrowed only for this main-thread call.
+            if !ok(unsafe { processor.setupProcessing(&mut setup) }) {
+                return Err("the plug-in refused the new audio configuration".into());
+            }
+            self.sample_rate = sample_rate;
+        }
         // SAFETY: as above, set up as when it loaded.
         if !ok(unsafe { self.component.setActive(1) }) {
             return Err("the plug-in did not activate again".into());

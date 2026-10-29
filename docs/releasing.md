@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog
 type: howto
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-10-29
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -31,6 +31,13 @@ covers:
 # Releasing
 
 Releases are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+
+Windows release, nightly and test packages enable `suhina/asio,suhina-cli/asio`, using
+the runner's LLVM installation for libclang and the vendored ASIO SDK. Both the desktop
+app and CLI can use installed ASIO drivers alongside WASAPI; no driver is bundled.
+Local builds need the same features explicitly (README › ASIO on Windows).
+The Windows package smoke test checks that `suhina-cli audio devices` reports the ASIO
+host even when the runner has no ASIO drivers installed.
 
 ## Versions
 

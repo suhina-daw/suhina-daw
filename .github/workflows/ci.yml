@@ -178,6 +178,16 @@ jobs:
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: ASIO driver initialization contract
+        if: runner.os == 'Windows'
+        env:
+          LIBCLANG_PATH: C:/Program Files/LLVM/bin
+        run: cargo test --manifest-path third_party/asio-sys/Cargo.toml --lib driver_info
+      - name: ASIO callback cycle contract
+        if: runner.os == 'Windows'
+        run: |
+          rustc --test third_party/cpal/src/host/asio/callback_cycle.rs -o callback-cycle-tests.exe
+          ./callback-cycle-tests.exe
       # The documentation, warnings as errors: a rustdoc link to code that was renamed (the map
       # from the window to its code in crates/ui/src/lib.rs, #768 › 4) fails here. Private items
       # are documented, so links to them resolve.

@@ -38,6 +38,13 @@ impl BlockCounts {
 
 /// The audio half of a hosted plug-in, as the engine runs it: real-time safe.
 pub struct Hosted {
+    gate: Option<super::transport_gate::TransportGate>,
+    continuation: suhina_engine::SongPosition,
+    rate: u32,
+    /// Live notes arriving during the stop fade wait for the first stopped block, so
+    /// its transport transition cannot reset a newly started voice.
+    stop_notes: Vec<DeviceEvent>,
+    stop_notes_overflow: bool,
     audio: PluginAudio,
     input: Vec<f32>,
     output: Vec<f32>,
@@ -65,6 +72,11 @@ pub struct Hosted {
 impl Hosted {
     pub fn new(audio: PluginAudio) -> Self {
         Self {
+            gate: None,
+            continuation: suhina_engine::SongPosition::default(),
+            rate: 1,
+            stop_notes: Vec::with_capacity(MAX_EVENTS / 2),
+            stop_notes_overflow: false,
             audio,
             input: vec![0.0; MAX_BLOCK_FRAMES * 2],
             output: vec![0.0; MAX_BLOCK_FRAMES * 2],
@@ -82,6 +94,13 @@ impl Hosted {
     /// The counts this keeps while the engine runs it.
     pub fn counts(&self) -> Arc<BlockCounts> {
         Arc::clone(&self.counts)
+    }
+
+    /// Instruments fade before a transport stop; downstream effects keep their tails.
+    pub fn with_instrument_transport(mut self, instrument: bool, rate: u32) -> Self {
+        self.gate = instrument.then(|| super::transport_gate::TransportGate::new(rate));
+        self.rate = rate.max(1);
+        self
     }
 }
 
@@ -202,14 +221,51 @@ impl Hosted {
         self.params.clear();
         // What earlier blocks could not send goes first.
         take_carried(&mut self.carried, &mut self.params, &mut self.notes, SONG_EVENTS);
+        let holding_stop = self.gate.as_ref().is_some_and(|g| g.holds_transport());
+        if !holding_stop {
+            for event in self.stop_notes.drain(..) {
+                if matches!(event, DeviceEvent::On { .. })
+                    && let Some(gate) = &mut self.gate
+                {
+                    gate.live_note(0);
+                }
+                push_event(&mut self.notes, 0, event);
+            }
+            if self.stop_notes_overflow {
+                push_event(&mut self.notes, 0, DeviceEvent::AllNotesOff);
+                self.stop_notes_overflow = false;
+            }
+        }
         for &(frame, event) in events {
+            if holding_stop && (!self.stop_notes.is_empty() || matches!(event, DeviceEvent::On { .. })) {
+                // Reserve room for a final release if hostile input exhausts the bound.
+                if self.stop_notes.len() + 1 < self.stop_notes.capacity() {
+                    self.stop_notes.push(event);
+                } else {
+                    self.stop_notes_overflow = true;
+                }
+                continue;
+            }
+            if matches!(event, DeviceEvent::On { .. })
+                && let Some(gate) = &mut self.gate
+            {
+                gate.live_note(frame);
+            }
             push_event(&mut self.notes, u32::try_from(frame).unwrap_or(u32::MAX), event);
         }
         // Where the song is, with every block: tempo-synced effects and instruments lock to it,
         // an ARA renderer plays by it.
-        let song = self.song;
+        // During the short stop fade the instrument still renders a continuing transport.
+        // In particular, Stop's jump back to the start marker must wait with the stop flag.
+        let song = if self.gate.as_ref().is_some_and(|g| g.holds_transport()) { self.continuation } else { self.song };
+        self.continuation = song;
+        self.continuation.position = song.position.saturating_add((buffer.len() / 2) as u64);
+        self.continuation.beat += (buffer.len() / 2) as f64 * song.tempo / (60.0 * f64::from(self.rate));
         let tempo = if song.tempo.is_finite() { song.tempo.clamp(1.0, 999.0) as f32 } else { 120.0 };
-        self.params.push(Event::transport(song.playing, song.position));
+        self.params.push(Event::transport(
+            song.playing || self.gate.as_ref().is_some_and(|g| g.holds_transport()),
+            song.position,
+        ));
         self.params.push(Event::tempo(tempo));
         self.params.push(Event::beat(song.beat));
         self.params.push(Event::bar(song.bar, song.bar_start, song.numerator, song.denominator));
@@ -233,6 +289,9 @@ impl Hosted {
             suhina_plugins::Outcome::Done => {
                 if let Some(output) = self.output.get(..buffer.len()) {
                     buffer.copy_from_slice(output);
+                }
+                if let Some(gate) = &mut self.gate {
+                    gate.process(buffer);
                 }
                 true
             }
@@ -267,6 +326,24 @@ impl Hosted {
 }
 
 impl PluginProcessor for Hosted {
+    fn smooth_transport_stop(&self) -> bool {
+        self.gate.is_some()
+    }
+    fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<u32, String> {
+        let latency = self.audio.reconfigure(f64::from(sample_rate), timeout).map_err(|e| e.to_string())?;
+        self.events.clear();
+        self.notes.clear();
+        self.params.clear();
+        self.carried.clear();
+        self.stop_notes.clear();
+        self.stop_notes_overflow = false;
+        self.sent_at = None;
+        self.rate = sample_rate.max(1);
+        if self.gate.is_some() {
+            self.gate = Some(super::transport_gate::TransportGate::new(sample_rate));
+        }
+        Ok(latency)
+    }
     fn process(&mut self, buffer: &mut [f32], events: &[(usize, DeviceEvent)], timeout: Duration) -> bool {
         if self.send(buffer, events, timeout) != Sent::Out {
             return false;
@@ -297,7 +374,7 @@ impl PluginProcessor for Hosted {
     /// Its host process and number there, unless releases from a block it could not take wait
     /// to be sent (they go on its own link first) or its link still has a block out.
     fn joint(&self) -> Option<Joint> {
-        if !self.carried.is_empty() {
+        if !self.carried.is_empty() || self.gate.as_ref().is_some_and(|g| !g.unity()) {
             return None;
         }
         self.audio.seat().map(|seat| Joint { process: seat.process, member: seat.instance })
@@ -351,6 +428,9 @@ impl PluginProcessor for Hosted {
     }
 
     fn transport(&mut self, song: &suhina_engine::SongPosition) {
+        if let Some(gate) = &mut self.gate {
+            gate.transport(song.playing);
+        }
         self.song = *song;
     }
 

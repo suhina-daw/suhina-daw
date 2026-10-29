@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-29
 covers:
   - apps/suhina/src/liquid.rs
   - apps/suhina/src/main.rs
@@ -85,7 +85,7 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 | `ara musical context changed` | host | the tempo map or time signatures sent to the plug-in again |
 | `slow frame N ms: part ms, …; what was shown` | app (`kit/frame_trace.rs`) | a frame whose drawing took 25 ms or more, part by part (› UI time) |
 | `frames: N in 1.0 s …` | app | once a second while the window draws: frames, drawing time on average and the longest, the longest wait between frames |
-| `audio: device underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), engine load …` | app | once a second, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
+| `audio: device underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), not sent N (+n), longest trip N µs, engine load …` | app | once a second while playing (including clean intervals); while stopped, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
 | `slow engine update: N ms (graph …)` | app (`session/src/lib.rs`) | a project change whose new engine graph took 25 ms or more to make, part by part |
 | `slow <work>: N ms` | app | library listings, browser rows, the sample map and its cache, a drop, adding to a track: anything that took 5 ms or more |
 
@@ -161,14 +161,41 @@ happens. Two counters tell the causes apart:
   engine had to hand the device its buffer, so that block passed the sound through unprocessed (a
   crackle on that track). The line names the plug-in late most often and its track. A return's
   plug-ins run after every track that sends to them, so they have the least time left.
+- **not sent** (of the late blocks): the host was still busy with an earlier block when the next
+  came, so the engine did not send this one at all — a serve that took longer than a block's
+  playing time, not a slow engine.
+- **longest trip:** the longest round trip a plug-in answered in, in microseconds: what any
+  answered block took at worst. With this and *not sent*, a miss's cause says itself — long
+  trips (the host's serve or the machine's scheduling), or a budget the deadline never left.
 
-Lines come only when a counter grew or the load is high, so a session that plays cleanly writes
-none.
+While playing, a health line is written each second, including zero deltas, so a clean
+interval can be distinguished from a stopped logger. While stopped, lines require a changed
+counter or high load. Each health line identifies the actual host, device, sample rate and
+playhead beat. `audio output:` records format changes even without a dropout, including
+whether the device is a fallback. `audio reopen begin/complete` records the requested choice,
+transport snapshot, elapsed opening time and whether plug-ins carried over.
+
+The last late render diagnostic gives its wall time in microseconds, frames queued before
+rendering, device period and number of render frames. These are atomic diagnostic samples
+published by the engine and read by the UI; no log writes run on the audio thread. A low
+smoothed CPU reading alone does not exclude one long render call or a scheduling delay.
+Counters belong to the current player/graph and may reset on replacement; use the reopen
+records and cumulative values as well as the deltas.
 
 What is normal: a few late plug-in blocks in the first second of playback (every plug-in wakes at
 once), and a few thousand stretched frames late right after a jump of the play position (the
 stretched clips there are made from the new place first). Late blocks that keep coming while it
 plays, or underruns at all, are the bug.
+
+### Further reading on audio timing
+
+- [Microsoft: DPC latency](https://microsoft.github.io/MIDI/kb/dpc-latency/) explains how driver
+  interrupts and scheduling delays can hold up an audio thread. A larger buffer can tolerate
+  more delay; identifying a driver as the cause requires a trace of the actual interruption.
+- [Kiefer et al., 2015: Parallelizing a Real-time Audio Application](https://ps.ipd.kit.edu/english/180_1222.php)
+  compares parallel scheduling strategies in an audio application. Its results motivate measuring
+  render completion times and synchronization overhead, rather than treating average CPU load
+  as proof that every audio deadline was met.
 
 ### Adding a trace point
 

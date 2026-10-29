@@ -254,6 +254,7 @@ impl Projects {
     /// transport stopped. Returns a notice when the chosen device was not there and the default
     /// plays instead.
     pub fn open_output(&mut self, id: Option<ProjectId>) -> Result<Option<String>, CommandError> {
+        self.ensure_output_can_close()?;
         let system = self.devices.audio.clone().ok_or("no audio output here")?;
         let choice = self.devices.output_choice.clone();
         let session = self.session_mut(id)?;
@@ -266,8 +267,13 @@ impl Projects {
                     opened.player
                 })
             })
-            .map_err(|e| CommandError(format!("no audio output: {e}")))?;
-        if !kept {
+            .map_err(|e| {
+                suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
+                CommandError(format!("no audio output: {e}"))
+            })?;
+        if kept {
+            session.retain_plugins_at_player_rate();
+        } else {
             session.restart_plugins();
         }
         Ok(notice)
@@ -275,14 +281,21 @@ impl Projects {
 
     /// Moves the active project's output to the one chosen now, keeping the transport where
     /// it is (the playhead, playing or stopped, and the metronome) and the plug-ins running.
-    /// Nothing happens while no project plays. Returns a notice as [`Projects::open_output`].
+    /// After a failed opening, a new choice opens a stopped output; an intentionally detached
+    /// project stays detached.
+    /// Returns a notice as [`Projects::open_output`].
     pub fn reopen_output(&mut self) -> Result<Option<String>, CommandError> {
+        self.ensure_output_can_close()?;
         // The preview output opens on the new choice when next needed.
         self.close_preview_output();
         let Some(system) = self.devices.audio.clone() else { return Ok(None) };
         let choice = self.devices.output_choice.clone();
         let Ok(session) = self.session_mut(None) else { return Ok(None) };
-        let Some(transport) = session.player().map(crate::audio::Transport::of) else { return Ok(None) };
+        let Some(transport) = session.player().map(crate::audio::Transport::of) else {
+            return if session.sync.output_open_failed { self.open_output(None) } else { Ok(None) };
+        };
+        let began = std::time::Instant::now();
+        suhina_plugins::trace!("audio reopen begin: choice {choice:?}, transport {transport:?}");
         let (mut notice, mut kept) = (None, false);
         session
             .replace_player(|project, audio, assets, previous| {
@@ -292,14 +305,24 @@ impl Projects {
                     opened.player
                 })
             })
-            .map_err(|e| CommandError(format!("no audio output: {e}")))?;
-        if !kept {
+            .map_err(|e| {
+                suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
+                CommandError(format!("no audio output: {e}"))
+            })?;
+        if kept {
+            session.retain_plugins_at_player_rate();
+        } else {
             session.restart_plugins();
         }
         if let Ok(player) = session.player_mut() {
             transport.restore(player)?;
         }
-        // Plug-ins that could not carry over (a new sample rate) start again.
+        suhina_plugins::trace!(
+            "audio reopen complete: {:.1} ms, plugins_kept={kept}, output {:?}, restored {transport:?}",
+            began.elapsed().as_secs_f64() * 1000.0,
+            session.player().and_then(crate::Player::output_info)
+        );
+        // Plug-ins that could not carry over start again; retained instances stay alive.
         session.sync_plugins();
         Ok(notice)
     }
@@ -315,6 +338,7 @@ impl Projects {
     /// Adds `session` after the last tab and makes it active. The previously active project
     /// stops playing. `name` defaults to the source file's name, or "Untitled N".
     pub fn add(&mut self, session: Session, name: Option<String>) -> Result<ProjectId, CommandError> {
+        self.ensure_output_can_close()?;
         if self.tabs.open.len() >= MAX_OPEN_PROJECTS {
             return Err(format!("at most {MAX_OPEN_PROJECTS} projects can be open; close one first").into());
         }
@@ -359,7 +383,10 @@ impl Projects {
                 .replace_player(|project, audio, assets, previous| {
                     system.open(project, audio, assets, &choice, previous).map(|opened| opened.player)
                 })
-                .map_err(|e| CommandError(format!("no audio output: {e}")))?;
+                .map_err(|e| {
+                    suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
+                    CommandError(format!("no audio output: {e}"))
+                })?;
             self.preview = Some(session);
         }
         self.preview.as_mut().ok_or_else(no_project)
@@ -369,7 +396,19 @@ impl Projects {
     /// own (a device may only be open once). The desktop app calls it before opening a project's
     /// output; adding a project and choosing another output do too.
     pub fn close_preview_output(&mut self) {
-        self.preview = None;
+        // The preview cannot currently open a panel, but keep a future panel from
+        // blocking this infallible cleanup entry point too.
+        if self.preview.as_ref().and_then(Session::player).is_none_or(|p| !p.control_panel_open()) {
+            self.preview = None;
+        }
+    }
+
+    /// Output replacement and tab changes must not join an owner blocked in its native dialog.
+    pub fn ensure_output_can_close(&self) -> Result<(), CommandError> {
+        let panel_open =
+            self.tabs.open.iter().any(|o| o.session.player().is_some_and(crate::Player::control_panel_open))
+                || self.preview.as_ref().and_then(Session::player).is_some_and(crate::Player::control_panel_open);
+        if panel_open { Err(CommandError("close the ASIO control panel first".into())) } else { Ok(()) }
     }
 
     pub fn active(&self) -> Option<ProjectId> {
@@ -406,6 +445,7 @@ impl Projects {
     /// Makes `id` active. The previously active project's player is closed, so only one project
     /// plays at a time.
     pub fn switch(&mut self, id: ProjectId) -> Result<(), CommandError> {
+        self.ensure_output_can_close()?;
         if self.get(id).is_none() {
             return Err(unknown_project(id));
         }
@@ -415,6 +455,7 @@ impl Projects {
 
     /// Moves `step` tabs from the active project, wrapping around. Returns the new active id.
     pub fn cycle(&mut self, step: isize) -> Result<ProjectId, CommandError> {
+        self.ensure_output_can_close()?;
         let len = self.tabs.open.len();
         let current =
             self.tabs.active.and_then(|a| self.tabs.open.iter().position(|o| o.id == a)).ok_or_else(no_project)?;
@@ -430,6 +471,7 @@ impl Projects {
     /// Closing is a critical operation: with backups before critical operations, a project with
     /// unsaved changes is backed up first.
     pub fn close(&mut self, id: ProjectId) -> Result<Session, CommandError> {
+        self.ensure_output_can_close()?;
         if self.get(id).is_none() {
             return Err(unknown_project(id));
         }

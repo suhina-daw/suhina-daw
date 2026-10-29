@@ -40,6 +40,23 @@ fn block(audio: &mut PluginAudio, timeout: Duration) -> (Outcome, f32) {
     (outcome, output[0])
 }
 
+/// Missing the audio deadline is not a hang when every request is eventually answered.
+#[test]
+fn repeatedly_late_answers_do_not_mark_a_responsive_plugin_hung() {
+    let (mut control, mut audio) = start("test:busy:10000", None);
+    let mut output = [0.0; FRAMES * 2];
+    for _ in 0..HUNG_AFTER + 2 {
+        let until = Instant::now() + PATIENT;
+        while !audio.ready(Instant::now()) {
+            assert!(Instant::now() < until, "previous request never answered");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(audio.send(&[1.0; FRAMES * 2], &[], output.len(), Duration::ZERO));
+        let _ = audio.finish(&mut output, Duration::ZERO);
+        assert_eq!(control.health(), Health::Running);
+    }
+}
+
 fn wait_for(plugin: &mut Plugin, health: Health) {
     let deadline = Instant::now() + PATIENT;
     while plugin.health() != health {
