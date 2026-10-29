@@ -119,7 +119,7 @@ impl Row {
 
 /// The levels of the main output and of every metered track, written by the audio thread
 /// and readable from any thread. Clip indicators are reset from any thread. It also carries
-/// the watched devices' input rings the EQ panel's analyser reads
+/// the watched devices' output rings the EQ panel's analyser reads
 /// ([`spectrum::Spectrum`], docs/spec/eq.md › The panel › The analyser).
 #[derive(Debug)]
 pub struct MeterMonitor {
@@ -172,7 +172,7 @@ impl MeterMonitor {
         self.main.level()
     }
 
-    /// The watched devices' input rings, the EQ panel's analyser's source
+    /// The watched devices' output rings, the EQ panel's analyser's source
     /// (docs/spec/eq.md › The panel › The analyser).
     pub fn spectrum(&self) -> &spectrum::Spectrum {
         &self.spectrum

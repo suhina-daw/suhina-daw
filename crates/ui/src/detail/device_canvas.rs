@@ -1979,7 +1979,7 @@ pub(crate) fn show(
             let _role = crate::kit::style_class::enter("eq-curve");
             let mut styled_ui = crate::kit::style_class::ui(ui);
             let ui = &mut *styled_ui;
-            super::eq_curve::show(ui, bounds, parameters, track, device, actions);
+            super::eq_curve::show(ui, bounds, parameters, track, at, actions);
             continue;
         }
         if let Some(Widget::Handle { color: line_color, span }) = &control.widget {

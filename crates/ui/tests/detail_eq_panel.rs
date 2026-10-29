@@ -77,12 +77,13 @@ fn eq_project() -> Project {
 }
 
 /// The EQ panel's analyser end to end: with the session's player a real renderer and the
-/// transport playing, the panel's watch reaches the engine and the device's input lands in
-/// its ring (docs/spec/eq.md › The panel › The analyser).
+/// transport playing, the panel's watch reaches the engine and the device's output lands in
+/// its ring, and the panel keeps the ring's moving count and asks for the next frame while
+/// the engine appends (docs/spec/eq.md › The panel › The analyser).
 #[test]
-fn the_eq_panels_analyser_receives_the_playing_input() {
-    let mut renderer = suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000)
-        .expect("a renderer");
+fn the_eq_panels_analyser_receives_the_playing_output() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
@@ -114,14 +115,74 @@ fn the_eq_panels_analyser_receives_the_playing_input() {
             .ctx
             .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum")))
             .and_then(|monitor| monitor.spectrum().samples(TrackId(1), 0))
-            .unwrap_or_else(|| panic!("the EQ's ring holds the playing input"))
+            .unwrap_or_else(|| panic!("the EQ's ring holds the playing output"))
     };
-    let (samples, valid) = played(&mut harness);    assert!(valid > 0, "the engine appended to the ring");
+    let (samples, valid) = played(&mut harness);
+    assert!(valid > 0, "the engine appended to the ring");
     assert!(
         samples.iter().any(|&s| s.abs() > 0.01),
-        "the playing input is in the ring, peak {}",
+        "the playing output is in the ring, peak {}",
         samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
     );
+    // The panel drew its analyser from the ring and asked for the next frame while the
+    // engine appends: the count it keeps moved with the engine's blocks.
+    let cursor = harness.ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("eq-spectrum-cursor", 1u32, 0usize))));
+    assert!(cursor.is_some_and(|cursor| cursor > 0), "the panel follows the ring while it plays");
+}
+
+/// Drums with one device: a group whose first branch holds the EQ — a grouped EQ's panel.
+fn grouped_eq_project() -> Project {
+    let mut project = suhina_ui::demo::demo_project();
+    let mut grouped = eq_device();
+    grouped.name = "EQ B".into();
+    let mut branch = suhina_engine::model::Branch::new("Branch 1");
+    branch.devices.push(grouped);
+    let group = Device {
+        name: "Group".into(),
+        kind: DeviceKind::Group(Box::new(suhina_engine::model::DeviceGroup::with_branches(vec![branch]))),
+        enabled: true,
+        state: None,
+        params: suhina_engine::GROUP_PARAMS.iter().map(|&(id, _, _, default)| DeviceParam::new(id, default)).collect(),
+        automation: Vec::new(),
+        extensions: Extensions::default(),
+    };
+    project.channels[0].devices.push(group);
+    project
+}
+
+/// A grouped EQ's panel claims no watch: nothing inside a group is tapped yet, and its
+/// branch-local index would name a top-level device's row and show that device's spectrum as
+/// its own (#1050 keeps the real fix; docs/spec/eq.md › The panel › The analyser).
+#[test]
+fn a_grouped_eqs_panel_claims_no_watch() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&grouped_eq_project(), &suhina_engine::AudioPool::new(), 48_000)
+            .expect("a renderer");
+    let mut session = Session::new(grouped_eq_project());
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = Harness::builder()
+        .with_size((1280.0, 900.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    assert!(harness.query_by_label("EQ response display").is_some(), "the grouped EQ's panel is drawn");
+    let monitor = harness
+        .ctx
+        .data(|d| d.get_temp::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::new("eq-spectrum")))
+        .expect("the frame carries the monitor");
+    // The grouped EQ's branch-local index is 0: no row may watch it, or a top-level device at
+    // index 0 would be tapped into that row and show as the grouped EQ's own spectrum.
+    assert!(monitor.spectrum().appended(TrackId(1), 0).is_none(), "the grouped panel claims no watch");
 }
 
 #[test]
@@ -235,9 +296,11 @@ fn the_edit_switch_edits_curve_b_in_the_stereo_spread_modes() {
     assert!(harness.query_by_label("Band 1 Frequency").is_some(), "the strips are curve A's again");
 }
 
-/// Renders the window with the EQ's panel showing to `target/ui-snapshots/eq-panel.png` and
-/// `eq-panel-b.png` (curve B edited in Left/Right), to look the display, the dots, the strips,
-/// the rows and the switch over. Needs a GPU adapter, so it runs only when asked:
+/// Renders the window with the EQ's panel showing to `target/ui-snapshots/eq-panel.png`,
+/// `eq-panel-b.png` (curve B edited in Left/Right) and `eq-panel-spectrum.png` (the transport
+/// playing through the EQ, so the analyser's grey line shows behind the curve), to look the
+/// display, the dots, the strips, the rows, the switch and the line over. Needs a GPU
+/// adapter, so it runs only when asked:
 /// `cargo test -p suhina-ui --test main detail_eq_panel -- --ignored render_the_panel`.
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]
@@ -257,4 +320,34 @@ fn render_the_panel() {
     harness.get_by_label("Edit curve B").click();
     harness.run();
     save(&mut harness, "eq-panel-b.png");
+
+    // With a real renderer playing through the EQ, the analyser's grey line behind the curve.
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&eq_project(), &suhina_engine::AudioPool::new(), 48_000).expect("a renderer");
+    let mut session = Session::new(eq_project());
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = Harness::builder()
+        .with_size((1280.0, 900.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    harness.get_by_label("Show Devices").click();
+    harness.run();
+    save(&mut harness, "eq-panel-idle.png");
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    let mut block = [0.0f32; 2 * 256];
+    for _ in 0..47 {
+        renderer.process(&mut block);
+    }
+    harness.run_steps(2);
+    save(&mut harness, "eq-panel-spectrum.png");
 }

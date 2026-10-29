@@ -148,10 +148,10 @@ fn plugins(project: &Project, stands: Vec<(Stand, PluginSlotInfo)>) -> Plugins {
 const EFFECT: PluginSlotInfo = PluginSlotInfo { instrument: false, latency: 0 };
 const INSTRUMENT: PluginSlotInfo = PluginSlotInfo { instrument: true, latency: 0 };
 
-/// An EQ after a VST3 instrument hears the plug-in's output in its spectrum ring: the tap is
-/// on the device's input, whatever ran before it (docs/spec/eq.md › The panel › The analyser).
+/// An EQ after a VST3 instrument rings what the EQ output: its defaults are flat, so its
+/// output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
 #[test]
-fn an_eq_after_a_plug_in_watches_the_plug_ins_output() {
+fn an_eq_after_a_plug_in_rings_its_output() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3()), device("eq", &[])]);
     let mut renderer = Renderer::build(
         &p,
@@ -165,11 +165,11 @@ fn an_eq_after_a_plug_in_watches_the_plug_ins_output() {
     monitor.spectrum().watch(1, TrackId(1), 1);
     let out = blocks(&mut renderer, 4, 480);
     assert!(peak(&out) > 0.4, "the plug-in instrument plays 0.5");
-    let (samples, valid) = monitor.spectrum().samples(TrackId(1), 1).expect("the EQ's ring has input");
+    let (samples, valid) = monitor.spectrum().samples(TrackId(1), 1).expect("the EQ's ring has output");
     assert!(valid >= 4 * 480, "{valid} frames of a 4-block play");
     assert!(
         samples.iter().any(|&s| s.abs() > 0.25),
-        "the plug-in's output is in the EQ's ring, peak {}",
+        "the EQ's output is in its ring, peak {}",
         samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
     );
 }
@@ -252,10 +252,10 @@ fn an_offline_render_plays_through_the_loop_and_tells_plug_ins_of_no_cycle() {
 }
 
 /// The user's case: live MIDI into the armed track, the VST3 instrument playing, and the EQ
-/// after it — with the transport stopped, as monitoring plays (docs/spec/eq.md › The panel ›
-/// The analyser).
+/// after it — with the transport stopped, as monitoring plays. The EQ's defaults are flat, so
+/// its output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
 #[test]
-fn an_eq_after_a_plug_in_hears_live_notes_with_the_transport_stopped() {
+fn an_eq_hears_live_notes_after_a_plug_in_with_the_transport_stopped() {
     use crate::{LaunchCommand, LiveEvent};
     let p = project(Vec::new(), 1.0, vec![plug(vst3()), device("eq", &[])]);
     let mut renderer = Renderer::build(
@@ -276,11 +276,11 @@ fn an_eq_after_a_plug_in_hears_live_notes_with_the_transport_stopped() {
     live.send(LiveEvent::NoteOn { key: 60, velocity: 1.0 });
     let out = blocks(&mut renderer, 4, 256);
     assert!(peak(&out) > 0.4, "the live note plays through the plug-in");
-    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the EQ's ring has the live input");
+    let (samples, valid) = spectrum.samples(TrackId(1), 1).expect("the EQ's ring has output");
     assert!(valid > 0);
     assert!(
         samples.iter().any(|&s| s.abs() > 0.25),
-        "the plug-in's live output is in the EQ's ring, peak {}",
+        "the EQ's output is in its ring, peak {}",
         samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
     );
 }

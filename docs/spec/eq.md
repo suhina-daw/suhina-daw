@@ -1,5 +1,5 @@
 ---
-description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, the panel's response display with the bands' dots and the input spectrum's analyser, how Live's EQ Eight imports into it, and how close it comes to Live's renders
+description: The built-in eight-band parametric EQ - its parameters, the band types and their responses, the 48 dB cuts' Q, Adaptive Q, Scale, the Stereo, Left/Right and Mid/Side curves, the panel's response display with the bands' dots and the output spectrum's analyser, how Live's EQ Eight imports into it, and how close it comes to Live's renders
 read_when: eq, equaliser, equalizer, parametric eq, eight-band eq, bell, shelf, notch, low cut, high cut, adaptive q, mid/side eq, state-variable filter, SVF, importing Live's EQ Eight, Eq8 elements, eq panel, response display, curve display, band dots, analyser, spectrum
 type: spec
 status: current
@@ -168,29 +168,36 @@ command, the same one a generated list writes.
 
 ### The analyser
 
-While sound plays through the device, the display also draws the spectrum of the device's
-**input** — the sound about to be equalised — as a dim line behind the response curve, on the
-same frequency axis and dB grid. The line is the same in Stereo, Left/Right and Mid/Side: the
-tap is before the EQ, so the mode does not change it. With nothing playing it holds the last
-spectrum.
+While sound plays through the device, the display also draws the spectrum of what the device's
+**output** is at that moment — the sound as the EQ shaped it — as a grey line behind the
+response curve, on the same frequency axis and across the display's height, so the line and the
+curve tell one story: where the curve pulls the sound down, the line follows. With nothing
+playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no line.
 
-- **The tap.** The chain pass on the audio thread mixes a watched device's input block to mono
+- **The tap.** The chain pass on the audio thread mixes a watched device's output block to mono
   (left and right halved) and appends it to a ring of 2048 samples in the meter monitor
-  (`crates/engine/src/spectrum.rs`). The rings are fixed tables of atomics, like the meters':
-  the audio thread only stores, never allocates, locks or waits, and a device whose row nobody
-  watches costs nothing. The watch rows are keyed by the device's index in the chain; a panel
-  claims row `device index mod 16` while it is drawn, and reads the ring only while the watch
-  still names its device. When two chains of the same track play at once (clips in more than
-  one column), whichever wrote last shows. A device inside a device group's branches is not
-  tapped yet: the group's pass does not run the tap, so its panel draws only the response
-  curve (issue #1048).
+  (`crates/engine/src/spectrum.rs`), after the device has run and before the next one. The
+  rings are fixed tables of atomics, like the meters': the audio thread only stores, never
+  allocates, locks or waits, and a device whose row nobody watches costs nothing. The watch
+  rows are keyed by the device's index in the chain; a panel claims row `device index mod 16`
+  while it is drawn, and reads the ring only while the watch still names its device (a claim
+  outlives its panel until the next graph swap, so at most that row's mixdown goes on). When
+  two chains of the same track play at once (clips in more than one column), whichever wrote
+  last shows. A device inside a device group's branches is not tapped yet, and its panel
+  claims no watch — its branch-local index would name a top-level device's row — so it draws
+  only the response curve (issue #1050 keys watches by the device's path, which lifts this).
 - **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
   already in the tree), and folds the spectrum into 64 bands spaced logarithmically over
   10 Hz – 22 kHz, taking each band's loudest bin. The level is the sine's amplitude against
-  full scale in dB (a full-scale sine at a band's centre draws at 0 dB); bands below the FFT's
-  first bin (about 23 Hz at 48 kHz) show that bin. The bands are drawn at half strength, as a
-  line, and nothing about them is history: each frame is the last 2048 samples (about 43 ms),
-  no peak hold, no smoothing.
+  full scale in dB; bands below the FFT's first bin (about 23 Hz at 48 kHz) show that bin. The
+  line is drawn on the display's own vertical scale — full scale at the top edge, −60 dB at
+  the bottom — not the gain grid: normal material sits far below a ±15 dB grid, so on the grid
+  the line falls below the display and never shows (live monitoring at a normal level drew no
+  line at all before the scale had its own range). The bands are drawn in the theme's grey,
+  behind the curve, and nothing about them is history: each frame is the last 2048 samples
+  (about 43 ms), no peak hold, no smoothing. While the engine appends to the ring the panel
+  asks for the next frame (the meters' repaints alone would hold steady with a steady level
+  and freeze the line); when the engine stops, the line holds the last spectrum.
 
 ## Decisions
 
@@ -214,16 +221,19 @@ Each entry: what was chosen, what it costs, why.
 6. **Type changes, on/off and mode changes fade; frequency, gain and Q glide over 20 ms.** Not
    measured (they need automation during a render). A bell whose Q falls fast swells a little
    while its resonance empties (half again the level for 20 ms from Q 6 to 0.3), with no step.
-7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser's tap is the
-   meters' pattern, and Audition is still left out.** The display sums the same filter
+7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser reads the
+   device's output, and Audition is still left out.** The display sums the same filter
    sections the device runs (`band_sections`), so what the panel shows is what the device
    renders and there is no second response implementation to drift from. Cost: about 6 000
    magnitude evaluations per curve per frame, on the UI thread, at the display's 192 points.
    The drawn bend near Nyquist is 48 kHz's wherever the project runs; only a corner above
-   20 kHz could differ at another rate. The analyser (above) reads the device's input through
-   the meter monitor's atomics and does its FFT on the UI thread, so the audio thread's cost
-   is the mono mixdown and the ring stores alone, only while a panel watches; Audition remains
-   a panel part left for later (the device-specs AGENTS › Scope).
+   20 kHz could differ at another rate. The analyser taps the device's output, not its input:
+   the line then shows what the EQ made of the sound, the same story the curve tells, and a
+   boost or cut shows on the line the moment the dot moves. The other candidate — the input,
+   what is being equalised — shows the problem rather than the effect. The tap is the meters'
+   pattern: the mono mixdown and the ring stores are the audio thread's whole cost, only while
+   a panel watches, and the FFT runs on the UI thread. Audition remains a panel part left for
+   later (the device-specs AGENTS › Scope).
 
 ## Known differences
 

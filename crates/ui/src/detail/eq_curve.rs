@@ -6,8 +6,11 @@
 //! response of the on bands of the curve in use, every band is a numbered dot at its frequency
 //! and gain, the selected band's Frequency, Gain and Q are strips beside the display, the
 //! bands' type menus and numbered selectors run along the bottom, and the Edit switch picks
-//! which curve the display edits in Left/Right and Mid/Side. Which band is selected and which
-//! curve is edited are panel state; every edit is a `device.setParam` command.
+//! which curve the display edits in Left/Right and Mid/Side. While sound plays through the
+//! device, the analyser also draws the spectrum of its output as a grey line behind the curve,
+//! on the display's own vertical scale, from a ring the engine's audio thread keeps in the
+//! meter monitor. Which band is selected and which curve is edited are panel state; every
+//! edit is a `device.setParam` command.
 
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use serde_json::json;
@@ -19,7 +22,7 @@ use suhina_engine::MeterMonitor;
 use suhina_engine::model::TrackId;
 use suhina_engine::spectrum::{self, RING};
 
-use crate::detail::detail_view::GraphParameter;
+use crate::detail::detail_view::{DeviceAt, GraphParameter};
 use crate::kit::theme;
 use crate::kit::widgets::{Action, fixed};
 
@@ -51,8 +54,11 @@ const DRAWN_RATE: f64 = DEFAULT_SAMPLE_RATE;
 const GAIN_TYPES: [usize; 3] = [2, 3, 5];
 /// How many bands the analyser folds the spectrum into over the display's frequency range.
 const ANALYSER_BANDS: usize = 64;
-/// How strong the analyser's line is drawn beside the response's.
-const ANALYSER_STRENGTH: f32 = 0.4;
+/// The analyser's own vertical scale across the display's height: this level in dB at the top
+/// edge, this at the bottom. The line is not read against the gain grid — normal material
+/// sits far below a ±15 dB grid, so on the grid the line would fall below the display and
+/// never show (docs/spec/eq.md › The panel › The analyser).
+const ANALYSER_DB: (f64, f64) = (0.0, -60.0);
 
 /// One band of one curve, as the display reads it: its values and the filter sections the
 /// device's own maths ([`band_sections`]) runs for them.
@@ -77,9 +83,10 @@ pub(crate) fn show(
     bounds: Rect,
     parameters: &[GraphParameter],
     track: TrackId,
-    device: usize,
+    at: &DeviceAt,
     actions: &mut Vec<Action>,
 ) {
+    let device = at.0.last().copied().unwrap_or(0);
     let display =
         Rect::from_min_size(bounds.min + Vec2::new(DISPLAY[0], DISPLAY[1]), Vec2::new(DISPLAY[2], DISPLAY[3]));
     let mode = value(parameters, "mode").round().min(2.0);
@@ -97,7 +104,7 @@ pub(crate) fn show(
         1 if curve_b.is_some() => curve_b.as_ref().unwrap_or(&curve_a),
         _ => &curve_a,
     };
-    let analyser = analyser_bands(ui, track, device);
+    let analyser = watch_key(at).and_then(|key| analyser_bands(ui, track, key));
 
     draw_display(ui, display, &curve_a, curve_b.as_deref().unwrap_or(&curve_a), mode > 0.0, analyser.as_ref());
     draw_dots(ui, display, edited, &mut selection, parameters, track, device, actions);
@@ -168,6 +175,21 @@ fn y_db(y: f32, display: Rect) -> f64 {
     ((display.bottom() - y) / display.height()).clamp(0.0, 1.0) as f64 * 2.0 * DB - DB
 }
 
+/// The y of the analyser's level in dB, on its own scale across the display's height: full
+/// scale at the top edge, [`ANALYSER_DB`]'s floor at its bottom, clamped to the display.
+fn analyser_y(db: f64, display: Rect) -> f32 {
+    let down = ((ANALYSER_DB.0 - db) / (ANALYSER_DB.0 - ANALYSER_DB.1)).clamp(0.0, 1.0);
+    display.top() + down as f32 * display.height()
+}
+
+/// The analyser's watch key for a device's path: a top-level device's index, or `None` for a
+/// device inside a group — the chain pass taps no grouped device, and its branch-local index
+/// would name a top-level device's row and show that device's spectrum (#1050 keys watches
+/// by path; docs/spec/eq.md › The panel › The analyser).
+fn watch_key(at: &DeviceAt) -> Option<usize> {
+    (at.0.len() == 1).then(|| at.0[0])
+}
+
 /// The summed response of the on bands, in points across the display.
 fn curve_points(display: Rect, curve: &[Band]) -> Vec<Pos2> {
     (0..=POINTS)
@@ -217,23 +239,30 @@ fn frequency_text(frequency: f64) -> String {
 
 /// The analyser's bands of this panel's device, or `None` while no meter monitor is in the
 /// frame's data or nothing has played through the device yet. The panel claims its watch row
-/// here, so the engine starts appending as soon as the panel shows.
+/// here, so the engine starts appending as soon as the panel shows, and asks for the next
+/// frame while the ring's appended count moves: the meters' repaints alone hold steady with a
+/// steady level, and the line would freeze with them (monitoring with the transport stopped).
 fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f32; ANALYSER_BANDS]> {
     let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::new("eq-spectrum")))?;
     let spectrum = monitor.spectrum();
     spectrum.watch(device % spectrum::ROWS, track, device);
     let (samples, _) = spectrum.samples(track, device)?;
+    // While the engine renders the device, the count moves and the panel comes back for the
+    // next window; when the engine stops, the count stops and the line holds the last
+    // spectrum.
+    let cursor = spectrum.appended(track, device).unwrap_or_default();
+    let cursor_id = egui::Id::new(("eq-spectrum-cursor", track.0, device));
+    if cursor != ui.ctx().data(|d| d.get_temp::<usize>(cursor_id)).unwrap_or(0) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(cursor_id, cursor));
     // The window and the transform's plan are the same for every panel and every frame; the
     // scratch is built anew, on the UI thread, where allocating is free.
     let cache = egui::Id::new("eq-spectrum-analyser");
     let (window, plan) = ui.ctx().data_mut(|d| {
         if d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache).is_none() {
-            let window: Vec<f32> =
-                (0..RING).map(|n| (0.5 - 0.5 * (std::f64::consts::PI * n as f64 / RING as f64).cos()) as f32).collect();
-            if let Ok(window) = <[f32; RING]>::try_from(window) {
-                let plan: Arc<dyn rustfft::Fft<f32>> = rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING);
-                d.insert_temp(cache, (Arc::new(window), plan));
-            }
+            let plan: Arc<dyn rustfft::Fft<f32>> = rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING);
+            d.insert_temp(cache, (Arc::new(hann()), plan));
         }
         d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache)
     })?;
@@ -243,10 +272,23 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
         .map(|(&sample, &weight)| rustfft::num_complex::Complex::new(sample * weight, 0.0))
         .collect();
     plan.process(&mut bins);
-    // 64 logarithmic bands over the display's range, each the loudest bin in it, as a sine's
-    // amplitude against full scale in dB.
-    let rate = spectrum.sample_rate();
     let sum = window.iter().sum::<f32>().max(1.0);
+    Some(fold(&bins, sum, spectrum.sample_rate()))
+}
+
+/// The analyser's Hann window over the ring's length.
+fn hann() -> [f32; RING] {
+    let mut window = [0.0f32; RING];
+    for (n, weight) in window.iter_mut().enumerate() {
+        *weight = (0.5 - 0.5 * (std::f64::consts::PI * n as f64 / RING as f64).cos()) as f32;
+    }
+    window
+}
+
+/// The transform's bins folded into the analyser's bands: each band the loudest bin in it, as
+/// a sine's amplitude against full scale in dB. `window_sum` is the Hann window's sum, `rate`
+/// the rate the ring was filled at.
+fn fold(bins: &[rustfft::num_complex::Complex<f32>], window_sum: f32, rate: f64) -> [f32; ANALYSER_BANDS] {
     let mut bands = [0.0; ANALYSER_BANDS];
     for (band, bands_out) in bands.iter_mut().enumerate() {
         let lo = FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf(band as f64 / ANALYSER_BANDS as f64);
@@ -259,10 +301,10 @@ fn analyser_bands(ui: &mut egui::Ui, track: TrackId, device: usize) -> Option<[f
                 peak = peak.max(cell.norm());
             }
         }
-        let db = 20.0 * f64::from(2.0 * peak / sum).max(1e-9).log10();
+        let db = 20.0 * f64::from(2.0 * peak / window_sum).max(1e-9).log10();
         *bands_out = (db as f32).clamp(-90.0, 30.0);
     }
-    Some(bands)
+    bands
 }
 
 /// The display: its background, its dB and frequency grids with their labels, the spectrum the
@@ -319,15 +361,9 @@ fn draw_display(
             }
         }
     }
-    let curves: [(&[Band], f32); 2] = [(curve_a, 1.0), (curve_b, 0.5)];
-    for (curve, strength) in curves.into_iter().take(usize::from(two_curves) + 1) {
-        painter.add(egui::Shape::line(
-            curve_points(display, curve),
-            Stroke::new(1.5, colors.accent.gamma_multiply(strength)),
-        ));
-    }
-    // The analyser's line behind the response: dimmer, on the same axes, the display's bands
-    // by their centre frequency.
+    // The analyser's grey line behind the response curves: the same frequency axis, its own
+    // vertical scale across the display's height, each band by its centre frequency — the
+    // shape of the sound as the EQ shaped it, not a level read against the gain grid.
     if let Some(bands) = spectrum {
         let points: Vec<Pos2> = bands
             .iter()
@@ -335,10 +371,17 @@ fn draw_display(
             .map(|(band, &db)| {
                 let centre =
                     FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf((band as f64 + 0.5) / ANALYSER_BANDS as f64);
-                Pos2::new(frequency_x(centre, display), db_y(f64::from(db), display))
+                Pos2::new(frequency_x(centre, display), analyser_y(f64::from(db), display))
             })
             .collect();
-        painter.add(egui::Shape::line(points, Stroke::new(1.0, colors.accent.gamma_multiply(ANALYSER_STRENGTH))));
+        painter.add(egui::Shape::line(points, Stroke::new(1.0, colors.text_secondary)));
+    }
+    let curves: [(&[Band], f32); 2] = [(curve_a, 1.0), (curve_b, 0.5)];
+    for (curve, strength) in curves.into_iter().take(usize::from(two_curves) + 1) {
+        painter.add(egui::Shape::line(
+            curve_points(display, curve),
+            Stroke::new(1.5, colors.accent.gamma_multiply(strength)),
+        ));
     }
 }
 
@@ -856,8 +899,8 @@ mod tests {
 
     #[test]
     fn the_analyser_folds_a_tone_onto_its_band() {
-        // A sine a quarter of full scale at 1 kHz, ringed and banded the way the panel does:
-        // its band reads about −12 dB and its neighbours are far below.
+        // A sine a quarter of full scale at 1 kHz, windowed and folded the way the panel does
+        // (`hann`, `fold`): its band reads about −12 dB and its neighbours are far below.
         let band_of_1k = ((1000.0f64 / FREQUENCY.0).ln() / (FREQUENCY.1 / FREQUENCY.0).ln() * ANALYSER_BANDS as f64)
             .floor()
             .clamp(0.0, (ANALYSER_BANDS - 1) as f64) as usize;
@@ -865,8 +908,7 @@ mod tests {
         for (n, sample) in samples.iter_mut().enumerate() {
             *sample = 0.25 * (2.0 * std::f64::consts::PI * 1000.0 * n as f64 / 48_000.0).sin() as f32;
         }
-        let window: Vec<f32> =
-            (0..RING).map(|n| (0.5 - 0.5 * (std::f64::consts::PI * n as f64 / RING as f64).cos()) as f32).collect();
+        let window = hann();
         let sum = window.iter().sum::<f32>();
         let mut bins: Vec<rustfft::num_complex::Complex<f32>> = samples
             .iter()
@@ -874,20 +916,7 @@ mod tests {
             .map(|(&sample, &weight)| rustfft::num_complex::Complex::new(sample * weight, 0.0))
             .collect();
         rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING).process(&mut bins);
-        let mut bands = [-90.0f32; ANALYSER_BANDS];
-        for (band, out) in bands.iter_mut().enumerate() {
-            let lo = FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf(band as f64 / ANALYSER_BANDS as f64);
-            let hi = FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf((band + 1) as f64 / ANALYSER_BANDS as f64);
-            let first = (lo * RING as f64 / 48_000.0).ceil().clamp(1.0, (RING / 2 - 1) as f64) as usize;
-            let last = (hi * RING as f64 / 48_000.0).ceil().clamp(first as f64, (RING / 2) as f64) as usize;
-            let mut peak = 0.0f32;
-            for binned in first..=last {
-                if let Some(cell) = bins.get(binned % RING) {
-                    peak = peak.max(cell.norm());
-                }
-            }
-            *out = (20.0 * f64::from(2.0 * peak / sum).max(1e-9).log10() as f32).clamp(-90.0, 30.0);
-        }
+        let bands = fold(&bins, sum, 48_000.0);
         assert!(
             (bands[band_of_1k] + 12.0).abs() < 1.0,
             "the 1 kHz band reads the tone's level, got {}",
@@ -898,5 +927,27 @@ mod tests {
                 assert!(*level < -30.0, "band {band} is {level} dB, far from a tone at 1 kHz");
             }
         }
+    }
+
+    #[test]
+    fn the_analyser_draws_on_its_own_scale_across_the_display() {
+        let display = display();
+        assert_eq!(analyser_y(0.0, display), display.top(), "a full-scale band at the top edge");
+        assert_eq!(analyser_y(ANALYSER_DB.1, display), display.bottom(), "the floor at the bottom edge");
+        assert!(
+            (analyser_y(ANALYSER_DB.1 / 2.0, display) - display.center().y).abs() < 1.0e-3,
+            "half the floor is the middle of the display"
+        );
+        assert_eq!(analyser_y(6.0, display), display.top(), "above full scale clamps to the top edge");
+        assert_eq!(analyser_y(-90.0, display), display.bottom(), "below the floor clamps to the bottom edge");
+    }
+
+    #[test]
+    fn only_a_top_level_device_is_watched_by_the_analyser() {
+        use crate::detail::detail_view::DeviceAt;
+        assert_eq!(watch_key(&DeviceAt(vec![3])), Some(3), "a top-level device by its index");
+        assert_eq!(watch_key(&DeviceAt(vec![])), None, "no path, no watch");
+        assert_eq!(watch_key(&DeviceAt(vec![1, 0, 0])), None, "a grouped device is not tapped");
+        assert_eq!(watch_key(&DeviceAt(vec![2, 1, 3, 0, 1])), None, "nested groups too");
     }
 }

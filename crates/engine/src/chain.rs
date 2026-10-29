@@ -714,16 +714,15 @@ impl Chain {
         while let Some(slot) = slots.get_mut(*stage) {
             match slot {
                 Slot::Device(device) => {
-                    if let Some(row) = self
-                        .positions
-                        .get(*stage)
-                        .copied()
-                        .filter(|position| watched.contains(&Some(*position)))
-                    {
-                        let input = buffer.get(from * 2..to * 2).unwrap_or(&[]);
-                        spectrum.append(row, input, to - from);
-                    }
                     run_device(device, *stage, buffer, from, to, pending, device_lanes, context, *sample_rate);
+                    // The analyser hears the device's output, so its line shows what the
+                    // device made of the sound (docs/spec/eq.md › The panel › The analyser).
+                    if let Some(row) =
+                        self.positions.get(*stage).copied().filter(|position| watched.contains(&Some(*position)))
+                    {
+                        let output = buffer.get(from * 2..to * 2).unwrap_or(&[]);
+                        spectrum.append(row, output, to - from);
+                    }
                     *stage += 1;
                 }
                 Slot::Group(group) => {

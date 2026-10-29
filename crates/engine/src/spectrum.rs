@@ -3,7 +3,7 @@
 
 //! The device-spectrum rings the EQ panel's analyser reads (docs/spec/eq.md › The panel › The
 //! analyser), carried by the meter monitor ([`crate::meters::MeterMonitor`]). The audio
-//! thread's chain pass mixes a watched device's input block to mono and appends it to a ring
+//! thread's chain pass mixes a watched device's output block to mono and appends it to a ring
 //! of atomics; the UI reads the ring and does the window, the transform and the bands itself,
 //! so the audio thread's whole cost is the mixdown and the stores, and only while a panel
 //! watches. Nothing here allocates, locks or waits.
@@ -27,7 +27,7 @@ struct Watch {
     device: AtomicU32,
 }
 
-/// One row's ring: the mono samples of the watched device's input, as `f32` bits, and the
+/// One row's ring: the mono samples of the watched device's output, as `f32` bits, and the
 /// count of frames ever appended (the write cursor). The audio thread writes; the UI reads.
 #[derive(Debug)]
 struct Ring {
@@ -35,7 +35,7 @@ struct Ring {
     samples: Box<[AtomicU32]>,
 }
 
-/// The watched devices' input rings. Allocated once with the meter monitor, off the audio
+/// The watched devices' output rings. Allocated once with the meter monitor, off the audio
 /// thread; after that every access is an atomic load or store.
 #[derive(Debug)]
 pub struct Spectrum {
@@ -96,8 +96,8 @@ impl Spectrum {
         rows
     }
 
-    /// The audio thread: `block` (interleaved stereo), the watched device's input this block,
-    /// mixes to mono and appends to `row`'s ring. Never allocates.
+    /// The audio thread: `block` (interleaved stereo), the watched device's output this
+    /// block, mixes to mono and appends to `row`'s ring. Never allocates.
     pub(crate) fn append(&self, row: usize, block: &[f32], frames: usize) {
         let Some(ring) = self.rings.get(row % ROWS) else { return };
         let cursor = ring.written.load(Ordering::Relaxed);
@@ -113,15 +113,28 @@ impl Spectrum {
         ring.written.store(cursor + frames, Ordering::Release);
     }
 
+    /// The row that watches `(track, device)`, if any.
+    fn row_of(&self, track: TrackId, device: u32) -> Option<usize> {
+        self.watches.iter().position(|watch| {
+            watch.track.load(Ordering::Relaxed) == track.0 && watch.device.load(Ordering::Relaxed) == device
+        })
+    }
+
+    /// How many frames the ring of the device a row watches has ever been appended: a count
+    /// that moves only while the engine renders the device, so a panel drawing its spectrum
+    /// asks for the next frame while it moves and holds its last line when it stops. `None`
+    /// while nothing watches `(track, device)` (docs/spec/eq.md › The panel › The analyser).
+    pub fn appended(&self, track: TrackId, device: usize) -> Option<usize> {
+        let device = u32::try_from(device).ok()?;
+        Some(self.rings.get(self.row_of(track, device)?)?.written.load(Ordering::Acquire))
+    }
+
     /// The UI reads a watched device's ring: the last `RING` mono samples, oldest first, and
     /// how many of them are real (the rest are silence, before the ring first filled), or
     /// `None` while nothing watches `(track, device)` or nothing was appended yet.
     pub fn samples(&self, track: TrackId, device: usize) -> Option<([f32; RING], usize)> {
         let device = u32::try_from(device).ok()?;
-        let index = self.watches.iter().position(|watch| {
-            watch.track.load(Ordering::Relaxed) == track.0 && watch.device.load(Ordering::Relaxed) == device
-        })?;
-        let ring = self.rings.get(index)?;
+        let ring = self.rings.get(self.row_of(track, device)?)?;
         let written = ring.written.load(Ordering::Acquire).min(RING);
         if written == 0 {
             return None;
@@ -188,6 +201,19 @@ mod tests {
         assert_eq!(samples[RING - 1], 0.0, "the block's last frame is a silence frame");
         // The reading is scoped to the watch: the row's other devices read nothing.
         assert!(spectrum.samples(TrackId(7), 1).is_none());
+    }
+
+    #[test]
+    fn the_count_of_appended_frames_moves_with_every_append() {
+        let spectrum = Spectrum::new();
+        assert_eq!(spectrum.appended(TrackId(7), 2), None, "nothing watched yet");
+        spectrum.watch(3, TrackId(7), 2);
+        assert_eq!(spectrum.appended(TrackId(7), 2), Some(0), "watched, nothing appended yet");
+        spectrum.append(3, &[0.5, 0.5, 0.25, 0.25], 2);
+        assert_eq!(spectrum.appended(TrackId(7), 2), Some(2), "one block's frames are counted");
+        spectrum.append(3, &[0.5, 0.5, 0.25, 0.25], 2);
+        assert_eq!(spectrum.appended(TrackId(7), 2), Some(4), "the count moves with every append");
+        assert_eq!(spectrum.appended(TrackId(8), 2), None, "another track reads nothing");
     }
 
     #[test]
