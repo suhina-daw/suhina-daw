@@ -6,7 +6,9 @@ status: draft
 last_verified: 2026-10-30
 covers:
   - crates/plugin-host/src/vst2/**
+  - crates/plugin-host/tests/vst2.rs
   - crates/plugin-host/tests/manual.rs
+  - crates/plugins/src/vst2.rs
 ---
 
 # The VST2 interface
@@ -14,10 +16,13 @@ covers:
 Suhina hosts VST2 plug-ins through the same out-of-process boundary as CLAP and VST3
 ([ADR 0006](../decisions/0006-plug-in-hosting.md)). This spec holds the interface itself:
 where each fact of it comes from, what our code does with it, and what keeps it true. The
-host that runs a project's plug-ins through the engine's boundary is not built yet; what
-exists is the interface layer behind the `vst2` feature of `suhina-plugin-host`: the ported
-definitions, the mock plug-in `test:vst2`, the probe and its `--vst2-probe` tool
-([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066) steps 1–3).
+interface layer and the host are built, behind the `vst2` feature of `suhina-plugin-host`
+(off by default: nothing ships VST2 hosting until the legal advice ADR 0022 › 5 asks for is
+resolved): the ported definitions, the mock plug-in `test:vst2`, the probe with its
+`--vst2-probe` tool, and the host that loads `vst2:<file>` and `test:vst2` through the
+engine's boundary — instances, blocks, parameters, state, latency
+([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066) steps 1–4). What is not built
+yet is below under *Not yet*.
 
 ## Where every fact comes from
 
@@ -204,7 +209,7 @@ A plug-in either saves its whole state as one opaque chunk, through `effGetChunk
 file keeps is the standard VST2 bank either way: `CcnK`, then `FBCh` for a chunk bank or
 `FxBk` for a program bank, big-endian — the layouts the VST3 SDK's `vst2persistence.h`
 describes (MIT), which the Live Set importer already reads and writes
-([`crates/als/src/vst2.rs`](../../crates/als/src/vst2.rs)); the same layouts serve here.
+([`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs)), one home for the importer, the VST3 hand-over and this host.
 A plug-in's chunk is copied out at once and capped at 1 MiB; a chunk's size is the plug-in's
 own claim, not trusted.
 
@@ -236,6 +241,57 @@ SUHINA_TEST_VST2="/path/to/a/vst2 plug.vst" \
   cargo test -p suhina-plugin-host --features vst2 --test manual -- --ignored --nocapture
 ```
 
+## The host
+
+The host ([`crates/plugin-host/src/vst2/host.rs`](../../crates/plugin-host/src/vst2/host.rs))
+runs a VST2 instance as CLAP and VST3 instances run (ADR 0006): loaded on the process's main
+thread, its audio on one of [`crates/plugin-host/src/audio.rs`](../../crates/plugin-host/src/audio.rs)'s
+threads through the link, its state and parameters over the control protocol. A plug-in is
+named `vst2:<file>` (a macOS bundle's executable looked up as a VST3 bundle's is) or
+`test:vst2`.
+
+The one shape the interface forces, which the other formats do not, is the audio-master
+callback: one global function with only the effect pointer to say who is asking. The audio
+thread says which instance it is serving in a thread-local set around each `process` call —
+no lock, so the audio thread never takes one — and a call from any other thread (an editor's,
+a plug-in's worker) finds its instance by its effect under a lock those threads may take.
+What the callback answers on the audio thread comes from atomics and lock-free slots only:
+the time information field by field, the sample rate and block size, the process level, and
+a knob the plug-in turned (`audioMasterAutomate`) through the same lock-free slots the VST3
+host uses for its plug-ins' own changes. The `GetTime` answer is a pointer to a per-thread
+copy of the time information, valid until the same thread's next `GetTime` *(assumed*
+contract, as every host gives*).
+
+- The cycle *(assumed)*: `effOpen`, `effSetSampleRate` (the rate in the call's float),
+  `effSetBlockSize` (the size in its value) at load; `effMainsChanged(1)` and
+  `effStartProcess` on the audio thread before the first block, `effStopProcess` and
+  `effMainsChanged(0)` when it stops (a reconfigure, an unload); `effClose` at unload.
+- A block: the song's events become the time information (the transport, tempo, beat, bar
+  and cycle of the interface's own fields and validity flags); a parameter the block carries
+  (automation) reaches the plug-in through `setParameter` before the block's audio, in the
+  order the engine sent — the interface has no sample-accurate parameters *(assumed)*; notes,
+  controllers, pitch bend and channel pressure become the interface's MIDI events at their
+  frames, as the MIDI wire format carries them, in one `effProcessEvents` call before the
+  audio.
+- Latency *(assumed)*: the pinned header names no latency field. This host reads the first
+  of VeSTige's twelve "zero" bytes as the delay, native byte order, negative read as none;
+  `audioMasterIOChanged` makes it read again and tell the engine. The probe reports the
+  twelve bytes for every plug-in it meets, which is what settles where a real one keeps its
+  delay. A channel-count change with `audioMasterIOChanged` is noted but does not rebuild the
+  block's buffers — a limit of this first version, in *Not yet*.
+- Parameters: the range is 0 to 1 and the default is the value now *(assumed* both: the
+  pinned header says nothing of a range and names no op-code for a default*)*. What the
+  plug-in changes itself comes back over the protocol as parameter changes, as an editor's
+  move does; the idle calls a plug-in asks for (`audioMasterNeedIdle` → `effIdle`) are served
+  from the process's main loop.
+- State, as the standard bank above: a chunk plug-in's chunk in a `CcnK`…`FBCh` bank; a
+  chunk-less one's parameters as one program in a `CcnK`…`FxBk` bank (the other programs are
+  not saved — a limit, below). Loading takes the chunk bank's chunk (`effSetChunk`), a
+  program bank's current program (set as the program, then its values as parameters,
+  *(assumed)* order), or a bare chunk. A `effSetChunk` answer that is not zero is read as a
+  refusal *(assumed)*: the plug-in runs with its defaults and the caller is told, never
+  silently restored.
+
 ## What keeps each fact true
 
 - The ported values and the layout: `the_ported_op_codes_hold_vestiges_numbers_and_our_assumed_four`
@@ -250,6 +306,12 @@ SUHINA_TEST_VST2="/path/to/a/vst2 plug.vst" \
 - Missing calls: `a_plug_in_without_calls_is_refused_not_called`.
 - The tool: `the_vst2_probe_tool_reports_on_the_mock` (in `tests/manual.rs`) runs
   `--vst2-probe test:vst2` as a process.
+- The host, in this process over a real link (`vst2/host_tests.rs`): the latency the assumed
+  field holds, blocks with a note at its frame and a parameter the block carries, the
+  parameter listing and a set parameter, the idle knob reported as a parameter change, the
+  state round trip through both bank forms, a reconfigure.
+- The host, through the engine's whole boundary (`tests/vst2.rs`): the same round trips with
+  the host process started and the control protocol between.
 - The real world: `an_installed_vst2_plug_in_answers_the_probe` (ignored, `SUHINA_TEST_VST2`)
   prints the report of an installed plug-in. **Nothing is (observed) until this runs green
   against one.**
@@ -260,15 +322,19 @@ that does).
 
 ## Not yet
 
-- The host itself: a `vst2:<file>` name in the host process, instances behind the engine's
-  boundary, blocks through the shared memory with the block deadline, latency, state on
-  save, restarts (step 4 of #1066).
 - Scanning VST2 files, the folder format choice becoming available, `add-folder --format
-  vst2`, the plug-in manager's format column (step 5).
+  vst2`, the plug-in manager's format column, and a project's VST2 device starting through
+  the host rather than its VST3 or CLAP replacement (step 5; the replacement stands until
+  then, ADR 0006 decision 8).
 - Programs and banks loading and saving, and the hand-over of VST2 state to a VST3 or CLAP
   replacement in both directions in one place (step 6, with the epic's migration work).
 - Editors (step 7), the `plugin.*` command parts (step 8), and the settings guide's VST2
   entries losing their "unavailable" wording in the same change that makes them work.
+- The MIDI events a plug-in sends its host: counted, dropped — the engine has no channel for
+  a plug-in's MIDI out in any format yet.
+- A channel-count change at `audioMasterIOChanged` does not rebuild the block's buffers; the
+  latency is re-read and reported, the buffers stay as they were.
+- A program bank saves the current program only; the plug-in's other programs are not kept.
 
 ## Open questions
 
@@ -278,9 +344,13 @@ another header (ADR 0022 decision 2).
 - The 64-bit `AEffect` offsets, against a real 64-bit plug-in (the layout test pins our
   struct; reading a real one's fields — a sane `numParams`, a callable dispatcher, a sane
   id — is the observation).
-- The latency: the pinned header names no latency field, and a host needs one. VeSTige's
-  twelve "zero" bytes and its "1.0f" float are where a real plug-in's numbers would show;
-  the probe reports both for every plug-in it meets.
+- The latency: the host reads the first of VeSTige's twelve "zero" bytes as the delay
+  *(assumed)*. The probe reports the twelve and the "1.0f" float for every plug-in it meets;
+  a real plug-in's delay showing there — and the host's latency reading matching what its
+  maker documents — is the observation that settles it.
+- A parameter's default: the pinned header names no op-code to ask; the host reports the
+  value now as the default, so a panel's "reset" is a no-op until something better is
+  observed.
 - The encoding of `audioMasterGetSampleRate`'s answer (whole number, or a float's bits?).
   The probe answers a whole number; the question is what a real plug-in reads from it.
 - The unit of `audioMasterTempoAt`'s answer.
@@ -298,6 +368,6 @@ another header (ADR 0022 decision 2).
   pinning, and the rule that nothing else may be read.
 - [ADR 0006](../decisions/0006-plug-in-hosting.md): the hosting the interface layer serves.
 - The VST2 bank layouts in the VST3 SDK's `vst2persistence.h` (MIT), as
-  [`crates/als/src/vst2.rs`](../../crates/als/src/vst2.rs) already reads them.
+  [`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs) holds them, one home for the importer, the VST3 hand-over and this host.
 - [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066): the work this layer is the
   first step of.
