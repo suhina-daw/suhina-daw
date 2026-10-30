@@ -93,7 +93,7 @@ comments describe the 32-bit layout; the 64-bit offsets are **(assumed)** agains
 | `flags` | `i32` | 56 | 36 | the bits below (from VeSTige) |
 | `ptr1`, `ptr2` | `*mut c_void` | 64, 72 | 40, 44 | the plug-in's own (from VeSTige) |
 | `empty3` | `[c_char; 12]` | 80 | 48 | VeSTige says zeroes; what a real plug-in holds there is an open question (latency) |
-| `unkown_float` | `f32` | 92 | 60 | VeSTige says `1.0f`, spelling and all; the plug-ins the first run met held there *(observed)* |
+| `unkown_float` | `f32` | 92 | 60 | VeSTige says `1.0f`, spelling and all; on the 67 installed plug-ins it held 1 exactly where the latency field was non-zero *(observed)* |
 | `ptr3`, `user` | `*mut c_void` | 96, 104 | 64, 68 | the plug-in's own (from VeSTige); the mock keeps its state in `user`, its own business |
 | `uniqueID` | `i32` | 112 | 72 | the four-character id (from VeSTige) |
 | `version` | `i32` | 116 | 76 | (from VeSTige) |
@@ -386,6 +386,10 @@ another header (ADR 0022 decision 2).
 - The events a plug-in sends its host: Acid V sent real MIDI rastered to its own step
   (`audioMasterProcessEvents` during `process`) *(observed)* — the window's "no channel yet"
   note gains a real example.
+- Entries that crash: three of the 72 scanned files crashed inside their entry calls,
+  taking only their disposable probe process with them — the crash behaviour the design
+  requires, a scan's failure list the place they show. The cause is theirs; the host never
+  reads a plug-in's code.
 - A shell file (several plug-ins in one): the pinned header has `effShellGetNextPlugin` and
   nothing of the members' ids, so the scan lists the file's first plug-in and its spec
   checks the id it names; the members' own listing and loading is open until the probe sees
@@ -394,13 +398,16 @@ another header (ADR 0022 decision 2).
   whole through the assumed `effGetChunk`/`effSetChunk` pair, with the size as the answer)
   *(observed for the ones met so far)*; whether a plug-in ever answers the bank-index
   `index` reading 1 (the current program) is unobserved.
-- VeSTige's `unkown_float` ("1.0f" in the pinned header) held 0 in the plug-ins the first
-  run met *(observed)*; its use stays open.
-- Where an installed plug-in keeps its latency: Arturia's Acid V held 44 in the first four
-  of VeSTige's twelve zero bytes — an instrument with input delay — while the effect the
-  probe ran first (Filterstep) held zeros there *(observed)*. The host's read of the first
-  four as the delay, native byte order, is the one consistent with both; a plug-in whose
-  documented delay differs from what the field holds would disprove it.
+- Where an installed plug-in keeps its latency — settled as far as a probe can: over 67
+  installed plug-ins run through the probe (one per file, disposable), 52 held a non-zero
+  number in the first four of VeSTige's twelve zero bytes — 44 on 33 of them, 32 on 8, 16
+  on 6, and 81, 80, 68, 64, 48 on one each — all reading as small frame counts in the byte
+  order the host assumes, and 15 held zero, the simple algorithmic effects among them whose
+  delay is genuinely none *(observed)*. `AEffect::version`'s neighbour, the field VeSTige
+  calls `unkown_float` ("1.0f" in the pinned header), tracked it perfectly: 1 exactly where
+  the latency is non-zero, 0 where it is none, on all 67, never another value *(observed)*.
+  A plug-in whose documented delay differs from the field would still disprove the read;
+  nothing of the kind turned up.
 
 ## Sources
 
