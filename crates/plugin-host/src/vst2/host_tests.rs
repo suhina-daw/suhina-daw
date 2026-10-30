@@ -12,7 +12,7 @@ use std::time::Duration;
 use suhina_ipc::{Event, EventKind, Link, Outcome, Served};
 
 use super::Vst2Plugin;
-use crate::vst2::test_vst2::{EDIT_GAIN, LATENCY};
+use crate::vst2::test_vst2::LATENCY;
 
 /// How long a block waits for its answer.
 const PATIENT: Duration = Duration::from_secs(10);
@@ -99,15 +99,27 @@ fn the_mock_lists_its_parameters() {
     finished(plugin);
 }
 
-/// The knob the mock turns on its first idle call — the gesture a plug-in's editor makes —
-/// comes out of the host as a parameter change, once.
+/// A state the mock was given comes back as a parameter change — its editor showing the
+/// restored value — reported once.
 #[test]
-fn the_mock_s_knob_comes_out_as_a_parameter_change() {
+fn a_restored_state_comes_back_as_a_parameter_change() {
     let (_link, mut plugin) = loaded(FIRST + 2);
-    // The first tick serves the idle call the mock asked for; the knob it turns there is
-    // reported by the same tick.
-    assert_eq!(plugin.tick(), vec![(0, f64::from(EDIT_GAIN))]);
-    // The knob turns once.
+    let bank = suhina_plugins::vst2::bank(
+        &suhina_plugins::vst2::Preset {
+            kind: suhina_plugins::vst2::CHUNK_BANK,
+            id: 7,
+            version: 1,
+            programs: 1,
+            current: 0,
+            parameters: 1,
+            little_endian: false,
+        },
+        &0.25f32.to_le_bytes(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    plugin.set_state(&bank).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(plugin.tick(), vec![(0, 0.25)]);
+    // Reported once.
     assert!(plugin.tick().is_empty());
     finished(plugin);
 }

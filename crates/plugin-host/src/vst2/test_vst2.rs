@@ -394,12 +394,7 @@ unsafe extern "C" fn dispatcher(
             );
             isize::from(yes)
         }
-        Some(EffectOp::Idle) => {
-            // The host's idle call, where a plug-in's own work runs: the knob turns once
-            // here too, so a host without editors (this first one) still sees an edit.
-            turn_the_knob(mock, effect);
-            0
-        }
+        Some(EffectOp::Idle) => 0,
         Some(EffectOp::GetParameterProperties) => {
             if index == 0 && !ptr.is_null() {
                 let mut properties = blank_properties();
@@ -458,8 +453,16 @@ unsafe extern "C" fn dispatcher(
                 [a, b, c, d, ..] => f32::from_le_bytes([*a, *b, *c, *d]),
                 _ => 0.0,
             };
+            let applied = size >= 4 && gain.is_finite();
+            if applied {
+                // The editor shows the restored value: the gesture's three host calls with
+                // it (VeSTige's op-codes; the value in `opt` is assumed).
+                let _ = mock.ask(effect, HostOp::BeginEdit, 0, 0, std::ptr::null_mut(), 0.0);
+                let _ = mock.ask(effect, HostOp::Automate, 0, 0, std::ptr::null_mut(), gain);
+                let _ = mock.ask(effect, HostOp::EndEdit, 0, 0, std::ptr::null_mut(), 0.0);
+            }
             if let Ok(mut inner) = mock.0.lock() {
-                if size >= 4 && gain.is_finite() {
+                if applied {
                     inner.gain = gain;
                 }
                 inner.chunk = chunk;

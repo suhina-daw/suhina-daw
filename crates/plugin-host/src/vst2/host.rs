@@ -21,6 +21,7 @@
 
 use std::cell::RefCell;
 use std::ffi::c_void;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -990,10 +991,17 @@ fn to_byte(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 127.0).round() as u8
 }
 
-/// Opens the plug-in `spec` names and returns its effect with what keeps it alive. The entry
-/// points are this layer's assumption, tried in order (the probe reports which answered); a
-/// plug-in that crashes while loading takes this process, as any format's would.
+/// The plug-in `spec` names, as the scanner's files are named (`vst2:<file>` or the built-in
+/// mock).
 fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
+    let spec =
+        if spec.starts_with("vst2:") || spec == super::probe::MOCK { spec.to_string() } else { format!("vst2:{spec}") };
+    // The id a scan's spec carries (`vst2:<file>#<id>`): checked against what the file gives
+    // back, so a spec naming one member of a shell never silently loads another.
+    let (spec, wanted) = match spec.rsplit_once('#') {
+        Some((path, id)) => (path.to_string(), Some(id.to_string())),
+        None => (spec, None),
+    };
     if spec == super::probe::MOCK {
         let (effect, mock) = super::test_vst2::mock(Some(host_callback));
         // The mock's own `AEffect`, whose `Mock` the module holds for as long as the effect
@@ -1001,8 +1009,8 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
         let pointer = effect.as_ref() as *const AEffect as *mut AEffect;
         return Ok((Module::Mock(effect, mock), pointer));
     }
-    let path = spec.strip_prefix("vst2:").ok_or("not a VST2 plug-in name")?;
-    let path = std::path::Path::new(path);
+    let path = spec.strip_prefix("vst2:").ok_or_else(|| format!("not a VST2 plug-in name: {spec:?}"))?.to_string();
+    let path = std::path::Path::new(&path);
     // A macOS bundle's executable is looked up as a VST3 bundle's is.
     let file = if path.is_file() {
         path.to_path_buf()
@@ -1034,7 +1042,64 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
     if effect.is_null() {
         return Err(format!("no entry of {} answered (tried, in order: {})", file.display(), ENTRY_NAMES.join(", ")));
     }
+    // The id a scan's spec carried, checked against what the file gave back.
+    // SAFETY: the effect the entry gave, its id field, read on this thread.
+    let id = unsafe { (*effect).uniqueID } as u32;
+    if let Some(wanted) = wanted
+        && wanted != format!("{id:08X}")
+    {
+        return Err(format!(
+            "the plug-in {spec:?} gave back the effect {id:08X}, not {wanted} (a shell's member is not the file's first)"
+        ));
+    }
     Ok((Module::Library(library), effect))
+}
+
+/// The plug-ins the file `spec` names holds, without running any (for scanning): read its
+/// identity, its counts and its category, then close it. A file's first effect is what is
+/// listed; a shell's other members are an open question (the spec's).
+pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String> {
+    let (_module, effect) = open(spec)?;
+    // SAFETY: the effect the entry gave back, read by value once, on this thread.
+    let read = unsafe { *effect };
+    if read.magic != vestige::kEffectMagic {
+        return Err(format!("the plug-in {spec:?} did not give a VST2 effect"));
+    }
+    let Some(dispatcher) = read.dispatcher else { return Err("the plug-in has no dispatcher".into()) };
+    let ask = |op: EffectOp, index: i32, ptr: *mut c_void| -> isize {
+        // SAFETY: the plug-in's dispatcher, with this call's arguments, on this thread,
+        // before the plug-in is closed again.
+        unsafe { dispatcher(effect, op.value(), index, 0, ptr, 0.0) }
+    };
+    let mut name = vec![0 as std::ffi::c_char; vestige::VestigeMaxNameLen];
+    let mut vendor = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];
+    let mut product = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];
+    // The buffers are this function's own, of the sizes the op-codes are assumed to give.
+    let _ = ask(EffectOp::GetEffectName, 0, name.as_mut_ptr().cast::<c_void>());
+    let _ = ask(EffectOp::GetVendorString, 0, vendor.as_mut_ptr().cast::<c_void>());
+    let _ = ask(EffectOp::GetProductString, 0, product.as_mut_ptr().cast::<c_void>());
+    let category = ask(EffectOp::GetPlugCategory, 0, std::ptr::null_mut()) as i32;
+    let version = ask(EffectOp::GetVendorVersion, 0, std::ptr::null_mut());
+    let _ = ask(EffectOp::Close, 0, std::ptr::null_mut());
+    let counts = (usize::try_from(read.numInputs).unwrap_or(0), usize::try_from(read.numOutputs).unwrap_or(0));
+    let instrument = category == vestige::kPlugCategSynth
+        || category == vestige::kPlugCategGenerator
+        || read.flags & vestige::effFlagsIsSynth != 0
+        || counts.0 == 0 && counts.1 > 0;
+    let name = super::field_text(&name);
+    let vendor = super::field_text(&vendor);
+    let product = super::field_text(&product);
+    let path = PathBuf::from(spec.strip_prefix("vst2:").unwrap_or(spec));
+    Ok(vec![suhina_plugins::scan::PluginInfo {
+        path: path.clone(),
+        id: format!("{:08X}", read.uniqueID as u32),
+        name: if name.is_empty() { product } else { name },
+        vendor,
+        version: version.to_string(),
+        features: vec![if instrument { "instrument".into() } else { "audio-effect".into() }],
+        replaces: Vec::new(),
+        ara: false,
+    }])
 }
 
 /// The entry points a VST2 library is assumed to export, in the order the host tries them

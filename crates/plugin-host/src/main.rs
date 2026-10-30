@@ -226,8 +226,20 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         },
         "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
         "test:vst3" | "test:vst3-mix" => vst3::describe(file),
+        #[cfg(feature = "vst2")]
+        "test:vst2" => vst2::host::describe(file),
         #[cfg(debug_assertions)]
         _ if file.starts_with(FLAKY) => flaky(file),
+        // A VST2 plug-in: a `.vst` bundle, a `.dll` or a `.so`, behind the `vst2` feature
+        // (ADR 0022); a build without it lists the file as failed.
+        _ if suhina_plugins::scan::is_vst2(std::path::Path::new(file)) => {
+            #[cfg(feature = "vst2")]
+            {
+                vst2::host::describe(file)
+            }
+            #[cfg(not(feature = "vst2"))]
+            Err("VST2 plug-ins are not hosted in this build (ADR 0022)".into())
+        }
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
         _ => clap::describe(&format!("clap:{file}")),
     }

@@ -218,12 +218,17 @@ CHAPTERS = [
      "SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, "
      "graphs and custom panels, and support explicit revision updates. Missing A/B, "
      "hot-swap, preset browser depth, defaults, device delay review."),
-    (24, "Using Plug-Ins", 12, 0.76, "partial",
+    (24, "Using Plug-Ins", 12, 0.80, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
      "editors (Windows/X11), scans that try failures again and settle files built for another "
      "processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency "
      "compensation (followed when a plug-in changes its latency while it plays), saved state "
-     "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
+     "(a change in an editor counts as unsaved), VST2 read and matched to VST3, and — behind the "
+     "host's vst2 feature, off by default until its release questions are resolved — VST2 hosted "
+     "directly: scanned in the system's VST folders and any folder added for the format, a "
+     "project's VST2 plug-in that has no VST3 or CLAP copy installed runs through the host with "
+     "its saved bank as the state, while a copy that exists still plays it (ADR 0006 decision 8), "
+     "parameters set "
      "and automated from the engine and shown as a generated list in the device panel, in step "
      "both ways with a plug-in's own editor (VST3 through the host's handler, CLAP through its "
      "blocks' output parameter events: an edit there becomes the panel's value with the next "
@@ -231,7 +236,7 @@ CHAPTERS = [
      "transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio "
      "clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, "
      "one document a plug-in and project so its editor shows every track; warped and looped clips not "
-     "yet). Missing AU, VST2 hosting, "
+     "yet). Missing AU, VST2 editors, "
      "configure mode, VST preset banks, sidechain parameters."),
     (25, "Instrument, Drum and Effect Racks", 20, 0.25, "partial",
      "Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and "

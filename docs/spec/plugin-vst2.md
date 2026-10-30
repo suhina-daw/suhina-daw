@@ -247,8 +247,9 @@ The host ([`crates/plugin-host/src/vst2/host.rs`](../../crates/plugin-host/src/v
 runs a VST2 instance as CLAP and VST3 instances run (ADR 0006): loaded on the process's main
 thread, its audio on one of [`crates/plugin-host/src/audio.rs`](../../crates/plugin-host/src/audio.rs)'s
 threads through the link, its state and parameters over the control protocol. A plug-in is
-named `vst2:<file>` (a macOS bundle's executable looked up as a VST3 bundle's is) or
-`test:vst2`.
+named `vst2:<file>` or `vst2:<file>#<id>` (a scan's form, the id checked against what the
+file gives back), a macOS bundle's executable looked up as a VST3 bundle's is, or
+`test:vst2` for the built-in mock.
 
 The one shape the interface forces, which the other formats do not, is the audio-master
 callback: one global function with only the effect pointer to say who is asking. The audio
@@ -311,7 +312,10 @@ contract, as every host gives*).
   parameter listing and a set parameter, the idle knob reported as a parameter change, the
   state round trip through both bank forms, a reconfigure.
 - The host, through the engine's whole boundary (`tests/vst2.rs`): the same round trips with
-  the host process started and the control protocol between.
+  the host process started and the control protocol between; and the central test of the
+  issue — a project naming a VST2 plug-in that only exists as VST2 opens, the plug-in loads
+  with its saved bank, plays with it, and the state read back is the settings (`found:
+  itself`).
 - The real world: `an_installed_vst2_plug_in_answers_the_probe` (ignored, `SUHINA_TEST_VST2`)
   prints the report of an installed plug-in. **Nothing is (observed) until this runs green
   against one.**
@@ -320,16 +324,30 @@ The crate's CI runs clippy and these tests with the `vst2` feature on, so the ga
 checked although nothing ships it (ADR 0022 decision 5: legal advice precedes any release
 that does).
 
+## Scanning, folders and the project's choice
+
+The scan reads a VST2 file the same way the host loads it — entry, magic, identity, counts,
+category, then close — in the disposable scan worker the other formats use
+([`crates/plugin-host/src/vst2/host.rs`](../../crates/plugin-host/src/vst2/host.rs) ›
+`describe`). A VST2 plug-in is a `.vst` bundle on macOS, a `.dll` on Windows or a `.so` on
+Linux; the system's VST folders are standard ones and any folder can be added for the
+format (`plugin.addFolder { folder, format: "vst2" }`), where before the build refused it.
+The plug-in manager and the browser name the format `vst2` where a format is named. A
+scanned VST2 plug-in's id is its unique id as eight hex digits — the form the model keeps
+for a VST2 device ([`DeviceKind::Vst2`](../../crates/model)) — so a project's device and a
+scanned plug-in meet by it.
+
+A project's VST2 device is still played by its installed VST3 or CLAP copy when one stands
+in for it (ADR 0006 decision 8); the plug-in **itself** — found by its id in the catalog,
+`How::Itself` — is the last resort, and its saved state is its own native form. The state's
+bank forms are one code path for the importer, the hand-over and this host
+([`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs)).
+
 ## Not yet
 
-- Scanning VST2 files, the folder format choice becoming available, `add-folder --format
-  vst2`, the plug-in manager's format column, and a project's VST2 device starting through
-  the host rather than its VST3 or CLAP replacement (step 5; the replacement stands until
-  then, ADR 0006 decision 8).
-- Programs and banks loading and saving, and the hand-over of VST2 state to a VST3 or CLAP
-  replacement in both directions in one place (step 6, with the epic's migration work).
 - Editors (step 7), the `plugin.*` command parts (step 8), and the settings guide's VST2
-  entries losing their "unavailable" wording in the same change that makes them work.
+  entries losing their "unavailable" wording in the same change that makes them work
+  (folders' wording is done).
 - The MIDI events a plug-in sends its host: counted, dropped — the engine has no channel for
   a plug-in's MIDI out in any format yet.
 - A channel-count change at `audioMasterIOChanged` does not rebuild the block's buffers; the
@@ -360,6 +378,10 @@ another header (ADR 0022 decision 2).
   for its filled strings; what real plug-ins answer for theirs is recorded by the probe.
 - `effGetChunk`'s `index` meaning (bank against program) and the answer being the size.
 - The `CanDo` strings' spelling, and which side asks which.
+- A shell file (several plug-ins in one): the pinned header has `effShellGetNextPlugin` and
+  nothing of the members' ids, so the scan lists the file's first plug-in and its spec
+  checks the id it names; the members' own listing and loading is open until the probe sees
+  what a shell answers.
 
 ## Sources
 

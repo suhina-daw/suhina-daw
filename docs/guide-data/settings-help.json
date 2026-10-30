@@ -318,7 +318,7 @@
       },
       {
         "name": "VST2",
-        "description": "Shown as unavailable: VST2 hosting is not implemented yet."
+        "description": "Look for VST2 files in that folder: `.vst` bundles on macOS, `.dll` files on Windows and `.so` files on Linux."
       }
     ],
     "whenToChange": "Add a custom installation folder when a plug-in is missing. Use Manage plug-ins to inspect a loading failure or temporarily disable a problematic plug-in.",

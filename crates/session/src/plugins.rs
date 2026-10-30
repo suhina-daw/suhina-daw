@@ -230,11 +230,8 @@ fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let format = match params.get("format") {
         None => FolderFormat::Any,
-        Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3 or clap")?,
+        Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3, clap or vst2")?,
     };
-    if !format.hosted() {
-        return Err("VST2 plug-ins are not hosted yet, so a VST2 folder cannot be added yet".into());
-    }
     let added = projects.library_mut().add_folder_as(folder_param(params)?, format)?;
     Ok(json!({ "added": added, "folders": paths(&projects.library_mut().custom_folders()) }))
 }

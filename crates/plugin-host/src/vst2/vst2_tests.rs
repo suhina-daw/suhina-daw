@@ -282,9 +282,12 @@ fn the_mock_and_the_probe_agree_on_the_conversation() {
     let answers: Vec<Option<isize>> =
         asks.iter().filter(|call| call.op == HostOp::CanDo.value()).map(|call| call.answer).collect();
     assert_eq!(answers, vec![Some(1), Some(1), Some(1)], "the host said yes to all three");
-    // The knob the mock turned: the gesture's three calls, the value in the automate call.
-    let automate = asks.iter().find(|call| call.op == HostOp::Automate.value());
-    assert_eq!(automate.map(|call| call.opt), Some(EDIT_GAIN));
+    // The gestures the mock made: the restored state reported as an edit (the chunk hand-back
+    // put 0.25 in), then the knob on the edit-idle. Each gesture is the three calls, the
+    // value in the automate call's float.
+    let automates: Vec<f32> =
+        asks.iter().filter(|call| call.op == HostOp::Automate.value()).map(|call| call.opt).collect();
+    assert_eq!(automates, vec![0.25, EDIT_GAIN]);
     assert!(asks.iter().any(|call| call.op == HostOp::BeginEdit.value()));
     assert!(asks.iter().any(|call| call.op == HostOp::EndEdit.value()));
     // The time information: the answer is assumed to be a pointer to it, and the mock read

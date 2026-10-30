@@ -18,8 +18,8 @@ use suhina_plugins::{Launch, Plugin};
 
 /// How long anything waits for the host process.
 const PATIENT: Duration = Duration::from_secs(20);
-/// The gain the mock's idle knob turns it to, which it plays with afterwards.
-const EDIT_GAIN: f32 = 0.125;
+/// The gain the mock starts with, and the one its idle knob turns it to.
+const DEFAULT_GAIN: f32 = 0.5;
 /// The latency the mock reports, in the field the host assumes holds it.
 const LATENCY: u32 = 32;
 
@@ -39,17 +39,6 @@ fn start() -> (Plugin, suhina_plugins::PluginAudio) {
     (plugin, audio)
 }
 
-/// The mock's idle knob turns once, shortly after it loads (its host's main loop serves the
-/// idle call it asked for). Every test that reads its gain waits for the turn first, so what
-/// they see is deterministic: the gain the mock plays with afterwards is [`EDIT_GAIN`].
-fn knob_turned(plugin: &mut Plugin) {
-    let deadline = Instant::now() + PATIENT;
-    while plugin.take_param_edits() != vec![(0, f64::from(EDIT_GAIN))] {
-        assert!(Instant::now() < deadline, "the knob's edit never came");
-        std::thread::sleep(Duration::from_millis(5));
-    }
-}
-
 /// One block through the link, with `events` at their frames.
 fn block(audio: &mut suhina_plugins::PluginAudio, input: &[f32], events: &[Event]) -> Vec<f32> {
     let mut output = vec![0.0f32; input.len()];
@@ -66,25 +55,24 @@ fn block(audio: &mut suhina_plugins::PluginAudio, input: &[f32], events: &[Event
 fn the_mock_runs_through_the_boundary() {
     let (mut plugin, mut audio) = start();
     assert_eq!(plugin.latency(), LATENCY, "the latency the assumed field holds");
-    knob_turned(&mut plugin);
 
     let params = plugin.params().unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(params.len(), 1);
     assert_eq!(params[0].name, "Gain");
-    assert_eq!(params[0].value, f64::from(EDIT_GAIN), "the knob's gain, after it turned");
+    assert_eq!(params[0].value, f64::from(DEFAULT_GAIN));
 
     let input: Vec<f32> = (0..512).map(|i| (i % 24) as f32 / 24.0).collect();
     let output = block(&mut audio, &input, &[]);
     for (out, sample) in output.iter().zip(&input) {
-        assert!((out - sample * EDIT_GAIN).abs() < 1e-6, "{out} vs {sample}");
+        assert!((out - sample * DEFAULT_GAIN).abs() < 1e-6, "{out} vs {sample}");
     }
 
     // A note at its frame, as `test:vst3` plays it, so either format's events path is
     // audible through the same boundary.
     let note = Event { frame: 10, note: -1, kind: EventKind::NoteOn { channel: 0, key: 60, velocity: 1.0 } };
     let output = block(&mut audio, &input, &[note]);
-    assert!((output[10 * 2] - input[10 * 2] * EDIT_GAIN - 1.0).abs() < 1e-6, "{}", output[20]);
-    assert!((output[11 * 2] - input[11 * 2] * EDIT_GAIN).abs() < 1e-6, "only the note's frame");
+    assert!((output[10 * 2] - input[10 * 2] * DEFAULT_GAIN - 1.0).abs() < 1e-6, "{}", output[20]);
+    assert!((output[11 * 2] - input[11 * 2] * DEFAULT_GAIN).abs() < 1e-6, "only the note's frame");
 
     // A parameter the block carries (automation) reaches the plug-in before its audio.
     let change = Event { frame: 0, note: -1, kind: EventKind::Param { id: 0, value: 0.9 } };
@@ -99,7 +87,6 @@ fn the_mock_runs_through_the_boundary() {
 #[test]
 fn a_state_round_trips_over_the_boundary() {
     let (mut plugin, _audio) = start();
-    knob_turned(&mut plugin);
     plugin.set_param(0, 0.25).unwrap_or_else(|e| panic!("{e}"));
     let state = plugin.save_state().unwrap_or_else(|e| panic!("{e}"));
     let bank = state.data.clone();
@@ -108,7 +95,6 @@ fn a_state_round_trips_over_the_boundary() {
     assert_eq!(suhina_plugins::vst2::chunk(&bank), Some(0.25f32.to_le_bytes().to_vec().as_slice()));
 
     let (mut reopened, _audio) = start();
-    knob_turned(&mut reopened);
     reopened.load_state(state).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(reopened.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.25);
 
@@ -129,22 +115,201 @@ fn a_state_round_trips_over_the_boundary() {
     assert_eq!(reopened.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.75);
 }
 
-/// The knob the mock turns on its first idle call comes back over the boundary as a
-/// parameter change, as an editor's move does.
+/// A state given to the running plug-in comes back over the boundary as a parameter change
+/// — its editor showing the restored value — and the session keeps the project in step with
+/// it.
 #[test]
-fn the_mock_s_edit_comes_back_over_the_boundary() {
+fn a_state_given_to_a_running_plug_in_comes_back_as_an_edit() {
     let (mut plugin, _audio) = start();
+    let bank = suhina_plugins::vst2::bank(
+        &suhina_plugins::vst2::Preset {
+            kind: suhina_plugins::vst2::CHUNK_BANK,
+            id: 7,
+            version: 1,
+            programs: 1,
+            current: 0,
+            parameters: 1,
+            little_endian: false,
+        },
+        &0.25f32.to_le_bytes(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    plugin.load_state(bank).unwrap_or_else(|e| panic!("{e}"));
     let deadline = Instant::now() + PATIENT;
     loop {
-        let edits = plugin.take_param_edits();
-        if edits == vec![(0, f64::from(EDIT_GAIN))] {
+        if plugin.take_param_edits() == vec![(0, 0.25)] {
             break;
         }
-        assert!(edits.is_empty(), "nothing before the knob: {edits:?}");
-        assert!(Instant::now() < deadline, "the knob's edit never came");
+        assert!(Instant::now() < deadline, "the restored value's edit never came");
         std::thread::sleep(Duration::from_millis(10));
     }
-    // The knob turns once.
+    // Reported once.
     std::thread::sleep(Duration::from_millis(50));
     assert!(plugin.take_param_edits().is_empty());
+}
+
+// ---- The acceptance test -------------------------------------------------------------------
+
+use std::sync::Arc;
+
+use serde_json::json;
+use suhina_engine::{AudioPool, RenderInputs, Renderer, render_offline, render_offline_from};
+use suhina_model::*;
+use suhina_plugins::scan::{Catalog, PluginInfo};
+use suhina_session::{Player, PluginEnv, Session, start_offline};
+
+const SR: u32 = 48_000;
+
+/// The gain the project's saved bank holds.
+const SAVED_GAIN: f32 = 0.25;
+
+/// The catalog with the scanned VST2 plug-in and no VST3 or CLAP copy of it.
+fn vst2_env() -> Arc<PluginEnv> {
+    let path = PathBuf::from("test:vst2");
+    let info = PluginInfo {
+        path: path.clone(),
+        id: "53685447".into(),
+        name: "Suhina Test Gain".into(),
+        vendor: "Suhina".into(),
+        version: "1".into(),
+        features: vec!["audio-effect".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(path.clone(), vec![info]);
+    Arc::new(PluginEnv::new(catalog, PathBuf::from(env!("CARGO_BIN_EXE_suhina-plugin-host"))))
+}
+
+/// A project as an imported one is saved: a note track, and the plug-in on its channel as a
+/// VST2 device with its id and its saved state, the standard bank.
+fn project() -> Project {
+    let state = suhina_plugins::vst2::bank(
+        &suhina_plugins::vst2::Preset {
+            kind: suhina_plugins::vst2::CHUNK_BANK,
+            id: 0x5368_5447,
+            version: 1,
+            programs: 1,
+            current: 0,
+            parameters: 1,
+            little_endian: false,
+        },
+        &SAVED_GAIN.to_le_bytes(),
+    )
+    .unwrap_or_default();
+    let note = Note::new(0.0, 0.5, 69, 1.0);
+    Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: true, audio: false },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "T")
+        }],
+        channels: vec![Channel {
+            id: ChannelId(1),
+            name: "C".into(),
+            role: ChannelRole::Regular,
+            volume: 1.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            cue: false,
+            output: None,
+            sends: Vec::new(),
+            devices: vec![Device {
+                name: "Suhina Test Gain".into(),
+                kind: DeviceKind::Vst2 { id: 0x5368_5447 },
+                enabled: true,
+                state: Some(state),
+                params: Vec::new(),
+                clip_host: false,
+                extensions: Extensions::default(),
+                automation: Vec::new(),
+            }],
+            extensions: Extensions::default(),
+            automation: Vec::new(),
+        }],
+        contents: vec![ClipContent {
+            id: ContentId(1),
+            name: "c".into(),
+            length: 1.0,
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note]) }],
+            extensions: Extensions::default(),
+            scale: None,
+        }],
+        arrangement: Arrangement {
+            lanes: vec![ArrangementLane {
+                id: Default::default(),
+                name: "l".into(),
+                track: Some(TrackId(1)),
+                clips: vec![Clip::new(ContentId(1), 0.0, 1.0)],
+            }],
+            markers: Vec::new(),
+            takes: Vec::new(),
+        },
+        ..Project::default()
+    }
+}
+
+/// The bank's chunk a project's device state holds, as a gain.
+fn saved_gain(project: &Project) -> Option<f32> {
+    let state = project.channels[0].devices[0].state.as_deref()?;
+    let bytes: [u8; 4] = suhina_plugins::vst2::chunk(state)?.try_into().ok()?;
+    Some(f32::from_le_bytes(bytes))
+}
+
+/// Plays blocks while the session looks after its plug-ins, until `done` holds.
+fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: impl FnMut(&mut Session) -> bool) {
+    let deadline = Instant::now() + PATIENT;
+    let mut block = vec![0.0f32; 256 * 2];
+    loop {
+        session.sync_plugins();
+        renderer.process(&mut block);
+        if done(session) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "{what}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// The central test of #1066: a project naming a VST2 plug-in that only exists as VST2 opens,
+/// the installed plug-in loads with its saved settings, plays with them, and the state read
+/// back is the settings, unchanged, to save.
+#[test]
+fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
+    let mut project = project();
+    assert_eq!(project.assign_ids(), Ok(()));
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR).unwrap();
+    let mut session = Session::new(project.clone());
+    session.attach_player(Player::new(renderer.controller(), None));
+    session.set_plugin_env(vst2_env());
+    let device = json!({ "track": 1, "device": 0 });
+    // The device is found and starts — the direct host, no VST3 or CLAP copy standing in.
+    until(&mut session, &mut renderer, "starting", |s| {
+        s.execute("device.plugin", &device).unwrap()["status"] == "running"
+    });
+    let heard = session.execute("device.plugin", &device).unwrap();
+    assert_eq!(heard["plugin"]["found"], "itself", "the VST2 plug-in itself, not a stand-in: {heard}");
+
+    // It plays with the saved settings: the render's gain is the bank's.
+    let gain = |samples: &[f32]| samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let started = start_offline(session.project(), &AudioPool::new(), &vst2_env(), SR);
+    assert_eq!(started.running(), 1, "{:?}", started.notices);
+    let wet = render_offline_from(
+        session.project(),
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(started.plugins),
+        SR,
+        256,
+        None,
+    )
+    .unwrap_or_default();
+    let dry = render_offline(session.project(), SR, 256).unwrap_or_default();
+    assert!(gain(&dry) > 0.1, "the note plays without the plug-in");
+    assert!((gain(&wet) / gain(&dry) - SAVED_GAIN).abs() < 1e-4, "the saved gain is the one it plays with");
+
+    // The state read back, to save, is the settings — the same bank, and no undo step of its
+    // own.
+    let heard = session.project_as_heard();
+    assert_eq!(saved_gain(&heard), Some(SAVED_GAIN));
+    assert!(!session.can_undo());
 }

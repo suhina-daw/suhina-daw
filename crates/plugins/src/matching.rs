@@ -32,6 +32,10 @@ pub enum How {
     Vst2Id,
     SameName,
     NewerVersion,
+    /// The scanned VST2 plug-in itself, loaded by the VST2 host (ADR 0022): the state is
+    /// the plug-in's own form. A project's VST2 plug-in still prefers a VST3 or CLAP copy
+    /// when one is installed (ADR 0006 decision 8), so this is the last resort.
+    Itself,
 }
 
 impl How {
@@ -42,12 +46,13 @@ impl How {
             How::Vst2Id => "vst2-id",
             How::SameName => "same-name",
             How::NewerVersion => "newer-version",
+            How::Itself => "itself",
         }
     }
 
     /// Whether the plug-in promises to read the saved state.
     pub fn keeps_state(self) -> bool {
-        matches!(self, How::Same | How::Declared | How::Vst2Id)
+        matches!(self, How::Same | How::Declared | How::Vst2Id | How::Itself)
     }
 }
 
@@ -180,7 +185,13 @@ impl Catalog {
         if let Some(plugin) = derived().find(|p| p.id.eq_ignore_ascii_case(&exact)).or_else(|| derived().next()) {
             return found(How::Vst2Id, plugin);
         }
-        self.match_name(name)
+        self.match_name(name).or_else(|| {
+            // No VST3 or CLAP copy stands in: the scanned VST2 plug-in itself, by its id
+            // (decision 8: the copies are preferred while any is installed).
+            self.plugins()
+                .find(|p| p.format() == "vst2" && p.id == format!("{id:08X}"))
+                .map(|plugin| Match { plugin, how: How::Itself })
+        })
     }
 
     /// The installed plug-in for a CLAP device with id `id`, saved under `name`.
@@ -259,6 +270,43 @@ mod tests {
 
     fn found(m: Option<Match<'_>>) -> Option<(&str, How)> {
         m.map(|m| (m.plugin.name.as_str(), m.how))
+    }
+
+    /// A catalog with the scanned VST2 plug-in `id` named `name`, and optionally a VST3
+    /// stand-in for it.
+    fn vst2_catalog(id: u32, name: &str, stand_in: bool) -> Catalog {
+        let file = |file: &str, plugin: serde_json::Value| json!({ "path": PathBuf::from(file).display().to_string(), "modified": 1, "size": 1, "plugins": [plugin] });
+        let mut entries = vec![file(
+            "/vst2/Gain.vst",
+            json!({ "id": format!("{id:08X}"), "name": name, "vendor": "Suhina", "version": "1", "features": ["audio-effect"], "replaces": [] }),
+        )];
+        if stand_in {
+            entries.push(file("/vst3/Gain.vst3", vst3(&vst2_class_id(id, name), name, "Suhina", &[])));
+        }
+        let text = json!({ "version": 2, "entries": entries }).to_string();
+        Catalog::from_json(&text)
+    }
+
+    /// A project's VST2 plug-in that no VST3 or CLAP copy stands in for is hosted itself.
+    #[test]
+    fn a_vst2_plug_in_without_a_standing_in_copy_runs_itself() {
+        let (id, name) = (0x5368_5447, "Suhina Test Gain");
+        let catalog = vst2_catalog(id, name, false);
+        let matched = catalog.match_vst2(id, name);
+        assert_eq!(found(matched), Some(("Suhina Test Gain", How::Itself)));
+        assert!(matched.is_some_and(|m| m.how.keeps_state()), "the state is its own form");
+        assert_eq!(matched.map(|m| m.plugin.format()), Some("vst2"), "the direct host loads it");
+    }
+
+    /// A copy that stands in still plays it (ADR 0006 decision 8), even though the plug-in
+    /// itself is installed.
+    #[test]
+    fn a_vst2_plug_in_with_a_standing_in_copy_prefers_it() {
+        let (id, name) = (0x5368_5448, "Suhina Test Gain");
+        let catalog = vst2_catalog(id, name, true);
+        let matched = catalog.match_vst2(id, name);
+        assert_eq!(found(matched).map(|(_, how)| how), Some(How::Vst2Id));
+        assert_eq!(matched.map(|m| m.plugin.format()), Some("vst3"));
     }
 
     #[test]

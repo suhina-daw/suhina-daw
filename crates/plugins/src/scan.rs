@@ -47,8 +47,8 @@ const HUNG: &str = "hung: ";
 /// Longest failure reason kept; a loader's message can list every path it tried.
 const MAX_REASON: usize = 240;
 
-/// The plug-in formats a folder can be scanned for. Suhina hosts CLAP and VST3; VST2 folders
-/// can be kept already, for when VST2 plug-ins are hosted, and give no files until then.
+/// The plug-in formats a folder can be scanned for. Suhina hosts CLAP, VST3 and — behind the
+/// host's `vst2` feature (ADR 0022) — VST2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FolderFormat {
     /// Every format Suhina hosts.
@@ -77,19 +77,14 @@ impl FolderFormat {
         Self::ALL.into_iter().find(|f| f.name() == text)
     }
 
-    /// Whether Suhina reads this format's plug-ins yet (VST2: not yet).
-    pub fn hosted(self) -> bool {
-        self != Self::Vst2
-    }
-
-    /// Whether a file named like `path` is a plug-in of this format.
+    /// Whether a file named like `path` is a plug-in of this format. A VST2 plug-in is a
+    /// `.vst` bundle on macOS, a `.dll` on Windows and a `.so` on Linux.
     fn takes(self, path: &Path) -> bool {
         match self {
-            Self::Any => has_extension(path, "clap") || is_vst3(path),
+            Self::Any => has_extension(path, "clap") || is_vst3(path) || is_vst2(path),
             Self::Vst3 => is_vst3(path),
             Self::Clap => has_extension(path, "clap"),
-            // Not hosted yet: a VST2 plug-in is a `.dll`, `.vst` or `.so` like any library.
-            Self::Vst2 => false,
+            Self::Vst2 => is_vst2(path),
         }
     }
 }
@@ -126,9 +121,24 @@ pub struct PluginInfo {
 }
 
 impl PluginInfo {
-    /// Its format, from the file's extension: `vst3` or `clap`.
+    /// Its format: `vst3`, `vst2` or `clap` — from the file's extension, or the name of a
+    /// plug-in built into the host for tests.
     pub fn format(&self) -> &'static str {
-        if is_vst3(&self.path) { "vst3" } else { "clap" }
+        let path = self.path.display().to_string();
+        if path.starts_with("test:") {
+            return match path.as_str() {
+                "test:vst3" | "test:vst3-mix" => "vst3",
+                "test:vst2" => "vst2",
+                _ => "clap",
+            };
+        }
+        if is_vst3(&self.path) {
+            "vst3"
+        } else if is_vst2(&self.path) {
+            "vst2"
+        } else {
+            "clap"
+        }
     }
 
     /// How the host is asked to load it (`clap:<file>#<id>` or `vst3:<file>#<id>`). A
@@ -149,6 +159,19 @@ fn has_extension(path: &Path, extension: &str) -> bool {
 
 fn is_vst3(path: &Path) -> bool {
     has_extension(path, "vst3")
+}
+
+/// A VST2 plug-in: a `.vst` bundle (macOS), a `.dll` (Windows) or a `.so` (Linux) — the
+/// shape of this system only.
+pub fn is_vst2(path: &Path) -> bool {
+    let extension = if cfg!(target_os = "macos") {
+        "vst"
+    } else if cfg!(windows) {
+        "dll"
+    } else {
+        "so"
+    };
+    has_extension(path, extension)
 }
 
 /// What reading one file gave.
@@ -217,8 +240,8 @@ pub struct Catalog {
     entries: Vec<Entry>,
 }
 
-/// Where this system keeps CLAP and VST3 plug-ins (those that exist), then the folders in
-/// `CLAP_PATH`.
+/// Where this system keeps CLAP, VST3 and VST2 plug-ins (those that exist), then the folders
+/// in `CLAP_PATH`.
 pub fn standard_folders() -> Vec<PathBuf> {
     let env = |name: &str| std::env::var_os(name).map(PathBuf::from);
     let mut folders: Vec<PathBuf> = Vec::new();
@@ -227,11 +250,20 @@ pub fn standard_folders() -> Vec<PathBuf> {
             folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join(format)));
             folders.extend(env("LOCALAPPDATA").map(|p| p.join("Programs").join("Common").join(format)));
         }
+        // The VST2 conventions, which no registry holds: the folders installers use.
+        folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join("VST2")));
+        folders.extend(env("PROGRAMFILES").map(|p| p.join("VSTPlugins")));
+        folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join("VSTPlugins")));
+        folders.extend(env("PROGRAMFILES").map(|p| p.join("Steinberg").join("VSTPlugins")));
+        folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join("Steinberg").join("Shared")));
     } else if cfg!(target_os = "macos") {
         for format in ["CLAP", "VST3"] {
             folders.extend(env("HOME").map(|p| p.join("Library/Audio/Plug-Ins").join(format)));
             folders.push(PathBuf::from("/Library/Audio/Plug-Ins").join(format));
         }
+        // A VST2 plug-in is a `.vst` bundle, and its folder is named VST.
+        folders.extend(env("HOME").map(|p| p.join("Library/Audio/Plug-Ins/VST")));
+        folders.push(PathBuf::from("/Library/Audio/Plug-Ins/VST"));
     } else {
         folders.extend(env("HOME").map(|p| p.join(".clap")));
         folders.push(PathBuf::from("/usr/lib/clap"));
@@ -239,6 +271,10 @@ pub fn standard_folders() -> Vec<PathBuf> {
         folders.extend(env("HOME").map(|p| p.join(".vst3")));
         folders.push(PathBuf::from("/usr/lib/vst3"));
         folders.push(PathBuf::from("/usr/local/lib/vst3"));
+        // VST2's: the same libraries, in the vst folders.
+        folders.extend(env("HOME").map(|p| p.join(".vst")));
+        folders.push(PathBuf::from("/usr/lib/vst"));
+        folders.push(PathBuf::from("/usr/local/lib/vst"));
     }
     if let Some(paths) = std::env::var_os("CLAP_PATH") {
         folders.extend(std::env::split_paths(&paths));
@@ -262,7 +298,7 @@ pub fn find_files(folders: &[PathBuf]) -> Vec<PathBuf> {
 pub fn find_files_of(folders: &[(PathBuf, FolderFormat)]) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut pending: Vec<(PathBuf, FolderFormat, usize)> =
-        folders.iter().filter(|(_, f)| f.hosted()).map(|(f, format)| (f.clone(), *format, 0)).collect();
+        folders.iter().map(|(f, format)| (f.clone(), *format, 0)).collect();
     while let Some((folder, format, depth)) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&folder) else { continue };
         for entry in entries.flatten() {

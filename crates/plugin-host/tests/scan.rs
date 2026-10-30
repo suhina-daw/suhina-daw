@@ -107,6 +107,30 @@ fn finds_plugin_files_in_folders() {
     assert!(standard_folders().iter().all(|f| f.is_dir()));
 }
 
+/// A VST2 folder's files are found for its format and for `Any`: a `.vst` bundle on macOS, a
+/// `.dll` on Windows, a `.so` on Linux — and nothing else of the folder's.
+#[cfg(feature = "vst2")]
+#[test]
+fn a_vst2_folder_s_files_are_found() {
+    let dir = folder("find-vst2");
+    let (shape, other) = if cfg!(target_os = "macos") {
+        ("Gain.vst", "Gain.vst3")
+    } else if cfg!(windows) {
+        ("Gain.dll", "Gain.vst3")
+    } else {
+        ("Gain.so", "Gain.vst3")
+    };
+    write(&dir.join(shape), "x");
+    write(&dir.join(other), "x");
+    write(&dir.join("readme.txt"), "x");
+    let found = find_files_of(&[(dir.clone(), FolderFormat::Vst2)]);
+    assert_eq!(found, vec![dir.join(shape)], "only the format's files");
+    let any = find_files(std::slice::from_ref(&dir));
+    assert!(any.contains(&dir.join(shape)), "Any takes the VST2 file too");
+    // The vst folders of this system are standard, whether or not anything is in them.
+    let _ = standard_folders();
+}
+
 /// Seconds since 1970, now.
 fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
@@ -186,7 +210,17 @@ fn a_folder_gives_only_its_formats_files() {
     write(&dir.join("clap/a.clap"), "x");
     write(&dir.join("clap/b.vst3"), "x");
     write(&dir.join("vst3/c.vst3"), "x");
-    write(&dir.join("vst2/d.dll"), "x");
+    // The VST2 shape of this system, which its folder now gives up, and a library file of
+    // another system's, which is nothing here.
+    let (vst2_file, foreign) = if cfg!(target_os = "macos") {
+        ("e.vst", "d.dll")
+    } else if cfg!(windows) {
+        ("e.dll", "d.so")
+    } else {
+        ("e.so", "d.dll")
+    };
+    write(&dir.join("vst2").join(vst2_file), "x");
+    write(&dir.join("vst2").join(foreign), "x");
     let name = |found: Vec<PathBuf>| -> Vec<String> {
         found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect()
     };
@@ -195,8 +229,14 @@ fn a_folder_gives_only_its_formats_files() {
         (dir.join("vst3"), FolderFormat::Vst3),
         (dir.join("vst2"), FolderFormat::Vst2),
     ];
-    assert_eq!(name(find_files_of(&folders)), ["a.clap", "c.vst3"]);
+    assert_eq!(name(find_files_of(&folders)), ["a.clap", "e.vst", "c.vst3"]);
     assert_eq!(name(find_files_of(&[(dir.join("clap"), FolderFormat::Any)])), ["a.clap", "b.vst3"]);
+    // The VST2 folder for Any gives its own shape only.
+    assert_eq!(
+        name(find_files_of(&[(dir.join("vst2"), FolderFormat::Any)])),
+        [vst2_file.to_string()],
+        "the other system's library file is not a plug-in file here"
+    );
 }
 
 #[test]

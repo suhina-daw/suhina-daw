@@ -136,7 +136,9 @@ crates/
   test-support  dev-dependency only: ProjectBuilder, write_wav, test signals, golden files (SUHINA_BLESS)
   plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins;
                behind the `vst2` feature (ADR 0022): the ported VeSTige definitions, the mock plug-in,
-               the probe with `--vst2-probe`, and the host that runs `vst2:<file>` on the same boundary
+               the probe with `--vst2-probe`, the host that runs `vst2:<file>` on the same boundary,
+               and the scan of VST2 files; `matching` runs a project's VST2 device through it when no
+               VST3 or CLAP copy stands in (ADR 0006 decision 8)
 devices/
   sampler  single-source sample and granular instrument; SDK runtime and theme-aware panel
   utility  gain, balance, width, mono, bass mono, phase, channels, DC filter; depends on dsp, device-api
