@@ -24,6 +24,7 @@ mod crossfade;
 mod cue;
 #[cfg(test)]
 mod cue_tests;
+mod declick;
 #[cfg(test)]
 mod fade_cost_tests;
 #[cfg(test)]
@@ -409,6 +410,9 @@ pub struct Renderer {
     /// waited so far: the transport rolls once they are, so their beginnings are heard (a
     /// locate waits for the read-ahead in OSS hosts too), or after [`START_WAIT_SECONDS`].
     start_waiting: Option<u64>,
+    /// A reopened output resumes here after read-ahead, without moving the play start marker.
+    start_target: Option<f64>,
+    start_guard: declick::StartGuard,
     stretch_scratch: Vec<f32>,
     /// Frames rendered since the renderer was built.
     position: u64,
@@ -439,6 +443,8 @@ pub struct Renderer {
     /// What the device has queued ahead of the next block and how much it takes at once, in
     /// frames ([`Renderer::set_render_lead`]): how long the block's plug-ins may take.
     render_lead: Option<(usize, usize)>,
+    #[cfg(test)]
+    observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
     /// The browser's preview voice (ADR 0011).
@@ -577,7 +583,14 @@ impl Renderer {
         options: RenderOptions,
     ) -> Result<Self, RenderError> {
         let RenderInputs { audio, assets, mut plugins } = inputs;
-        let graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        let mut graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        if plugins.carried {
+            // The old note-off schedule died with its renderer, but the retained
+            // instruments did not. Release those voices before chasing notes here.
+            for chain in &mut graph.chains {
+                chain.release_retained();
+            }
+        }
         graph.launcher.monitor.running.store(!options.stopped, std::sync::atomic::Ordering::Relaxed);
         let mut meters = meters::MeterWriter::new(sample_rate);
         meters.assign(graph.levels.tracks());
@@ -598,6 +611,8 @@ impl Renderer {
             active_audio_count: 0,
             stretch_fresh: true,
             start_waiting: None,
+            start_target: None,
+            start_guard: declick::StartGuard::new(sample_rate),
             stretch_scratch: vec![0.0; STRETCH_BLOCK * 2],
             position: 0,
             origin: 0,
@@ -613,6 +628,8 @@ impl Renderer {
             offline: false,
             declick: Declick::default(),
             render_lead: None,
+            #[cfg(test)]
+            observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
@@ -657,7 +674,7 @@ impl Renderer {
         for key in processors.keys() {
             info.entry(*key).or_default();
         }
-        Plugins { info, processors }
+        Plugins { info, processors, carried: true }
     }
 
     /// The delay latency compensation adds to everything, in frames: the most any track's
@@ -717,7 +734,7 @@ impl Renderer {
     /// it, every note plays at the first frame of the next block. Never allocates.
     /// How far the output is ahead of the device as the next block starts: `queued` frames are
     /// waiting to be played before it, and the device takes `device` frames at once. The block's
-    /// plug-ins may take the time those queued frames play, less the device's buffer and a
+    /// plug-ins may take the time the complete queued device periods play, less a
     /// margin, instead of a fixed share of the block: a return's plug-ins, which run after every
     /// track that sends to them, missed the share left to them in a large project and crackled.
     /// Call it before every [`Renderer::process`] while a device plays. Never allocates.
@@ -757,10 +774,13 @@ impl Renderer {
     /// Publishes the plug-in blocks missed so far and the plug-in that missed most. Never
     /// allocates.
     fn publish_plugin_misses(&mut self) {
-        let (mut total, mut worst) = (0u64, (0u64, 0u64));
+        let (mut total, mut blocked, mut worst) = (0u64, 0u64, (0u64, 0u64));
+        let mut worst_trip = 0u32;
         for chain in &mut self.graph.chains {
             for slot in chain.plugin_slots() {
                 total += slot.missed;
+                blocked += slot.busy;
+                worst_trip = worst_trip.max(slot.longest_us);
                 if slot.missed > worst.1 {
                     worst = (slot.key, slot.missed);
                 }
@@ -768,6 +788,8 @@ impl Renderer {
         }
         let monitor = &self.graph.launcher.monitor;
         monitor.plugin_misses.store(total, std::sync::atomic::Ordering::Relaxed);
+        monitor.plugin_blocked.store(blocked, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_trip.store(worst_trip, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_plugin.store(worst.0, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_misses.store(worst.1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -817,8 +839,13 @@ impl Renderer {
     fn process_parts(&mut self, out: &mut [f32], cue: Option<&mut [f32]>) {
         // The CPU load is measured only in real time: an offline render runs flat out.
         let measured = if self.offline { None } else { Some(Instant::now()) };
+        // The device needs this whole batch at one instant. Splitting it into
+        // internal chunks must neither shorten that budget nor renew it.
+        let batch_deadline = self.render_lead.and_then(|_| self.deadline(out.len() / 2));
         self.receive_swap();
         self.receive_plugins();
+        let misses_before = self.plugin_misses();
+        let render_frames = out.len() / 2;
         let mut rest = out;
         let mut cue_rest = cue;
         // Every new graph whose frame falls in this block takes over at its frame: the frames
@@ -831,7 +858,7 @@ impl Renderer {
                     let (before, after) = rest.split_at_mut(split);
                     let (cue_before, cue_after) = split_cue(cue_rest, split);
                     if !before.is_empty() {
-                        self.process_block(before, cue_before);
+                        self.process_block(before, cue_before, batch_deadline);
                         self.declick.ease(before);
                     }
                     self.apply_swap();
@@ -843,23 +870,36 @@ impl Renderer {
             }
         }
         if !rest.is_empty() {
-            self.process_block(rest, cue_rest);
+            self.process_block(rest, cue_rest, batch_deadline);
             self.declick.ease(rest);
         }
         self.publish_position();
         self.publish_plugin_misses();
         self.publish_count_in();
         if let Some(started) = measured {
-            self.cpu.measured(started, Instant::now());
+            let ended = Instant::now();
+            if self.plugin_misses() > misses_before {
+                let (queued, period) = self.render_lead.unwrap_or_default();
+                self.cpu.monitor.record_late_render(
+                    ended.saturating_duration_since(started),
+                    queued,
+                    period,
+                    render_frames,
+                );
+            }
+            self.cpu.measured(started, ended);
         }
     }
 
-    fn process_block(&mut self, mut out: &mut [f32], mut cue: Option<&mut [f32]>) {
+    fn process_block(&mut self, mut out: &mut [f32], mut cue: Option<&mut [f32]>, deadline: Option<Instant>) {
         // Device chains hold at most MAX_BLOCK frames; longer blocks are rendered in pieces. A
         // piece also ends at the loop end, where the transport wraps to the loop start, so the
         // wrap lands on its exact frame. Commands are applied first: they can start the
         // transport or move it, which changes where the loop end falls.
         while !out.is_empty() {
+            // A jump due at the loop end is made before the wrap, else the wrap moves the
+            // playhead to the loop start first and the jump waits for a boundary it has passed.
+            self.jump_if_due();
             self.wrap_loop();
             self.drain_commands();
             self.jump_if_due();
@@ -873,7 +913,7 @@ impl Renderer {
             let frames = self.frames_to_jump().map_or(frames, |to_jump| frames.min(to_jump.max(1)));
             let (chunk, rest) = std::mem::take(&mut out).split_at_mut(frames * 2);
             let (cue_chunk, cue_after) = split_cue(cue, chunk.len());
-            self.process_chunk(chunk, cue_chunk);
+            self.process_chunk(chunk, cue_chunk, deadline);
             // A source render's file audio is the node's captured sum; the master mix the chunk
             // holds first is the whole mix's, which a node render does not read.
             if let Some(capture) = self.graph.capture.as_ref() {
@@ -891,27 +931,46 @@ impl Renderer {
     /// of the block's playing time, so a late plug-in costs its own sound, not the device's
     /// deadline. `None` offline.
     fn deadline(&self, frames: usize) -> Option<Instant> {
+        self.deadline_at(frames, Instant::now())
+    }
+
+    fn deadline_at(&self, frames: usize, now: Instant) -> Option<Instant> {
         if self.offline {
             return None;
         }
         let rate = f64::from(self.sample_rate.max(1));
         let block = frames as f64 / rate;
         let seconds = match self.render_lead {
-            // What is queued plays while this block is made; the device's own buffer and a
-            // margin are kept for it. Never less than a quarter of the block, never past it.
+            // A complete queued period covers even an immediate callback, leaving
+            // until the following callback to supply more. Only a partial period
+            // is discounted; subtracting a whole period starves return effects
+            // every time a large callback drains the ring to exactly one period.
+            // Keep a margin. A partially primed ring still gives half a batch;
+            // otherwise use its actual reserve, including for a brief start burst.
             Some((queued, device)) => {
-                let room = (queued as f64 - device as f64) / rate - LEAD_MARGIN_SECONDS;
-                room.clamp(block * 0.25, block * 0.95)
+                let period = device.max(1);
+                let covered = queued / period * period;
+                let room = covered as f64 / rate - LEAD_MARGIN_SECONDS;
+                room.max(block * 0.5)
             }
             None => block * DEADLINE_SHARE,
         };
-        Some(Instant::now() + Duration::from_secs_f64(seconds))
+        let duration = Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO);
+        Some(now.checked_add(duration).unwrap_or(now))
     }
 
-    fn process_chunk(&mut self, out: &mut [f32], cue: Option<&mut [f32]>) {
+    fn process_chunk(&mut self, out: &mut [f32], cue: Option<&mut [f32]>, batch_deadline: Option<Instant>) {
         let frames = out.len() / 2;
         self.cue.begin(frames);
-        let deadline = if self.graph.chains.is_empty() { None } else { self.deadline(frames) };
+        let deadline =
+            if self.graph.chains.is_empty() { None } else { batch_deadline.or_else(|| self.deadline(frames)) };
+        #[cfg(test)]
+        {
+            if let Some(observed) = self.observed_deadlines.1.get_mut(self.observed_deadlines.0) {
+                *observed = deadline;
+            }
+            self.observed_deadlines.0 = self.observed_deadlines.0.saturating_add(1);
+        }
         for chain in &mut self.graph.chains {
             chain.begin(frames, deadline);
         }
@@ -1120,6 +1179,9 @@ impl Renderer {
             self.preview.finish(preview, frames, &mut self.graph.chains);
         }
         self.cue.finish(out, frames);
+        if let Some(bus) = self.cue.bus.get_mut(..frames * 2) {
+            self.start_guard.process(out, bus);
+        }
         if let Some(cue) = cue
             && let Some(bus) = self.cue.bus.get(..frames * 2)
         {

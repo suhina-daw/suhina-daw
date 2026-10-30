@@ -3,7 +3,7 @@ description: How third-party plug-ins are hosted out of process (process model, 
 read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC, shared memory, unsafe, plug-in crash, scanning, plug-in editor
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-29
 covers:
   - crates/ipc/**
   - crates/plugins/**
@@ -52,12 +52,12 @@ and state (`DeviceKind::Clap`, `Vst3`, `Vst2` with `Device::state`); nothing run
 - The VST3 SDK is MIT since version 3.8 (October 2025); GPLv3 and Steinberg's own licence no
   longer apply to it. Rust: `vst3` (MIT/Apache-2.0), bindings generated from the SDK.
 - VST2: Steinberg stopped signing VST2 agreements in 2018 and has said new VST2 hosts cannot be
-  licensed. Its SDK licence is not GPL-compatible. Free headers exist (VeSTige, GPLv2+; FST,
-  GPLv3+), but VeSTige's origin is known only second-hand and was the target of a DMCA notice in
-  2018, and FST takes names from JUCE sources that shipped Steinberg's headers, which our
-  clean-room rules do not allow. A third one exists, Xaymar's `vst2sdk` (BSD-3-Clause, used by
-  DPF and by Lemon Studio); it is a reverse-engineering result like the others, and
-  [ADR 0022](0022-vst2-interface-description.md) decides it is not a source for us either.
+  licensed. Its SDK licence is not GPL-compatible. Free headers exist, all reverse-engineering
+  results: VeSTige (GPLv2+, from LMMS, shipped by Ardour and vendored by yabridge; the target of a
+  DMCA notice in 2018), FST (GPLv3+; takes names from JUCE sources that shipped Steinberg's headers)
+  and Xaymar's `vst2sdk` (BSD-3-Clause, used by DPF and by Lemon Studio).
+  [ADR 0022](0022-vst2-interface-description.md) takes VeSTige, pinned, as the one source of the
+  interface, a named exception to the clean-room rules; the others stay excluded.
 - VST3 has a documented way to replace a VST2 plug-in: the VST3 version declares the VST2 class
   it replaces (`moduleinfo.json` `Compatibility`, SDK 3.7.5 and later, or
   `IPluginCompatibility`, or the documented class-id convention built from the VST2 id and
@@ -238,12 +238,20 @@ workspace forbids.
    back. Primitives: a futex in the shared memory on Linux; duplicated auto-reset events on
    Windows, waited on together with a high-resolution waitable timer that wakes the wait 1 ms
    before the deadline, the rest spent yielding, so a miss ends on time and not on the system
-   timer's next 15.6 ms tick (#211); semaphores on macOS, prototyped first because they are the
-   least certain. The host's
+   timer's next 15.6 ms tick (#211); on macOS, checks with short naps between them — measured on
+   an M3, a mac wait that only yields never sleeps, and the timeshare scheduler then demotes the
+   thread for burning a core and steers it to the efficiency cores, where its round trip misses
+   the deadline: 138 µs at rest, p50 651 µs and growing to 17 % of blocks late with three busy
+   processes on the machine. A nap counts as waiting and the demotion does not accumulate;
+   250 µs caps each requested sleep, although OS scheduling can delay the actual wake-up. A semaphore wait
+   remains the surest wake, and the reason it has not landed: Mach semaphores live in one task
+   and cannot be shared with another process by name (their send rights would have to go over
+   Mach IPC), and named POSIX semaphores answer `sem_open` across processes but Darwin has no
+   `sem_timedwait` to end a wait by its deadline. The host's
    audio thread runs at the engine's real-time priority (MMCSS "Pro Audio" on Windows; the
    engine's audio workgroup on macOS). The engine waits at most the rest of the block's time.
    On a miss it outputs the plug-in's input (an effect) or silence (an instrument) for that block
-   and counts the miss. Repeated misses, a dead process or an unanswered ping mark the plug-in
+   and counts the miss. Repeated unanswered requests, a dead process or an unanswered ping mark the plug-in
    *crashed* or *hung*; the engine kills the process and offers a restart. Offline renders wait
    without a deadline (with a long timeout), so they run as fast as the plug-in allows; a block
    left unanswered there says whether the process died (the plug-in crashed) or is still stuck.
@@ -266,17 +274,37 @@ workspace forbids.
    Suhina. The hosts' audio threads wait for every block, so only a plug-in stuck in one block
    that long hits the limit, and the host process ending is then a crash the engine already
    reports and restarts. **macOS:** the highest priority (the audio workgroup is to come).
+   Measured on an M3, what a priority alone does not get: macOS refuses QoS on a thread whose
+   priority another call has already raised (set the class first); the user-interactive class
+   alone did not keep a waiting thread off the efficiency cores; and the time-constraint policy
+   (`THREAD_TIME_CONSTRAINT_POLICY`) on a thread that waits by yielding defers its work to the
+   policy's period — 81 % of blocks late in the same bench — so a scheduling class is worth it
+   only once the waits sleep. Until then the napped wait (above) keeps a mac thread's timeshare
+   band clean without either.
    Nothing fails over it: when real-time scheduling is refused the first stream in a process
    adds a notice (the app shows it, `suhina-cli play` prints it), and the hosts' threads, which
    ask the same system, play on silently. `SUHINA_NO_REALTIME=1` turns it off, to compare.
-   The deadline is 60 % of a block's
+   A late reply resets the hang counter when the next request is accepted: missing
+   an audio deadline does not mean the host stopped answering. Superseded starts
+   after a rate change are unloaded off the session thread, like accepted instances.
+   With measured render lead, the deadline uses the complete device periods covered by queued
+   frames minus 3 ms, with half a render batch as the startup floor. All internal chunks
+   of the batch share that absolute deadline: the 1024-frame internal limit must neither
+   cap a short processing burst while queued audio covers it nor renew the time allowed
+   for a hanging processor. Sustained overload still exhausts the queue and misses its
+   deadline; extra processing time does not add buffered audio or latency. Playback keeps four engine blocks
+   queued (or a device period and a block, whichever is larger); armed tracks keep
+   their shallower queue. Without measured lead the deadline is 60 % of a block's
    playing time for all of a block's plug-ins together, one after another, so it depends on
    the block: the audio output renders the engine in blocks of its own ahead of the device into a
    ring, rather than in the device's buffers, after a driver that gave 3 ms buffers left 25
    plug-ins 30 to 50 % of their blocks late (notes dropped, "stopped answering"). The block is
    the buffer size the user chooses (Settings › Audio, `audio.setOutput`: 64 … 4096 frames,
    rounded to a size the driver allows; 1024 when none is chosen), so the deadline follows that
-   choice: a smaller buffer is quicker to answer a key and leaves the plug-ins less time. The
+   choice: a smaller buffer is quicker to answer a key and leaves the plug-ins less time.
+   Ordinary playback keeps four blocks queued; armed input keeps its shorter queue.
+   The half-batch minimum and queued-period budget above retain the room needed by
+   plug-ins at small device buffers without capping a queue-covered batch at one block. The
    driver is never asked for a size outside the buffer range it declared: a range holding no size
    the engine renders in leaves the driver its own, with a notice that says which size plays.
    With ASIO and WASAPI exclusive mode the device's buffer is that size too; WASAPI shared mode
@@ -573,12 +601,12 @@ workspace forbids.
 
 ## Not decided yet
 
-- **Hosting VST2 directly.** The interface description and where it comes from is
-  [ADR 0022](0022-vst2-interface-description.md) (proposed): our own clean-room description,
-  observed and written in `docs/spec/`, with no third-party reverse-engineered header as a source.
-  The process, scanning, editor and format decisions above are unchanged, and legal advice still
-  precedes a release that ships it. The work starts when we know which plug-ins people still use
-  only as VST2.
+- **Hosting VST2 directly.** Where the interface description comes from is decided in
+  [ADR 0022](0022-vst2-interface-description.md): the VeSTige header as Ardour distributes it,
+  pinned. Nothing is built yet: the header is to be ported to Rust with its notice, checked by our
+  own mock plug-in and probe, and written up in `docs/spec/plugin-vst2.md`. The work is
+  [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066). The process, scanning, editor and
+  format decisions above are unchanged, and legal advice still precedes a release that ships it.
 - **Our own Wine host** for Windows plug-ins on Linux (`suhina-plugin-host` built for Wine,
   speaking the same protocol, so one hop instead of two and one place for crashes, scanning and
   editors). Decided after native CLAP and VST3 work and the cost of the yabridge path has been
@@ -681,6 +709,64 @@ workspace forbids.
   unanswered, as a late block does. An offline render started with its plug-ins keeps the
   latencies they had when they started.
 
+### Retained processors across an output change
+
+A renderer returning its processors marks them as carried. Before the replacement renderer
+chases the current notes, its instrument chains queue explicit note-offs for all 128 keys,
+then AllNotesOff for those retained processors. Explicit releases are necessary for instruments
+that ignore controller 123, including VST3 instruments without its MIDI mapping.
+The old renderer's note-off schedule no longer exists; keeping its voices while chasing notes
+again would stack voices on every device or engine-block change. This does not reload presets,
+restart host processes or reset effect tails. An ordinary graph edit keeps its existing note
+schedule and does not use this output-replacement flag.
+
+## Amendment: reconfiguring a retained instance
+
+Protocol 14 adds `reconfigure {instance, sample_rate}` and
+`reconfigured {instance, latency}`. The engine must quiesce the instance's audio
+link before requesting a change. Its shared-memory maximum block capacity is
+unchanged; engine block-size changes within that capacity require no new link.
+Rates must be finite, positive and at most 768000 Hz.
+
+The host stops and joins the instance's audio worker with the existing bounded
+stop wait, deactivates the same component, changes its processing configuration,
+and activates it again. CLAP uses its activate configuration; VST3 calls
+setupProcessing while inactive on the host main thread. The editor and component
+are retained, and the reply carries the newly reported latency. The caller must
+not resume audio until the acknowledgement and its latency update are applied.
+Failure is explicit and requires recovery; it must not be treated as a successful
+rate change. Same-rate requests leave an already configured instance alone.
+
+The output owner applies this transaction to retained processors before building
+its new renderer, updating each slot's latency. The session acknowledges the
+retained rate before its next rack sync; otherwise that sync would unload all
+instances again. Starts still in flight are retired and restarted at the new
+rate because they were not part of the returned renderer. A failed transaction
+aborts opening the new renderer and reports the error instead of playing a graph
+containing mixed processing rates. A later crash restart reads the acknowledged
+rate shared with the control half.
+
+## Amendment: stopping a hosted instrument
+
+Some instruments reset their output immediately when the transport's playing flag
+becomes false, even when ordinary note-off messages alone allow a smooth release.
+The hosted instrument therefore fades its continuing output to zero over 5 ms
+using a smooth polynomial gain envelope before delivering the stopped transport.
+Its position continues during that short fade; Stop's return to the start marker
+is deferred along with the flag. This is per instrument, before downstream effects
+and delay compensation, so those effects can keep their tails. Instrument releases
+are limited to this stop fade. A Play during the fade reverses it from its current
+gain; a live note while paused reopens the gate at that note's frame offset.
+Live notes arriving during the short fade wait, in order, until the first stopped
+block, so that the delayed transport transition cannot reset their new voices.
+This bounded queue does not allocate while rendering; overflow ends with a release.
+
+While its gate changes or is closed, an instrument processes separately from
+joint followers, so its envelope cannot mute downstream effects. Ordinary playback
+keeps joint processing. The renderer does not add the older held-sample output
+ramp when its instruments provide this soft-stop contract. Both offline and live
+hosting use the same gate. This introduces no delay during ordinary playback.
+
 ## Sources
 
 - Bitwig plug-in hosting modes: https://www.bitwig.com/userguide/latest/vst_plug-in_handling_and_options
@@ -693,6 +779,7 @@ workspace forbids.
 - VST3 SDK under MIT: https://github.com/steinbergmedia/vst3sdk; vst3 crate: https://github.com/coupler-rs/vst3-rs
 - VST2 licensing for hosts: https://forums.steinberg.net/t/can-i-create-vst-2-support-for-host-application-vst-3-license/202012
 - DMCA notice against VeSTige (2018): https://lists.linuxaudio.org/archives/linux-audio-dev/2018-June/037132.html
+- VeSTige as Ardour distributes it: https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h
 - FST: https://sources.debian.org/src/fst/0.177.0-1/README.md
 - VST3 `moduleinfo.json` and compatibility: https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/VST+Module+Architecture/ModuleInfo-JSON.html
 - VST2 compatibility FAQ: https://steinbergmedia.github.io/vst3_dev_portal/pages/FAQ/Compatibility+with+VST+2.x+or+VST+1.html

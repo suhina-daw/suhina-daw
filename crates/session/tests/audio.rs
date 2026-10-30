@@ -24,6 +24,8 @@ const SR: u32 = 48_000;
 /// Opens players on renderers it keeps, so a test can run them, and records each choice.
 #[derive(Default)]
 struct Stand {
+    panel_open: Arc<std::sync::atomic::AtomicBool>,
+    reject_next_open: std::sync::atomic::AtomicBool,
     renderers: Mutex<Vec<Renderer>>,
     opened: Mutex<Vec<(OutputChoice, bool)>>,
     /// The device that is "not there": choosing it falls back with a notice. Besides
@@ -37,9 +39,12 @@ struct Stand {
 
 /// An output: what it was opened on, its error flag, and whether it plays in place of the
 /// device chosen.
-struct Live(OutputChoice, Arc<std::sync::atomic::AtomicBool>, bool);
+struct Live(OutputChoice, Arc<std::sync::atomic::AtomicBool>, bool, Arc<std::sync::atomic::AtomicBool>);
 
 impl LiveOutput for Live {
+    fn control_panel_open(&self) -> bool {
+        self.3.load(std::sync::atomic::Ordering::Acquire)
+    }
     fn info(&self) -> OutputInfo {
         OutputInfo {
             host: self.0.host.clone().unwrap_or_else(|| "Stand".into()),
@@ -95,10 +100,17 @@ impl AudioSystem for Stand {
         }
         self.opened.lock().unwrap().push((choice.clone(), previous.is_some()));
         drop(previous);
+        if self.reject_next_open.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            return Err("test output unavailable".into());
+        }
         let mut renderer = Renderer::stopped(project, audio, choice.sample_rate.unwrap_or(SR)).unwrap();
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.failed.lock().unwrap().push(Arc::clone(&failed));
-        let player = Player::with_output(renderer.controller(), None, Arc::new(Live(choice, failed, fallback)));
+        let player = Player::with_output(
+            renderer.controller(),
+            None,
+            Arc::new(Live(choice, failed, fallback, Arc::clone(&self.panel_open))),
+        );
         self.renderers.lock().unwrap().push(renderer);
         Ok(Opened { player, notice, plugins_kept: true })
     }
@@ -134,7 +146,17 @@ fn with_stand(missing: Option<&str>) -> (Projects, Arc<Stand>) {
 #[test]
 fn audio_commands_are_listed_with_their_kind() {
     let ids: Vec<&str> = audio_commands().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["audio.devices", "audio.setOutput", "output.setCuePair", "output.setCueVolume", "audio.info"]);
+    assert_eq!(
+        ids,
+        [
+            "audio.openControlPanel",
+            "audio.devices",
+            "audio.setOutput",
+            "output.setCuePair",
+            "output.setCueVolume",
+            "audio.info",
+        ]
+    );
     assert!(audio_commands().iter().all(|c| c.kind == CommandKind::Audio));
     let listed = suhina_session::all_commands();
     assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == "audio.setOutput"));
@@ -481,4 +503,47 @@ fn the_preview_output_closes_before_a_project_or_another_output_opens() {
     assert!(projects.preview_session().is_some_and(|s| s.player().is_none()), "the project's session now");
     run(&mut projects, "preview.play", json!({ "path": wav(&dir) })).unwrap_err();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn choosing_an_output_recovers_after_a_driver_open_failed() {
+    let (mut projects, stand) = with_stand(None);
+    projects.add(Session::new(project()), None).unwrap();
+    projects.open_output(None).unwrap();
+    stand.reject_next_open.store(true, std::sync::atomic::Ordering::Relaxed);
+    let error = run(&mut projects, "audio.setOutput", json!({"device": "USB"})).unwrap_err();
+    assert!(error.contains("test output unavailable"), "{error}");
+    assert!(projects.session_mut(None).unwrap().player().is_none());
+    run(&mut projects, "audio.setOutput", json!({"device": "Default"})).unwrap();
+    assert!(projects.session_mut(None).unwrap().player().is_some());
+    assert_eq!(stand.opened.lock().unwrap().len(), 3);
+    assert_eq!(run(&mut projects, "audio.info", json!({})).unwrap()["device"], "Default");
+}
+
+#[test]
+fn a_native_panel_blocks_output_and_tab_changes_without_detaching_the_player() {
+    use std::sync::atomic::Ordering;
+    let (mut projects, stand) = with_stand(None);
+    let first = projects.add(Session::new(project()), None).unwrap();
+    let second = projects.add(Session::new(project()), None).unwrap();
+    projects.open_output(None).unwrap();
+    let chosen = projects.output_choice().clone();
+    let opened = stand.opened.lock().unwrap().len();
+    stand.panel_open.store(true, Ordering::Release);
+    assert!(projects.open_output(None).unwrap_err().to_string().contains("close the ASIO control panel first"));
+    assert!(projects.reopen_output().is_err());
+    assert!(projects.switch(first).is_err());
+    assert!(projects.cycle(1).is_err());
+    assert!(projects.close(second).is_err());
+    assert!(projects.add(Session::new(project()), None).is_err());
+    assert!(run(&mut projects, "audio.setOutput", json!({"device": "USB"})).is_err());
+    assert_eq!(projects.output_choice(), &chosen);
+    assert_eq!(projects.active(), Some(second));
+    assert_eq!(projects.len(), 2);
+    assert!(projects.get(second).unwrap().player().is_some());
+    assert_eq!(stand.opened.lock().unwrap().len(), opened);
+    stand.panel_open.store(false, Ordering::Release);
+    projects.reopen_output().unwrap();
+    projects.close(second).unwrap();
+    assert_eq!(projects.active(), Some(first));
 }

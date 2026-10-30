@@ -16,6 +16,59 @@ const BUFFER_SIZES: [u32; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 const SAMPLE_RATES: [u32; 13] =
     [8_000, 11_025, 16_000, 22_050, 32_000, 44_100, 48_000, 88_200, 96_000, 176_400, 192_000, 352_800, 384_000];
 
+/// CPAL 0.18's ASIO descriptors own metadata, not loaded drivers. Keep them before
+/// opening a stream: enumerating another driver while one plays ends the iterator.
+#[cfg(all(windows, feature = "asio"))]
+static ASIO_DEVICES: std::sync::Mutex<Option<Vec<cpal::Device>>> = std::sync::Mutex::new(None);
+
+pub(crate) fn host_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, String> {
+    #[cfg(all(windows, feature = "asio"))]
+    if host.id().name() == "ASIO" {
+        let mut cached = ASIO_DEVICES.lock().map_err(|e| e.to_string())?;
+        return cached_listing(&mut cached, || host.devices().map(|d| d.collect()).map_err(|e| e.to_string()));
+    }
+    host.devices().map(|devices| devices.collect()).map_err(|e| e.to_string())
+}
+
+#[cfg(any(test, all(windows, feature = "asio")))]
+fn cached_listing<T: Clone>(
+    cached: &mut Option<Vec<T>>,
+    load: impl FnOnce() -> Result<Vec<T>, String>,
+) -> Result<Vec<T>, String> {
+    if let Some(devices) = cached.as_ref() {
+        return Ok(devices.clone());
+    }
+    let devices = load()?;
+    *cached = Some(devices.clone());
+    Ok(devices)
+}
+
+pub(crate) fn output_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, String> {
+    Ok(host_devices(host)?
+        .into_iter()
+        .filter(|d| d.supported_output_configs().is_ok_and(|mut c| c.next().is_some()))
+        .collect())
+}
+
+pub(crate) fn input_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, String> {
+    Ok(host_devices(host)?
+        .into_iter()
+        .filter(|d| d.supported_input_configs().is_ok_and(|mut c| c.next().is_some()))
+        .collect())
+}
+
+pub(crate) fn default_output(host: &cpal::Host) -> Option<cpal::Device> {
+    if host.id().name() == "ASIO" {
+        output_devices(host).ok()?.into_iter().next()
+    } else {
+        host.default_output_device()
+    }
+}
+
+pub(crate) fn default_input(host: &cpal::Host) -> Option<cpal::Device> {
+    if host.id().name() == "ASIO" { input_devices(host).ok()?.into_iter().next() } else { host.default_input_device() }
+}
+
 /// The buffer sizes a device with the driver range `range` can be asked for: the powers of two
 /// inside it, and its ends, within [`MIN_BUFFER_FRAMES`] … [`MAX_BUFFER_FRAMES`]. A range that
 /// makes no sense (empty, reversed) counts as none, and the device is then asked for no size at
@@ -194,9 +247,10 @@ pub fn list_hosts() -> Vec<HostInfo> {
 /// The host's input devices with their channels and sample rates; none when they cannot be
 /// listed.
 fn list_inputs(host: &cpal::Host) -> Vec<InputInfo> {
-    let default = host.default_input_device().map(|d| d.to_string());
-    let Ok(devices) = host.input_devices() else { return Vec::new() };
+    let default = default_input(host).map(|d| d.to_string());
+    let Ok(devices) = input_devices(host) else { return Vec::new() };
     devices
+        .into_iter()
         .map(|device| {
             let name = device.to_string();
             let mut ranges = Vec::new();
@@ -219,9 +273,10 @@ fn list_inputs(host: &cpal::Host) -> Vec<InputInfo> {
 }
 
 fn list_devices(host: &cpal::Host, host_name: &str) -> Result<Vec<DeviceInfo>, String> {
-    let default = host.default_output_device().map(|d| d.to_string());
-    let devices = host.output_devices().map_err(|e| e.to_string())?;
+    let default = default_output(host).map(|d| d.to_string());
+    let devices = output_devices(host)?;
     Ok(devices
+        .into_iter()
         .map(|device| {
             let name = device.to_string();
             let mut info = DeviceInfo { default: default.as_deref() == Some(name.as_str()), ..DeviceInfo::default() };

@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use wasapi::{Direction, SampleType, StreamMode, WaveFormat};
 
-use crate::{Progress, RING_CHANNELS, Ring, channel_sample, cue_channel, measure_latency, read_ring};
+use crate::{Progress, RING_CHANNELS, Ring, channel_sample, cue_channel, measure_latency, read_device_ring};
 
 /// How long the loop waits for the device before checking whether it should stop, in ms.
 const WAIT_MS: u32 = 100;
@@ -238,6 +238,7 @@ fn run(
     }
     let _realtime = suhina_realtime::RealTime::join(frames, sample_rate);
     let period = Duration::from_secs_f64(frames as f64 / f64::from(sample_rate.max(1)));
+    let mut envelope = crate::transition::Envelope::new(sample_rate);
     while !stop.load(Ordering::Acquire) {
         if event.wait_for_event(WAIT_MS).is_err() {
             continue;
@@ -253,7 +254,7 @@ fn run(
         let Some(out) = ringed.get_mut(..space * RING_CHANNELS) else { continue };
         if go.load(Ordering::Acquire) {
             let queued = ring.slots() / RING_CHANNELS;
-            read_ring(&mut ring, out, progress);
+            read_device_ring(&mut ring, out, progress, &mut envelope, period);
             progress.set_latency(measure_latency(queued, period, sample_rate));
         } else {
             out.fill(0.0);

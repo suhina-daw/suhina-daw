@@ -310,6 +310,15 @@ force a rewrite of everything built on it, so it is not something we clean up la
 - Open-source code under a licence compatible with GPL-3.0-or-later, ported with its notices
   kept. Code without a licence may not be copied, ported or translated; only its published
   description (a paper, a README) may be learnt from.
+- **One named exception for the VST2 interface: VeSTige.** The VeSTige header as Ardour
+  distributes it (`libs/ardour/ardour/vestige/vestige.h`, GPL-2.0-or-later, used under
+  GPL-3.0-or-later), at the commit [ADR 0022](docs/decisions/0022-vst2-interface-description.md)
+  pins, may be read and its interface definitions ported to Rust, with its copyright and licence
+  notice kept. It is a third-party reverse-engineering result, which the next list otherwise
+  forbids; the project accepts this one source on the record ADR 0022 keeps. The exception covers
+  that file only: not Steinberg's VST2 SDK, not leaked code, not FST, not `vst2sdk`, not any other
+  header or write-up, and not material from any other reverse engineering. Permission to implement
+  is not permission to ship: a release with VST2 hosting still needs what ADR 0022 › 5 asks.
 
 **Not allowed:**
 
@@ -327,7 +336,8 @@ force a rewrite of everything built on it, so it is not something we clean up la
   decompilation of a proprietary program, for example the notes and binary patches of projects
   that make a commercial DAW run on another operating system. An unmodified, licensed copy of
   the program may still be run on such a platform to observe it; the project's findings about
-  the program's internals, and its patched copies, may not be read or used.
+  the program's internals, and its patched copies, may not be read or used. The one exception is
+  the VeSTige header above.
 - Copying samples, presets, Packs, Core Library content, impulse responses, wavetables or demo
   projects from proprietary products, or committing them as test data.
 - Copying the visual design of a proprietary product: icons, artwork, interface text, colours,

@@ -799,7 +799,16 @@ impl Session {
                 take.began,
                 audio.as_ref().map(|(_, frames, _)| *frames)
             );
-            let mut taken = p.arrangement.takes.iter().filter(|t| t.track == take.track).count();
+            // New takes go on from the highest number the track's takes show, so a name is never
+            // used twice after a take was deleted.
+            let mut taken = p
+                .arrangement
+                .takes
+                .iter()
+                .filter(|t| t.track == take.track)
+                .filter_map(|t| crate::commands::take::take_number(&t.name))
+                .max()
+                .unwrap_or(0);
             for pass in &passes {
                 let (content, offset, length) = match (&audio, audio_content) {
                     (Some((_, frames, rate)), Some(content)) => {

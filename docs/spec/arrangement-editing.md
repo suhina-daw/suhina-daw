@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-10-28
+last_verified: 2026-10-29
 covers:
   - crates/session/src/commands.rs
   - crates/ui/src/arrangement/timeline.rs
@@ -620,12 +620,12 @@ launches land on the arrangement's bars.
 
 **A jump while playing** ends the notes that sound (with their release) and the audio clips that
 play, and plays on from the new beat as a start would: a note that sounds there is chased, whether
-the jump moves the marker (a click on the ruler, `transport.setPosition`) or only the playhead
+the jump moves the marker (a click on the ruler, `transport.jump`) or only the playhead
 (`Locate`, when the audio output is opened again); a loop's wrap is not a jump and chases nothing. Launches and a scene tempo that were
 waiting are queued again for the next boundary from the new beat. Time-stretched clips are
 silent until the stretch worker has caught up with the new place (about one block in practice).
 
-**In the Arrangement view** a click on the ruler runs `transport.setPosition`: the beat under the
+**In the Arrangement view** a click on the ruler runs `transport.jump`: the beat under the
 pointer, on [the grid](#the-grid) (Alt held, or the grid `none`: free, to a thousandth of a beat).
 The marker is a small triangle hanging from the ruler's lower edge; the playhead is a line through
 the ruler and the lanes, at the marker while stopped (measurements in
@@ -1013,3 +1013,22 @@ says recording need not be enabled, and Off says live input is silent but can st
 recorded. Tooltips explain the selected mode and the separate record-ready
 button, without requiring knowledge of "armed" or "play-through". The file/API value `in`
 remains unchanged.
+
+### Starting and stopping playback without an output step
+
+For a graph with hosted plug-ins, Play joins the previous main and cue output samples to the
+newly rendered sound over a 2 ms linear transition. The transition waits for the graph's reported
+processing latency, so it covers the new sound reaching the output rather than expiring during
+the preceding delayed audio. During that wait, the old tail is preserved; the transition joins
+from its last sample. Native audio clip readers already have
+start guards; hosted processors can otherwise bypass that protection. This covers
+starting inside a sustained note. The transition begins at the previous output value, rather
+than forcing an already audible effect tail to zero. It does not move note times or add a buffer
+of latency, and spans render-block boundaries. Offline command rendering uses the same path.
+
+Stopping a running transport, whether returning to the marker or keeping the current position,
+uses the same latency-aligned transition unless all instrument slots provide their own smooth
+stop. Hosted instruments with a transport gate fade their own output over 5 ms instead.
+Note-off messages still arrive immediately; the transition smooths an abrupt release without
+cutting off effect tails.
+Stopping an already stopped transport does not begin a new transition.

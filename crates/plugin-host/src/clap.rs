@@ -473,6 +473,20 @@ impl ClapPlugin {
         self.latency
     }
 
+    pub(crate) fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
+        if self.configuration.sample_rate == sample_rate {
+            return Ok(self.latency);
+        }
+        let previous = self.configuration.sample_rate;
+        self.configuration.sample_rate = sample_rate;
+        if let Err(why) = self.reactivate() {
+            self.configuration.sample_rate = previous;
+            return Err(why);
+        }
+        self.latency = read_latency(&mut self.instance);
+        Ok(self.latency)
+    }
+
     /// A latency the plug-in reported since this was last asked. A plug-in that asked for a
     /// restart is restarted first (its latency may change only while it is deactivated).
     pub(crate) fn latency_changed(&mut self) -> Option<u32> {

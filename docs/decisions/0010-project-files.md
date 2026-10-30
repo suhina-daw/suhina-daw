@@ -72,13 +72,9 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
    change within two reads, about a minute, and the window reads the states twice right away
    before it asks whether to save (decision 9).
 8. **New projects.** A blank project is two note tracks, two audio tracks, two returns, the main
-   channel and eight scenes (`suhina_session::blank_project`); `track.add` adds more. With
-   Settings › Arrangement › Returns in new projects on None (`new_project_returns = none`) it
-   has no returns, so no track shows sends until a return is inserted
-   (`suhina_session::blank_project_with`, #898); New or open offers the other kind for one
-   project too. A project that has returns always shows them, whatever the setting. A
+   channel and eight scenes (`suhina_session::blank_project`); `track.add` adds more. A
    project from a template is any project file opened untitled; its audio is still
-   found next to the template.
+   found next to the template. *Amended 2026-10-24, see Amendment: new projects without returns.*
 9. **The window** offers New or open (Ctrl+T): a new blank project, one from a template in the
    templates folder, or a project to open from a typed path or the recent list (kept in
    `recent.txt`). Started without a project given, it opens what Settings › Projects and backups › Startup project
@@ -172,6 +168,13 @@ does not parse files or allocate their storage.
 - Large note-heavy projects are bigger than a binary format would make them.
 - A crash loses at most the work since the last backup (decision 11). A project's `.backup`
   folder grows by one file per backup; with clean-up on it holds at most 20 per project.
+
+## Amendment: new projects without returns (2026-10-24, #898)
+
+A blank project need not have returns. With Settings › Arrangement › Returns in new projects on
+None (`new_project_returns = none`) it has none, so no track shows sends until a return is
+inserted (`suhina_session::blank_project_with`); New or open offers the other kind for one
+project too. A project that has returns always shows them, whatever the setting.
 
 ## Not decided yet
 

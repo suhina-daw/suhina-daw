@@ -16,7 +16,10 @@ the documents that match your task.
 1. **Clean-room (outranks everything).** Follow [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
    Never disassemble or decompile proprietary DAW or plug-in binaries, never use leaked code, never
    commit content from commercial products. Knowledge comes from observation, self-authored files
-   and public documentation, and is written down in `docs/spec/` before it is implemented.
+   and public documentation, and is written down in `docs/spec/` before it is implemented. The one
+   third-party reverse-engineering result allowed is the VeSTige header for the VST2 interface,
+   at the commit [ADR 0022](docs/decisions/0022-vst2-interface-description.md) pins; the
+   exception and its limits are in CONTRIBUTING › Clean-room.
 2. **Never crash.** Non-test code never panics: no `unwrap()`, `expect()`, `panic!`,
    `unreachable!`, `todo!` or `unimplemented!`. Return the crate's error type. Input-derived
    numbers are hostile: use `get()` and `checked_*`, cap allocations sized by input. No `unsafe`

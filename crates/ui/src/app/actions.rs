@@ -240,9 +240,11 @@ impl App {
                 let devices = self.picked_devices();
                 actions.push(Action::new("device.duplicateMany", json!({ "track": track.0, "devices": devices })));
             }
-            // Track headers clicked last: the edit keys act on the selected tracks (#919).
+            // Track headers clicked last: the edit keys act on the selected tracks (#919); paste
+            // only when tracks were copied, else a copied clip pastes on the track as before.
             "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
-                if !self.focused_tracks().is_empty() =>
+                if !self.focused_tracks().is_empty()
+                    && (action != "selection.paste" || self.session().is_some_and(|s| s.copied_tracks() > 0)) =>
             {
                 let tracks = self.focused_tracks();
                 let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();

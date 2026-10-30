@@ -124,6 +124,9 @@ decision 9.
    track, so held notes and tails carry on through an edit and the new parameter values
    apply; otherwise the new chain starts fresh and the old devices are freed with the old
    graph, off the audio thread. A render with chains is 2 s longer, for releases and tails.
+   The main channel runs a chain of its own too, last, over the mix that reaches the main
+   output, when it holds devices or its volume, pan or mute follows a lane. *Amended
+   2026-10-25, see Amendment: a chain on the main channel.*
 
 10. **A group with devices is a bus** (added 2026-10-12, with Stems files, whose mastering
    compressor and limiter must act on the sum of the stems). When a group track's channel holds

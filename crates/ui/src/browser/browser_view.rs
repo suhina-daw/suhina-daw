@@ -331,8 +331,8 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         out.status = Some(Status::Error(format!("Cannot preview: {e}")));
     }
     // Whether the preview voice still plays, wherever the control for it is shown.
-    let sounding = preview_sounding(projects);
-    state.observe_preview(sounding);
+    let (sounding, started) = preview_sounding(projects);
+    state.observe_preview(sounding, started);
     // While a sample is being read for its preview, every frame looks for it, so it plays the
     // moment it is ready.
     if state.preview_pending() {
@@ -1172,6 +1172,10 @@ fn row_menu(
 /// of the selection, else `item` alone, when it is a sample.
 pub fn copy_files(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<PathBuf> {
     let sample = |i: &BrowserItem| (i.kind == ItemKind::Sample).then(|| i.path()).flatten();
+    // Only a sample's menu copies: a MIDI file's would otherwise copy the samples picked with it.
+    if item.kind != ItemKind::Sample {
+        return Vec::new();
+    }
     if selected.iter().any(|s| s.key == item.key) {
         selected.iter().filter_map(sample).collect()
     } else {
@@ -1388,7 +1392,7 @@ pub fn preview_sample(state: &mut BrowserState, projects: &mut Projects, path: P
 /// Stops any preview: the one waiting to be read, and whatever the preview voice plays, even
 /// when the browser has lost track of it (#836).
 pub fn stop_preview(state: &mut BrowserState, projects: &mut Projects) {
-    let was = state.previewing.is_some() || state.preview_pending() || preview_sounding(projects);
+    let was = state.previewing.is_some() || state.preview_pending() || preview_sounding(projects).0;
     state.cancel_preview();
     if was {
         let _ = projects.execute("preview.stop", &json!({}));
@@ -1396,8 +1400,12 @@ pub fn stop_preview(state: &mut BrowserState, projects: &mut Projects) {
 }
 
 /// Whether the preview voice plays now.
-fn preview_sounding(projects: &Projects) -> bool {
-    projects.preview_session().and_then(|s| s.player()).is_some_and(|p| p.preview_monitor().playing())
+/// Whether the preview voice plays now, and how many previews it has started.
+fn preview_sounding(projects: &Projects) -> (bool, u64) {
+    projects
+        .preview_session()
+        .and_then(|s| s.player())
+        .map_or((false, 0), |p| (p.preview_monitor().playing(), p.preview_monitor().started()))
 }
 
 fn preview_strip(
@@ -1438,9 +1446,23 @@ fn preview_strip(
     let item = match state.selected.as_slice() {
         [one] if matches!(one.kind, ItemKind::Sample | ItemKind::Midi) => one.clone(),
         _ => {
+            // Nothing to preview picked, but a preview still sounding (its point was unpicked on
+            // the map): a Stop button for it, so a sounding preview always has one (#836).
+            let (sounding, _) = preview_sounding(projects);
+            let mut hint = area.shrink(PAD);
+            if sounding {
+                let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
+                let response = widgets::button_area(ui, stop, Id::new("browser-preview-play"), "Stop preview");
+                widgets::button_surface(&painter, stop, &response, true, theme::control_background(), 0.0);
+                play_glyph(&painter, stop.center(), true, theme::accent(), 7.0);
+                if response.clicked() {
+                    stop_preview(state, projects);
+                }
+                hint = Rect::from_min_max(Pos2::new(stop.right() + PAD, hint.top()), hint.max);
+            }
             widgets::text_in(
                 &painter,
-                area.shrink(PAD),
+                hint,
                 Align2::LEFT_CENTER,
                 "Select a sample or MIDI file to preview",
                 theme::ui_font(theme::TEXT_SMALL),

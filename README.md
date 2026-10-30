@@ -144,7 +144,11 @@ folders. Build into a folder without the label (Cargo's `build.target-dir` outsi
 
 ### ASIO on Windows
 
-A default Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
+Windows release, nightly and test packages include ASIO: in Settings › Audio, choose **ASIO**
+under **Driver**, then an installed driver under **Device**. WASAPI remains available.
+ASIO drivers are installed separately; the package does not install a driver.
+
+A default local Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
 Audio). ASIO, which talks to an audio interface's own driver, is a Cargo feature, because
 building it compiles the Steinberg ASIO SDK with the C++ compiler and generates its bindings with
 bindgen, which needs libclang:

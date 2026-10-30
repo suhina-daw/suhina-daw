@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "devices/*", "apps/*"]
+exclude = ["third_party/asio-sys", "third_party/cpal"]
+
+[patch.crates-io]
+cpal = { path = "third_party/cpal" }
+# Initialize the host fields passed to ASIOInit (third_party/asio-sys/VENDORED.md).
+asio-sys = { path = "third_party/asio-sys" }
 
 [workspace.package]
 version = "0.0.1"

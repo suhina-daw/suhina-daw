@@ -4,6 +4,15 @@
 use super::*;
 
 #[test]
+fn opening_settings_after_a_stream_keeps_all_cached_drivers_without_probing() {
+    let mut cached = None;
+    let before = cached_listing(&mut cached, || Ok(vec!["first", "selected", "last"])).unwrap();
+    let during = cached_listing(&mut cached, || panic!("must not load another driver during playback")).unwrap();
+    assert_eq!(before, during);
+    assert_eq!(during.iter().find(|name| **name == "selected"), Some(&"selected"));
+}
+
+#[test]
 fn buffers_are_the_drivers_powers_of_two_and_ends() {
     assert_eq!(allowed_buffers(None), BUFFER_SIZES.to_vec());
     assert_eq!(allowed_buffers(Some((32, 1024))), vec![64, 128, 256, 512, 1024]);

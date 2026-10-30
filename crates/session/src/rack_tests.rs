@@ -3,6 +3,20 @@
 
 use super::*;
 
+#[test]
+fn retiring_a_superseded_start_does_not_wait_for_its_unload() {
+    struct ReportDrop(std::sync::mpsc::Sender<std::thread::ThreadId>);
+    impl Drop for ReportDrop {
+        fn drop(&mut self) {
+            let _ = self.0.send(std::thread::current().id());
+        }
+    }
+    let (report, received) = std::sync::mpsc::channel();
+    let caller = std::thread::current().id();
+    retire_started(ReportDrop(report));
+    assert_ne!(received.recv().unwrap(), caller, "unloading belongs to the retirement thread");
+}
+
 /// A pending read whose instance was detached while the host held its control.
 fn detached_gather() -> Rack {
     Rack {

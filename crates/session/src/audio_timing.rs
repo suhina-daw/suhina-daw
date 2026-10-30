@@ -11,13 +11,18 @@ use suhina_model::{AudioRegion, Clip, ContentId, LaneData, LoopRange, Project};
 
 /// Shortest a clip is made by a remap, in beats.
 const SHORTEST: f64 = 1.0 / 64.0;
+/// Most warp markers read from one region, as the engine reads (`MAX_WARP_MARKERS` in
+/// `crates/engine/src/audio.rs`): a project with more cannot make an edit copy them all.
+const MAX_WARP_MARKERS: usize = 100_000;
 
 /// A content's mapping from beats to file seconds.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Mapping {
-    /// Unwarped (or warped without two usable markers): seconds per beat, at the project's
-    /// tempo and the repitch a transpose gives.
-    Linear(f64),
+    /// Unwarped (or warped without two usable markers): seconds per content beat at the
+    /// project's tempo, and the content beats a project beat plays (a transpose's repitch on an
+    /// unwarped clip). The engine plays content beat `offset + elapsed × rate`, so the rate
+    /// applies to the time played, never to where the clip starts in its file.
+    Linear { per_beat: f64, rate: f64 },
     /// Warp markers as (beat, seconds), sorted by beat, rising in both.
     Warp(Vec<(f64, f64)>),
 }
@@ -31,33 +36,45 @@ impl Mapping {
         let mut markers: Vec<(f64, f64)> = region
             .warp_markers
             .iter()
+            .take(MAX_WARP_MARKERS.saturating_mul(2))
             .filter(|m| m.time.is_finite() && m.audio_time.is_finite())
             .map(|m| (m.time, m.audio_time))
             .collect();
         markers.sort_by(|a, b| a.0.total_cmp(&b.0));
         markers.dedup_by(|a, b| a.0 == b.0);
-        // Only markers that rise in both can be read back from seconds.
-        let rising = markers.windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 > w[0].1);
-        if region.warped && markers.len() >= 2 && rising {
-            return Some(Self::Warp(markers));
+        markers.truncate(MAX_WARP_MARKERS);
+        let per_beat = 60.0 / tempo_bpm;
+        if region.warped && markers.len() >= 2 {
+            // The engine plays any two markers; only markers that rise in both can be read back
+            // from seconds, so a clip on markers that fall is left as it is (no mapping).
+            let rising = markers.windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 > w[0].1);
+            return rising.then_some(Self::Warp(markers));
         }
         let rate = if region.warped { 1.0 } else { 2f64.powf(region.transpose / 12.0) };
         let rate = if rate.is_finite() && rate > 0.0 { rate } else { 1.0 };
-        Some(Self::Linear(60.0 / tempo_bpm * rate))
+        Some(Self::Linear { per_beat, rate })
     }
 
     /// File seconds at content beat `beat`, the end segments extended.
     fn seconds(&self, beat: f64) -> f64 {
         match self {
-            Self::Linear(per_beat) => beat * per_beat,
+            Self::Linear { per_beat, .. } => beat * per_beat,
             Self::Warp(markers) => along(markers, beat, |m| m.0, |m| m.1),
+        }
+    }
+
+    /// Content beats one project beat plays.
+    fn rate(&self) -> f64 {
+        match self {
+            Self::Linear { rate, .. } => *rate,
+            Self::Warp(_) => 1.0,
         }
     }
 
     /// Content beat at file second `seconds`: the inverse of [`Mapping::seconds`].
     fn beat(&self, seconds: f64) -> f64 {
         match self {
-            Self::Linear(per_beat) => seconds / per_beat,
+            Self::Linear { per_beat, .. } => seconds / per_beat,
             Self::Warp(markers) => along(markers, seconds, |m| m.1, |m| m.0),
         }
     }
@@ -93,13 +110,14 @@ pub(crate) fn mappings(p: &Project) -> Vec<(ContentId, Mapping)> {
 /// its file; its start stays.
 fn remap(clip: &mut Clip, old: &Mapping, new: &Mapping) {
     let convert = |beat: f64| new.beat(old.seconds(beat));
-    let end = clip.offset + clip.length;
+    // The clip's length is in project beats; the content beats it plays are that times the rate.
+    let end = clip.offset + clip.length * old.rate();
     let (offset, end) = (convert(clip.offset), convert(end));
     if !(offset.is_finite() && end.is_finite()) {
         return;
     }
     clip.offset = offset.max(0.0);
-    clip.length = (end - clip.offset).max(SHORTEST);
+    clip.length = ((end - clip.offset) / new.rate()).max(SHORTEST);
     if let Some(range) = clip.loop_range {
         let (start, end) = (convert(range.start), convert(range.end));
         if start.is_finite() && end.is_finite() && end > start {
@@ -149,8 +167,10 @@ mod tests {
     fn a_four_beat_loop_at_124_bpm_spans_what_its_seconds_take_at_90_with_warp_off() {
         // 4 beats at 124 BPM: 1.935484 s.
         let seconds = 4.0 * 60.0 / 124.0;
-        let warped = Mapping::of(&region(true, &[(0.0, 0.0), (4.0, seconds)]), 90.0).unwrap_or(Mapping::Linear(0.0));
-        let unwarped = Mapping::of(&region(false, &[(0.0, 0.0), (4.0, seconds)]), 90.0).unwrap_or(Mapping::Linear(0.0));
+        let warped = Mapping::of(&region(true, &[(0.0, 0.0), (4.0, seconds)]), 90.0)
+            .unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
+        let unwarped = Mapping::of(&region(false, &[(0.0, 0.0), (4.0, seconds)]), 90.0)
+            .unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
         let mut clip = Clip::new(ContentId(1), 8.0, 4.0);
         remap(&mut clip, &warped, &unwarped);
         assert_eq!(clip.start, 8.0, "the start stays");
@@ -172,9 +192,22 @@ mod tests {
     }
 
     #[test]
-    fn markers_that_do_not_rise_play_linearly() {
+    fn markers_that_do_not_rise_have_no_mapping_to_remap_by() {
         let backwards = region(true, &[(0.0, 2.0), (4.0, 1.0)]);
-        assert_eq!(Mapping::of(&backwards, 120.0), Some(Mapping::Linear(0.5)));
+        assert_eq!(Mapping::of(&backwards, 120.0), None);
         assert_eq!(Mapping::of(&backwards, 0.0), None);
+    }
+
+    /// A transpose repitches the time played, not where the clip starts in its file: at 120 BPM
+    /// an offset of 2 is second 1 with or without +12, and the clip plays half as long (#916).
+    #[test]
+    fn a_transpose_keeps_the_start_and_halves_the_length() {
+        let plain = Mapping::of(&region(false, &[]), 120.0).unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
+        let octave = Mapping::of(&AudioRegion { transpose: 12.0, ..region(false, &[]) }, 120.0)
+            .unwrap_or(Mapping::Linear { per_beat: 0.0, rate: 1.0 });
+        let mut clip = Clip { offset: 2.0, ..Clip::new(ContentId(1), 0.0, 4.0) };
+        remap(&mut clip, &plain, &octave);
+        assert!((clip.offset - 2.0).abs() < 1e-9, "{}", clip.offset);
+        assert!((clip.length - 2.0).abs() < 1e-9, "{}", clip.length);
     }
 }

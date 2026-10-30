@@ -64,7 +64,12 @@ impl App {
                         result["cue_db"].as_f64().map_or_else(|| "silent".to_string(), |db| format!("{db:+.0} dB"));
                     self.status = Status::Done(format!("Cue volume: {db}"));
                 }
-                Err(e) => self.status = Status::Error(e.message().to_owned()),
+                Err(e) => {
+                    // A rejected command leaves the old choice; an open failure keeps the
+                    // requested choice for retry. Reflect whichever the session retained.
+                    self.settings.set_output_choice(self.projects.output_choice());
+                    self.status = Status::Error(e.message().to_owned());
+                }
             }
             return;
         }
@@ -80,10 +85,17 @@ impl App {
                         (None, None) => Status::Done("Cue: with the main output".to_string()),
                     };
                 }
-                Err(e) => self.status = Status::Error(e.message().to_owned()),
+                Err(e) => {
+                    // A rejected command leaves the old choice; an open failure keeps the
+                    // requested choice for retry. Reflect whichever the session retained.
+                    self.settings.set_output_choice(self.projects.output_choice());
+                    self.status = Status::Error(e.message().to_owned());
+                }
             }
             return;
         }
+        let previous_output_open =
+            self.session().and_then(Session::player).and_then(suhina_session::Player::output_info).is_some();
         let params = choice.to_json();
         let params = json!({
             "host": params["host"].as_str().unwrap_or(""),
@@ -95,6 +107,12 @@ impl App {
         });
         match self.projects.execute("audio.setOutput", &params) {
             Ok(result) => {
+                let default = self.about.audio_hosts.iter().find(|h| h.default).map(|h| h.name.as_str());
+                // A failed choice remains selected for retry, but is not a working device.
+                if previous_output_open {
+                    self.settings.remember_output(&current, default);
+                }
+                self.settings.remember_output(choice, default);
                 self.status = match result["notice"].as_str() {
                     Some(notice) => Status::Hint(notice.to_string()),
                     None => Status::Done(format!(
@@ -106,7 +124,12 @@ impl App {
                     )),
                 };
             }
-            Err(e) => self.status = Status::Error(e.message().to_owned()),
+            Err(e) => {
+                // A rejected command leaves the old choice; an open failure keeps the
+                // requested choice for retry. Reflect whichever the session retained.
+                self.settings.set_output_choice(self.projects.output_choice());
+                self.status = Status::Error(e.message().to_owned());
+            }
         }
     }
 
@@ -268,6 +291,11 @@ impl App {
         if outcome.audio_refresh {
             self.list_audio_devices();
         }
+        if outcome.audio_control_panel
+            && let Err(error) = self.projects.execute("audio.openControlPanel", &json!({}))
+        {
+            self.status = Status::Error(error.message().to_string());
+        }
         if let Some(field) = outcome.pick {
             self.ask_pick(field);
         }
@@ -314,3 +342,7 @@ impl App {
             })
     }
 }
+
+#[cfg(test)]
+#[path = "audio_settings_tests.rs"]
+mod tests;

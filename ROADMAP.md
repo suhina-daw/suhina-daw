@@ -143,6 +143,8 @@ refused or suspended, never by losing its edits.
 - Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
   editable automatic boundaries with persistent corrections, stereo waveform lanes,
   pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+- Audio settings can open the active ASIO driver's native control panel, and
+  show the engine block separately from the measured driver callback size.
 
 - Theme skins: editable SVG/PNG controls with colour/state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts and native element placement, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid toolbar/workspace panel layout and persistent anchors between controls. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
 - Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's colour as `--track-colour`, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
@@ -168,6 +170,11 @@ refused or suspended, never by losing its edits.
 
 - **Composable SDK sample source:** Rust-authored instrument graphs can bind PCM to
   independent polyphonic `sampler` nodes and process their audio with ordinary SDK nodes.
+- Windows release, nightly and test packages include ASIO support: choose ASIO in Settings ›
+  Audio › Driver, then an installed audio driver in Device. WASAPI remains available.
+
+- ASIO device choices remain available during playback. Late plug-in replies do not
+  mark a responsive host as hung, and obsolete starts unload away from the window.
 
 - **Device SDK authoring:** checked Rust graph handles, parameter-source helpers and standard
   panel-control constructors produce the same data-only `.sd` devices and use the existing runtime.

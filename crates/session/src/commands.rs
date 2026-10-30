@@ -32,7 +32,7 @@ mod range;
 mod registry;
 mod returns;
 mod scene;
-mod take;
+pub(crate) mod take;
 mod tempo;
 mod time_signature;
 mod track;

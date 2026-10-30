@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-10-29
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -32,6 +32,29 @@ start that preview; background and navigation drags must not toggle the dimmer.
 Text inputs and dropdowns use transparent fills and only a
 theme-coloured underline, stronger on hover and accented on focus. Navigation rows
 have no opaque background: only selected/hovered rows add a translucent tint.
+
+### Choosing an audio driver and device
+
+Each resolved host remembers its last applied device across application restarts,
+including an explicit Default selection. The system-default host and the same host
+chosen by name share this history. Choosing Driver restores an available remembered
+device and applies the pair together, without opening an intermediate default.
+For a new host or an unavailable remembered device, Driver only changes the devices
+shown in the form. Device then shows “Choose a device…”; selecting a named device or explicitly
+selecting Default applies the driver and device together with `audio.setOutput`.
+Until then Now continues to describe the output still playing. Closing Settings
+or selecting the active driver abandons the pending driver choice. Sample-rate
+and buffer edits made while a driver is pending belong to that pending choice.
+There are no preferred driver brands. A change that keeps the sample rate carries
+existing plug-ins over; a different rate reconfigures the retained instances while
+processing is stopped, without reloading their state or recreating their editors.
+
+The active ASIO device's **Device settings → Control panel…** button sits directly
+below Device, before Sample rate. It is absent for a pending selection or a device
+other than the one currently running; it always addresses the retained active
+ASIO instance. Exclusive mode is shown only for WASAPI. Audio status reports the
+engine block and measured driver callback separately from total output latency;
+internal driver buffers are configured through the native panel.
 
 ## Sources
 
@@ -106,6 +129,14 @@ system folder picker or removes its grant; the project-folder grant can also be 
 The settings persist across restarts. Missing folders grant no access, and each subsequent
 operation uses the current grants. File › Export still writes to the destination the person
 chooses. Agents cannot change these settings. Standalone MCP keeps its `--write-root` option.
+
+### Keeping playback through an output change
+
+Changing the output or engine block restores the current playhead and keeps the play start
+marker separate. If stretched audio is still being prepared on the new output, the pending
+start accepts the restored playhead and launched clips before playback begins. Cancelling
+that pending start clears the resume target; the next ordinary Play uses the marker.
+
 
 ## Theme gallery and colour editor
 

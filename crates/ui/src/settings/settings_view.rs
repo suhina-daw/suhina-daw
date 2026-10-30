@@ -304,7 +304,7 @@ impl Page {
 
 /// What the Settings page keeps between frames: the page shown, and the action whose keys are
 /// being set (the next key pressed becomes its key).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PageState {
     pub page: Page,
     /// Settings lives in a separate native viewport until Dock is chosen.
@@ -329,6 +329,8 @@ pub struct PageState {
     pub theme_colour_held: bool,
     /// The audio devices were listed since the Audio page was opened.
     pub audio_listed: Option<bool>,
+    /// A driver picked in the form, applied only once its device is chosen.
+    pub audio_pending: Option<suhina_session::OutputChoice>,
     /// What is typed in the search field: while it has text, the settings that match it are shown
     /// in place of a page.
     pub search: String,
@@ -379,6 +381,8 @@ pub struct Outcome {
     pub audio_output: Option<suhina_session::OutputChoice>,
     /// The audio devices should be listed again.
     pub audio_refresh: bool,
+    /// Ask the active output's owner to open its native ASIO panel.
+    pub audio_control_panel: bool,
     /// A MIDI input port was turned on or off: the app runs `midi.setInput`.
     pub midi_input: Option<(String, bool)>,
     /// A field's Browse… was clicked: the app shows the system's dialog for it.
@@ -899,6 +903,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         !escaped && state.capture.is_none() && !state.help_open && ui.input(|i| i.key_pressed(egui::Key::Escape));
     if response.clicked() || escape {
         outcome.close = true;
+        state.audio_pending = None;
     }
     if state.help_open {
         help_dialog(ui, settings, state, &mut outcome);
@@ -2124,7 +2129,10 @@ struct Chosen<'a> {
 }
 
 fn chosen<'a>(settings: &Settings, about: &'a About) -> Chosen<'a> {
-    let choice = settings.output_choice();
+    chosen_output(settings.output_choice(), about)
+}
+
+fn chosen_output(choice: suhina_session::OutputChoice, about: &About) -> Chosen<'_> {
     let default_host = about.audio_hosts.iter().find(|h| h.default).or(about.audio_hosts.first());
     let host = match &choice.host {
         Some(name) => about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)),
@@ -2153,8 +2161,18 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
         cx.outcome.audio_refresh = true;
         cx.state.audio_listed = Some(true);
     }
-    let picked = output_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
-    use_output(cx, picked);
+    let active = cx.settings.output_choice();
+    let shown = cx.state.audio_pending.as_ref().unwrap_or(&active);
+    let picked = output_rows(cx.ui, cx.painter, cx.page, y, shown, cx.about, cx.state.audio_pending.is_some());
+    if let Some(picked) = picked {
+        if matches!(picked, OutputPick::ControlPanel) {
+            cx.outcome.audio_control_panel = true;
+            return;
+        }
+        let picked = restore_driver(picked, cx.settings, cx.about);
+        let apply = select_output(&mut cx.state.audio_pending, &active, picked);
+        use_output(cx, apply);
+    }
 }
 
 /// Audio › Cue: the cue's output pair and volume.
@@ -2168,16 +2186,106 @@ pub(crate) fn audio_now(cx: &mut Cx<'_>, y: &mut f32) {
     cx.outcome.audio_refresh |= now_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
 }
 
+fn native_panel_visible(
+    pending: bool,
+    host: Option<&str>,
+    device: Option<&str>,
+    live: Option<&suhina_session::OutputInfo>,
+) -> bool {
+    !pending
+        && host == Some("ASIO")
+        && live.is_some_and(|live| live.host == "ASIO" && device == Some(live.device.as_str()))
+}
+
+/// The native panel belongs beside the device it configures.
+fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
+    label(painter, r, "Device settings", "Open the active driver's buffer and hardware settings");
+    let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
+    let response =
+        widgets::button_area(ui, rect, Id::new("asio-control-panel"), "Open the active ASIO driver's control panel");
+    let hover = widgets::hover(ui, &response);
+    painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    widgets::text_in(
+        painter,
+        rect,
+        Align2::CENTER_CENTER,
+        "Control panel…",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_primary(),
+    );
+    response.clicked()
+}
+
+/// Selecting a driver only changes the form. The device commits the pair through
+/// the same audio.setOutput command as every other output change.
+enum OutputPick {
+    ControlPanel,
+    Driver(suhina_session::OutputChoice),
+    Device(suhina_session::OutputChoice),
+    Setting(suhina_session::OutputChoice),
+}
+
+/// A remembered, available pair can be committed atomically; an unknown or missing
+/// device still requires an explicit choice, never an intermediate default open.
+fn restore_driver(picked: OutputPick, settings: &Settings, about: &About) -> OutputPick {
+    let OutputPick::Driver(mut choice) = picked else { return picked };
+    if choice.host == settings.output_choice().host {
+        return OutputPick::Driver(choice);
+    }
+    let default = about.audio_hosts.iter().find(|h| h.default);
+    let host = choice
+        .host
+        .as_ref()
+        .and_then(|name| about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)))
+        .or_else(|| choice.host.is_none().then_some(default).flatten());
+    let remembered = settings.remembered_device(choice.host.as_deref(), default.map(|h| h.name.as_str()));
+    if let (Some(host), Some(device)) = (host, remembered) {
+        let available = match &device {
+            Some(name) => host.devices.iter().any(|d| &d.name == name),
+            None => host.devices.iter().any(|d| d.default),
+        };
+        if available {
+            choice.device = device;
+            return OutputPick::Device(choice);
+        }
+    }
+    OutputPick::Driver(choice)
+}
+
+fn select_output(
+    pending: &mut Option<suhina_session::OutputChoice>,
+    active: &suhina_session::OutputChoice,
+    picked: OutputPick,
+) -> Option<suhina_session::OutputChoice> {
+    match picked {
+        OutputPick::ControlPanel => None,
+        OutputPick::Driver(choice) => {
+            *pending = (choice.host != active.host).then_some(choice);
+            None
+        }
+        OutputPick::Device(choice) => {
+            *pending = None;
+            Some(choice)
+        }
+        OutputPick::Setting(choice) if pending.is_some() => {
+            *pending = Some(choice);
+            None
+        }
+        OutputPick::Setting(choice) => Some(choice),
+    }
+}
+
 /// The rows of Audio › Output; returns a new choice.
 fn output_rows(
     ui: &Ui,
     painter: &egui::Painter,
     page: Rect,
     y: &mut f32,
-    settings: &Settings,
+    choice: &suhina_session::OutputChoice,
     about: &About,
-) -> Option<suhina_session::OutputChoice> {
-    let Chosen { choice, default_host, host, device } = chosen(settings, about);
+    pending: bool,
+) -> Option<OutputPick> {
+    let Chosen { choice, default_host, host, device } = chosen_output(choice.clone(), about);
     let row = |y: &mut f32| setting_row(page, y);
     let mut picked: Option<suhina_session::OutputChoice> = None;
     // Host.
@@ -2187,13 +2295,20 @@ fn output_rows(
         vec![(format!("Default ({})", default_host.map_or("none", |h| h.name.as_str())), None)];
     options.extend(about.audio_hosts.iter().map(|h| (h.name.clone(), Some(h.name.clone()))));
     if let Some(host) = choice_dropdown(ui, painter, r, "Driver", &options, &choice.host) {
-        picked = choice.with_params(&serde_json::json!({ "host": host.unwrap_or_default() })).ok();
+        return choice
+            .with_params(&serde_json::json!({ "host": host.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Driver);
     }
     // Device.
     let r = row(y);
-    let note = match (&choice.device, device) {
-        (Some(name), None) => format!("{name} is not there; the default output plays"),
-        _ => "The output device on that driver".to_string(),
+    let note = if pending {
+        "Choose a device to apply the driver change".to_string()
+    } else {
+        match (&choice.device, device) {
+            (Some(name), None) => format!("{name} is not there; the default output plays"),
+            _ => "The output device on that driver".to_string(),
+        }
     };
     label(painter, r, "Device", &note);
     let default_device = host.and_then(|h| h.devices.iter().find(|d| d.default)).map_or("none", |d| d.name.as_str());
@@ -2201,8 +2316,28 @@ fn output_rows(
     if let Some(host) = host {
         options.extend(host.devices.iter().map(|d| (d.name.clone(), Some(d.name.clone()))));
     }
-    if let Some(name) = choice_dropdown(ui, painter, r, "Device", &options, &choice.device) {
-        picked = choice.with_params(&serde_json::json!({ "device": name.unwrap_or_default() })).ok();
+    let mut device_options: Vec<_> = options.into_iter().map(|(label, value)| (label, Some(value))).collect();
+    let selected = if pending {
+        device_options.insert(0, ("Choose a device…".into(), None));
+        None
+    } else {
+        Some(choice.device.clone())
+    };
+    if let Some(Some(name)) = choice_dropdown(ui, painter, r, "Device", &device_options, &selected) {
+        return choice
+            .with_params(&serde_json::json!({ "device": name.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Device);
+    }
+    // Only expose the panel for the device actually running, never a pending choice.
+    if native_panel_visible(
+        pending,
+        host.map(|h| h.name.as_str()),
+        device.map(|d| d.name.as_str()),
+        about.audio_live.as_ref(),
+    ) && driver_panel_row(ui, painter, row(y))
+    {
+        return Some(OutputPick::ControlPanel);
     }
     // Sample rate.
     let r = row(y);
@@ -2241,9 +2376,9 @@ fn output_rows(
     } else if device_sets {
         let note = match declares {
             Some((min, max)) if min < max => {
-                format!("The device's own buffer, from its driver: {min} to {max} frames")
+                format!("Requested driver buffer: {min} to {max} frames")
             }
-            Some((min, _)) => format!("The device's own buffer; its driver allows {min} frames only"),
+            Some((min, _)) => format!("Requested driver buffer: {min} frames only"),
             None => "The device's own buffer; its driver sets the size".to_string(),
         };
         ("Buffer size", note)
@@ -2262,18 +2397,18 @@ fn output_rows(
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
         picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
     }
-    // Exclusive mode, WASAPI only.
-    let r = row(y);
-    let note = if !wasapi {
-        "WASAPI only; ASIO always has the device to itself"
-    } else if device.is_some_and(|d| !d.exclusive) {
-        "This device does not allow it; it plays shared"
-    } else {
-        "The device plays only Suhina, with less delay; other programs are not heard on it"
-    };
-    label(painter, r, "Exclusive mode", note);
-    if let Some(on) = switch(ui, painter, r, "Exclusive mode", choice.exclusive) {
-        picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+    // Exclusive mode belongs to WASAPI, not to the ASIO driver panel.
+    if wasapi {
+        let r = row(y);
+        let note = if device.is_some_and(|d| !d.exclusive) {
+            "This device does not allow it; it plays shared"
+        } else {
+            "The device plays only Suhina; other programs are not heard on it"
+        };
+        label(painter, r, "Exclusive mode", note);
+        if let Some(on) = switch(ui, painter, r, "Exclusive mode", choice.exclusive) {
+            picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+        }
     }
 
     // Input device (ADR 0017): off until chosen, so nothing opens a microphone unasked.
@@ -2301,7 +2436,7 @@ fn output_rows(
         picked = choice.with_params(&serde_json::json!({ "input": input.as_text() })).ok();
     }
 
-    picked
+    picked.map(OutputPick::Setting)
 }
 
 /// The rows of Audio › Cue; returns a new choice.
@@ -2386,6 +2521,12 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     );
     let r = row(y);
     label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
+    let r = row(y);
+    let buffers = about.audio_live.as_ref().map_or_else(
+        || "No active output".to_string(),
+        |info| format!("Engine: {} frames · Driver callback: {} frames", info.engine_block, info.buffer_frames),
+    );
+    label(painter, r, "Active buffers", &buffers);
     // A key on a MIDI controller (ADR 0017): the engine keeps less ahead while a track is armed.
     let r = row(y);
     let key = match &about.audio_live {
@@ -2710,55 +2851,5 @@ pub(super) fn edit_rgba(ui: &mut Ui, rgba: &mut [u8; 4], alpha: egui::color_pick
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_theme_search_matches_names_ids_and_variant_names() {
-        let variants = vec![("nord@frost".to_string(), "Frost".to_string())];
-        assert!(theme_matches("", "nord", "Nord", &variants));
-        assert!(theme_matches("nor", "nord", "Nord", &variants));
-        assert!(theme_matches("frost", "nord", "Nord", &variants));
-        assert!(!theme_matches("frost", "dracula", "Dracula", &variants));
-        assert!(theme_matches("test-new", "test-new-theme", "Kajo", &[]));
-    }
-
-    #[test]
-    fn settings_tree_does_not_cover_the_material_with_opaque_rows() {
-        let ctx = egui::Context::default();
-        motion::set_enabled(&ctx, false);
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            page_list(ui, ui.painter(), Rect::from_min_size(Pos2::ZERO, Vec2::new(140.0, 300.0)), Some(Page::Projects));
-        });
-        assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(shape) if shape.fill.is_opaque())));
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn form_fields_have_transparent_fills() {
-        let ctx = egui::Context::default();
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            input_style(ui);
-            assert_eq!(ui.visuals().text_edit_bg_color(), egui::Color32::TRANSPARENT);
-        });
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn the_output_now_says_which_chosen_device_it_waits_for() {
-        let info = suhina_session::OutputInfo {
-            host: "WASAPI".into(),
-            device: "Speakers".into(),
-            sample_rate: 48_000,
-            engine_block: 512,
-            ..Default::default()
-        };
-        let usb = suhina_session::OutputChoice { device: Some("USB Audio".into()), ..Default::default() };
-        assert_eq!(now_playing(&info, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames)");
-        let waiting = suhina_session::OutputInfo { fallback: true, ..info };
-        assert_eq!(now_playing(&waiting, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames), until USB Audio is back");
-        let asio = suhina_session::OutputChoice { host: Some("ASIO".into()), ..Default::default() };
-        assert!(now_playing(&waiting, &asio).ends_with("until ASIO is back"));
-    }
-}
+#[path = "settings_view_tests.rs"]
+mod tests;

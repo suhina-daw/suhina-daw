@@ -35,6 +35,7 @@ use crate::{CommandError, Player};
 mod catalog;
 mod hosted;
 mod offline;
+mod transport_gate;
 
 pub use self::catalog::*;
 pub use self::hosted::*;
@@ -203,6 +204,12 @@ struct Started {
     /// Its state read just after it started, for later reads to be compared with (a plug-in may
     /// report a state it was given in a form of its own); `None` when it did not answer.
     first_state: Option<SavedState>,
+}
+
+/// A superseded start can own a control connection whose destructor waits for an
+/// unload (or a sibling still loading). Never run that destructor on the UI thread.
+fn retire_started<T: Send + 'static>(started: T) {
+    let _detached = std::thread::Builder::new().name("suhina-plugin-retire".into()).spawn(move || drop(started));
 }
 
 /// What a plug-in's control half did on a thread of its own, coming back.
@@ -837,6 +844,18 @@ impl Rack {
         }
     }
 
+    /// The output has acknowledged reconfiguration of the retained audio processors.
+    /// Prevent the next sync from replacing their still-live control halves.
+    pub(crate) fn retain_at_rate(&mut self, sample_rate: u32) {
+        if self.sample_rate == sample_rate {
+            return;
+        }
+        self.sample_rate = sample_rate;
+        // A start still in flight has no processor in the returned renderer and therefore
+        // was not reconfigured. Retire its old-generation result and start it at the new rate.
+        self.instances.retain(|_, instance| !matches!(instance.status, PluginStatus::Loading));
+    }
+
     /// Reads `control`'s last state and lets it go, on a thread of its own; the state comes
     /// back to be kept for when the device's plug-in starts again.
     fn stop(&self, key: u64, mut control: Plugin) {
@@ -1382,8 +1401,12 @@ impl Rack {
         let mut changed = false;
         let mut reopen = Vec::new();
         while let Ok(started) = self.receiver.try_recv() {
-            let Some(instance) = self.instances.get_mut(&started.key) else { continue };
+            let Some(instance) = self.instances.get_mut(&started.key) else {
+                retire_started(started);
+                continue;
+            };
             if instance.generation != started.generation {
+                retire_started(started);
                 continue;
             }
             if let Some(state) = started.first_state {
@@ -1403,7 +1426,8 @@ impl Rack {
                     }
                     instance.state_refused = refused;
                     // A plug-in with an ARA document plays its regions at the song's position.
-                    let hosted = Hosted::new(audio);
+                    let hosted =
+                        Hosted::new(audio).with_instrument_transport(instance.info.instrument, self.sample_rate);
                     instance.counts = Some(hosted.counts());
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,

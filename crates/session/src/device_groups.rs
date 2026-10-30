@@ -453,13 +453,7 @@ pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, 
     let track = track_or_main_id(&session.project, params)?;
     // A running plug-in's state as it is now, as device.copy takes it.
     let (heard, _) = session.heard();
-    let heard_devices = heard
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .and_then(|c| heard.channel(c))
-        .map(|c| c.devices.clone());
+    let heard_devices = heard.channel_of_track(track).map(|c| c.devices.clone());
     edit_chain(session, params, |devices| {
         let path = device_path(devices, params, "device")?;
         let copy = heard_devices

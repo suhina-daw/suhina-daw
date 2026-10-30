@@ -379,6 +379,8 @@ pub struct Settings {
     /// for the default; sample rate and buffer size, 0 for the device's own.
     pub audio_host: String,
     pub audio_device: String,
+    /// Last explicitly applied device per resolved audio host; None means its default.
+    pub audio_devices: std::collections::BTreeMap<String, Option<String>>,
     pub audio_sample_rate: u32,
     pub audio_buffer: u32,
     /// WASAPI exclusive mode; off, so other programs stay heard.
@@ -461,6 +463,7 @@ impl Default for Settings {
             waveform_db: false,
             audio_host: String::new(),
             audio_device: String::new(),
+            audio_devices: Default::default(),
             audio_sample_rate: 0,
             audio_buffer: 0,
             audio_exclusive: false,
@@ -480,6 +483,23 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub(crate) fn remember_output(&mut self, choice: &suhina_session::OutputChoice, default_host: Option<&str>) {
+        let Some(host) = choice.host.as_deref().or(default_host) else { return };
+        let key = host.trim().to_lowercase();
+        if self.audio_devices.len() < 64 || self.audio_devices.contains_key(&key) {
+            self.audio_devices.insert(key, choice.device.clone());
+        }
+    }
+
+    pub(crate) fn remembered_device(&self, host: Option<&str>, default_host: Option<&str>) -> Option<Option<String>> {
+        let key = host.or(default_host)?.trim().to_lowercase();
+        let active = self.output_choice();
+        if active.host.as_deref().or(default_host).is_some_and(|h| h.eq_ignore_ascii_case(&key)) {
+            return Some(active.device);
+        }
+        self.audio_devices.get(&key).cloned()
+    }
+
     /// The audio output these settings choose.
     pub fn output_choice(&self) -> suhina_session::OutputChoice {
         let text = |s: &str| (!s.trim().is_empty()).then(|| s.trim().to_string());
@@ -631,6 +651,7 @@ impl Settings {
             + &format!("auto_arm = {}\n", if self.auto_arm { "on" } else { "off" })
             + &format!("setting_descriptions = {}\n", self.setting_descriptions.param())
             + &self.updates.to_text()
+            + &format!("audio_devices = {}\n", serde_json::json!(self.audio_devices))
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
     }
 
@@ -743,6 +764,22 @@ impl Settings {
                 }
                 ("audio_host", host) => settings.audio_host = host.to_string(),
                 ("audio_device", device) => settings.audio_device = device.to_string(),
+                ("audio_devices", value) if value.len() <= 32_768 => {
+                    if let Ok(devices) =
+                        serde_json::from_str::<std::collections::BTreeMap<String, Option<String>>>(value)
+                    {
+                        settings.audio_devices = devices
+                            .into_iter()
+                            .filter(|(host, device)| {
+                                host.len() <= 256 && device.as_ref().is_none_or(|d| d.len() <= 1024)
+                            })
+                            .take(64)
+                            .map(|(host, device)| (host.to_lowercase(), device))
+                            .collect();
+                    } else {
+                        warnings.push(format!("settings line {}: invalid audio device history", number + 1));
+                    }
+                }
                 ("audio_sample_rate", rate) if rate.parse::<u32>().is_ok_and(|r| r <= MAX_SAMPLE_RATE) => {
                     settings.audio_sample_rate = rate.parse().unwrap_or(0);
                 }

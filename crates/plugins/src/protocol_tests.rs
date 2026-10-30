@@ -81,6 +81,8 @@ fn every_message_round_trips() {
     assert_eq!(VERSION, 14);
     let messages = [
         Message::Hello { version: VERSION },
+        Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },
+        Message::Reconfigured { instance: 7, latency: 512 },
         Message::TransportKey,
         Message::TypedKey { key: b'A', pressed: true },
         Message::AraPlayback(AraPlayback::Start),
@@ -168,6 +170,20 @@ fn every_message_round_trips() {
         let line = message.encode();
         assert!(!line.contains('\n'), "{line}");
         assert_eq!(Message::decode(&line), Some(message), "{line}");
+    }
+}
+
+#[test]
+fn reconfiguration_rejects_invalid_rates_and_identifiers() {
+    for line in [
+        r#"{"op":"reconfigure","instance":1,"sample_rate":0}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":-1}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":1e100}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":"48000"}"#,
+        r#"{"op":"reconfigure","sample_rate":48000}"#,
+        r#"{"op":"reconfigured","instance":1,"latency":-1}"#,
+    ] {
+        assert_eq!(Message::decode(line), None, "{line}");
     }
 }
 

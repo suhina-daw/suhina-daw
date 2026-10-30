@@ -807,13 +807,8 @@ pub(crate) fn remove_many(session: &mut Session, params: &Value) -> Result<Value
 pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_or_main_id(&session.project, params)?;
     let (heard, _) = session.heard();
-    let channel = heard
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .and_then(|c| heard.channel(c))
-        .ok_or("the track has no mixer channel")?;
+    // Main has no track: its channel is found through `channel_of_track` as a track's is.
+    let channel = heard.channel_of_track(track).ok_or("the track has no mixer channel")?;
     let mut paths = device_list(&channel.devices, params)?;
     paths.reverse();
     let copied: Vec<Device> = paths.iter().filter_map(|p| device_at(&channel.devices, p).cloned()).collect();
@@ -830,13 +825,7 @@ pub(crate) fn copy(session: &mut Session, params: &Value) -> Result<Value, Comma
 pub(crate) fn duplicate_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_or_main_id(&session.project, params)?;
     let (heard, _) = session.heard();
-    let heard_devices = heard
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .and_then(|c| heard.channel(c))
-        .map(|c| c.devices.clone());
+    let heard_devices = heard.channel_of_track(track).map(|c| c.devices.clone());
     let own = device_channel_read(session, params)?.devices.clone();
     let mut paths = device_list(&own, params)?;
     paths.reverse();
@@ -1018,14 +1007,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
     // The device's kind first, from a read; no mutation until the file has loaded.
     let kind = {
         let track = track_or_main_id(&session.project, params)?;
-        let channel = session
-            .project
-            .tracks
-            .iter()
-            .find(|t| t.id == track)
-            .and_then(|t| t.channel)
-            .ok_or("the track has no mixer channel")?;
-        let channel = session.project.channel(channel).ok_or("the track's channel is missing")?;
+        let channel = session.project.channel_of_track(track).ok_or("the track has no mixer channel")?;
         let path = device_path(&channel.devices, params, "device")?;
         match device_at(&channel.devices, &path) {
             Some(device) => match &device.kind {

@@ -111,7 +111,9 @@ or, for audio, its waveform drawn as they come in. After a jump it starts again 
 
 A track that recorded into the arrangement has its passes as **take lanes** under it, oldest
 first, shown with the track's name: **Drums Take 1**, **Drums Take 2** and so on (the project keeps
-"Take 1", so the names follow a renamed track). Take lanes do not play: their clips are drawn
+"Take 1", so the names follow a renamed track). A take keeps its number when another is deleted, and
+a new pass takes the next number after the highest one the track's takes show, so no two have one
+name; the take commands' `take` is that number. Take lanes do not play: their clips are drawn
 greyed. They are where the best parts of each pass are picked and put together on the track
 (comping):
 

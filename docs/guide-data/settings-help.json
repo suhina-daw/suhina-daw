@@ -182,50 +182,9 @@
   "Audio/Status/Audio status": {
     "sourceFingerprint": "eb0a60ba1e649ad33f5e2e0229c3ca47bdb5303128d92eac8de6603b6a1659c0",
     "summary": "Inspect the audio device actually running and its timing reports.",
-    "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Latency reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Key to sound estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Input now reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty.",
+    "description": "This panel reports live audio rather than saving a preference. Output identifies the device currently playing, including fallback to another output. Delay to the speakers reports the engine-to-speaker delay and underruns: occasions when audio was not supplied in time. Delay when you play a key estimates the current delay for live notes; arming a track makes the engine keep less audio queued ahead. Recording input reports the open input, its channel count and input underruns, or says none is open. List devices again refreshes the available hardware list; it does not itself choose another device. With no playing project, live reports may be empty. Active buffers reports the engine render block and measured driver callback separately. Internal driver buffers can differ, and these frame counts are not the total measured latency. The native driver panel is under Output, beside Device settings.",
     "options": [],
     "whenToChange": "Check this when the selected interface is unplugged, live notes feel late, or playback breaks up. Compare the reports after changing Output settings.",
-    "references": [
-      "crates/ui/src/settings/settings_rows.rs",
-      "crates/ui/src/settings.rs",
-      "crates/ui/src/settings/settings_view.rs",
-      "crates/session/src/audio.rs",
-      "crates/output/src/lib.rs",
-      "docs/decisions/0020-latency-and-its-readout.md",
-      "docs/spec/cue-output.md"
-    ]
-  },
-  "Audio/Output/audio_host,audio_device,audio_sample_rate,audio_buffer,audio_exclusive,audio_input": {
-    "sourceFingerprint": "8dd26e41c1ca957fd8b007b176696f28788338229a3a93e1208e884e288e3308",
-    "summary": "Choose audio hardware, its driver, timing settings and recording input.",
-    "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Device selects an output on that driver. Default follows the system choice; a missing chosen output can fall back to the default. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track.",
-    "options": [
-      {
-        "name": "Driver: Default / listed driver",
-        "description": "Use the default audio system or explicitly select one. WASAPI is Windows’ audio system; ASIO uses an interface’s ASIO driver when available."
-      },
-      {
-        "name": "Device: Default / listed output",
-        "description": "Use the driver’s default output or a named output device. The list follows Driver."
-      },
-      {
-        "name": "Sample rate: Device’s own / listed Hz value",
-        "description": "Keep the device’s preferred rate or request one of its advertised rates. Hz means frames per second."
-      },
-      {
-        "name": "Buffer size / Engine block: Default / listed frames",
-        "description": "Use the default render block or a listed frame count. Read the row’s label and note to see whether this also sets the device buffer."
-      },
-      {
-        "name": "Exclusive mode: On / Off",
-        "description": "On requests WASAPI exclusive access where supported. Off uses shared access. It does not switch ASIO between shared and exclusive operation."
-      },
-      {
-        "name": "Input: Off / Default / listed input",
-        "description": "Off opens no audio input. Default follows the driver’s default input; a named choice uses that input device."
-      }
-    ],
-    "whenToChange": "Select your audio interface and input before recording. If key-to-sound delay is distracting, inspect Now and try a supported smaller buffer; if underruns increase, try a larger one.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings.rs",
@@ -2298,6 +2257,47 @@
       "crates/ui/src/settings/update_settings.rs",
       "crates/ui/src/app/updates.rs",
       "docs/spec/updates.md"
+    ]
+  },
+  "Audio/Output/audio_host,audio_device,audio_devices,audio_sample_rate,audio_buffer,audio_exclusive,audio_input": {
+    "sourceFingerprint": "3faf6e1ef9f62aae5381067a023101e0cedd4bb20fb910c598313a7ae04ee4bb",
+    "summary": "Choose audio hardware, its driver, timing settings and recording input.",
+    "description": "Driver selects the audio system used to reach your hardware; the listed drivers depend on the platform and build. Each driver remembers its last applied device across restarts, including an explicit Default selection. Choosing Driver restores that device and applies the pair together when it is available. Default and the same host selected by name share this memory. For a new driver or an unavailable remembered device, choose Device, including Default if wanted, before the new driver opens. Until then the current output keeps playing; closing Settings cancels the pending driver choice. Installed ASIO devices stay listed while ASIO plays; restart Suhina after installing a new ASIO driver. Default follows the system choice; a missing chosen output can fall back to the default. Sample rate is the number of audio frames per second; choose a listed rate or Device’s own. Buffer size controls the device buffer where supported, including WASAPI exclusive mode; when labelled Engine block it controls Suhina’s rendering chunks, while the operating system or driver keeps its own device buffer. Smaller chunks alone do not guarantee the same reduction in the latency shown under Now. Exclusive mode applies to supported WASAPI devices and reserves the device for Suhina; other applications are then not heard on it. Input independently selects Off, the default input or a named microphone/interface input on the chosen driver. Input is Off initially. Choosing an input supplies audio to tracks configured to use it; it does not itself arm or record a track. Device changes retain running plug-in instances. If the effective sample rate changes, Suhina stops processing while it reconfigures those instances and updates their latency; it does not reload their presets or editors. A plug-in that refuses reconfiguration prevents the new output from starting and reports an error. A plug-in still loading when the rate changes starts again at the new rate. When changing outputs, Suhina fades the old device to silence before closing it and fades in the first audio on the new device. The shutdown drain is limited to 500 ms if a device stops responding; the change still interrupts audio and cannot prevent a pop generated inside the hardware. Device settings, immediately below Device, opens Control panel… for the matching active ASIO driver. The button is hidden while a driver choice is pending, when another device is running, or with a non-ASIO host. The native panel configures the running instance, not an external defaults editor; opening it does not reload plug-ins. While the native panel is open, output changes and project closing are rejected until it is closed. A rejected output choice restores the displayed selection and does not replace the driver’s remembered device. If the device itself fails to open, the requested choice stays selected for retry; device history is updated only after a successful selection. Switching to another driver after a failed opening preserves the previous driver’s last working device. Buffer size requests a supported processing buffer; it does not describe every internal driver or hardware buffer. Exclusive mode is shown only for WASAPI. If opening a device fails, selecting an available device opens a new stopped audio engine; restarting the application is not required to retry.",
+    "options": [
+      {
+        "name": "Driver: Default / listed driver",
+        "description": "Use the default audio system or explicitly select one. WASAPI is Windows’ audio system; ASIO uses an interface’s ASIO driver when available. Returning to a driver restores its available remembered device in the same operation."
+      },
+      {
+        "name": "Device: Default / listed output",
+        "description": "Use the driver’s default output or a named output device. The list follows Driver. The applied selection is saved separately for each driver."
+      },
+      {
+        "name": "Sample rate: Device’s own / listed Hz value",
+        "description": "Keep the device’s preferred rate or request one of its advertised rates. Hz means frames per second."
+      },
+      {
+        "name": "Buffer size / Engine block: Default / listed frames",
+        "description": "Use the default render block or a listed frame count. Read the row’s label and note to see whether this also sets the device buffer."
+      },
+      {
+        "name": "Exclusive mode: On / Off",
+        "description": "On requests WASAPI exclusive access where supported. Off uses shared access. It does not switch ASIO between shared and exclusive operation."
+      },
+      {
+        "name": "Input: Off / Default / listed input",
+        "description": "Off opens no audio input. Default follows the driver’s default input; a named choice uses that input device."
+      }
+    ],
+    "whenToChange": "Select your audio interface and input before recording. If key-to-sound delay is distracting, inspect Now and try a supported smaller buffer; if underruns increase, try a larger one. Use Control panel… for driver-specific buffer and hardware settings.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/session/src/audio.rs",
+      "crates/output/src/lib.rs",
+      "docs/decisions/0020-latency-and-its-readout.md",
+      "docs/spec/cue-output.md"
     ]
   }
 }

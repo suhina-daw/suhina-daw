@@ -467,6 +467,7 @@ impl Session {
     /// go to it from now on. Replaces (and so closes) any previous player. It should have been
     /// started with [`Session::audio`]; audio added later reaches it with the next edit.
     pub fn attach_player(&mut self, mut player: Player) {
+        self.sync.output_open_failed = false;
         // A new engine starts on its own default grid; it takes this session's instead. Its
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
@@ -591,6 +592,7 @@ impl Session {
                 Ok(())
             }
             Err(e) => {
+                self.sync.output_open_failed = true;
                 self.plugins.stop_all();
                 Err(e)
             }
@@ -603,9 +605,16 @@ impl Session {
         self.plugins.stop_all();
     }
 
+    pub(crate) fn retain_plugins_at_player_rate(&mut self) {
+        if let Some(player) = &self.sync.player {
+            self.plugins.retain_at_rate(player.sample_rate());
+        }
+    }
+
     /// Disconnects the audio engine; the project's plug-ins stop (each keeps its last state for
     /// when the project plays again).
     pub fn detach_player(&mut self) -> Option<Player> {
+        self.sync.output_open_failed = false;
         self.plugins.stop_all();
         self.end_takes_now();
         self.sync.player.take()
@@ -798,7 +807,7 @@ impl Session {
     pub(crate) fn player_mut(&mut self) -> Result<&mut Player, CommandError> {
         self.sync.player.as_mut().ok_or_else(|| {
             CommandError(
-                "no audio engine is playing this project: start one with `suhina-cli play --launcher`, or the MCP                  server with --audio"
+                "no audio engine is playing this project: choose an available device in Audio settings; headless sessions need audio enabled"
                     .into(),
             )
         })
@@ -1121,10 +1130,14 @@ impl Session {
     pub fn sync_device_files(&mut self) {
         // Paths still attached to devices, by kind.
         let mut need: HashMap<String, String> = HashMap::new();
-        for track in &self.project.tracks {
-            let Some(channel) = track.channel.and_then(|ch| self.project.channel(ch)) else {
-                continue;
-            };
+        // Every track's channel and Main's: a file-backed device on Main loads as one on a track.
+        let channels = self
+            .project
+            .tracks
+            .iter()
+            .filter_map(|track| track.channel.and_then(|ch| self.project.channel(ch)))
+            .chain(self.project.main_channel());
+        for channel in channels {
             for device in &channel.devices {
                 let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
                 if !suhina_device_registry::is_file_device(id) {

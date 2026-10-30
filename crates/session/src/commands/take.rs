@@ -111,17 +111,22 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
 ];
 
+/// The number in a take lane's name, "Take 3" giving 3.
+pub(crate) fn take_number(name: &str) -> Option<usize> {
+    name.strip_prefix("Take ")?.trim().parse().ok().filter(|n| *n >= 1)
+}
+
 /// The index in `project.arrangement.takes` of take number `take` (from 1) of `track`.
 fn take_index(p: &Project, track: TrackId, params: &Value) -> Result<usize, CommandError> {
     let number =
         params.get("take").and_then(Value::as_u64).filter(|n| *n >= 1).ok_or("take must be a number from 1")?;
     let number = usize::try_from(number).map_err(|_| "take is out of range")?;
-    p.arrangement
-        .takes
-        .iter()
-        .enumerate()
-        .filter(|(_, t)| t.track == track)
-        .nth(number - 1)
+    // The number the lane shows ("Take 3" is 3), which stays the take's after others are
+    // deleted; a take named otherwise is found by its place among the track's takes.
+    let mine = || p.arrangement.takes.iter().enumerate().filter(|(_, t)| t.track == track);
+    mine()
+        .find(|(_, t)| take_number(&t.name) == Some(number))
+        .or_else(|| mine().filter(|(_, t)| take_number(&t.name).is_none()).nth(number - 1))
         .map(|(i, _)| i)
         .ok_or_else(|| format!("the track has no take {number}").into())
 }

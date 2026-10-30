@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-10-29
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -111,6 +111,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   at, ADR 0017), `underruns`, `failed` and `fallback` (it plays in
   place of a chosen host or device that is not there), `channels` (opened) and `cue_pair`.
   Without `--audio`, `audio.devices` returns an error.
+  `audio.openControlPanel {}` requests the active ASIO stream's own native panel
+  on its owner thread and returns `requested: true`. It does not reopen the output
+  or load plugins. Other hosts or a missing output return an error; close a modal
+  driver panel before changing output or closing the project.
 
 - **The cue (headphones).** `output.setCuePair {pair}` plays previews and the tracks whose cue
   is on (`track.setCue {track, cue}`, an edit) on another pair of the same device's outputs
@@ -563,6 +567,6 @@ does with it: reads a file, files or a folder, writes one, a library item or pla
 `confine()` checks every one by that type; the files commands write have each their own rule. A
 test gives every `Path` parameter a path outside the roots and fails when `confine()` lets it
 through, and fails for a text parameter named like a file or a folder (`path`, `paths`, `folder`,
-`file`, `to`, `item`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
+`file`, `to`, `item`, `items`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
 cannot take a path unchecked. Which commands an agent may not run is on each command's spec
 (`Policy::agents`: denied, or not to an agent attached to the app). `library.copyTo` reads every file of its `items` below the read root and copies them only into a `folder` below the write root (#865); `library.moveTo` is checked the same way and is not open to an agent attached to the app, since a moved file is gone from where it was (#943).

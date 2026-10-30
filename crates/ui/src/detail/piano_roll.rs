@@ -190,6 +190,8 @@ pub fn show(
         state.selected.clear();
         state.gesture = None;
         state.playing_key = None;
+        // The scroll reach a zoom gave the last clip is not this one's.
+        state.zoom_reach = 0.0;
     }
     // Keys run before the piano roll is drawn, and their commands after it: notes a paste or a
     // duplicate selected this frame exist from the next frame on.

@@ -65,8 +65,9 @@ Its key ideas:
    - **clips** that place a content from the pool on the arrangement or in a launcher slot, with
      their own start, length, offset and loop range, and (audio on the arrangement) a fade-in and
      a fade-out in beats ([arrangement editing](../spec/arrangement-editing.md) › Fades)
-   - an **arrangement** of lanes, each optionally bound to a track, and its **markers** (named
-     beats on the timeline, kept in beat order)
+   - an **arrangement** of lanes, each optionally bound to a track, its **markers** (named
+     beats on the timeline, kept in beat order) and its **take lanes** (recorded passes kept
+     under their tracks). *Amended 2026-10-24, see Amendment: take lanes.*
    - a **launcher**: scenes and per-track slot columns
 2. **Per-format extensions.** Every object carries an `Extensions` list where an importer keeps
    data the core does not model, keyed by format, verbatim, so that a future exporter for the

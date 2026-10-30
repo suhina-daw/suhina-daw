@@ -160,3 +160,15 @@ fn clips_do_not_stack_where_the_track_has_takes() {
     let after: Vec<(f64, f64)> = lane(&s).iter().filter(|c| c.start >= 20.0).map(|c| (c.start, c.length)).collect();
     assert!(after.contains(&(20.0, 4.0)) && after.contains(&(21.0, 2.0)), "{after:?}");
 }
+
+/// A take keeps the number its lane shows after another is deleted: with Take 1 gone, `take: 3`
+/// is still the lane named "Take 3" (#916).
+#[test]
+fn a_take_is_named_by_the_number_its_lane_shows() {
+    let mut s = session();
+    run(&mut s, "take.delete", json!({ "track": 1, "take": 1 })).unwrap();
+    let done = run(&mut s, "take.delete", json!({ "track": 1, "take": 3 })).unwrap();
+    assert_eq!(done["deleted"], json!("Take 3"));
+    let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["Take 2"]);
+}

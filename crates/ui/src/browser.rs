@@ -291,6 +291,8 @@ pub struct BrowserState {
     /// The preview voice has been seen playing since `previewing` was set: until then a voice
     /// that is not playing yet has not started, not ended (#836).
     preview_heard: bool,
+    /// How many previews the voice had started at the last look.
+    preview_seen: u64,
     /// The row a button press selected, so its release does not select it again.
     pub(crate) handled_press: Option<String>,
     /// Why the sample waiting to preview could not be read, to show once.
@@ -335,6 +337,7 @@ impl Default for BrowserState {
             previewing: None,
             pending_preview: None,
             preview_heard: false,
+            preview_seen: 0,
             preview_error: None,
             handled_press: None,
             scroll: 0.0,
@@ -869,10 +872,15 @@ impl BrowserState {
     /// What the preview voice says this frame: once it has been heard playing, a voice that is
     /// no longer playing has ended, and nothing previews. A voice not heard yet may still be
     /// about to start, so the control keeps showing Stop for it.
-    pub fn observe_preview(&mut self, playing: bool) {
-        if playing {
+    /// `started` counts the previews the voice has begun: a new one since the last look means
+    /// it played, even when it started and ended between two looks.
+    pub fn observe_preview(&mut self, playing: bool, started: u64) {
+        let begun = started > self.preview_seen;
+        self.preview_seen = started;
+        if playing || begun {
             self.preview_heard = self.previewing.is_some();
-        } else if self.preview_heard && !self.preview_pending() {
+        }
+        if !playing && self.preview_heard && !self.preview_pending() {
             self.previewing = None;
             self.preview_heard = false;
         }
@@ -914,13 +922,17 @@ mod tests {
         state.pending_preview = None;
         state.preview_started("kick.wav".into());
         // The audio thread has not started it in the first frames: it has not ended.
-        state.observe_preview(false);
+        state.observe_preview(false, 0);
         assert!(state.preview_active_for("kick.wav"), "not dropped before the voice starts");
-        state.observe_preview(true);
+        state.observe_preview(true, 1);
         assert!(state.preview_active_for("kick.wav"));
-        state.observe_preview(false);
+        state.observe_preview(false, 1);
         assert!(!state.preview_active_for("kick.wav"), "ended at the sample's end");
         assert_eq!(state.previewing, None);
+        // A short one that starts and ends between two looks: the count shows it played.
+        state.preview_started("hat.wav".into());
+        state.observe_preview(false, 2);
+        assert!(!state.preview_active_for("hat.wav"), "a preview over before it was seen playing");
         // Stopping forgets it at once.
         state.preview_started("snare.wav".into());
         state.cancel_preview();

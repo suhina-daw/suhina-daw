@@ -1055,3 +1055,43 @@ fn a_jump_on_the_grid_waits_for_the_next_bar() {
     renderer.process(&mut block);
     assert!((8.0..8.1).contains(&renderer.monitor().beat()), "{}", renderer.monitor().beat());
 }
+
+#[test]
+fn reopening_during_stretch_preparation_resumes_at_the_playhead() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    // Hold the real read-ahead worker so Play must wait, as on a reopened device.
+    let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
+    renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+    renderer.handle(LaunchCommand::Play);
+    assert!(renderer.start_waiting.is_some());
+    renderer.handle(LaunchCommand::Locate { beat: 8.0 });
+    renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
+    renderer.handle(LaunchCommand::SetLaunchTempo { bpm: 135.0 });
+    // Exhaust the bounded preparation wait without relying on thread scheduling.
+    renderer.wait_to_start(SR as u64);
+    renderer.wait_to_start(0);
+    assert!(renderer.running);
+    assert_eq!(renderer.graph.launcher.beat, 8.0, "resume must not go back to the marker");
+    assert_eq!(renderer.start_beat, 1.0, "the play start marker stays");
+    assert_eq!(renderer.graph.launcher.tempo_bpm, 135.0, "a restored scene tempo stays");
+    assert_eq!(renderer.graph.launcher.columns[0].playing.as_ref().map(|p| p.slot), Some(0));
+}
+
+#[test]
+fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
+    renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+    renderer.handle(LaunchCommand::Play);
+    renderer.handle(LaunchCommand::Locate { beat: 8.0 });
+    renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
+    renderer.handle(LaunchCommand::Stop);
+    assert!(!renderer.running);
+    assert!(renderer.start_waiting.is_none());
+    assert_eq!(renderer.start_beat, 1.0);
+    renderer.handle(LaunchCommand::Play);
+    renderer.wait_to_start(SR as u64);
+    renderer.wait_to_start(0);
+    assert_eq!(renderer.graph.launcher.beat, 1.0);
+    assert!(renderer.graph.launcher.columns[0].playing.is_none());
+}

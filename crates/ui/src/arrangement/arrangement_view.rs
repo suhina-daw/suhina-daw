@@ -1465,6 +1465,8 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
             state.selected_tracks = vec![TrackId::MAIN];
             state.focus = None;
             state.track_focus = false;
+            // A selected clip would keep its track's devices in the detail area.
+            state.clear_selected_clip();
         }
         let fill = if selected { theme::control_active() } else { theme::panel_background() };
         fixed_painter.fill_background(header, 0.0, fill);

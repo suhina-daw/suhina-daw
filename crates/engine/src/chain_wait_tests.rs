@@ -153,6 +153,26 @@ fn find(log: &[Hand], name: &str) -> Hand {
     *log.iter().find(|hand| hand.name == name).unwrap()
 }
 
+#[test]
+fn a_large_device_period_does_not_cut_plugin_time_to_a_quarter_block() {
+    let p = tracks(vec![vec![plug()]]);
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    renderer.set_render_lead(FRAMES, FRAMES * 2);
+    let now = Instant::now();
+    assert_eq!(renderer.deadline_at(FRAMES, now), Some(now + Duration::from_millis(64)));
+}
+
+#[test]
+fn a_queued_device_period_leaves_time_for_the_next_plugin_block() {
+    let p = tracks(vec![vec![plug()]]);
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    renderer.set_render_lead(FRAMES * 2, FRAMES * 2);
+    let now = Instant::now();
+    assert_eq!(renderer.deadline_at(FRAMES, now), Some(now + Duration::from_millis(253)));
+}
+
 /// Two chains of three plug-ins whose slow plug-ins are at different places: one chain's first,
 /// the other's last. In stages the block would take both slow plug-ins one after another (the
 /// second stage of every chain waiting for the first chain's slow one); a chain that goes on
@@ -302,4 +322,53 @@ fn offline_the_order_plug_ins_answer_in_changes_nothing() {
     // And it is the plug-ins' sound: not the dry track.
     let dry = crate::render_offline(&tracks(vec![vec![], vec![]]), SR, 512).unwrap();
     assert!(max_diff(&at_once[..dry.len().min(at_once.len())], &dry) > 1e-3);
+}
+
+#[test]
+fn late_plugin_diagnostics_capture_render_time_and_queue_lead() {
+    let p = tracks(vec![vec![plug()]]);
+    let log = Arc::default();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![Timed::new("hung", 0.5, HUNG, &log)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_render_lead(FRAMES * 2, FRAMES * 2);
+    play(&mut renderer, 1);
+    assert!(renderer.plugin_misses() > 0);
+    let (elapsed, queued, period, frames) = renderer.cpu.monitor.late_render();
+    assert!(elapsed > 0);
+    assert_eq!((queued, period, frames), ((FRAMES * 2) as u64, (FRAMES * 2) as u64, FRAMES as u64));
+}
+
+#[test]
+fn queued_audio_covers_a_start_burst_longer_than_an_internal_chunk() {
+    let p = tracks(vec![vec![plug()]]);
+    let mut renderer =
+        Renderer::build(&p, RenderInputs::from_audio(&AudioPool::new()), SR, RenderOptions::PLAYING).unwrap();
+    renderer.set_render_lead(FRAMES * 3, FRAMES);
+    let now = Instant::now();
+    assert_eq!(renderer.deadline_at(FRAMES * 2, now), Some(now + Duration::from_millis(381)));
+}
+
+#[test]
+fn internal_chunks_share_the_device_deadline_instead_of_restarting_it() {
+    let p = tracks(vec![vec![plug()]]);
+    let log = Arc::default();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![Timed::new("instant", 0.5, Duration::ZERO, &log)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_render_lead(FRAMES * 2, FRAMES);
+    renderer.process(&mut vec![0.0; FRAMES * 4]);
+    assert_eq!(renderer.observed_deadlines.0, 2);
+    assert!(renderer.observed_deadlines.1[0].is_some());
+    assert_eq!(renderer.observed_deadlines.1[0], renderer.observed_deadlines.1[1], "chunks share an absolute deadline");
 }

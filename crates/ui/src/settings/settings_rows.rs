@@ -135,7 +135,15 @@ pub(crate) static ROWS: &[Entry] = &[
         "Output",
         "Audio device",
         "The sound card Suhina plays through and records from, and how it is set up",
-        &["audio_host", "audio_device", "audio_sample_rate", "audio_buffer", "audio_exclusive", "audio_input"],
+        &[
+            "audio_host",
+            "audio_device",
+            "audio_devices",
+            "audio_sample_rate",
+            "audio_buffer",
+            "audio_exclusive",
+            "audio_input",
+        ],
         crate::settings::settings_view::audio_output,
     ),
     block(

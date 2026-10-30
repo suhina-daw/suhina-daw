@@ -133,6 +133,9 @@ pub enum Health {
 
 /// The audio thread's half: runs blocks through the plug-in.
 pub struct PluginAudio {
+    /// Used only while the renderer is quiescent, never by a render callback.
+    group: std::sync::Weak<Mutex<Group>>,
+    sample_rate: Arc<AtomicU64>,
     link: Link,
     unanswered: Arc<AtomicU32>,
     /// The instance's number in its host process.
@@ -152,6 +155,37 @@ pub struct Seat {
 }
 
 impl PluginAudio {
+    /// Reconfigures a quiescent audio link. Not real-time safe: call only after the old
+    /// renderer has stopped and before the new one starts. The control half may stay on
+    /// its session thread, including while an editor is open.
+    pub fn reconfigure(&mut self, sample_rate: f64, timeout: Duration) -> Result<u32, PluginError> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 || sample_rate > 768_000.0 {
+            return Err(PluginError::Protocol("invalid sample rate".into()));
+        }
+        let shared = self.group.upgrade().ok_or_else(|| PluginError::Protocol("the plug-in was unloaded".into()))?;
+        let deadline = Instant::now() + timeout;
+        let mut group = lock_until(&shared, deadline).ok_or(PluginError::Timeout("reconfigure"))?;
+        if group.generation != self.process {
+            return Err(PluginError::Protocol("the host process was replaced".into()));
+        }
+        let instance = self.instance;
+        let reply = group.request(
+            Some(instance),
+            &Message::Reconfigure { instance, sample_rate },
+            "reconfigure",
+            deadline.saturating_duration_since(Instant::now()),
+            |m| matches!(m, Message::Reconfigured { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::Reconfigured { latency, .. } => {
+                self.sample_rate.store(sample_rate.to_bits(), Ordering::Release);
+                group.note(&Message::LatencyChanged { instance, latency });
+                Ok(latency)
+            }
+            _ => Err(PluginError::Protocol("expected reconfiguration acknowledgement".into())),
+        }
+    }
+
     /// One block through the plug-in, waiting at most `timeout`; see [`Link::process`].
     /// Real-time safe.
     pub fn process(&mut self, input: &[f32], output: &mut [f32], timeout: Duration) -> Outcome {
@@ -167,6 +201,9 @@ impl PluginAudio {
         output: &mut [f32],
         timeout: Duration,
     ) -> Outcome {
+        if self.link.ready() {
+            self.unanswered.store(0, Ordering::Relaxed);
+        }
         let outcome = self.link.process_with_events(input, events, output, timeout);
         self.note(outcome);
         outcome
@@ -183,7 +220,11 @@ impl PluginAudio {
         if !sent && !patience.is_zero() && self.link.wait_ready(Instant::now() + patience) {
             sent = self.link.send_with_events(input, events, room);
         }
-        if !sent {
+        if sent {
+            // Accepting a new request proves the previous one was answered, even
+            // if its reply arrived too late to be used for audio.
+            self.unanswered.store(0, Ordering::Relaxed);
+        } else {
             self.note(Outcome::Busy);
         }
         sent
@@ -213,7 +254,9 @@ impl PluginAudio {
         if !sent && !patience.is_zero() && self.link.wait_ready(Instant::now() + patience) {
             sent = self.link.send_joint(input, events, followers, room);
         }
-        if !sent {
+        if sent {
+            self.unanswered.store(0, Ordering::Relaxed);
+        } else {
             self.note(Outcome::Busy);
         }
         sent
@@ -223,6 +266,11 @@ impl PluginAudio {
     /// a block its host did not answer counts against this instance too, as it may be the one
     /// that is stuck. Real-time safe.
     pub fn followed(&self, outcome: Outcome) {
+        // A missed joint request was accepted, so the previous joint request
+        // finished. Busy means no new request could go and keeps the hang count.
+        if outcome == Outcome::Missed {
+            self.unanswered.store(0, Ordering::Relaxed);
+        }
         self.note(outcome);
     }
 
@@ -727,6 +775,8 @@ fn next_instance() -> u32 {
 
 /// The control half: one plug-in instance in a host process.
 pub struct Plugin {
+    /// Shared with the retained audio half so a later crash restart uses its current rate.
+    sample_rate: Arc<AtomicU64>,
     launch: Launch,
     group: Arc<Mutex<Group>>,
     instance: u32,
@@ -758,7 +808,10 @@ impl Plugin {
         let instance = next_instance();
         let (generation, latency, edits_clips, link) = lock(&group).load(&launch, instance)?;
         let unanswered = Arc::new(AtomicU32::new(0));
+        let sample_rate = Arc::new(AtomicU64::new(launch.sample_rate.to_bits()));
+        let audio_group = Arc::downgrade(&group);
         let plugin = Self {
+            sample_rate: Arc::clone(&sample_rate),
             launch,
             group,
             instance,
@@ -772,7 +825,7 @@ impl Plugin {
             editor_size: None,
             last_health: Health::Running,
         };
-        Ok((plugin, PluginAudio { link, unanswered, instance, process: generation }))
+        Ok((plugin, PluginAudio { link, unanswered, instance, process: generation, group: audio_group, sample_rate }))
     }
 
     /// Delay the plug-in adds, in frames, as it last reported: when it loaded, or since (see
@@ -971,6 +1024,30 @@ impl Plugin {
     /// The plug-in's parameters with their current values.
     pub fn params(&mut self) -> Result<Vec<ParamInfo>, PluginError> {
         self.params_within(self.launch.timeout)
+    }
+
+    /// Changes the audio rate without replacing the instance or its editor. The caller
+    /// must stop submitting audio first. A failed request requires explicit recovery.
+    pub fn reconfigure(&mut self, sample_rate: f64, timeout: Duration) -> Result<u32, PluginError> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 || sample_rate > 768_000.0 {
+            return Err(PluginError::Protocol("invalid sample rate".into()));
+        }
+        let instance = self.instance;
+        let reply = self.request_within(
+            timeout,
+            &Message::Reconfigure { instance, sample_rate },
+            "reconfigure",
+            |m| matches!(m, Message::Reconfigured { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::Reconfigured { latency, .. } => {
+                self.launch.sample_rate = sample_rate;
+                self.sample_rate.store(sample_rate.to_bits(), Ordering::Release);
+                self.latency = latency;
+                Ok(latency)
+            }
+            _ => Err(PluginError::Protocol("expected reconfiguration acknowledgement".into())),
+        }
     }
 
     /// [`Plugin::params`], waiting at most `timeout` for the host's answer instead of the launch
@@ -1206,6 +1283,7 @@ impl Plugin {
     /// already replaced by another's restart is loaded into the new one. An instance with a
     /// process of its own always gets a new process.
     pub fn restart(&mut self) -> Result<PluginAudio, PluginError> {
+        self.launch.sample_rate = f64::from_bits(self.sample_rate.load(Ordering::Acquire));
         // The instance being replaced: if its audio thread is stuck in a shared process, that
         // process cannot let it go and is ended. Read before the counter is replaced below.
         let own_hung = self.unanswered.load(Ordering::Relaxed) >= HUNG_AFTER;
@@ -1246,7 +1324,14 @@ impl Plugin {
         // What `health` says while the group is busy (#188): the new instance, not the old one's
         // `Crashed` or `Hung`.
         self.last_health = Health::Running;
-        let audio = PluginAudio { link, unanswered: self.unanswered.clone(), instance, process: generation };
+        let audio = PluginAudio {
+            link,
+            unanswered: self.unanswered.clone(),
+            instance,
+            process: generation,
+            group: Arc::downgrade(&self.group),
+            sample_rate: Arc::clone(&self.sample_rate),
+        };
         let params = std::mem::take(&mut self.params_since);
         if let Some(state) = self.last_state.clone() {
             self.load_state(state)?;

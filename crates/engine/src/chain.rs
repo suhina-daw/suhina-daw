@@ -358,6 +358,9 @@ impl Chain {
                         latency: info.latency,
                         enabled: stored.enabled,
                         missed: 0,
+                        busy: 0,
+                        longest_us: 0,
+                        sent_at: None,
                         params: SlotParams::new(stored, frames_per_beat),
                     }));
                     positions.push(position);
@@ -1012,6 +1015,19 @@ impl Chain {
         self.held = [NOT_HELD; 128];
         self.next_off = NOT_HELD;
         self.push(frame, NoteEvent::AllNotesOff);
+    }
+
+    /// A retained processor has voices whose schedule belonged to the old renderer.
+    /// Explicit releases also reach instruments that ignore controller 123 (including
+    /// VST3 instruments without that MIDI mapping). This runs only while building.
+    pub(crate) fn release_retained(&mut self) {
+        if !self.instrument {
+            return;
+        }
+        for key in 0..=127u8 {
+            self.push(0, NoteEvent::Off { key, velocity: 0.5 });
+        }
+        self.push(0, NoteEvent::AllNotesOff);
     }
 
     fn push(&mut self, frame: usize, event: NoteEvent) {

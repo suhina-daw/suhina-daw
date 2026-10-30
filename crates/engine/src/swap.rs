@@ -522,7 +522,7 @@ impl Controller {
         let collect_began = std::time::Instant::now();
         updater.collect();
         let collect_took = collect_began.elapsed();
-        let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new() };
+        let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new(), carried: false };
         let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins, None)
             .map_err(|e| e.to_string())?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
@@ -758,5 +758,12 @@ impl Controller {
             m.worst_plugin.load(Ordering::Relaxed),
             m.worst_misses.load(Ordering::Relaxed),
         )
+    }
+
+    /// Plug-in blocks that were not sent at all (their host was still busy with an earlier
+    /// one), and the longest round trip a plug-in answered in, in microseconds.
+    pub fn plugin_time(&self) -> (u64, u32) {
+        let m = &self.monitor;
+        (m.plugin_blocked.load(Ordering::Relaxed), m.worst_trip.load(Ordering::Relaxed))
     }
 }
