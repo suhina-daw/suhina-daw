@@ -57,6 +57,9 @@ struct EditorRect {
     right: i16,
 }
 
+/// The mock's editor: 300 × 200, as `test:vst3`'s is; the rect `effEditGetRect` names.
+static MOCK_EDITOR_RECT: EditorRect = EditorRect { top: 0, left: 0, bottom: 200, right: 300 };
+
 /// What the mock has seen and what it holds, all behind one lock. The records are bounded
 /// ([`MAX_RECORDED`]): the mock runs for a whole session through the host, and its records
 /// are its product for the tests, not a log without end.
@@ -360,11 +363,14 @@ unsafe extern "C" fn dispatcher(
             0
         }
         Some(EffectOp::EditGetRect) => {
-            // The editor's rectangle, as the op-code's assumed shape reads it: 300 × 200, as
-            // test:vst3's editor is.
+            // The op-code's `ptr` is a pointer slot, filled with a pointer to the mock's own
+            // rect — the same contract a real plug-in keeps (observed: writing the rect into
+            // the slot itself had the host dereference the rect's bytes as a pointer, and
+            // took its process with it).
             if !ptr.is_null() {
-                // SAFETY: the caller's buffer, of the size the op-code is assumed to fill.
-                unsafe { *ptr.cast::<EditorRect>() = EditorRect { top: 0, left: 0, bottom: 200, right: 300 } };
+                // SAFETY: the caller's pointer slot; the mock's rect is a static, outliving
+                // the call.
+                unsafe { *ptr.cast::<*const EditorRect>() = &MOCK_EDITOR_RECT };
             }
             1
         }
