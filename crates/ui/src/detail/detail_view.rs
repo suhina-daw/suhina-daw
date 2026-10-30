@@ -142,16 +142,12 @@ fn chain_row(
             // not size it, or its controls are crowded over each other.
             let graph = device.graph.as_ref().filter(|_| device.file_device.is_none());
             let authored_width = graph.map_or(authored_base, |graph| {
+                // The stock controls in columns of a compact panel's width, right of the canvas
+                // when there is one; wider where an `.sd` file places its controls further out.
+                let list = list_right(device, graph);
                 graph.canvas.as_ref().map_or_else(
-                    || {
-                        // The generated list is a compact panel's width, wider only where an
-                        // `.sd` file places its controls further out.
-                        parameter_layout(&graph.parameters, COMPACT_WIDTH, &[])
-                            .iter()
-                            .map(|cell| cell.right() + PAD * 2.0)
-                            .fold(STACK_WIDTH, f32::max)
-                    },
-                    |c| c.viewport_size.map_or(DEVICE_WIDTH.max(c.size[0] + PAD * 2.0), |v| v[0] + PAD * 2.0),
+                    || STACK_WIDTH.max(list + PAD * 2.0),
+                    |c| c.viewport_size.map_or(DEVICE_WIDTH.max(c.size[0].max(list) + PAD * 2.0), |v| v[0] + PAD * 2.0),
                 )
             });
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
@@ -165,8 +161,7 @@ fn chain_row(
                     .map_or(width, |themed| width.max(themed.clamp(120.0, 1600.0)));
                 (width, computed.and_then(|c| c.height))
             };
-            let height = sdk_viewport(device)
-                .map_or_else(|| panel_height(device, width - PAD * 2.0, editor), |v| ROW + PAD * 2.0 + v[1]);
+            let height = sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
             // `.device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
             let height = match (themed_height, editor) {
@@ -281,7 +276,7 @@ fn chain_row(
 
 /// How tall a device's panel is in a row or a stack: its header, then its parameters, its
 /// plug-in rows, its embedded editor, or a NAM panel's own height.
-fn panel_height(device: &DeviceBox, width: f32, editor: Option<Vec2>) -> f32 {
+fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
     let rows =
         if device.plugin.is_some() { 2.0 + BUTTON_HEIGHT / PARAM_ROW } else { device.params.len().max(1) as f32 };
     match editor {
@@ -292,29 +287,48 @@ fn panel_height(device: &DeviceBox, width: f32, editor: Option<Vec2>) -> f32 {
         None if device.plugin.is_some() => {
             let rows = ROW + PAD * 2.0 + rows * PARAM_ROW;
             device.graph.as_ref().map_or(rows, |graph| {
-                rows.max((EDITOR_TOP + graph_body(graph, width) + PAD).min(ROW + PAD * 2.0 + COMPACT_HEIGHT))
+                rows.max((EDITOR_TOP + graph_body(device, graph) + PAD).min(ROW + PAD * 2.0 + COMPACT_HEIGHT))
             })
         }
-        None => ROW + PAD * 2.0 + device.graph.as_ref().map_or(rows * PARAM_ROW, |graph| graph_body(graph, width)),
+        None => ROW + PAD * 2.0 + device.graph.as_ref().map_or(rows * PARAM_ROW, |graph| graph_body(device, graph)),
     }
 }
 
-/// How tall a device's parameters, nodes and canvas are. A list without a canvas is at most a
-/// compact panel's height and scrolls past it (ADR 0021 › Amendment: device panels, 5).
-fn graph_body(graph: &GraphBox, width: f32) -> f32 {
-    let cells = parameter_layout(
-        &graph.parameters,
-        width,
-        graph.canvas.as_ref().map_or(&[], |c| c.hidden_parameters.as_slice()),
-    )
-    .iter()
-    .map(|r| r.bottom())
-    .fold(0.0f32, f32::max);
-    let height = cells + graph.nodes.len() as f32 * NODE_ROW;
-    match &graph.canvas {
-        Some(canvas) => height + canvas.size[1],
-        None => height.min(COMPACT_HEIGHT),
+/// How tall a device's nodes and, beside each other, its canvas and parameter list are. The list
+/// continues in columns to the right rather than below the compact panel (ADR 0021 › Amendment:
+/// device panels, 5).
+fn graph_body(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    let cells =
+        list_cells(graph, COMPACT_WIDTH, list_height(device, graph)).iter().map(|r| r.bottom()).fold(0.0f32, f32::max);
+    let canvas = graph.canvas.as_ref().map_or(0.0, |c| c.size[1]);
+    let body = graph.nodes.len() as f32 * NODE_ROW + cells.max(canvas);
+    // A list without a canvas scrolls past the compact panel when it cannot widen (a themed width).
+    if graph.canvas.is_none() { body.min(COMPACT_HEIGHT) } else { body }
+}
+
+/// How far right a device's stock-control list reaches. An embedded editor hides the list, so it
+/// takes no room in that panel.
+fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    if device.plugin.as_ref().is_some_and(|p| p.embedded.is_some()) {
+        return 0.0;
     }
+    list_cells(graph, COMPACT_WIDTH, list_height(device, graph)).iter().fold(0.0f32, |right, c| right.max(c.right()))
+}
+
+/// How tall a device's stock-control list may grow before it continues in a new column: the
+/// compact panel's body less a plug-in's rows above the list and the graph's node rows, or a
+/// taller canvas beside it. A list in a panel the theme sizes (`.device { width }`) keeps one
+/// column that follows that width and scrolls.
+fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    if graph.canvas.is_none() {
+        let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+        if crate::kit::style_class::computed().is_some_and(|c| c.width.is_some()) {
+            return f32::INFINITY;
+        }
+    }
+    let above = if device.plugin.is_some() { EDITOR_TOP - ROW - PAD } else { 0.0 };
+    let room = COMPACT_HEIGHT - above - graph.nodes.len() as f32 * NODE_ROW;
+    graph.canvas.as_ref().map_or(room, |c| room.max(c.size[1]))
 }
 
 fn sdk_viewport(device: &DeviceBox) -> Option<[f32; 2]> {
@@ -419,7 +433,7 @@ fn chain_stack(
             continue;
         }
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
-        let height = panel_height(device, area.width() - PAD * 2.0, editor);
+        let height = panel_height(device, editor);
         let height = sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
         let right = sdk_viewport(device).map_or(area.right(), |v| (area.left() + v[0] + PAD * 2.0).min(area.right()));
         let rect = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(right, y + height));
@@ -834,7 +848,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, track, &device.at, actions);
+                graph_controls(ui, list, graph, list_height(device, graph), track, &device.at, actions);
             }
         }
         outline(painter);
@@ -858,7 +872,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, track, &device.at, actions);
+        graph_controls(ui, body, graph, list_height(device, graph), track, &device.at, actions);
         outline(painter);
         return clicked;
     }

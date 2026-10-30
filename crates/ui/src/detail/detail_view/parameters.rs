@@ -375,9 +375,8 @@ pub(super) fn knob(
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
     if response.dragged() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-        let delta = f64::from(response.drag_delta().y) / widgets::PARAMETER_DRAG_PIXELS * fine;
+        let delta = f64::from(widgets::value_drag_delta(ui, &response).y) / widgets::PARAMETER_DRAG_PIXELS * fine;
         position = (position - delta).clamp(0.0, 1.0);
         *value = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
         response.mark_changed();
@@ -454,33 +453,76 @@ pub(super) fn parameter_height(parameter: &GraphParameter) -> f32 {
         }
 }
 
-pub(super) fn parameter_layout(parameters: &[GraphParameter], width: f32, hidden: &[String]) -> Vec<Rect> {
-    // The theme may lay the parameters a device places nowhere itself side by side, each cell as
-    // tall as it says (`--suhina-param-columns`, `--suhina-param-row`).
-    let (columns, row) = crate::kit::style_class::theme_param_grid();
-    let cell = width / columns as f32;
-    let mut bottom = 0.0f32;
-    let mut column = 0usize;
-    let mut line_top = 0.0f32;
-    parameters
-        .iter()
-        .filter(|p| !hidden.contains(&p.id))
+/// Where each shown parameter's cell goes: at its own position, or under the one before in a
+/// column `width` wide. A cell that would end below `max_height` starts a new column to the
+/// right, so a long list widens the panel instead of scrolling (ADR 0021 › Amendment: device
+/// panels, 5); `f32::INFINITY` keeps one column. The theme may divide a column into cells side by
+/// side, each as tall as it says (`--suhina-param-columns`, `--suhina-param-row`).
+pub(super) fn parameter_layout(
+    parameters: &[GraphParameter],
+    width: f32,
+    max_height: f32,
+    hidden: &[String],
+) -> Vec<Rect> {
+    let (slots, row) = crate::kit::style_class::theme_param_grid();
+    let cell = width / slots as f32;
+    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id));
+    let placed_size = |p: &GraphParameter| p.ui.size.unwrap_or([width, parameter_height(p)]);
+    // A placed cell pushes down the columns it reaches into, wherever it is in the list.
+    let placed: Vec<Rect> = shown()
+        .filter_map(|p| p.ui.position.map(|[x, y]| Rect::from_min_size(Pos2::new(x, y), placed_size(p).into())))
+        .collect();
+    let floor = |column: f32| {
+        placed.iter().filter(|r| r.right() > column && r.left() < column + width).fold(0.0f32, |b, r| b.max(r.bottom()))
+    };
+    let (mut column, mut right, mut bottom) = (0.0f32, 0.0f32, floor(0.0));
+    let (mut slot, mut line_top) = (0usize, 0.0f32);
+    shown()
         .map(|parameter| {
             if let Some([x, y]) = parameter.ui.position {
-                let [w, h] = parameter.ui.size.unwrap_or([width, parameter_height(parameter)]);
-                let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-                bottom = bottom.max(rect.bottom());
-                return rect;
+                return Rect::from_min_size(Pos2::new(x, y), placed_size(parameter).into());
             }
             let height = row.map_or_else(|| parameter_height(parameter), |row| row.max(parameter_height(parameter)));
             let [w, h] = parameter.ui.size.unwrap_or([cell, height]);
-            if column == 0 {
+            if slot == 0 {
                 line_top = bottom;
+                // Half a point of slack: heights summed in another order must not open a column.
+                // Past every placed cell the floor is zero, so this ends. A cell wider than its
+                // column keeps the next one clear of it.
+                while line_top > 0.0 && line_top + h > max_height + 0.5 {
+                    column = right.max(column + width);
+                    right = column;
+                    bottom = floor(column);
+                    line_top = bottom;
+                }
             }
-            let rect = Rect::from_min_size(Pos2::new(cell * column as f32, line_top), Vec2::new(w, h));
+            let rect = Rect::from_min_size(Pos2::new(column + cell * slot as f32, line_top), Vec2::new(w, h));
             bottom = bottom.max(rect.bottom());
-            column = (column + 1) % columns;
+            right = right.max(rect.right());
+            slot = (slot + 1) % slots;
             rect
+        })
+        .collect()
+}
+
+/// The stock controls of `graph` from the top left of the part under its nodes. With a canvas, the
+/// list flows to the canvas's right and a cell the file places itself stays under the canvas, where
+/// its position has always been measured from.
+pub(super) fn list_cells(graph: &GraphBox, width: f32, max_height: f32) -> Vec<Rect> {
+    let Some(canvas) = &graph.canvas else {
+        return parameter_layout(&graph.parameters, width, max_height, &[]);
+    };
+    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id));
+    let mut skipped = canvas.hidden_parameters.clone();
+    skipped.extend(shown().filter(|p| p.ui.position.is_some()).map(|p| p.id.clone()));
+    let mut flow = parameter_layout(&graph.parameters, width, max_height, &skipped).into_iter();
+    shown()
+        .filter_map(|p| match p.ui.position {
+            Some([x, y]) => {
+                let size = p.ui.size.unwrap_or([width, parameter_height(p)]);
+                Some(Rect::from_min_size(Pos2::new(x, y + canvas.size[1]), size.into()))
+            }
+            None => flow.next().map(|cell| cell.translate(Vec2::new(canvas.size[0], 0.0))),
         })
         .collect()
 }

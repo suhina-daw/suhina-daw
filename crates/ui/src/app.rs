@@ -1091,7 +1091,10 @@ impl App {
         // never from the clip's start (the plug-in's timeline is where the user points).
         // A click in the clip's body set where play starts; only a clip picked whole plays from
         // its start.
-        let clip = (selected || self.settings.play_from == PlayFrom::Clip)
+        // Picking clips clears the time selection, so one there now was painted after the pick:
+        // plain Play starts at it (#937); playing from the selected clip still means the clip.
+        let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
+        let clip = (selected || (self.settings.play_from == PlayFrom::Clip && !painted))
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1605,6 +1608,7 @@ impl App {
             PickField::BrowserFolder
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
+            | PickField::PluginFolder
             | PickField::BackgroundImage => None,
         };
         self.pick_request = Some(PickRequest { field, start });
@@ -1617,7 +1621,7 @@ impl App {
     }
 
     /// Puts a path chosen in the system's dialog where it was asked for: a setting, the save
-    /// prompt's folder, a project to open, or a folder for the browser.
+    /// prompt's folder, a project to open, a folder for the browser, or a plug-in folder.
     pub fn set_picked(&mut self, field: PickField, path: PathBuf) {
         let text = path.display().to_string();
         match field {
@@ -1630,6 +1634,12 @@ impl App {
                 if !self.settings.mcp_write_folders.contains(&text) {
                     self.settings.mcp_write_folders.push(text);
                 }
+            }
+            PickField::PluginFolder => {
+                // The folder goes in with the format the add row has chosen (Both, VST3 or CLAP).
+                let format = self.plugins.new_format;
+                self.plugin_request(PluginRequest::AddFolder(text, format));
+                return;
             }
             PickField::NamModelsFolder => self.settings.nam_models_folder = text,
             // A folder whose files move with it asks first.
@@ -2585,6 +2595,7 @@ impl App {
         );
         self.frame_trace.start();
         self.frame_trace.causes(ui.ctx());
+        crate::kit::widgets::release_value_drag(ui.ctx());
         // Closing: the dialog alone, so nothing of the window without its projects shows behind.
         if let Some((_, going)) = &self.quitting {
             let waiting: Vec<String> =

@@ -571,6 +571,11 @@ are two actions (#657): a click in the tracks' area (an empty lane, a clip's bod
 marker, on the grid (Alt: free), and never moves playback while it plays; a click on the ruler is
 a seek, which while playing waits for the next launch boundary (`transport.jump`).
 
+**A painted time selection** (over the lanes or along the ruler) moves the marker to its start when
+the button goes up, so Play starts there (#937), even with a clip still picked whole; playing from
+the selected clip (Shift+Space) still starts at the clip. While playing, the marker moves too and playback
+goes on where it is (`transport.setStart`), so Stop returns to the selection's start.
+
 **Where other DAWs stand** (their public manuals, October 2026): every one starts playback from a
 start position the user sets; they differ on the first Stop.
 
@@ -638,8 +643,8 @@ moving the marker there by hand first is a step too many. **Suhina:** the play/s
 Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
-selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
-clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
+time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
 from the marker. **Shift+Space** (`transport.playFromSelection` in the keymap) plays from the
 selected clip whatever the setting; while playing, it jumps there.
 
@@ -998,13 +1003,14 @@ apply live and persist as application settings without modifying project data.
 A note-playing track has one small control immediately after its record-arm button that reads
 the track's monitoring mode, Auto, In or Off (the chip shows In as **On**), before its name or volume controls. A click opens the three choices, with a tooltip
 explaining the current state; it is not a second record-arm button or headphone cue. The same
-choices appear in the MIDI input menu, beside port and channel selection. Auto (the default)
+choices appear in the MIDI input menu, beside port and channel selection; a header too narrow
+or too low for the chip to end inside its row, before the take lanes' button when that ends the row, leaves it out, and that menu is the way (#876). Auto (the default)
 hears the input while armed; In hears it independently of arming; Off never hears the live
 input. Recording still depends on arm and record, including when monitoring is Off; In alone
 never records. Monitoring does not suppress clip playback. The selected mode is project data,
 set through `track.setMidiInput` with `monitor: auto | in | off`, and supports undo and redo.
 Changing mode releases notes that are no longer monitored, without retriggering held keys.
-Old projects without this field retain Auto. Compact and expanded headers reserve space for the monitor control before names and level controls.
+Old projects without this field retain Auto. Where the chip shows, compact and expanded headers reserve its space before names and level controls; where it is left out, the name starts after the arm button.
 
 The popup is titled Hear your MIDI keyboard and offers three single-line choices: Automatic,
 Always on and Off. A fixed-height footer explains the hovered or keyboard-focused choice,

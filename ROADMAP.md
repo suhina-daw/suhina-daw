@@ -11,7 +11,7 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows and Linux X11; still to do: automation lanes in the UI, macOS and Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
@@ -181,7 +181,7 @@ refused or suspended, never by losing its edits.
 
 - Every built-in effect, instrument and MIDI effect has editable controls in the device panel:
   its layout (in Rust, or as `devices/<name>/panel.json`: dials, buttons and band graphs in the compact panel, an expanded panel where a device has many parameters, and a generated list below the compact panel for parameters the compact layout does not place), or a parameter list generated from the device's own parameters,
-  260 px wide and at most 168 px high, scrolling past that. Each change is `device.setParam`, so it
+  in 260 px columns at most 168 px high, continuing in columns to the right rather than scrolling. Each change is `device.setParam`, so it
   is one undo step and an automation lane takes it over. Built-ins are native code with a layout
   loaded by their id, not `.sd` files ([ADR 0021](docs/decisions/0021-device-graph-files.md) ›
   Amendment: device panels).
@@ -421,7 +421,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   default one process per plug-in file, or per vendor, or one per instance
   (`plugin.setHosting`); a crash or hang costs that plug-in's sound, not the project
   ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)). The host runs on Linux, Windows and
-  macOS (editors on macOS still to come).
+  macOS (there editors open in a window of their own).
 - An opened Live Set's plug-ins play in the app: each is found among the installed ones (a VST3
   version for a VST2 plug-in too) and started with the settings the project saved; instruments
   play their track's notes, effects process their track. Missing ones are named in the status
@@ -437,9 +437,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
   closes the shown track's plug-in's editor (the device the chain panel selects, else the
   track's first running one; mappable, Settings › Keys). Editors float
-  above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
-  (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
-  the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
+  above Suhina's window, owned by it (Windows, X11), and respond at once; on macOS they
+  float in a plain window of the host's own, since a view of another process's cannot attach
+  to Suhina's window (ADR 0006). A setting (Plug-ins › Editors › Device view) shows them
+  inside the device panel instead, as part of the chain, on Windows and X11; on macOS the
+  setting falls back to the window. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
   so this works on Wayland desktops too.
 - Renders (`suhina-cli render`, MCP `project_render`) run the same plug-ins.
 - MCP `project_render` from an open project starts its plug-ins with the state the running ones
@@ -469,8 +471,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
-  macOS editors, VST2 hosting (not decided).
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland
+  editors, VST2 hosting (not decided).
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it

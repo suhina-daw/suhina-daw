@@ -730,6 +730,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         state.time_selection = (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None });
         if ui.input(|i| !i.pointer.primary_down()) {
             state.ruler_select = None;
+            play_from_selection(state, timeline, actions);
         }
     }
     let beat_at = |x: f32, free: bool, state: &ArrangementViewState| {
@@ -1325,6 +1326,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     state.selected.clear();
                     state.anchor = None;
                 }
+                play_from_selection(state, timeline, actions);
             }
         } else {
             // A rectangle that picks the clips it touches, whole.
@@ -1713,6 +1715,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 }
             }
         }
+    }
+}
+
+/// A time selection just painted moves the play start marker to its start, so Play starts there
+/// (#937); while playing, playback goes on where it is and the next start begins there.
+fn play_from_selection(state: &ArrangementViewState, timeline: &Timeline, actions: &mut Vec<Action>) {
+    // The ruler reaches past the last beat a start may be on.
+    if let Some(start) = state.time_selection.as_ref().map(|s| s.start.min(suhina_engine::MAX_START_BEAT))
+        && (start - timeline.start_beat).abs() > 1e-9
+    {
+        actions.push(Action::new("transport.setStart", json!({ "beats": start })));
     }
 }
 

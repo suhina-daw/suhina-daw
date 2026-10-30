@@ -7,6 +7,7 @@
 //! settings folder, so a scan survives a restart and the next one reads only what changed.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::{OsStr, OsString};
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -193,12 +194,37 @@ pub fn host_next_to_this_program() -> PathBuf {
 }
 
 /// `path` without Windows' `\\?\` prefix where it is an ordinary drive path, as people write it.
-fn plain(path: PathBuf) -> PathBuf {
+pub fn plain(path: PathBuf) -> PathBuf {
     let rest = {
         let text = path.to_string_lossy();
         text.strip_prefix(r"\\?\").filter(|rest| rest.as_bytes().get(1) == Some(&b':')).map(PathBuf::from)
     };
     rest.unwrap_or(path)
+}
+
+/// A leading `~` alone or before a separator becomes `home`, so a folder typed with one is the
+/// folder it names. `~name` (another user's home) stays as typed; without a home folder, too.
+fn expand_home(folder: &Path, home: Option<&OsStr>) -> PathBuf {
+    let Some(home) = home else { return folder.to_path_buf() };
+    match folder.strip_prefix("~") {
+        Ok(rest) if rest.as_os_str().is_empty() => PathBuf::from(home),
+        // `~name` is another user's home: not ours to expand.
+        Ok(rest) if !rest.is_absolute() => Path::new(home).join(rest),
+        _ => folder.to_path_buf(),
+    }
+}
+
+/// The home folder a typed `~` becomes: `HOME`, and on Windows also `USERPROFILE`, which Windows
+/// sets where `HOME` is often absent (only shells set `HOME` there).
+fn user_home() -> Option<OsString> {
+    home_folder(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
+
+/// `home`, or where it is missing on Windows, `profile`; on other systems only `HOME` counts, as
+/// before. An empty value counts as missing: it would turn `~/x` into the relative `x`.
+fn home_folder(home: Option<OsString>, profile: Option<OsString>) -> Option<OsString> {
+    let home = home.filter(|value| !value.is_empty());
+    if cfg!(windows) { home.or(profile.filter(|value| !value.is_empty())) } else { home }
 }
 
 /// The folders the user added and the catalog, loaded from the settings folder on first use.
@@ -318,9 +344,11 @@ impl Library {
     }
 
     /// Adds a folder to look in for `format`'s plug-ins; returns false if it was there already
-    /// with that format (with another one, the format changes).
+    /// with that format (with another one, the format changes). A folder typed with a leading
+    /// `~` works as typed: the home folder takes its place.
     pub fn add_folder_as(&mut self, folder: &Path, format: FolderFormat) -> Result<bool, String> {
         self.load();
+        let folder = expand_home(folder, user_home().as_deref());
         if !folder.is_dir() {
             return Err(format!("{} is not a folder", folder.display()));
         }
@@ -344,6 +372,8 @@ impl Library {
     /// Stops looking in a folder the user added; returns false if it was not one of them.
     pub fn remove_folder(&mut self, folder: &Path) -> Result<bool, String> {
         self.load();
+        let folder = expand_home(folder, user_home().as_deref());
+        let folder = folder.as_path();
         let canonical = folder.canonicalize().ok().map(plain);
         let matches = |f: &PathBuf| f == folder || Some(f) == canonical.as_ref();
         let before = self.custom.len();
@@ -360,6 +390,8 @@ impl Library {
     /// when it already was so.
     pub fn set_folder_enabled(&mut self, folder: &Path, enabled: bool) -> Result<bool, String> {
         let listed = self.folder_list();
+        let folder = expand_home(folder, user_home().as_deref());
+        let folder = folder.as_path();
         let canonical = folder.canonicalize().ok().map(plain);
         let path = listed
             .iter()
