@@ -65,8 +65,11 @@ answered:
 An entry that returns null is taken as the plug-in declining to load **(assumed)**; an
 answer that is not null is checked for the `AEffect` magic before anything else is called
 **(assumed)**. A call a plug-in makes of its host from inside its entry, before the effect
-exists, is answered 0 and recorded nowhere **(assumed)**; whether real plug-ins make such
-calls is an open question below.
+exists — it cannot know its effect yet — needs the host's identity answered: the probe's
+first run against installed plug-ins *(observed)* showed two of them (Audiomodern's
+Filterstep, TAL-NoiseMaker) asking `audioMasterVersion` with a null effect and giving up on
+the load when the answer was 0, which the host had answered when this host treated such
+calls as nothing to answer. `VSTPluginMain` is the entry name that answered *(observed)*.
 
 ## The `AEffect` layout
 
@@ -90,7 +93,7 @@ comments describe the 32-bit layout; the 64-bit offsets are **(assumed)** agains
 | `flags` | `i32` | 56 | 36 | the bits below (from VeSTige) |
 | `ptr1`, `ptr2` | `*mut c_void` | 64, 72 | 40, 44 | the plug-in's own (from VeSTige) |
 | `empty3` | `[c_char; 12]` | 80 | 48 | VeSTige says zeroes; what a real plug-in holds there is an open question (latency) |
-| `unkown_float` | `f32` | 92 | 60 | VeSTige says `1.0f`, spelling and all; the probe reports what it really holds |
+| `unkown_float` | `f32` | 92 | 60 | VeSTige says `1.0f`, spelling and all; the plug-ins the first run met held there *(observed)* |
 | `ptr3`, `user` | `*mut c_void` | 96, 104 | 64, 68 | the plug-in's own (from VeSTige); the mock keeps its state in `user`, its own business |
 | `uniqueID` | `i32` | 112 | 72 | the four-character id (from VeSTige) |
 | `version` | `i32` | 116 | 76 | (from VeSTige) |
@@ -359,9 +362,9 @@ bank forms are one code path for the importer, the hand-over and this host
 Each is an (assumed) fact the probe or the ignored test settles; none may be settled from
 another header (ADR 0022 decision 2).
 
-- The 64-bit `AEffect` offsets, against a real 64-bit plug-in (the layout test pins our
-  struct; reading a real one's fields — a sane `numParams`, a callable dispatcher, a sane
-  id — is the observation).
+- The 64-bit `AEffect` offsets, against every real plug-in the probe meets (the
+  first run's plug-ins read sensibly: counts, id, version, a callable
+  `processReplacing`; *(observed, for the ones met so far)*).
 - The latency: the host reads the first of VeSTige's twelve "zero" bytes as the delay
   *(assumed)*. The probe reports the twelve and the "1.0f" float for every plug-in it meets;
   a real plug-in's delay showing there — and the host's latency reading matching what its
@@ -382,6 +385,15 @@ another header (ADR 0022 decision 2).
   nothing of the members' ids, so the scan lists the file's first plug-in and its spec
   checks the id it names; the members' own listing and loading is open until the probe sees
   what a shell answers.
+- The state chunk's forms: a real plug-in's chunk (Filterstep's began `VC2!` and came back
+  whole through the assumed `effGetChunk`/`effSetChunk` pair, with the size as the answer)
+  *(observed for the ones met so far)*; whether a plug-in ever answers the bank-index
+  `index` reading 1 (the current program) is unobserved.
+- VeSTige's `unkown_float` ("1.0f" in the pinned header) held 0 in the plug-ins the first
+  run met *(observed)*; its use stays open.
+- Whether an installed plug-in keeps a latency in VeSTige's twelve zero bytes: the first
+  run's plug-ins held zeros there *(observed)*, matching "no latency" more than "no field";
+  a plug-in with delay is the observation that settles where its number lives.
 
 ## Sources
 
