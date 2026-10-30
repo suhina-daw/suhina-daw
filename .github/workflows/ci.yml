@@ -93,22 +93,23 @@ jobs:
       - name: Documents that describe the changed code
         if: github.event_name == 'pull_request'
         run: python3 scripts/docs.py impact HEAD^1
-      # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml). A pull
-      # request that edits one of them would have the edit overwritten on the next merge, silently,
-      # so it is refused here instead and sent to the source of the file.
+      # docs/INDEX.md, docs/commands.md, docs/features.md and the two feature figures are generated
+      # on main (docs-generated.yml). A pull request that edits one of them would have the edit
+      # overwritten on the next merge, silently, so it is refused here instead and sent to the
+      # source of the file. Adding one (the pull request that introduces it) is not an edit.
       - name: Generated files are not edited by hand
         if: github.event_name == 'pull_request'
         env:
           BASE: HEAD^1
         run: |
-          edited=$(git diff --name-only "$BASE" HEAD -- docs/INDEX.md docs/commands.md || true)
+          edited=$(git diff --name-only --diff-filter=a "$BASE" HEAD -- docs/INDEX.md docs/commands.md             docs/features.md docs/features-by-area.svg docs/features-by-area-dark.svg || true)
           if [ -z "$edited" ]; then
             echo "No generated file is touched."
             exit 0
           fi
           echo "::error::These files are generated on main and an edit here would be overwritten:"
           printf '%s\n' "$edited"
-          echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md."
+          echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md, docs/features.json and the issues' area: labels for docs/features.md and the feature figures."
           exit 1
       # The feature map is valid; its list and figures are written on main (docs-generated.yml).
       - name: The feature map

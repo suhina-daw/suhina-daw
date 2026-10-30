@@ -45,7 +45,10 @@ KIND_OF = {"done": "done", "partial": "working", "planned": "planned"}
 LABELS = {"done": "Done", "working": "In progress", "planned": "Planned"}
 WORDS = {"done": "done", "working": "in progress", "planned": "planned"}
 LABEL = re.compile(r"^area: [a-z0-9-]+$")
-CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.I)
+# At most seven digits, so a hostile number in a pull request's text cannot fail int().
+CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d{1,7})\b", re.I)
+# Characters that make Markdown, escaped in titles anyone can write.
+MARKDOWN = re.compile(r"([\\`*_{}\[\]<>()#+!|~])")
 PAGES = 30
 
 # One hue, darkest for done, checked as an ordinal ramp against each surface.
@@ -143,7 +146,7 @@ def tally(areas: list, issues: list, pulls: list) -> list:
     """Each area with its items (title, kind, issue number or None) and its open bugs."""
     closing = set()
     for pull in pulls:
-        closing.update(int(n) for n in CLOSES.findall(pull.get("body") or ""))
+        closing.update(int(n) for n in CLOSES.findall(pull.get("body") or "") if int(n) > 0)
     out = []
     for area in areas:
         items, bugs = [], []
@@ -190,11 +193,16 @@ def anchor(name: str) -> str:
     return "".join(ch for ch in name.lower().replace(" ", "-") if ch.isalnum() or ch == "-")
 
 
+def text(value) -> str:
+    """A title as plain text in Markdown: on one line, its markup characters escaped."""
+    return MARKDOWN.sub(r"\\\1", " ".join(str(value).split()))
+
+
 def item_line(item: dict) -> str:
     if item["issue"] is not None:
-        return f"- [#{item['issue']}]({ISSUES}/{item['issue']}) {item['title']}"
-    ref = f" ({item['ref']})" if item.get("ref") else ""
-    return f"- {item['title']}{ref}"
+        return f"- [#{item['issue']}]({ISSUES}/{item['issue']}) {text(item['title'])}"
+    ref = f" ({text(item['ref'])})" if item.get("ref") else ""
+    return f"- {text(item['title'])}{ref}"
 
 
 def markdown(tallied: list) -> str:

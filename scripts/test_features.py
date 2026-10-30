@@ -97,6 +97,11 @@ class WriteTest(unittest.TestCase):
             self.assertIn("All areas", text)
             self.assertIn("2 done · 1 in progress · 1 planned · 1 bug", text)
 
+    def test_titles_are_escaped_and_huge_references_ignored(self):
+        self.assertEqual(features.text("a [link](x) *b*\nnext"), r"a \[link\]\(x\) \*b\* next")
+        area = features.tally([AREA], [issue(5)], [{"body": "Closes #5 and fixes #" + "9" * 5000}])[0]
+        self.assertEqual(features.counts(area)["working"], 2)
+
     def test_breakdown_leaves_out_zeros(self):
         self.assertEqual(features.breakdown({"done": 3, "working": 0, "planned": 2}, 0), "3 done · 2 planned")
 

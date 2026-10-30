@@ -447,7 +447,9 @@ nothing itself.
 ## What the documents say when it lands
 
 ROADMAP's *What works now* gains a bullet when a user can hear a keyed compressor, the devices table says
-which devices read a key, and the README's *Mixing and routing* row names key inputs.
+which devices read a key, and the *Key inputs (sidechain)* and *Plug-ins with several outputs* entries of
+[`docs/features.json`](../features.json) are marked done (the feature list and figures are written from it on
+`main`).
 
 ## Open questions
 

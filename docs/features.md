@@ -2,7 +2,7 @@
 
 # What Suhina does today
 
-In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 199 done, 30 in progress and 190 planned, counted from the issues of each area's `area:` label and the features without an issue in [features.json](features.json); 57 open bugs besides. The order the planned ones are built in is in [ROADMAP.md](../ROADMAP.md).
+In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 199 done, 30 in progress and 191 planned, counted from the issues of each area's `area:` label and the features without an issue in [features.json](features.json); 57 open bugs besides. The order the planned ones are built in is in [ROADMAP.md](../ROADMAP.md).
 
 | Area | Done | In progress | Planned | Open bugs |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@ In the areas Suhina aims at ([ADR 0016](decisions/0016-scope.md)): 199 done, 30 
 | [Devices as a system](#devices-as-a-system) | 14 | 1 | 20 | 3 |
 | [Built-in effects](#built-in-effects) | 10 | 3 | 26 | 0 |
 | [Instruments and MIDI effects](#instruments-and-midi-effects) | 5 | 1 | 20 | 0 |
-| [Plug-ins](#plug-ins) | 24 | 3 | 24 | 8 |
+| [Plug-ins](#plug-ins) | 24 | 3 | 25 | 8 |
 | [Browser and library](#browser-and-library) | 11 | 2 | 6 | 7 |
 | [Export and rendering](#export-and-rendering) | 4 | 0 | 1 | 0 |
 | [Control and sync](#control-and-sync) | 2 | 1 | 4 | 0 |
@@ -37,18 +37,18 @@ Issues: [`area: projects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%
 - Collecting a project's files into its folder
 - Finding unused files
 - DAWproject import and export (M7)
-- FL Studio projects (.flp) (epic #271)
+- FL Studio projects \(.flp\) (epic \#271)
 - [#929](https://github.com/suhina-daw/suhina-daw/issues/929) MIDI files: import and export notes with MPE expression
 - [#814](https://github.com/suhina-daw/suhina-daw/issues/814) Backups and recovery: check the rules end to end and fix what a user would not expect
-- [#681](https://github.com/suhina-daw/suhina-daw/issues/681) Project switcher: Up and Down move through the Ctrl+Tab list
-- [#670](https://github.com/suhina-daw/suhina-daw/issues/670) A project's file paths can reach other hosts (UNC paths on Windows)
+- [#681](https://github.com/suhina-daw/suhina-daw/issues/681) Project switcher: Up and Down move through the Ctrl\+Tab list
+- [#670](https://github.com/suhina-daw/suhina-daw/issues/670) A project's file paths can reach other hosts \(UNC paths on Windows\)
 - [#606](https://github.com/suhina-daw/suhina-daw/issues/606) A project is a folder: document, manifest and assets
 - [#103](https://github.com/suhina-daw/suhina-daw/issues/103) Live Set import: read arrangement audio clip fades
 
 **Done**
 
-- Opening Live Sets (.als)
-- Suhina's own project file (.suhina)
+- Opening Live Sets \(.als\)
+- Suhina's own project file \(.suhina\)
 - New, open, save and save as
 - Importing MIDI files
 - [#633](https://github.com/suhina-daw/suhina-daw/issues/633) Start panel: one visible drop hint that names .suhina and .als
@@ -59,8 +59,8 @@ Issues: [`area: projects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%
 - [#318](https://github.com/suhina-daw/suhina-daw/issues/318) Start panel: recent projects with search and dates, New and Open, and the audio device, in the empty area when no project is open
 - [#314](https://github.com/suhina-daw/suhina-daw/issues/314) File menu: Open recent, listing recently saved and opened projects
 - [#272](https://github.com/suhina-daw/suhina-daw/issues/272) flp: read the container and the event stream
-- [#234](https://github.com/suhina-daw/suhina-daw/issues/234) Start-up: what opens when Suhina starts (a new project, a template, or the New/Open dialog), and browsing samples with nothing open
-- [#202](https://github.com/suhina-daw/suhina-daw/issues/202) Backups (autosave): an interval or before critical operations, kept in the project's .backup folder
+- [#234](https://github.com/suhina-daw/suhina-daw/issues/234) Start-up: what opens when Suhina starts \(a new project, a template, or the New/Open dialog\), and browsing samples with nothing open
+- [#202](https://github.com/suhina-daw/suhina-daw/issues/202) Backups \(autosave\): an interval or before critical operations, kept in the project's .backup folder
 - [#140](https://github.com/suhina-daw/suhina-daw/issues/140) Missing files: a panel that lists a project's missing samples and finds them
 - [#120](https://github.com/suhina-daw/suhina-daw/issues/120) Ask before closing a project or quitting with unsaved changes
 - [#48](https://github.com/suhina-daw/suhina-daw/issues/48) UI: dim the window while a project file is dragged over it
@@ -89,15 +89,15 @@ Issues: [`area: launcher`](https://github.com/suhina-daw/suhina-daw/issues?q=is%
 - Stop buttons and back to arrangement
 - [#842](https://github.com/suhina-daw/suhina-daw/issues/842) Session view: Delete in a clip slot's right-click menu
 - [#647](https://github.com/suhina-daw/suhina-daw/issues/647) Metronome: level on the main strip, a choice of click sound, and an on/off button in the control bar
-- [#642](https://github.com/suhina-daw/suhina-daw/issues/642) Session view: a slot's right-click menu and Ctrl+R rename work as in the Arrangement
+- [#642](https://github.com/suhina-daw/suhina-daw/issues/642) Session view: a slot's right-click menu and Ctrl\+R rename work as in the Arrangement
 - [#458](https://github.com/suhina-daw/suhina-daw/issues/458) Back to arrangement, session view fixes
 - [#411](https://github.com/suhina-daw/suhina-daw/issues/411) Clip launcher: launch slots and scenes from computer keys and MIDI notes
 - [#408](https://github.com/suhina-daw/suhina-daw/issues/408) Detail area: follow-action controls for a slot clip
-- [#404](https://github.com/suhina-daw/suhina-daw/issues/404) Session view: scenes (launch a row, scene tempo and time signature, insert, duplicate)
+- [#404](https://github.com/suhina-daw/suhina-daw/issues/404) Session view: scenes \(launch a row, scene tempo and time signature, insert, duplicate\)
 - [#399](https://github.com/suhina-daw/suhina-daw/issues/399) Clip launcher: launch modes, legato and per-clip quantisation
 - [#398](https://github.com/suhina-daw/suhina-daw/issues/398) Clip launcher: follow actions
 - [#276](https://github.com/suhina-daw/suhina-daw/issues/276) Session view: select a slot clip and show it in the detail area
-- [#273](https://github.com/suhina-daw/suhina-daw/issues/273) Put an arrangement clip into a clip slot (copy/paste, drag)
+- [#273](https://github.com/suhina-daw/suhina-daw/issues/273) Put an arrangement clip into a clip slot \(copy/paste, drag\)
 - [#104](https://github.com/suhina-daw/suhina-daw/issues/104) Launched clips: fade-in and fade-out
 
 **Open bugs**
@@ -112,10 +112,10 @@ Issues: [`area: arrangement`](https://github.com/suhina-daw/suhina-daw/issues?q=
 
 - [#1046](https://github.com/suhina-daw/suhina-daw/issues/1046) Arrangement: track headers on the left by default
 - [#991](https://github.com/suhina-daw/suhina-daw/issues/991) Arrangement: an optional toolbar of tools, and focus areas for the tool keys
-- [#957](https://github.com/suhina-daw/suhina-daw/issues/957) Arrangement: Alt+wheel zooms one track or all, and automation lanes follow it
+- [#957](https://github.com/suhina-daw/suhina-daw/issues/957) Arrangement: Alt\+wheel zooms one track or all, and automation lanes follow it
 - [#956](https://github.com/suhina-daw/suhina-daw/issues/956) Arrangement: resize several selected clips together
 - [#947](https://github.com/suhina-daw/suhina-daw/issues/947) Tracks: a menu on the empty area below the tracks, and Insert multiple
-- [#946](https://github.com/suhina-daw/suhina-daw/issues/946) Tracks: a track's name follows its instrument until renamed, and # stands for its number
+- [#946](https://github.com/suhina-daw/suhina-daw/issues/946) Tracks: a track's name follows its instrument until renamed, and \# stands for its number
 - [#945](https://github.com/suhina-daw/suhina-daw/issues/945) Tracks: an empty track takes the kind of the clip dropped on it
 - [#657](https://github.com/suhina-daw/suhina-daw/issues/657) Timeline: a click in the track area sets where playback starts
 
@@ -125,10 +125,10 @@ Issues: [`area: arrangement`](https://github.com/suhina-daw/suhina-daw/issues?q=
 - [#1044](https://github.com/suhina-daw/suhina-daw/issues/1044) Arrangement: Alt and drag duplicates clips
 - [#942](https://github.com/suhina-daw/suhina-daw/issues/942) Arrangement: the selected track's lane is highlighted across the timeline
 - [#713](https://github.com/suhina-daw/suhina-daw/issues/713) Time selection: Add section inserts empty time and moves everything after it
-- [#702](https://github.com/suhina-daw/suhina-daw/issues/702) Stacked clips: choose the row a moved clip goes to (decision needed)
+- [#702](https://github.com/suhina-daw/suhina-daw/issues/702) Stacked clips: choose the row a moved clip goes to \(decision needed\)
 - [#697](https://github.com/suhina-daw/suhina-daw/issues/697) Arrangement: stacked clips split the lane into rows only where they overlap
-- [#696](https://github.com/suhina-daw/suhina-daw/issues/696) Tracks: Ctrl+R renames the selected track in its header, in both views
-- [#626](https://github.com/suhina-daw/suhina-daw/issues/626) Arrangement: keep stacked clips readable (minimum row height, overlap count, expand and collapse)
+- [#696](https://github.com/suhina-daw/suhina-daw/issues/696) Tracks: Ctrl\+R renames the selected track in its header, in both views
+- [#626](https://github.com/suhina-daw/suhina-daw/issues/626) Arrangement: keep stacked clips readable \(minimum row height, overlap count, expand and collapse\)
 - [#208](https://github.com/suhina-daw/suhina-daw/issues/208) Multi-select tracks and clips, and group the selection
 
 **Done**
@@ -142,9 +142,9 @@ Issues: [`area: arrangement`](https://github.com/suhina-daw/suhina-daw/issues?q=
 - [#311](https://github.com/suhina-daw/suhina-daw/issues/311) Arrangement: the control bar's grid value sets the grid lines and snapping
 - [#204](https://github.com/suhina-daw/suhina-daw/issues/204) Play from the selected clip's start
 - [#116](https://github.com/suhina-daw/suhina-daw/issues/116) Arrangement: set the play position by clicking the ruler
-- [#99](https://github.com/suhina-daw/suhina-daw/issues/99) Arrangement: markers (locators) on the timeline
-- [#98](https://github.com/suhina-daw/suhina-daw/issues/98) Arrangement: loop region (loop brace) that the transport repeats
-- [#97](https://github.com/suhina-daw/suhina-daw/issues/97) Transport: play from any position (click the ruler to move the playhead)
+- [#99](https://github.com/suhina-daw/suhina-daw/issues/99) Arrangement: markers \(locators\) on the timeline
+- [#98](https://github.com/suhina-daw/suhina-daw/issues/98) Arrangement: loop region \(loop brace\) that the transport repeats
+- [#97](https://github.com/suhina-daw/suhina-daw/issues/97) Transport: play from any position \(click the ruler to move the playhead\)
 - [#65](https://github.com/suhina-daw/suhina-daw/issues/65) UI: group and ungroup tracks, move tracks, context menus
 - [#63](https://github.com/suhina-daw/suhina-daw/issues/63) UI: overlapping clips, with settings to allow sample and MIDI stacking
 
@@ -154,15 +154,15 @@ Issues: [`area: arrangement`](https://github.com/suhina-daw/suhina-daw/issues?q=
 - [#936](https://github.com/suhina-daw/suhina-daw/issues/936) Arrangement: loop lines lag behind a drag and stop above the returns and Main
 - [#919](https://github.com/suhina-daw/suhina-daw/issues/919) Tracks: cut, copy, paste and duplicate whole tracks
 - [#918](https://github.com/suhina-daw/suhina-daw/issues/918) Tracks: select and show a new track, and select the next one after a delete
-- [#910](https://github.com/suhina-daw/suhina-daw/issues/910) Zoom: Ctrl+wheel does not keep the time under the pointer in place
+- [#910](https://github.com/suhina-daw/suhina-daw/issues/910) Zoom: Ctrl\+wheel does not keep the time under the pointer in place
 - [#876](https://github.com/suhina-daw/suhina-daw/issues/876) Arrangement: the MIDI monitoring chip overlaps the track header's controls at narrow widths
 - [#861](https://github.com/suhina-daw/suhina-daw/issues/861) Arrangement: Shift while dragging places off the grid
-- [#709](https://github.com/suhina-daw/suhina-daw/issues/709) Tracks: Ctrl+T changes other tracks' colours; a track keeps the colour it was created with
-- [#704](https://github.com/suhina-daw/suhina-daw/issues/704) Consolidate (Ctrl+J) does not work on stacked clips or on audio clips
+- [#709](https://github.com/suhina-daw/suhina-daw/issues/709) Tracks: Ctrl\+T changes other tracks' colours; a track keeps the colour it was created with
+- [#704](https://github.com/suhina-daw/suhina-daw/issues/704) Consolidate \(Ctrl\+J\) does not work on stacked clips or on audio clips
 - [#703](https://github.com/suhina-daw/suhina-daw/issues/703) Stacked clips: splitting a clip in a stack moves its end part up a row
 - [#701](https://github.com/suhina-daw/suhina-daw/issues/701) Time selection: painting over stacked clips selects only that row's clip
 - [#695](https://github.com/suhina-daw/suhina-daw/issues/695) Arrangement: the selection highlight moves late when another clip on the same track is clicked
-- [#694](https://github.com/suhina-daw/suhina-daw/issues/694) Arrangement: Shift+click selects the wrong clips across tracks
+- [#694](https://github.com/suhina-daw/suhina-daw/issues/694) Arrangement: Shift\+click selects the wrong clips across tracks
 - [#692](https://github.com/suhina-daw/suhina-daw/issues/692) Arrangement: after a Ctrl-drag copy to another track, the copy is selected
 - [#691](https://github.com/suhina-daw/suhina-daw/issues/691) Arrangement: a selection box dragged down to the returns selects clips out of view and scrolls
 - [#690](https://github.com/suhina-daw/suhina-daw/issues/690) Tracks: Delete removes a selected track, colours at full strength and kept when a track is deleted
@@ -178,18 +178,18 @@ Issues: [`area: clips`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3Ai
 **Planned**
 
 - Clip envelopes
-- [#742](https://github.com/suhina-daw/suhina-daw/issues/742) Audio clips: per-clip gain and a drawable gain envelope (always independent)
+- [#742](https://github.com/suhina-daw/suhina-daw/issues/742) Audio clips: per-clip gain and a drawable gain envelope \(always independent\)
 - [#715](https://github.com/suhina-daw/suhina-daw/issues/715) Fades: dragging one clip's fade changes the fades of every selected clip
-- [#700](https://github.com/suhina-daw/suhina-daw/issues/700) Clip loop: how a loop is turned on and shown (decision needed)
-- [#693](https://github.com/suhina-daw/suhina-daw/issues/693) Clips: Ctrl+R renames every selected clip at once, as a setting
-- [#336](https://github.com/suhina-daw/suhina-daw/issues/336) Detail area: a Loop switch for a slot clip (runs clip.setLoop)
+- [#700](https://github.com/suhina-daw/suhina-daw/issues/700) Clip loop: how a loop is turned on and shown \(decision needed\)
+- [#693](https://github.com/suhina-daw/suhina-daw/issues/693) Clips: Ctrl\+R renames every selected clip at once, as a setting
+- [#336](https://github.com/suhina-daw/suhina-daw/issues/336) Detail area: a Loop switch for a slot clip \(runs clip.setLoop\)
 - [#206](https://github.com/suhina-daw/suhina-daw/issues/206) Context menus everywhere, with clip rename and colour
 
 **Done**
 
 - [#753](https://github.com/suhina-daw/suhina-daw/issues/753) MIDI notes on arrangement clips drawn dark on the clip colour
-- [#641](https://github.com/suhina-daw/suhina-daw/issues/641) Clips: a Rename item in the right-click menu, Ctrl+R renames the selected clip, shortcuts shown in every menu item
-- [#562](https://github.com/suhina-daw/suhina-daw/issues/562) Right click => rename midi clip
+- [#641](https://github.com/suhina-daw/suhina-daw/issues/641) Clips: a Rename item in the right-click menu, Ctrl\+R renames the selected clip, shortcuts shown in every menu item
+- [#562](https://github.com/suhina-daw/suhina-daw/issues/562) Right click =\> rename midi clip
 - [#561](https://github.com/suhina-daw/suhina-daw/issues/561) Audio clip feature parity with midi clip
 - [#493](https://github.com/suhina-daw/suhina-daw/issues/493) Setting: whether a double-click on an empty slot or lane makes a MIDI clip
 - [#201](https://github.com/suhina-daw/suhina-daw/issues/201) Create an empty MIDI clip by double-clicking
@@ -226,7 +226,7 @@ Issues: [`area: audio`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3Ai
 - Real-time time-stretching
 - Tempo detection of samples
 - [#743](https://github.com/suhina-daw/suhina-daw/issues/743) Engine: a playing clip's stretch voice carries over to the new graph after an edit
-- [#402](https://github.com/suhina-daw/suhina-daw/issues/402) Tempo and time-signature changes over the song (tempo map)
+- [#402](https://github.com/suhina-daw/suhina-daw/issues/402) Tempo and time-signature changes over the song \(tempo map\)
 
 **Open bugs**
 
@@ -252,7 +252,7 @@ Issues: [`area: midi-editing`](https://github.com/suhina-daw/suhina-daw/issues?q
 - [#624](https://github.com/suhina-daw/suhina-daw/issues/624) Piano roll: ghost note opacity as a setting, and cache the ghost notes
 - [#461](https://github.com/suhina-daw/suhina-daw/issues/461) Keep the library beside the piano roll while editing MIDI, and drop samples onto the arrangement from there
 - [#350](https://github.com/suhina-daw/suhina-daw/issues/350) Piano roll: chords, strum and arpeggiate
-- [#349](https://github.com/suhina-daw/suhina-daw/issues/349) Piano roll: MIDI tools (transpose, stretch, reverse, invert, humanise, legato, split and join notes)
+- [#349](https://github.com/suhina-daw/suhina-daw/issues/349) Piano roll: MIDI tools \(transpose, stretch, reverse, invert, humanise, legato, split and join notes\)
 - [#343](https://github.com/suhina-daw/suhina-daw/issues/343) Piano roll: edit a Session slot clip's notes
 
 **Done**
@@ -260,15 +260,15 @@ Issues: [`area: midi-editing`](https://github.com/suhina-daw/suhina-daw/issues?q
 - [#490](https://github.com/suhina-daw/suhina-daw/issues/490) Piano roll: workflow modes in its toolbar, a Custom mode, and a defined double-click
 - [#460](https://github.com/suhina-daw/suhina-daw/issues/460) Piano roll step 4: a scalable toolbar with clearer icons, an eraser and mute tool, MIDI tools beside the notes, selection info and a mouse-first preset
 - [#443](https://github.com/suhina-daw/suhina-daw/issues/443) Piano roll step 3: tool icons and tool keys, a Slice tool, inline quantise, a playable keyboard and keymap presets
-- [#442](https://github.com/suhina-daw/suhina-daw/issues/442) Piano roll step 2: pull it to the top, Alt+wheel zoom, a toolbar with tools and its own grid value
+- [#442](https://github.com/suhina-daw/suhina-daw/issues/442) Piano roll step 2: pull it to the top, Alt\+wheel zoom, a toolbar with tools and its own grid value
 - [#353](https://github.com/suhina-daw/suhina-daw/issues/353) Piano roll: the clip's loop region and start and end markers in its ruler
 - [#352](https://github.com/suhina-daw/suhina-daw/issues/352) Duplicated clips share their notes: editing one duplicate edits all
 - [#351](https://github.com/suhina-daw/suhina-daw/issues/351) Piano roll: draw mode, audition, left-edge resize, copy by drag, velocity tools
 - [#348](https://github.com/suhina-daw/suhina-daw/issues/348) Piano roll: ghost notes from other clips
 - [#347](https://github.com/suhina-daw/suhina-daw/issues/347) Piano roll: a clip's scale, scale highlighting and fold
-- [#346](https://github.com/suhina-daw/suhina-daw/issues/346) Piano roll: its own grid value (adaptive, triplets, off) and grid shortcuts
-- [#345](https://github.com/suhina-daw/suhina-daw/issues/345) Piano roll: quantise notes (note.quantize, Ctrl+U)
-- [#344](https://github.com/suhina-daw/suhina-daw/issues/344) Piano roll: keyboard editing (arrows, Ctrl+A, Escape) and copy, cut, paste, duplicate of notes
+- [#346](https://github.com/suhina-daw/suhina-daw/issues/346) Piano roll: its own grid value \(adaptive, triplets, off\) and grid shortcuts
+- [#345](https://github.com/suhina-daw/suhina-daw/issues/345) Piano roll: quantise notes \(note.quantize, Ctrl\+U\)
+- [#344](https://github.com/suhina-daw/suhina-daw/issues/344) Piano roll: keyboard editing \(arrows, Ctrl\+A, Escape\) and copy, cut, paste, duplicate of notes
 - [#200](https://github.com/suhina-daw/suhina-daw/issues/200) Piano roll: edit a MIDI clip's notes
 
 **Open bugs**
@@ -296,14 +296,14 @@ Issues: [`area: recording`](https://github.com/suhina-daw/suhina-daw/issues?q=is
 
 - [#834](https://github.com/suhina-daw/suhina-daw/issues/834) Auto-arm: a setting that arms the selected track
 - [#808](https://github.com/suhina-daw/suhina-daw/issues/808) MIDI input: separate In, Auto and Off monitoring from record arm
-- [#597](https://github.com/suhina-daw/suhina-daw/issues/597) Audio monitoring on the track: Audio From and a Monitor pick (In, Auto, Off) on the strip
+- [#597](https://github.com/suhina-daw/suhina-daw/issues/597) Audio monitoring on the track: Audio From and a Monitor pick \(In, Auto, Off\) on the strip
 - [#278](https://github.com/suhina-daw/suhina-daw/issues/278) MIDI input per track: choose the port and channel each armed track hears
 - [#269](https://github.com/suhina-daw/suhina-daw/issues/269) MIDI input: sample-accurate placement from the driver's timestamps
 - [#268](https://github.com/suhina-daw/suhina-daw/issues/268) Audio recording to files in the project, lined up for input and output latency
 - [#267](https://github.com/suhina-daw/suhina-daw/issues/267) Audio input: input devices, a track's input channel, monitoring In / Auto / Off
 - [#266](https://github.com/suhina-daw/suhina-daw/issues/266) MIDI recording into session slots and the arrangement, with count-in
 - [#265](https://github.com/suhina-daw/suhina-daw/issues/265) Live input latency: measure note-to-sound latency, and a shallower render queue for live playing
-- [#264](https://github.com/suhina-daw/suhina-daw/issues/264) MIDI input: play an armed track's instrument live from a MIDI controller (ADR 0017)
+- [#264](https://github.com/suhina-daw/suhina-daw/issues/264) MIDI input: play an armed track's instrument live from a MIDI controller \(ADR 0017\)
 
 **Open bugs**
 
@@ -324,13 +324,13 @@ Issues: [`area: automation`](https://github.com/suhina-daw/suhina-daw/issues?q=i
 - Recording automation from the controls
 - Tempo automation edited by hand
 - [#819](https://github.com/suhina-daw/suhina-daw/issues/819) Arrangement: an automation view that draws envelopes over the clips
-- [#669](https://github.com/suhina-daw/suhina-daw/issues/669) Devices: parameters that cannot be automated (blocks the delay's Equal-Loudness option)
+- [#669](https://github.com/suhina-daw/suhina-daw/issues/669) Devices: parameters that cannot be automated \(blocks the delay's Equal-Loudness option\)
 
 **Done**
 
 - [#913](https://github.com/suhina-daw/suhina-daw/issues/913) Automation: Bezier segments that move in the parameter's position, with exact splits and measured curve drags
 - [#420](https://github.com/suhina-daw/suhina-daw/issues/420) Automation lanes in the Arrangement view
-- [#395](https://github.com/suhina-daw/suhina-daw/issues/395) Automation: envelopes for mixer and built-in device parameters (model, engine, commands)
+- [#395](https://github.com/suhina-daw/suhina-daw/issues/395) Automation: envelopes for mixer and built-in device parameters \(model, engine, commands\)
 
 **Open bugs**
 
@@ -352,22 +352,22 @@ Issues: [`area: mixing`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3A
 - Crossfader
 - Track delay
 - Split stereo panning
-- Key inputs (sidechain)
+- Key inputs \(sidechain\)
 - Plug-ins with several outputs
 - Routing to external hardware
 - [#892](https://github.com/suhina-daw/suhina-daw/issues/892) Built-in A/B referencing: reference tracks that bypass the main output, level-matched switching
-- [#890](https://github.com/suhina-daw/suhina-daw/issues/890) Loudness meter: LUFS (momentary, short-term, integrated), true peak and loudness range
+- [#890](https://github.com/suhina-daw/suhina-daw/issues/890) Loudness meter: LUFS \(momentary, short-term, integrated\), true peak and loudness range
 
 **Done**
 
 - [#744](https://github.com/suhina-daw/suhina-daw/issues/744) Track headers: the cue button shows headphones, not a C beside the pan's C
 - [#660](https://github.com/suhina-daw/suhina-daw/issues/660) Session mixer: a draggable divider between the device list and the controls
-- [#635](https://github.com/suhina-daw/suhina-daw/issues/635) Main strip: add a volume fader (probably pan too) and a command for the main output's volume
+- [#635](https://github.com/suhina-daw/suhina-daw/issues/635) Main strip: add a volume fader \(probably pan too\) and a command for the main output's volume
 - [#491](https://github.com/suhina-daw/suhina-daw/issues/491) Session view: a vertical channel strip per track, with a volume fader, in a resizable mixer
 - [#455](https://github.com/suhina-daw/suhina-daw/issues/455) Mixer: work a selection in proportion, the wheel over a value, and a field-or-knob choice
 - [#401](https://github.com/suhina-daw/suhina-daw/issues/401) Cue output: preview and solo-in-place to a separate output pair
 - [#397](https://github.com/suhina-daw/suhina-daw/issues/397) Level meters for tracks, returns and the main output
-- [#396](https://github.com/suhina-daw/suhina-daw/issues/396) Sends and returns: return tracks play, per-track send levels (pre/post)
+- [#396](https://github.com/suhina-daw/suhina-daw/issues/396) Sends and returns: return tracks play, per-track send levels \(pre/post\)
 - [#209](https://github.com/suhina-daw/suhina-daw/issues/209) Nested groups and their signal chain
 - [#61](https://github.com/suhina-daw/suhina-daw/issues/61) UI: output routing in track headers
 
@@ -393,7 +393,7 @@ Issues: [`area: devices`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - Community devices as Pure Data patches
 - [#1052](https://github.com/suhina-daw/suhina-daw/issues/1052) Device: Patch Bay, a device that wires other devices together freely with cables
 - [#1051](https://github.com/suhina-daw/suhina-daw/issues/1051) Tracks: a full-window node view of a track's device chain and its signal routing
-- [#1009](https://github.com/suhina-daw/suhina-daw/issues/1009) Devices: decide how panels are built (structure in JSON, layout and style in CSS)
+- [#1009](https://github.com/suhina-daw/suhina-daw/issues/1009) Devices: decide how panels are built \(structure in JSON, layout and style in CSS\)
 - [#984](https://github.com/suhina-daw/suhina-daw/issues/984) Device: Modulator, an LFO or envelope follower mapped to any parameter
 - [#955](https://github.com/suhina-daw/suhina-daw/issues/955) Devices tab: a vertical chain and animated cables between devices
 - [#954](https://github.com/suhina-daw/suhina-daw/issues/954) Device panels: per-device defaults and skins, a quick panel of chosen parameters
@@ -403,32 +403,32 @@ Issues: [`area: devices`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - [#871](https://github.com/suhina-daw/suhina-daw/issues/871) Devices: paste copied devices into the selected track without picking a device
 - [#827](https://github.com/suhina-daw/suhina-daw/issues/827) Expanded device panel: free panning and navigation consistent with Arrangement
 - [#740](https://github.com/suhina-daw/suhina-daw/issues/740) Import: Live's racks as device groups
-- [#688](https://github.com/suhina-daw/suhina-daw/issues/688) Devices: drag a device to another track to move it, Ctrl+drag to copy it
-- [#685](https://github.com/suhina-daw/suhina-daw/issues/685) Devices: Ctrl+D duplicates the picked devices
+- [#688](https://github.com/suhina-daw/suhina-daw/issues/688) Devices: drag a device to another track to move it, Ctrl\+drag to copy it
+- [#685](https://github.com/suhina-daw/suhina-daw/issues/685) Devices: Ctrl\+D duplicates the picked devices
 - [#617](https://github.com/suhina-daw/suhina-daw/issues/617) Untrusted files: the .sd trust rules, path handling and malformed-file tests
 - [#502](https://github.com/suhina-daw/suhina-daw/issues/502) Bring the device SDK node catalog to plugdata count parity
-- [#64](https://github.com/suhina-daw/suhina-daw/issues/64) UI: detail area with the device chain (horizontal or stacked) and moving devices
+- [#64](https://github.com/suhina-daw/suhina-daw/issues/64) UI: detail area with the device chain \(horizontal or stacked\) and moving devices
 
 **Done**
 
 - Custom panels with artwork
 - Devices of an imported set kept as placeholders
-- [#679](https://github.com/suhina-daw/suhina-daw/issues/679) Devices: layouts for built-in effects and instruments (the .sd UI part, no graph), and a generated parameter list
+- [#679](https://github.com/suhina-daw/suhina-daw/issues/679) Devices: layouts for built-in effects and instruments \(the .sd UI part, no graph\), and a generated parameter list
 - [#662](https://github.com/suhina-daw/suhina-daw/issues/662) Device panel: an X button in the header removes the device
 - [#659](https://github.com/suhina-daw/suhina-daw/issues/659) Session view: a track's whole column is a drop target for a device or plug-in
 - [#637](https://github.com/suhina-daw/suhina-daw/issues/637) Device panel: limit the device chain's height to its content, with 'Drop audio effects here' when empty
 - [#552](https://github.com/suhina-daw/suhina-daw/issues/552) Bypass button for devices
 - [#505](https://github.com/suhina-daw/suhina-daw/issues/505) Detail area: switch between the clip editor and the track's devices, and a double-click on a track opens its devices
-- [#484](https://github.com/suhina-daw/suhina-daw/issues/484) Devices (plugins, etc) need to be able to be deleted from a midi track
-- [#406](https://github.com/suhina-daw/suhina-daw/issues/406) ADR: every device is a Suhina device (.sd) built from shared blocks; heavy DSP as native blocks; one device per parity target
+- [#484](https://github.com/suhina-daw/suhina-daw/issues/484) Devices \(plugins, etc\) need to be able to be deleted from a midi track
+- [#406](https://github.com/suhina-daw/suhina-daw/issues/406) ADR: every device is a Suhina device \(.sd\) built from shared blocks; heavy DSP as native blocks; one device per parity target
 - [#300](https://github.com/suhina-daw/suhina-daw/issues/300) Support code-based community devices
-- [#147](https://github.com/suhina-daw/suhina-daw/issues/147) Ability to group effects [Feature Request]
-- [#72](https://github.com/suhina-daw/suhina-daw/issues/72) Device commands: add, remove, switch and set devices on tracks (LOOP-35)
-- [#55](https://github.com/suhina-daw/suhina-daw/issues/55) Device chains on tracks in the engine; instruments play the track's notes (LOOP-35)
+- [#147](https://github.com/suhina-daw/suhina-daw/issues/147) Ability to group effects \[Feature Request\]
+- [#72](https://github.com/suhina-daw/suhina-daw/issues/72) Device commands: add, remove, switch and set devices on tracks \(LOOP-35\)
+- [#55](https://github.com/suhina-daw/suhina-daw/issues/55) Device chains on tracks in the engine; instruments play the track's notes \(LOOP-35\)
 
 **Open bugs**
 
-- [#1007](https://github.com/suhina-daw/suhina-daw/issues/1007) Devices: devices inside a group cannot be picked, and Ctrl+A does not pick the device chain
+- [#1007](https://github.com/suhina-daw/suhina-daw/issues/1007) Devices: devices inside a group cannot be picked, and Ctrl\+A does not pick the device chain
 - [#826](https://github.com/suhina-daw/suhina-daw/issues/826) Device panels: scroll position is not retained with multiple devices in Stack mode
 - [#686](https://github.com/suhina-daw/suhina-daw/issues/686) Device panel: X removes every picked device, not only its own
 
@@ -440,11 +440,11 @@ Issues: [`area: effects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 
 - [#1047](https://github.com/suhina-daw/suhina-daw/issues/1047) EQ: the panel's display draws the playing spectrum behind the curve
 - [#1041](https://github.com/suhina-daw/suhina-daw/issues/1041) EQ: a panel with the response curve, band dots and per-band controls
-- [#387](https://github.com/suhina-daw/suhina-daw/issues/387) Device: multiband dynamics (upward and downward)
+- [#387](https://github.com/suhina-daw/suhina-daw/issues/387) Device: multiband dynamics \(upward and downward\)
 
 **Planned**
 
-- [#1059](https://github.com/suhina-daw/suhina-daw/issues/1059) Device: give the auto-pan effect a name of its own (Pan & Tremolo)
+- [#1059](https://github.com/suhina-daw/suhina-daw/issues/1059) Device: give the auto-pan effect a name of its own \(Pan & Tremolo\)
 - [#1050](https://github.com/suhina-daw/suhina-daw/issues/1050) EQ: the analyser also taps devices inside device groups
 - [#986](https://github.com/suhina-daw/suhina-daw/issues/986) Device: Clipper, hard or soft clipping with oversampling
 - [#985](https://github.com/suhina-daw/suhina-daw/issues/985) Device: Beat Repeat, captured slices of the beat repeated in time
@@ -465,11 +465,11 @@ Issues: [`area: effects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - [#923](https://github.com/suhina-daw/suhina-daw/issues/923) Device: Pump, one-knob ducking synced to the tempo
 - [#912](https://github.com/suhina-daw/suhina-daw/issues/912) Utility: the panel's Gain slider follows the knob's law, and an automated jump in Gain is centred on its point
 - [#897](https://github.com/suhina-daw/suhina-daw/issues/897) Device: a distinct Suhina-designed algorithmic reverb with listening-led tuning
-- [#891](https://github.com/suhina-daw/suhina-daw/issues/891) Spectrum analyzer with stereo views (mid/side, correlation, stereo image)
-- [#388](https://github.com/suhina-daw/suhina-daw/issues/388) Device: convolution reverb (impulse responses)
+- [#891](https://github.com/suhina-daw/suhina-daw/issues/891) Spectrum analyzer with stereo views \(mid/side, correlation, stereo image\)
+- [#388](https://github.com/suhina-daw/suhina-daw/issues/388) Device: convolution reverb \(impulse responses\)
 - [#386](https://github.com/suhina-daw/suhina-daw/issues/386) Device: multi-stage saturation
 - [#385](https://github.com/suhina-daw/suhina-daw/issues/385) Device: bus compressor
-- [#382](https://github.com/suhina-daw/suhina-daw/issues/382) Device: filter (multimode, with LFO and envelope follower)
+- [#382](https://github.com/suhina-daw/suhina-daw/issues/382) Device: filter \(multimode, with LFO and envelope follower\)
 
 **Done**
 
@@ -479,10 +479,10 @@ Issues: [`area: effects`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - Utility
 - Vinyl distortion
 - [#907](https://github.com/suhina-daw/suhina-daw/issues/907) Import: Live's EQ Three as the DJ EQ, on the measured band split
-- [#489](https://github.com/suhina-daw/suhina-daw/issues/489) NAM device :)
-- [#384](https://github.com/suhina-daw/suhina-daw/issues/384) Device: algorithmic reverb (Dragonfly Reverb port as a native block, Suhina reverb as a .sd device)
-- [#383](https://github.com/suhina-daw/suhina-daw/issues/383) Device: delay (stereo, ping-pong, synced)
-- [#381](https://github.com/suhina-daw/suhina-daw/issues/381) Device: parametric EQ (eight bands)
+- [#489](https://github.com/suhina-daw/suhina-daw/issues/489) NAM device :\)
+- [#384](https://github.com/suhina-daw/suhina-daw/issues/384) Device: algorithmic reverb \(Dragonfly Reverb port as a native block, Suhina reverb as a .sd device\)
+- [#383](https://github.com/suhina-daw/suhina-daw/issues/383) Device: delay \(stereo, ping-pong, synced\)
+- [#381](https://github.com/suhina-daw/suhina-daw/issues/381) Device: parametric EQ \(eight bands\)
 
 ## Instruments and MIDI effects
 
@@ -508,9 +508,9 @@ Issues: [`area: instruments`](https://github.com/suhina-daw/suhina-daw/issues?q=
 - [#962](https://github.com/suhina-daw/suhina-daw/issues/962) Device: DS Kick, a synthesised kick drum
 - [#926](https://github.com/suhina-daw/suhina-daw/issues/926) MPE input: play built-in instruments with per-note pitch, pressure and timbre
 - [#739](https://github.com/suhina-daw/suhina-daw/issues/739) Sampler: zones, several samples on key and velocity ranges
-- [#394](https://github.com/suhina-daw/suhina-daw/issues/394) Instrument: physical-modelling synth (resonators)
+- [#394](https://github.com/suhina-daw/suhina-daw/issues/394) Instrument: physical-modelling synth \(resonators\)
 - [#393](https://github.com/suhina-daw/suhina-daw/issues/393) Instrument: wavetable synth
-- [#392](https://github.com/suhina-daw/suhina-daw/issues/392) Instrument: drum sampler (pads)
+- [#392](https://github.com/suhina-daw/suhina-daw/issues/392) Instrument: drum sampler \(pads\)
 - [#390](https://github.com/suhina-daw/suhina-daw/issues/390) FM synth: more waveforms and a filter
 - [#389](https://github.com/suhina-daw/suhina-daw/issues/389) Instrument: subtractive synth
 - [#101](https://github.com/suhina-daw/suhina-daw/issues/101) Import: Live's Drum Rack and Simpler as built-in instruments
@@ -518,10 +518,10 @@ Issues: [`area: instruments`](https://github.com/suhina-daw/suhina-daw/issues?q=
 **Done**
 
 - Sampler: slicing
-- [#674](https://github.com/suhina-daw/suhina-daw/issues/674) MIDI effect: pitch (transpose notes by semitones)
+- [#674](https://github.com/suhina-daw/suhina-daw/issues/674) MIDI effect: pitch \(transpose notes by semitones\)
 - [#391](https://github.com/suhina-daw/suhina-daw/issues/391) Instrument: sampler
-- [#79](https://github.com/suhina-daw/suhina-daw/issues/79) Hear the FM synth from the CLI: --fm with DX7 voice files (LOOP-16)
-- [#50](https://github.com/suhina-daw/suhina-daw/issues/50) FM synth: the DX7-style engine ported from MSFA, and instruments in device-api (LOOP-16)
+- [#79](https://github.com/suhina-daw/suhina-daw/issues/79) Hear the FM synth from the CLI: --fm with DX7 voice files \(LOOP-16\)
+- [#50](https://github.com/suhina-daw/suhina-daw/issues/50) FM synth: the DX7-style engine ported from MSFA, and instruments in device-api \(LOOP-16\)
 
 ## Plug-ins
 
@@ -529,24 +529,25 @@ Issues: [`area: plug-ins`](https://github.com/suhina-daw/suhina-daw/issues?q=is%
 
 **In progress**
 
-- ARA clip editing (epic #587)
+- ARA clip editing (epic \#587)
 - [#999](https://github.com/suhina-daw/suhina-daw/issues/999) Settings › Plug-ins › Editors: the note says editors do not open on this system, while on macOS they open in a window of their own
 - [#990](https://github.com/suhina-daw/suhina-daw/issues/990) ARA: the ARA plug-in belongs to the clip, not the track
 
 **Planned**
 
+- [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066) Plug-ins: host VST2 directly \(clean-room spec, mock plug-in and probe first\)
 - [#952](https://github.com/suhina-daw/suhina-daw/issues/952) Device panels: a parameter search in a plug-in's panel
 - [#927](https://github.com/suhina-daw/suhina-daw/issues/927) Plug-ins: per-note expression to CLAP and VST3 plug-ins, and per-channel MPE
-- [#866](https://github.com/suhina-daw/suhina-daw/issues/866) Plug-in parameters: groups (MIDI CC, VST3 units, CLAP modules) and a column layout in the wide device view
+- [#866](https://github.com/suhina-daw/suhina-daw/issues/866) Plug-in parameters: groups \(MIDI CC, VST3 units, CLAP modules\) and a column layout in the wide device view
 - [#859](https://github.com/suhina-daw/suhina-daw/issues/859) Plug-in host: silence on main input channels past the link width
 - [#858](https://github.com/suhina-daw/suhina-daw/issues/858) Plug-in host: downmix a stereo link into a mono main input
 - [#822](https://github.com/suhina-daw/suhina-daw/issues/822) Plug-in scan: at start, scan only the plug-ins that are new, changed or gone
 - [#817](https://github.com/suhina-daw/suhina-daw/issues/817) ARA editor and Arrangement: follow each other's position and selection
-- [#815](https://github.com/suhina-daw/suhina-daw/issues/815) Plug-in editors: Escape does not close a floating editor, Alt+F4 closes the editor instead of Suhina
+- [#815](https://github.com/suhina-daw/suhina-daw/issues/815) Plug-in editors: Escape does not close a floating editor, Alt\+F4 closes the editor instead of Suhina
 - [#813](https://github.com/suhina-daw/suhina-daw/issues/813) ARA: a hidden editor keeps the plug-in out of backups
 - [#797](https://github.com/suhina-daw/suhina-daw/issues/797) ARA: a fresh import of a file takes the edits of an older clip of the same file
 - [#725](https://github.com/suhina-daw/suhina-daw/issues/725) Plug-in manager: select several rows and turn them off or on together
-- [#724](https://github.com/suhina-daw/suhina-daw/issues/724) ARA: where an ARA plug-in shows on a track (research first)
+- [#724](https://github.com/suhina-daw/suhina-daw/issues/724) ARA: where an ARA plug-in shows on a track \(research first\)
 - [#722](https://github.com/suhina-daw/suhina-daw/issues/722) ARA: moving an edited clip to another track asks Copy as new or Keep edits
 - [#721](https://github.com/suhina-daw/suhina-daw/issues/721) Playback from the selected clip's start is a setting
 - [#720](https://github.com/suhina-daw/suhina-daw/issues/720) ARA: the plug-in's notes on the clip, and the editor docked to its track when raised fully
@@ -584,7 +585,7 @@ Issues: [`area: plug-ins`](https://github.com/suhina-daw/suhina-daw/issues?q=is%
 - [#110](https://github.com/suhina-daw/suhina-daw/issues/110) Plug-ins: follow latency a plug-in changes while it runs
 - [#109](https://github.com/suhina-daw/suhina-daw/issues/109) Plug-ins: automate plug-in parameters from the engine
 - [#108](https://github.com/suhina-daw/suhina-daw/issues/108) Plug-ins: one round trip per block for consecutive plug-ins in one host process
-- [#100](https://github.com/suhina-daw/suhina-daw/issues/100) Engine: plug-ins in the track chain (imported VST3/VST2 instruments and effects sound in the app)
+- [#100](https://github.com/suhina-daw/suhina-daw/issues/100) Engine: plug-ins in the track chain \(imported VST3/VST2 instruments and effects sound in the app\)
 - [#66](https://github.com/suhina-daw/suhina-daw/issues/66) UI: plug-ins section in Settings with the scanner
 
 **Open bugs**
@@ -610,10 +611,10 @@ Issues: [`area: browser`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 **Planned**
 
 - Collections
-- [#711](https://github.com/suhina-daw/suhina-daw/issues/711) Browser: the sidebar decides what is shown, and Recent is its own item (decision needed)
+- [#711](https://github.com/suhina-daw/suhina-daw/issues/711) Browser: the sidebar decides what is shown, and Recent is its own item \(decision needed\)
 - [#710](https://github.com/suhina-daw/suhina-daw/issues/710) Sample map: a Minimize or Close button and Escape when it fills the main area
 - [#708](https://github.com/suhina-daw/suhina-daw/issues/708) Browser: slides or fades when it is hidden and shown, with animations on
-- [#315](https://github.com/suhina-daw/suhina-daw/issues/315) Drops from the file manager: show where a file will land while dragging (pointer position from the windowing layer)
+- [#315](https://github.com/suhina-daw/suhina-daw/issues/315) Drops from the file manager: show where a file will land while dragging \(pointer position from the windowing layer\)
 - [#137](https://github.com/suhina-daw/suhina-daw/issues/137) NKS presets in the browser and on the sample map
 
 **Done**
@@ -622,9 +623,9 @@ Issues: [`area: browser`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 - [#548](https://github.com/suhina-daw/suhina-daw/issues/548) Hovering over tag should display tag name
 - [#457](https://github.com/suhina-daw/suhina-daw/issues/457) Tag Editor for Suhina
 - [#330](https://github.com/suhina-daw/suhina-daw/issues/330) Browser: plug-ins as a flat list or grouped by vendor or type, with favourites and tags
-- [#325](https://github.com/suhina-daw/suhina-daw/issues/325) Sample map: recognise kinds of sounds reliably (features v2, classify before the layout, set a kind by hand)
+- [#325](https://github.com/suhina-daw/suhina-daw/issues/325) Sample map: recognise kinds of sounds reliably \(features v2, classify before the layout, set a kind by hand\)
 - [#274](https://github.com/suhina-daw/suhina-daw/issues/274) Drop audio and MIDI files from the system file manager onto tracks and slots
-- [#195](https://github.com/suhina-daw/suhina-daw/issues/195) Sample map: readable with 200 000 samples (overplotting, overlapping labels)
+- [#195](https://github.com/suhina-daw/suhina-daw/issues/195) Sample map: readable with 200 000 samples \(overplotting, overlapping labels\)
 - [#194](https://github.com/suhina-daw/suhina-daw/issues/194) Sample map: open it in its own window, e.g. on a second screen
 - [#136](https://github.com/suhina-daw/suhina-daw/issues/136) Sample map: browse samples by how they sound
 - [#133](https://github.com/suhina-daw/suhina-daw/issues/133) Stems files: load .stem.mp4 tracks as a group of their stems
@@ -652,8 +653,8 @@ Issues: [`area: export`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3A
 
 - Renders from the command line and MCP
 - Offline renders on the same code as playback
-- [#760](https://github.com/suhina-daw/suhina-daw/issues/760) Export: MP3 encoder (LAME 3.100, vendored, own fft.c)
-- [#601](https://github.com/suhina-daw/suhina-daw/issues/601) Export: render the mix to an audio file (WAV, MP3, Ogg) from the app
+- [#760](https://github.com/suhina-daw/suhina-daw/issues/760) Export: MP3 encoder \(LAME 3.100, vendored, own fft.c\)
+- [#601](https://github.com/suhina-daw/suhina-daw/issues/601) Export: render the mix to an audio file \(WAV, MP3, Ogg\) from the app
 
 ## Control and sync
 
@@ -673,7 +674,7 @@ Issues: [`area: control`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3
 **Done**
 
 - [#403](https://github.com/suhina-daw/suhina-daw/issues/403) MIDI controllers and remote mapping: spec and ADR
-- [#71](https://github.com/suhina-daw/suhina-daw/issues/71) UI: configurable shortcuts for every command (cut, copy, paste, duplicate and the rest)
+- [#71](https://github.com/suhina-daw/suhina-daw/issues/71) UI: configurable shortcuts for every command \(cut, copy, paste, duplicate and the rest\)
 
 ## Commands and agents
 
@@ -693,10 +694,10 @@ Issues: [`area: audio-system`](https://github.com/suhina-daw/suhina-daw/issues?q
 
 **Planned**
 
-- [#449](https://github.com/suhina-daw/suhina-daw/issues/449) Audio output: show the measured latency while you work (control bar performance readout)
-- [#307](https://github.com/suhina-daw/suhina-daw/issues/307) [feature] SuhinASIO (custom driver)
+- [#449](https://github.com/suhina-daw/suhina-daw/issues/449) Audio output: show the measured latency while you work \(control bar performance readout\)
+- [#307](https://github.com/suhina-daw/suhina-daw/issues/307) \[feature\] SuhinASIO \(custom driver\)
 - [#176](https://github.com/suhina-daw/suhina-daw/issues/176) Audio output: open the ASIO driver's control panel, and its buffer granularity
-- [#175](https://github.com/suhina-daw/suhina-daw/issues/175) Audio output: measure plug-in timing on the UA Apollo (WASAPI shared, exclusive, ASIO)
+- [#175](https://github.com/suhina-daw/suhina-daw/issues/175) Audio output: measure plug-in timing on the UA Apollo \(WASAPI shared, exclusive, ASIO\)
 
 **Done**
 
@@ -766,9 +767,9 @@ Issues: [`area: look`](https://github.com/suhina-daw/suhina-daw/issues?q=is%3Ais
 **Open bugs**
 
 - [#870](https://github.com/suhina-daw/suhina-daw/issues/870) Settings › Theme: choosing a theme keeps the page in place; the theme editor in its own window
-- [#847](https://github.com/suhina-daw/suhina-daw/issues/847) Windows: diagnose severe UI stalls in PR #841 themes
+- [#847](https://github.com/suhina-daw/suhina-daw/issues/847) Windows: diagnose severe UI stalls in PR \#841 themes
 - [#800](https://github.com/suhina-daw/suhina-daw/issues/800) MacOS binary needs to be signed or else apple will tell users it's malware
-- [#712](https://github.com/suhina-daw/suhina-daw/issues/712) Colour picker: choosing a colour from + closes the menu too early
+- [#712](https://github.com/suhina-daw/suhina-daw/issues/712) Colour picker: choosing a colour from \+ closes the menu too early
 - [#653](https://github.com/suhina-daw/suhina-daw/issues/653) macOS: show Cmd shortcuts in menus, and make copying and pasting clips with the keyboard work
 
 ## Audio to MIDI
@@ -782,4 +783,4 @@ Issues: [`area: audio-to-midi`](https://github.com/suhina-daw/suhina-daw/issues?
 
 **Done**
 
-- [#146](https://github.com/suhina-daw/suhina-daw/issues/146) Stem separation [Feature Request]
+- [#146](https://github.com/suhina-daw/suhina-daw/issues/146) Stem separation \[Feature Request\]
