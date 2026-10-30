@@ -14,7 +14,9 @@
 //!
 //! What it can load: CLAP plug-ins ([`clap`]), the CLAP test plug-ins built in for tests
 //! ([`test_clap`], [`test_clap_delay`], [`test_clap_ports`]), and simple test processors
-//! ([`processors`]) that crash or hang on purpose.
+//! ([`processors`]) that crash or hang on purpose. With the `vst2` feature (ADR 0022) it
+//! gains the VST2 interface layer ([`vst2`]): the ported VeSTige definitions, the mock
+//! plug-in `test:vst2` and the `--vst2-probe` tool.
 //!
 //! A plug-in may report another latency while it runs. Between messages the main thread asks
 //! each instance whether it did (restarting its processing first where the format asks for
@@ -43,6 +45,8 @@ mod test_clap;
 mod test_clap_delay;
 mod test_clap_ports;
 mod test_vst3;
+#[cfg(feature = "vst2")]
+mod vst2;
 mod vst3;
 mod vst3_editor;
 mod vst3_events;
@@ -157,7 +161,15 @@ fn main() {
         (Some("--control"), Some(address)) => address,
         (Some("--scan"), Some(file)) => scan(file),
         (Some("--scan-worker"), None) => scan_worker(),
+        #[cfg(feature = "vst2")]
+        (Some("--vst2-probe"), Some(name)) => vst2_probe(name),
         _ => {
+            #[cfg(feature = "vst2")]
+            eprintln!(
+                "usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker | \
+                 --vst2-probe <plug-in>"
+            );
+            #[cfg(not(feature = "vst2"))]
             eprintln!("usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker");
             std::process::exit(2);
         }
@@ -165,6 +177,24 @@ fn main() {
     if let Err(e) = run(address) {
         eprintln!("suhina-plugin-host: {e}");
         std::process::exit(1);
+    }
+}
+
+/// `--vst2-probe <plug-in>`: prints the report of the probe over the VST2 plug-in the name
+/// gives (a VST2 file, or `test:vst2` for the built-in mock) and exits. A tool of the `vst2`
+/// feature (ADR 0022): what the probe learns settles the interface's *assumed* facts, and
+/// this process is disposable, as a scanner's is.
+#[cfg(feature = "vst2")]
+fn vst2_probe(name: &str) -> ! {
+    match vst2::probe::run_tool(name) {
+        Ok(report) => {
+            println!("{report}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("suhina-plugin-host: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
