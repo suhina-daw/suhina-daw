@@ -24,7 +24,7 @@ pub(crate) const KEYMAP: &[&str] = &["keymap.json"];
 
 /// The note under Editors on macOS: the editors open in a window of their own, and what is
 /// missing is the device view's embed, which a host on this system cannot give (ADR 0006).
-const EDITORS_NOTE_EMBED: &str = "Editors open in a window of their own; the device view needs Windows or X11";
+const EDITORS_NOTE_EMBED: &str = "Editors open in their own window; the device view needs Windows or X11";
 /// The note under Editors where no editor opens at all: a system with no display (Linux without
 /// an X server, Wayland without editors yet).
 const EDITORS_NOTE_NONE: &str = "Editors need Windows or an X server (DISPLAY); they do not open here yet";
