@@ -1073,6 +1073,56 @@
       "workInProgress": false
     },
     {
+      "id": "Arrangement/Tracks/new_project_returns",
+      "page": "Arrangement",
+      "section": "Tracks",
+      "name": "Returns in new projects",
+      "note": "Choose whether a new blank project starts with return tracks.",
+      "keys": [
+        "new_project_returns"
+      ],
+      "sourceFingerprint": "7914528ff4c1b1a88ad36b8e8bc402fb7e087c4dfb3005225ed0b9e80115144c",
+      "helpStatus": "reviewed",
+      "description": "Return tracks receive sound sent from other channels, often for shared effects. This preference decides whether a new blank project gets the A and B return tracks. With None the project has no returns, so no track shows send controls until you insert a return track. It only affects new blank projects: a project you open that already has returns always shows them, and the New or open dialog offers the other kind for a single project.",
+      "options": [
+        {
+          "name": "A and B",
+          "description": "New blank projects get two return tracks, A and B. This is the default."
+        },
+        {
+          "name": "None",
+          "description": "New blank projects have no return tracks and no send controls."
+        }
+      ],
+      "whenToChange": "Choose None if you never use return tracks and want new projects without them and without send controls; keep A and B if you often send several tracks to shared effects.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Tracks/alt_wheel",
+      "page": "Arrangement",
+      "section": "Tracks",
+      "name": "Alt+wheel resizes",
+      "note": "Choose whether Alt and the mouse wheel resize all tracks or only the one under the pointer.",
+      "keys": [
+        "alt_wheel"
+      ],
+      "sourceFingerprint": "08e96feac6a5daa0c402e1340ff71c6a861ec32d09f8bd88225f7b8fad4eb1a7",
+      "helpStatus": "reviewed",
+      "description": "In the Arrangement view, holding Alt and turning the mouse wheel over the tracks makes them taller or shorter. All tracks changes every track and its automation lanes together. The one under the pointer changes only the track or the automation lane the pointer is over.",
+      "options": [
+        {
+          "name": "All tracks",
+          "description": "Every track and automation lane changes height together. This is the default."
+        },
+        {
+          "name": "The one under the pointer",
+          "description": "Only the track or automation lane under the pointer changes height."
+        }
+      ],
+      "whenToChange": "Pick The one under the pointer when you want to make one track or one automation lane bigger without changing the others.",
+      "workInProgress": false
+    },
+    {
       "id": "Arrangement/Track sizes/arrangement_track_size",
       "page": "Arrangement",
       "section": "Track sizes",
@@ -1219,6 +1269,129 @@
       "workInProgress": false
     },
     {
+      "id": "Arrangement/Tools/arrangement_toolbar",
+      "page": "Arrangement",
+      "section": "Tools",
+      "name": "Toolbar",
+      "note": "Show a row of tools over the Arrangement and let the number keys choose them.",
+      "keys": [
+        "arrangement_toolbar"
+      ],
+      "sourceFingerprint": "dfbb527972fe530e0f7873b810a0cc3a2824a3eeddebb9dafaa6640b320d085d",
+      "helpStatus": "reviewed",
+      "description": "With this on, a toolbar runs along the top of the Arrangement with six tools: Select (moves, trims and selects clips, as without the toolbar), Range (a drag selects time anywhere), Split (a click cuts a clip where you click), Erase (a click deletes a clip), Draw (a drag on a lane makes an empty clip as long as the drag) and Mute (a click mutes or unmutes a clip). The keys 1 to 6 choose them while the Arrangement was clicked last; when the piano roll was clicked last, the same keys choose its own tools. The Arrangement is outlined in the accent colour while it has the keys.",
+      "options": [
+        {
+          "name": "Off",
+          "description": "No toolbar; the Arrangement always works as the Select tool. This is the default."
+        },
+        {
+          "name": "On",
+          "description": "The toolbar shows and the keys 1 to 6 choose its tools while the Arrangement has the focus."
+        }
+      ],
+      "whenToChange": "Turn it on if you prefer to pick a tool (split, erase, draw) and click, rather than using menus and modifier keys.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Tools/arrangement_grid",
+      "page": "Arrangement",
+      "section": "Tools",
+      "name": "Default grid",
+      "note": "Choose the Arrangement's grid when Suhina starts.",
+      "keys": [
+        "arrangement_grid"
+      ],
+      "sourceFingerprint": "cf4e204d5bf10b8bf78d76727dfded8fda752be1a68795a77039fd74a18930c2",
+      "helpStatus": "reviewed",
+      "description": "The Arrangement has a grid of its own, apart from the control bar's Quantize box: its lines, and where clips, fades, automation points and ruler clicks snap. This sets what it starts on. A fixed value keeps its lines that far apart (coarser when zoomed far out); an adaptive grid makes its lines finer as you zoom in. From there the grid menu (the toolbar, an empty lane's right-click menu, an automation lane's menu) and Ctrl+1 to Ctrl+4 change it; changing this setting sets the grid again.",
+      "options": [
+        {
+          "name": "Adaptive widest",
+          "description": "The lines follow the zoom, as far apart as the adaptive widths go."
+        },
+        {
+          "name": "Adaptive wide",
+          "description": "The lines follow the zoom, wide apart."
+        },
+        {
+          "name": "Adaptive medium",
+          "description": "The lines follow the zoom, a medium distance apart."
+        },
+        {
+          "name": "Adaptive narrow",
+          "description": "The lines follow the zoom, close together."
+        },
+        {
+          "name": "Adaptive narrowest",
+          "description": "The lines follow the zoom, as close as the adaptive widths go."
+        },
+        {
+          "name": "8 bars",
+          "description": "Lines and snapping every eight bars."
+        },
+        {
+          "name": "4 bars",
+          "description": "Every four bars."
+        },
+        {
+          "name": "2 bars",
+          "description": "Every two bars."
+        },
+        {
+          "name": "1 bar",
+          "description": "Every bar."
+        },
+        {
+          "name": "1/2",
+          "description": "Every half note."
+        },
+        {
+          "name": "1/4",
+          "description": "Every beat (quarter note). This is the default."
+        },
+        {
+          "name": "1/8",
+          "description": "Every eighth note."
+        },
+        {
+          "name": "1/16",
+          "description": "Every sixteenth note."
+        },
+        {
+          "name": "1/32",
+          "description": "Every thirty-second note."
+        }
+      ],
+      "whenToChange": "Pick an adaptive grid if you zoom a lot and want the lines to follow; pick a fixed value such as 1 bar for arranging whole sections or 1/16 for detailed edits.",
+      "workInProgress": false
+    },
+    {
+      "id": "Arrangement/Automation/automation_click",
+      "page": "Arrangement",
+      "section": "Automation",
+      "name": "Click anywhere adds",
+      "note": "Choose whether a single click anywhere on an automation lane adds a point.",
+      "keys": [
+        "automation_click"
+      ],
+      "sourceFingerprint": "1f827ef5968036a13c39b01f476bbc40dc56a4a98a2f84fadf88f02b25b04462",
+      "helpStatus": "reviewed",
+      "description": "Off (the default), a click on an automation lane adds a point only on or near the envelope's line, where the pointer turns into a hand and the line's value shows beside it; a click away from the line only ends the painted range and the selected points, and a double-click there adds a point at the pointer. On, a click anywhere on the lane adds a point at the pointer's beat and height, as before.",
+      "options": [
+        {
+          "name": "Off",
+          "description": "A click adds a point only on or near the line; a double-click adds one anywhere. This is the default."
+        },
+        {
+          "name": "On",
+          "description": "A click anywhere on the lane adds a point at the pointer."
+        }
+      ],
+      "whenToChange": "Turn it on if you mostly draw automation point by point and want every click to add one.",
+      "workInProgress": false
+    },
+    {
       "id": "Arrangement/Advanced/stretch_alt_drag",
       "page": "Arrangement",
       "section": "Advanced",
@@ -1294,6 +1467,31 @@
       "workInProgress": false
     },
     {
+      "id": "Arrangement/Advanced/copy_names",
+      "page": "Arrangement",
+      "section": "Advanced",
+      "name": "Copy names",
+      "note": "Choose how a duplicated or pasted track is named when its name is taken.",
+      "keys": [
+        "copy_names"
+      ],
+      "sourceFingerprint": "a90400a7c63e6034f55c05ac70435b7f386f7b8deda47d2e559e392a4331be59",
+      "helpStatus": "reviewed",
+      "description": "When a track named Bass is duplicated or pasted and Bass is already taken, the copy gets a number. Wrapped names it Bass (2), Hash names it Bass #2. A name that contains # without a number after it shows the track's number, so it is kept as it is and every copy shows its own number. Tracks that were never renamed are called # MIDI or # Audio and keep that name.",
+      "options": [
+        {
+          "name": "Wrapped (2)",
+          "description": "Copies read Bass (2), Bass (3). This is the default."
+        },
+        {
+          "name": "Hash #2",
+          "description": "Copies read Bass #2, Bass #3."
+        }
+      ],
+      "whenToChange": "Pick Hash if you prefer numbered names without brackets, for example to match how your other projects are named.",
+      "workInProgress": false
+    },
+    {
       "id": "Session/Launching/select_on_launch",
       "page": "Session",
       "section": "Launching",
@@ -1302,7 +1500,7 @@
       "keys": [
         "select_on_launch"
       ],
-      "sourceFingerprint": "472f1211e33f3116c9415321f86be26f7ad105b2d676a9e2ee479e981eff5e6c",
+      "sourceFingerprint": "6778f0162430bda77f5213f31f41e621e2f3cd6c19aebacbdafff6090352445e",
       "helpStatus": "reviewed",
       "description": "The Session view is the grid used to launch clips independently of the Arrangement timeline. With this enabled, launching a clip with its slot’s launch control also selects the clip and its track, so the detail area follows that clip. With it off, launch playback can change while you keep editing the previously selected clip. Clicking the clip name still selects it without launching.",
       "options": [
@@ -1498,6 +1696,35 @@
       "workInProgress": false
     },
     {
+      "id": "Browser/Browser/browser_folder_drop",
+      "page": "Browser",
+      "section": "Browser",
+      "name": "Dropping on a folder",
+      "note": "Choose what dragging samples onto a folder in the browser does.",
+      "keys": [
+        "browser_folder_drop"
+      ],
+      "sourceFingerprint": "15bd78b04b1425e655480f656db49531ee802447d76b1dc7bb07ea08d0f4b209",
+      "helpStatus": "reviewed",
+      "description": "Samples dragged in the browser and dropped on one of its folders go into that folder. Ask shows a question with Move, Copy and Cancel, and a Remember my choice box that sets this setting. Move takes the files out of where they were; their pins, recent places and colour tags go with them, and a file an open project plays is left where it is. Copy leaves the originals. A name already taken in the folder gets a number (Kick 2.wav); nothing is overwritten. Holding Ctrl while dropping always copies, Shift always moves.",
+      "options": [
+        {
+          "name": "Ask",
+          "description": "Ask each time whether to move or copy. This is the default."
+        },
+        {
+          "name": "Move",
+          "description": "Move the samples into the folder without asking."
+        },
+        {
+          "name": "Copy",
+          "description": "Copy the samples into the folder without asking."
+        }
+      ],
+      "whenToChange": "Set Move or Copy once you always want the same result and the question gets in the way.",
+      "workInProgress": false
+    },
+    {
       "id": "Browser/Previews/preview_autoplay",
       "page": "Browser",
       "section": "Previews",
@@ -1636,6 +1863,39 @@
         }
       ],
       "whenToChange": "Raise the limit when a wanted loop is absent because of its length, or lower it to focus on shorter sounds.",
+      "workInProgress": false
+    },
+    {
+      "id": "Browser/Sample map/map_label_size",
+      "page": "Browser",
+      "section": "Sample map",
+      "name": "Map labels",
+      "note": "Set how large the names of the sample map's clusters are, or hide them.",
+      "keys": [
+        "map_label_size"
+      ],
+      "sourceFingerprint": "3f65b23994aed1b587df0e467df0d9b39668200a2c0daee5113a37fc00e7962c",
+      "helpStatus": "reviewed",
+      "description": "The sample map names its groups of similar sounds (Kick, Snare, Vocal and so on) with labels drawn over the points. In a narrow map, large labels can cover the very points they name. This setting scales every label by the same amount, so bigger groups keep their larger labels and labels still never overlap. It is the same choice as Labels in the map's top bar.",
+      "options": [
+        {
+          "name": "Off",
+          "description": "Hide the labels; the legend under the map still names the kinds."
+        },
+        {
+          "name": "50 %",
+          "description": "Labels at half their full size."
+        },
+        {
+          "name": "75 %",
+          "description": "Labels at three quarters of their full size."
+        },
+        {
+          "name": "100 %",
+          "description": "Labels at their full size. This is the default."
+        }
+      ],
+      "whenToChange": "Make the labels smaller or turn them off when they hide samples you want to see or click, most often in the map docked in the browser.",
       "workInProgress": false
     },
     {

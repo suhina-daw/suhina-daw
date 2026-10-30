@@ -138,6 +138,56 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::CRITICAL,
     },
     CommandSpec {
+        id: "track.copy",
+        label: "Copy whole tracks for track.paste: each with its channel, devices, automation, clips, take lanes and slots, a group with its tracks",
+        params: &[param("tracks", ParamType::Tracks, "the tracks to copy (ids or names), in project order")],
+        kind: CommandKind::Read,
+        run: copy_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.cut",
+        label: "Copy whole tracks for track.paste and delete them, as one undo step",
+        params: &[param("tracks", ParamType::Tracks, "the tracks to cut (ids or names)")],
+        kind: CommandKind::Edit,
+        run: cut_tracks,
+        policy: Policy::CRITICAL,
+    },
+    CommandSpec {
+        id: "track.paste",
+        label: "Add the tracks track.copy or track.cut copied, with new clips of their own, after a track or at the end of the regular tracks",
+        params: &[
+            optional(
+                "after",
+                ParamType::Track,
+                "put them after this track, in its group (default: after the last regular track)",
+            ),
+            optional("suffix", ParamType::Text, COPY_SUFFIX),
+        ],
+        kind: CommandKind::Edit,
+        run: paste_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.setKind",
+        label: "Make an empty track a MIDI or an audio track; a MIDI track that becomes an audio track loses its instrument and MIDI effects",
+        params: &[TRACK, param("kind", ParamType::Text, "midi or audio")],
+        kind: CommandKind::Edit,
+        run: crate::track_kind::set_kind,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "track.duplicate",
+        label: "Copy the named tracks, with new clips of their own, as one block after the last of them; a group with its tracks",
+        params: &[
+            param("tracks", ParamType::Tracks, "the tracks to duplicate (ids or names)"),
+            optional("suffix", ParamType::Text, COPY_SUFFIX),
+        ],
+        kind: CommandKind::Edit,
+        run: duplicate_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "track.renameClips",
         label: "Name every clip of a track, in the arrangement and in its slots, after the track",
         params: &[TRACK],
@@ -239,7 +289,16 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         label: "Add an audio or MIDI track with its mixer channel, clip slots and arrangement lane, optionally with a device (an instrument or MIDI effect makes a MIDI track, an effect an audio track)",
         params: &[
             optional("kind", ParamType::Text, "audio or midi (default: from the device)"),
-            optional("name", ParamType::Text, "the track's name (default: the device's, or Audio n / MIDI n)"),
+            optional(
+                "name",
+                ParamType::Text,
+                "the track's name (default: the device's, or # Audio / # MIDI, # reading as the track's number)",
+            ),
+            optional(
+                "count",
+                ParamType::Integer,
+                "how many empty tracks to add, one after another (1 to 64, default 1)",
+            ),
             optional(
                 "after",
                 ParamType::Track,
@@ -625,6 +684,59 @@ fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     Ok(json!({ "color": text }))
 }
 
+fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let copied = crate::track_copy::copy(&session.project, &tracks)?;
+    let names = copied.first_names();
+    let count = copied.len();
+    session.clipboards.whole_tracks = copied;
+    Ok(json!({ "copied": count, "tracks": names }))
+}
+
+fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let copied = crate::track_copy::copy(&session.project, &tracks)?;
+    let names = copied.first_names();
+    let count = copied.len();
+    // The tracks in groups first, so deleting a group leaves none of them behind.
+    let mut gone = crate::track_copy::with_their_tracks(&session.project, &tracks);
+    gone.reverse();
+    for track in gone {
+        delete_track(session, &json!({ "track": track.0 }))?;
+    }
+    session.clipboards.whole_tracks = copied;
+    Ok(json!({ "cut": count, "tracks": names }))
+}
+
+/// The `suffix` parameter's description, shared by `track.paste` and `track.duplicate`.
+const COPY_SUFFIX: &str = "how a copy of a taken name reads: wrapped (\"Bass (2)\", default) or hash (\"Bass #2\"); a name with # (the track's number) stays as it is";
+
+fn paste_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let after = match params.get("after") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(track_at(&session.project, params, "after")?),
+    };
+    let clipboard = session.clipboards.whole_tracks.clone();
+    let added = crate::track_copy::paste(&mut session.project, &clipboard, after, suffix(params)?)?;
+    Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+fn duplicate_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let tracks = track_list(&session.project, params)?;
+    let added = crate::track_copy::duplicate(&mut session.project, &tracks, suffix(params)?)?;
+    Ok(json!({ "tracks": added.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+/// The `suffix` parameter of `track.paste` and `track.duplicate`: how a taken name says it is a
+/// copy ("wrapped": "Bass (2)", "hash": "Bass #2"); wrapped when it is left out.
+fn suffix(params: &Value) -> Result<crate::track_copy::Suffix, CommandError> {
+    match params.get("suffix").and_then(Value::as_str) {
+        None => Ok(crate::track_copy::Suffix::default()),
+        Some(name) => crate::track_copy::Suffix::parse(name)
+            .ok_or_else(|| format!("suffix is \"wrapped\" or \"hash\", not {name:?}").into()),
+    }
+}
+
 fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
     let p = &session.project;
@@ -640,6 +752,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
         None => {
             p.tracks.retain(|t| t.id != track);
             p.arrangement.lanes.retain(|l| l.track != Some(track));
+            p.arrangement.takes.retain(|t| t.track != track);
             p.launcher.columns.retain(|c| c.track != track);
         }
     }

@@ -382,7 +382,7 @@ fn the_x_at_the_end_of_the_toolbar_closes_the_editor() {
 }
 
 #[test]
-fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
+fn double_clicking_a_clip_opens_the_closed_editor_at_its_height() {
     let mut h = piano_app();
     let bottom = detail_bottom(&h);
     pull_to(&mut h, bottom - 250.0);
@@ -390,10 +390,25 @@ fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
     let x = hide_button(&h).expect("a Hide editor button").center();
     click(&mut h, x);
     assert!(!piano_shows(&h));
-    // A click on the clip again opens it, as tall as it was.
+    // A click only selects the clip: the editor stays closed (#916).
     h.get_by_label(CLIP).click();
     h.run();
-    assert!(piano_shows(&h), "selecting the clip opens the editor");
+    assert!(!piano_shows(&h), "a click does not open the closed editor");
+    // A double-click opens it, as tall as it was.
+    let at = h.get_by_label(CLIP).rect().center();
+    // A second apart from the click before, so the two make a double-click of their own.
+    let ready = h.ctx.input(|i| i.time) + 1.0;
+    while h.ctx.input(|i| i.time) < ready {
+        h.step();
+    }
+    for _ in 0..2 {
+        h.hover_at(at);
+        h.drag_at(at);
+        h.drop_at(at);
+        h.step();
+    }
+    h.run();
+    assert!(piano_shows(&h), "double-clicking the clip opens the editor");
     let again = bottom - splitter(&h).bottom();
     assert!((again - height).abs() < 1.5, "at its height: {again}, was {height}");
 }

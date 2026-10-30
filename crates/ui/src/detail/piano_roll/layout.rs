@@ -261,6 +261,7 @@ pub(super) fn scroll_and_zoom_by_hand(ui: &Ui, state: &mut PianoRollState, area:
                 let beat = (pointer.x - grid.left() + state.scroll.x) / state.beat_width;
                 state.beat_width = (state.beat_width * zoom).clamp(BEAT_WIDTH_RANGE.0, BEAT_WIDTH_RANGE.1);
                 state.scroll.x = beat * state.beat_width - (pointer.x - grid.left());
+                state.zoom_reach = f64::from((state.scroll.x + grid.width()) / state.beat_width);
             }
         } else {
             state.scroll -= wheel;

@@ -6,6 +6,40 @@
 use super::*;
 
 impl App {
+    /// Moves or copies sample files into a folder of the browser (#943); when a file there has
+    /// the name of one of them, asks first whether to keep both or skip those.
+    pub(super) fn files_into_folder(&mut self, files: Vec<PathBuf>, folder: &Path, copy: bool) {
+        let taken: Vec<String> = files
+            .iter()
+            .filter(|f| name_taken(f, folder))
+            .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        suhina_plugins::trace!("browser: {} of {} names already in {}", taken.len(), files.len(), folder.display());
+        if taken.is_empty() {
+            self.files_into_folder_now(files, folder, copy);
+        } else {
+            self.name_clash = Some((files, folder.to_path_buf(), copy, taken));
+        }
+    }
+
+    /// Moves or copies sample files into a folder of the browser (#943), saying how it went.
+    pub(super) fn files_into_folder_now(&mut self, files: Vec<PathBuf>, folder: &Path, copy: bool) {
+        let items: Vec<String> = files.iter().map(|p| p.display().to_string()).collect();
+        let params = json!({ "items": items, "folder": folder.display().to_string() });
+        suhina_plugins::trace!(
+            "browser: {} {} files into {}",
+            if copy { "copy" } else { "move" },
+            items.len(),
+            folder.display()
+        );
+        self.status = if copy {
+            copied_status(self.projects.execute("library.copyTo", &params))
+        } else {
+            moved_status(self.projects.execute("library.moveTo", &params))
+        };
+        self.browser.relist();
+    }
+
     /// Handles files dropped from the system: folders, themes and projects here; the samples and
     /// MIDI files are returned, to land where the views say they are dropped.
     pub(super) fn dropped_files(&mut self, ui: &Ui) -> Vec<BrowserItem> {
@@ -69,16 +103,78 @@ impl App {
         let (mut released, mut escape, mut ctrl, mut pointer) = ui.input(|i| {
             (!i.pointer.primary_down(), i.key_pressed(Key::Escape), i.modifiers.command, i.pointer.latest_pos())
         });
+        let shift = ui.input(|i| i.modifiers.shift);
         // A drag from the map's own window: that window has the pointer until the button is let go.
         if let Some(remote) = self.map_window.drag {
             (released, escape, ctrl) = (remote.released, remote.escape, remote.ctrl);
             pointer = self.drag_pointer(ui.ctx());
         }
-        let target = self.drop_target(&items, pointer);
         if escape {
             self.browser.drag = None;
             self.map_window.drag = None;
             return;
+        }
+        if released {
+            let kinds: Vec<String> = items.iter().map(|i| format!("{:?}", i.kind)).collect();
+            suhina_plugins::trace!(
+                "browser: drag of {} released at {:?}, over folder {:?}",
+                kinds.join(","),
+                pointer,
+                self.browser.drop_folder
+            );
+        }
+        // Samples over a folder of the browser go into it, moved or copied (#943).
+        if let Some(folder) = self.browser.drop_folder.take() {
+            let name = folder.file_name().map_or_else(|| folder.display().to_string(), |n| n.to_string_lossy().into());
+            if !released {
+                self.status = Status::Hint(format!("Drop to move or copy into {name}; Ctrl copies, Shift moves"));
+                return;
+            }
+            self.browser.drag = None;
+            self.map_window.drag = None;
+            let files = drag_out_files(&items);
+            suhina_plugins::trace!(
+                "browser: {} items dropped on folder {} ({} files), setting {:?}",
+                items.len(),
+                folder.display(),
+                files.len(),
+                self.settings.view.folder_drop
+            );
+            if files.is_empty() {
+                return;
+            }
+            let copy = match (ctrl, shift, self.settings.view.folder_drop) {
+                (true, _, _) => Some(true),
+                (_, true, _) => Some(false),
+                (_, _, FolderDrop::Copy) => Some(true),
+                (_, _, FolderDrop::Move) => Some(false),
+                (_, _, FolderDrop::Ask) => None,
+            };
+            match copy {
+                Some(copy) => self.files_into_folder(files, &folder, copy),
+                None => self.folder_drop = Some((files, folder)),
+            }
+            return;
+        }
+        // Carried out of every Suhina window, samples become a drag of files that the system's
+        // file manager copies where they are dropped; the originals stay (#865).
+        if !released && self.outside_suhina(ui.ctx(), pointer) {
+            let files = drag_out_files(&items);
+            if !files.is_empty() {
+                self.drag_out = Some(files);
+                self.browser.drag = None;
+                self.map_window.drag = None;
+                self.view.drop = None;
+                self.arrangement.drop = None;
+                return;
+            }
+        }
+        let target = self.drop_target(&items, pointer);
+        // Samples on a MIDI track that holds clips, or MIDI files on such an audio track, are
+        // refused, with the pointer saying so (#945).
+        let refused = self.refused_drop(&items, target);
+        if refused.is_some() && !released {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
         }
         let separate = ctrl != self.settings.drop_separate;
         if let Some(pointer) = pointer {
@@ -89,12 +185,56 @@ impl App {
             self.map_window.drag = None;
             self.view.drop = None;
             self.arrangement.drop = None;
-            if let Some(target) = target {
+            if let Some(why) = refused {
+                self.status = Status::Hint(why);
+            } else if let Some(target) = target {
                 // Dropped into the project: the preview has done its job.
                 browser_view::stop_preview(&mut self.browser, &mut self.projects);
                 self.drop_items(&items, target, separate);
             }
         }
+    }
+
+    /// Why dropping `items` on `target` is refused (#945): samples on a MIDI track, or MIDI files
+    /// on an audio track, that holds clips. An empty track takes their kind instead.
+    pub(super) fn refused_drop(&self, items: &[BrowserItem], target: Option<DropTarget>) -> Option<String> {
+        let track = match target? {
+            DropTarget::Track(t)
+            | DropTarget::Chain(t)
+            | DropTarget::Lane { track: t, .. }
+            | DropTarget::Slot { track: t, .. } => t,
+            _ => return None,
+        };
+        let session = self.session()?;
+        let t = session.project().track(track)?;
+        let samples = items.iter().any(|i| i.kind == crate::interaction::drop::ItemKind::Sample);
+        let midi = items.iter().any(|i| i.kind == crate::interaction::drop::ItemKind::Midi);
+        let other = (samples && !t.content.audio && t.content.notes) || (midi && !t.content.notes && t.content.audio);
+        (other && !session.track_is_empty(track)).then(|| {
+            let what = if samples { "audio" } else { "MIDI" };
+            format!(
+                "{} holds clips of another kind: drop the {what} on an empty track, or below the tracks",
+                session.project().shown_track_name(track)
+            )
+        })
+    }
+
+    /// Whether `pointer` (in the main window's points) is over neither the main window nor the
+    /// sample map's own window. No pointer is not taken for outside: the window keeps the pointer
+    /// while a button is held, so it always knows where a drag is.
+    pub(super) fn outside_suhina(&self, ctx: &egui::Context, pointer: Option<Pos2>) -> bool {
+        let Some(pointer) = pointer else { return false };
+        if ctx.content_rect().contains(pointer) {
+            return false;
+        }
+        let main = ctx.input(|i| i.viewport().inner_rect).map_or(Pos2::ZERO, |r| r.min);
+        let desktop = pointer + main.to_vec2();
+        let over_map = self.sample_map.view.window
+            && self.map_window.place.is_some_and(|[x, y, w, h]| {
+                Rect::from_min_size(Pos2::new(x as f32, y as f32), Vec2::new(w as f32, h as f32 + 40.0))
+                    .contains(desktop)
+            });
+        !over_map
     }
 
     /// While a device is carried from a chain or a strip's list: the label beside the pointer,
@@ -107,6 +247,7 @@ impl App {
         });
         if escape {
             self.device_carry = None;
+            ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::new(drop::DEVICE_CARRYING)));
             return;
         }
         let target = match self.shown {
@@ -114,14 +255,20 @@ impl App {
             View::Arrangement => self.arrangement.drop.as_ref().and_then(|p| p.target),
         };
         let to = match target {
-            Some(DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. }) => {
-                Some(t).filter(|t| *t != from)
-            }
+            Some(
+                DropTarget::Track(t)
+                | DropTarget::Chain(t)
+                | DropTarget::Lane { track: t, .. }
+                | DropTarget::Slot { track: t, .. },
+            ) => Some(t).filter(|t| *t != from),
             _ => None,
         };
         let session = self.session();
         let name = |track: TrackId| {
-            session.and_then(|s| s.project().track(track)).map_or_else(String::new, |t| t.name.clone())
+            if track == TrackId::MAIN {
+                return "Main".to_string();
+            }
+            session.map_or_else(String::new, |s| s.project().shown_track_name(track))
         };
         let device = session
             .and_then(|s| {
@@ -130,7 +277,12 @@ impl App {
                 p.channel(channel)?.devices.get(index).map(|d| d.name.clone())
             })
             .unwrap_or_default();
+        // Over its own chain: the place under the pointer along it.
+        let along = pointer
+            .and_then(|p| drop::device_slots_under(ui.ctx(), from, p).and_then(|list| list.at(p)))
+            .filter(|to| *to != index && *to != index + 1);
         if !released {
+            ui.ctx().data_mut(|d| d.insert_temp(Id::new(drop::DEVICE_CARRYING), (from, index)));
             if let Some(pointer) = pointer {
                 let text = match to {
                     Some(to) if copy => format!("Copy {device} to {}", name(to)),
@@ -142,8 +294,13 @@ impl App {
             return;
         }
         self.device_carry = None;
+        ui.ctx().data_mut(|d| d.remove::<(TrackId, usize)>(Id::new(drop::DEVICE_CARRYING)));
         self.view.drop = None;
         self.arrangement.drop = None;
+        if let Some(to) = along.filter(|_| to.is_none()) {
+            self.run(&Action::new("device.move", json!({ "track": from.0, "device": index, "to": to })));
+            return;
+        }
         if let Some(to) = to {
             if !copy {
                 self.selected_device = None;
@@ -153,6 +310,12 @@ impl App {
                 "device.moveToTrack",
                 json!({ "track": from.0, "device": index, "toTrack": to.0, "copy": copy }),
             ));
+            // The track it went to is selected and its chain shown, so the editor opened next is
+            // the moved or copied device's, not the one left on the track it came from.
+            self.selected_device = None;
+            self.device_picks.clear();
+            self.select_tracks(vec![to]);
+            self.detail_showing = detail_view::Showing::Devices;
         }
     }
 
@@ -199,7 +362,7 @@ impl App {
                 if detail.contains(pointer)
                     && items.iter().any(|i| i.kind.is_device() || i.kind == drop::ItemKind::Sample) =>
             {
-                Some(DropTarget::Track(track))
+                Some(DropTarget::Chain(track))
             }
             _ => target,
         }
@@ -377,7 +540,7 @@ impl App {
     /// A track's name, or its id when the project has none by that id.
     pub(super) fn track_name(&self, track: TrackId) -> String {
         self.session()
-            .and_then(|s| s.project().track(track).map(|t| t.name.clone()))
+            .and_then(|s| s.project().track(track).map(|_| s.project().shown_track_name(track)))
             .unwrap_or_else(|| track.0.to_string())
     }
 
@@ -468,14 +631,18 @@ impl App {
         separate: bool,
     ) -> Option<drop::DropPlan> {
         let project = self.session()?.project();
-        let name = |t: TrackId| project.track(t).map_or_else(|| t.0.to_string(), |x| x.name.clone());
+        let name = |t: TrackId| {
+            if t == TrackId::MAIN {
+                return "Main".to_string();
+            }
+            project.track(t).map_or_else(|| t.0.to_string(), |x| x.name.clone())
+        };
         if let [sample] = items
             && sample.kind == drop::ItemKind::Sample
             && sample.path().is_some_and(|path| !suhina_media::stems::is_stems_path(&path))
-            && let Some(track_id) = match target {
-                DropTarget::Track(t) | DropTarget::Lane { track: t, .. } | DropTarget::Slot { track: t, .. } => Some(t),
-                _ => None,
-            }
+            // Only on the track's devices (the detail area): on its lane, header or slot the sample
+            // is a clip, and an empty MIDI track becomes an audio track for it (#945).
+            && let DropTarget::Chain(track_id) = target
             && let Some(track) = project.track(track_id)
             && track.content.notes
             && !track.content.audio
@@ -619,6 +786,13 @@ impl App {
                     // A Stems file arrives as one group: it opens folded, so the drop reads as a
                     // single lane until the group's triangle is clicked (`clip.addFiles`).
                     self.fold_new_groups(&result);
+                    // A device dropped on a track shows that track's devices, the new one among
+                    // them (#950).
+                    if id.starts_with("device.add")
+                        && let Some(track) = params["track"].as_u64().and_then(|t| u32::try_from(t).ok())
+                    {
+                        self.show_devices_of(TrackId(track));
+                    }
                     let skipped = result["skipped"].as_array().map_or(0, Vec::len);
                     let placed = result["clips"].as_array().map_or(0, Vec::len);
                     self.status = match (id, skipped) {
@@ -716,4 +890,12 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
 /// Whether `path` names a theme package (`<name>.theme.suhina`), which is no project.
 pub fn is_theme_package(path: &std::path::Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".theme.suhina"))
+}
+
+/// Whether `folder` has a file of `file`'s name that is not `file` itself (one already there
+/// is left where it is, not copied over itself).
+pub(super) fn name_taken(file: &Path, folder: &Path) -> bool {
+    let Some(name) = file.file_name() else { return false };
+    let there = folder.join(name);
+    there.exists() && std::fs::canonicalize(&there).ok() != std::fs::canonicalize(file).ok()
 }

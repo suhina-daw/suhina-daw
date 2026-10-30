@@ -338,6 +338,10 @@ pub enum AraPlayback {
     Stop,
     /// Move the play position to this many seconds of song time.
     Position(f64),
+    /// Make the loop (cycle) this span: its start and its length, in seconds of song time.
+    Cycle(f64, f64),
+    /// Turn the loop on or off.
+    CycleOn(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -416,6 +420,14 @@ pub enum Message {
     Param {
         instance: u32,
         param: ParamInfo,
+    },
+    /// Set by the user in the plug-in's own editor: the host reports it so the session keeps
+    /// the project's values in step (decision 6). Comes unasked; `value` is what the plug-in
+    /// now runs with.
+    ParamChanged {
+        instance: u32,
+        id: u32,
+        value: f64,
     },
     /// Open the plug-in's editor; answered with `EditorOpened` and the size of its inside.
     /// `owner` is the engine's window (a Win32 `HWND`, an X11 window id). Not `embedded`: the
@@ -516,6 +528,12 @@ pub enum Message {
     /// Space was pressed in one of the host's editor windows (unasked): the engine plays or
     /// stops as Space does in its own window, since the key never reaches it there.
     TransportKey,
+    /// A key the app's computer keyboard plays, pressed or let go in an editor window while
+    /// that keyboard plays notes: its Windows virtual-key code.
+    TypedKey {
+        key: u8,
+        pressed: bool,
+    },
     /// An ARA plug-in asked the host's transport to play, stop or move (unasked): its own
     /// transport buttons and a click in its editor's timeline (#717).
     AraPlayback(AraPlayback),
@@ -566,6 +584,7 @@ impl Message {
             | Self::Params { instance, .. }
             | Self::SetParam { instance, .. }
             | Self::Param { instance, .. }
+            | Self::ParamChanged { instance, .. }
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
@@ -589,6 +608,7 @@ impl Message {
             | Self::Pong { .. }
             | Self::Memory { .. }
             | Self::TransportKey
+            | Self::TypedKey { .. }
             | Self::AraPlayback(_)
             | Self::Quit => None,
         }
@@ -636,6 +656,9 @@ impl Message {
                 json!({ "op": "set_param", "instance": instance, "id": id, "value": value })
             }
             Self::Param { instance, param } => json!({ "op": "param", "instance": instance, "param": param.to_json() }),
+            Self::ParamChanged { instance, id, value } => {
+                json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
+            }
             Self::OpenEditor { instance, owner, embedded } => {
                 json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
             }
@@ -681,10 +704,17 @@ impl Message {
             }
             Self::Memory { bytes } => json!({ "op": "memory", "bytes": bytes }),
             Self::TransportKey => json!({ "op": "transport_key" }),
+            Self::TypedKey { key, pressed } => json!({ "op": "typed_key", "key": key, "pressed": pressed }),
             Self::AraPlayback(AraPlayback::Start) => json!({ "op": "ara_playback", "request": "start" }),
             Self::AraPlayback(AraPlayback::Stop) => json!({ "op": "ara_playback", "request": "stop" }),
             Self::AraPlayback(AraPlayback::Position(seconds)) => {
                 json!({ "op": "ara_playback", "request": "position", "seconds": seconds })
+            }
+            Self::AraPlayback(AraPlayback::Cycle(start, length)) => {
+                json!({ "op": "ara_playback", "request": "cycle", "seconds": start, "length": length })
+            }
+            Self::AraPlayback(AraPlayback::CycleOn(on)) => {
+                json!({ "op": "ara_playback", "request": "cycle_on", "on": on })
             }
             Self::CloseEditor { instance } => json!({ "op": "close_editor", "instance": instance }),
             Self::EditorClosed { instance } => json!({ "op": "editor_closed", "instance": instance }),
@@ -775,6 +805,11 @@ impl Message {
                 value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
             },
             "param" => Self::Param { instance: instance()?, param: ParamInfo::from_json(value.get("param")?)? },
+            "param_changed" => Self::ParamChanged {
+                instance: instance()?,
+                id: small("id")?,
+                value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
+            },
             "open_editor" => Self::OpenEditor {
                 instance: instance()?,
                 owner: match value.get("owner") {
@@ -845,12 +880,21 @@ impl Message {
             "latency_changed" => Self::LatencyChanged { instance: instance()?, latency: small("latency")? },
             "memory" => Self::Memory { bytes: number("bytes")? },
             "transport_key" => Self::TransportKey,
+            "typed_key" => Self::TypedKey {
+                key: value.get("key").and_then(Value::as_u64).and_then(|k| u8::try_from(k).ok())?,
+                pressed: value.get("pressed").and_then(Value::as_bool)?,
+            },
             "ara_playback" => Self::AraPlayback(match text("request")?.as_str() {
                 "start" => AraPlayback::Start,
                 "stop" => AraPlayback::Stop,
                 "position" => AraPlayback::Position(
                     value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
                 ),
+                "cycle" => AraPlayback::Cycle(
+                    value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
+                    value.get("length").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0)?,
+                ),
+                "cycle_on" => AraPlayback::CycleOn(value.get("on").and_then(Value::as_bool)?),
                 _ => return None,
             }),
             "close_editor" => Self::CloseEditor { instance: instance()? },

@@ -109,6 +109,39 @@ fn the_clip_column_edits_the_clip() {
     );
 }
 
+/// An audio clip's column shows its start marker, and its end marker when it does not loop; a
+/// slot's clip edits its gain too (#699).
+#[test]
+fn an_audio_clips_column_shows_its_markers_and_gain() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let project = demo_project();
+    let beat_b = project.arrangement.lanes[0].clips[1].id;
+    let Detail::Clip(mut info, chain) =
+        build(&project, Some(TrackId(1)), Some(ClipRef::Arrangement(TrackId(1), beat_b)))
+    else {
+        panic!("expected the clip")
+    };
+    info.audio = true;
+    info.gain_db = Some(0.0);
+    info.markers = (1.0, 5.0);
+    info.looping = false;
+    info.loop_range = None;
+    info.at = Some(ClipRef::Slot(TrackId(1), 0));
+    let detail = Detail::Clip(info, chain);
+    let harness = Harness::builder().with_size(egui::vec2(700.0, 500.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            show_row(ui, &detail, &[], actions, &mut Vec::new());
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Start marker: 1 beats");
+    harness.get_by_label("End marker: 5 beats");
+    // The slot's gain is a control to drag, not only a value shown.
+    let gain = harness.get_by_label("Gain: 0.0 dB");
+    assert_eq!(gain.accesskit_node().role(), egui::accesskit::Role::Slider);
+}
+
 /// While the transport runs, a panel shows what its automation plays: a toggle holds each
 /// point's value, a continuous parameter moves between them (#706).
 #[test]
@@ -156,6 +189,21 @@ fn a_selected_slot_clip_shows_its_scene_loop_and_fades() {
     assert_eq!(chain.track, TrackId(3));
     assert_eq!(build(&project, None, Some(ClipRef::Slot(TrackId(2), 99))), Detail::Nothing);
     assert_eq!(build(&project, None, Some(ClipRef::Slot(TrackId(10), 0))), Detail::Nothing);
+}
+
+/// The clip host (the plug-in that edits a track's clips) is not in the chain's devices but is
+/// its host, so the clip editor finds it (#990).
+#[test]
+fn a_clip_host_is_the_chains_host_not_one_of_its_devices() {
+    let mut project = demo_project();
+    project.channels[0]
+        .devices
+        .insert(0, Device { clip_host: true, ..Device::new("Melodyne", DeviceKind::Builtin("utility".into())) });
+    project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    assert_eq!(chain.devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Utility"]);
+    let host = chain.host.as_ref().expect("the clip host");
+    assert_eq!((host.name.as_str(), host.index), ("Melodyne", 0));
 }
 
 #[test]

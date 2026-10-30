@@ -54,6 +54,7 @@ fn project(lane: LaneData, length: f64) -> Project {
                 clips: vec![clip(0.0, length)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene { id: Default::default(), name: "1".into(), tempo_bpm: None, time_signature: None }],

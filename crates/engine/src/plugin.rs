@@ -272,7 +272,12 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
 pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
     let mut list = Vec::new();
     for channel in &project.channels {
-        let track = project.tracks.iter().find(|t| t.channel == Some(channel.id)).map(|t| t.id);
+        let track = project
+            .tracks
+            .iter()
+            .find(|t| t.channel == Some(channel.id))
+            .map(|t| t.id)
+            .or_else(|| (channel.role == suhina_model::ChannelRole::Master).then_some(suhina_model::TrackId::MAIN));
         let mut seen: Vec<(u64, u32)> = Vec::new();
         for (path, device) in walk_devices(&channel.devices) {
             let position = path.first().copied().unwrap_or(0);

@@ -111,7 +111,7 @@ fn at_start_the_start_panel_shows_unless_the_settings_say_otherwise() {
 
     let mut harness = started(at_start(AtStart::Blank), None);
     assert!(!harness.state().project_dialog_open());
-    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank));
+    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank { returns: true }));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn the_start_panel_opens_recent_projects_forgets_them_and_comes_back_when_the_la
 
     harness.get_by_label("New project").click();
     harness.run();
-    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank));
+    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank { returns: true }));
 
     // With a project open the panel is gone; when the last one closes it is back, with its lists
     // read again.

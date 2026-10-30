@@ -46,6 +46,7 @@ map_layout = grid
 map_hover_preview = off
 map_max_seconds = 30
 map_dot_size = 150
+map_label_size = 50
 map_window = on
 map_window_rect = 10, 20, 640, 480
 audio_host = ASIO
@@ -103,6 +104,7 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
         map_hover_preview: false,
         map_max_seconds: 30,
         map_dot_size: 150,
+        map_label_size: 50,
         map_window: true,
         map_window_rect: Some([10, 20, 640, 480]),
         audio_host: "ASIO".into(),
@@ -170,6 +172,7 @@ fn settings_survive_a_round_trip() {
         map_hover_preview: false,
         map_max_seconds: 30,
         map_dot_size: 250,
+        map_label_size: 100,
         waveform_db: true,
         audio_host: "ASIO".into(),
         audio_device: "Universal Audio Thunderbolt".into(),
@@ -362,4 +365,15 @@ fn the_toolbar_size_round_trips_and_an_unknown_one_is_large() {
         "Normal, Large and Larger scale the toolbar"
     );
     assert_eq!(ToolbarSize::ALL.map(ToolbarSize::name), ["Normal", "Large", "Larger"]);
+}
+
+#[test]
+fn the_map_label_size_is_kept_and_only_its_steps_are_read() {
+    for (text, size) in
+        [("map_label_size = 0", 0), ("map_label_size = 75", 75), ("map_label_size = 60", MAP_LABEL_SIZE)]
+    {
+        assert_eq!(Settings::from_text(text).0.map_label_size, size, "{text}");
+    }
+    let settings = Settings { map_label_size: 50, ..Settings::default() };
+    assert_eq!(Settings::from_text(&settings.to_text()).0.map_label_size, 50);
 }

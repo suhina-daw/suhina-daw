@@ -28,7 +28,7 @@ fn project() -> Project {
             extensions: Extensions::default(),
             scale: None,
         }],
-        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Vec::new() },
+        arrangement: Arrangement { lanes: vec![lane(1), lane(2)], markers: Vec::new(), takes: Vec::new() },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],
             columns: vec![LauncherColumn {

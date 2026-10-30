@@ -55,7 +55,7 @@ fn compact_session_css_applies_to_a_png_skin_without_changing_artwork_or_project
     settle(&mut harness);
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
-    for label in ["Controls, meters and toolbar", "Native CSS", "Load compact Session geometry"] {
+    for label in ["Controls, meters and toolbar", "Native CSS", "Load compact Launcher geometry"] {
         wheel_to(&mut harness, label, 80);
         harness.get_by_label(label).click();
         settle(&mut harness);
@@ -683,7 +683,7 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
         ("Devices", Some("Detail area width: Full width")),
         ("Importing", Some("Warp mode for samples: Rhythmic")),
         ("Arrangement", Some("Show advanced settings")),
-        ("Session and mixer", Some("Mixer control style: Knob")),
+        ("Launcher and mixer", Some("Mixer control style: Knob")),
         ("Clip editor", Some("Piano roll toolbar size: Larger")),
         ("Browser", Some("Colour tag limit: 1024")),
         ("Keys", Some("Change keys of file.new")),

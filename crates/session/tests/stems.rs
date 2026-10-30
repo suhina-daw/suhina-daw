@@ -145,7 +145,7 @@ fn a_stems_file_dropped_on_a_group_goes_into_it_and_into_a_scene() {
     assert_eq!(group.parent, Some(outer));
     assert_eq!(channel(p, group).output, track(p, "Set").channel);
     // Inside the outer group, after its tracks.
-    let position = |name: &str| p.tracks.iter().position(|t| t.name == name).unwrap();
+    let position = |name: &str| p.tracks.iter().position(|t| p.shown_track_name(t.id) == name).unwrap();
     assert!(position("tones-alac") > position("2 MIDI"));
     let vox = track(p, "Vox");
     let column = p.launcher.columns.iter().find(|c| c.track == vox.id).unwrap();

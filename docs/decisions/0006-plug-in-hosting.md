@@ -3,7 +3,7 @@ description: How third-party plug-ins are hosted out of process (process model, 
 read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC, shared memory, unsafe, plug-in crash, scanning, plug-in editor
 type: decision
 status: current
-last_verified: 2026-10-29
+last_verified: 2026-10-30
 covers:
   - crates/ipc/**
   - crates/plugins/**
@@ -52,12 +52,12 @@ and state (`DeviceKind::Clap`, `Vst3`, `Vst2` with `Device::state`); nothing run
 - The VST3 SDK is MIT since version 3.8 (October 2025); GPLv3 and Steinberg's own licence no
   longer apply to it. Rust: `vst3` (MIT/Apache-2.0), bindings generated from the SDK.
 - VST2: Steinberg stopped signing VST2 agreements in 2018 and has said new VST2 hosts cannot be
-  licensed. Its SDK licence is not GPL-compatible. Free headers exist (VeSTige, GPLv2+; FST,
-  GPLv3+), but VeSTige's origin is known only second-hand and was the target of a DMCA notice in
-  2018, and FST takes names from JUCE sources that shipped Steinberg's headers, which our
-  clean-room rules do not allow. A third one exists, Xaymar's `vst2sdk` (BSD-3-Clause, used by
-  DPF and by Lemon Studio); it is a reverse-engineering result like the others, and
-  [ADR 0022](0022-vst2-interface-description.md) decides it is not a source for us either.
+  licensed. Its SDK licence is not GPL-compatible. Free headers exist, all reverse-engineering
+  results: VeSTige (GPLv2+, from LMMS, shipped by Ardour and vendored by yabridge; the target of a
+  DMCA notice in 2018), FST (GPLv3+; takes names from JUCE sources that shipped Steinberg's headers)
+  and Xaymar's `vst2sdk` (BSD-3-Clause, used by DPF and by Lemon Studio).
+  [ADR 0022](0022-vst2-interface-description.md) takes VeSTige, pinned, as the one source of the
+  interface, a named exception to the clean-room rules; the others stay excluded.
 - VST3 has a documented way to replace a VST2 plug-in: the VST3 version declares the VST2 class
   it replaces (`moduleinfo.json` `Compatibility`, SDK 3.7.5 and later, or
   `IPluginCompatibility`, or the documented class-id convention built from the VST2 id and
@@ -163,8 +163,13 @@ workspace forbids.
      session's processor merges them with the notes in frame order, a value before a note at
      the same frame; a block the host could not take carries the latest value of each
      parameter to the next. Nothing allocates on the audio thread: each slot has room for 512
-     events a block. Values go to the processor only, so a VST3 plug-in's editor does not move
-     with its automation yet.
+     events a block. A parameter value that reaches the processor from the engine (a panel
+     set, an automation lane) also goes to the edit controller on the main thread
+     (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
+     so the plug-in's editor follows the sound; and the host reports what was changed in its
+     editor back (decision 6: `param_changed`, since version 14, #828), so the session keeps
+     the project's values in step with it — no undo step of its own, and a change since the
+     last save.
    - **Where the shared memory lives, and who frees it.** The engine's side makes each region
      (a link's, or an ARA audio source's, ADR 0028) and the host opens it by an address; the
      operating system frees it when both have let go of it, however they end, so a crash or a
@@ -220,7 +225,15 @@ workspace forbids.
      own range (a VST3 plug-in's normalized, a CLAP plug-in's plain), on a VST3 controller at
      once and on the processor (VST3 parameter changes, CLAP parameter events) at the start of
      the next block. The engine side keeps values set since the state was last read and sets
-     them again after a restart.
+     them again after a restart. `param_changed` (since version 14, unasked, #828) tells the
+     session what the user moved in the plug-in's editor: the value the plug-in runs with now,
+     which the session keeps the project's values in step with — no undo step of its own, and
+     a change since the last save. A VST3 plug-in reports it through the host's component
+     handler (`performEdit`); a CLAP one comes out with the blocks as output parameter events,
+     which the host reads after each block (the only way CLAP has: its host params extension
+     has no call of the kind, and the host does not give that extension today, so its
+     `request_flush` stays unanswered and a change made while no block runs waits for the
+     next one).
 4. **Block sync and deadline.** The engine signals the host, the host processes and signals
    back. Primitives: a futex in the shared memory on Linux; duplicated auto-reset events on
    Windows, waited on together with a high-resolution waitable timer that wakes the wait 1 ms
@@ -507,9 +520,12 @@ workspace forbids.
     of that, Options › Settings › Plug-ins › Editors: *Window* (the default) or *Device view*,
     where the editor shows inside the device panel as part of the chain, as the wrapper
     devices some users buy do by hand for one plug-in at a time. With *Device view* the engine
-    asks for the editor `embedded` (protocol version 7), the host opens it as a child inside
-    Suhina's window (Win32 `WS_CHILD` under the `HWND`, X11 a child of the window id; both
-    allowed across processes) and hidden, answers its size, and the window lays the panel out
+    asks for the editor `embedded` (protocol version 7), the host opens it over Suhina's
+    window (X11 a child of the window id; on Windows a frameless window that Suhina's `HWND`
+    owns, placed in screen pixels and moved with that window, because Suhina's window draws
+    through DirectComposition for its see-through backgrounds and that covers its child
+    windows: an editor made a `WS_CHILD` stayed invisible behind it; made per-monitor DPI
+    aware, as Suhina's window is) and hidden, answers its size, and the window lays the panel out
     around it (the device as wide as the editor, the panel as tall) and says each frame where
     it goes (`place_editor`: the editor's origin and the panel's visible area in the window's
     pixels; the host keeps the editor inside a *clip* window of that area, so a scrolled or
@@ -585,12 +601,12 @@ workspace forbids.
 
 ## Not decided yet
 
-- **Hosting VST2 directly.** The interface description and where it comes from is
-  [ADR 0022](0022-vst2-interface-description.md) (proposed): our own clean-room description,
-  observed and written in `docs/spec/`, with no third-party reverse-engineered header as a source.
-  The process, scanning, editor and format decisions above are unchanged, and legal advice still
-  precedes a release that ships it. The work starts when we know which plug-ins people still use
-  only as VST2.
+- **Hosting VST2 directly.** Where the interface description comes from is decided in
+  [ADR 0022](0022-vst2-interface-description.md): the VeSTige header as Ardour distributes it,
+  pinned. Nothing is built yet: the header is to be ported to Rust with its notice, checked by our
+  own mock plug-in and probe, and written up in `docs/spec/plugin-vst2.md`. The work is
+  [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066). The process, scanning, editor and
+  format decisions above are unchanged, and legal advice still precedes a release that ships it.
 - **Our own Wine host** for Windows plug-ins on Linux (`suhina-plugin-host` built for Wine,
   speaking the same protocol, so one hop instead of two and one place for crashes, scanning and
   editors). Decided after native CLAP and VST3 work and the cost of the yabridge path has been
@@ -763,6 +779,7 @@ hosting use the same gate. This introduces no delay during ordinary playback.
 - VST3 SDK under MIT: https://github.com/steinbergmedia/vst3sdk; vst3 crate: https://github.com/coupler-rs/vst3-rs
 - VST2 licensing for hosts: https://forums.steinberg.net/t/can-i-create-vst-2-support-for-host-application-vst-3-license/202012
 - DMCA notice against VeSTige (2018): https://lists.linuxaudio.org/archives/linux-audio-dev/2018-June/037132.html
+- VeSTige as Ardour distributes it: https://github.com/Ardour/ardour/blob/365cc92cba0e016c30fea34aed168a0957aeeca0/libs/ardour/ardour/vestige/vestige.h
 - FST: https://sources.debian.org/src/fst/0.177.0-1/README.md
 - VST3 `moduleinfo.json` and compatibility: https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/VST+Module+Architecture/ModuleInfo-JSON.html
 - VST2 compatibility FAQ: https://steinbergmedia.github.io/vst3_dev_portal/pages/FAQ/Compatibility+with+VST+2.x+or+VST+1.html

@@ -62,7 +62,7 @@ maximum displacement is 18% of that band, scaled by Panel strength and small-sur
 fading. Coordinates remain monotonic (no folded image), clamped to the captured screen.
 The centre has zero displacement and zero sharp-overlay opacity. All labels and controls
 are painted afterward. Missing sharp sources fall back to the blurred current backdrop.
-Arrangement and Session track headers and clip backgrounds get a lightweight optical
+Arrangement and Launcher track headers and clip backgrounds get a lightweight optical
 coating (a narrow rounded rim with directional highlights, an inner shade and a
 weaker opposing light return, over a source-coloured directional body gradient),
 painted before labels, controls,

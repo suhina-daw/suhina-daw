@@ -11,7 +11,7 @@ serde_json.workspace = true
 zip.workspace = true
 flate2.workspace = true
 semver = "1"  # MIT OR Apache-2.0; already in the tree through the build tools
-sha2 = "0.10"  # MIT OR Apache-2.0; the downloaded package's checksum
+sha2 = "0.11"  # MIT OR Apache-2.0; the downloaded package's checksum
 tar = { version = "0.4", default-features = false }  # MIT OR Apache-2.0; the macOS and Linux packages
 
 [lints]

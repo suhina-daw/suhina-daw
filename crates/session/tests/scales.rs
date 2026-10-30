@@ -33,6 +33,7 @@ fn clip(content: u32) -> Clip {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     }
 }
@@ -89,6 +90,7 @@ fn project_built() -> Project {
                 clips: vec![clip(1), Clip { start: 4.0, ..clip(1) }, Clip { start: 8.0, ..clip(2) }],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],

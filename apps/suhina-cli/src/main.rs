@@ -437,6 +437,7 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
         state: None,
         params,
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     };
     let channels: Vec<ChannelId> =
@@ -1077,6 +1078,7 @@ fn demo_project() -> Project {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     };
 
@@ -1103,6 +1105,7 @@ fn demo_project() -> Project {
                 },
             ],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

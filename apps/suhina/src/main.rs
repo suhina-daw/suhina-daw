@@ -418,7 +418,7 @@ impl eframe::App for Window {
             }
             self.see_through = Some(see_through);
         }
-        self.draw(ui);
+        self.draw(ui, frame);
         suhina_ui::kit::liquid::finish_backdrops(ui.ctx());
         suhina_ui::kit::surface::finish_frame(ui.ctx());
         self.blur(frame);
@@ -441,7 +441,7 @@ impl eframe::App for Window {
 
 impl Window {
     /// One frame of the window: the splash while starting, then the app and what it asked for.
-    fn draw(&mut self, ui: &mut eframe::egui::Ui) {
+    fn draw(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
         if let Some(splash) = self.splash.as_mut()
             && splash.take_start(ui.ctx())
             && let Some(start_up) = self.start_up.take()
@@ -464,6 +464,10 @@ impl Window {
             }
         }
         suhina_plugins::trace::timed("desktop UI", || self.app.ui(ui));
+        if let Some(files) = self.app.take_drag_out() {
+            let result = drag_out(frame, files);
+            self.app.drag_out_ended(result);
+        }
         #[cfg(target_os = "macos")]
         if let Some(menu) = &mut self.mac_menu {
             menu.sync(&self.app.menus());
@@ -662,7 +666,9 @@ impl Window {
     /// Makes a new project, blank or from a template, and opens it in a new tab.
     fn new_project(&mut self, new: NewProject) {
         let made = match new {
-            NewProject::Blank => Ok((Session::new(suhina_session::blank_project()), Vec::new())),
+            NewProject::Blank { returns } => {
+                Ok((Session::new(suhina_session::blank_project_with(returns)), Vec::new()))
+            }
             NewProject::Template(path) => Session::from_template(&path),
         };
         match made {
@@ -869,6 +875,35 @@ fn pick(request: &suhina_ui::interaction::pick::PickRequest) -> Option<PathBuf> 
     } else {
         dialog.add_filter(request.field.filter_label(), request.field.extensions()).pick_file()
     }
+}
+
+/// The picture beside the pointer while samples are dragged out of the window.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const DRAG_OUT_IMAGE: &[u8] = include_bytes!("drag_out.png");
+
+/// Hands `files` to the system as a drag the file manager copies where they are dropped, never
+/// moves (#865): whether they were dropped, when the system says so before it returns (Windows
+/// does; macOS reports later and the status line says nothing).
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn drag_out(frame: &eframe::Frame, files: Vec<PathBuf>) -> Result<bool, String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    drag::start_drag(
+        frame,
+        drag::DragItem::Files(files),
+        drag::Image::Raw(DRAG_OUT_IMAGE.to_vec()),
+        move |result, _| {
+            let _ = sender.send(matches!(result, drag::DragResult::Dropped));
+        },
+        drag::Options { mode: drag::DragMode::Copy, ..Default::default() },
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(receiver.try_recv().unwrap_or(false))
+}
+
+/// Linux has no drag of files out of a winit window yet: Copy to folder… does the same.
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn drag_out(_frame: &eframe::Frame, _files: Vec<PathBuf>) -> Result<bool, String> {
+    Err("dragging samples out is not available on this system yet; right-click one and choose Copy to folder…".into())
 }
 
 fn saved(path: &Path, what: &str) -> String {

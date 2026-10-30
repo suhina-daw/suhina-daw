@@ -54,6 +54,7 @@ pub(crate) fn project(notes: Vec<Note>, length: f64, devices: Vec<Device>) -> Pr
                 clips: vec![clip(0.0, false)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             mappings: Vec::new(),
@@ -335,6 +336,40 @@ fn stopping_the_transport_releases_an_instruments_notes() {
 }
 
 #[test]
+fn a_held_note_ends_when_an_edit_takes_it_away_while_playing() {
+    // An 8-beat note sounds; at 0.5 s an edit deletes its clip, deletes the note, or shortens it
+    // to 1.5 beats (0.75 s): the instrument lets it go then, not at its old end (#916).
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[])]);
+    let mut no_clip = p.clone();
+    no_clip.arrangement.lanes[0].clips.clear();
+    let mut no_note = p.clone();
+    let mut shorter = p.clone();
+    for (project, notes) in [(&mut no_note, vec![]), (&mut shorter, vec![note(0.0, 1.5, 69)])] {
+        project.contents[0].lanes =
+            vec![suhina_model::ContentLane { target: None, data: suhina_model::LaneData::Notes(notes) }];
+    }
+    for (name, edited, silent_from) in
+        [("clip deleted", &no_clip, 24_000), ("note deleted", &no_note, 24_000), ("note shortened", &shorter, 36_000)]
+    {
+        let mut renderer =
+            Renderer::build(&p, RenderInputs::from_audio(&crate::AudioPool::new()), SR, RenderOptions::PLAYING)
+                .unwrap();
+        let mut controller = renderer.controller();
+        let mut out = blocks(&mut renderer, 50, 480);
+        assert!(peak(&left(&out)[9_600..]) > 0.05, "{name}: sounding");
+        controller.update(edited).unwrap();
+        out.extend(blocks(&mut renderer, 150, 480));
+        let out = left(&out);
+        // The synth's release, then silence.
+        let after = silent_from + 9_600;
+        assert!(peak(&out[after..]) < 1e-4, "{name}: {}", peak(&out[after..]));
+        if silent_from > 24_000 {
+            assert!(peak(&out[24_000..silent_from]) > 0.05, "{name}: plays on until its new end");
+        }
+    }
+}
+
+#[test]
 fn an_edit_keeps_a_chain_playing_and_takes_its_new_values() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("fm-synth", &[]), device("utility", &[])]);
     let mut edited = p.clone();
@@ -419,4 +454,26 @@ fn sdk_delay_tail_and_oscillator_phase_carry_through_graph_swaps() {
         let reference = blocks(&mut untouched, 120, 480);
         assert!(max_diff(&out, &reference) < 1e-5, "{name}: {}", max_diff(&out, &reference));
     }
+}
+
+/// #911: with the loop on over bars 3 to 10 and playback starting before a MIDI clip at bar 5,
+/// the clip's first note sounds on its beat, not later.
+#[test]
+fn a_midi_clip_sounds_on_its_beat_after_play_with_the_loop_on() {
+    let mut p = project(vec![note(0.0, 1.0, 60)], 4.0, vec![device("fm-synth", &[])]);
+    if let Some(clip) = p.arrangement.lanes.get_mut(0).and_then(|l| l.clips.get_mut(0)) {
+        clip.start = 16.0;
+    }
+    p.transport.loop_range = Some(LoopRange { start: 8.0, end: 36.0 });
+    p.transport.loop_enabled = true;
+    let mut renderer = Renderer::stopped(&p, &crate::AudioPool::new(), SR).unwrap();
+    let mut controller = renderer.controller();
+    controller.send(crate::LaunchCommand::SetPosition { beat: 4.0 }).unwrap();
+    blocks(&mut renderer, 2, 256);
+    controller.send(crate::LaunchCommand::Play).unwrap();
+    let out = blocks(&mut renderer, (14 * BEAT) / 256, 256);
+    let first = out.iter().position(|s| s.abs() > 1e-4).map(|i| i / 2).expect("the note sounds");
+    // Twelve beats from the start at beat 4 to the clip at beat 16, give or take a block.
+    let expected = 12 * BEAT;
+    assert!(first + 256 >= expected && first <= expected + 512, "first sound at frame {first}, expected {expected}");
 }

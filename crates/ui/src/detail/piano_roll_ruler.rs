@@ -263,6 +263,7 @@ pub fn command(address: &Value, before: &ClipShape, after: &ClipShape, part: Par
 /// command is pushed when it is let go; a click on the bar turns the loop on or off; a drag
 /// anywhere else zooms time around the pointer (up and down) and scrolls it (sideways). Returns
 /// the clip as the drag in progress leaves it, to draw.
+#[allow(clippy::too_many_arguments)]
 pub fn interact(
     ui: &Ui,
     ruler: Rect,
@@ -270,6 +271,7 @@ pub fn interact(
     clip: &PianoClip,
     state: &mut PianoRollState,
     free: bool,
+    seeks: bool,
     actions: &mut Vec<Action>,
 ) -> Option<ClipShape> {
     let grid = note_grid(clip, state.beat_width);
@@ -338,11 +340,24 @@ pub fn interact(
     }
     if response.clicked()
         && let Some(pos) = response.interact_pointer_pos()
-        && part_at(&shape, &axis(state), ruler, pos) == Some(Part::Loop)
     {
-        let mut params = clip.address.clone();
-        params["loop"] = json!(shape.loop_range.is_none());
-        actions.push(Action::new("clip.setLoop", params));
+        match part_at(&shape, &axis(state), ruler, pos) {
+            Some(Part::Loop) => {
+                let mut params = clip.address.clone();
+                params["loop"] = json!(shape.loop_range.is_none());
+                actions.push(Action::new("clip.setLoop", params));
+            }
+            // An arrangement clip's ruler sets where playback starts, on the grid (Alt: free), as
+            // the Arrangement's ruler does: stopped the next play starts there, playing it jumps
+            // on the launch grid (#951).
+            None if seeks => {
+                let beat = grid.place(axis(state).beat_at(pos.x), free, false);
+                let at = clip.placement.start + (beat - clip.placement.offset);
+                let at = at.clamp(clip.placement.start, clip.placement.start + clip.placement.length);
+                actions.push(Action::new("transport.jump", json!({ "beats": (at * 1000.0).round() / 1000.0 })));
+            }
+            _ => {}
+        }
     }
     preview.map(|(_, after)| after)
 }

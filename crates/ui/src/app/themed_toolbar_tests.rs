@@ -124,7 +124,7 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
     harness.run();
     assert_eq!(harness.get_by_label("Play").rect(), play);
     assert_eq!(harness.get_by_label("Tempo").rect(), tempo);
-    let tempo_text = format!("{:.2}", harness.state().grid.tempo_bpm);
+    let tempo_text = format!("{:.3}", harness.state().grid.tempo_bpm);
     let position_text = harness.state().grid.position();
     let text = |label: &str| {
         harness

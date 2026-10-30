@@ -83,10 +83,14 @@ fn pan_and_mute_map_across_the_lane() {
     assert!(!Scale::Pan.stepped());
 }
 
-/// Moving values together keeps them in range, and a silent volume stays silent.
+/// Moving values together keeps them in range; a silent volume rises from the lane's bottom
+/// (-70 dB), so points picked at the bottom move with the rest, and a level moved down to the
+/// bottom is silent (#916).
 #[test]
-fn a_shift_keeps_values_in_range_and_silence_silent() {
-    assert_eq!(Scale::Volume.shift(0.0, 6.0), 0.0);
+fn a_shift_keeps_values_in_range_and_moves_silence_from_the_bottom() {
+    assert!((gain_to_db(Scale::Volume.shift(0.0, 6.0)) + 64.0).abs() < 1e-9);
+    assert!((gain_to_db(Scale::Volume.shift(0.0, 64.0)) + 6.0).abs() < 1e-9);
+    assert_eq!(Scale::Volume.shift(10f64.powf(-60.0 / 20.0), -20.0), 0.0);
     assert!((gain_to_db(Scale::Volume.shift(1.0, 10.0)) - 6.0).abs() < 1e-9);
     assert_eq!(Scale::Pan.shift(0.5, 1.0), 1.0);
     assert_eq!(Scale::Mute.shift(1.0, -0.4), 1.0);
@@ -132,6 +136,7 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
         state: None,
         params: Vec::new(),
         automation: vec![lane],
+        clip_host: false,
         extensions: Default::default(),
     });
     let params = Params::build(&project);
@@ -174,6 +179,7 @@ fn sd_parameters_are_listed_and_use_their_control_scale() {
         state: graph.to_sd().ok().map(String::into_bytes),
         params: Vec::new(),
         automation: vec![lane],
+        clip_host: false,
         extensions: Default::default(),
     });
     let params = Params::build(&project);

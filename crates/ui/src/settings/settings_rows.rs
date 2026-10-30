@@ -12,7 +12,7 @@
 use crate::settings::settings_view::{ADVANCED, Role};
 use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
-use crate::settings::view_settings::{DetailLayout, WaveformColour};
+use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
     AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, OnOpen, PianoRollTop, PlayFrom, Side, StopReturn,
     ToolbarSize, WarpMode,
@@ -448,6 +448,24 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Tracks",
+        "Returns in new projects",
+        "Whether a new blank project starts with the A and B return tracks or with none",
+        &["new_project_returns"],
+        |cx, r| cx.choose(r, &[("A and B", true), ("None", false)], |s| &mut s.view.new_returns),
+    ),
+    row(
+        Page::Arrangement,
+        "Tracks",
+        "Alt+wheel resizes",
+        "Whether Alt and the mouse wheel resize all tracks and their lanes or only the one under the pointer",
+        &["alt_wheel"],
+        |cx, r| {
+            cx.choose(r, &[("All tracks", false), ("The one under the pointer", true)], |s| &mut s.view.alt_wheel_one)
+        },
+    ),
+    row(
+        Page::Arrangement,
         "Track sizes",
         "Default track size",
         "The named height ordinary tracks are drawn at",
@@ -528,6 +546,44 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Tools",
+        "Toolbar",
+        "A row of tools over the Arrangement (Select, Range, Split, Erase, Draw, Mute) that the keys 1 to 6 choose while it has the focus",
+        &["arrangement_toolbar"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.arrangement_toolbar),
+    ),
+    row(
+        Page::Arrangement,
+        "Tools",
+        "Default grid",
+        "The Arrangement's grid when Suhina starts, a fixed value or one that follows the zoom",
+        &["arrangement_grid"],
+        |cx, r| {
+            let names: Vec<String> = super::view_settings::DEFAULT_GRIDS
+                .iter()
+                .map(|g| {
+                    let mut name = g.to_string();
+                    if let Some(first) = name.get_mut(..1) {
+                        first.make_ascii_uppercase();
+                    }
+                    name
+                })
+                .collect();
+            let options: Vec<(&str, &'static str)> =
+                names.iter().zip(super::view_settings::DEFAULT_GRIDS).map(|(n, g)| (n.as_str(), g)).collect();
+            cx.choose(r, &options, |s| &mut s.view.default_grid)
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Click anywhere adds",
+        "Whether a click anywhere on an automation lane adds a point, not only a click on or near the line",
+        &["automation_click"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.automation_click_anywhere),
+    ),
+    row(
+        Page::Arrangement,
         "Advanced",
         "Edge drag stretches audio",
         "Dragging an audio clip's edge with Ctrl and Alt held stretches its sound to the new length",
@@ -551,10 +607,18 @@ pub(crate) static ROWS: &[Entry] = &[
         |cx, r| cx.on_off(r, |s| &mut s.view.track_sizes.advanced),
     ),
     row(
+        Page::Arrangement,
+        "Advanced",
+        "Copy names",
+        "How a duplicated or pasted track is named when its name is taken, Bass (2) or Bass #2",
+        &["copy_names"],
+        |cx, r| cx.choose(r, &[("Wrapped (2)", true), ("Hash #2", false)], |s| &mut s.view.copy_wrapped),
+    ),
+    row(
         Page::Session,
         "Launching",
         "Select launched clip",
-        "Starting a clip in the Session view also selects it and shows it in the detail area",
+        "Starting a clip in the Launcher view also selects it and shows it in the detail area",
         &["select_on_launch"],
         |cx, r| cx.on_off(r, |s| &mut s.select_on_launch),
     ),
@@ -625,6 +689,18 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Browser,
+        "Browser",
+        "Dropping on a folder",
+        "Whether samples dragged onto a browser folder ask each time, move or copy (Ctrl copies and Shift moves)",
+        &["browser_folder_drop"],
+        |cx, r| {
+            cx.choose(r, &[("Ask", FolderDrop::Ask), ("Move", FolderDrop::Move), ("Copy", FolderDrop::Copy)], |s| {
+                &mut s.view.folder_drop
+            });
+        },
+    ),
+    row(
+        Page::Browser,
         "Previews",
         "Preview selected file",
         "Selecting a sample or MIDI file plays it",
@@ -667,6 +743,17 @@ pub(crate) static ROWS: &[Entry] = &[
         |cx, r| {
             let options = [("5 s", 5u32), ("10 s", 10), ("30 s", 30), ("60 s", 60)];
             cx.choose(r, &options, |s| &mut s.map_max_seconds);
+        },
+    ),
+    row(
+        Page::Browser,
+        "Sample map",
+        "Map labels",
+        "How large the names of the groups in the sample map are, or Off to hide them",
+        &["map_label_size"],
+        |cx, r| {
+            let options = [("Off", 0u32), ("50 %", 50), ("75 %", 75), ("100 %", 100)];
+            cx.choose(r, &options, |s| &mut s.map_label_size);
         },
     ),
     row(Page::Browser, "Tags", "Colour tag limit", "How many colour tags you can make in the browser", &[], |cx, r| {

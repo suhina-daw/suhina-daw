@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
-use suhina_engine::{RecordReceiver, RecordedAudio, RecordedNote};
+use suhina_engine::{RecordReceiver, RecordedAudio, RecordedJump, RecordedNote};
 use suhina_model::TrackId;
 
 /// How long the thread rests between looks at the rings while it writes a take: the audio ring
@@ -41,6 +41,14 @@ pub(crate) enum Order {
 #[derive(Debug)]
 pub(crate) enum Report {
     Note(RecordedNote),
+    /// The arrangement's playhead jumped: a new pass over the beats begins (#909).
+    Jump(RecordedJump),
+    /// `track`'s take wrote its first frame, which lines up with renderer frame `position`.
+    Began {
+        track: TrackId,
+        path: PathBuf,
+        position: u64,
+    },
     /// A take's file is finished: its frames and channels, and why it ended early, if it did.
     Finished {
         track: TrackId,
@@ -49,12 +57,17 @@ pub(crate) enum Report {
         channels: u16,
         error: Option<String>,
     },
-    /// Frames of `track`'s take written so far.
+    /// Frames of `track`'s take written so far, and the peaks of the frames written since the
+    /// last report, one per [`PEAK_FRAMES`], for the take's waveform while it records (#909).
     Written {
         track: TrackId,
         frames: u64,
+        peaks: Vec<f32>,
     },
 }
+
+/// Frames per peak of a recording take's waveform.
+pub(crate) const PEAK_FRAMES: u64 = 512;
 
 /// The session's end of the thread.
 pub(crate) struct RecordThread {
@@ -103,14 +116,43 @@ struct Take {
     /// When it was told to end or last had a chunk, whichever is later, and why it failed.
     ended: Option<Instant>,
     error: Option<String>,
+    /// The loudest sample of the peak being gathered, and the peaks finished since the last
+    /// report.
+    peak: f32,
+    peaks: Vec<f32>,
+    /// The last time the arrangement's playhead jumped while this take was written (a loop
+    /// going back, a click on the ruler): its end is counted from there, so every pass before
+    /// it is kept whole (#909).
+    last_jump: Option<RecordedJump>,
 }
 
 impl Take {
+    /// Counts one more frame written, with `level`, finishing a peak every [`PEAK_FRAMES`].
+    fn add_to_peak(&mut self, level: f32) {
+        self.peak = self.peak.max(level);
+        self.written += 1;
+        if self.written.is_multiple_of(PEAK_FRAMES) {
+            // At most a report's worth waits; the session gathers and caps them.
+            if self.peaks.len() < 1 << 16 {
+                self.peaks.push(self.peak.min(1.0));
+            }
+            self.peak = 0.0;
+        }
+    }
+
     /// Frames from its first that the take ends at, once known.
     fn until(&self) -> Option<u64> {
         let end = self.end?;
         if end.is_nan() || end <= 0.0 {
             return Some(0);
+        }
+        // After a jump the end beat is on the pass that jump began: the frames up to the jump,
+        // then the beats from where it landed. Without one, the beats from the start.
+        if let (Some(jump), Some(first)) = (self.last_jump, self.first) {
+            let step = jump.beats_per_frame;
+            let after = (self.start + end - jump.beat).max(0.0) / step;
+            return (step > 0.0 && after.is_finite())
+                .then(|| jump.position.saturating_sub(first).saturating_add(after.round() as u64));
         }
         let frames = end / self.beats_per_frame;
         (self.beats_per_frame > 0.0 && frames.is_finite()).then(|| frames.round() as u64)
@@ -138,6 +180,9 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
                         end: None,
                         ended: None,
                         error: None,
+                        peak: 0.0,
+                        peaks: Vec::new(),
+                        last_jump: None,
                     });
                 }
                 Ok(Order::End { track, beats }) => {
@@ -162,9 +207,20 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
         while let Some(note) = receiver.next_note() {
             let _ = reports.send(Report::Note(note));
         }
+        while let Some(jump) = receiver.next_jump() {
+            // An arrangement take being written counts its end from the last jump.
+            for take in takes.iter_mut().filter(|t| !t.by_clock && t.first.is_some_and(|f| jump.position >= f)) {
+                take.last_jump = Some(jump);
+            }
+            let _ = reports.send(Report::Jump(jump));
+        }
         while let Some(chunk) = receiver.next_audio() {
             if let Some(take) = takes.iter_mut().find(|t| t.track == chunk.track && t.error.is_none()) {
+                let began = take.first.is_some();
                 write(take, &chunk, sample_rate);
+                if let (false, Some(position)) = (began, take.first) {
+                    let _ = reports.send(Report::Began { track: take.track, path: take.path.clone(), position });
+                }
                 if let Some(ended) = take.ended.as_mut() {
                     *ended = Instant::now();
                 }
@@ -195,8 +251,9 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
         }
         if last_report.elapsed() >= Duration::from_millis(100) {
             last_report = Instant::now();
-            for take in &takes {
-                let _ = reports.send(Report::Written { track: take.track, frames: take.written });
+            for take in &mut takes {
+                let peaks = std::mem::take(&mut take.peaks);
+                let _ = reports.send(Report::Written { track: take.track, frames: take.written, peaks });
             }
         }
         std::thread::sleep(if takes.is_empty() { LOOK_IDLE } else { LOOK_EVERY });
@@ -248,7 +305,8 @@ fn write(take: &mut Take, chunk: &RecordedAudio, sample_rate: u32) {
     };
     let until = take.until().unwrap_or(u64::MAX);
     let next = first + take.written;
-    let Some(writer) = take.writer.as_mut() else { return };
+    // Out of the take while it is written to, so the take's counts can change meanwhile.
+    let Some(mut writer) = take.writer.take() else { return };
     // Frames lost before this chunk are silence, so later sound keeps its beat.
     let gap = chunk.position.saturating_sub(next).min(MAX_GAP_SECONDS * u64::from(sample_rate));
     let mut failed = None;
@@ -261,7 +319,7 @@ fn write(take: &mut Take, chunk: &RecordedAudio, sample_rate: u32) {
                 failed = Some(e);
             }
         }
-        take.written += 1;
+        take.add_to_peak(0.0);
     }
     let skip = (first + take.written).saturating_sub(chunk.position);
     let samples = chunk.samples();
@@ -276,9 +334,11 @@ fn write(take: &mut Take, chunk: &RecordedAudio, sample_rate: u32) {
                 failed = Some(e);
                 break;
             }
+            take.peak = take.peak.max(if sample.is_finite() { sample.abs() } else { 0.0 });
         }
-        take.written += 1;
+        take.add_to_peak(0.0);
     }
+    take.writer = Some(writer);
     if let Some(e) = failed {
         take.error = Some(format!("could not write {}: {e}; the take keeps what was written", take.path.display()));
     }

@@ -27,8 +27,8 @@ use suhina_model::{
     LaneId, LaunchMapping, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange,
     MAX_CHANGE_BEAT, MAX_INPUT_CHANNEL, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping,
     MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb, Scale, ScaleMode, Scene,
-    SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId, Transport,
-    WarpMarker, automation, valid_bpm,
+    SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
+    Transport, WarpMarker, automation, valid_bpm,
 };
 
 /// The file extension, without the dot.
@@ -269,6 +269,26 @@ fn project_value(p: &Project) -> Value {
         arrangement["markers"] =
             p.arrangement.markers.iter().map(|m| json!({ "beat": number(m.beat), "name": m.name })).collect();
     }
+    // Take lanes (#909), left out when there are none, so a project without is written as before.
+    if !p.arrangement.takes.is_empty() {
+        arrangement["takes"] = p
+            .arrangement
+            .takes
+            .iter()
+            .map(|t| {
+                let mut take = json!({
+                    "track": t.track.0,
+                    "name": t.name,
+                    "clips": t.clips.iter().map(clip_value).collect::<Vec<_>>(),
+                });
+                // A take's own colour (#989), left out while it takes the palette's.
+                if let Some(Rgb(r, g, b)) = t.color {
+                    take["color"] = json!(format!("#{r:02X}{g:02X}{b:02X}"));
+                }
+                take
+            })
+            .collect();
+    }
     out.insert("arrangement".into(), arrangement);
     let mut launcher = json!({
         "scenes": p.launcher.scenes.iter().map(scene_value).collect::<Vec<_>>(),
@@ -460,6 +480,10 @@ fn device_value(d: &Device) -> Value {
         if !d.automation.is_empty() {
             map.insert("automation".into(), lanes_value(&d.automation));
         }
+        // Only a channel's clip host says so (#990), so other devices keep their shape.
+        if d.clip_host {
+            map.insert("clip_host".into(), json!(true));
+        }
         with_extensions(map, &d.extensions);
     }
     out
@@ -592,6 +616,10 @@ fn clip_value(c: &Clip) -> Value {
         // Only a clip with a colour of its own carries one; the others show their track's.
         if let Some(Rgb(r, g, b)) = c.color {
             map.insert("color".into(), json!(format!("#{r:02X}{g:02X}{b:02X}")));
+        }
+        // Only a clip edited by its channel's ARA plug-in says so (#990).
+        if c.ara {
+            map.insert("ara".into(), json!(true));
         }
         with_extensions(map, &c.extensions);
     }
@@ -910,7 +938,25 @@ fn read_project(value: &Value) -> Result<Project, ProjectFileError> {
                 }
                 markers.push(Marker { beat, name: text(m, "name", &at)? });
             }
-            let mut arrangement = Arrangement { lanes, markers };
+            let mut takes = Vec::new();
+            for (i, v) in list(a, "takes", "project.arrangement")?.iter().enumerate() {
+                let at = format!("project.arrangement.takes[{i}]");
+                let take = object(v, &at)?;
+                let clips = list(take, "clips", &at)?
+                    .iter()
+                    .enumerate()
+                    .map(|(j, c)| read_clip(c, &format!("{at}.clips[{j}]")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                // A take's clips have no ids: commands name a take by its track and number.
+                let clips = clips.into_iter().map(|c| Clip { id: ClipId::NONE, ..c }).collect();
+                takes.push(TakeLane {
+                    track: TrackId(whole(take, "track", &at)?),
+                    name: text(take, "name", &at)?,
+                    clips,
+                    color: read_color(take.get("color"), &at)?,
+                });
+            }
+            let mut arrangement = Arrangement { lanes, markers, takes };
             arrangement.sort_markers();
             arrangement
         }
@@ -1212,6 +1258,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         state: bytes(d, "state", at)?,
         params,
         automation,
+        clip_host: flag(d, "clip_host", false, at)?,
         extensions: extensions(d, at)?,
     })
 }
@@ -1373,6 +1420,7 @@ fn read_clip(value: &Value, at: &str) -> Result<Clip, ProjectFileError> {
         follow_action: read_follow(c, at)?,
         launch: read_launch(c, at)?,
         color: read_color(c.get("color"), at)?,
+        ara: flag(c, "ara", false, at)?,
         extensions: extensions(c, at)?,
     })
 }

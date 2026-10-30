@@ -20,7 +20,7 @@ An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ablet
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,
-> or sine tones), and lets agents edit them over MCP. The desktop app has the Session and
+> or sine tones), and lets agents edit them over MCP. The desktop app has the Launcher and
 > Arrangement views, a browser with a sample map, and settings. See [`ROADMAP.md`](ROADMAP.md) for what works and what comes next.
 
 Suhina is an independent clean-room project. It is not affiliated with, sponsored by or

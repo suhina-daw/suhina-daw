@@ -110,16 +110,17 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 70] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 83] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
     ("file.saveAs", "Save the project under another name", "File"),
     ("file.saveTemplate", "Save the project as a template", "File"),
     ("transport.toggle", "Play or stop", "Transport"),
+    ("view.computerKeyboard", "Play notes from the computer keyboard, or stop", "Transport"),
     ("transport.playFromSelection", "Play from the start of the selected clip", "Transport"),
-    ("view.toggle", "Switch between Session and Arrangement", "View"),
-    ("view.session", "Show the Session view", "View"),
+    ("view.toggle", "Switch between Launcher and Arrangement", "View"),
+    ("view.session", "Show the Launcher view", "View"),
     ("view.arrangement", "Show the Arrangement view", "View"),
     ("settings.open", "Open or close Settings", "View"),
     ("view.detail", "Show or hide the detail area", "View"),
@@ -154,11 +155,11 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 70] = [
     ("track.addMidi", "Add a MIDI track", "Tracks"),
     ("clip.insertMidi", "Insert an empty MIDI clip over the time selection", "Edit"),
     ("view.automation", "Show or hide every track's automation lanes", "View"),
-    ("selection.launch", "Launch the selected clip slot", "Session"),
-    ("selection.up", "Select the clip slot above", "Session"),
-    ("selection.down", "Select the clip slot below", "Session"),
-    ("selection.left", "Select the clip slot in the track to the left", "Session"),
-    ("selection.right", "Select the clip slot in the track to the right", "Session"),
+    ("selection.launch", "Launch the selected clip slot", "Launcher"),
+    ("selection.up", "Select the clip slot above", "Launcher"),
+    ("selection.down", "Select the clip slot below", "Launcher"),
+    ("selection.left", "Select the clip slot in the track to the left", "Launcher"),
+    ("selection.right", "Select the clip slot in the track to the right", "Launcher"),
     ("pianoRoll.quantize", "Quantise the piano roll's selected notes, or all its notes", PIANO_ROLL),
     ("pianoRoll.selectAll", "Select every note in the piano roll", PIANO_ROLL),
     ("pianoRoll.deselect", "Clear the piano roll's note selection", PIANO_ROLL),
@@ -177,6 +178,18 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 70] = [
     ("pianoRoll.tool4", "Choose the Erase tool", PIANO_ROLL),
     ("pianoRoll.tool5", "Choose the Slice tool", PIANO_ROLL),
     ("marker.addAtPlayhead", "Add an arrangement marker at the playhead", "Edit"),
+    ("selection.takeUp", "Swap the selected comped part for the take above it", "Edit"),
+    ("selection.takeDown", "Swap the selected comped part for the take below it", "Edit"),
+    ("arrangement.tool1", "Choose the Arrangement's Select tool", ARRANGEMENT),
+    ("arrangement.tool2", "Choose the Arrangement's Range tool", ARRANGEMENT),
+    ("arrangement.tool3", "Choose the Arrangement's Split tool", ARRANGEMENT),
+    ("arrangement.tool4", "Choose the Arrangement's Erase tool", ARRANGEMENT),
+    ("arrangement.tool5", "Choose the Arrangement's Draw tool", ARRANGEMENT),
+    ("arrangement.tool6", "Choose the Arrangement's Mute tool", ARRANGEMENT),
+    ("arrangement.gridNarrow", "Make the Arrangement's grid finer", ARRANGEMENT),
+    ("arrangement.gridWiden", "Make the Arrangement's grid coarser", ARRANGEMENT),
+    ("arrangement.gridTriplet", "Turn the Arrangement's triplet grid on or off", ARRANGEMENT),
+    ("arrangement.gridSnap", "Turn snapping to the Arrangement's grid on or off", ARRANGEMENT),
     ("pianoRoll.tool6", "Choose the Mute tool", PIANO_ROLL),
     ("pianoRoll.gridNarrow", "Make the piano roll's grid finer", PIANO_ROLL),
     ("pianoRoll.gridWiden", "Make the piano roll's grid coarser", PIANO_ROLL),
@@ -189,6 +202,14 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 70] = [
 
 /// The Shortcuts list's group for the piano roll's own actions.
 const PIANO_ROLL: &str = "Piano roll";
+/// The Shortcuts list's group for the Arrangement's tool keys.
+const ARRANGEMENT: &str = "Arrangement";
+
+/// Whether an action works only while the Arrangement has the keyboard, not the piano roll: its
+/// tool keys and grid keys, which share the piano roll's keys (#991).
+pub fn arrangement_only(action: &str) -> bool {
+    action.starts_with("arrangement.tool") || action.starts_with("arrangement.grid")
+}
 
 /// Whether an action works only while the piano roll has the keyboard (after a click in it). Its
 /// keys are left for the rest of the window otherwise: Escape and the arrows mean other things
@@ -198,7 +219,7 @@ pub fn piano_roll_only(action: &str) -> bool {
     action.starts_with("pianoRoll.") && action != "pianoRoll.quantize"
 }
 
-/// Whether `action` works only on a selected clip slot in the Session view: the piano roll keys
+/// Whether `action` works only on a selected clip slot in the Launcher view: the piano roll keys
 /// never do (it edits arrangement clips), so the two may share keys.
 pub fn slot_only(action: &str) -> bool {
     matches!(action, "selection.launch" | "selection.up" | "selection.down" | "selection.left" | "selection.right")
@@ -207,7 +228,7 @@ pub fn slot_only(action: &str) -> bool {
 /// Whether `action` is left alone while the piano roll has the keyboard: the selected slot's keys,
 /// and selecting every arrangement clip, whose key selects every note there instead.
 pub fn not_in_piano_roll(action: &str) -> bool {
-    slot_only(action) || action == "selection.selectAll"
+    slot_only(action) || action == "selection.selectAll" || arrangement_only(action)
 }
 
 /// Whether `a` and `b` can both run on the same key press, so one key for both is a conflict.
@@ -425,7 +446,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 71] = [
+const DEFAULTS: [(&str, &[&str]); 84] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -435,6 +456,7 @@ const DEFAULTS: [(&str, &[&str]); 71] = [
     ("file.save", &["Ctrl+S"]),
     ("file.saveAs", &["Ctrl+Shift+S"]),
     ("transport.toggle", &["Space"]),
+    ("view.computerKeyboard", &["Ctrl+K"]),
     ("transport.playFromSelection", &["Shift+Space"]),
     ("view.toggle", &["Tab"]),
     ("view.detail", &["Shift+Tab"]),
@@ -471,6 +493,18 @@ const DEFAULTS: [(&str, &[&str]); 71] = [
     ("selection.right", &["Right"]),
     ("pianoRoll.quantize", &["Ctrl+U"]),
     ("marker.addAtPlayhead", &["M"]),
+    ("selection.takeUp", &["Alt+Up"]),
+    ("selection.takeDown", &["Alt+Down"]),
+    ("arrangement.tool1", &["1"]),
+    ("arrangement.tool2", &["2"]),
+    ("arrangement.tool3", &["3"]),
+    ("arrangement.tool4", &["4"]),
+    ("arrangement.tool5", &["5"]),
+    ("arrangement.tool6", &["6"]),
+    ("arrangement.gridNarrow", &["Ctrl+1"]),
+    ("arrangement.gridWiden", &["Ctrl+2"]),
+    ("arrangement.gridTriplet", &["Ctrl+3"]),
+    ("arrangement.gridSnap", &["Ctrl+4"]),
     ("transport.setLoopEnabled", &["Ctrl+L"]),
     ("project.next", &["Ctrl+Tab"]),
     ("project.previous", &["Ctrl+Shift+Tab"]),
@@ -719,18 +753,35 @@ impl Keymap {
         all.sort_by_key(|(_, k)| std::cmp::Reverse(k.modifier_count()));
         let mut fired = Vec::new();
         for (id, key) in all {
+            // A key held down repeats; only the actions that step something (the arrows, undo)
+            // follow the repeat. The others, Space's play and stop among them, act once (#916).
+            let only_repeats = input.events.iter().any(|e| is_press(e, key.key, true))
+                && !input.events.iter().any(|e| is_press(e, key.key, false));
             let shortcut = egui::KeyboardShortcut::new(key.modifiers, key.key);
             let pressed = if key.modifiers.is_none() {
                 input.consume_key(Modifiers::NONE, key.key)
             } else {
                 input.consume_shortcut(&shortcut)
             };
-            if pressed && !fired.contains(id) {
+            if pressed && !fired.contains(id) && (!only_repeats || repeats(id, key.key)) {
                 fired.push(id.clone());
             }
         }
         fired
     }
+}
+
+/// Whether `event` presses `key`, as a repeat of a key held down when `repeat`.
+fn is_press(event: &egui::Event, key: egui::Key, repeat: bool) -> bool {
+    matches!(event, egui::Event::Key { key: k, pressed: true, repeat: r, .. } if *k == key && *r == repeat)
+}
+
+/// Whether the action `id` on `key` follows a held key's repeat: stepping keys and undo do;
+/// a toggle does not.
+fn repeats(id: &str, key: egui::Key) -> bool {
+    use egui::Key::{ArrowDown, ArrowLeft, ArrowRight, ArrowUp, PageDown, PageUp};
+    matches!(key, ArrowUp | ArrowDown | ArrowLeft | ArrowRight | PageUp | PageDown)
+        || matches!(id, "edit.undo" | "edit.redo")
 }
 
 /// A key written as the keymap writes it ("Ctrl+C"), as menus show it on this system.

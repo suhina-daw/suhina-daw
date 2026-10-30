@@ -91,11 +91,19 @@ pub struct PreviewMonitor {
     playing: AtomicBool,
     /// Seconds from the start of what plays (f64 bits).
     seconds: AtomicU64,
+    /// How many samples or MIDI files have started playing, so a preview that starts and ends
+    /// between two looks is still seen to have played.
+    started: AtomicU64,
 }
 
 impl PreviewMonitor {
     pub fn playing(&self) -> bool {
         self.playing.load(Ordering::Relaxed)
+    }
+
+    /// How many samples or MIDI files have started playing since the voice was made.
+    pub fn started(&self) -> u64 {
+        self.started.load(Ordering::Relaxed)
     }
 
     /// Seconds into the sample or MIDI file being previewed.
@@ -248,9 +256,11 @@ impl Preview {
                     let position = (from.max(0.0) * rate).min(data.frames() as f64);
                     let step = rate / f64::from(self.sample_rate.max(1));
                     self.sample = Some(SamplePlay { data, position, step, played: 0, gain, target: gain });
+                    self.monitor.started.fetch_add(1, Ordering::Relaxed);
                 }
                 PreviewCommand::Notes { notes, gain } => {
                     self.stop(chains, 0);
+                    self.monitor.started.fetch_add(1, Ordering::Relaxed);
                     self.notes = Some(NotesPlay {
                         notes,
                         frame: 0,

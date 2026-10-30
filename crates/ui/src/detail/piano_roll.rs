@@ -37,6 +37,7 @@ mod edits;
 mod layout;
 mod state;
 mod toolbar;
+pub(crate) use toolbar::{grid_entries, grid_key_labels, menu_arrow};
 
 pub use self::clip::*;
 #[cfg(test)]
@@ -45,6 +46,7 @@ use self::drawing::*;
 use self::edits::*;
 pub use self::layout::*;
 pub use self::state::*;
+pub use self::toolbar::IconButton;
 pub(crate) use self::toolbar::*;
 
 pub use gestures::start_by;
@@ -180,7 +182,7 @@ pub fn show(
     let _style_class = crate::kit::style_class::enter("piano-roll");
     let mut styled_ui = crate::kit::style_class::ui(ui);
     let ui = &mut *styled_ui;
-    let Context { options, keymap, copied, playhead } = cx;
+    let Context { options, keymap, copied, playhead, start_marker, seeks } = cx;
     let scale = options.toolbar_size.scale();
     let fresh = state.shown.as_ref() != Some(&clip.address);
     if fresh {
@@ -188,6 +190,8 @@ pub fn show(
         state.selected.clear();
         state.gesture = None;
         state.playing_key = None;
+        // The scroll reach a zoom gave the last clip is not this one's.
+        state.zoom_reach = 0.0;
     }
     // Keys run before the piano roll is drawn, and their commands after it: notes a paste or a
     // duplicate selected this frame exist from the next frame on.
@@ -242,12 +246,20 @@ pub fn show(
     }
     scroll_and_zoom(ui, state, area, grid_rect, inputs);
     // The ruler: its loop handles and markers, and dragging it to zoom and scroll time.
-    let shape = ruler_view::interact(ui, ruler, grid_rect.left(), clip, state, inputs.alt, actions);
+    let shape = ruler_view::interact(ui, ruler, grid_rect.left(), clip, state, inputs.alt, seeks, actions);
     state.view_width = grid_rect.width();
     let rows_height = rows.len() as f32 * state.key_height;
     state.scroll.y = state.scroll.y.clamp(0.0, (rows_height - grid_rect.height()).max(0.0));
-    let width = ((clip.length + clip.bar_beats * 4.0) as f32 * state.beat_width).max(grid_rect.width());
-    state.scroll.x = state.scroll.x.clamp(0.0, (width - grid_rect.width()).max(0.0));
+    // The view goes on past the clip over the ghost notes, so the other picked clips' notes can
+    // be reached (#1054).
+    let ghosts_end = clip.ghosts.notes.iter().map(|n| n.start + n.length).fold(0.0, f64::max);
+    let most = crate::arrangement::arrangement_view::most_scroll_x(
+        clip.length.max(ghosts_end) + clip.bar_beats * 4.0,
+        state.zoom_reach,
+        state.beat_width,
+        grid_rect.width(),
+    );
+    state.scroll.x = state.scroll.x.clamp(0.0, most);
     let layout = Layout {
         keys,
         ruler,
@@ -536,6 +548,10 @@ pub fn show(
     }
     // The playhead: where playback is in the clip's content (through its start, offset and loop),
     // over the ruler, the grid and the velocity lane, as the other views show it.
+    // Where playback starts next, for an arrangement clip: a click on the ruler moves it (#951).
+    if let Some(beat) = start_marker.and_then(|at| clip.placement.content_beat(at)) {
+        drawing::draw_start_marker(ui, &layout, beat);
+    }
     if let Some(beat) = playhead.and_then(|at| clip.placement.content_beat(at)) {
         draw_playhead(ui, &layout, beat);
     }

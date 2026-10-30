@@ -83,6 +83,20 @@ pub enum LaunchCommand {
     SetPosition {
         beat: f64,
     },
+    /// Moves the play start marker to `beat` as [`LaunchCommand::SetPosition`] does, but while
+    /// the transport runs playback goes on where it is: the next start begins at the marker
+    /// (#657). Non-finite beats are ignored.
+    SetStart {
+        beat: f64,
+    },
+    /// A deliberate seek (#657): while the transport runs, playback jumps to `beat` at the next
+    /// boundary of the global launch quantisation (at once with none), and the play start marker
+    /// moves there then; until it does the jump is pending ([`LauncherMonitor::pending_jump`]),
+    /// a second one replaces it and a stop cancels it. While stopped it is
+    /// [`LaunchCommand::SetPosition`].
+    JumpOnGrid {
+        beat: f64,
+    },
     /// A press of a slot's launch button. What it does depends on the clip's launch mode
     /// (`docs/spec/clip-launching.md` › Launch settings): it launches the clip, or, for a clip in
     /// toggle mode that is playing, stops it.
@@ -349,6 +363,8 @@ pub struct LauncherMonitor {
     launch_beat: AtomicU64,
     /// Beats the count-in still counts before the transport starts (f64 bits); 0 when none.
     pub(crate) count_in: AtomicU64,
+    /// Where a pending jump goes, in beats (f64 bits); NaN when none waits (#657).
+    pub(crate) pending_jump: AtomicU64,
 }
 
 impl LauncherMonitor {
@@ -381,7 +397,15 @@ impl LauncherMonitor {
             follows_map: AtomicBool::new(true),
             launch_beat: AtomicU64::new(0f64.to_bits()),
             count_in: AtomicU64::new(0f64.to_bits()),
+            pending_jump: AtomicU64::new(f64::NAN.to_bits()),
         }
+    }
+
+    /// Where a jump asked for on the playback strip goes while it waits for its boundary
+    /// ([`LaunchCommand::JumpOnGrid`]), in beats; `None` when none waits.
+    pub fn pending_jump(&self) -> Option<f64> {
+        let beat = f64::from_bits(self.pending_jump.load(Ordering::Relaxed));
+        beat.is_finite().then_some(beat)
     }
 
     /// The beat a launch issued now would happen at, on the global launch grid, as of the start
@@ -1214,15 +1238,27 @@ impl Renderer {
             LaunchCommand::Stop | LaunchCommand::StopHere if self.start_waiting.is_some() => {
                 self.start_waiting = None;
                 self.start_target = None;
+                self.pending_jump = None;
                 let marker = self.start_beat;
                 self.stop_transport(false);
                 self.set_position(marker);
             }
-            LaunchCommand::Stop => self.stop_transport(false),
-            LaunchCommand::StopHere => self.stop_transport(true),
+            LaunchCommand::Stop => {
+                self.pending_jump = None;
+                self.stop_transport(false);
+            }
+            LaunchCommand::StopHere => {
+                self.pending_jump = None;
+                self.stop_transport(true);
+            }
             LaunchCommand::SetRecording { on } => self.recorder.set(on),
             LaunchCommand::CountIn { beats, bar_beats } => self.start_count_in(beats, bar_beats),
-            LaunchCommand::SetPosition { beat } => self.set_position(beat),
+            LaunchCommand::SetPosition { beat } => {
+                self.pending_jump = None;
+                self.set_position(beat);
+            }
+            LaunchCommand::SetStart { beat } => self.set_start(beat),
+            LaunchCommand::JumpOnGrid { beat } => self.jump_on_grid(beat),
             LaunchCommand::Locate { beat } => {
                 if beat.is_finite() {
                     let beat = beat.clamp(0.0, MAX_START_BEAT);
@@ -1518,6 +1554,55 @@ impl Renderer {
         launcher.monitor.running.store(false, Ordering::Relaxed);
     }
 
+    /// Moves the play start marker without moving playback (#657).
+    fn set_start(&mut self, beat: f64) {
+        if !beat.is_finite() {
+            return;
+        }
+        if self.running {
+            self.start_beat = beat.clamp(0.0, MAX_START_BEAT);
+        } else {
+            self.set_position(beat);
+        }
+    }
+
+    /// A seek at the next global launch boundary while playing, at once with no quantisation
+    /// or while stopped (#657).
+    fn jump_on_grid(&mut self, beat: f64) {
+        if !beat.is_finite() {
+            return;
+        }
+        let at = self.graph.launcher.launch_beat();
+        if !self.running || at <= self.graph.launcher.beat() + 1e-9 {
+            self.pending_jump = None;
+            self.set_position(beat);
+            return;
+        }
+        self.pending_jump = Some((beat.clamp(0.0, MAX_START_BEAT), at));
+    }
+
+    /// Frames until a pending jump's boundary, while one waits and the transport runs.
+    pub(crate) fn frames_to_jump(&self) -> Option<usize> {
+        let (_, at) = self.pending_jump.filter(|_| self.running)?;
+        let per_frame = self.graph.launcher.tempo_bpm() / 60.0 / f64::from(self.sample_rate.max(1));
+        if !(per_frame.is_finite() && per_frame > 0.0) {
+            return Some(0);
+        }
+        let frames = ((at - self.graph.launcher.beat()) / per_frame).ceil();
+        Some(if frames.is_finite() && frames > 0.0 { frames.min(usize::MAX as f64) as usize } else { 0 })
+    }
+
+    /// Makes a pending jump whose boundary has come.
+    pub(crate) fn jump_if_due(&mut self) {
+        if let Some((beat, at)) = self.pending_jump
+            && self.running
+            && self.graph.launcher.beat() >= at - 1e-9
+        {
+            self.pending_jump = None;
+            self.set_position(beat);
+        }
+    }
+
     /// Moves the play start marker to `beat`; while running, playback jumps there. Launches and
     /// a scene tempo still waiting are queued again for the next boundary from the new beat.
     fn set_position(&mut self, beat: f64) {
@@ -1685,6 +1770,8 @@ impl Renderer {
         let monitor = &launcher.monitor;
         monitor.beat.store(launcher.beat.to_bits(), Ordering::Relaxed);
         monitor.launch_beat.store(launcher.launch_beat().to_bits(), Ordering::Relaxed);
+        let pending = self.pending_jump.map_or(f64::NAN, |(beat, _)| beat);
+        monitor.pending_jump.store(pending.to_bits(), Ordering::Relaxed);
         monitor.tempo.store(launcher.tempo_bpm.to_bits(), Ordering::Relaxed);
         for (column, elapsed) in launcher.columns.iter().zip(&monitor.elapsed) {
             if let Some(playing) = column.playing {
@@ -1919,6 +2006,7 @@ impl Renderer {
                 bus: note.bus,
                 meter: note.meter,
                 scale: note.scale,
+                arranged: false,
             };
             start_note(voices, chains, frame, *position, *sample_rate, end, start);
         };

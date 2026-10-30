@@ -68,6 +68,8 @@ pub struct Panel {
     flags_key: Option<String>,
     /// An item double-clicked, for the window to add to the selected track.
     pub add: Vec<BrowserItem>,
+    /// Files Copy to folder… asked for, for the window to copy once a folder is picked (#865).
+    pub copy_to: Vec<std::path::PathBuf>,
     /// Something to say in the status bar (a preview that cannot play).
     pub status: Option<String>,
     /// A kind was set by hand since the layout was made: the next refresh lays the scope out
@@ -89,6 +91,7 @@ impl Default for Panel {
             points: Vec::new(),
             flags_key: None,
             add: Vec::new(),
+            copy_to: Vec::new(),
             status: None,
             stale: false,
         }
@@ -418,6 +421,7 @@ impl Panel {
         suhina_plugins::trace::timed("sample map points", || self.update_points(state, projects, revision));
         self.view.preview_on_hover = settings.map_hover_preview;
         self.view.dot_size = settings.map_dot_size as f32 / 100.0;
+        self.view.label_size = settings.map_label_size as f32 / 100.0;
         self.view.volume = settings.preview_volume;
         let tags: Vec<String> = projects.file_library_mut().tags().into_iter().map(|t| t.name).collect();
         let status = self.status();
@@ -527,6 +531,11 @@ impl Panel {
                     self.flags_key = None;
                 }
             }
+            MapEvent::CopyTo(i) => {
+                if let Some(path) = self.path(i) {
+                    self.copy_to = crate::browser::browser_view::copy_files(&item_of(&path), state.selected());
+                }
+            }
             MapEvent::ShowInFolder(i) => {
                 if let Some(path) = self.path(i) {
                     if let Some(folder) = path.parent() {
@@ -566,6 +575,10 @@ impl Panel {
             }
             MapEvent::DotSize(percent) => {
                 settings.map_dot_size = percent;
+                return true;
+            }
+            MapEvent::LabelSize(percent) => {
+                settings.map_label_size = percent;
                 return true;
             }
             MapEvent::Volume(db) => {

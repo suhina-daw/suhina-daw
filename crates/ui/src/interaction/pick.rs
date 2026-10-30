@@ -37,6 +37,8 @@ pub enum PickField {
     DataFolder,
     /// Cabinet sounds folder (docs/spec/nam-amp-and-cab.md).
     IrFolder,
+    /// The folder Copy to folder… copies samples into (`library.copyTo`, #865).
+    CopyToFolder,
 }
 
 impl PickField {
@@ -61,6 +63,7 @@ impl PickField {
             Self::ThemesFolder => "Themes folder",
             Self::DataFolder => "Settings folder",
             Self::IrFolder => "Cabinet sounds folder",
+            Self::CopyToFolder => "Copy the samples to",
         }
     }
 

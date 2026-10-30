@@ -72,7 +72,7 @@ pub fn row_height_with_editor(height: u32, pixels_per_point: f32) -> f32 {
 pub fn show_row(
     ui: &mut Ui,
     detail: &Detail,
-    selected: &[(TrackId, usize)],
+    selected: &[(TrackId, DeviceAt)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -112,7 +112,7 @@ fn chain_row(
     painter: &egui::Painter,
     area: Rect,
     chain: &Chain,
-    selected: &[(TrackId, usize)],
+    selected: &[(TrackId, DeviceAt)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -198,6 +198,7 @@ fn chain_row(
     ui.set_clip_rect(area.intersect(outer_clip));
     let mut x = area.left() - offset;
     let mut tallest: f32 = 0.0;
+    let mut slots = Vec::new();
     for (device, (width, height)) in entries.iter().zip(boxes) {
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
         // A panel with its editor embedded takes the area's whole height, and the editor is
@@ -206,14 +207,17 @@ fn chain_row(
         let rect = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(width, shown_height));
         x = rect.right() + 1.0;
         tallest = tallest.max(height);
+        if device.at.top() {
+            slots.push((device.index, rect));
+        }
         if rect.right() < area.left() {
             continue;
         }
         if rect.left() > area.right() {
             break;
         }
-        // Picks are of the track's own devices (Ctrl+G groups them, Delete removes them).
-        let lit = device.at.top() && selected.contains(&(chain.track, device.index));
+        // Picks are of any device, inside a group too (Ctrl+G groups them, Delete removes them).
+        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
         let clicked = match &device.group {
             Some(group) => {
                 group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions)
@@ -224,8 +228,8 @@ fn chain_row(
         };
         inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
-        if clicked && device.at.top() {
-            picked.clicked = Some((chain.track, device.index));
+        if clicked {
+            picked.clicked = Some((chain.track, device.at.clone()));
         }
         plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
@@ -234,6 +238,27 @@ fn chain_row(
         }
     }
     ui.set_clip_rect(outer_clip);
+    // A device of this chain carried over it: a line where it would go (#688).
+    let carrying = ui.data(|d| d.get_temp::<(TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING)));
+    if let Some((track, from)) = carrying.filter(|(t, _)| *t == chain.track)
+        && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| area.contains(*p))
+        && let Some(to) = crate::interaction::drop::device_slot_at(&slots, pointer.x, false)
+        && to != from
+        && to != from + 1
+        && track == chain.track
+    {
+        let x = slots
+            .iter()
+            .find(|(i, _)| *i == to)
+            .map_or_else(|| slots.last().map_or(area.left(), |(_, r)| r.right() + 0.5), |(_, r)| r.left() - 0.5);
+        painter.with_clip_rect(area).line_segment(
+            [Pos2::new(x, area.top()), Pos2::new(x, (area.top() + tallest).min(area.bottom()))],
+            egui::Stroke::new(2.0, theme::accent()),
+        );
+    }
+    let pass = ui.ctx().cumulative_pass_nr();
+    let list = crate::interaction::drop::DeviceSlots { track: chain.track, area, slots, vertical: false, pass };
+    crate::interaction::drop::note_device_slots(ui.ctx(), list);
     if let Some(bar) = bar {
         painter.fill_background(bar, 0.0, theme::control_background());
         let thumb_width = (area.width() / total * bar.width()).max(24.0);
@@ -301,7 +326,7 @@ fn sdk_viewport(device: &DeviceBox) -> Option<[f32; 2]> {
 pub fn show_stack(
     ui: &mut Ui,
     detail: &Detail,
-    selected: &[(TrackId, usize)],
+    selected: &[(TrackId, DeviceAt)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -364,7 +389,7 @@ fn chain_stack(
     painter: &egui::Painter,
     area: Rect,
     chain: &Chain,
-    selected: &[(TrackId, usize)],
+    selected: &[(TrackId, DeviceAt)],
     actions: &mut Vec<Action>,
     places: &mut Vec<EditorPlace>,
 ) -> Picked {
@@ -384,12 +409,12 @@ fn chain_stack(
             if rect.top() > area.bottom() {
                 break;
             }
-            let lit = device.at.top() && selected.contains(&(chain.track, device.index));
+            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
                 group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions);
             inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
-            if clicked && device.at.top() {
-                picked.clicked = Some((chain.track, device.index));
+            if clicked {
+                picked.clicked = Some((chain.track, device.at.clone()));
             }
             continue;
         }
@@ -402,13 +427,13 @@ fn chain_stack(
         if rect.top() > area.bottom() {
             break;
         }
-        let lit = device.at.top() && selected.contains(&(chain.track, device.index));
+        let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
         let clicked =
             device_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, lit, actions, &chain.nam);
         inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
-        if clicked && device.at.top() {
-            picked.clicked = Some((chain.track, device.index));
+        if clicked {
+            picked.clicked = Some((chain.track, device.at.clone()));
         }
         plugin_button(ui, &painter.with_clip_rect(area), rect, chain.track, device, actions);
         if let Some(editor) = editor {
@@ -507,7 +532,9 @@ pub fn show_ara_editor(
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
     painter.fill_background(area, 0.0, theme::window_background());
-    let Some(device) = chain.devices.iter().find(|d| d.index == device) else { return };
+    // The clip host is not among the chain's devices (#990): its editor is found as the host.
+    let found = chain.devices.iter().find(|d| d.index == device && d.at.top());
+    let Some(device) = found.or(chain.host.as_ref().filter(|h| h.index == device)) else { return };
     let Some(plugin) = &device.plugin else { return };
     let response = ui.interact(area, egui::Id::new(("ara-editor", chain.track.0)), Sense::hover());
     let label = format!("Clip editor {}", device.name);
@@ -528,6 +555,21 @@ pub fn show_ara_editor(
             Action::new("view.araFloat", params),
             actions,
         );
+        // At the row's right end the ×, which hides the editor, as the piano roll's does.
+        let hide =
+            Rect::from_min_size(Pos2::new(area.right() - PAD - BUTTON_HEIGHT, float.top()), Vec2::splat(BUTTON_HEIGHT));
+        let response = crate::kit::widgets::button_area(ui, hide, egui::Id::new(("ara-hide", track.0)), "Hide editor")
+            .on_hover_text("Hide editor");
+        let fill = crate::kit::motion::mix(
+            theme::control_background(),
+            theme::control_hover(),
+            crate::kit::widgets::hover(ui, &response),
+        );
+        painter.rect_filled(hide, 0.0, fill);
+        crate::detail::piano_roll::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        if response.clicked() {
+            actions.push(Action::new("view.editor", json!({})));
+        }
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, float.bottom() + PAD), size);
         let mut place = editor_place(ui, area, rect.expand(PAD), size, track, device, rect.min);
         // The editor is asked to take the room under Float, as a piano roll fills it.

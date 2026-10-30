@@ -43,7 +43,10 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
-pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome, take_keyboard_back};
+pub use suhina_ipc::{
+    AudioSource, Event, EventKind, MAX_EVENTS, Outcome, keys_to_engine, pointer_on_screen, set_keys_to_engine,
+    take_keyboard_back,
+};
 use suhina_ipc::{IpcError, Link};
 
 use protocol::{AraDocument, MAX_LINE, Message, VERSION};
@@ -465,6 +468,9 @@ struct Group {
     resized_editors: Vec<(u32, (u32, u32))>,
     /// Instances whose plug-in reported another latency (the latest), not yet taken in.
     latencies: Vec<(u32, u32)>,
+    /// Parameters the host said the user moved in a plug-in's editor (the latest per instance
+    /// and id), not yet taken in.
+    param_edits: Vec<(u32, u32, f64)>,
     /// The notes ARA plug-ins found in their regions (the latest per instance and region), not
     /// yet taken in (#720).
     ara_notes: Vec<(u32, String, Vec<protocol::AraNote>)>,
@@ -484,6 +490,7 @@ impl Group {
             closed_editors: Vec::new(),
             resized_editors: Vec::new(),
             latencies: Vec::new(),
+            param_edits: Vec::new(),
             ara_notes: Vec::new(),
             ara_analysis: Vec::new(),
             ram: None,
@@ -503,6 +510,7 @@ impl Group {
         self.closed_editors.clear();
         self.resized_editors.clear();
         self.latencies.clear();
+        self.param_edits.clear();
         self.ara_notes.clear();
         self.ram = None;
     }
@@ -548,6 +556,14 @@ impl Group {
                     self.latencies.push((*instance, *latency));
                 }
             }
+            Message::ParamChanged { instance, id, value } => {
+                // The last value of a parameter wins; one that already moved a step keeps its
+                // latest.
+                self.param_edits.retain(|(i, other, _)| !(i == instance && other == id));
+                if self.param_edits.len() < MAX_CLOSED_EDITORS {
+                    self.param_edits.push((*instance, *id, *value));
+                }
+            }
             Message::AraNotes { instance, region, notes, .. } => {
                 self.ara_notes.retain(|(i, r, _)| !(i == instance && r == region));
                 if self.ara_notes.len() < protocol::MAX_ARA_OBJECTS {
@@ -560,7 +576,7 @@ impl Group {
                     self.ara_analysis.push((*instance, *progress));
                 }
             }
-            Message::TransportKey | Message::AraPlayback(_) => take_in_transport(message),
+            Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_) => take_in_transport(message),
             Message::Memory { bytes } => {
                 // Only a process that is still there reports; the host sends it once a second,
                 // so the latest is what the control bar adds.
@@ -619,6 +635,20 @@ impl Group {
     fn take_latency(&mut self, instance: u32) -> Option<u32> {
         let at = self.latencies.iter().position(|(i, _)| *i == instance)?;
         Some(self.latencies.swap_remove(at).1)
+    }
+
+    /// What the host said the user moved in `instance`'s editor since the last call (and
+    /// forgets it): each (id, value) once, the latest per id.
+    fn take_param_edits(&mut self, instance: u32) -> Vec<(u32, f64)> {
+        let mut taken = Vec::new();
+        self.param_edits.retain_mut(|(i, id, value)| {
+            if *i != instance {
+                return true;
+            }
+            taken.push((*id, *value));
+            false
+        });
+        taken
     }
 
     /// Sends `message` (about `instance`, or the process) and waits for the reply `wanted`
@@ -823,6 +853,30 @@ impl Plugin {
             }
         }
         self.latency
+    }
+
+    /// What the user moved in the plug-in's editor since the last call, as (id, value) pairs
+    /// in the plug-in's own range (see [`ParamInfo`]): the session keeps the project's values
+    /// in step with them. Never waits: while the process is busy with another request,
+    /// nothing yet.
+    pub fn take_param_edits(&mut self) -> Vec<(u32, f64)> {
+        let Some(mut group) = try_lock(&self.group) else { return Vec::new() };
+        if group.generation != self.generation {
+            return Vec::new();
+        }
+        group.drain();
+        let taken = group.take_param_edits(self.instance);
+        // An edit the session keeps the project's values in step with is also a value set
+        // since the state was last read: a restart sets it again, the latest of a parameter
+        // winning (ADR 0006, decision 3). Kept only until the state is read again, which
+        // holds it.
+        for (id, value) in &taken {
+            self.params_since.retain(|(other, _)| *other != *id);
+            if self.params_since.len() < protocol::MAX_PARAMS {
+                self.params_since.push((*id, *value));
+            }
+        }
+        taken
     }
 
     /// The notes the ARA plug-in found in its regions since the last call, by region id
@@ -1376,6 +1430,18 @@ static TRANSPORT_KEYS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU
 /// How many times Space was pressed in a plug-in's editor window since the last call: the window
 /// plays or stops that many times, as Space in its own window does. Takes in what the hosts sent
 /// without waiting for any of them.
+/// Keys the app's computer keyboard plays, pressed or let go in plug-in editor windows (their
+/// Windows virtual-key codes), oldest first.
+static TYPED_KEYS: Mutex<Vec<(u8, bool)>> = Mutex::new(Vec::new());
+/// At most this many wait; more are dropped (a stuck window would otherwise grow the list).
+const MAX_TYPED_KEYS: usize = 64;
+
+/// The keys pressed and let go in editor windows while the computer keyboard plays (#944).
+pub fn take_typed_keys() -> Vec<(u8, bool)> {
+    drain_groups();
+    std::mem::take(&mut *lock(&TYPED_KEYS))
+}
+
 pub fn take_transport_keys() -> u32 {
     drain_groups();
     TRANSPORT_KEYS.swap(0, std::sync::atomic::Ordering::Relaxed)
@@ -1438,11 +1504,24 @@ fn take_in_transport(message: &Message) {
         Message::TransportKey => {
             TRANSPORT_KEYS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        Message::TypedKey { key, pressed } => {
+            let mut keys = lock(&TYPED_KEYS);
+            if keys.len() < MAX_TYPED_KEYS {
+                keys.push((*key, *pressed));
+            }
+        }
         Message::AraPlayback(request) => {
             let mut requests = lock(&ARA_PLAYBACK);
-            // A newer position replaces one not taken yet; a few starts and stops are kept.
-            if let protocol::AraPlayback::Position(_) = request {
-                requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+            // A newer position or loop replaces one not taken yet (a loop dragged in the editor
+            // asks on every move); a few starts and stops are kept.
+            match request {
+                protocol::AraPlayback::Position(_) => {
+                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+                }
+                protocol::AraPlayback::Cycle(..) => {
+                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Cycle(..)));
+                }
+                _ => {}
             }
             if requests.len() < MAX_ARA_PLAYBACK {
                 requests.push(*request);
@@ -1474,12 +1553,14 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                         let shown = matches!(
                             message,
                             Message::TransportKey
+                                | Message::TypedKey { .. }
                                 | Message::AraPlayback(_)
                                 | Message::AraNotes { .. }
                                 | Message::AraAnalysis { .. }
                                 | Message::EditorClosed { .. }
                         );
-                        if matches!(message, Message::TransportKey | Message::AraPlayback(_)) {
+                        if matches!(message, Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_))
+                        {
                             take_in_transport(&message);
                             wake();
                             continue;

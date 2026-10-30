@@ -78,7 +78,7 @@ target may be **relative to the focus** instead of naming a track or device:
 
 - `selected` track or device: whatever is selected in the window when the message arrives;
 - `bank` track *n*: the *n*-th track (1 to 8) of the current bank, a run of eight tracks that
-  starts at the leftmost track shown in the Session View, moved by the triggers
+  starts at the leftmost track shown in the Launcher view, moved by the triggers
   `mapping.bankNext` and `mapping.bankPrevious`;
 - `selected` device parameter *n*: the *n*-th parameter of the selected device, in the order the
   device lists them.

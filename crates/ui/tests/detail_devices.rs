@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The detail area's Clip / Devices switch and the double-click on a track that shows its devices
-//! (`docs/spec/ui-clip-editor.md` › Where it opens): from an Arrangement header, a Session column's
+//! (`docs/spec/ui-clip-editor.md` › Where it opens): from an Arrangement header, a Launcher column's
 //! name and its channel strip, opening a hidden detail area, and never changing the project.
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
@@ -16,7 +16,7 @@ use suhina_ui::demo::demo_project;
 use suhina_ui::{App, kit::theme};
 
 const SIZE: (f32, f32) = (1280.0, 900.0);
-/// A MIDI clip on Drums in the Arrangement view, and one in a Session slot.
+/// A MIDI clip on Drums in the Arrangement view, and one in a Launcher slot.
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const SLOT: &str = "Select Beat B on Drums (scene 3)";
 
@@ -28,6 +28,7 @@ fn device(name: &str) -> Device {
         state: None,
         params: Vec::new(),
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     }
 }
@@ -40,7 +41,7 @@ fn project() -> Project {
     project
 }
 
-/// The window with the project in the Session view, frames close enough for a double-click.
+/// The window with the project in the Launcher view, frames close enough for a double-click.
 fn window() -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
@@ -314,7 +315,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         .with_max_steps(60)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
-    harness.get_by_label("Session view").click();
+    harness.get_by_label("Launcher view").click();
     // The column name's double-click shows the track's devices directly.
     let name = harness.get_by_label("Track Drums").rect().center();
     double_click_at(&mut harness, name);

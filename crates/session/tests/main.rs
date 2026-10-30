@@ -10,10 +10,13 @@
 mod audio;
 mod audio_input;
 mod automation;
+mod clip_ara;
+mod clip_automation;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
 mod commands;
+mod comping;
 mod cue;
 mod device_groups;
 mod devices;
@@ -26,6 +29,7 @@ mod launch_mappings;
 mod launch_settings;
 mod launcher;
 mod library;
+mod main_channel;
 mod meters;
 mod midi;
 mod note_gestures;
@@ -48,6 +52,8 @@ mod stems;
 mod support;
 mod temp_dir;
 mod tempo;
+mod track_copy;
+mod track_names;
 mod trusted_audio;
 
 #[test]

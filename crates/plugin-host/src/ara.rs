@@ -2012,8 +2012,8 @@ static PLAYBACK: ARAPlaybackControllerInterface = ARAPlaybackControllerInterface
     requestStartPlayback: Some(start_request),
     requestStopPlayback: Some(stop_request),
     requestSetPlaybackPosition: Some(position_request),
-    requestSetCycleRange: Some(no_cycle_request),
-    requestEnableCycle: Some(no_cycle_switch),
+    requestSetCycleRange: Some(cycle_request),
+    requestEnableCycle: Some(cycle_switch),
 };
 
 /// What the plug-ins asked of the transport, waiting for the main loop to send it on (#717). A
@@ -2097,16 +2097,21 @@ pub(crate) fn shown_position(engine: i64, sample_rate: f64, playing: bool) -> i6
     wanted
 }
 
-// The loop (cycle) requests wait for a later step: Suhina's loop region is set in the ruler.
-
-unsafe extern "C" fn no_cycle_request(
+// A loop drawn or switched in the plug-in's editor is the arrangement's loop, as one set in the
+// ruler is; the plug-in reads the loop back from each block's process context.
+unsafe extern "C" fn cycle_request(
     _host: ARAPlaybackControllerHostRef,
-    _start: ARATimePosition,
-    _length: ARATimeDuration,
+    start: ARATimePosition,
+    length: ARATimeDuration,
 ) {
+    if start.is_finite() && start >= 0.0 && length.is_finite() && length > 0.0 {
+        ask(AraPlayback::Cycle(start, length));
+    }
 }
 
-unsafe extern "C" fn no_cycle_switch(_host: ARAPlaybackControllerHostRef, _enable: ARABool) {}
+unsafe extern "C" fn cycle_switch(_host: ARAPlaybackControllerHostRef, enable: ARABool) {
+    ask(AraPlayback::CycleOn(enable != 0));
+}
 
 #[cfg(test)]
 #[path = "ara_tests.rs"]

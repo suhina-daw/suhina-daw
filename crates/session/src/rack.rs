@@ -1489,6 +1489,23 @@ impl Rack {
         changed
     }
 
+    /// Takes in what the host said the user moved in a running plug-in's editor since the
+    /// last call: (device key, parameter id, value) for the session to keep the project's
+    /// values in step with.
+    pub(crate) fn take_param_edits(&mut self) -> Vec<(u64, u32, f64)> {
+        let mut edits = Vec::new();
+        for (key, instance) in self.instances.iter_mut() {
+            if instance.status != PluginStatus::Running {
+                continue;
+            }
+            let Some(control) = instance.control.as_mut() else { continue };
+            for (id, value) in control.take_param_edits() {
+                edits.push((*key, id, value));
+            }
+        }
+        edits
+    }
+
     /// Takes in the notes ARA plug-ins found in their clips, and forgets those of clips no
     /// running, enabled plug-in edits any more (moved off its track, deleted, the device bypassed
     /// or removed).

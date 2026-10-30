@@ -57,6 +57,11 @@ exceptions = [
     { crate = "zerotrie", allow = ["Unicode-3.0"] },
     { crate = "zerovec", allow = ["Unicode-3.0"] },
     { crate = "zerovec-derive", allow = ["Unicode-3.0"] },
+    # Apache-2.0 WITH LLVM-exception: Apache-2.0 with an exception that only grants more,
+    # GPLv3-compatible. target-lexicon is in the lock file only through the drag crate's GTK
+    # backend for Linux (gtk > system-deps > cfg-expr), which Suhina does not build: drag is a
+    # Windows and macOS dependency of the desktop app (#865).
+    { crate = "target-lexicon", allow = ["Apache-2.0 WITH LLVM-exception"] },
     # Boost Software License 1.0: permissive, GPL-compatible (FSF). The Windows clipboard, used by
     # egui through arboard.
     { crate = "clipboard-win", allow = ["BSL-1.0"] },
@@ -108,4 +113,8 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant 5: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names 4: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5: unmaintained, Linux D-Bus for rtkit and accesskit; waits for accesskit on zbus 6" },
+    # proc-macro-error is unmaintained, not a vulnerability. It is in the lock file only through
+    # the drag crate's GTK backend for Linux (gtk 0.18), which Suhina never builds: the desktop app
+    # depends on drag on Windows and macOS only (#865). Remove it when drag drops gtk 0.18.
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained; only drag's Linux GTK backend, which Suhina does not build" },
 ]

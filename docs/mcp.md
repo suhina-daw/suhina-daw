@@ -71,7 +71,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 - **Audio output.** With `--audio`, each opened project also plays on the chosen output device
   (the default one until `audio.setOutput` chooses another) with the transport stopped, and transport commands (`scene.launch`, `clip.launch`, `clip.release`, `track.stop`,
   `launcher.stopAll`, `launcher.setQuantization`, `launcher.backToArrangement`, `transport.play`, `transport.stop`,
-  `transport.setPosition`, `transport.setMetronome`,
+  `transport.setPosition`, `transport.setStart` (the marker alone), `transport.jump` (a seek at the next launch
+  boundary, #657), `transport.setMetronome`,
   `launcher.state`) are heard. Without it they return an error, except `launcher.setQuantization`,
   which the project's session keeps and hands to an engine attached later; launch scripts in
   `project_render` work either way. Edits and undo/redo are heard by the playing engine from its
@@ -356,6 +357,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   arrangement, `points` a flat list of beat and value (`[0, 0.2, 4, 0.8]`), `[]` removing it.
   Values are kept in the parameter's range once `device.pluginParams` has listed them.
   `track.devices` gives a plug-in's set values and any device's lanes (`automation`).
+  The `device.*` and `automation.*` commands take `"main"` for `track` (and `toTrack`) to act on
+  the main channel, which has no track of its own: its devices run over the whole mix and its
+  volume, pan and mute lanes play (#687). Commands that change tracks themselves do not take it.
 
 - **Device groups.** A device inside a device group is named by a *device path*
   ([spec](spec/device-groups.md)): a whole number is a device on the track, as before, and text
@@ -381,7 +385,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Automation.** `automation.addPoint`, `automation.movePoint`, `automation.deletePoint`,
   `automation.movePoints`, `automation.deletePoints` (several points of one lane in one undo
-  step), `automation.clear`, `automation.setEnabled` and `automation.list` (through `command_run`) edit
+  step), `automation.copy`, `automation.paste`, `automation.duplicate`, `automation.deleteRange`
+  and `automation.insertShape` (a time range of a lane), `automation.scaleRange`,
+  `automation.smooth` (rounds the corners and jumps in a range) and `automation.simplify`
+  (fewer points), `automation.clear`,
+  `automation.setEnabled` and `automation.list` (through `command_run`) edit
   the envelopes of a track's `volume`, `pan` and `mute` (no `device`) and of any device
   parameter (`device` and its `param` id), point by point, each one undo step; values in the
   set command's unit (the volume in dB). `device.setAutomation` replaces a whole device lane, for
@@ -549,6 +557,6 @@ does with it: reads a file, files or a folder, writes one, a library item or pla
 `confine()` checks every one by that type; the files commands write have each their own rule. A
 test gives every `Path` parameter a path outside the roots and fails when `confine()` lets it
 through, and fails for a text parameter named like a file or a folder (`path`, `paths`, `folder`,
-`file`, `to`, `item`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
+`file`, `to`, `item`, `items`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
 cannot take a path unchecked. Which commands an agent may not run is on each command's spec
-(`Policy::agents`: denied, or not to an agent attached to the app).
+(`Policy::agents`: denied, or not to an agent attached to the app). `library.copyTo` reads every file of its `items` below the read root and copies them only into a `folder` below the write root (#865); `library.moveTo` is checked the same way and is not open to an agent attached to the app, since a moved file is gone from where it was (#943).

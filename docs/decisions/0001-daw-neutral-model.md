@@ -26,7 +26,7 @@ different ways:
 | Reuse of the same content | Clips are copied; each copy is independent | One pattern is placed many times in the playlist; editing it changes every instance | `Clip.reference` points at one shared timeline |
 | Timeline rows | Each arrangement row is a track with its own mixer strip | Playlist tracks are free rows, not tied to a channel or mixer insert | `Lanes`, each optionally bound to a `Track` |
 | Instrument vs mixer | Track = instrument/effects chain + mixer strip | Channel rack (generators) routes to separate mixer inserts | `Track` (structure) and `Channel` (mixer strip) are separate |
-| Clip launching | Session view: grid of slots × scenes | None (performance mode aside) | `Scene` + `ClipSlot` |
+| Clip launching | Launcher view: grid of slots × scenes | None (performance mode aside) | `Scene` + `ClipSlot` |
 
 The FL Studio column is from general knowledge and will be verified and documented in
 `docs/spec/` before any `.flp` work starts (sources: observation, self-authored files and the
@@ -65,8 +65,9 @@ Its key ideas:
    - **clips** that place a content from the pool on the arrangement or in a launcher slot, with
      their own start, length, offset and loop range, and (audio on the arrangement) a fade-in and
      a fade-out in beats ([arrangement editing](../spec/arrangement-editing.md) › Fades)
-   - an **arrangement** of lanes, each optionally bound to a track, and its **markers** (named
-     beats on the timeline, kept in beat order)
+   - an **arrangement** of lanes, each optionally bound to a track, its **markers** (named
+     beats on the timeline, kept in beat order) and its **take lanes** (recorded passes kept
+     under their tracks). *Amended 2026-10-24, see Amendment: take lanes.*
    - a **launcher**: scenes and per-track slot columns
 2. **Per-format extensions.** Every object carries an `Extensions` list where an importer keeps
    data the core does not model, keyed by format, verbatim, so that a future exporter for the
@@ -93,7 +94,7 @@ How each DAW maps onto the core:
 - **FL pattern** → one clip content whose lanes each target a channel's track; every playlist
   instance is a clip pointing at the same content.
 - **FL playlist track** → an arrangement lane with no track binding.
-- **Ableton Session view** → launcher columns (one per track) × scenes.
+- **Ableton Launcher view** → launcher columns (one per track) × scenes.
 
 ## Amendment: built-in effect or instrument parameters (2026-10-11)
 
@@ -217,6 +218,21 @@ those rules are checked by the commands that build groups, not by the model.
 The project file writes a group as a device of `"type": "group"` and is version 2 only when a
 project holds one ([`.suhina` format](../spec/suhina-format.md)), so a project without groups
 still opens in a Suhina from before them.
+
+## Amendment: take lanes (2026-10-24)
+
+`Arrangement::takes` holds `TakeLane`s: a track and a name, and the clips of one recorded pass on
+the arrangement's beats ([recording spec](../spec/recording.md#take-lanes), #909). Recording into
+the arrangement keeps every pass over the same beats (the loop wrapping, the playhead moved back)
+as a take lane and puts the latest on the track, so comping copies parts of a take onto the track
+as new clips. On the arrangement rather than on each lane, because takes belong to a track and
+not to the lane's own clips, they never play, and the engine, the importers and every lane stay as
+they were. Take clips reference contents like any clip; they have no ids (`ClipId::NONE`), since no
+command names one by id: a take is named by its track and its number. `Project::validate` checks
+that a take's track and its clips' contents exist; deleting a track deletes its takes.
+
+The project file writes them under `arrangement.takes`, left out when there are none; files with
+them are version 4 ([`.suhina` format](../spec/suhina-format.md) › Versions).
 
 ## Consequences
 

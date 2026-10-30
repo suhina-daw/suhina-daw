@@ -33,7 +33,7 @@ What exists, or is in review:
 - **Edits while playing** ([ADR 0005](0005-edits-while-playing.md)): an edit rebuilds the
   engine's graph, except a device parameter, which has a cheap path
   (`Player::set_device_param`) that changes one value from the next block.
-- **The window's drags**: a volume drag in the Session View shows the moving value locally and
+- **The window's drags**: a volume drag in the Launcher view shows the moving value locally and
   runs `track.setVolume` once, when the mouse is released (`crates/ui/src/session/session_view.rs`).
 - **Settings and keymap**: the window keeps `settings.txt` and `keymap.json` in its storage
   folder; the keymap maps keys to commands that take no parameters.
@@ -149,8 +149,11 @@ have.
 11. **Generic first.** The first version supports what a generic controller sends: CC (7 bit and
     14 bit pairs), notes, pitch bend and program change, on any channel; absolute, and relative
     in the three common encodings (two's complement, sign and magnitude, offset from 64). NRPN,
-    feedback, surface programs and the computer keyboard as a controller come later, in that
-    order; the keymap already maps keys to commands that take no parameters.
+    feedback and surface programs come later, in that order; the keymap already maps keys to
+    commands that take no parameters. The computer keyboard plays notes already (#944): with
+    `view.computerKeyboard` (Ctrl+K, the control bar's **Keys** button) on, two rows of letters
+    play the armed tracks through the same live input a controller's notes take (ADR 0017), Z
+    and X move the octave and C and V the velocity; it maps nothing.
 
 ## Consequences
 

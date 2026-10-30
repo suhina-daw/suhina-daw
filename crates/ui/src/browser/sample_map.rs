@@ -94,6 +94,8 @@ pub enum MapEvent {
         on: bool,
     },
     ShowInFolder(usize),
+    /// Copy it, or every picked point when it is one of them, into a folder (#865).
+    CopyTo(usize),
     /// Set its kind by hand, or (`None`) give it back to its name and sound.
     SetKind {
         item: usize,
@@ -103,6 +105,8 @@ pub enum MapEvent {
     Layout(Layout),
     /// The point size was changed, in percent.
     DotSize(u32),
+    /// The cluster labels' size was changed, in percent; 0 hides them.
+    LabelSize(u32),
     /// The preview level was changed, in dB.
     Volume(i32),
     /// The large-view button.
@@ -133,6 +137,9 @@ pub struct MapView {
     /// The points' size as a share of their size at first (Size in the top bar). Positions do
     /// not change with it, so smaller points stand further apart.
     pub dot_size: f32,
+    /// The cluster labels' size as a share of their full size (Labels in the top bar); 0 hides
+    /// them.
+    pub label_size: f32,
     /// The preview level in dB (Volume in the top bar).
     pub volume: i32,
     /// Kinds the legend shows; the others are dimmed. Empty: all.
@@ -250,6 +257,7 @@ impl Default for MapView {
             pressed: None,
             dragging_items: false,
             dot_size: 1.0,
+            label_size: 1.0,
             volume: crate::settings::PREVIEW_VOLUME,
             legend: HashSet::new(),
             rubber_band: None,
@@ -664,6 +672,26 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
             events.push(MapEvent::DotSize(percent));
         }
     });
+    together(ui, 110.0, |ui| {
+        ui.label(egui::RichText::new("Labels").color(theme::text_secondary()).size(theme::TEXT_SMALL));
+        let percent = (view.label_size * 100.0).round() as u32;
+        let name = |p: u32| if p == 0 { "Off".to_string() } else { format!("{p} %") };
+        egui::ComboBox::from_id_salt("sample-map-labels")
+            .width(56.0)
+            .selected_text(name(percent))
+            .show_ui(ui, |ui| {
+                for size in crate::settings::MAP_LABEL_SIZES {
+                    if ui.selectable_label(percent == size, name(size)).clicked() && percent != size {
+                        view.label_size = size as f32 / 100.0;
+                        events.push(MapEvent::LabelSize(size));
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "The size of the groups' names on the map; Off hides them, the legend still names the kinds",
+            );
+    });
     together(ui, 170.0, |ui| {
         ui.label(egui::RichText::new("Volume").color(theme::text_secondary()).size(theme::TEXT_SMALL));
         let (low, high) = crate::settings::PREVIEW_VOLUMES;
@@ -817,6 +845,10 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
             }
             if ui.button("Show in folder").clicked() {
                 events.push(MapEvent::ShowInFolder(i));
+                ui.close();
+            }
+            if ui.button("Copy to folder…").clicked() {
+                events.push(MapEvent::CopyTo(i));
                 ui.close();
             }
         }
@@ -1061,11 +1093,17 @@ fn draw_points(
     }
 }
 
+/// A cluster label's text size: its size for the cluster's count, scaled by the Labels choice,
+/// so bigger clusters keep their larger labels at every size.
+fn label_font_size(label_size: f32, count_scale: f32) -> f32 {
+    theme::TEXT * 1.6 * count_scale * label_size.clamp(0.0, 1.0)
+}
+
 /// One label per cluster, sized by its count, placed largest first so none overlap
 /// (docs/spec/sample-map.md › Many items › Labels).
 fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
     let fade = ((LABEL_FADE_ZOOM - view.zoom) / 2.0).clamp(0.0, 1.0);
-    if fade <= 0.0 {
+    if fade <= 0.0 || view.label_size <= 0.0 {
         return;
     }
     let clusters: Vec<&Cluster> =
@@ -1074,7 +1112,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
     let galleys: Vec<_> = clusters
         .iter()
         .map(|c| {
-            let font = theme::ui_font(theme::TEXT * 1.6 * crowd::label_scale(c.count, smallest));
+            let font = theme::ui_font(label_font_size(view.label_size, crowd::label_scale(c.count, smallest)));
             // Light text: a label sits on its own kind's colour, so that colour would not read.
             painter.layout_no_wrap(c.kind.label().to_string(), font, theme::text_primary().gamma_multiply(fade))
         })

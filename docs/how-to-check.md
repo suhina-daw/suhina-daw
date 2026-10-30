@@ -115,12 +115,12 @@ Explain a term like this the first time the steps use it:
 | Term | Plain words |
 |---|---|
 | project | the whole song, saved as one `.suhina` file |
-| track | one column (Session view) or row (Arrangement view) holding one instrument or one kind of sound |
+| track | one column (Launcher view) or row (Arrangement view) holding one instrument or one kind of sound |
 | slot | one box in a track's column; it holds one clip or is empty |
 | clip | a block of sound or notes in a slot or on the timeline |
 | scene | a row of slots across all tracks; launching it starts every clip in that row |
 | launch | start a clip or scene playing; it starts on the next beat or bar, not at once |
-| Session view | the grid of tracks and slots for starting clips live (Tab switches views) |
+| Launcher view | the grid of tracks and slots for starting clips live (Tab switches views) |
 | Arrangement view | the timeline, left to right, where clips are laid out as a song |
 | browser | the panel listing sounds and files (Ctrl+B shows or hides it) |
 | sample | a recorded sound in an audio file |

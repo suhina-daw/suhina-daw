@@ -83,6 +83,7 @@ fn project(length: f64, devices: Vec<Device>) -> Project {
                 clips: vec![Clip::new(ContentId(1), 0.0, length)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

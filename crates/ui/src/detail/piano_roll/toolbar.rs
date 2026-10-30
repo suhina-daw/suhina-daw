@@ -9,7 +9,7 @@ use super::*;
 /// [`crate::browser::browser_view`]'s icons are. `active` marks the note clipboard's buttons while there
 /// is something to act on, and the quantise block while it is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum IconButton {
+pub enum IconButton {
     Select,
     Draw,
     Paint,
@@ -89,7 +89,7 @@ impl IconButton {
 
     /// Our own strokes for the shape, in a 14 px box around `rect`'s centre, scaled with the
     /// toolbar (Toolbar size): `scale` multiplies the shape and its strokes together.
-    pub(super) fn draw(self, painter: &egui::Painter, rect: Rect, color: Color32, scale: f32) {
+    pub fn draw(self, painter: &egui::Painter, rect: Rect, color: Color32, scale: f32) {
         let scale = if scale.is_finite() { scale.clamp(0.5, 2.5) } else { 1.0 };
         let c = rect.center();
         let stroke = Stroke::new(1.1 * scale, color);
@@ -410,57 +410,15 @@ pub(super) fn grid_menu(
     keymap: &crate::settings::keymap::Keymap,
 ) -> Option<PianoGrid> {
     let grid = clip.grid_menu;
-    let font = theme::ui_font(theme::TEXT_SMALL);
     let mono = theme::mono_font(theme::TEXT_SMALL);
     let shown = grid.label();
     let mut picked = None;
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         let text = egui::RichText::new(format!("{shown}   ")).font(mono.clone()).color(theme::text_value());
         let menu = ui.menu_button(text, |ui| {
-            // One entry: its text, the key its action has, ticked when `ticked` says so.
-            let mut entry = |ui: &mut Ui, name: &str, action: Option<&str>, ticked: Option<bool>, result: PianoGrid| {
-                let enabled = !clip.grid_follows || result.control_bar_value().is_some();
-                let key = action.and_then(|a| keymap.label(a)).unwrap_or_default();
-                let text = egui::RichText::new(name).font(font.clone());
-                let button = egui::Button::selectable(ticked.unwrap_or(false), text)
-                    .shortcut_text(egui::RichText::new(key.as_str()).font(mono.clone()).color(theme::text_hint()));
-                let response = ui.add_enabled(enabled, button);
-                // Its accessible label is its name and its key, as the icon buttons' are.
-                let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
-                response.widget_info(|| match ticked {
-                    Some(on) => egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, &label),
-                    None => egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &label),
-                });
-                if response.clicked() {
-                    picked = Some(result);
-                    ui.close();
-                }
-            };
-            let heading = |ui: &mut Ui, text: &str| {
-                ui.label(egui::RichText::new(text).font(font.clone()).color(theme::text_hint()));
-            };
-            entry(ui, "Snap to grid", Some("pianoRoll.gridSnap"), Some(grid.snap), grid.toggle_snap());
-            ui.separator();
-            heading(ui, "Adaptive grid");
-            for width in Width::ALL {
-                let name = format!("Adaptive {}", width.name().to_lowercase());
-                let result = PianoGrid { mode: GridMode::Adaptive(width), ..grid };
-                entry(ui, &name, None, Some(grid.mode == GridMode::Adaptive(width)), result);
-            }
-            ui.separator();
-            heading(ui, "Fixed grid");
-            for (index, value) in FIXED_VALUES.iter().enumerate() {
-                // Picking a value while following the control bar turns snapping back on: its
-                // none is snap off.
-                let snap = grid.snap || clip.grid_follows;
-                let result = PianoGrid { mode: GridMode::Fixed(index), snap, ..grid };
-                entry(ui, value, None, Some(grid.mode == GridMode::Fixed(index)), result);
-            }
-            ui.separator();
-            entry(ui, "Narrow grid", Some("pianoRoll.gridNarrow"), None, grid.narrower());
-            entry(ui, "Widen grid", Some("pianoRoll.gridWiden"), None, grid.wider());
-            ui.separator();
-            entry(ui, "Triplet grid", Some("pianoRoll.gridTriplet"), Some(grid.triplet), grid.toggle_triplet());
+            let follows = clip.grid_follows;
+            let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
+            picked = grid_entries(ui, grid, &keys, &|g| !follows || g.control_bar_value().is_some());
         });
         let label = format!("Grid value {shown}");
         menu_arrow(ui, menu.response.rect, theme::text_value());
@@ -468,6 +426,101 @@ pub(super) fn grid_menu(
         menu.response.on_hover_text("The grid: snapping, adaptive or fixed lines, triplets");
     });
     picked.filter(|p| *p != grid)
+}
+
+/// The piano roll's grid keys: snap, narrower, wider, triplets.
+pub(crate) const PIANO_GRID_KEYS: [&str; 4] =
+    ["pianoRoll.gridSnap", "pianoRoll.gridNarrow", "pianoRoll.gridWiden", "pianoRoll.gridTriplet"];
+
+/// A grid menu's entries, all in the menu itself, compact: Snap to grid; the adaptive widths in
+/// rows of three and the fixed values in two rows of five under small headings; Narrow grid,
+/// Widen grid and Triplet grid. `keys` are the key labels of snap, narrow, widen and triplet
+/// (empty for none). The chosen ones carry a tick; an entry `enabled` refuses is greyed out. The
+/// piano roll's toolbar, the Arrangement's toolbar and its menus show the same entries. Returns
+/// the grid picked.
+pub(crate) fn grid_entries(
+    ui: &mut Ui,
+    grid: PianoGrid,
+    keys: &[String; 4],
+    enabled: &dyn Fn(&PianoGrid) -> bool,
+) -> Option<PianoGrid> {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let mono = theme::mono_font(theme::TEXT_SMALL);
+    let picked = std::cell::Cell::new(None);
+    ui.set_min_width(220.0);
+    // A tick before a chosen entry, the room for one before the others, so names line up.
+    let ticked = |on: bool, name: &str| format!("{} {name}", if on { "\u{2713}" } else { "\u{2002}" });
+    // One row: its text, its key at the right, a tick when `on` says so.
+    let row = |ui: &mut Ui, name: &str, key: &str, on: Option<bool>, result: PianoGrid| {
+        let allowed = enabled(&result);
+        let text = egui::RichText::new(ticked(on.unwrap_or(false), name)).font(font.clone());
+        let button = egui::Button::new(text)
+            .frame(false)
+            .shortcut_text(egui::RichText::new(key).font(mono.clone()).color(theme::text_hint()));
+        let response = ui.add_enabled(allowed, button);
+        let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
+        response.widget_info(|| match on {
+            Some(on) => egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label),
+            None => egui::WidgetInfo::labeled(egui::WidgetType::Button, allowed, &label),
+        });
+        if response.clicked() {
+            picked.set(Some(result));
+            ui.close();
+        }
+    };
+    // A heading, then `cells` in rows of `columns`: a short name, ticked when chosen, the grid
+    // it picks and its accessible label.
+    let table = |ui: &mut Ui, title: &str, columns: usize, cells: Vec<(String, bool, PianoGrid, String)>| {
+        ui.label(egui::RichText::new(title).font(font.clone()).color(theme::text_hint()));
+        egui::Grid::new(("grid-menu", title)).spacing(egui::vec2(10.0, 2.0)).show(ui, |ui| {
+            for (index, (name, on, result, label)) in cells.into_iter().enumerate() {
+                let allowed = enabled(&result);
+                let text = egui::RichText::new(ticked(on, &name)).font(font.clone());
+                let response = ui.add_enabled(allowed, egui::Button::new(text).frame(false));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, allowed, on, &label));
+                if response.clicked() {
+                    picked.set(Some(result));
+                    ui.close();
+                }
+                if (index + 1) % columns == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+    };
+    row(ui, "Snap to grid", &keys[0], Some(grid.snap), grid.toggle_snap());
+    ui.separator();
+    let widths = Width::ALL
+        .into_iter()
+        .map(|w| {
+            let result = PianoGrid { mode: GridMode::Adaptive(w), ..grid };
+            let label = format!("Adaptive {}", w.name().to_lowercase());
+            (w.name().to_string(), grid.mode == GridMode::Adaptive(w), result, label)
+        })
+        .collect();
+    table(ui, "Adaptive grid:", 3, widths);
+    // Picking a value turns snapping back on (the control bar's none is snap off).
+    let values = FIXED_VALUES
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let result = PianoGrid { mode: GridMode::Fixed(i), snap: true, ..grid };
+            let name = v.replace(" bars", " Bars").replace(" bar", " Bar");
+            (name, grid.mode == GridMode::Fixed(i), result, v.to_string())
+        })
+        .collect();
+    table(ui, "Fixed grid:", 5, values);
+    ui.separator();
+    row(ui, "Narrow grid", &keys[1], None, grid.narrower());
+    row(ui, "Widen grid", &keys[2], None, grid.wider());
+    ui.separator();
+    row(ui, "Triplet grid", &keys[3], Some(grid.triplet), grid.toggle_triplet());
+    picked.get().filter(|p| *p != grid)
+}
+
+/// The key labels of `actions` (snap, narrow, widen, triplet) in `keymap`, empty for none.
+pub(crate) fn grid_key_labels(keymap: &crate::settings::keymap::Keymap, actions: &[&str; 4]) -> [String; 4] {
+    actions.map(|a| keymap.label(a).unwrap_or_default())
 }
 
 /// The small triangle at the right end of a toolbar menu's button, drawn as a shape: the UI font

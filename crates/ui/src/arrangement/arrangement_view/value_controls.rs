@@ -7,7 +7,7 @@ use super::*;
 
 /// A header's send knob to one return: dragged up or down for the level (`track.setSend`, sent
 /// when let go), double-click for none, right-click for before or after the fader
-/// (`track.setSendMode`), as the Session view's strip's.
+/// (`track.setSendMode`), as the Launcher view's strip's.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn send_knob(
     ui: &Ui,
@@ -225,7 +225,7 @@ pub(super) fn value_control(
     }
 }
 
-/// A volume as a small knob with its value beside it, for Settings › Session and mixer ›
+/// A volume as a small knob with its value beside it, for Settings › Launcher and mixer ›
 /// Mixer controls: Knob.
 pub(super) fn volume_knob(painter: &egui::Painter, rect: Rect, db: f64, hover: f32, response: Option<&egui::Response>) {
     let pointer = motion::mix(theme::text_value(), theme::text_primary(), hover);

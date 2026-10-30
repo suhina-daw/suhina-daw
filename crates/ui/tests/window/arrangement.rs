@@ -412,11 +412,11 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 72.0));
     stop(&mut harness, &mut renderer);
 
-    // In the Session view the selection is not shown, so Where Play starts the marker; stopping
+    // In the Launcher view the selection is not shown, so Where Play starts the marker; stopping
     // again first puts the marker at the beginning.
     stop(&mut harness, &mut renderer);
     assert_eq!(monitor.start_beat(), 0.0);
-    harness.get_by_label("Session view").click();
+    harness.get_by_label("Launcher view").click();
     harness.run();
     harness.key_press(Key::Space);
     harness.run_steps(2);
@@ -843,6 +843,33 @@ fn loop_fade_in_curve(harness: &Harness<'static, App>) -> Option<suhina_engine::
     lane.clips.first().map(|clip| clip.fade_in_curve)
 }
 
+/// A fade's menu resets it: no fade, its shape and curve the defaults (#916).
+#[test]
+fn a_fades_menu_resets_it() {
+    use suhina_engine::model::{FadeCurve, FadeShape};
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Clip Loop on Loop at bar 1").click();
+    harness.run();
+    drag_sideways(&mut harness, "Fade-in of Loop on Loop", 24.0);
+    harness.get_by_label("Fade-in of Loop on Loop").click_secondary();
+    harness.run();
+    harness.get_by_label("Equal power").click();
+    harness.run();
+    assert_eq!(loop_fade_in_curve(&harness), Some(FadeCurve { shape: FadeShape::EqualPower, curve: 0.0 }));
+    harness.get_by_label("Fade-in of Loop on Loop").click_secondary();
+    harness.run();
+    harness.get_by_label("Reset fade").click();
+    harness.run();
+    assert_eq!(loop_fade_in_curve(&harness), Some(FadeCurve::default()));
+    let fade_in = harness
+        .state()
+        .session()
+        .and_then(|s| s.project().arrangement.lanes.iter().flat_map(|l| &l.clips).next().map(|c| c.fade_in));
+    assert_eq!(fade_in, Some(0.0));
+}
+
 /// A right-click on a fade handle picks the shape; the curve handle on the fade's line bends it
 /// with a vertical drag and a double-click straightens it (#197).
 #[test]
@@ -992,13 +1019,13 @@ fn an_audio_clip_renames_and_moves_like_a_midi_one() {
     // An audio track and its empty clip, made with the double-click.
     harness.get_by_label("+ Audio track").click();
     harness.run();
-    let at = harness.get_by_label("Stop Audio 1 (scene 1)").rect().center();
+    let at = harness.get_by_label("Stop 5 Audio (scene 1)").rect().center();
     double_click_at(&mut harness, at);
     harness.run();
-    assert!(harness.query_by_label("Launch Audio clip on Audio 1 (scene 1)").is_some());
+    assert!(harness.query_by_label("Launch Audio clip on 5 Audio (scene 1)").is_some());
 
     // Renaming through the slot's menu: click into the field, select all, type, Enter.
-    harness.get_by_label("Launch Audio clip on Audio 1 (scene 1)").click_secondary();
+    harness.get_by_label("Launch Audio clip on 5 Audio (scene 1)").click_secondary();
     harness.run();
     harness.get_by_label_contains("Rename clip Audio clip").click();
     harness.run();
@@ -1008,11 +1035,11 @@ fn an_audio_clip_renames_and_moves_like_a_midi_one() {
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();
-    assert!(harness.query_by_label("Launch Break on Audio 1 (scene 1)").is_some(), "the audio clip took the name");
+    assert!(harness.query_by_label("Launch Break on 5 Audio (scene 1)").is_some(), "the audio clip took the name");
 
     // Dragging it to the next scene moves it.
-    let from = harness.get_by_label("Launch Break on Audio 1 (scene 1)").rect().center();
-    let to = harness.get_by_label("Stop Audio 1 (scene 2)").rect().center();
+    let from = harness.get_by_label("Launch Break on 5 Audio (scene 1)").rect().center();
+    let to = harness.get_by_label("Stop 5 Audio (scene 2)").rect().center();
     harness.hover_at(from);
     harness.step();
     harness.drag_at(from);
@@ -1021,8 +1048,8 @@ fn an_audio_clip_renames_and_moves_like_a_midi_one() {
     harness.step();
     harness.drop_at(to);
     harness.run();
-    assert!(harness.query_by_label("Launch Break on Audio 1 (scene 2)").is_some(), "the audio clip moved by drag");
-    assert!(harness.query_by_label("Stop Audio 1 (scene 1)").is_some(), "the source emptied");
+    assert!(harness.query_by_label("Launch Break on 5 Audio (scene 2)").is_some(), "the audio clip moved by drag");
+    assert!(harness.query_by_label("Stop 5 Audio (scene 1)").is_some(), "the source emptied");
     assert!(
         matches!(harness.state().status(), Status::Done(text) if text.contains("Moved")),
         "{:?}",
@@ -1038,15 +1065,15 @@ fn a_double_click_on_an_empty_spot_of_an_audio_lane_makes_a_clip_there() {
     // An audio track next to the demo's MIDI ones; its empty lane shows in the arrangement.
     harness.get_by_label("+ Audio track").click();
     harness.run();
-    assert!(harness.query_by_label("Lane Audio 1").is_some(), "the lane is there");
-    let at = harness.get_by_label("Lane Audio 1").rect().center();
+    assert!(harness.query_by_label("Lane 5 Audio").is_some(), "the lane is there");
+    let at = harness.get_by_label("Lane 5 Audio").rect().center();
     double_click_at(&mut harness, at);
     let made = harness.state().session().and_then(|s| {
         s.project()
             .arrangement
             .lanes
             .iter()
-            .find(|l| l.name == "Audio 1")
+            .find(|l| l.name == "# Audio")
             .map(|l| l.clips.len().max(1) == l.clips.len() && !l.clips.is_empty())
     });
     assert!(made.unwrap_or(false), "the empty audio clip is in the lane");
@@ -1451,4 +1478,529 @@ fn ctrl_r_with_several_clips_selected_renames_them_all() {
         .filter(|c| project.contents.iter().any(|x| x.id == c.content && x.name == "Same"))
         .count();
     assert_eq!(named, count);
+}
+
+/// After a header click the edit keys act on tracks (#919): Ctrl+D duplicates the selected
+/// tracks right after themselves, Ctrl+X cuts and Ctrl+V pastes them back.
+#[test]
+fn the_edit_keys_copy_cut_paste_and_duplicate_selected_tracks() {
+    let mut harness = arrangement_app();
+    let names = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .map(|s| s.project().tracks.iter().map(|t| t.name.clone()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
+    harness.run();
+    assert_eq!(names(&harness)[..2], ["Drums", "Drums (2)"]);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::X);
+    harness.run();
+    assert!(!names(&harness).contains(&"Bass".to_string()), "{:?}", names(&harness));
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::V);
+    harness.run();
+    let after = names(&harness);
+    let drums = after.iter().position(|n| n == "Drums").unwrap();
+    assert_eq!(after.get(drums + 1).map(String::as_str), Some("Bass"), "{after:?}");
+}
+
+/// While playing, a click in a clip's body moves the play start marker and leaves playback
+/// where it is; the ruler's seek waits for the next bar (#657).
+#[test]
+fn a_click_in_the_tracks_while_playing_moves_the_marker_not_playback() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    for _ in 0..10 {
+        render_a_block(&mut renderer);
+    }
+    let body = harness.get_by_label("Clip Beat B on Drums at bar 17").rect().center();
+    harness.hover_at(body);
+    harness.run_steps(2);
+    harness.drag_at(body);
+    harness.drop_at(body);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert!(monitor.running());
+    assert!(monitor.beat() < 4.0, "playback goes on: {}", monitor.beat());
+    assert!(monitor.start_beat() >= 64.0, "the marker moved: {}", monitor.start_beat());
+    // The ruler's seek waits for the next bar of the launch quantisation (1 bar).
+    let ruler = harness.get_by_label("Ruler").rect();
+    let at = egui::pos2(ruler.left() + 130.0, ruler.center().y);
+    harness.hover_at(at);
+    harness.run_steps(2);
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!(monitor.pending_jump(), Some(16.0));
+    assert!(monitor.beat() < 4.0, "{}", monitor.beat());
+}
+
+/// After Delete or Ctrl+X the next track is selected, Ctrl+V pastes a cut track back, and a new
+/// track is selected (#918, #919).
+#[test]
+fn delete_and_cut_select_the_next_track_and_ctrl_v_pastes_back() {
+    let mut harness = arrangement_app();
+    let names = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .map(|s| s.project().tracks.iter().map(|t| t.name.clone()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let selected = |h: &Harness<'static, App>| {
+        h.state().session().and_then(|s| {
+            let p = s.project();
+            h.state().selected_tracks().first().and_then(|id| p.track(*id)).map(|t| t.name.clone())
+        })
+    };
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("Bass"));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::X);
+    harness.run();
+    assert!(!names(&harness).contains(&"Bass".to_string()));
+    assert_eq!(selected(&harness).as_deref(), Some("Keys"));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::V);
+    harness.run();
+    let after = names(&harness);
+    let keys = after.iter().position(|n| n == "Keys").unwrap();
+    assert_eq!(after.get(keys + 1).map(String::as_str), Some("Bass"), "{after:?}");
+    // A new track is selected.
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::T);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("# MIDI"));
+}
+
+/// The empty area below the tracks has a menu with the insert items and the track clipboard, and
+/// a right-click on + Audio track inserts several tracks at once (#947).
+#[test]
+fn the_empty_area_menu_pastes_tracks_and_insert_multiple_adds_several() {
+    let mut harness = arrangement_app();
+    let count = |h: &Harness<'static, App>| h.state().session().map_or(0, |s| s.project().tracks.len());
+    let before = count(&harness);
+    harness.get_by_label("Empty space").click_secondary();
+    harness.run();
+    assert!(harness.query_by_label_contains("Insert MIDI track").is_some());
+    harness.key_press(Key::Escape);
+    harness.run();
+    // Copy a track, then Paste from the empty area's menu.
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::C);
+    harness.run();
+    harness.get_by_label("Empty space").click_secondary();
+    harness.run();
+    harness.get_by_label_contains("Paste").click();
+    harness.run();
+    assert_eq!(count(&harness), before + 1);
+    // Insert multiple: four audio tracks in one go, one undo step.
+    harness.get_by_label("+ Audio track").click_secondary();
+    harness.run();
+    harness.get_by_label("Insert").click();
+    harness.run();
+    assert_eq!(count(&harness), before + 5);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(count(&harness), before + 1);
+}
+
+/// A track with take lanes has a button in its header that hides and shows them, and a click on
+/// a take puts its part on the track in the take's colour (#953).
+#[test]
+fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    project.arrangement.takes.push(suhina_engine::model::TakeLane {
+        track: drums,
+        name: "Take 1".into(),
+        clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, ..clip.clone() }],
+        color: None,
+    });
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    assert!(harness.query_by_label("Drums Take 1").is_some());
+    harness.get_by_label("Hide take lanes of Drums").click();
+    harness.run();
+    assert!(harness.query_by_label("Drums Take 1").is_none());
+    harness.get_by_label("Show take lanes of Drums").click();
+    harness.run();
+    // The track's clip is the take's own pass, so it reads as a part of Take 1 (#989). A click on
+    // the take's clip comps it, coloured: at the clip's own place on the row, the same as on the
+    // track's lane.
+    let lane = harness.get_by_label("Clip Drums Take 1 on Drums at bar 1").rect();
+    let row = harness.get_by_label("Comp from Drums Take 1").rect();
+    let at = egui::pos2(lane.center().x, row.center().y);
+    harness.hover_at(at);
+    harness.run();
+    // One click takes nothing (a double-click takes the whole piece).
+    let before = harness.state().session().map(|s| s.project().arrangement.lanes.clone());
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    let after = harness.state().session().map(|s| s.project().arrangement.lanes.clone());
+    assert_eq!(after, before, "a click takes nothing");
+    // A drag across part of it puts that part on the track.
+    let to = egui::pos2(lane.left() + lane.width() * 0.75, row.center().y);
+    harness.drag_at(at);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    let coloured = harness.state().session().is_some_and(|s| {
+        s.project()
+            .arrangement
+            .lanes
+            .iter()
+            .filter(|l| l.track == Some(drums))
+            .flat_map(|l| &l.clips)
+            .any(|c| c.color.is_some())
+    });
+    assert!(coloured, "the comped part shows the take's colour");
+    // The part is still named after its take, and the take lane's menu recolours it.
+    harness.get_by_label("Clip Drums Take 1 on Drums at bar 1");
+    harness.get_by_label("Comp from Drums Take 1").click_secondary();
+    harness.run();
+    // Submenus: their buttons carry an arrow after the name.
+    harness.get_by_label_contains("Recolor lane");
+    assert_eq!(harness.query_all_by_label_contains("Recolor").count(), 2, "Recolor lane, and Recolor for the piece");
+    harness.get_by_label("Delete take");
+}
+
+/// The rename field opens with the whole name selected, so typing replaces it (#916).
+#[test]
+fn renaming_in_place_starts_with_the_whole_name_selected() {
+    let mut harness = arrangement_app();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::R);
+    harness.run();
+    harness.run();
+    harness.get_by_label("Track name").type_text("Sub");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let names: Vec<String> =
+        harness.state().session().unwrap().project().tracks.iter().map(|t| t.name.clone()).collect();
+    assert!(names.contains(&"Sub".to_string()), "typing replaced the selected name: {names:?}");
+}
+
+/// A click on the piano roll's ruler sets where playback starts, at that beat of the clip on the
+/// arrangement (#951).
+#[test]
+fn a_click_on_the_piano_rolls_ruler_sets_where_playback_starts() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    // The clip at bar 17 (beat 64), its piano roll in the detail area.
+    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    harness.run_steps(2);
+    let ruler = harness.get_by_label("Piano roll ruler").rect();
+    // Low on the ruler, under the loop row, a little in from the clip's start.
+    let at = egui::pos2(ruler.left() + 40.0, ruler.bottom() - 3.0);
+    harness.hover_at(at);
+    harness.run_steps(2);
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    let start = monitor.start_beat();
+    assert!((64.0..72.0).contains(&start), "the marker is inside the clip: {start}");
+    harness.run_steps(2);
+    assert!(harness.query_by_label_contains("Play start at beat").is_some(), "and shows in the piano roll");
+}
+
+/// With the toolbar on, the tool keys choose the Arrangement's tools while it has the focus, and
+/// the Erase tool deletes a clicked clip (#991).
+#[test]
+fn the_arrangement_toolbar_tools_act_on_clips_and_its_keys_choose_them() {
+    let mut harness = arrangement_app();
+    assert!(harness.query_by_label("Arrangement tool Erase").is_none(), "no toolbar by default");
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    harness.get_by_label("Arrangement tool Select");
+    // A click on an empty lane gives the view the focus; 4 chooses Erase.
+    harness.get_by_label("Lane Drums").click();
+    harness.run();
+    harness.key_press(Key::Num4);
+    harness.run();
+    let clips = |h: &Harness<'_, App>| h.state().session().map_or(0, |s| s.project().all_clips().count());
+    let before = clips(&harness);
+    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    harness.run();
+    assert_eq!(clips(&harness), before - 1, "the Erase tool deleted the clip");
+    // 1 goes back to Select: a click only selects.
+    harness.key_press(Key::Num1);
+    harness.run();
+    harness.get_by_label("Clip Beat A on Drums at bar 1").click();
+    harness.run();
+    assert_eq!(clips(&harness), before - 1);
+}
+
+/// The line under a take lane makes the track's take lanes taller; a double-click puts them back
+/// (#989).
+#[test]
+fn a_take_lanes_edge_drags_its_height() {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    for n in 1..=2 {
+        project.arrangement.takes.push(suhina_engine::model::TakeLane {
+            track: drums,
+            name: format!("Take {n}"),
+            clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, ..clip.clone() }],
+            color: None,
+        });
+    }
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let height = |h: &Harness<'static, App>| h.get_by_label("Comp from Drums Take 1").rect().height();
+    let before = height(&harness);
+    let edge = harness.get_by_label("Height of Drums Take 1").rect().center();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.drop_at(edge + egui::vec2(0.0, 30.0));
+    harness.run();
+    assert!(height(&harness) > before + 20.0, "{before} -> {}", height(&harness));
+    // Every take lane of the track alike.
+    let second = harness.get_by_label("Comp from Drums Take 2").rect().height();
+    assert!((second - height(&harness)).abs() < 1.0);
+}
+
+/// With Ctrl held a take lane takes ordinary clicks: a drag comps nothing (#989).
+#[test]
+fn with_ctrl_a_take_lane_drag_comps_nothing() {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    project.arrangement.takes.push(suhina_engine::model::TakeLane {
+        track: drums,
+        name: "Take 1".into(),
+        clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, ..clip }],
+        color: None,
+    });
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let row = harness.get_by_label("Comp from Drums Take 1").rect();
+    let lanes = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().arrangement.lanes.clone());
+    let before = lanes(&harness);
+    let (from, to) = (row.left_center() + egui::vec2(20.0, 0.0), row.left_center() + egui::vec2(120.0, 0.0));
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.hover_at(from);
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(lanes(&harness), before);
+    // Without Ctrl the same drag comps.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.hover_at(from);
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_ne!(lanes(&harness), before);
+}
+
+/// Ctrl and a click pick take pieces, a second one lets go of it, and Delete deletes those picked;
+/// a take left with none goes (#989).
+#[test]
+fn ctrl_clicks_pick_take_pieces_and_delete_deletes_them() {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    for n in 1..=2 {
+        project.arrangement.takes.push(suhina_engine::model::TakeLane {
+            track: drums,
+            name: format!("Take {n}"),
+            clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, ..clip.clone() }],
+            color: None,
+        });
+    }
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let takes = |h: &Harness<'static, App>| h.state().session().map_or(0, |s| s.project().arrangement.takes.len());
+    let click = |h: &mut Harness<'static, App>, label: &str| {
+        let at = h.get_by_label(label).rect().left_center() + egui::vec2(20.0, 0.0);
+        h.hover_at(at);
+        h.drag_at(at);
+        h.drop_at(at);
+        h.run();
+    };
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    click(&mut harness, "Comp from Drums Take 1");
+    click(&mut harness, "Comp from Drums Take 2");
+    // A second Ctrl-click lets go of Take 2's piece again.
+    click(&mut harness, "Comp from Drums Take 2");
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.key_press(Key::Delete);
+    harness.run();
+    let names: Vec<String> = harness
+        .state()
+        .session()
+        .map(|s| s.project().arrangement.takes.iter().map(|t| t.name.clone()).collect())
+        .unwrap_or_default();
+    assert_eq!(names, ["Take 2"], "only the picked piece's take went");
+    assert!(
+        harness.state().session().is_some_and(|s| !s.project().arrangement.lanes.iter().all(|l| l.clips.is_empty()))
+    );
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(takes(&harness), 2);
+    // A click without Ctrl lets go of what was picked: Delete then leaves the takes alone.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    click(&mut harness, "Comp from Drums Take 1");
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    click(&mut harness, "Comp from Drums Take 1");
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(takes(&harness), 2);
+}
+
+/// A take lane's header: S solos it, the up arrow puts it on the track, ✕ deletes it (#989).
+#[test]
+fn a_take_lanes_header_buttons_solo_promote_and_delete_it() {
+    let mut project = demo_project();
+    let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
+    let clip = project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(drums))
+        .and_then(|l| l.clips.first())
+        .cloned()
+        .unwrap();
+    project.arrangement.takes.push(suhina_engine::model::TakeLane {
+        track: drums,
+        name: "Take 1".into(),
+        clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, start: 200.0, ..clip }],
+        color: None,
+    });
+    project.assign_ids().unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Solo Drums Take 1").click();
+    harness.run();
+    assert_eq!(harness.state().session().and_then(Session::take_solo), Some((drums, 1)));
+    harness.get_by_label("Solo Drums Take 1").click();
+    harness.run();
+    assert_eq!(harness.state().session().and_then(Session::take_solo), None);
+    let clips = |h: &Harness<'static, App>| {
+        h.state().session().map_or(0, |s| {
+            s.project()
+                .arrangement
+                .lanes
+                .iter()
+                .filter(|l| l.track == Some(drums))
+                .map(|l| l.clips.len())
+                .sum::<usize>()
+        })
+    };
+    let before = clips(&harness);
+    harness.get_by_label("Put Drums Take 1 on the track").click();
+    harness.run();
+    assert_eq!(clips(&harness), before + 1, "the take is on the track");
+    harness.get_by_label("Delete Drums Take 1").click();
+    harness.run();
+    assert!(harness.state().session().is_some_and(|s| s.project().arrangement.takes.is_empty()));
+}
+
+/// A track header's volume and pan, clicked, take a typed number with Enter.
+#[test]
+fn a_header_volume_and_pan_take_a_typed_number() {
+    let mut harness = arrangement_app();
+    let channel = |h: &Harness<'static, App>| h.state().session().unwrap().project().channels[0].clone();
+    let name = harness.state().session().unwrap().project().tracks[0].name.clone();
+    harness.get_by_label(&format!("{name} volume")).click();
+    harness.run();
+    harness.event(egui::Event::Text("-12".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let db = 20.0 * channel(&harness).volume.log10();
+    assert!((db + 12.0).abs() < 0.05, "volume typed: {db}");
+    harness.run_steps(60);
+    harness.get_by_label(&format!("{name} pan")).click();
+    harness.run();
+    // The pan's own scale: 50L to 50R, so -25 is half left.
+    harness.event(egui::Event::Text("-25".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((channel(&harness).pan + 0.5).abs() < 0.01, "pan typed: {}", channel(&harness).pan);
 }

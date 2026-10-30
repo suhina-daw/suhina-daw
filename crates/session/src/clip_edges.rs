@@ -44,6 +44,7 @@ fn is_audio(p: &Project, content: ContentId) -> bool {
 /// Puts `clip` back on lane `lane` (it was taken out), replacing what it covers unless `stack`;
 /// answers with its index there.
 fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usize, CommandError> {
+    let stack = stack && !p.lane_takes_cover(lane, clip.start, clip.start + clip.length);
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
     if !stack {
         make_room(&mut lane.clips, clip.start, clip.start + clip.length);
@@ -53,11 +54,76 @@ fn put_back(p: &mut Project, lane: usize, clip: Clip, stack: bool) -> Result<usi
     Ok(lane.clips.iter().position(|c| *c == clip).unwrap_or_default())
 }
 
+/// `clip.trimMany {clips, edge, by, stack?}`: the same edge of every clip moved by `by` beats as
+/// `clip.trim` moves it, each stopping at its own limits and at the next clip of the selection on
+/// its lane, in one undo step (#956). Each clip is
+/// found by its id when its turn comes, as an earlier one may have changed where the others are.
+pub(crate) fn trim_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let edge = match params.get("edge").and_then(Value::as_str) {
+        Some("start") => "start",
+        Some("end") => "end",
+        _ => return Err("edge must be start or end".into()),
+    };
+    let by =
+        params.get("by").and_then(Value::as_f64).filter(|b| b.is_finite()).ok_or("by must be a number of beats")?;
+    let stack = params.get("stack").cloned().unwrap_or(Value::Bool(false));
+    let p = &session.project;
+    let ids: Vec<u32> = crate::commands::clip_list(p, params)?
+        .into_iter()
+        .filter_map(|(track, index)| {
+            p.arrangement.lanes.iter().find(|l| l.track == Some(track)).and_then(|l| l.clips.get(index)).map(|c| c.id.0)
+        })
+        .collect();
+    // Where each clip of the selection starts and ends before any moves, by id, on its lane: an
+    // edge moved outward stops where the next clip of the same selection on that lane begins
+    // (or the one before ends), so stretching the last of two clips side by side does not run
+    // the first over it and cut it short.
+    let before: Vec<(u32, usize, f64, f64)> = session
+        .project
+        .arrangement
+        .lanes
+        .iter()
+        .enumerate()
+        .flat_map(|(lane, l)| {
+            l.clips.iter().filter(|c| ids.contains(&c.id.0)).map(move |c| (c.id.0, lane, c.start, c.start + c.length))
+        })
+        .collect();
+    for id in &ids {
+        let p = &session.project;
+        let Some((lane, track, index, clip)) = p.arrangement.lanes.iter().enumerate().find_map(|(lane, l)| {
+            let index = l.clips.iter().position(|c| c.id.0 == *id)?;
+            Some((lane, l.track?, index, l.clips.get(index)?.clone()))
+        }) else {
+            continue;
+        };
+        let at = if edge == "start" { clip.start } else { clip.start + clip.length };
+        let mut to = at + by;
+        let others = before.iter().filter(|(other, l, ..)| *other != *id && *l == lane);
+        if edge == "end" && by > 0.0 {
+            let next = others
+                .filter(|(.., start, _)| *start >= at - 1e-9)
+                .map(|(.., start, _)| *start)
+                .fold(f64::INFINITY, f64::min);
+            to = to.min(next.max(at));
+        } else if edge == "start" && by < 0.0 {
+            let previous =
+                others.filter(|(.., end)| *end <= at + 1e-9).map(|(.., end)| *end).fold(f64::NEG_INFINITY, f64::max);
+            to = to.max(previous.min(at));
+        }
+        if (to - at).abs() < 1e-9 {
+            continue;
+        }
+        trim_clip(session, &json!({ "track": track.0, "index": index, edge: to, "stack": stack }))?;
+    }
+    Ok(json!({ "clips": ids.len() }))
+}
+
 /// `clip.trim {track, index, start?, end?, loop?, stack?}`: moves the clip's left edge to
 /// `start` and its right edge to `end` (arrangement beats). The left edge moves the content
-/// with it, so what plays stays where it was; it goes no earlier than the content's start. A
-/// clip that does not loop ends at most where its audio does (a MIDI clip's content grows with
-/// it); a looping clip repeats its loop as far as it goes. The clip replaces what it now covers
+/// with it, so what plays stays where it was; an audio clip's goes no earlier than its audio's
+/// start, a MIDI clip's on before its notes, the content growing at the start (#832). A clip
+/// that does not loop ends at most where its audio does (a MIDI clip's content grows with it);
+/// a looping clip repeats its loop as far as it goes. The clip replaces what it now covers
 /// unless stacked. Edges past the limits stop at them.
 pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (start, end) = (edge(params, "start")?, edge(params, "end")?);
@@ -93,6 +159,30 @@ pub(crate) fn trim_clip(session: &mut Session, params: &Value) -> Result<Value, 
         // end at the loop's start, which moved what played.
         Some(range) if offset < 0.0 || (clip.offset >= range.start && offset < range.start) || offset >= range.end => {
             offset = range.start + (offset - range.start).rem_euclid(range.end - range.start);
+        }
+        // A MIDI clip goes on before its notes (#832): its content grows at the start by as
+        // much, its notes keeping where they play, so the clip starts with empty time. A content
+        // other clips play too is copied first, so they are left as they are.
+        _ if offset < 0.0 && !audio => {
+            let grow = -offset;
+            let shared = p.all_clips().filter(|c| c.content == clip.content).count() > 1;
+            if shared {
+                let mut copy = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
+                copy.id = new_content_id(p)?;
+                clip.content = copy.id;
+                p.contents.push(copy);
+            }
+            if let Some(content) = p.contents.iter_mut().find(|c| c.id == clip.content) {
+                content.length += grow;
+                for lane in &mut content.lanes {
+                    if let LaneData::Notes(notes) = &mut lane.data {
+                        for note in notes {
+                            note.time += grow;
+                        }
+                    }
+                }
+            }
+            offset = 0.0;
         }
         _ if offset < 0.0 => {
             new_start -= offset / rate;

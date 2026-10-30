@@ -116,8 +116,8 @@ fn a_tracks_clips_take_its_colour_and_name_again() {
     // The track menu's "Assign track color to all clips".
     run(&mut session, "clip.setColor", json!({ "track": 1, "color": "none" })).unwrap();
     assert!(clips(&session, 1).iter().all(|c| c.color.is_none()));
-    // "Rename all clips": the track's name.
-    let track = session.project().track(TrackId(1)).unwrap().name.clone();
+    // "Assign track name to clips": the track's name.
+    let track = session.project().shown_track_name(TrackId(1));
     run(&mut session, "track.renameClips", json!({ "track": 1 })).unwrap();
     for content in [ContentId(1), ContentId(2)] {
         assert_eq!(session.project().content(content).unwrap().name, track);

@@ -346,3 +346,30 @@ fn the_plugin_toggle_has_its_own_key_under_every_preset() {
     let (keymap, warnings) = Keymap::from_json(r#"{ "view.plugin": [] }"#);
     assert_eq!((keymap.keys("view.plugin").len(), warnings.len()), (0, 0));
 }
+
+/// A held Space plays or stops once: its repeats do nothing; a held arrow steps on (#916).
+#[test]
+fn a_held_key_toggles_once_and_steps_on_repeat() {
+    let keymap = Keymap::default();
+    let press = |key: Key, repeat: bool| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat,
+        modifiers: Modifiers::NONE,
+    };
+    let mut input = egui::InputState::default();
+    input.events.push(press(Key::Space, false));
+    assert_eq!(keymap.pressed(&mut input, |_| true), ["transport.toggle"]);
+    let mut input = egui::InputState::default();
+    input.events.push(press(Key::Space, true));
+    assert!(keymap.pressed(&mut input, |_| true).is_empty(), "a repeat of Space does nothing");
+    assert!(input.events.is_empty(), "and nothing else gets it");
+    let stepping =
+        keymap.bindings.iter().find(|(_, keys)| keys.iter().any(|k| k.key == Key::ArrowUp && k.modifiers.is_none()));
+    if let Some((id, _)) = stepping {
+        let mut input = egui::InputState::default();
+        input.events.push(press(Key::ArrowUp, true));
+        assert_eq!(keymap.pressed(&mut input, |_| true), std::slice::from_ref(id), "an arrow steps on");
+    }
+}

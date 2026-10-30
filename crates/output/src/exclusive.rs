@@ -172,7 +172,11 @@ pub(crate) fn capable_devices() -> Vec<String> {
         if wasapi::initialize_mta().is_err() {
             return Vec::new();
         }
-        let Ok(collection) = wasapi::DeviceCollection::new(&Direction::Render) else { return Vec::new() };
+        let Ok(collection) =
+            wasapi::DeviceEnumerator::new().and_then(|devices| devices.get_device_collection(&Direction::Render))
+        else {
+            return Vec::new();
+        };
         let count = collection.get_nbr_devices().unwrap_or(0);
         (0..count)
             .filter_map(|i| {
@@ -312,17 +316,18 @@ fn reason(code: Option<u32>) -> Option<&'static str> {
 fn set_up(name: Option<&str>, sample_rate: u32, buffer_frames: Option<u32>) -> Result<Device, String> {
     let error = |what: &str, e: wasapi::WasapiError| format!("{what}: {e}");
     wasapi::initialize_mta().ok().map_err(|e| format!("could not start COM: {e}"))?;
+    let devices = wasapi::DeviceEnumerator::new().map_err(|e| error("no output devices", e))?;
     let device = match name {
         Some(name) => {
             let collection =
-                wasapi::DeviceCollection::new(&Direction::Render).map_err(|e| error("no output devices", e))?;
+                devices.get_device_collection(&Direction::Render).map_err(|e| error("no output devices", e))?;
             let count = collection.get_nbr_devices().map_err(|e| error("no output devices", e))?;
             (0..count)
                 .filter_map(|i| collection.get_device_at_index(i).ok())
-                .find(|d| d.get_friendlyname().is_ok_and(|n| crate::devices::same_name(&n, name)))
+                .find(|d| d.get_friendlyname().is_ok_and(|n: String| crate::devices::same_name(&n, name)))
                 .ok_or_else(|| format!("no output device {name:?}"))?
         }
-        None => wasapi::get_default_device(&Direction::Render).map_err(|e| error("no default output", e))?,
+        None => devices.get_default_device(&Direction::Render).map_err(|e| error("no default output", e))?,
     };
     let mut client = device.get_iaudioclient().map_err(|e| error("could not open the device", e))?;
     let channels = client.get_mixformat().map(|m| m.get_nchannels()).unwrap_or(2).clamp(1, 64);

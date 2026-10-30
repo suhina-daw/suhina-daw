@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Theme-owned Session density; native render, scroll and drop geometry share it.
+//! Theme-owned Launcher density; native render, scroll and drop geometry share it.
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,7 +34,7 @@ impl SessionGeometry {
     }
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), &'static str> {
-        let (min, max) = Self::limits(name).ok_or("unknown Session dimension")?;
+        let (min, max) = Self::limits(name).ok_or("unknown Launcher dimension")?;
         let value = if value == "auto" {
             None
         } else {
@@ -43,7 +43,7 @@ impl SessionGeometry {
                     .strip_suffix("px")
                     .and_then(|s| s.parse::<u16>().ok())
                     .filter(|n| (min..=max).contains(n))
-                    .ok_or("Session dimension is outside its supported range")?,
+                    .ok_or("Launcher dimension is outside its supported range")?,
             )
         };
         match name {
@@ -52,7 +52,7 @@ impl SessionGeometry {
             "scene-width" => self.scene_width = value,
             "slot-height" => self.slot_height = value,
             "header-height" => self.header_height = value,
-            _ => return Err("unknown Session dimension"),
+            _ => return Err("unknown Launcher dimension"),
         }
         Ok(())
     }

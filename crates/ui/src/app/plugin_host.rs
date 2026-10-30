@@ -85,9 +85,22 @@ impl App {
             );
             session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
         }
+        let changes = self.session().map(suhina_session::Session::change_count);
         let notices = self.projects.poll_plugins();
+        // A take kept while polling changed the project: the views are built again now, so its
+        // clip and take lanes show at once, not at the next command (#909).
+        if self.session().map(suhina_session::Session::change_count) != changes {
+            self.revision += 1;
+            self.timeline = None;
+        }
         if let Some(last) = notices.last() {
             self.status = Status::Hint(last.clone());
+        }
+        // A take that records, or waits a moment for its last notes and its file after Stop,
+        // keeps the window drawing, so it grows on screen and becomes a clip once it is done,
+        // not at the next click (#909).
+        if self.session().is_some_and(suhina_session::Session::is_recording) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         if self
             .session()

@@ -49,6 +49,7 @@ fn clicking_a_second_device_moves_the_selection_so_delete_takes_it() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();
@@ -92,6 +93,7 @@ fn a_removals_undo_puts_the_selection_back_on_its_device() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();
@@ -312,6 +314,7 @@ fn removing_a_device_below_the_selected_one_moves_the_selection_with_it() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();

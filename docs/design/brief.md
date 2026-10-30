@@ -52,16 +52,17 @@ From [research](#sources) and the first design rounds:
    ([spec](../spec/sample-map.md) › Where the map is shown).
 6. **Progressive disclosure.** Controls appear when there is room or need (track height, toggled
    sections), never all at once.
-7. **Every grid shows its lines.** Columns and rows of the Session grid, bars and beats, key rows.
+7. **Every grid shows its lines.** Columns and rows of the Launcher grid, bars and beats, key rows.
 8. **Not pure black.** The darkest surface is a warm near-black so the eye can adapt.
 
 ## Keep familiar (behaviour and structure)
 
 - Window regions: control bar on top, browser on the left, the main view in the centre, the
   detail area (devices or clip editor) at the bottom, info text and status at the very bottom.
-- Session view as a grid: tracks are columns, scenes are rows, scene launch on the right, return
+- Launcher view as a grid: tracks are columns, scenes are rows, scene launch on the right, return
   tracks and the main track after the regular tracks.
-- Arrangement view: timeline left, track headers on the right with their controls.
+- Arrangement view: track headers with their controls on the left of the timeline by default
+  (#1046); the right is a setting, and a theme may choose it.
 - Interactions: click to launch, pending state while quantised, drag from the browser, double-click
   to open a clip (on an empty slot or lane of a MIDI track, to make one), Tab between Session and
   Arrangement; keyboard shortcuts and menu structure.
@@ -78,7 +79,7 @@ From [research](#sources) and the first design rounds:
 | Knobs | Small circle with a pointer line, value below | Live's open arc knobs |
 | Value fields | Neutral grey fill; volume fills full height with a level tick at the edges only; pan is a thin bottom bar growing from a centre tick | Live's cyan-filled boxes |
 | Toggles | Track on = light grey number button; solo = accent; arm = red ring, filled when armed | The orange numbered track button |
-| Track headers | A band of the track colour down the Arrangement header's edge; the Session header filled with it, its name in the theme's light or dark text, whichever reads | A dot of colour too small to tell tracks apart |
+| Track headers | A band of the track colour down the Arrangement header's edge; the Launcher header filled with it, its name in the theme's light or dark text, whichever reads | A dot of colour too small to tell tracks apart |
 | Clip slots | Flat cells, a small square in the track colour; playing = brighter cell with an accent progress line; queued = accent outline; recording = red dot and line | Fully coloured slots with triangle and square glyphs |
 | Arrangement clips | Neutral body, 2 px top strip and note or wave marks in the track colour | Colour-filled clip bodies |
 | MIDI notes | Track colour, velocity as brightness, selected note with a light outline | Velocity as saturation; blue selected notes |
@@ -91,7 +92,7 @@ From [research](#sources) and the first design rounds:
 
 ## Layout decisions
 
-- **Grid lines:** Session columns are separated by `border.strong`, scene rows by `border`; the
+- **Grid lines:** Launcher columns are separated by `border.strong`, scene rows by `border`; the
   separators run through the mixer section. Arrangement tracks are separated by `border.strong`.
 - **Track headers grow with track height** (Arrangement): compact = name and on/solo/arm; then
   volume and pan; then routing (output, and input, channel and monitor In/Auto/Off with
@@ -120,7 +121,7 @@ a theme file can change any of them (see Themes). Current values:
 | `control.playingBackground` | `#4A4843` | A playing clip or scene |
 | `control.selectedBackground` | `#C9C4BB` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
 | `border` | `#383733` | Hairlines between regions and rows |
-| `border.strong` | `#45433F` | Session columns and arrangement track lines |
+| `border.strong` | `#45433F` | Launcher columns and arrangement track lines |
 | `text.primary` | `#ECE8E1` | Names and values |
 | `text.secondary` | `#9A958C` | Labels and notes |
 | `text.hint` | `#66625B` | Inactive text, hints and section titles |

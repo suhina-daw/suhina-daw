@@ -5,12 +5,15 @@
 
 use super::*;
 
+const RANGE_START: Param = param("start", ParamType::Number, "the range's first arrangement beat, from 0");
+const RANGE_END: Param = param("end", ParamType::Number, "the range's end, an arrangement beat after start");
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "automation.addPoint",
         label: "Add a point to a parameter's automation (envelope) over the arrangement, making the lane if it has none; the value moves from point to point along each segment's curve. Without a value the point goes on the envelope and a bent segment is split so it plays as before",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             param("beat", ParamType::Number, "arrangement beat, from 0; a second point at one beat makes a jump"),
@@ -20,6 +23,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "value in the unit the parameter's set command takes: volume in dB (at most +6; below -150 is silence), pan -1 to 1, mute 0 or 1, a device's as device.setParam; left out, the envelope's value at the beat",
             ),
             CURVE,
+            optional(
+                "shape",
+                ParamType::Text,
+                "a shape for the segment from the point before to the new one, between their heights, as automation.insertShape names them (a repeating one once a beat)",
+            ),
         ],
         kind: CommandKind::Edit,
         run: crate::automation::add_point,
@@ -29,7 +37,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "automation.movePoint",
         label: "Move a point of a parameter's automation to another beat or value, or change its curve",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             POINT,
@@ -44,7 +52,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "automation.deletePoint",
         label: "Delete a point of a parameter's automation; the lane goes with its last point",
-        params: &[TRACK, AUTOMATED_DEVICE, AUTOMATED, POINT],
+        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, POINT],
         kind: CommandKind::Edit,
         run: crate::automation::delete_point,
         policy: Policy::DEFAULT,
@@ -53,7 +61,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "automation.movePoints",
         label: "Move several points of one parameter's automation together, by a number of beats and by a value, in one undo step; values stay in the parameter's range",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             param(
@@ -85,7 +93,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "automation.deletePoints",
         label: "Delete several points of one parameter's automation in one undo step; the lane goes with its last point",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             param(
@@ -102,7 +110,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "automation.clear",
         label: "Remove a parameter's automation, or without param every lane of the track's mixer or of the device",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             optional("param", ParamType::Text, "the parameter, as for automation.addPoint; left out for every lane"),
         ],
@@ -114,7 +122,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "automation.setEnabled",
         label: "Turn a parameter's automation off or on again; a manual change to an automated parameter turns it off, and the value set by hand holds until it is on again",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             AUTOMATED_DEVICE,
             AUTOMATED,
             param("enabled", ParamType::Bool, "false turns the lane off, true on"),
@@ -124,9 +132,171 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "automation.copy",
+        label: "Copy a time range of a parameter's automation, its values at the range's edges with it, or picked points, for automation.paste",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            optional("start", ParamType::Number, "the range's first arrangement beat, from 0 (with end; or points)"),
+            optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
+            optional(
+                "points",
+                ParamType::Integers,
+                "instead of a range: point indices, from 0, as in automation.list; pasted, they go in among the lane's points from the first of them",
+            ),
+        ],
+        kind: CommandKind::Read,
+        run: crate::automation_range::copy,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.paste",
+        label: "Paste the copied automation range onto a parameter's lane from a beat, over what is there; on another parameter each value sits where it sat on its own lane (the same height); the envelope outside the range stays",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            param("start", ParamType::Number, "arrangement beat the pasted range starts at, from 0"),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::paste,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.duplicate",
+        label: "Copy a time range of a parameter's automation right after itself, over what is there; answers the copy's range; the clipboard stays as it was",
+        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::duplicate,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.deleteRange",
+        label: "Delete the points of a parameter's automation inside a time range; the values at the range's edges stay, so the envelope outside it does not change",
+        params: &[DEVICE_TRACK, AUTOMATED_DEVICE, AUTOMATED, RANGE_START, RANGE_END],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::delete_range,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.insertShape",
+        label: "Fill a time range of a parameter's automation with a shape over the parameter's whole range, or with point the segment from the point before it to it, between the two points' heights: sine, triangle, saw_up, saw_down, square (these repeat), ramp_up, ramp_down, curve_up, curve_down or swell; the envelope outside stays",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            optional("start", ParamType::Number, "the range's first arrangement beat, from 0 (with end; or point)"),
+            optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
+            optional(
+                "point",
+                ParamType::Integer,
+                "instead of a range: the point, from 0, whose segment from the point before gets the shape (the first point's: to the next)",
+            ),
+            param(
+                "shape",
+                ParamType::Text,
+                "sine, triangle, saw_up, saw_down, square, ramp_up, ramp_down, curve_up, curve_down or swell",
+            ),
+            optional(
+                "cycles",
+                ParamType::Integer,
+                "how many times a repeating shape plays, 1 to 512 (default 1 in a range, once a beat on a point's segment)",
+            ),
+            optional(
+                "depth",
+                ParamType::Number,
+                "how much of the travel the shape swings over, 0 to 1 (default 1, the whole travel; on a point's segment, of the way between the two heights)",
+            ),
+            optional(
+                "center",
+                ParamType::Number,
+                "in a range: the place on the lane (0 to 1) a shape of less depth swings around (default the lane's value where the range starts)",
+            ),
+            CONTINUE,
+            REPLACE,
+        ],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::insert_shape,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.simplify",
+        label: "Thin the points of a parameter's automation inside a time range to those its line needs, each segment left bent to keep the shape",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            RANGE_START,
+            RANGE_END,
+            optional(
+                "tolerance",
+                ParamType::Number,
+                "how far from the old line the new one may go, as a share of the lane's height, 0 to 1 (default 0.02)",
+            ),
+            CONTINUE,
+            REPLACE,
+        ],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::simplify,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.smooth",
+        label: "Round the corners and jumps of a parameter's automation inside a time range: a jump becomes an eased step, a corner between straight segments eases in and out; bent segments stay",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            RANGE_START,
+            RANGE_END,
+            param(
+                "amount",
+                ParamType::Number,
+                "how much of the room on each side of a corner or jump the rounding takes, 0 to 1",
+            ),
+            CONTINUE,
+            REPLACE,
+        ],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::smooth,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "automation.scaleRange",
+        label: "Stretch the points of a parameter's automation inside a time range, or picked points, up and down around their middle or the bottom of the lane, kept inside the parameter's travel",
+        params: &[
+            DEVICE_TRACK,
+            AUTOMATED_DEVICE,
+            AUTOMATED,
+            optional("start", ParamType::Number, "the range's first arrangement beat, from 0 (with end; or points)"),
+            optional("end", ParamType::Number, "the range's end, an arrangement beat after start"),
+            optional(
+                "points",
+                ParamType::Integers,
+                "instead of a range: point indices, from 0; only they move, around the middle of the line over their span",
+            ),
+            param(
+                "factor",
+                ParamType::Number,
+                "how far from what they are scaled around the points go, 0 to 4: 1 leaves them, 2 doubles their swing, 0 flattens them",
+            ),
+            optional(
+                "around",
+                ParamType::Text,
+                "\"middle\" (default): half-way between the lowest and highest point in the span; \"bottom\": the bottom of the lane, so 0.5 halves every value",
+            ),
+            CONTINUE,
+            REPLACE,
+        ],
+        kind: CommandKind::Edit,
+        run: crate::automation_range::scale_range,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "automation.list",
         label: "List a track's automation: its mixer's lanes and each device's, with their points (beat, value, curve as [x1, y1, x2, y2]) and whether they play",
-        params: &[TRACK],
+        params: &[DEVICE_TRACK],
         kind: CommandKind::Read,
         run: crate::automation::list,
         policy: Policy::DEFAULT,

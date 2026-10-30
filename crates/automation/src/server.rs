@@ -948,7 +948,7 @@ mod refused_tests {
             }
             for param in suhina_session::params_of(id).unwrap() {
                 let named_like_a_path =
-                    ["path", "paths", "folder", "file", "to", "item", "preset", "sd", "output", "place"]
+                    ["path", "paths", "folder", "file", "to", "item", "items", "preset", "sd", "output", "place"]
                         .contains(&param.name);
                 let ParamType::Path(kind) = param.ty else {
                     let text = matches!(param.ty, ParamType::Text | ParamType::Texts);

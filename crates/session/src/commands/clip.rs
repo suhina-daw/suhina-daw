@@ -37,6 +37,23 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::UNHEARD,
     },
     CommandSpec {
+        id: "clip.trimMany",
+        label: "Move the same edge of several arrangement clips by the same beats as one undo step, each stopping at its own limits as clip.trim does (the selected clips dragged by one edge)",
+        params: &[
+            CLIPS,
+            param("edge", ParamType::Text, "start (the left edge, the content moving with it) or end"),
+            param("by", ParamType::Number, "how far each edge moves, in beats; negative moves it left"),
+            optional(
+                "stack",
+                ParamType::Bool,
+                "true leaves clips under them as they are; false (default) replaces them",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_edges::trim_clips,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "clip.renameMany",
         label: "Give several arrangement clips the same name, as one undo step; clips that play the same content share the name",
         params: &[CLIPS, param("name", ParamType::Text, "the new name (empty clears it)")],
@@ -54,7 +71,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setGain",
-        label: "Set an audio clip's gain (every clip that plays the same audio content follows)",
+        label: "Set an audio clip's gain, an arrangement clip's or a slot's (every clip that plays the same audio content follows)",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -63,6 +80,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Integer,
                 "clip index on the track, from project.clips (deprecated, use clip; accepted until the project format's next version (ADR 0025))",
             ),
+            CLIP_SCENE,
             param("db", ParamType::Decibels, "gain in dB, at most +24; \"-inf\" or below -150 is silence"),
         ],
         kind: CommandKind::Edit,
@@ -106,11 +124,16 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.shiftFades",
-        label: "Lengthen or shorten the fade-in or fade-out of several arrangement clips by the same beats, each from its own, kept from 0 to what the clip's other fade leaves; clips with no audio are left as they are; as one undo step",
+        label: "Lengthen or shorten the fade-in or fade-out of several arrangement clips by the same beats, each from its own, kept from 0 to what the clip's other fade leaves, and optionally give that fade one curve; clips with no audio are left as they are; as one undo step",
         params: &[
             CLIPS,
             param("edge", ParamType::Text, "in or out"),
-            param("beats", ParamType::Number, "how much longer (or, below 0, shorter) each fade gets"),
+            optional("beats", ParamType::Number, "how much longer (or, below 0, shorter) each fade gets (default 0)"),
+            optional(
+                "curve",
+                ParamType::Number,
+                "the curve every one of these fades takes, -1 to +1 (default: as each is)",
+            ),
         ],
         kind: CommandKind::Edit,
         run: shift_fades,
@@ -196,6 +219,22 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[CLIPS, param("enabled", ParamType::Bool, "true plays the clips, false silences them")],
         kind: CommandKind::Edit,
         run: set_clip_enabled,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.setAra",
+        label: "Play audio clips through their track's ARA plug-in (such as Melodyne), or no longer: a track without one gets it as its clip host, first in its chain and not in its device list",
+        params: &[
+            CLIPS,
+            param("on", ParamType::Bool, "true plays the clips through the plug-in, false plays them as they are"),
+            optional(
+                "plugin",
+                ParamType::Text,
+                "the ARA plug-in a track without one gets, as plugin.list names it (default: the installed one, Melodyne first)",
+            ),
+        ],
+        kind: CommandKind::Edit,
+        run: crate::clip_ara::set_ara,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -663,15 +702,7 @@ fn set_clip_gain(session: &mut Session, params: &Value) -> Result<Value, Command
         return Err(format!("db must be at most +24, got {db}").into());
     }
     let gain = if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
-    let (lane, index) = lane_and_index(&session.project, params)?;
-    let content = session
-        .project
-        .arrangement
-        .lanes
-        .get(lane)
-        .and_then(|l| l.clips.get(index))
-        .map(|c| c.content)
-        .ok_or("the clip is missing")?;
+    let (_, content, _) = crate::notes::locate(&session.project, params)?;
     let content =
         session.project.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
     let mut audio = false;
@@ -812,8 +843,15 @@ fn copy_clips(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         _ => return Err("give either clips (arrangement clips) or track and scene (a clip slot)".into()),
     }
     let names: Vec<String> = copied.iter().map(|(_, content)| content.name.clone()).collect();
+    // The automation under each arrangement clip goes with it.
+    let under = from
+        .iter()
+        .zip(&copied)
+        .map(|(track, (clip, _))| crate::automation_range::under(session, *track, clip.start, clip.start + clip.length))
+        .collect();
     session.clipboards.clips = copied;
     session.clipboards.tracks = from;
+    session.clipboards.under = under;
     Ok(json!({ "copied": names }))
 }
 
@@ -911,6 +949,8 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     let earliest = session.clipboards.clips.iter().map(|(clip, _)| clip.start).fold(f64::INFINITY, f64::min);
     let offset = if earliest.is_finite() { start - earliest } else { 0.0 };
     let copied = session.clipboards.clips.clone();
+    let under = session.clipboards.under.clone();
+    let sources = session.clipboards.tracks.clone();
     let p = &mut session.project;
     let lane = match p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
         Some(lane) => lane,
@@ -937,6 +977,7 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         let at = clip.start + offset;
         let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
+        let stack = stack && !p.lane_takes_cover(lane, at, at + copy.length);
         let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
         if !stack {
             make_room(&mut lane.clips, at, at + copy.length);
@@ -946,6 +987,13 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
         placed.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": at }));
+    }
+    // The automation that was under each clip, under its copy.
+    for (i, (clip, _)) in session.clipboards.clips.clone().iter().enumerate() {
+        if let Some(lanes) = under.get(i) {
+            let same = sources.get(i) == Some(&track);
+            crate::automation_range::lay_under(session, track, clip.start + offset, lanes, same)?;
+        }
     }
     Ok(json!({ "clips": placed }))
 }
@@ -1019,7 +1067,20 @@ fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         Some("out") => false,
         _ => return Err("edge must be in or out".into()),
     };
-    let beats = number(params, "beats")?;
+    let beats = if params.get("beats").is_some() { number(params, "beats")? } else { 0.0 };
+    let curve = match params.get("curve") {
+        None => None,
+        Some(_) => {
+            let curve = number(params, "curve")?;
+            if !(-1.0..=1.0).contains(&curve) {
+                return Err(format!("curve must be from -1 to +1, got {curve}").into());
+            }
+            Some(curve)
+        }
+    };
+    if params.get("beats").is_none() && curve.is_none() {
+        return Err("give beats, curve or both".into());
+    }
     let p = &mut session.project;
     let chosen = clip_list(p, params)?;
     let mut changed = 0;
@@ -1045,6 +1106,13 @@ fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandEr
             clip.fade_in = now;
         } else {
             clip.fade_out = now;
+        }
+        if let Some(curve) = curve {
+            if fade_in {
+                clip.fade_in_curve.curve = curve;
+            } else {
+                clip.fade_out_curve.curve = curve;
+            }
         }
         changed += 1;
     }
@@ -1101,6 +1169,16 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
     let clips = clip_list(&session.project, params)?;
+    // The automation under each clip, laid under its copy once the copies are placed.
+    let carried: Vec<(TrackId, f64, Vec<crate::automation_range::Under>)> = clips
+        .iter()
+        .filter_map(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
+            let clip = lane.clips.get(*index)?;
+            let end = clip.start + clip.length;
+            Some((*track, end, crate::automation_range::under(session, *track, clip.start, end)))
+        })
+        .collect();
     let p = &mut session.project;
     let mut made: Vec<Value> = Vec::new();
     for (track, indexes) in clips_by_track(&clips) {
@@ -1118,9 +1196,10 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         for copy in &mut copies {
             copy.id = p.new_clip_id()?;
         }
+        let covered: Vec<bool> = copies.iter().map(|c| p.takes_cover(track, c.start, c.start + c.length)).collect();
         let Some(lane) = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) else { continue };
-        for copy in copies {
-            if !stack {
+        for (copy, covered) in copies.into_iter().zip(covered) {
+            if !stack || covered {
                 make_room(&mut lane.clips, copy.start, copy.start + copy.length);
             }
             let (copy_id, copy_start) = (copy.id, copy.start);
@@ -1129,6 +1208,9 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
             let index = lane.clips.iter().position(|c| c.id == copy_id).unwrap_or_default();
             made.push(json!({ "clip": copy_id.0, "track": track.0, "index": index, "start": copy_start }));
         }
+    }
+    for (track, at, lanes) in &carried {
+        crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
     }
     Ok(json!({ "clips": made }))
 }
@@ -1170,6 +1252,29 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         None | Some(Value::Null) => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
+    // An empty track of the other kind takes the clip's (#945).
+    if to != track
+        && let Some(content) = session
+            .project
+            .arrangement
+            .lanes
+            .iter()
+            .find(|l| l.track == Some(track))
+            .and_then(|l| usize::try_from(index).ok().and_then(|i| l.clips.get(i)))
+            .map(|c| c.content)
+    {
+        crate::track_kind::fit_empty_for(session, to, content)?;
+    }
+    // The automation under the clip, taken along (#916).
+    let carried = session
+        .project
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(track))
+        .and_then(|l| usize::try_from(index).ok().and_then(|i| l.clips.get(i)))
+        .map(|c| (c.start, c.start + c.length))
+        .map(|(from, end)| (from, end, crate::automation_range::under(session, track, from, end)));
     let p = &mut session.project;
     let from_lane =
         p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the track has no arrangement lane")?;
@@ -1207,6 +1312,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if to != track && clip.color.is_none() {
         clip.color = keep;
     }
+    let stack = stack && !p.takes_cover(to, start, start + clip.length);
     let lane = p.arrangement.lanes.get_mut(to_lane).ok_or("the lane is missing")?;
     if !stack {
         make_room(&mut lane.clips, start, start + clip.length);
@@ -1216,6 +1322,10 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     lane.clips.push(clip);
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let new_index = lane.clips.iter().position(|c| c.id == clip_id).unwrap_or_default();
+    if let Some((from, end, lanes)) = carried {
+        crate::automation_range::clear_under(session, track, from, end, &lanes)?;
+        crate::automation_range::lay_under(session, to, start, &lanes, to == track)?;
+    }
     Ok(json!({ "clip": clip_id.0, "start": start, "track": to.0, "index": new_index }))
 }
 
@@ -1239,6 +1349,20 @@ fn move_slot(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         ),
     };
 
+    // An empty track of the other kind takes the clip's (#945).
+    let from = session.project.launcher.columns.get(from_column).map(|c| c.track);
+    if let Some(to) = to_track.filter(|t| Some(*t) != from)
+        && let Some(content) = session
+            .project
+            .launcher
+            .columns
+            .get(from_column)
+            .and_then(|c| c.slots.get(from_scene))
+            .and_then(|s| s.clip.as_ref())
+            .map(|c| c.content)
+    {
+        crate::track_kind::fit_empty_for(session, to, content)?;
+    }
     let project = &mut session.project;
     let from_track = project.launcher.columns.get(from_column).map(|c| c.track).ok_or("the track has no clip slots")?;
     let to_track = to_track.unwrap_or(from_track);

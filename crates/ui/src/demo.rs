@@ -172,6 +172,7 @@ fn clip_of(content: ContentId) -> Clip {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     }
 }

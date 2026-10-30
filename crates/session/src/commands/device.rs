@@ -26,7 +26,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.add",
         label: "Add a built-in effect, instrument or MIDI effect to a track; MIDI effects go first and change the notes, the instrument right after them plays the notes, an effect goes last unless a position is given",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             optional(
                 "id",
                 ParamType::Text,
@@ -52,7 +52,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.addSd",
         label: "Load a data-only .sd AudioEffect and add it to a track",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             param("path", ParamType::Path(PathKind::File), "path to a validated .sd AudioEffect graph"),
             optional("sample", ParamType::Path(PathKind::File), "audio file for the graph resource named sample"),
             optional(
@@ -69,7 +69,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.updateSd",
         label: "Update an embedded .sd device to a newer revision and migrate its saved parameter values",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param(
                 "path",
@@ -84,7 +84,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.remove",
         label: "Remove a device from a track",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Edit,
         run: devices::remove,
         policy: Policy::DEFAULT,
@@ -92,7 +92,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.removeMany",
         label: "Remove several devices from a track as one undo step",
-        params: &[TRACK, DEVICES],
+        params: &[DEVICE_TRACK, DEVICES],
         kind: CommandKind::Edit,
         run: devices::remove_many,
         policy: Policy::DEFAULT,
@@ -100,7 +100,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.copy",
         label: "Copy devices of a track, with their parameters, automation and a running plug-in's state as it is now, for device.paste",
-        params: &[TRACK, DEVICES],
+        params: &[DEVICE_TRACK, DEVICES],
         kind: CommandKind::Read,
         run: devices::copy,
         policy: Policy::DEFAULT,
@@ -108,7 +108,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.paste",
         label: "Put the copied devices into a track's chain, in the order they were copied, as one undo step",
-        params: &[TRACK, POSITION],
+        params: &[DEVICE_TRACK, POSITION],
         kind: CommandKind::Edit,
         run: devices::paste,
         policy: Policy::DEFAULT,
@@ -117,7 +117,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.group",
         label: "Put consecutive devices of a track (or of a group's branch) into a new device group of one branch, in the place of the first; the sound does not change",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             optional("count", ParamType::Integer, "how many consecutive devices from that one, at least 1 (default 1)"),
             optional("name", ParamType::Text, "the group's name (default: the device's, or Group)"),
@@ -129,7 +129,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.ungroup",
         label: "Put the devices of a device group of one branch in its place",
-        params: &[TRACK, GROUP],
+        params: &[DEVICE_TRACK, GROUP],
         kind: CommandKind::Edit,
         run: device_groups::ungroup,
         policy: Policy::DEFAULT,
@@ -137,7 +137,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.addGroup",
         label: "Add an empty device group (one empty branch, a clean passthrough) to a track or inside a group",
-        params: &[TRACK, POSITION, optional("name", ParamType::Text, "the group's name (default Group)")],
+        params: &[DEVICE_TRACK, POSITION, optional("name", ParamType::Text, "the group's name (default Group)")],
         kind: CommandKind::Edit,
         run: device_groups::add_group,
         policy: Policy::DEFAULT,
@@ -146,7 +146,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.move",
         label: "Move a device along a track's chain, between a group's branches, or into or out of a group",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param(
                 "to",
@@ -161,7 +161,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.duplicate",
         label: "Copy a device (a group with everything in it) next to itself; a plug-in's copy starts with its state as it is now",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Edit,
         run: device_groups::duplicate,
         policy: Policy::DEFAULT,
@@ -170,9 +170,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.moveToTrack",
         label: "Move a device (a group with everything in it) to another track, or copy it there; it goes where its kind goes on that track, a running plug-in's state with it, as one undo step",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
-            param("toTrack", ParamType::Track, "the track to move or copy it to, by id or name"),
+            param(
+                "toTrack",
+                ParamType::Track,
+                "the track to move or copy it to, by id or name, or \"main\" for the main channel",
+            ),
             optional("copy", ParamType::Bool, "true copies it and leaves it where it is (default false)"),
         ],
         kind: CommandKind::Edit,
@@ -182,7 +186,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.duplicateMany",
         label: "Copy several devices of a track (groups with everything in them), all from one chain or branch, right after the last of them, in their order, as one undo step; the device clipboard stays as it was",
-        params: &[TRACK, DEVICES],
+        params: &[DEVICE_TRACK, DEVICES],
         kind: CommandKind::Edit,
         run: devices::duplicate_many,
         policy: Policy::DEFAULT,
@@ -190,16 +194,24 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.setEnabled",
         label: "Switch a device on or off; a device that is off passes the sound through",
-        params: &[TRACK, DEVICE, param("enabled", ParamType::Bool, "false switches the device off")],
+        params: &[DEVICE_TRACK, DEVICE, param("enabled", ParamType::Bool, "false switches the device off")],
         kind: CommandKind::Edit,
         run: devices::set_enabled,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "device.setEnabledMany",
+        label: "Switch several devices of a track on or off as one undo step",
+        params: &[DEVICE_TRACK, DEVICES, param("enabled", ParamType::Bool, "false switches the devices off")],
+        kind: CommandKind::Edit,
+        run: devices::set_enabled_many,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "device.setNamFile",
         label: "Load a .nam model into a NAM Amp Modeler, or a .wav impulse response into a NAM Cab Loader (docs/spec/nam-amp-and-cab.md)",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param(
                 "path",
@@ -214,7 +226,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.file",
         label: "The file a NAM Amp Modeler or NAM Cab Loader runs: its absolute path (empty when none is set) and the model's or cab's name",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Read,
         run: devices::device_file,
         policy: Policy::DEFAULT,
@@ -222,7 +234,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.loadSample",
         label: "Load an audio file into a Sampler instrument, or into the sample binding of an SDK graph",
-        params: &[TRACK, DEVICE, param("path", ParamType::Path(PathKind::File), "sample audio file")],
+        params: &[DEVICE_TRACK, DEVICE, param("path", ParamType::Path(PathKind::File), "sample audio file")],
         kind: CommandKind::Edit,
         run: devices::load_sample,
         policy: Policy::DEFAULT,
@@ -231,7 +243,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.setSampleSlices",
         label: "Replace a Sampler's manual slice boundaries",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param("points", ParamType::Numbers, "normalized source positions strictly between 0 and 1"),
             optional("continue", ParamType::Bool, "continue the preceding slice drag undo step"),
@@ -243,7 +255,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.recordSample",
         label: "Record the armed track's selected audio input into its Sampler; stop commits the source as one undo step",
-        params: &[TRACK, DEVICE, param("on", ParamType::Bool, "start or stop sample recording")],
+        params: &[DEVICE_TRACK, DEVICE, param("on", ParamType::Bool, "start or stop sample recording")],
         kind: CommandKind::Transport,
         run: crate::recording::record_sample,
         policy: Policy::DEFAULT,
@@ -252,7 +264,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.setParam",
         label: "Set a parameter of a device on a track, heard from the next block; the value is limited to the parameter's range",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param(
                 "param",
@@ -283,7 +295,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.setAutomation",
         label: "Automate a built-in, .sd or plug-in device parameter over the arrangement: points of beat and value, a straight line between them; no points removes the automation (automation.addPoint edits one point)",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             DEVICE,
             param(
                 "param",
@@ -303,7 +315,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.pluginParams",
         label: "List the parameters of a running plug-in device: id, name, range, default, current value and the plug-in's own text for it",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Plugin,
         run: devices::plugin_params,
         policy: Policy::DEFAULT,
@@ -312,7 +324,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "device.addPlugin",
         label: "Add an installed plug-in to a track; an instrument goes right after the MIDI effects and plays the track's notes, an effect goes last unless a position is given. It starts while the project plays",
         params: &[
-            TRACK,
+            DEVICE_TRACK,
             param("plugin", ParamType::Text, "plug-in name, id or file, from plugin.list"),
             optional(
                 "position",
@@ -327,7 +339,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.plugin",
         label: "Where a plug-in device stands: loading, running, missing, crashed or failed, the installed plug-in found for it, its latency, whether its editor is open",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Read,
         run: devices::plugin_status,
         policy: Policy::DEFAULT,
@@ -335,7 +347,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.openEditor",
         label: "Open a plug-in device's editor in a window, or inside the device view when Suhina embeds editors (Options › Settings › Plug-ins); changes there are heard at once",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Plugin,
         run: devices::open_editor,
         policy: Policy::DEFAULT,
@@ -343,7 +355,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.closeEditor",
         label: "Close a plug-in device's editor",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Plugin,
         run: devices::close_editor,
         policy: Policy::DEFAULT,
@@ -351,7 +363,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "device.restart",
         label: "Restart a plug-in device that crashed or stopped answering, in a fresh process with its last state",
-        params: &[TRACK, DEVICE],
+        params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::Plugin,
         run: devices::restart,
         policy: Policy::DEFAULT,

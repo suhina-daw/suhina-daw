@@ -30,6 +30,9 @@ enum Behaviour {
     Delay(usize),
     /// Never answers.
     Gone,
+    /// Plays 1.0 on both sides for its first this many frames, then silence, whatever comes in:
+    /// an ARA renderer playing its regions (#990).
+    Render(usize),
 }
 
 struct Stand {
@@ -111,6 +114,12 @@ impl PluginProcessor for Stand {
                 }
             }
             Behaviour::Gone => return false,
+            Behaviour::Render(until) => {
+                for (frame, pair) in buffer.chunks_mut(2).enumerate() {
+                    let value = if self.frames + frame < until { 1.0 } else { 0.0 };
+                    pair.iter_mut().for_each(|s| *s = value);
+                }
+            }
         }
         self.frames += frames;
         true
@@ -1137,6 +1146,70 @@ fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
     // A restart reaches it inside the group.
     controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
+}
+
+/// An audio track playing a 0.5 file (or `level`) in two one-beat clips, the first marked for
+/// the clip host, with `devices` on its channel.
+fn hosted_project(level: f32, devices: Vec<Device>, first_ara: bool, second: bool) -> (Project, AudioPool) {
+    let mut p = project(Vec::new(), 2.0, devices);
+    p.tracks[0].content = ContentKinds { notes: false, audio: true };
+    p.launcher.columns.clear();
+    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("dc.wav")) }];
+    let clip = |start: f64, ara: bool| Clip { ara, ..Clip::new(ContentId(1), start, 1.0) };
+    p.arrangement.lanes[0].clips =
+        if second { vec![clip(0.0, first_ara), clip(1.0, false)] } else { vec![clip(0.0, first_ara)] };
+    let mut pool = AudioPool::new();
+    let data = crate::AudioData { sample_rate: SR, channels: 1, samples: vec![level; BEAT * 2] };
+    pool.files.insert("dc.wav".into(), Arc::new(data));
+    (p, pool)
+}
+
+/// The channel's clip host plays the ARA clips at their gains and fades, the other clips go past
+/// it; disabled, every clip plays as it is (#990).
+#[test]
+fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
+    let mut host = plug(vst3());
+    host.clip_host = true;
+    let (p, pool) = hosted_project(0.5, vec![host.clone()], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&pool).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let out = left(&out);
+    // The first beat: the host's 1.0, at the gains a 1.0 file plays the clip at.
+    let (reference, ref_pool) = hosted_project(1.0, Vec::new(), false, false);
+    let full = left(&render_offline_from(&reference, RenderInputs::from_audio(&ref_pool), SR, 512, None).unwrap());
+    let middle = BEAT / 2;
+    assert!(full[middle] > 0.0);
+    assert!((out[middle] - full[middle]).abs() < 1e-5, "{} vs {}", out[middle], full[middle]);
+    // The click guard at the clip's start scales the host's output too.
+    assert!(out[0].abs() < 1e-6, "{}", out[0]);
+    // The second beat: the plain clip, past the host (which is silent there).
+    let (plain, plain_pool) = hosted_project(0.5, Vec::new(), false, true);
+    let raw = left(&render_offline_from(&plain, RenderInputs::from_audio(&plain_pool), SR, 512, None).unwrap());
+    let later = BEAT + BEAT / 2;
+    assert!((out[later] - raw[later]).abs() < 1e-5, "{} vs {}", out[later], raw[later]);
+
+    // A disabled host: every clip plays as it is.
+    host.enabled = false;
+    let (p, pool) = hosted_project(0.5, vec![host], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let off = left(
+        &render_offline_from(
+            &p,
+            RenderInputs::from_audio(&pool).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
+    assert!((off[middle] - raw[middle]).abs() < 1e-5, "{} vs {}", off[middle], raw[middle]);
 }
 
 #[test]

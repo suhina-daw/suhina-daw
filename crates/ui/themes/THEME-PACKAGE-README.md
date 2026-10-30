@@ -34,7 +34,7 @@ my-theme/
   background.png      # optional background image
   README.md           # this guide
   examples/dark-gloss.css  # optional paint-only example; not enabled automatically
-  examples/compact-session.css  # optional native Session density; not enabled automatically
+  examples/compact-session.css  # optional native Launcher density; not enabled automatically
 ```
 
 `theme.css` is yours: Suhina reads it and never writes it. What a user changes in Suhina's
@@ -155,10 +155,10 @@ the variant in use. It sets track/return/scene widths and header/slot heights (i
 the `--session-*` settings): widths are 64–512px, slot height 16–64px and header height
 20–64px. Use `auto` to remove
 an override. The same geometry drives drawing, scrolling and drop/input targets.
-Mixer height keeps its existing native divider/preference. Session and Arrangement
+Mixer height keeps its existing native divider/preference. Launcher and Arrangement
 remain separate; this does not introduce the separately planned mixer view.
 The example also includes `.pan { --suhina-appearance: knob; }`, a portable native
-pan-face override for Session and Arrangement. `field` forces a number field, while
+pan-face override for Launcher and Arrangement. `field` forces a number field, while
 `native` retains the global preference. Native parameter gestures remain unchanged.
 
 The gloss example gives `.mixer` and `.track-name` their own materials. Meter gradients
@@ -192,7 +192,7 @@ remain available with OpenGL or adapters without linear texture-view aliases.
 **Suhina Blocks** has brown plank CSS and original pixel SVGs, with no landscape
 or background PNG. Eight raw track colours choose distinct `track.body.color-RRGGBB`
 textures. Canonical `.track-column { --suhina-track-artwork: on; }` extends body
-artwork behind Session slots; empty cells preserve it and native clip launches remain
+artwork behind Launcher slots; empty cells preserve it and native clip launches remain
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
 
@@ -219,7 +219,7 @@ The dB labels/ticks can also be moved, resized or hidden independently with
 `.control-mixer-volume-scale`; `.fader-scale` styles their ink. This keeps a swapped
 meter/fader layout from forcing the scale to remain on the fader's original side.
 Native compact-height thresholds remain in force. Placement coverage is still growing:
-toolbar modules/transport, the Session mixer sections, solo/cue/arm/type glyphs and
+toolbar modules/transport, the Launcher mixer sections, solo/cue/arm/type glyphs and
 Arrangement name/colour/volume/pan/meter are connected. Device SDK controls, captions,
 panels and other typed elements use `device-<control-id>` names; moving/resizing them
 keeps their existing parameter commands and hit targets. Long/non-ASCII ids get a stable
@@ -230,7 +230,7 @@ Arrangement fold, enable, automation, output/input routing and send navigation a
 also connected (`arrangement-fold`, `arrangement-enable`, `arrangement-automation`,
 `arrangement-output`, `arrangement-input`, `arrangement-sends-previous/next`).
 Individual send slots use `mixer-send-1` and `arrangement-send-1`, then `-2`, etc.,
-following native return order. Session sends stay inside their movable sends region.
+following native return order. Launcher sends stay inside their movable sends region.
 
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds. Exact raw
 track colours choose variants independently of selection/mute tint:
@@ -408,7 +408,7 @@ clip gain), `.track-button` (solo, cue, arm, track-on, monitor, automation), `.t
 | Toolbar `.toolbar` | `.toolbar-module`, modules `#browser`, `#tempo`, `#position`, `#signature`, `#grid`, `#count-in`, `#metronome`, `#views`, `#performance`, `#mapping`, `#agents`; `#control-play`, `#control-stop`, `#control-record`, `#control-metronome-toggle`, `#control-browser-toggle` |
 | Arrangement header `.arrangement .track-header` | `.track-name`, `.track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `.fold`, `#arrangement-volume`, `#arrangement-pan`, `.send`, `.value-fill`, `.value-handle` |
 | Timeline `.arrangement` | `.ruler`, `.ruler-number`, `.ruler-tick`, `.loop-region`, `.loop-line`, `.playhead`, `.clip`, `.clip-name`, `.clip-waveform`, `.clip-notes`, `.clip-gain`, `.clip-fade-handle`, `.add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
-| Session and mixer `.session`, `.mixer` | `.track-column`, `.slot`, `.scene`, `.scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `.fader`, `.fader-cap`, `.fader-rail`, `.fader-scale`, `.meter`, `#mixer-divider` |
+| Launcher and mixer `.session`, `.mixer` | `.track-column`, `.slot`, `.scene`, `.scene-column`, `#mixer-volume`, `#mixer-pan`, `#mixer-send-N`, `.fader`, `.fader-cap`, `.fader-rail`, `.fader-scale`, `.meter`, `#mixer-divider` |
 | Piano roll `.piano-roll` | `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity`, `.piano-tool` with `#piano-<tool>`, `.midi-tools` (`#quantise-amount`), `.clip-info`, `.editor-tab` |
 | Browser `.browser` | `.browser-place`, `.browser-row`, `.browser-play`, `.browser-tag-dot`, `.browser-preview-wave`, `#browser-search` (`.text-input`) |
 | Devices `.device`, `#device-<id>` | `.device-header`, `.device-control`, `.slider`, `.slider-rail`, `.slider-fill`, `.slider-handle`, `.knob`, `.value` |
@@ -524,7 +524,7 @@ A button's glyph takes the button's `color`, in every state. Artwork has an on s
 
 ### Tracks
 
-A track's header, Session column and mixer strip give the sheet `--track-colour`, the track's
+A track's header, Launcher column and mixer strip give the sheet `--track-colour`, the track's
 colour, and its name `--track-fill`, the fill Suhina draws there (the colour at the user's header
 colour strength). Use them to style each view on its own, whatever that setting is:
 
@@ -535,7 +535,7 @@ colour strength). Use them to style each view on its own, whatever that setting 
 ```
 
 A name's `color` sets its text; without one it is worked out from the fill. `.mixer` is a strip,
-also in the Session view, so `.mixer .track-name` is the strip's name and
+also in the Launcher view, so `.mixer .track-name` is the strip's name and
 `.track-header .track-name` the column's. Artwork for one view only: `track.name.session`,
 `track.name.mixer`, `track.name.arrangement`, `track.body.session` and
 `track.body.arrangement`, over `track.name` and `track.body`.
@@ -763,7 +763,7 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   font-size: 11px; }`.
 - **Empty slots:** `.slot { background-color: #262626; }`.
 - **Pan and send knobs of their own:** `pan.knob.body`, `pan.knob.pointer`, `send.knob.body` and
-  `send.knob.pointer` artwork change only those knobs, in the Session and the Arrangement.
+  `send.knob.pointer` artwork change only those knobs, in the Launcher and the Arrangement.
   `.send { --suhina-appearance: knob; }` makes the Arrangement's sends knobs too.
 - **The mixer's colour strip:** `.control-mixer-color { display: none; }` hides it; `top`, `height`
   and `width` move it (to the bottom, say).

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Right-click menus in the Session view: a track's strip and a return's column have the track's
+//! Right-click menus in the Launcher view: a track's strip and a return's column have the track's
 //! menu as its header does, every track menu inserts tracks, and the empty space after the
 //! tracks offers the same (`docs/spec/ui-session-view.md`).
 

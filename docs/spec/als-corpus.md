@@ -57,7 +57,7 @@ share one `Samples/` folder.
 | 13 | `13-second-session-clip.als` | Create a clip in the second slot of the same track with one note: G3 on beat 1. |
 | 14 | `14-arrangement-moved.als` | In Arrangement View, move the MIDI track's arrangement clip to bar 3. |
 | 15 | `15-close-piano-roll.als` | Close the piano roll (Clip View). Nothing else. |
-| 16 | `16-extend-mixer.als` | Show the whole mixer section in Session View. Nothing else. |
+| 16 | `16-extend-mixer.als` | Show the whole mixer section in Launcher view. Nothing else. |
 | 17 | `17-track-volume-pan.als` | Set the audio track's volume to -6 dB and pan to 50L (fully left). |
 | 18 | `18-track-mute.als` | Mute the audio track (Track Activator off). |
 | 19 | `19-return-send.als` | Unmute. Turn the audio track's Send A up to -12 dB. |
@@ -75,7 +75,7 @@ Continue from the last file of series 1 and use an audio track that has no clips
 
 | # | File name | Edit from the previous file |
 |---|---|---|
-| 30 | `30-audio-clip.als` | In Session View, drag `loopwerk-demo.wav` from your file manager into the track's first clip slot. Leave warp settings as Live sets them. |
+| 30 | `30-audio-clip.als` | In Launcher view, drag `loopwerk-demo.wav` from your file manager into the track's first clip slot. Leave warp settings as Live sets them. |
 | 31 | `31-audio-warp-off.als` | Open the clip (Clip View) and turn Warp off. |
 | 32 | `32-audio-warp-marker.als` | Turn Warp on again, add one warp marker on beat 2 and drag it a little to the right. |
 | 33 | `33-audio-gain.als` | Set the **clip's** Gain (Clip View, not the mixer) to -6 dB. |
@@ -111,7 +111,7 @@ sets. "The C3 clip" is the session clip in 1-MIDI slot 1 (C3, loop on, 2 bars).
 | 55 | `55-clip-loop-position.als` | Type `1.3.1` in the loop **Position**. |
 | 56 | `56-clip-loop-off.als` | Turn **Loop** off. |
 | 57 | `57-clip-end-marker.als` | Type `2.3.1` in **End**. |
-| 58 | `58-clip-deactivated.als` | Select the C3 clip in Session View and press `0` (deactivate clip). |
+| 58 | `58-clip-deactivated.als` | Select the C3 clip in Launcher view and press `0` (deactivate clip). |
 | 59 | `59-note-deactivated.als` | Open the G3 clip (1-MIDI slot 2), select the note and press `0` (deactivate note). |
 | 60 | `60-group-track.als` | Select the headers of 3-Audio and 4-loopwerk-demo (Ctrl-click) and press `Ctrl+G`. |
 | 61 | `61-audio-warp-off.als` | Session audio clip on 4-loopwerk-demo: Warp off. |
@@ -409,7 +409,7 @@ No bounces: Export renders the arrangement, not session clips.
 
 | # | File name | Edit from the previous file |
 |---|---|---|
-| 320 | `320-session-clip.als` | In Session View, drag `test-signal.wav` into the audio track's first clip slot. Warp off. |
+| 320 | `320-session-clip.als` | In Launcher view, drag `test-signal.wav` into the audio track's first clip slot. Warp off. |
 | 321 | `321-clip-volume-envelope.als` | Clip View › Envelopes, Mixer › Track Volume: a ramp from `0` dB at the clip's start to `-12` dB at its end. |
 | 322 | `322-clip-device-envelope.als` | In the same clip, Utility › Gain: `0` dB at the start, `-12` dB halfway. |
 | 323 | `323-clip-envelope-unlinked.als` | Unlink the clip's envelope (the Link switch in the envelope panel) and give it a loop of 1 bar. Log how. |

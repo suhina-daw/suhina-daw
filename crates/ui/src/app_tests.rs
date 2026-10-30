@@ -4,6 +4,18 @@
 use super::*;
 
 #[test]
+fn the_map_window_stays_above_suhina_and_minimises_with_it() {
+    use egui::WindowLevel::{AlwaysOnTop, Normal};
+    assert_eq!(map_window_level(true, false), AlwaysOnTop, "a click in the main window keeps it above");
+    assert_eq!(map_window_level(false, true), AlwaysOnTop);
+    assert_eq!(map_window_level(false, false), Normal, "another program in use covers it");
+    assert_eq!(follow_main_minimised(true, false), Some(true));
+    assert_eq!(follow_main_minimised(true, true), None, "minimised once");
+    assert_eq!(follow_main_minimised(false, true), Some(false), "restored with the main window");
+    assert_eq!(follow_main_minimised(false, false), None, "minimised by hand stays so");
+}
+
+#[test]
 fn a_pending_quit_check_continues_after_the_close_event_is_gone() {
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
@@ -125,7 +137,7 @@ fn failed_sampler_decode_leaves_the_empty_track_unchanged() {
     let mut app = App::new();
     app.set_session(Session::new(suhina_session::blank_project()), &[]);
     let item = drop::system_file(Path::new("/invalid.wav")).unwrap();
-    let plan = app.plan_drop(&[item], DropTarget::Track(TrackId(1)), false).unwrap();
+    let plan = app.plan_drop(&[item], DropTarget::Chain(TrackId(1)), false).unwrap();
     let before = app.session().unwrap().project().clone();
     for short in [false, true] {
         let (send, decoded) = std::sync::mpsc::channel();
@@ -270,25 +282,25 @@ fn empty_midi_track_drop_adds_sampler_before_loading_source() {
         &[],
     );
     let sample = drop::system_file(Path::new("/test.wav")).unwrap();
-    for target in [
-        DropTarget::Track(TrackId(1)),
-        DropTarget::Slot { track: TrackId(1), scene: 0 },
-        DropTarget::Lane { track: TrackId(1), beat: 0. },
-    ] {
+    // On the track's devices (the detail area): a Sampler that plays it.
+    let plan = app.plan_drop(std::slice::from_ref(&sample), DropTarget::Chain(TrackId(1)), false).unwrap();
+    assert_eq!(
+        plan.commands,
+        vec![
+            ("device.add", json!({"track":1,"id":"sampler"})),
+            ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
+        ]
+    );
+    // On its slot or lane: a clip, as on any track (the empty MIDI track becomes an audio one).
+    for target in [DropTarget::Slot { track: TrackId(1), scene: 0 }, DropTarget::Lane { track: TrackId(1), beat: 0. }] {
         let plan = app.plan_drop(std::slice::from_ref(&sample), target, false).unwrap();
-        assert_eq!(
-            plan.commands,
-            vec![
-                ("device.add", json!({"track":1,"id":"sampler"})),
-                ("device.loadSample", json!({"track":1,"device":0,"path":"/test.wav"}))
-            ]
-        );
+        assert_eq!(plan.commands[0].0, "clip.addFiles", "{target:?}");
     }
     let stems = drop::system_file(Path::new("/test.stem.mp4")).unwrap();
     let plan = app.plan_drop(&[stems], DropTarget::Lane { track: TrackId(1), beat: 0. }, false).unwrap();
     assert_eq!(plan.commands[0].0, "clip.addFiles");
     app.run_drop(vec![("device.add", json!({"track":1,"id":"sampler"}))]);
-    assert!(app.plan_drop(&[sample], DropTarget::Track(TrackId(1)), false).is_none());
+    assert!(app.plan_drop(&[sample], DropTarget::Chain(TrackId(1)), false).is_none());
 }
 
 #[test]
@@ -789,10 +801,10 @@ fn a_rename_in_place_covers_the_name_drawn_under_it() {
     harness.state_mut().rename = Some((json!({ "rename_track": track }), "Renamed".into(), false));
     harness.run();
     let field = harness.get_by_label("Track name").rect();
-    let back = theme::control_background().to_opaque();
+    // The back is the name's own colour (#916), opaque, so nothing drawn under it shows through.
     assert!(
         harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == back && rect.rect.contains_rect(field))),
+            egui::Shape::Rect(rect) if rect.fill.a() == u8::MAX && rect.rect.contains_rect(field))),
         "an opaque back under the field"
     );
 }
@@ -827,4 +839,47 @@ fn css_workspace_moves_native_controls_and_preserves_project_state() {
     assert!(harness.query_by_label("Detail area splitter").is_some());
     assert_eq!(harness.state().session().unwrap().project(), &before);
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+}
+
+/// A rename in the launcher view's header reads as the name itself: the name's size, centred in
+/// the header as the name is, and no selection colour of the theme's, which reads as a box of
+/// its own on a coloured header (#916).
+#[test]
+fn a_rename_in_a_session_header_reads_as_the_name() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_session(Session::new(crate::demo::demo_project()), &[]);
+    app.settings.animations = false;
+    app.shown = View::Session;
+    let track = app.session().unwrap().project().tracks[0].id.0;
+    let mut harness =
+        egui_kittest::Harness::builder().with_size((1280.0, 800.0)).build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.state_mut().rename = Some((json!({ "rename_track": track }), "Renamed".into(), false));
+    harness.run();
+    harness.run();
+    let field = harness.get_by_label("Track name").rect();
+    let text = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == "Renamed" => Some(text.clone()),
+            _ => None,
+        })
+        .expect("the field's text");
+    let size = text.galley.job.sections.first().map(|s| s.format.font_id.size);
+    assert_eq!(size, Some(theme::TEXT), "the name's own size");
+    let middle = text.pos.y + text.galley.size().y / 2.0;
+    assert!((middle - field.center().y).abs() <= 1.5, "centred: text at {middle}, field {field:?}");
+}
+
+/// Every copy in Suhina puts a line on the system clipboard, automation, devices and tracks too,
+/// so Ctrl+V reaches the keymap after it even when the clipboard held no text (#916).
+#[test]
+fn copies_put_a_line_on_the_system_clipboard() {
+    for command in ["automation.copy", "device.copy", "track.copy", "track.cut", "clip.copy", "note.cut"] {
+        assert!(clipboard_line(command).is_some_and(|line| line.starts_with("Suhina: ")), "{command}");
+    }
+    assert_eq!(clipboard_line("automation.paste"), None);
 }

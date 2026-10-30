@@ -481,7 +481,7 @@
       "name": "Mixing and routing",
       "features": [
         {
-          "name": "Channel strips in the Session view",
+          "name": "Channel strips in the Launcher view",
           "status": "done",
           "ref": "#491"
         },

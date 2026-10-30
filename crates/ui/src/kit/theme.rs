@@ -79,7 +79,7 @@ palette! {
     border, "border", 0x383733,
         "Hairlines between regions and rows";
     border_strong, "border.strong", 0x45433F,
-        "Session columns and arrangement track lines";
+        "Launcher columns and arrangement track lines";
     text_primary, "text.primary", 0xECE8E1,
         "Names and values";
     text_secondary, "text.secondary", 0x9A958C,
@@ -591,7 +591,7 @@ impl Theme {
 /// Original paint-only example, shared by the editor and portable packages.
 pub const GLOSS_EXAMPLE: &str = include_str!("../../themes/dark-gloss.css");
 
-/// Optional native Session density, shared by the editor and exported packages.
+/// Optional native Launcher density, shared by the editor and exported packages.
 pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-session.css");
 
 /// Optional panels own their dimensions so closed panels leave no fixed-size track.

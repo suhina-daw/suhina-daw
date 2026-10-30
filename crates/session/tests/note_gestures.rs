@@ -33,6 +33,7 @@ fn clip(content: u32, start: f64) -> Clip {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
         launch: Default::default(),
     }
@@ -99,6 +100,7 @@ fn project_built() -> Project {
                 clips: vec![clip(1, 0.0), clip(2, 4.0), clip(3, 8.0), clip(4, 12.0)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],

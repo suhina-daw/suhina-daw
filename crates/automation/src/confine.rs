@@ -29,6 +29,23 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
         "project.export" => confine_export(workspace, &mut params)?,
         "project.autosave" => confine_autosave(workspace, &params, source)?,
         "project.collect" => confine_collect(workspace, &mut params, source)?,
+        // Copies are written only into a folder below the write root (#865); the files they read
+        // are its `items`, checked below like any other.
+        "library.copyTo" => {
+            let folder = params.get("folder").and_then(Value::as_str).ok_or("folder must be a folder")?;
+            params["folder"] = json!(display_path(&workspace.writable_folder(Path::new(folder))?));
+        }
+        // A move writes where the files go and takes them from where they are (#943): both the
+        // folder and the folder of every item are below the write root.
+        "library.moveTo" => {
+            let folder = params.get("folder").and_then(Value::as_str).ok_or("folder must be a folder")?;
+            params["folder"] = json!(display_path(&workspace.writable_folder(Path::new(folder))?));
+            let items = params.get("items").and_then(Value::as_array).cloned().unwrap_or_default();
+            for item in items {
+                let path = Path::new(item.as_str().ok_or("items must be a list of file paths")?);
+                workspace.writable_folder(path.parent().ok_or("an item has no folder")?)?;
+            }
+        }
         _ => {}
     }
     for param in suhina_session::params_of(id).unwrap_or_default() {
@@ -481,6 +498,23 @@ mod from_the_tool_lists {
         assert_eq!(export(&workspace, json!({})).unwrap(), json!({}));
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn library_move_to_takes_files_only_from_below_the_write_root() {
+        let (dir, _) = roots("move");
+        std::fs::create_dir_all(dir.join("inside/out")).unwrap();
+        // Read and write roots both inside: the pack's kick may move into out.
+        let workspace = Workspace::new(Some(&dir.join("inside")), Some(&dir.join("inside"))).unwrap();
+        let kick = dir.join("inside/pack/kick.wav").display().to_string();
+        let out = dir.join("inside/out").display().to_string();
+        let ok = confine(&workspace, "library.moveTo", json!({ "items": [kick], "folder": out }), None);
+        assert!(ok.is_ok(), "{ok:?}");
+        // With the write root only out, the kick cannot be taken from the pack.
+        let narrow = Workspace::new(Some(&dir.join("inside")), Some(&dir.join("inside/out"))).unwrap();
+        let out = dir.join("inside/out").display().to_string();
+        assert!(confine(&narrow, "library.moveTo", json!({ "items": [kick], "folder": out }), None).is_err());
+    }
+
     #[test]
     fn sd_sample_path_obeys_the_same_read_boundary_as_the_graph() {
         let (dir, workspace) = roots("sd-sample");

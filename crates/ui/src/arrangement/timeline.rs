@@ -108,6 +108,11 @@ pub struct ClipBox {
     /// What the clip is known by from one build to the next (its content and its start), so a
     /// stacked clip keeps its sub-row when another goes.
     pub stack_key: (u32, u64),
+    /// The number on its track (from 1) of the take it was comped from, for a part of a comp: it
+    /// is named and coloured after that take (#989).
+    pub take: Option<usize>,
+    /// It plays through its channel's ARA plug-in (#990).
+    pub ara: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,7 +145,7 @@ pub struct Lane {
     pub volume_db: f64,
     pub pan: f64,
     /// The track's sends, one per return track in track order (none on a return), as the
-    /// Session view's strip has them.
+    /// Launcher view's strip has them.
     pub sends: Vec<crate::interaction::grid::SendKnob>,
     /// The group track this track plays into; `None` is the main output.
     pub output: Option<TrackId>,
@@ -202,6 +207,8 @@ pub struct Timeline {
     pub beat: f64,
     /// The play start marker: where the transport starts, in beats.
     pub start_beat: f64,
+    /// Where a seek from the ruler goes while it waits for its launch boundary (#657).
+    pub pending_jump: Option<f64>,
     /// The arrangement's markers, in beat order.
     pub markers: Vec<MarkerFlag>,
     /// The loop region, when the project has one (on or off).
@@ -220,7 +227,52 @@ pub struct Timeline {
     pub tempo: Option<suhina_engine::model::TempoMap>,
     /// The parameters each track's automation lanes can show, with their points.
     pub automation: crate::arrangement::automation_lanes::Params,
+    /// The take lanes under tracks that recorded into the arrangement (`docs/spec/recording.md` ›
+    /// Take lanes), in the order they were recorded.
+    pub takes: Vec<TakeRow>,
+    /// The takes recording into the arrangement now, set by the app every frame (#909).
+    pub live_takes: Vec<suhina_session::LiveTake>,
 }
+
+/// One take lane: its track, its number on the track (from 1, as `take.comp` names it), its
+/// name and its clips.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeRow {
+    pub track: TrackId,
+    pub number: usize,
+    pub name: String,
+    pub clips: Vec<ClipBox>,
+    /// Its colour: its own, or the palette's in turn ([`take_colour`]).
+    pub color: Rgb,
+    /// The spans of it that are on the track (start, end in beats): drawn lit, the rest dimmed
+    /// (#989).
+    pub used: Vec<(f64, f64)>,
+}
+
+/// The colour of a track's take `number` (from 1) while it has none of its own: the palette's
+/// colours in turn, three apart so neighbouring takes differ (#953).
+pub fn take_colour(number: usize) -> Rgb {
+    let swatches = crate::interaction::colour_picker::swatches();
+    swatches[number.saturating_mul(3) % swatches.len()]
+}
+
+/// A take as it is shown: its track's name and its own, "Bass Take 2" (#989), so a renamed
+/// track's takes follow it.
+fn take_name(project: &Project, take: &suhina_engine::model::TakeLane) -> String {
+    format!("{} {}", project.shown_track_name(take.track), take.name)
+}
+
+/// The number on its track (from 1), name and colour of piece `piece` of take `index` of
+/// `arrangement.takes`: the piece's own colour, else the take's, else the palette's in turn.
+fn take_of(project: &Project, index: usize, piece: usize) -> Option<(usize, String, Rgb)> {
+    let take = project.arrangement.takes.get(index)?;
+    let number = project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
+    let colour = take.clips.get(piece).and_then(|c| c.color).or(take.color).unwrap_or_else(|| take_colour(number));
+    Some((number, take_name(project, take), colour))
+}
+
+/// How many take lanes a track needs before they are shown.
+pub const TAKES_SHOWN_FROM: usize = 1;
 
 impl Lane {
     /// Where the track sits in the track list.
@@ -294,6 +346,7 @@ impl Timeline {
                 channel.is_some_and(|c| c.role == ChannelRole::Effect)
             })
             .collect();
+        let mut number = 0;
         for (position, track) in project.tracks.iter().enumerate() {
             let channel = track.channel.and_then(|id| project.channel(id));
             let kind = match channel.map(|c| c.role) {
@@ -302,6 +355,9 @@ impl Timeline {
                 Some(ChannelRole::Submix) => ColumnKind::Group,
                 _ => ColumnKind::Track,
             };
+            if kind != ColumnKind::Return {
+                number += 1;
+            }
             let track_color = track_colour(track, position);
             let clips = project
                 .arrangement
@@ -313,37 +369,16 @@ impl Timeline {
                         .iter()
                         .enumerate()
                         .map(|(index, clip)| {
-                            let content = project.content(clip.content);
-                            let looped = clip.loop_range.is_some();
-                            let audio =
-                                content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
-                            ClipBox {
-                                id: clip.id,
-                                color: clip.color.unwrap_or(track_color),
-                                stack_key: (clip.content.0, clip.start.to_bits()),
-                                earliest_start: if looped { 0.0 } else { (clip.start - clip.offset).max(0.0) },
-                                latest_end: content
-                                    .filter(|_| audio && !looped)
-                                    .map(|c| clip.start - clip.offset + c.length),
-                                index,
-                                start: clip.start,
-                                length: clip.length,
-                                name: content.map(|c| c.name.clone()).unwrap_or_default(),
-                                enabled: clip.enabled,
-                                fade_in: clip.fade_in,
-                                fade_out: clip.fade_out,
-                                fade_in_curve: clip.fade_in_curve,
-                                fade_out_curve: clip.fade_out_curve,
-                                audio: content
-                                    .is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
-                                audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
-                                notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
-                                seams: loop_seams(clip),
-                                loop_range: clip.loop_range,
-                                offset: clip.offset,
-                                row: 0,
-                                rows: 1,
+                            let mut shown = clip_box(project, clip, index, track_color);
+                            // A part of a comp: named and coloured after its take (#989).
+                            if let Some((number, name, color)) =
+                                project.comp_piece(track.id, clip).and_then(|(i, piece)| take_of(project, i, piece))
+                            {
+                                shown.take = Some(number);
+                                shown.name = name;
+                                shown.color = clip.color.unwrap_or(color);
                             }
+                            shown
                         })
                         .collect()
                 })
@@ -351,7 +386,12 @@ impl Timeline {
             let clips = sub_rows(clips, track.id, rows_before, &mut stack_rows);
             let lane = Lane {
                 track: track.id,
-                name: track.name.clone(),
+                // Its `#` read as its number (#946).
+                name: if kind == ColumnKind::Return {
+                    track.name.clone()
+                } else {
+                    suhina_engine::model::names::shown_with_number(&track.name, number)
+                },
                 color: track_colour(track, position),
                 kind,
                 notes: kind == ColumnKind::Track && track.content.notes,
@@ -419,6 +459,7 @@ impl Timeline {
             .fold(0.0, f64::max);
         let main_volume_db =
             project.channels.iter().find(|c| c.role == ChannelRole::Master).map(|c| gain_to_db(c.volume));
+        let takes = take_rows(project);
         let mut timeline = Self {
             recording_spans: Vec::new(),
             stack_rows,
@@ -436,11 +477,14 @@ impl Timeline {
             running: false,
             beat: 0.0,
             start_beat: 0.0,
+            pending_jump: None,
             markers,
             loop_brace,
             overrides: false,
             waveforms: Arc::default(),
             automation: crate::arrangement::automation_lanes::Params::build(project),
+            takes,
+            live_takes: Vec::new(),
         };
         timeline.follow(monitor);
         timeline
@@ -474,6 +518,7 @@ impl Timeline {
         self.running = running;
         self.beat = beats(beat);
         self.start_beat = beats(start);
+        self.pending_jump = monitor.and_then(LauncherMonitor::pending_jump).filter(|_| running);
         // Which tracks play launched clips instead of their arrangement clips: their lanes
         // dim, and the arrangement shows Back to arrangement while any does.
         for lane in &mut self.lanes {
@@ -519,7 +564,7 @@ impl Folds {
         }
     }
 
-    /// The folded groups as a set, for the views that share them (the Session view's columns,
+    /// The folded groups as a set, for the views that share them (the Launcher view's columns,
     /// the track list's drop targets).
     pub fn groups(&self) -> std::collections::BTreeSet<TrackId> {
         self.folded.iter().copied().collect()
@@ -586,6 +631,79 @@ fn holds(project: &Project, group: TrackId, track: TrackId) -> bool {
 pub(crate) fn inside_lanes<T: std::borrow::Borrow<Lane>>(lanes: &[T], index: usize) -> usize {
     let depth = lanes.get(index).map_or(0, |l| l.borrow().depth);
     lanes.iter().skip(index.saturating_add(1)).take_while(|l| l.borrow().depth > depth).count()
+}
+
+/// The take lanes of tracks with at least [`TAKES_SHOWN_FROM`] takes, numbered per track.
+fn take_rows(project: &Project) -> Vec<TakeRow> {
+    let mut rows = Vec::new();
+    for track in &project.tracks {
+        let takes: Vec<&suhina_engine::model::TakeLane> =
+            project.arrangement.takes.iter().filter(|t| t.track == track.id).collect();
+        if takes.len() < TAKES_SHOWN_FROM {
+            continue;
+        }
+        let indices: Vec<usize> = (0..project.arrangement.takes.len())
+            .filter(|&i| project.arrangement.takes.get(i).is_some_and(|t| t.track == track.id))
+            .collect();
+        rows.extend(takes.into_iter().zip(indices).enumerate().map(|(i, (take, index))| {
+            TakeRow {
+                track: track.id,
+                number: i + 1,
+                name: take_name(project, take),
+                // Each piece in its own colour or the take's, named after the take.
+                clips: take
+                    .clips
+                    .iter()
+                    .enumerate()
+                    .map(|(piece, clip)| {
+                        let own = take.color.unwrap_or_else(|| take_colour(i + 1));
+                        ClipBox {
+                            name: take_name(project, take),
+                            take: Some(i + 1),
+                            ..clip_box(project, clip, piece, clip.color.unwrap_or(own))
+                        }
+                    })
+                    .collect(),
+                color: take.color.unwrap_or_else(|| take_colour(i + 1)),
+                used: project.comp_used(index),
+            }
+        }));
+    }
+    rows
+}
+
+/// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
+fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
+    let content = project.content(clip.content);
+    let looped = clip.loop_range.is_some();
+    let audio = content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
+    ClipBox {
+        id: clip.id,
+        color: clip.color.unwrap_or(track_color),
+        stack_key: (clip.content.0, clip.start.to_bits()),
+        // A MIDI clip goes on before its notes (#832); an audio clip's audio starts where it does.
+        earliest_start: if looped || !audio { 0.0 } else { (clip.start - clip.offset).max(0.0) },
+        latest_end: content.filter(|_| audio && !looped).map(|c| clip.start - clip.offset + c.length),
+        index,
+        start: clip.start,
+        length: clip.length,
+        name: content.map(|c| c.name.clone()).unwrap_or_default(),
+        enabled: clip.enabled,
+        fade_in: clip.fade_in,
+        fade_out: clip.fade_out,
+        fade_in_curve: clip.fade_in_curve,
+        fade_out_curve: clip.fade_out_curve,
+        audio: content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
+        audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
+        notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
+        seams: loop_seams(clip),
+        loop_range: clip.loop_range,
+        offset: clip.offset,
+        row: 0,
+        rows: 1,
+        take: None,
+        ara: clip.ara,
+    }
 }
 
 /// What an audio clip needs to draw its waveform: the engine's mapping from beats to the file.

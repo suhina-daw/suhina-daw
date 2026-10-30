@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Settings of the window's layout and editing that live in their own lines of the settings
-//! file: the Session mixer's height, where the detail area goes, and whether a double-click on an
+//! file: the Launcher mixer's height, where the detail area goes, and whether a double-click on an
 //! empty slot or lane makes a clip (`docs/design/components.md` › Settings).
 
-/// The Session mixer's height in points: the least, the default and the most a file may say
+/// The Launcher mixer's height in points: the least, the default and the most a file may say
 /// (the view clamps it further to the space it has).
 pub const MIXER_HEIGHTS: (u32, u32, u32) = (46, 166, 2000);
 
@@ -75,6 +75,35 @@ impl DetailLayout {
     }
 }
 
+/// What samples dropped on a folder in the browser do (#943).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FolderDrop {
+    /// A question asks whether to move or copy them, and can remember the answer.
+    #[default]
+    Ask,
+    Move,
+    Copy,
+}
+
+impl FolderDrop {
+    fn param(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Move => "move",
+            Self::Copy => "copy",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "ask" => Some(Self::Ask),
+            "move" => Some(Self::Move),
+            "copy" => Some(Self::Copy),
+            _ => None,
+        }
+    }
+}
+
 /// The settings this module reads and writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewSettings {
@@ -86,7 +115,7 @@ pub struct ViewSettings {
     pub audio_colour_strength: u8,
     /// Track header colour strength, as a percentage of its source RGB colour.
     pub header_colour_strength: u8,
-    /// The Session mixer's height, in points.
+    /// The Launcher mixer's height, in points.
     pub mixer_height: u32,
     /// The strips' fader height the divider under their device lists sets, in points; 0 is
     /// automatic.
@@ -94,6 +123,9 @@ pub struct ViewSettings {
     pub detail_layout: DetailLayout,
     /// A double-click on an empty slot or an empty spot of a lane makes an empty clip of the track's kind.
     pub double_click_clip: bool,
+    /// A click anywhere on an automation lane adds a point; off (the default), only a click on or
+    /// near the line does, and a double-click adds one anywhere.
+    pub automation_click_anywhere: bool,
     /// Clip menus carry a name field that renames in place, instead of Rename (off by default).
     pub menu_name_field: bool,
     /// Notes moved onto others of the same key and start replace them (on by default).
@@ -144,7 +176,42 @@ pub struct ViewSettings {
     pub recent_chips: bool,
     /// The Arrangement view leaves out the return tracks' rows (its "Hide returns" button).
     pub returns_hidden: bool,
+    /// A new blank project gets the A and B return tracks (on by default); off, it starts with
+    /// none, so no sends show until a return is inserted (#898).
+    pub new_returns: bool,
+    /// A copy of a track whose name is taken reads "Bass (2)" (on by default) or, off, "Bass #2"
+    /// (#946).
+    pub copy_wrapped: bool,
+    /// Alt and the wheel change only the lane under the pointer (a track's or an automation
+    /// lane's); off (the default), every lane (#957).
+    pub alt_wheel_one: bool,
+    /// What samples dropped on a folder in the browser do: ask, move or copy (#943).
+    pub folder_drop: FolderDrop,
+    /// The Arrangement's toolbar of tools shows, and the tool keys choose them while it has the
+    /// focus (off by default, #991).
+    pub arrangement_toolbar: bool,
+    /// The Arrangement's grid when Suhina starts, and again when this is changed: a fixed value
+    /// such as `1/4` or an adaptive width such as `adaptive narrow` (1/4 by default).
+    pub default_grid: &'static str,
 }
+
+/// The values Settings › Arrangement › Default grid offers, as the settings file keeps them.
+pub const DEFAULT_GRIDS: [&str; 14] = [
+    "adaptive widest",
+    "adaptive wide",
+    "adaptive medium",
+    "adaptive narrow",
+    "adaptive narrowest",
+    "8 bars",
+    "4 bars",
+    "2 bars",
+    "1 bar",
+    "1/2",
+    "1/4",
+    "1/8",
+    "1/16",
+    "1/32",
+];
 
 impl Default for ViewSettings {
     fn default() -> Self {
@@ -158,6 +225,7 @@ impl Default for ViewSettings {
             strip_fader: 0,
             detail_layout: DetailLayout::Beside,
             double_click_clip: true,
+            automation_click_anywhere: false,
             menu_name_field: false,
             notes_replace: true,
             replace_clip: false,
@@ -179,15 +247,27 @@ impl Default for ViewSettings {
             new_clip_track_colour: true,
             recent_chips: false,
             returns_hidden: false,
+            new_returns: true,
+            copy_wrapped: true,
+            alt_wheel_one: false,
+            folder_drop: FolderDrop::Ask,
+            arrangement_toolbar: false,
+            default_grid: "1/4",
         }
     }
 }
 
 impl ViewSettings {
+    /// How a copy of a track with a taken name reads, as `track.paste` and `track.duplicate`
+    /// take it: "wrapped" ("Bass (2)") or "hash" ("Bass #2").
+    pub fn copy_suffix(&self) -> &'static str {
+        if self.copy_wrapped { "wrapped" } else { "hash" }
+    }
+
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\n",
+            "session_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\n",
             self.mixer_height,
             self.strip_fader,
             self.detail_layout.param(),
@@ -202,9 +282,15 @@ impl ViewSettings {
             if self.new_clip_track_colour { "track" } else { "theme" },
             if self.recent_chips { "chips" } else { "indented" },
             if self.returns_hidden { "hidden" } else { "shown" },
+            if self.new_returns { "two" } else { "none" },
+            self.copy_suffix(),
+            if self.alt_wheel_one { "pointer" } else { "all" },
+            self.folder_drop.param(),
+            if self.arrangement_toolbar { "on" } else { "off" },
             if self.clip_halves { "halves" } else { "name_bar" },
             if self.grid_in_clips { "on" } else { "off" },
             f64::from(self.waveform_zoom) / 100.0,
+            if self.automation_click_anywhere { "anywhere" } else { "line" },
         ) + &format!(
             "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
             self.waveform.mode.name(),
@@ -221,6 +307,7 @@ impl ViewSettings {
                 self.app_name_centered, self.bar_project_name, self.bar_project_timing, self.bar_project_centered
             )
             + &format!("background_tint = {}\nbackground_blur = {}\n", self.background_tint, self.background_blur)
+            + &format!("arrangement_grid = {}\n", self.default_grid)
             + &self.track_sizes.to_text()
     }
 
@@ -298,6 +385,7 @@ impl ViewSettings {
             ("detail_layout", "beside") => self.detail_layout = DetailLayout::Beside,
             ("detail_layout", "full_width") => self.detail_layout = DetailLayout::FullWidth,
             ("double_click_clip", "on" | "off") => self.double_click_clip = value == "on",
+            ("automation_click", "anywhere" | "line") => self.automation_click_anywhere = value == "anywhere",
             ("menu_name_field", "on" | "off") => self.menu_name_field = value == "on",
             ("notes_replace", "on" | "off") => self.notes_replace = value == "on",
             ("time_select", "ctrl_drag" | "clip_lower_half") => self.time_select_ctrl = value == "ctrl_drag",
@@ -308,6 +396,16 @@ impl ViewSettings {
             ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
+            ("new_project_returns", "two" | "none") => self.new_returns = value == "two",
+            ("copy_names", "wrapped" | "hash") => self.copy_wrapped = value == "wrapped",
+            ("alt_wheel", "pointer" | "all") => self.alt_wheel_one = value == "pointer",
+            ("browser_folder_drop", drop) if FolderDrop::parse(drop).is_some() => {
+                self.folder_drop = FolderDrop::parse(drop).unwrap_or_default();
+            }
+            ("arrangement_toolbar", "on" | "off") => self.arrangement_toolbar = value == "on",
+            ("arrangement_grid", grid) if DEFAULT_GRIDS.contains(&grid) => {
+                self.default_grid = DEFAULT_GRIDS.iter().find(|g| **g == grid).copied().unwrap_or("1/4");
+            }
             ("clip_drag", "halves" | "name_bar") => self.clip_halves = value == "halves",
             ("clip_grid", "on" | "off") => self.grid_in_clips = value == "on",
             ("waveform_zoom", zoom) => match zoom.parse::<f32>() {
@@ -347,6 +445,7 @@ mod tests {
             strip_fader: 90,
             detail_layout: DetailLayout::FullWidth,
             double_click_clip: false,
+            automation_click_anywhere: true,
             menu_name_field: true,
             notes_replace: false,
             time_select_ctrl: true,
@@ -360,6 +459,12 @@ mod tests {
             new_clip_track_colour: false,
             recent_chips: true,
             returns_hidden: true,
+            new_returns: false,
+            copy_wrapped: false,
+            alt_wheel_one: true,
+            folder_drop: FolderDrop::Copy,
+            arrangement_toolbar: true,
+            default_grid: "adaptive narrow",
             replace_clip: true,
             menu_bar: false,
             app_name_centered: true,

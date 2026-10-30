@@ -12,8 +12,10 @@ use std::fmt;
 
 pub mod automation;
 mod build;
+mod comping;
 mod groups;
 mod ids;
+pub mod names;
 mod tempo;
 
 pub use tempo::{
@@ -39,6 +41,13 @@ pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TrackId(pub u32);
+
+impl TrackId {
+    /// The main channel, which has no track of its own: commands, the engine and the views name
+    /// it by this id where they name a track ([`Project::channel_of_track`], #687). No track has
+    /// it; the largest id is never handed out to one.
+    pub const MAIN: Self = Self(u32::MAX);
+}
 
 /// Identifies a [`Channel`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -293,6 +302,9 @@ pub struct Device {
     /// The device's parameters over the arrangement, one lane per parameter (by the same id as
     /// in `params`), for plug-ins and built-in effects and instruments alike.
     pub automation: Vec<AutomationLane>,
+    /// The channel's ARA plug-in that edits its clips (ADR 0028 › Amendment: the ARA plug-in
+    /// belongs to the clip, #990): always its first device, not shown in its device list.
+    pub clip_host: bool,
     pub extensions: Extensions,
 }
 
@@ -560,6 +572,10 @@ pub struct Clip {
     /// The clip's own colour; `None` shows its track's, so a new clip takes the track's colour
     /// and follows it. A clip moved to another track keeps the colour it had.
     pub color: Option<Rgb>,
+    /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0028 › Amendment: the
+    /// ARA plug-in belongs to the clip, #990): its raw audio is edited there, then its gain and
+    /// fades follow. Arrangement audio clips only.
+    pub ara: bool,
     pub extensions: Extensions,
 }
 
@@ -825,6 +841,23 @@ pub struct Arrangement {
     pub lanes: Vec<ArrangementLane>,
     /// Named positions on the timeline, sorted by beat ([`Arrangement::sort_markers`]).
     pub markers: Vec<Marker>,
+    /// Recorded passes kept under their tracks (take lanes), oldest first: what a recording
+    /// into the arrangement played, pass by pass, so parts of each can be put together on the
+    /// track (comping, ADR 0001 › Amendment: take lanes). They do not play.
+    pub takes: Vec<TakeLane>,
+}
+
+/// One recorded pass of a track: its clips, on the arrangement's beats. Their clips have no ids
+/// ([`ClipId::NONE`]): commands name a take by its track and its number, and comping copies a
+/// part of one onto the track as a new clip.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeLane {
+    pub track: TrackId,
+    /// Its name, as the window shows it ("Take 3").
+    pub name: String,
+    pub clips: Vec<Clip>,
+    /// Its colour, set from its menu (Recolor lane, #989); `None` takes the palette's in turn.
+    pub color: Option<Rgb>,
 }
 
 impl Arrangement {
@@ -1175,6 +1208,12 @@ impl Project {
                 }
             }
         }
+        for take in &self.arrangement.takes {
+            track_ref(take.track, &mut errors);
+            for clip in &take.clips {
+                content_ref(clip.content, &mut errors);
+            }
+        }
         for (index, marker) in self.arrangement.markers.iter().enumerate() {
             if !marker.is_valid() {
                 errors.push(ValidationError::BadMarker(index));
@@ -1364,6 +1403,7 @@ mod tests {
                     clips: vec![clip(1, 0.0)],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             launcher: Launcher {
                 mappings: Vec::new(),
@@ -1408,6 +1448,7 @@ mod tests {
                     clips: vec![clip(1, 0.0), clip(1, 4.0)],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Project::default()
         };
@@ -1434,6 +1475,7 @@ mod tests {
                     clips: vec![clip(3, 0.0)],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Project::default()
         };
@@ -1519,6 +1561,7 @@ mod tests {
                     clips: vec![with(1.0, 1.0), with(3.0, 3.0)],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Project::default()
         };
@@ -1578,6 +1621,7 @@ mod tests {
             arrangement: Arrangement {
                 lanes: Vec::new(),
                 markers: vec![Marker::new(0.0, "ok"), Marker::new(-1.0, "before"), Marker::new(f64::NAN, "nan")],
+                takes: Vec::new(),
             },
             ..Project::default()
         };

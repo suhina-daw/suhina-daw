@@ -29,7 +29,7 @@ The technical details (the presets, the mouse switches and the keymap file) are 
   - **Anywhere**: in any view, as long as you are not typing in a text field.
   - **Piano roll**: only after you have clicked inside the piano roll (the editor that shows a
     MIDI clip's notes). Until you click there, the same keys keep their other uses.
-  - **Session slot**: in the Session view, when a clip slot is selected. A slot is one of the boxes
+  - **Launcher slot**: in the Launcher view, when a clip slot is selected. A slot is one of the boxes
     in a track's column that holds a clip.
   - **Selection**: acts on what is selected. In the arrangement that is the selected clips; in the
     piano roll, after a click in it, the selected notes.
@@ -74,7 +74,7 @@ The project you leave stops playing.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Tab | `view.toggle` | Anywhere | Switches between the Session view (clips in a grid of slots, launched by hand) and the Arrangement view (clips on a timeline). |
+| Tab | `view.toggle` | Anywhere | Switches between the Launcher view (clips in a grid of slots, launched by hand) and the Arrangement view (clips on a timeline). |
 | Shift+Tab | `view.detail` | Anywhere | Shows or hides the detail area at the bottom of the window, where the clip editor and the track's effects and instruments are. |
 | Ctrl+Shift+E | `view.editor` | Anywhere | Hides the clip editor, or shows it again. In the piano roll, Escape still only clears the note selection. |
 | Alt+M | `view.araEditor` | Arrangement | Opens the selected audio clip in its track's plug-in that edits clips (such as a pitch editor): the detail area shows the clip with the plug-in's editor. |
@@ -82,7 +82,11 @@ The project you leave stops playing.
 | Ctrl+F | `browser.search` | Anywhere | Puts the cursor in the browser's search field, and shows the browser when it is hidden. In the field, Up and Down move through the results, Enter adds the selected result to the selected track, and Escape clears the search and then leaves the field. |
 | Ctrl+Alt+Shift+M | `view.sampleMap` | Anywhere | Shows or hides the sample map in the main area. The sample map places your samples on a map by how they sound, so similar sounds are close together. Escape on the map closes it too. |
 | Ctrl+Alt+M | `view.sampleMapWindow` | Anywhere | Opens the sample map in a window of its own, or puts it back in the main window. |
-| Ctrl+M | `view.mappingMode` | Anywhere | Starts or stops key mapping. While mapping, you click a clip slot, a scene or a stop button and press a key to launch it with. While the Session view is shown, a key mapped this way wins over its shortcut. |
+| 1 to 6 | `arrangement.tool1` … `arrangement.tool6` | Arrangement | With the Arrangement's toolbar on (Settings › Arrangement › Toolbar) and the Arrangement clicked last, choose its Select, Range, Split, Erase, Draw and Mute tools. With the piano roll clicked last, the same keys choose the piano roll's tools. |
+| Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4 | `arrangement.gridNarrow`, `arrangement.gridWiden`, `arrangement.gridTriplet`, `arrangement.gridSnap` | Arrangement | With the Arrangement clicked last, make its grid finer or coarser, turn triplets on or off, or turn snapping on or off. With the piano roll clicked last, the same keys change the piano roll's grid. |
+| Alt+Up, Alt+Down | `selection.takeUp`, `selection.takeDown` | Arrangement | Swaps each selected part of a comp (a part put on the track from a take lane) for the same span of the take above or below it, going round the takes. |
+| Ctrl+K | `view.computerKeyboard` | Anywhere | Turns the computer keyboard's notes on or off. While on, A W S E D F T G Y H U J K (and O L P ;) play the armed tracks like a piano's keys, Z and X move the octave and C and V the velocity, and those keys run no shortcut. The control bar's **Keys** button does the same. |
+| Ctrl+M | `view.mappingMode` | Anywhere | Starts or stops key mapping. While mapping, you click a clip slot, a scene or a stop button and press a key to launch it with. While the Launcher view is shown, a key mapped this way wins over its shortcut. |
 | Ctrl+, | `settings.open` | Anywhere | Opens Settings, or closes it when it is open. |
 | Ctrl+Plus or Ctrl+= | `view.zoomIn` | Anywhere | Makes everything in the window larger, in 10 % steps up to 200 %. Both keys work because on some keyboards Plus needs Shift. |
 | Ctrl+Minus | `view.zoomOut` | Anywhere | Makes everything in the window smaller, in 10 % steps down to 50 %. |
@@ -134,17 +138,17 @@ of clip is on.
 | Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. With devices picked (clicked in a mixer strip's device list or in the device chain), it puts those devices into a device group instead: one box that holds them, with branches that run side by side. |
 | Ctrl+Shift+G | `selection.ungroup` | A picked device group | Takes a device group of one branch apart, putting its devices back in its place. |
 
-## Session view
+## Launcher view
 
-These keys work in the Session view when a clip slot is selected.
+These keys work in the Launcher view when a clip slot is selected.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
-| Enter | `selection.launch` | Session slot | Launches the clip in the selected slot: it starts playing at the next launch point. |
-| Up | `selection.up` | Session slot | Selects the slot above. |
-| Down | `selection.down` | Session slot | Selects the slot below. |
-| Left | `selection.left` | Session slot | Selects the slot in the track to the left. |
-| Right | `selection.right` | Session slot | Selects the slot in the track to the right. |
+| Enter | `selection.launch` | Launcher slot | Launches the clip in the selected slot: it starts playing at the next launch point. |
+| Up | `selection.up` | Launcher slot | Selects the slot above. |
+| Down | `selection.down` | Launcher slot | Selects the slot below. |
+| Left | `selection.left` | Launcher slot | Selects the slot in the track to the left. |
+| Right | `selection.right` | Launcher slot | Selects the slot in the track to the right. |
 
 ## Piano roll
 

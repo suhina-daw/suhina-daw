@@ -227,6 +227,7 @@ fn everything() -> Project {
                 },
             ],
             markers: vec![Marker::new(0.0, "Intro"), Marker::new(16.0, "Verse"), Marker::new(16.0, "")],
+            takes: Vec::new(),
         },
         launcher: Launcher {
             mappings: vec![
@@ -305,6 +306,50 @@ fn launch_mappings_are_written_with_their_targets() {
     );
     let empty: Value = serde_json::from_str(&to_json(&Project::default())).unwrap();
     assert!(empty["project"]["launcher"].get("mappings").is_none(), "{empty}");
+}
+
+/// A clip edited by its channel's ARA plug-in and the channel's clip host survive a round trip
+/// (#990); neither is written when not set.
+#[test]
+fn a_clip_host_and_its_ara_clips_survive_a_round_trip() {
+    let mut project = everything();
+    assert!(!to_json(&project).contains("\"clip_host\"") && !to_json(&project).contains("\"ara\""));
+    let lane = project.arrangement.lanes.iter_mut().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    lane.clips[0].ara = true;
+    let channel = project.channels.iter_mut().find(|c| !c.devices.is_empty()).unwrap();
+    channel.devices[0].clip_host = true;
+    let text = to_json(&project);
+    assert!(text.contains("\"clip_host\": true") && text.contains("\"ara\": true"), "{text}");
+    assert_eq!(from_json(&text), Ok(project));
+}
+
+/// Take lanes (#909) are written under the arrangement with their track, name and clips, the
+/// clips without ids, and left out when there are none.
+#[test]
+fn take_lanes_survive_a_round_trip() {
+    let mut project = everything();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    project.arrangement.takes = vec![
+        TakeLane {
+            track,
+            name: "Take 1".into(),
+            clips: vec![Clip { id: ClipId::NONE, ..clip.clone() }],
+            color: Some(Rgb(0x12, 0x34, 0x56)),
+        },
+        TakeLane {
+            track,
+            name: "Take 2".into(),
+            clips: vec![Clip { id: ClipId::NONE, start: 4.0, ..clip }],
+            color: None,
+        },
+    ];
+    assert_eq!(project.validate(), Ok(()));
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(written["project"]["arrangement"]["takes"][1]["name"], json!("Take 2"));
+    assert_eq!(from_json(&text), Ok(project));
+    assert!(!to_json(&everything()).contains("\"takes\""), "none, none written");
 }
 
 #[test]
@@ -1060,6 +1105,11 @@ fn a_device_group_survives_a_round_trip() {
 fn every_feature() -> Project {
     let mut project = everything();
     project.channels[0].devices.extend(with_a_group().channels[0].devices.clone());
+    // Version 4: take lanes (#909).
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    project.arrangement.takes =
+        vec![TakeLane { track, name: "Take 1".into(), clips: vec![Clip { id: ClipId::NONE, ..clip }], color: None }];
     project
 }
 
@@ -1068,7 +1118,7 @@ fn version_file(version: u64) -> std::path::PathBuf {
 }
 
 /// One file per version, as that version wrote it, and every one of them still reads: version 1
-/// without the device group it could not hold.
+/// without the device group it could not hold, versions before 4 without take lanes.
 #[test]
 fn a_file_of_every_version_reads() {
     for version in 1..=VERSION {
@@ -1079,6 +1129,8 @@ fn a_file_of_every_version_reads() {
             expected.channels[0].devices.retain(|d| d.as_group().is_none());
         }
         if version < 4 {
+            // Take lanes came with version 4.
+            expected.arrangement.takes.clear();
             // A curve outside the mirrored family needs two control points.
             for point in expected
                 .channels

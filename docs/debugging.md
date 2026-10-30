@@ -103,7 +103,7 @@ The parts, in the order the frame draws them: `input` (keys, polls, the sample m
 `grid` (the session's state for the views), `bars` (menu, control and status bars), `browser`,
 `detail` (the detail area: clip column, devices, piano roll), `view setup`, `timeline` (the
 Arrangement's lanes and clips, rebuilt only after the project changed: `timeline rebuilt`),
-`arrangement view` or `session view` (drawing it), `views`, `drags`, `dialogs`, `commands`
+`arrangement view` or `launcher view` (drawing it), `views`, `drags`, `dialogs`, `commands`
 (running what the frame asked for), `quit check` (advancing all projects' nonblocking plug-in state checks
 before asking whether to save on quit) and `rest`. The part that stands
 out is where to look.

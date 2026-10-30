@@ -433,6 +433,39 @@ impl Projects {
         self.tabs.open.iter_mut().find(|o| o.id == id).map(|o| &mut o.session)
     }
 
+    /// Gives every other open project what `from` (the active one for `None`) copied: tracks,
+    /// clips, devices and notes, so a copy in one tab pastes into any tab (#919). Pastes give
+    /// what they place ids of the project they paste into. The tracks copied clips came from are
+    /// that project's own, so elsewhere a clip paste names its track. [`Projects::execute`] does
+    /// it after a copy or a cut; a caller that runs those on a session directly, as the window
+    /// does, calls it after them.
+    pub fn share_clipboards(&mut self, from: Option<ProjectId>) {
+        let from = from.or(self.tabs.active);
+        let Some(copied) = from.and_then(|t| self.tabs.open.iter().find(|o| o.id == t)) else { return };
+        let mut clipboards = copied.session.clipboards.clone();
+        clipboards.tracks.clear();
+        for open in self.tabs.open.iter_mut().filter(|o| Some(o.id) != from) {
+            open.session.clipboards = clipboards.clone();
+        }
+    }
+
+    /// Whether `id` is a command that fills a clipboard, after which [`Projects::share_clipboards`]
+    /// gives every tab what it copied.
+    pub fn copies(id: &str) -> bool {
+        matches!(
+            id,
+            "track.copy"
+                | "track.cut"
+                | "clip.copy"
+                | "clip.cut"
+                | "range.copy"
+                | "range.cut"
+                | "device.copy"
+                | "note.copy"
+                | "note.cut"
+        )
+    }
+
     /// The session `id` names, or the active one when `id` is `None`.
     pub fn session_mut(&mut self, id: Option<ProjectId>) -> Result<&mut Session, CommandError> {
         let id = match id.or(self.tabs.active) {
@@ -724,6 +757,9 @@ impl Projects {
         }
         let result = self.session_mut(project)?.execute(id, params);
         self.poll_plugins();
+        if Self::copies(id) && result.is_ok() {
+            self.share_clipboards(target);
+        }
         if let Ok(value) = &result {
             crate::library::record_use(&mut self.browser.files, id, params, value);
         }

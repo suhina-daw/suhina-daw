@@ -47,6 +47,7 @@ fn project() -> Project {
                 ..ArrangementLane::default()
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default(), Scene::default()],

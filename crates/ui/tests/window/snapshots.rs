@@ -189,7 +189,7 @@ fn render_the_session_window() {
     image.save(folder.join("drop.png")).unwrap_or_else(|e| panic!("{e}"));
 }
 
-/// Renders the Session and Arrangement views in every theme that comes with Suhina, to
+/// Renders the Launcher and Arrangement views in every theme that comes with Suhina, to
 /// `target/ui-snapshots/theme-<id>-session.png` and `-arrangement.png`, to look them over. Needs
 /// a GPU adapter: `cargo test -p suhina-ui -- --ignored`.
 #[test]

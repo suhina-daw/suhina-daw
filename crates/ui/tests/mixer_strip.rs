@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view's channel strip in the window: what each mixer height shows, resizing it from
+//! The Launcher view's channel strip in the window: what each mixer height shows, resizing it from
 //! its top edge, the fader (one undo step, a double-click for 0 dB), the output dropdown and the
 //! device list
 //! (`docs/spec/ui-session-view.md` › Mixer); the detail area's two layouts; and the setting that
@@ -33,6 +33,7 @@ fn project() -> suhina_engine::model::Project {
             state: None,
             params: Vec::new(),
             automation: Vec::new(),
+            clip_host: false,
             extensions: Extensions::default(),
         });
     }
@@ -378,7 +379,7 @@ fn a_double_click_makes_a_clip_only_while_the_setting_is_on() {
 
         let at = harness.get_by_label("Stop Keys (scene 1)").rect().center();
         double_click_at(&mut harness, at);
-        assert_eq!(keys_clips(&harness), (slots + made, lane), "Session view, setting on: {on}");
+        assert_eq!(keys_clips(&harness), (slots + made, lane), "Launcher view, setting on: {on}");
 
         harness.get_by_label("Arrangement view").click();
         harness.run();
@@ -388,7 +389,7 @@ fn a_double_click_makes_a_clip_only_while_the_setting_is_on() {
     }
 }
 
-/// Renders the Session view with a tall mixer to `target/ui-snapshots/mixer-strip.png`, for
+/// Renders the Launcher view with a tall mixer to `target/ui-snapshots/mixer-strip.png`, for
 /// looking at: `cargo test -p suhina-ui --test mixer_strip -- --ignored`.
 #[test]
 #[ignore = "needs a GPU adapter; run with --ignored"]
@@ -592,6 +593,49 @@ fn a_clicked_volume_takes_a_typed_number_and_the_arrow_keys() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::ArrowUp);
     harness.run();
     assert_eq!(volume(&harness), before, "Ctrl+Up does not step the volume");
+}
+
+/// A device inside a group is picked with a click on its panel and deleted from its branch;
+/// Ctrl+A picks every device of the chain, so Delete takes them all in one step (#916).
+#[test]
+fn a_device_inside_a_group_is_picked_and_ctrl_a_picks_the_whole_chain() {
+    let mut harness = window_at(DEVICES_AT + 40.0);
+    harness.get_by_label("Show Utility on Drums").click();
+    harness.run();
+    harness.get_by_label("Show Limiter on Drums").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    // On the panel's header, clear of the controls that take a click in its middle.
+    let panel = harness.get_by_label("Device Limiter").rect();
+    let header = Pos2::new(panel.left() + panel.width() / 2.0, panel.top() + 8.0);
+    harness.hover_at(header);
+    harness.run();
+    harness.drag_at(header);
+    harness.run();
+    harness.drop_at(header);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    let group = drums(&harness).iter().find_map(Device::as_group).cloned().expect("a device group");
+    let inside: Vec<&str> = group.branches[0].devices.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(inside, ["Utility"], "the Limiter inside the group went");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    let grouped = drums(&harness);
+    // Ctrl+A on the chain, then Delete: every device goes in one step, and one undo brings them.
+    harness.get_by_label("Show Group on Drums").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(drums(&harness).is_empty(), "{:?}", drums(&harness).iter().map(|d| d.name.clone()).collect::<Vec<_>>());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(drums(&harness), grouped);
 }
 
 #[test]

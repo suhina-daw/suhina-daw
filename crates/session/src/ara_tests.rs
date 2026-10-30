@@ -213,3 +213,25 @@ fn a_clip_with_its_own_content_copies_the_edits_of_the_one_it_came_from() {
     // Nothing changed: nothing to copy.
     assert!(before.clone_origins(&before).iter().all(Option::is_none));
 }
+
+/// With a clip host only the clips that name it are its regions; a track-wide ARA plug-in from
+/// before made a clip host names every audio clip of its track (#990).
+#[test]
+fn a_clip_host_has_only_the_clips_that_name_it() {
+    let (mut project, audio) = project();
+    let mut channel = suhina_model::Channel::new(suhina_model::ChannelId(1), "Vocals");
+    channel.devices.push(suhina_model::Device::new(
+        "Melodyne",
+        suhina_model::DeviceKind::Vst3 { id: "5653544d656c6f64796e6500000000".into() },
+    ));
+    project.channels.push(channel);
+    project.tracks[0].channel = Some(suhina_model::ChannelId(1));
+    // Before: the plug-in has every audio clip of the track.
+    assert!(Layout::of(&project, &audio, TrackId(1)).has_region("clip-2"));
+    assert!(crate::clip_ara::make_host(&mut project, TrackId(1)));
+    assert!(project.arrangement.lanes[0].clips.iter().all(|c| c.ara), "every audio clip names it");
+    assert!(!crate::clip_ara::make_host(&mut project, TrackId(1)), "once");
+    project.arrangement.lanes[0].clips[1].ara = false;
+    let layout = Layout::of(&project, &audio, TrackId(1));
+    assert!(layout.has_region("clip-1") && !layout.has_region("clip-2"));
+}

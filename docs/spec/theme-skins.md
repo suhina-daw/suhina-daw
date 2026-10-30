@@ -89,10 +89,10 @@ and explicit limits. Its palette reference is generated from the token registry.
 
 # Theme skins
 
-## Session density and meter materials
+## Launcher density and meter materials
 
 The original **Suhina Sheet** built-in theme demonstrates a light spreadsheet-like
-Session, green application chrome, compact cells and square controls. Its own
+Launcher, green application chrome, compact cells and square controls. Its own
 self-contained SVG artwork lives under `assets/themes/sheet/` and is embedded with
 the palette and CSS, so duplication/export includes the effective artwork without
 depending on installed files. It uses existing native controls, commands and views;
@@ -129,7 +129,7 @@ adapter in an isolated X11 session; it does not establish physical-GPU timing.
 
 **Suhina Blocks** uses original brown plank/grain CSS, stone-like beveled controls
 and colour-keyed pixel SVG textures. It has no landscape or background PNG. Native
-`.track-column { --suhina-track-artwork: on; }` opts Session slot columns into the
+`.track-column { --suhina-track-artwork: on; }` opts Launcher slot columns into the
 existing `track.body` artwork (including raw colour/state variants). The body stays
 behind clip cells; empty cells preserve it while hover/stop marks remain native.
 `off` or omission retains the original slot fills. JSON/CSS/export preserve this
@@ -137,15 +137,15 @@ native style property, and it does not change launch/drop geometry or commands.
 
 ![Suhina Blocks with brown plank workspace, colour-keyed pixel track textures and native meters](../design/reference/theme-blocks-session.png)
 
-This native Vulkan Session capture uses original SVG pixel textures and CSS brown
+This native Vulkan Launcher capture uses original SVG pixel textures and CSS brown
 planks. No landscape wallpaper or game artwork is used. Native replacement-alpha
 surfaces leave textured empty slots untouched; hover paints as an ordinary overlay
 so it cannot erase the underlying artwork.
 
-Session and Arrangement remain separate views. Theme customization does not introduce
+Launcher and Arrangement remain separate views. Theme customization does not introduce
 a combined view or the separately planned mixer view.
 
-Optional `skin.session` dimensions change the native Session layout: `track-width`
+Optional `skin.session` dimensions change the native Launcher layout: `track-width`
 and `return-width` (64–512 points), `scene-width` (64–512), `slot-height` (16–64),
 `header-height` (20–64). Omitted values use native
 geometry/preferences. Canonical CSS mirrors these as `session { track-width: 80px; }`
@@ -154,7 +154,7 @@ to use its existing native preference and divider.
 Column widths affect scrolling, rendering, file/clip drop targets and hit testing
 together. Individual control placement remains relative to these native anchors.
 Canonical `.pan { --suhina-appearance: knob; }` stores a portable pan-face override
-in `skin.styles` for both Session and Arrangement. `field` forces a value field;
+in `skin.styles` for both Launcher and Arrangement. `field` forces a value field;
 `native` or no override retains the existing global preference. The compact example
 includes the knob override; themes do not need to change the user's preference.
 The fader's dB labels/ticks expose `mixer-volume-scale` separately from the rail/cap
@@ -182,7 +182,7 @@ The [compact gloss follow-up](../design/reference/theme-dark-gloss-compact.png) 
 86-point track columns, 80-point returns, 18-point slots, the existing 320-point
 mixer height, a centred narrow pan knob, a separately positioned dB scale and the
 optional original metallic cap SVG. The meter sits left of the fader. It demonstrates
-the Session view alone; neither a combined Arrangement view nor a standalone mixer
+the Launcher view alone; neither a combined Arrangement view nor a standalone mixer
 view is introduced. The screenshot is from actual demo playback on the same isolated
 Linux OpenGL/virtual-ALSA setup described below.
 
@@ -209,12 +209,12 @@ name texture. The detail panel is hidden and the existing native mixer/track res
 is used to expose controls. They demonstrate implemented adapters, not complete
 browser CSS support or a finished appearance for every theme.
 
-- [Session, tall mixer and live vertical meters](../design/reference/theme-dark-gloss.png).
+- [Launcher, tall mixer and live vertical meters](../design/reference/theme-dark-gloss.png).
 - [Horizontal faders/meters, names at the bottom and top-only colour stripes](../design/reference/theme-dark-gloss-horizontal.png).
 - [Edit interface (removed for now, issue #995): actual controls beneath outlines and an 8-point grid](../design/reference/theme-interface-editor.png).
 - [Arrangement, large native track rows and replaceable note glyphs](../design/reference/theme-dark-gloss-arrangement.png).
 
-The Session meter captures use actual demo playback through a paced virtual ALSA
+The Launcher meter captures use actual demo playback through a paced virtual ALSA
 sink. They do not verify physical audio latency or supported desktop transparency;
 the native GPU transparency regression has separate automated coverage. Theme
 changes were made through external JSON/CSS files while the app remained open.
@@ -280,11 +280,11 @@ their own SVG roles (`track.midi` and `track.audio`); MIDI defaults to a note sy
 Arrangement headers also expose `arrangement-fold`, `arrangement-enable`,
 `arrangement-automation`, `arrangement-output`, `arrangement-input`,
 `arrangement-send-1` (and subsequent return slots), and previous/next send buttons.
-Session send controls expose `mixer-send-1` and subsequent slots within the movable
+Launcher send controls expose `mixer-send-1` and subsequent slots within the movable
 sends region. Slot numbers follow native return order, independent of project ids.
 
 Connected placement adapters currently include native/custom toolbar modules (`toolbar-NAME`),
-transport play/stop/record/metronome, Session strip name, output/input/monitor block, devices,
+transport play/stop/record/metronome, Launcher strip name, output/input/monitor block, devices,
 sends, pan, volume/readout, meter, compact volume and toggle row (`mixer-NAME`), solo/cue/arm,
 track-type glyphs, and Arrangement name, colour band, volume/pan and meter. `mixer-color` can
 hide the side band or make it a top stripe; `mixer-name { bottom: 0px; }` relocates the name.
@@ -596,7 +596,7 @@ absent elements; put sizes on the optional panels and use `auto` tracks instead:
 
 The native workspace exposes `.workspace` / `#workspace`, with `.workspace-panel`
 children `#panel-browser`, `#panel-main`, `#panel-detail`. They contain the browser,
-Session/Arrangement and detail scopes respectively. Authored layout declarations on
+Launcher/Arrangement and detail scopes respectively. Authored layout declarations on
 these containers opt into CSS Flex/Grid geometry. With none, native splitters and layout
 remain in charge. Closed native panels do not become visible merely through CSS.
 In CSS layout mode, dimensions and placement come from the stylesheet, so browser/detail
@@ -650,7 +650,7 @@ visible toolbar modules (`#tempo`, `#transport`, etc.); the same rectangles boun
 native input targets. The host still defines toolbar height. A stylesheet without
 toolbar layout declarations leaves the ordinary toolbar arrangement intact; a customized
 bar scrolls horizontally when it exceeds the window. The bounded retained scope tree
-exposes actual ancestry and siblings. Session mixer and track-header scopes carry stable
+exposes actual ancestry and siblings. Launcher mixer and track-header scopes carry stable
 `[data-object="track-N"]` identities. Clip, scene and slot roles also expose their native
 project identities. Controls
 connected through native responses expose hover, active, disabled and focus states.
@@ -911,7 +911,7 @@ of bars, and a slider id per parameter.
   `color` and the value formats.
 - **Empty slots:** `.slot { background-color }` replaces the track-tinted fill of an empty slot.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
-  a send's knob, in the Session and the Arrangement; without them they use `knob.*`. An
+  a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
   Arrangement send is a knob with `.send { --suhina-appearance: knob }`, as in the mixer.
 - **Mixer colour strip:** `.control-mixer-color` (`display: none` hides it; `top`, `height` and
   `width` move and size it).

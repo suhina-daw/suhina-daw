@@ -287,7 +287,7 @@ impl Page {
         (Page::Devices, "Devices"),
         (Page::Importing, "Importing"),
         (Page::Arrangement, "Arrangement"),
-        (Page::Session, "Session and mixer"),
+        (Page::Session, "Launcher and mixer"),
         (Page::ClipEditor, "Clip editor"),
         (Page::Browser, "Browser"),
         (Page::Keys, "Keys"),

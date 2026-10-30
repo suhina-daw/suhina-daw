@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view's channel strip: the part of a column under its slots, which shows more the
+//! The Launcher view's channel strip: the part of a column under its slots, which shows more the
 //! taller the mixer is (`docs/spec/ui-session-view.md` › Mixer, sizes and steps in
 //! `docs/design/components.md` › Mixer strip). [`layout`] says where each part goes for a height;
 //! [`show`] draws a column's strip and turns what is done there into [`Action`]s.
@@ -62,7 +62,7 @@ const FADER_COLUMN: f32 = 20.0;
 const SCALE_WIDTH: f32 = 14.0;
 const METER_GAP: f32 = 4.0;
 const SEND_HEIGHT: f32 = 22.0;
-/// Session meters use wider stereo bars than compact Arrangement headers.
+/// Launcher meters use wider stereo bars than compact Arrangement headers.
 pub const METER_WIDTH: f32 = 14.0;
 const CAP: Vec2 = Vec2::new(20.0, 26.0);
 
@@ -448,6 +448,8 @@ pub fn show(
     // A click on the strip selects its track, a return's too; a slot selected on that track stays.
     if strip.clicked() {
         state.selected = Some(column.track);
+        state.selected_tracks = vec![column.track];
+        state.devices_clicked = true;
         if state.selected_slot.is_some_and(|(track, _)| track != column.track) {
             state.selected_slot = None;
         }
@@ -692,9 +694,12 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     } else {
         state.device_scroll.remove(&track);
     }
-    for (index, device) in column.devices.iter().enumerate() {
-        let top = rect.top() - scroll + index as f32 * DEVICE_ROW;
+    let mut slots = Vec::new();
+    for (row_index, device) in column.devices.iter().enumerate() {
+        let index = device.at;
+        let top = rect.top() - scroll + row_index as f32 * DEVICE_ROW;
         let row = Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), DEVICE_ROW));
+        slots.push((index, row));
         if !row.intersects(clip) {
             continue;
         }
@@ -710,6 +715,9 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
                 Some(crate::session::session_view::DeviceEvent::Open { track, index, plugin: device.plugin });
         } else if response.clicked() {
             state.selected = Some(track);
+            if !state.selected_tracks.contains(&track) {
+                state.selected_tracks = vec![track];
+            }
             state.selected_slot = None;
             state.shown_device = Some((track, index));
             state.open_detail = true;
@@ -717,7 +725,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             state.device_event = Some(crate::session::session_view::DeviceEvent::Pick { track, index, add, run });
         }
         // Lit as the detail area's chain lights it: the devices picked in either.
-        let lit = state.device_picks.contains(&(track, index));
+        let lit = state.device_picks.iter().any(|(t, at)| *t == track && at.index() == Some(index));
         let fill = if lit {
             theme::control_active()
         } else {
@@ -754,6 +762,28 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             );
         }
     }
+    // A device of this track carried over its list: a line where it would go, and its place
+    // for the drop (#688).
+    let carrying = ui.data(|d| {
+        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING))
+    });
+    if let Some((_, from)) = carrying.filter(|(t, _)| *t == track)
+        && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| clip.contains(*p))
+        && let Some(to) = crate::interaction::drop::device_slot_at(&slots, pointer.y, true)
+        && to != from
+        && to != from + 1
+    {
+        let y = slots
+            .iter()
+            .find(|(i, _)| *i == to)
+            .map_or_else(|| slots.last().map_or(rect.top(), |(_, r)| r.bottom()), |(_, r)| r.top());
+        list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, theme::accent()));
+    }
+    let pass = ui.ctx().cumulative_pass_nr();
+    crate::interaction::drop::note_device_slots(
+        ui.ctx(),
+        crate::interaction::drop::DeviceSlots { track, area: clip, slots, vertical: true, pass },
+    );
 }
 
 /// The audio tracking's block above the toggles: "Audio From" with a dropdown of where the

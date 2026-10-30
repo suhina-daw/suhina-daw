@@ -94,6 +94,7 @@ fn project(tracks: u32) -> Project {
                 state: None,
                 params: Vec::new(),
                 automation: Vec::new(),
+                clip_host: false,
                 extensions: Extensions::default(),
             }],
             extensions: Extensions::default(),
@@ -118,6 +119,7 @@ fn project(tracks: u32) -> Project {
                 follow_action: Default::default(),
                 launch: Default::default(),
                 color: None,
+                ara: false,
                 extensions: Extensions::default(),
             }],
         });

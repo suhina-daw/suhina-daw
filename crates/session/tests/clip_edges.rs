@@ -322,3 +322,113 @@ fn an_audio_clips_warp_mode_and_transpose_are_set() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert!(region(&session).warped, "undone, warp is back on");
 }
+
+/// Warp off plays the file at its own speed, so the clip spans what its seconds take at the
+/// song's tempo, and a tempo change resizes it; warp on follows the tempo, and the clip keeps its
+/// start throughout (#830, #831).
+#[test]
+fn an_unwarped_clip_spans_its_seconds_at_the_tempo_and_keeps_its_start() {
+    let mut session = Session::new(project());
+    let clip = first(&session, 3);
+    assert_eq!((clip.start, clip.length), (4.0, 8.0), "4 s at 120 BPM");
+    // Unwarped at 60 BPM: the same 4 s are 4 beats.
+    run(&mut session, "transport.setTempo", json!({ "bpm": 60 })).unwrap();
+    let clip = first(&session, 3);
+    assert_eq!(clip.start, 4.0);
+    assert!((clip.length - 4.0).abs() < 1e-9, "{}", clip.length);
+    // Warped from here it follows the tempo: back at 120 it stays 4 beats.
+    run(&mut session, "clip.setAudio", json!({ "clip": clip.id.0, "warp": true })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 120 })).unwrap();
+    assert!((first(&session, 3).length - 4.0).abs() < 1e-9, "{}", first(&session, 3).length);
+    // Warp off again: the file's 4 s at 120 BPM are 8 beats, from the same start.
+    run(&mut session, "clip.setAudio", json!({ "clip": clip.id.0, "warp": false })).unwrap();
+    let unwarped = first(&session, 3);
+    assert_eq!(unwarped.start, 4.0);
+    assert!((unwarped.length - 8.0).abs() < 1e-9, "{}", unwarped.length);
+    // Undo puts the length back with the warp switch.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!((first(&session, 3).length - 4.0).abs() < 1e-9);
+    // Loop and gain edits never move it.
+    run(&mut session, "clip.setLoop", json!({ "clip": clip.id.0, "loop": true })).unwrap();
+    run(&mut session, "clip.setGain", json!({ "clip": clip.id.0, "db": -3.0 })).unwrap();
+    assert_eq!(first(&session, 3).start, 4.0);
+}
+
+/// The selected clips dragged by one edge move it as far, each stopping at its own limits, in
+/// one undo step (#956): the MIDI clip grows by eight beats, the unlooped audio clip only as far
+/// as its audio goes.
+#[test]
+fn several_clips_move_the_same_edge_by_as_much_in_one_step() {
+    let mut session = Session::new(suhina_test_support::with_ids(project()));
+    let ids: Vec<u32> = [1, 3].iter().map(|t| first(&session, *t).id.0).collect();
+    let clips: Vec<serde_json::Value> = ids.iter().map(|id| json!({ "clip": id })).collect();
+    run(&mut session, "clip.trimMany", json!({ "clips": clips, "edge": "end", "by": 8.0 })).unwrap();
+    assert_eq!(first(&session, 1).length, 12.0);
+    assert!(first(&session, 3).length <= 8.0 + 1e-9, "the audio clip stops at its audio: {:?}", first(&session, 3));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!((first(&session, 1).length, first(&session, 3).length), (4.0, 8.0));
+    assert!(run(&mut session, "clip.trimMany", json!({ "clips": clips, "edge": "middle", "by": 1.0 })).is_err());
+}
+
+/// Two MIDI clips side by side, both selected, the later one's end dragged a bar on: the earlier
+/// one stops where the later begins, so it does not run over it and cut it short.
+#[test]
+fn a_selected_clip_does_not_grow_over_the_next_one_of_the_selection() {
+    let mut session = Session::new(suhina_test_support::with_ids(project()));
+    let a = first(&session, 1);
+    run(&mut session, "clip.create", json!({ "track": 1, "start": a.start + a.length })).unwrap();
+    let lane = |s: &Session| {
+        let mut clips: Vec<(f64, f64)> = s
+            .project()
+            .arrangement
+            .lanes
+            .iter()
+            .find(|l| l.track == Some(suhina_engine::model::TrackId(1)))
+            .map(|l| l.clips.iter().map(|c| (c.start, c.length)).collect())
+            .unwrap_or_default();
+        clips.sort_by(|x, y| x.0.total_cmp(&y.0));
+        clips
+    };
+    let before = lane(&session);
+    assert_eq!(before.len(), 2);
+    let ids: Vec<serde_json::Value> = session
+        .project()
+        .arrangement
+        .lanes
+        .iter()
+        .find(|l| l.track == Some(suhina_engine::model::TrackId(1)))
+        .map(|l| l.clips.iter().map(|c| json!({ "clip": c.id.0 })).collect())
+        .unwrap_or_default();
+    run(&mut session, "clip.trimMany", json!({ "clips": ids, "edge": "end", "by": 4.0 })).unwrap();
+    let after = lane(&session);
+    assert_eq!(after.len(), 2, "both clips are still there: {after:?}");
+    assert_eq!(after[0], before[0], "the earlier clip stops at the later one");
+    assert_eq!((after[1].0, after[1].1), (before[1].0, before[1].1 + 4.0), "the later one grows a bar");
+}
+
+/// A MIDI clip's left edge goes on before its notes (#832): the clip starts earlier with empty
+/// time, its note stays where it plays, and a content another clip plays is copied first.
+#[test]
+fn a_midi_clips_left_edge_goes_before_its_notes() {
+    let mut project = project();
+    // The riff on beat 4 too, playing the same content.
+    if let Some(lane) = project.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))) {
+        lane.clips.push(Clip::new(ContentId(2), 8.0, 4.0));
+    }
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    run(&mut session, "clip.trim", json!({ "track": 1, "index": 1, "start": 6.0 })).unwrap();
+    let p = session.project();
+    let clips = &p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap().clips;
+    let moved = clips.iter().find(|c| (c.start - 6.0).abs() < 1e-9).unwrap();
+    assert_eq!((moved.length, moved.offset), (6.0, 0.0));
+    assert_ne!(moved.content, ContentId(2), "the shared content was copied");
+    let content = p.content(moved.content).unwrap();
+    assert_eq!(content.length, 6.0);
+    let LaneData::Notes(notes) = &content.lanes[0].data else { panic!("notes") };
+    assert_eq!(notes[0].time, 2.0, "the note still plays on beat 8");
+    // The other clip keeps its content as it was.
+    let LaneData::Notes(theirs) = &p.content(ContentId(2)).unwrap().lanes[0].data else { panic!("notes") };
+    assert_eq!(theirs[0].time, 0.0);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().contents.len(), 2);
+}

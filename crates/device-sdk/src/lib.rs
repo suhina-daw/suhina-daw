@@ -544,6 +544,40 @@ impl Parameter {
         self
     }
 
+    /// Whether its control turns logarithmically (a log slider or knob over a positive range).
+    pub fn logarithmic(&self) -> bool {
+        matches!(self.control, ParameterControl::LogSlider | ParameterControl::LogKnob) && self.min > 0.0
+    }
+
+    /// Where `value` sits on an automation lane, 0 … 1: linear, or logarithmic for a log
+    /// control; the middle for a parameter with no range.
+    pub fn lane_position(&self, value: f64) -> f64 {
+        let (min, max) = (self.min, self.max);
+        let value = self.clamp(value);
+        if min >= max {
+            0.5
+        } else if self.logarithmic() {
+            (value.ln() - min.ln()) / (max.ln() - min.ln())
+        } else {
+            (value - min) / (max - min)
+        }
+    }
+
+    /// The value at `position` (0 … 1) on an automation lane: the inverse of
+    /// [`Parameter::lane_position`], held in the range.
+    pub fn lane_value(&self, position: f64) -> f64 {
+        let (min, max) = (self.min, self.max);
+        let position = if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 };
+        let value = if min >= max {
+            min
+        } else if self.logarithmic() {
+            (min.ln() + position * (max.ln() - min.ln())).exp()
+        } else {
+            min + position * (max - min)
+        };
+        self.clamp(value)
+    }
+
     /// Clamp hostile values and preserve discrete parameter semantics.
     pub fn clamp(&self, value: f64) -> f64 {
         let value = if value.is_finite() { value.clamp(self.min, self.max) } else { self.default };

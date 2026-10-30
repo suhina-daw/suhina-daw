@@ -80,6 +80,7 @@ fn project_built() -> Project {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     };
     let slot = |clip: Option<Clip>, has_stop: bool| Slot { clip, has_stop };
@@ -131,8 +132,9 @@ fn transport_commands_need_a_player() {
     let mut session = Session::new(project());
     // The quantisation is kept by the session until a player is attached (tested below). Arming
     // is kept by the session and told to each new player, so it needs none either (ADR 0017);
-    // nor do the count-in and what records (docs/spec/recording.md).
-    let without = ["launcher.setQuantization", "track.setArm", "transport.setCountIn", "record.state"];
+    // nor do the count-in and what records (docs/spec/recording.md), nor the take lane heard in
+    // place of its track, which is told to each player as it builds (#989).
+    let without = ["launcher.setQuantization", "track.setArm", "transport.setCountIn", "record.state", "take.solo"];
     for spec in commands().iter().filter(|c| c.kind == CommandKind::Transport && !without.contains(&c.id)) {
         let params = json!({ "track": "Drums", "scene": 1, "value": "1 bar", "on": true, "beats": 4.0, "key": 60 });
         let mut params = params
@@ -528,6 +530,7 @@ fn playing_with_clips() -> (Session, Renderer) {
         fade_out_curve: Default::default(),
         follow_action: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
         launch: Default::default(),
     };

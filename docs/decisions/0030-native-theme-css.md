@@ -134,7 +134,7 @@ mirror between those two representations. Conditional rules are not flattened in
 unconditional palette values.
 
 Native scopes now collect a bounded retained tree (4096 nodes, depth 16), with stable
-named Session track roles (`data-object`) and state from connected egui responses.
+named Launcher track roles (`data-object`) and state from connected egui responses.
 Child/sibling matching uses this actual tree. A changed tree is styled as one snapshot;
 results are applied on the next repaint, preserving native command ids and targets.
 Identity remains stable for named track scopes when tracks move. Clip, slot and scene

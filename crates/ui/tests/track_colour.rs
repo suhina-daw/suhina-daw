@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Track colours in the window: the Arrangement header's colour band, the Session column's
+//! Track colours in the window: the Arrangement header's colour band, the Launcher column's
 //! coloured header and the channel strip's band down its edge are drawn in the track's colour over their area;
 //! a click on a colour area opens the palette, a swatch sets the colour in one undo step
 //! (`docs/design/components.md` › Colour palette).

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view: slots, scenes, launching, stop buttons, slot menus and drags between the views.
+//! The Launcher view: slots, scenes, launching, stop buttons, slot menus and drags between the views.
 
 use super::*;
 
@@ -175,17 +175,17 @@ fn a_double_click_on_an_empty_slot_of_an_audio_track_makes_an_empty_clip_there()
     // An audio track next to the demo's MIDI ones.
     harness.get_by_label("+ Audio track").click();
     harness.run();
-    assert!(harness.query_by_label("Stop Audio 1 (scene 1)").is_some(), "the track's empty slot is there");
-    let at = harness.get_by_label("Stop Audio 1 (scene 1)").rect().center();
+    assert!(harness.query_by_label("Stop 5 Audio (scene 1)").is_some(), "the track's empty slot is there");
+    let at = harness.get_by_label("Stop 5 Audio (scene 1)").rect().center();
     double_click_at(&mut harness, at);
     assert!(
-        harness.query_by_label("Launch Audio clip on Audio 1 (scene 1)").is_some(),
+        harness.query_by_label("Launch Audio clip on 5 Audio (scene 1)").is_some(),
         "the empty audio clip is there"
     );
     // One undo step takes it back.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
-    assert!(harness.query_by_label("Stop Audio 1 (scene 1)").is_some(), "the slot is empty again");
+    assert!(harness.query_by_label("Stop 5 Audio (scene 1)").is_some(), "the slot is empty again");
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn wait_over(harness: &mut Harness<'static, App>, at: egui::Pos2) {
 fn an_arrangement_clip_dragged_over_the_session_switch_drops_into_a_slot() {
     let mut harness = arrangement_app();
     let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
-    let switch = harness.get_by_label("Session view").rect().center();
+    let switch = harness.get_by_label("Launcher view").rect().center();
     harness.hover_at(from);
     harness.step();
     harness.drag_at(from);
@@ -642,4 +642,92 @@ fn a_slots_context_menu_deletes_its_clip() {
     harness.get_by_label_contains("Delete").click();
     harness.run();
     assert!(harness.query_by_label("Launch Loop on Loop (scene 1)").is_none(), "the audio clip is gone");
+}
+
+#[test]
+fn moving_the_session_view_with_the_middle_button_scrolls_it() {
+    // Enough tracks that the columns run past the window.
+    let mut session = Session::new(demo_project());
+    for _ in 0..20 {
+        session.execute("track.add", &json!({ "kind": "midi" })).unwrap();
+    }
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = window(app);
+    let header = |h: &Harness<'static, App>| h.get_by_label("Track Bass").rect().center();
+    let before = header(&harness);
+    let from = harness.get_by_label("Launch Walk on Bass (scene 2)").rect().center();
+    let button = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Middle,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    harness.hover_at(from);
+    harness.run();
+    harness.input_mut().events.push(button(from, true));
+    harness.run();
+    for step in 1..=4 {
+        harness.hover_at(from + egui::vec2(-50.0 * step as f32, 0.0));
+        harness.run();
+    }
+    let to = from + egui::vec2(-200.0, 0.0);
+    harness.input_mut().events.push(button(to, false));
+    harness.run();
+    let after = header(&harness);
+    assert!(after.x < before.x - 150.0, "{before:?} -> {after:?}");
+}
+
+/// Main can be selected (#687): a click on its header shows its devices in the detail area,
+/// where a device added to it appears.
+#[test]
+fn clicking_main_selects_it_and_its_devices_show() {
+    let mut session = Session::new(demo_project());
+    session.execute("device.add", &json!({ "track": "main", "id": "utility" })).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut harness = window(app);
+    harness.get_all_by_label("Select Main").next().unwrap().click();
+    harness.run();
+    assert!(harness.query_all_by_label_contains("Utility").next().is_some());
+}
+
+/// Ctrl-click adds a header to the selection and Shift-click takes the run between, as in the
+/// Arrangement view; Ctrl+D copies the selected tracks as one block after the last and selects
+/// the copies (#208, #919).
+#[test]
+fn ctrl_and_shift_clicks_select_several_headers_and_ctrl_d_copies_them_as_a_block() {
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = window(app);
+    let names = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .map(|s| s.project().tracks.iter().map(|t| t.name.clone()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
+    harness.run();
+    assert_eq!(names(&harness)[..5], ["Drums", "Bass", "Drums (2)", "Bass (2)", "Keys"]);
+    // The copies are selected: Delete removes them.
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(names(&harness)[..3], ["Drums", "Bass", "Keys"]);
+    // Shift-click: Drums to Keys, three tracks; Ctrl-click takes Bass out again.
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Keys").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(names(&harness)[..2], ["Bass", "Vox"]);
 }

@@ -17,7 +17,7 @@ covers:
 
 Every track, group and return track, and the main output, has a level meter: how loud it is
 now, per side, and whether it went over full scale. The engine measures; the window, the CLI and
-MCP read the same numbers. Session mixer meters use two 6 px bars with a 2 px gap;
+MCP read the same numbers. Launcher mixer meters use two 6 px bars with a 2 px gap;
 compact Arrangement meters retain two 4 px bars. The drawing fills the allocated width
 without changing the scale, ballistics or clip reset behaviour.
 
@@ -58,7 +58,7 @@ the engine does not hold peaks.
 
 Sizes and tokens are in [components](../design/components.md) › Meter.
 
-- **Session view:** each mixer strip (tracks, groups, returns) shows its meter right of the pan
+- **Launcher view:** each mixer strip (tracks, groups, returns) shows its meter right of the pan
   knob, standing up; the main strip under the scene column shows the main output's.
 - **Arrangement view:** each track header shows its meter standing at its right edge, as tall as
   the rows the header shows; the return and main rows along the bottom show theirs lying down,

@@ -116,6 +116,9 @@ pub struct PianoRollState {
     /// Points scrolled from beat 0 and from the top of the highest key.
     pub scroll: Vec2,
     pub beat_width: f32,
+    /// The furthest beat a zoom at the pointer has shown at the right edge, so the time under
+    /// the pointer stays in place past the clip's end (#910).
+    pub(crate) zoom_reach: f64,
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
@@ -208,6 +211,7 @@ impl Default for PianoRollState {
             shown: None,
             scroll: Vec2::ZERO,
             beat_width: 40.0,
+            zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
             focused: false,
@@ -567,4 +571,9 @@ pub struct Context<'a> {
     /// The arrangement beat being played while the transport runs, for the playhead; `None`
     /// while it is stopped.
     pub playhead: Option<f64>,
+    /// Where playback starts next, as an arrangement beat, for an arrangement clip: shown in the
+    /// piano roll, which a click on its ruler moves (#951). `None` for a slot's clip.
+    pub start_marker: Option<f64>,
+    /// The clip is on the arrangement: a click on the ruler sets where playback starts (#951).
+    pub seeks: bool,
 }

@@ -52,6 +52,7 @@ fn sending(level: f64, pre_fader: bool, return_devices: Vec<Device>) -> Project 
                 clips: vec![clip],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
