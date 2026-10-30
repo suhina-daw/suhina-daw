@@ -15,9 +15,11 @@ covers:
 
 # The Settings window
 
-Options › Settings (Ctrl+,) opens the Settings window over the main window. How it is drawn
-(sizes, colours, the controls) is in [components](../design/components.md) › Settings; this spec
-says what is on each page, how the pages scroll and how a setting finds its place.
+Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
+bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
+it is open. How it is drawn (sizes, colours, the controls) is in
+[components](../design/components.md) › Settings; this spec says what is on each page, how the
+pages scroll and how a setting finds its place.
 
 The title's Open in window button moves Settings into a separate native, resizable
 window that can be moved to another monitor. Dock returns it to the main-window

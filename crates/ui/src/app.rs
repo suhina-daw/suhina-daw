@@ -1605,6 +1605,7 @@ impl App {
             PickField::BrowserFolder
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
+            | PickField::PluginFolder
             | PickField::BackgroundImage => None,
         };
         self.pick_request = Some(PickRequest { field, start });
@@ -1617,7 +1618,7 @@ impl App {
     }
 
     /// Puts a path chosen in the system's dialog where it was asked for: a setting, the save
-    /// prompt's folder, a project to open, or a folder for the browser.
+    /// prompt's folder, a project to open, a folder for the browser, or a plug-in folder.
     pub fn set_picked(&mut self, field: PickField, path: PathBuf) {
         let text = path.display().to_string();
         match field {
@@ -1630,6 +1631,12 @@ impl App {
                 if !self.settings.mcp_write_folders.contains(&text) {
                     self.settings.mcp_write_folders.push(text);
                 }
+            }
+            PickField::PluginFolder => {
+                // The folder goes in with the format the add row has chosen (Both, VST3 or CLAP).
+                let format = self.plugins.new_format;
+                self.plugin_request(PluginRequest::AddFolder(text, format));
+                return;
             }
             PickField::NamModelsFolder => self.settings.nam_models_folder = text,
             // A folder whose files move with it asks first.
