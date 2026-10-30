@@ -603,8 +603,9 @@ workspace forbids.
 
 - **Hosting VST2 directly.** Where the interface description comes from is decided in
   [ADR 0022](0022-vst2-interface-description.md): the VeSTige header as Ardour distributes it,
-  pinned. Nothing is built yet: the header is to be ported to Rust with its notice, checked by our
-  own mock plug-in and probe, and written up in `docs/spec/plugin-vst2.md`. The work is
+  pinned. Built behind the host's `vst2` feature, off by default: the port with its notice, the
+  mock plug-in and probe, the host, the scan, the editors and a project's last-resort choice of
+  it, written up in `docs/spec/plugin-vst2.md`. The work is
   [#1066](https://github.com/suhina-daw/suhina-daw/issues/1066). The process, scanning, editor and
   format decisions above are unchanged; shipping VST2-enabled builds is allowed by ADR 0022's
   2026-10-31 amendment.

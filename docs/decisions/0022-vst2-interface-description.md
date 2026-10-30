@@ -3,7 +3,7 @@ description: Where the VST2 interface description comes from — the VeSTige hea
 read_when: VST2, VST 2, AEffect, ABI, opcode, dispatcher, audioMaster, clean-room, reverse engineering, VeSTige, vestige.h, Ardour, LMMS, vst2sdk, FST, yabridge, plug-in interface description, VST trademark, provenance
 type: decision
 status: accepted
-built: no
+built: partly
 last_verified: 2026-10-31
 ---
 
