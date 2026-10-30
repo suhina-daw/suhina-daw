@@ -39,8 +39,17 @@ fn found(m: Option<Match<'_>>) -> Option<(&str, How)> {
 /// stand-in for it.
 fn vst2_catalog(id: u32, name: &str, stand_in: bool) -> Catalog {
     let file = |file: &str, plugin: serde_json::Value| json!({ "path": PathBuf::from(file).display().to_string(), "modified": 1, "size": 1, "plugins": [plugin] });
+    // The VST2 file shape of this system (a `.vst` bundle on macOS, a `.dll` on Windows, a
+    // `.so` on Linux), the one `format()` reads it as.
+    let shape = if cfg!(target_os = "macos") {
+        "Gain.vst"
+    } else if cfg!(windows) {
+        "Gain.dll"
+    } else {
+        "Gain.so"
+    };
     let mut entries = vec![file(
-        "/vst2/Gain.vst",
+        format!("/vst2/{shape}").as_str(),
         json!({ "id": format!("{id:08X}"), "name": name, "vendor": "Suhina", "version": "1", "features": ["audio-effect"], "replaces": [] }),
     )];
     if stand_in {
