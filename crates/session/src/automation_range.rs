@@ -484,7 +484,11 @@ pub(crate) fn scale_range(session: &mut Session, params: &Value) -> Result<Value
     else {
         return Err("the range has no points".into());
     };
-    let middle = (low + high) / 2.0;
+    let middle = match params.get("around").and_then(Value::as_str) {
+        None | Some("middle") => (low + high) / 2.0,
+        Some("bottom") => 0.0,
+        Some(other) => return Err(format!("around is \"middle\" or \"bottom\", got {other:?}").into()),
+    };
     for (index, point) in points.iter_mut().enumerate() {
         let moves = match &picked {
             Some(list) => list.contains(&index),

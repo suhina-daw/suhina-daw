@@ -556,46 +556,72 @@ fn live(ui: &Ui, state: &mut LanesState, response: &egui::Response) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 struct Stretch {
     of: String,
+    track: TrackId,
+    key: LaneKey,
     shown: f64,
-    applied: f64,
-    /// A step of this drag is in the history already, so the next one joins it (`continue`).
-    joined: bool,
+    /// What the points are scaled around, a place 0 to 1 on the lane, from the line as it was
+    /// before the scaling began.
+    pivot: f64,
+    /// A step of this scaling is in the history already: the next one replaces it, starting from
+    /// the line as it was (`continue` with `replace`), so going back to 100 % puts it back whole.
+    started: bool,
+    /// When the slider was last hovered or dragged (the window's clock), for the dashed line at
+    /// the pivot on the lane.
+    shown_at: f64,
 }
 
-/// The Scale slider for what `of` names: where it stands (100 % for something new), and while it
-/// is dragged or when it is let go of, the factor that takes the points from where they are to the
-/// value shown, as a share of where the scaling began (so 150 % then 120 % ends at 120 %), and
-/// whether that step joins the one before it in the history (one drag is one undo step).
-fn stretch_slider(ui: &mut Ui, state: &mut LanesState, of: String) -> Option<(f64, bool)> {
+/// The middle Scale works around: half-way between the lowest and highest of the points from
+/// `start` to `end`, as places on the lane.
+fn middle_of(points: &[AutomationPoint], scale: &Scale, start: f64, end: f64) -> f64 {
+    let places = points.iter().filter(|p| p.beat >= start && p.beat <= end).map(|p| scale.position(p.value));
+    let (low, high) = places.fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+    if low <= high { (low + high) / 2.0 } else { 0.5 }
+}
+
+/// The Scale slider and what it scales around, for what `of` names on `track`'s `key` lane, the
+/// points' `middle` given: while it is dragged or when it is let go of, the factor from the line as
+/// it was (100 % for something new) and whether the step before is replaced.
+fn stretch_slider(
+    ui: &mut Ui,
+    state: &mut LanesState,
+    (track, key): (TrackId, &LaneKey),
+    of: String,
+    middle: f64,
+) -> Option<(f64, bool)> {
     let kept = state.stretch.clone().filter(|s| s.of == of);
-    let (shown, applied, joined) = kept.map_or((1.0, 1.0, false), |s| (s.shown, s.applied, s.joined));
-    let mut percent = shown * 100.0;
+    let mut percent = kept.as_ref().map_or(1.0, |s| s.shown) * 100.0;
     let response = ui
-        .add(egui::Slider::new(&mut percent, 5.0..=200.0).text("Scale").suffix(" %").fixed_decimals(0))
+        .add(egui::Slider::new(&mut percent, 0.0..=200.0).text("Scale").suffix(" %").fixed_decimals(0))
         .on_hover_text(
-            "Pushes the points away from their middle (over 100 %) or pulls them toward it (under 100 %). \
-             Works on any points, drawn or inserted; their timing stays.",
+            "Pushes the points away from the dashed line (over 100 %) or pulls them toward it (under 100 %), \
+             from the line as it was: back at 100 % it is as before. Their timing stays.",
         );
+    // Around: the points' middle, or the bottom of the lane (a share of each value).
+    let mut bottom = state.scale_bottom;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Around").color(theme::text_hint()).size(theme::TEXT_SMALL));
+        ui.selectable_value(&mut bottom, false, "Middle")
+            .on_hover_text("Around half-way between the lowest and highest point, so the shape swings more or less");
+        ui.selectable_value(&mut bottom, true, "Bottom")
+            .on_hover_text("Around the bottom of the lane: 50 % halves every value");
+    });
+    let changed_around = bottom != state.scale_bottom;
+    state.scale_bottom = bottom;
+    let pivot = if bottom { 0.0 } else { kept.as_ref().filter(|_| !changed_around).map_or(middle, |s| s.pivot) };
+    let now = ui.input(|i| i.time);
+    let shown_at =
+        if response.hovered() || response.dragged() { now } else { kept.as_ref().map_or(0.0, |s| s.shown_at) };
+    let started = kept.as_ref().is_some_and(|s| s.started);
     let shown = percent / 100.0;
-    let joined = joined && !response.drag_started();
-    state.stretch = Some(Stretch { of, shown, applied, joined });
-    let due = live(ui, state, &response);
-    if !due || (shown - applied).abs() < 1e-6 || applied <= 0.0 {
-        if response.drag_stopped()
-            && let Some(stretch) = state.stretch.as_mut()
-        {
-            stretch.joined = false;
-        }
+    state.stretch = Some(Stretch { of, track, key: key.clone(), shown, pivot, started, shown_at });
+    let due = live(ui, state, &response) || (changed_around && started);
+    if !due {
         return None;
     }
-    // The command takes 0 to 4 at a time; what it did is what the points are at now.
-    let factor = (shown / applied).clamp(0.0, 4.0);
-    let dragging = response.dragged() && !response.drag_stopped();
     if let Some(stretch) = state.stretch.as_mut() {
-        stretch.applied = applied * factor;
-        stretch.joined = dragging;
+        stretch.started = true;
     }
-    Some((factor, joined))
+    Some((shown.clamp(0.0, 4.0), started))
 }
 
 /// The Smooth slider's amount kept for one range.
@@ -738,6 +764,8 @@ pub struct LanesState {
     /// Scale as the menu shows it for what it scales (a range or picked points, by a key): the
     /// value shown and the value the points are at now, from where the scaling began.
     stretch: Option<Stretch>,
+    /// Scale works around the bottom of the lane, not the points' middle (the window's choice).
+    scale_bottom: bool,
     /// Smooth as the range menu shows it, and the smoothing it put in last.
     smooth: Option<Smoothed>,
     /// Simplify as the range menu shows it, with the line from before it.
@@ -1614,7 +1642,7 @@ fn lane(
                 let center =
                     suhina_engine::model::automation::value_at(&level, start, param.scale.stepped(), &param.scale)
                         .map_or(0.5, |v| param.scale.position(v));
-                let lane = (&param.points[..], &level[..]);
+                let lane = (&param.points[..], &level[..], &param.scale);
                 range_menu(ui, state, track, key, (start, end), center, geometry.grid.bar_beats, lane, actions);
             }
             // Elsewhere nothing is drawn: the shape is the one the next points' segments take,
@@ -1628,7 +1656,7 @@ fn lane(
                     state.new_shape = None;
                     ui.close();
                 }
-                picked_menu(ui, state, track, key, actions);
+                picked_menu(ui, state, (track, key, param), actions);
             }
         }
         grid_menu(ui, state, actions);
@@ -1690,6 +1718,20 @@ fn lane(
             &format!("automation lane {} {}/{:?}", track.0, key.param, key.device),
             format!("{drew}, {} points", param.points.len()),
         );
+    }
+    let now = ui.input(|i| i.time);
+    if let Some(stretch) =
+        state.stretch.as_ref().filter(|s| s.track == track && &s.key == key && now - s.shown_at < 0.15)
+    {
+        let y = y_of(plot, stretch.pivot);
+        let dashes = Shape::dashed_line(
+            &[Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
+            Stroke::new(1.0, ink.gamma_multiply(0.8)),
+            4.0,
+            4.0,
+        );
+        lane_painter.extend(dashes);
+        ui.ctx().request_repaint();
     }
     if let Some(simplified) = state.simplify.as_ref().filter(|s| s.track == track && &s.key == key && s.amount > 0.0) {
         let before = envelope(&simplified.original, &param.scale, plot, geometry);
@@ -1922,7 +1964,7 @@ fn lane(
                     ui.close();
                 }
             }
-            picked_menu(ui, state, track, key, actions);
+            picked_menu(ui, state, (track, key, param), actions);
             grid_menu(ui, state, actions);
         });
         // The field Edit value opened, beside the point: Enter (or a click elsewhere) sets the
@@ -1984,7 +2026,7 @@ fn range_menu(
     (start, end): (f64, f64),
     center: f64,
     bar_beats: f64,
-    (points, level): (&[AutomationPoint], &[AutomationPoint]),
+    (points, level, scale): (&[AutomationPoint], &[AutomationPoint], &Scale),
     actions: &mut Vec<Action>,
 ) {
     let bar = bar_beats.max(1e-3);
@@ -2075,10 +2117,13 @@ fn range_menu(
     ui.separator();
     ui.label(egui::RichText::new("Points in the range").color(theme::text_hint()).size(theme::TEXT_SMALL));
     let of = format!("{}/{key:?}/range {start} {end}", track.0);
-    if let Some((factor, joined)) = stretch_slider(ui, state, of.clone()) {
+    let middle = middle_of(points, scale, start, end);
+    if let Some((factor, again)) = stretch_slider(ui, state, (track, key), of.clone(), middle) {
         let mut params = ranged();
         params["factor"] = json!(factor);
-        params["continue"] = json!(joined);
+        params["around"] = json!(if state.scale_bottom { "bottom" } else { "middle" });
+        params["continue"] = json!(again);
+        params["replace"] = json!(again);
         actions.push(Action::new("automation.scaleRange", params));
         // The shape is scaled now: Depth and Rate would put the unscaled one back.
         state.last_shape = None;
@@ -2142,7 +2187,12 @@ fn range_menu(
 
 /// The picked points' part of a lane's menus, when points of this lane are picked: how many, and
 /// Scale for them (`automation.scaleRange` with them, live while it is dragged).
-fn picked_menu(ui: &mut Ui, state: &mut LanesState, track: TrackId, key: &LaneKey, actions: &mut Vec<Action>) {
+fn picked_menu(
+    ui: &mut Ui,
+    state: &mut LanesState,
+    (track, key, param): (TrackId, &LaneKey, &Param),
+    actions: &mut Vec<Action>,
+) {
     let Some(points) = state
         .selection
         .as_ref()
@@ -2158,11 +2208,17 @@ fn picked_menu(ui: &mut Ui, state: &mut LanesState, track: TrackId, key: &LaneKe
             .color(theme::text_hint())
             .size(theme::TEXT_SMALL),
     );
-    if let Some((factor, joined)) = stretch_slider(ui, state, format!("{}/{key:?}/points {points:?}", track.0)) {
+    let beats = points.iter().filter_map(|&i| param.points.get(i)).map(|p| p.beat);
+    let (first, last) = beats.fold((f64::MAX, f64::MIN), |(lo, hi), b| (lo.min(b), hi.max(b)));
+    let middle = middle_of(&param.points, &param.scale, first, last);
+    let of = format!("{}/{key:?}/points {points:?}", track.0);
+    if let Some((factor, again)) = stretch_slider(ui, state, (track, key), of, middle) {
         let mut params = key.params(track);
         params["points"] = json!(points);
         params["factor"] = json!(factor);
-        params["continue"] = json!(joined);
+        params["around"] = json!(if state.scale_bottom { "bottom" } else { "middle" });
+        params["continue"] = json!(again);
+        params["replace"] = json!(again);
         actions.push(Action::new("automation.scaleRange", params));
     }
 }

@@ -790,6 +790,33 @@ fn stretching_picked_points_moves_only_them() {
     assert_eq!(values, [0.5, -1.0, 0.5, -1.0, 0.5]);
 }
 
+/// Scale around the bottom of the lane takes a share of each place; a scaling that replaces the
+/// one before starts from the line as it was, so 200 % and back to 100 % puts back peaks the lane's
+/// edge had cut (#916).
+#[test]
+fn scaling_around_the_bottom_and_back_restores_the_line() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.0), (1.0, 0.8), (2.0, 0.0)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let scale = |factor: f64, again: bool| {
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "around": "middle",
+                "continue": again, "replace": again })
+    };
+    run(&mut session, "automation.scaleRange", scale(2.0, false)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values[1], 1.0, "the peak is cut at the lane's top: {values:?}");
+    run(&mut session, "automation.scaleRange", scale(1.0, true)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| (p.1 * 1e9).round() / 1e9).collect();
+    assert_eq!(values, [0.0, 0.8, 0.0]);
+    // Around the bottom (full left), a half: each place halves toward it.
+    let bottom = json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 0.5, "around": "bottom" });
+    run(&mut session, "automation.scaleRange", bottom).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| (p.1 * 1e9).round() / 1e9).collect();
+    assert_eq!(values, [-0.5, -0.1, -0.5]);
+}
+
 /// Smooth points keeps a sine a sine: the line after it stays within a few hundredths of the
 /// line before it everywhere, curves and all, with fewer points (#916).
 #[test]

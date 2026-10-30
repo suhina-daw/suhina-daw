@@ -264,7 +264,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "automation.scaleRange",
-        label: "Stretch the points of a parameter's automation inside a time range, or picked points, up and down around their middle, kept inside the parameter's travel",
+        label: "Stretch the points of a parameter's automation inside a time range, or picked points, up and down around their middle or the bottom of the lane, kept inside the parameter's travel",
         params: &[
             DEVICE_TRACK,
             AUTOMATED_DEVICE,
@@ -279,9 +279,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "factor",
                 ParamType::Number,
-                "how far from their middle the points go, 0 to 4: 1 leaves them, 2 doubles their swing, 0 flattens them",
+                "how far from what they are scaled around the points go, 0 to 4: 1 leaves them, 2 doubles their swing, 0 flattens them",
+            ),
+            optional(
+                "around",
+                ParamType::Text,
+                "\"middle\" (default): half-way between the lowest and highest point in the span; \"bottom\": the bottom of the lane, so 0.5 halves every value",
             ),
             CONTINUE,
+            REPLACE,
         ],
         kind: CommandKind::Edit,
         run: crate::automation_range::scale_range,
