@@ -176,15 +176,14 @@ impl App {
                 let behind = ui.interact(window, Id::new("settings-behind"), Sense::click_and_drag());
                 let _swallowed = behind.clicked();
                 let tint = ui.painter().add(egui::Shape::Noop);
-                let size = Vec2::new(
-                    SETTINGS_SIZE.x.min(window.width() - 2.0 * PAD),
-                    SETTINGS_SIZE.y.min(window.height() - 2.0 * PAD),
-                );
+                // The panel stays above the status bar, which shows what the page reports.
+                let mut bounds = window.shrink(PAD);
+                bounds.max.y = bounds.max.y.min(window.bottom() - theme::STATUS_BAR);
+                let size = Vec2::new(SETTINGS_SIZE.x.min(bounds.width()), SETTINGS_SIZE.y.min(bounds.height()));
                 let position = ui
                     .ctx()
                     .data(|data| data.get_temp::<Pos2>(Id::new("settings-panel-position")))
                     .unwrap_or(window.center() - size / 2.0);
-                let bounds = window.shrink(PAD);
                 let position = egui::pos2(
                     position.x.clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
                     position.y.clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),

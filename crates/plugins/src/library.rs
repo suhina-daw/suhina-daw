@@ -372,6 +372,8 @@ impl Library {
     /// Stops looking in a folder the user added; returns false if it was not one of them.
     pub fn remove_folder(&mut self, folder: &Path) -> Result<bool, String> {
         self.load();
+        let folder = expand_home(folder, user_home().as_deref());
+        let folder = folder.as_path();
         let canonical = folder.canonicalize().ok().map(plain);
         let matches = |f: &PathBuf| f == folder || Some(f) == canonical.as_ref();
         let before = self.custom.len();
@@ -388,6 +390,8 @@ impl Library {
     /// when it already was so.
     pub fn set_folder_enabled(&mut self, folder: &Path, enabled: bool) -> Result<bool, String> {
         let listed = self.folder_list();
+        let folder = expand_home(folder, user_home().as_deref());
+        let folder = folder.as_path();
         let canonical = folder.canonicalize().ok().map(plain);
         let path = listed
             .iter()

@@ -512,7 +512,10 @@ impl ArrangementViewState {
         self.track_focus = false;
         self.picked_whole = true;
         // Clips picked: the time selection gives way to them, so one left was painted after them.
-        self.time_selection = None;
+        // Nothing picked (Select All in an empty project) leaves it be.
+        if !keys.is_empty() {
+            self.time_selection = None;
+        }
         self.anchor = keys.first().copied();
         self.selected = keys;
     }

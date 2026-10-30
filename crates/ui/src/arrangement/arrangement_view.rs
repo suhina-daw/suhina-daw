@@ -1721,10 +1721,11 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
 /// A time selection just painted moves the play start marker to its start, so Play starts there
 /// (#937); while playing, playback goes on where it is and the next start begins there.
 fn play_from_selection(state: &ArrangementViewState, timeline: &Timeline, actions: &mut Vec<Action>) {
-    if let Some(selection) = &state.time_selection
-        && (selection.start - timeline.start_beat).abs() > 1e-9
+    // The ruler reaches past the last beat a start may be on.
+    if let Some(start) = state.time_selection.as_ref().map(|s| s.start.min(suhina_engine::MAX_START_BEAT))
+        && (start - timeline.start_beat).abs() > 1e-9
     {
-        actions.push(Action::new("transport.setStart", json!({ "beats": selection.start })));
+        actions.push(Action::new("transport.setStart", json!({ "beats": start })));
     }
 }
 

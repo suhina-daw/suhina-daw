@@ -29,7 +29,8 @@ in columns 260 px wide and up to 168 px tall: a longer list continues in another
 right, and the panel widens rather than scrolls. Stock controls a canvas leaves shown sit in the
 same columns to the canvas's right. In a row a device is as wide as its canvas and columns plus
 12 px (220 px at least, 272 px for one column); the stacked column is 272 px wide by default. A
-smaller detail area or column scrolls the panel.
+smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`
+and no canvas keeps one column that follows that width and scrolls.
 
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
