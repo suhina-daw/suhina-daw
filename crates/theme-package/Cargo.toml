@@ -12,7 +12,7 @@ serde_json.workspace = true
 zip.workspace = true
 flate2.workspace = true  # the zip crate's deflate backend
 roxmltree.workspace = true
-sha2 = "0.10"  # MIT OR Apache-2.0; the files' checksums in the manifest
+sha2 = "0.11"  # MIT OR Apache-2.0; the files' checksums in the manifest
 
 [lints]
 workspace = true
