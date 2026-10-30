@@ -113,7 +113,6 @@ Besides `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warning
 python scripts/docs.py check
 python scripts/rename_suhina.py --check
 python scripts/license_header.py --check     # after adding a source file
-python scripts/parity/update_report.py --check-inputs
 cargo deny check                             # when Cargo.lock changed
 ```
 
@@ -121,6 +120,6 @@ Report each check as **passed**, **failed** (with the output) or **not run** (an
 that could not run in the environment is never reported as passed.
 
 The pull request follows the repository's template. *How to check it* follows
-[`docs/how-to-check.md`](../../../docs/how-to-check.md); the parity line and the documents to
+[`docs/how-to-check.md`](../../../docs/how-to-check.md); the documents to
 update are in AGENTS.md, and `python scripts/docs.py impact` lists the documents that cover the
 code you changed.

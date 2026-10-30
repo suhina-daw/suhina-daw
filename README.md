@@ -7,15 +7,16 @@
 
 An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
 
-Suhina was called Loopwerk until October 2026; settings kept under the old name carry over on the first start. <!-- rename_suhina: keep -->
-
-<a href="docs/research/parity-live-12-by-area.png">
-  <img width="700" alt="Parity by area: the share of each area of a reference DAW's manual that Suhina covers today" src="docs/research/parity-live-12-by-area.png">
+<a href="docs/features.md">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/features-by-area-dark.svg">
+    <img width="782" alt="Suhina's features by area: how many are done, partly done and planned" src="docs/features-by-area.svg">
+  </picture>
 </a>
 
-> How much of that workflow exists today, measured chapter by chapter against a reference DAW's
-> manual: [the report](docs/research/parity-live-12.md), [the order the gap gets closed in](docs/decisions/0016-parity-target.md).
-> Rebuilt on `main` whenever the numbers change.
+> What Suhina does today, area by area, from its own feature map: [the list](docs/features.md).
+> What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
+> Rebuilt on `main` whenever the map changes.
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,

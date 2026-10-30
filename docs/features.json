@@ -1,0 +1,1023 @@
+{
+  "about": "Suhina's areas (ADR 0016), each with its `area:` label on GitHub, and the features in them that have no issue of their own: what was built before the board existed, or is planned without an issue yet. A feature whose ref names an issue (#N) is counted through that issue. scripts/features.py checks this file and, on main, writes docs/features.md and the two figures from it and the issues.",
+  "statuses": [
+    "done",
+    "partial",
+    "planned"
+  ],
+  "areas": [
+    {
+      "name": "Projects and files",
+      "features": [
+        {
+          "name": "Opening Live Sets (.als)",
+          "status": "done"
+        },
+        {
+          "name": "Suhina's own project file (.suhina)",
+          "status": "done"
+        },
+        {
+          "name": "New, open, save and save as",
+          "status": "done"
+        },
+        {
+          "name": "Templates and the start panel",
+          "status": "done",
+          "ref": "#318"
+        },
+        {
+          "name": "Recent projects",
+          "status": "done",
+          "ref": "#314"
+        },
+        {
+          "name": "Several projects open in tabs",
+          "status": "done",
+          "ref": "#36"
+        },
+        {
+          "name": "Backups and recovery after a crash",
+          "status": "done",
+          "ref": "#202"
+        },
+        {
+          "name": "Finding and relinking missing audio files",
+          "status": "done",
+          "ref": "#140"
+        },
+        {
+          "name": "Importing MIDI files",
+          "status": "done"
+        },
+        {
+          "name": "Exporting MIDI files",
+          "status": "planned"
+        },
+        {
+          "name": "Collecting a project's files into its folder",
+          "status": "planned"
+        },
+        {
+          "name": "Finding unused files",
+          "status": "planned"
+        },
+        {
+          "name": "DAWproject import and export",
+          "status": "planned",
+          "ref": "M7"
+        },
+        {
+          "name": "FL Studio projects (.flp)",
+          "status": "planned",
+          "ref": "epic #271"
+        }
+      ],
+      "label": "area: projects"
+    },
+    {
+      "name": "Launcher",
+      "features": [
+        {
+          "name": "Launching clips and scenes on a quantisation grid",
+          "status": "done"
+        },
+        {
+          "name": "Stop buttons and back to arrangement",
+          "status": "done"
+        },
+        {
+          "name": "Scenes: insert, duplicate, rename, delete",
+          "status": "done",
+          "ref": "#404"
+        },
+        {
+          "name": "A scene's own tempo and time signature",
+          "status": "done",
+          "ref": "#404"
+        },
+        {
+          "name": "Follow actions",
+          "status": "done",
+          "ref": "#398"
+        },
+        {
+          "name": "Launch modes and legato",
+          "status": "done",
+          "ref": "#399"
+        },
+        {
+          "name": "Per-clip launch quantisation",
+          "status": "done",
+          "ref": "#399"
+        },
+        {
+          "name": "Launching from computer keys",
+          "status": "done",
+          "ref": "#411"
+        },
+        {
+          "name": "Metronome",
+          "status": "done",
+          "ref": "#647"
+        },
+        {
+          "name": "Samples dropped into slots",
+          "status": "done",
+          "ref": "#274"
+        },
+        {
+          "name": "Copying clips between the Session and Arrangement views",
+          "status": "done",
+          "ref": "#273"
+        },
+        {
+          "name": "Fades on launched clips",
+          "status": "done",
+          "ref": "#104"
+        },
+        {
+          "name": "Launching from MIDI notes",
+          "status": "planned",
+          "ref": "#264"
+        }
+      ],
+      "label": "area: launcher"
+    },
+    {
+      "name": "Arrangement view",
+      "features": [
+        {
+          "name": "Clips on track lanes, moved and copied by dragging",
+          "status": "done"
+        },
+        {
+          "name": "Zoom, scroll and the grid",
+          "status": "done",
+          "ref": "#311"
+        },
+        {
+          "name": "Playing from a position or from the selected clip",
+          "status": "done",
+          "ref": "#204"
+        },
+        {
+          "name": "Markers",
+          "status": "done",
+          "ref": "#99"
+        },
+        {
+          "name": "Loop region",
+          "status": "done",
+          "ref": "#98"
+        },
+        {
+          "name": "Split and consolidate",
+          "status": "done",
+          "ref": "#400"
+        },
+        {
+          "name": "Clip fades",
+          "status": "done",
+          "ref": "#62"
+        },
+        {
+          "name": "Clips that cover others replace what they cover",
+          "status": "done",
+          "ref": "#63"
+        },
+        {
+          "name": "Track groups inside groups, folding",
+          "status": "done",
+          "ref": "#209"
+        },
+        {
+          "name": "Track colours",
+          "status": "done",
+          "ref": "#509"
+        },
+        {
+          "name": "Inserting and deleting time",
+          "status": "planned",
+          "ref": "#713"
+        },
+        {
+          "name": "Punch in and out",
+          "status": "planned"
+        },
+        {
+          "name": "Comping and take lanes",
+          "status": "planned",
+          "ref": "#989"
+        }
+      ],
+      "label": "area: arrangement"
+    },
+    {
+      "name": "Clips and the clip editor",
+      "features": [
+        {
+          "name": "The detail area across the full width",
+          "status": "done",
+          "ref": "#492"
+        },
+        {
+          "name": "Double-click makes an empty clip",
+          "status": "done",
+          "ref": "#493"
+        },
+        {
+          "name": "Clip names and colours from the clip's menu",
+          "status": "partial",
+          "ref": "#206"
+        },
+        {
+          "name": "Clip gain on the clip",
+          "status": "done",
+          "ref": "#62"
+        },
+        {
+          "name": "Waveforms in clips",
+          "status": "done",
+          "ref": "#196"
+        },
+        {
+          "name": "Editing a clip's start, end and loop",
+          "status": "partial",
+          "ref": "#700"
+        },
+        {
+          "name": "Clip envelopes",
+          "status": "planned"
+        }
+      ],
+      "label": "area: clips"
+    },
+    {
+      "name": "Audio, tempo and warping",
+      "features": [
+        {
+          "name": "Decoding WAV, AIFF, FLAC, MP3 and Ogg Vorbis",
+          "status": "done"
+        },
+        {
+          "name": "Gain and transpose",
+          "status": "done"
+        },
+        {
+          "name": "Warping along warp markers",
+          "status": "done"
+        },
+        {
+          "name": "Real-time time-stretching",
+          "status": "done"
+        },
+        {
+          "name": "Tempo detection of samples",
+          "status": "done"
+        },
+        {
+          "name": "Tempo and time-signature changes over the song",
+          "status": "partial",
+          "ref": "#402"
+        },
+        {
+          "name": "Editing warp markers by hand",
+          "status": "planned"
+        },
+        {
+          "name": "Formant shifting for transposed clips",
+          "status": "planned"
+        },
+        {
+          "name": "Tap tempo",
+          "status": "planned"
+        }
+      ],
+      "label": "area: audio"
+    },
+    {
+      "name": "MIDI editing",
+      "features": [
+        {
+          "name": "Piano roll",
+          "status": "done",
+          "ref": "#200"
+        },
+        {
+          "name": "Note gestures: draw, move, resize, select",
+          "status": "done",
+          "ref": "#351"
+        },
+        {
+          "name": "Quantise",
+          "status": "done",
+          "ref": "#345"
+        },
+        {
+          "name": "Keyboard editing",
+          "status": "done",
+          "ref": "#344"
+        },
+        {
+          "name": "Grid menu and ruler",
+          "status": "done",
+          "ref": "#346"
+        },
+        {
+          "name": "Ghost notes",
+          "status": "done",
+          "ref": "#348"
+        },
+        {
+          "name": "Clip scales and folding to the scale",
+          "status": "done",
+          "ref": "#347"
+        },
+        {
+          "name": "Velocity and note properties",
+          "status": "partial",
+          "ref": "#351"
+        },
+        {
+          "name": "Note commands for the command line and agents",
+          "status": "planned",
+          "ref": "#200"
+        },
+        {
+          "name": "Transforming notes: strum, humanise, arpeggiate, stretch",
+          "status": "planned",
+          "ref": "#349"
+        },
+        {
+          "name": "Generating notes: rhythms, chords, melodies",
+          "status": "planned",
+          "ref": "#350"
+        },
+        {
+          "name": "Per-note expression (MPE)",
+          "status": "planned",
+          "ref": "#930"
+        },
+        {
+          "name": "Grooves",
+          "status": "planned"
+        },
+        {
+          "name": "Tuning systems",
+          "status": "planned"
+        }
+      ],
+      "label": "area: midi-editing"
+    },
+    {
+      "name": "Recording and inputs",
+      "features": [
+        {
+          "name": "Recording into clip slots",
+          "status": "done",
+          "ref": "#266"
+        },
+        {
+          "name": "Recording into the arrangement",
+          "status": "done",
+          "ref": "#268"
+        },
+        {
+          "name": "Audio and MIDI recording, lined up with what was heard",
+          "status": "done",
+          "ref": "#268"
+        },
+        {
+          "name": "Count-in",
+          "status": "done",
+          "ref": "#266"
+        },
+        {
+          "name": "Audio inputs per track and monitoring",
+          "status": "done",
+          "ref": "#267"
+        },
+        {
+          "name": "A MIDI input per track",
+          "status": "done",
+          "ref": "#278"
+        },
+        {
+          "name": "MIDI controllers playing the armed tracks",
+          "status": "done",
+          "ref": "#264"
+        },
+        {
+          "name": "Auto-arm the selected track",
+          "status": "done",
+          "ref": "#834"
+        },
+        {
+          "name": "Lower latency while a track is armed",
+          "status": "done",
+          "ref": "#265"
+        },
+        {
+          "name": "Overdubbing MIDI into a playing clip",
+          "status": "planned"
+        },
+        {
+          "name": "Capturing what was played before recording",
+          "status": "planned"
+        },
+        {
+          "name": "Resampling and recording from other tracks",
+          "status": "planned",
+          "ref": "#987"
+        },
+        {
+          "name": "Bouncing and freezing tracks",
+          "status": "planned"
+        }
+      ],
+      "label": "area: recording"
+    },
+    {
+      "name": "Automation",
+      "features": [
+        {
+          "name": "Volume, pan and mute envelopes",
+          "status": "done",
+          "ref": "#395"
+        },
+        {
+          "name": "Built-in device parameters",
+          "status": "done",
+          "ref": "#395"
+        },
+        {
+          "name": "Plug-in parameters",
+          "status": "done",
+          "ref": "#109"
+        },
+        {
+          "name": "Lanes in the Arrangement view",
+          "status": "done",
+          "ref": "#420"
+        },
+        {
+          "name": "Points with curves and jumps",
+          "status": "done",
+          "ref": "#913"
+        },
+        {
+          "name": "Recording automation from the controls",
+          "status": "planned"
+        },
+        {
+          "name": "Tempo automation edited by hand",
+          "status": "planned"
+        }
+      ],
+      "label": "area: automation"
+    },
+    {
+      "name": "Mixing and routing",
+      "features": [
+        {
+          "name": "Channel strips in the Launcher view",
+          "status": "done",
+          "ref": "#491"
+        },
+        {
+          "name": "Volume, pan, mute and solo, on many tracks at once",
+          "status": "done",
+          "ref": "#455"
+        },
+        {
+          "name": "Group tracks and their buses",
+          "status": "done",
+          "ref": "#209"
+        },
+        {
+          "name": "Sends and return tracks",
+          "status": "done",
+          "ref": "#396"
+        },
+        {
+          "name": "Level meters",
+          "status": "done",
+          "ref": "#397"
+        },
+        {
+          "name": "Cue output for headphones",
+          "status": "done",
+          "ref": "#401"
+        },
+        {
+          "name": "Track output routing",
+          "status": "done",
+          "ref": "#61"
+        },
+        {
+          "name": "Latency compensation",
+          "status": "done",
+          "ref": "#110"
+        },
+        {
+          "name": "Devices on return tracks and the main output",
+          "status": "planned",
+          "ref": "#687"
+        },
+        {
+          "name": "Crossfader",
+          "status": "planned"
+        },
+        {
+          "name": "Track delay",
+          "status": "planned"
+        },
+        {
+          "name": "Split stereo panning",
+          "status": "planned"
+        },
+        {
+          "name": "Key inputs (sidechain)",
+          "status": "planned"
+        },
+        {
+          "name": "Plug-ins with several outputs",
+          "status": "planned"
+        },
+        {
+          "name": "Routing to external hardware",
+          "status": "planned"
+        }
+      ],
+      "label": "area: mixing"
+    },
+    {
+      "name": "Devices as a system",
+      "features": [
+        {
+          "name": "Device chains on tracks",
+          "status": "done",
+          "ref": "#55"
+        },
+        {
+          "name": "Device panels with dials and band graphs",
+          "status": "done",
+          "ref": "#679"
+        },
+        {
+          "name": "Device groups (parallel chains)",
+          "status": "done",
+          "ref": "#147"
+        },
+        {
+          "name": "Device SDK: effects as data-only graphs (.sd)",
+          "status": "done",
+          "ref": "#406"
+        },
+        {
+          "name": "Custom panels with artwork",
+          "status": "done"
+        },
+        {
+          "name": "Devices of an imported set kept as placeholders",
+          "status": "done"
+        },
+        {
+          "name": "Macros",
+          "status": "planned"
+        },
+        {
+          "name": "Key and velocity zones for chains",
+          "status": "planned",
+          "ref": "#739"
+        },
+        {
+          "name": "Device presets",
+          "status": "planned"
+        },
+        {
+          "name": "Community devices as Pure Data patches",
+          "status": "planned"
+        }
+      ],
+      "label": "area: devices"
+    },
+    {
+      "name": "Built-in effects",
+      "features": [
+        {
+          "name": "EQ (eight bands)",
+          "status": "done",
+          "ref": "#381"
+        },
+        {
+          "name": "EQ response curve and analyser",
+          "status": "partial",
+          "ref": "#1041"
+        },
+        {
+          "name": "DJ EQ",
+          "status": "done",
+          "ref": "#907"
+        },
+        {
+          "name": "Compressor",
+          "status": "done"
+        },
+        {
+          "name": "Limiter",
+          "status": "done"
+        },
+        {
+          "name": "Delay",
+          "status": "done",
+          "ref": "#383"
+        },
+        {
+          "name": "Reverb",
+          "status": "done",
+          "ref": "#384"
+        },
+        {
+          "name": "Overdrive",
+          "status": "done"
+        },
+        {
+          "name": "Utility",
+          "status": "done"
+        },
+        {
+          "name": "Auto-pan and tremolo",
+          "status": "done",
+          "ref": "#1059"
+        },
+        {
+          "name": "Vinyl distortion",
+          "status": "done"
+        },
+        {
+          "name": "NAM amp modeler and cabinet loader",
+          "status": "done",
+          "ref": "#489"
+        },
+        {
+          "name": "Filter",
+          "status": "planned",
+          "ref": "#382"
+        },
+        {
+          "name": "Bus compressor",
+          "status": "planned",
+          "ref": "#385"
+        },
+        {
+          "name": "Multiband dynamics",
+          "status": "planned",
+          "ref": "#387"
+        },
+        {
+          "name": "Saturation",
+          "status": "planned",
+          "ref": "#386"
+        },
+        {
+          "name": "Gate",
+          "status": "planned",
+          "ref": "#973"
+        },
+        {
+          "name": "Chorus, flanger and phaser",
+          "status": "planned",
+          "ref": "#969"
+        },
+        {
+          "name": "Convolution reverb",
+          "status": "planned",
+          "ref": "#388"
+        }
+      ],
+      "label": "area: effects"
+    },
+    {
+      "name": "Instruments and MIDI effects",
+      "features": [
+        {
+          "name": "FM synth with DX7 voice files",
+          "status": "done",
+          "ref": "#50"
+        },
+        {
+          "name": "Sampler: sample and granular playback",
+          "status": "done",
+          "ref": "#391"
+        },
+        {
+          "name": "Sampler: slicing",
+          "status": "done"
+        },
+        {
+          "name": "Pitch (MIDI effect)",
+          "status": "done",
+          "ref": "#674"
+        },
+        {
+          "name": "Drum sampler",
+          "status": "planned",
+          "ref": "#392"
+        },
+        {
+          "name": "Wavetable synth",
+          "status": "planned",
+          "ref": "#393"
+        },
+        {
+          "name": "Subtractive synth",
+          "status": "planned",
+          "ref": "#389"
+        },
+        {
+          "name": "Physical-modelling synth",
+          "status": "planned",
+          "ref": "#394"
+        },
+        {
+          "name": "Scale and chord MIDI effects",
+          "status": "planned",
+          "ref": "#981"
+        },
+        {
+          "name": "Arpeggiator",
+          "status": "planned"
+        },
+        {
+          "name": "Velocity and random MIDI effects",
+          "status": "planned"
+        }
+      ],
+      "label": "area: instruments"
+    },
+    {
+      "name": "Plug-ins",
+      "features": [
+        {
+          "name": "CLAP hosting",
+          "status": "done"
+        },
+        {
+          "name": "VST3 hosting",
+          "status": "done"
+        },
+        {
+          "name": "Each plug-in sandboxed in its own process",
+          "status": "done"
+        },
+        {
+          "name": "A crashed plug-in restarted, the project kept",
+          "status": "done"
+        },
+        {
+          "name": "Plug-in editors",
+          "status": "done",
+          "ref": "#129"
+        },
+        {
+          "name": "Plug-in state saved in the project",
+          "status": "done",
+          "ref": "#111"
+        },
+        {
+          "name": "VST2 plug-ins of a project opened through their VST3 versions",
+          "status": "done"
+        },
+        {
+          "name": "Plug-ins of different tracks run at the same time",
+          "status": "done",
+          "ref": "#142"
+        },
+        {
+          "name": "Plug-in manager, scanning and folders per format",
+          "status": "done",
+          "ref": "#66"
+        },
+        {
+          "name": "ARA clip editing",
+          "status": "partial",
+          "ref": "epic #587"
+        }
+      ],
+      "label": "area: plug-ins"
+    },
+    {
+      "name": "Browser and library",
+      "features": [
+        {
+          "name": "Folders, search, pins and recent items",
+          "status": "done",
+          "ref": "#124"
+        },
+        {
+          "name": "Colour tags and the tag editor",
+          "status": "done",
+          "ref": "#457"
+        },
+        {
+          "name": "Previews, also through the cue output",
+          "status": "done"
+        },
+        {
+          "name": "A category for plug-ins",
+          "status": "done",
+          "ref": "#330"
+        },
+        {
+          "name": "Files dragged in from the system's file manager",
+          "status": "done",
+          "ref": "#274"
+        },
+        {
+          "name": "Sample map by sound",
+          "status": "done",
+          "ref": "#136"
+        },
+        {
+          "name": "Kinds of samples recognised by sound",
+          "status": "done",
+          "ref": "#325"
+        },
+        {
+          "name": "Collections",
+          "status": "planned"
+        }
+      ],
+      "label": "area: browser"
+    },
+    {
+      "name": "Export and rendering",
+      "features": [
+        {
+          "name": "Mixdown to WAV, FLAC, Ogg Vorbis and MP3",
+          "status": "done",
+          "ref": "#601"
+        },
+        {
+          "name": "Renders from the command line and MCP",
+          "status": "done"
+        },
+        {
+          "name": "Offline renders on the same code as playback",
+          "status": "done"
+        },
+        {
+          "name": "Exporting each track to its own file",
+          "status": "planned",
+          "ref": "#205"
+        }
+      ],
+      "label": "area: export"
+    },
+    {
+      "name": "Control and sync",
+      "features": [
+        {
+          "name": "Keys bound to any command",
+          "status": "done",
+          "ref": "#71"
+        },
+        {
+          "name": "Mapping MIDI controllers to controls",
+          "status": "planned"
+        },
+        {
+          "name": "MIDI clock in and out",
+          "status": "planned"
+        },
+        {
+          "name": "Tempo sync with other programs on the network",
+          "status": "planned"
+        }
+      ],
+      "label": "area: control"
+    },
+    {
+      "name": "Commands and agents",
+      "features": [
+        {
+          "name": "Every edit a command with one undo step",
+          "status": "done"
+        },
+        {
+          "name": "Edits heard while playing, without a gap",
+          "status": "done",
+          "ref": "#76"
+        },
+        {
+          "name": "Command-line tool",
+          "status": "done"
+        },
+        {
+          "name": "MCP server",
+          "status": "done"
+        },
+        {
+          "name": "Agents attached to the running app",
+          "status": "done",
+          "ref": "#605"
+        }
+      ],
+      "label": "area: agents"
+    },
+    {
+      "name": "Audio system and performance",
+      "features": [
+        {
+          "name": "WASAPI, ASIO, ALSA and Core Audio",
+          "status": "done",
+          "ref": "#143"
+        },
+        {
+          "name": "Buffer size and sample rate settings",
+          "status": "done",
+          "ref": "#143"
+        },
+        {
+          "name": "Falling back when the audio device is unplugged",
+          "status": "done",
+          "ref": "#177"
+        },
+        {
+          "name": "Real-time priority for audio threads",
+          "status": "done",
+          "ref": "#150"
+        },
+        {
+          "name": "CPU load in the control bar",
+          "status": "done",
+          "ref": "#407"
+        }
+      ],
+      "label": "area: audio-system"
+    },
+    {
+      "name": "Look, settings and access",
+      "features": [
+        {
+          "name": "Themes as style sheets, built-in themes",
+          "status": "done",
+          "ref": "#1017"
+        },
+        {
+          "name": "Theme packages to share",
+          "status": "done"
+        },
+        {
+          "name": "Window zoom",
+          "status": "done",
+          "ref": "#159"
+        },
+        {
+          "name": "Settings window with a guide",
+          "status": "done",
+          "ref": "#219"
+        },
+        {
+          "name": "Updates from within the app",
+          "status": "done"
+        },
+        {
+          "name": "Installers and signed builds",
+          "status": "planned",
+          "ref": "M8"
+        },
+        {
+          "name": "Keyboard navigation of the views",
+          "status": "planned"
+        },
+        {
+          "name": "Screen reader support",
+          "status": "planned"
+        }
+      ],
+      "label": "area: look"
+    },
+    {
+      "name": "Audio to MIDI",
+      "features": [
+        {
+          "name": "Stem separation",
+          "status": "partial",
+          "ref": "#146"
+        },
+        {
+          "name": "Slicing to MIDI",
+          "status": "planned"
+        },
+        {
+          "name": "Drum, bass, melody and chord detection",
+          "status": "planned"
+        }
+      ],
+      "label": "area: audio-to-midi"
+    }
+  ]
+}
