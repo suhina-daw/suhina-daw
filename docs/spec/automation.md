@@ -3,7 +3,7 @@ description: Automation envelopes - lanes of points over the arrangement for a t
 read_when: automation, envelope, curve family, Bezier, volume fader, fader law, volume taper, volume smoothing, Taper, VolumeTaper, Curve, CurveDrag, curve split, curve drag, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
 type: spec
 status: current
-last_verified: 2026-10-29
+last_verified: 2026-10-30
 covers:
   - crates/model/src/automation.rs
   - crates/engine/src/automation.rs

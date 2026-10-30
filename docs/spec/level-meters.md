@@ -3,7 +3,7 @@ description: What the level meters measure (tracks, groups, returns, the main ou
 read_when: level meter, meters, peak, RMS, clip indicator, clipping, peak hold, mixer.levels, mixer.resetClip, MeterMonitor, track header meter, mixer strip meter, dBFS
 type: spec
 status: current
-last_verified: 2026-10-22
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/meters.rs
   - crates/engine/src/meters_tests.rs

@@ -3,7 +3,7 @@ description: How to write a pull request's "How to check it" section, steps a ne
 read_when: how to check it, test steps, QA steps, how to test, pull request description, manual testing, reviewer steps, check a change
 type: howto
 status: current
-last_verified: 2026-10-26
+last_verified: 2026-10-28
 covers:
   - .github/pull_request_template.md
   - .claude/skills/how-to-check/SKILL.md

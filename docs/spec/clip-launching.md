@@ -3,7 +3,7 @@ description: How launching clips and scenes behaves: quantisation, stop buttons,
 read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-10-23
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs

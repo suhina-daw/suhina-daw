@@ -3,7 +3,7 @@ description: How hardware MIDI controllers drive Suhina - MIDI learn onto any co
 read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output
 type: decision
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-28
 ---
 
 # 0019: MIDI controllers and mapping

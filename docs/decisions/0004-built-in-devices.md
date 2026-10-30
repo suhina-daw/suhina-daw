@@ -3,7 +3,7 @@ description: The interface of built-in effects and instruments (Device trait, pa
 read_when: device, built-in effect or instrument, effect, instrument, dsp, filter, parameter, automation, utility, device-api, conformance
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-30
 covers:
   - crates/dsp/**
   - crates/device-api/**

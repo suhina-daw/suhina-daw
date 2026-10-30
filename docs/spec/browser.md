@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-25
+last_verified: 2026-10-30
 covers:
   - crates/library/**
   - crates/media/src/midi.rs

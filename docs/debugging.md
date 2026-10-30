@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-10-29
+last_verified: 2026-10-30
 covers:
   - apps/suhina/src/liquid.rs
   - apps/suhina/src/main.rs

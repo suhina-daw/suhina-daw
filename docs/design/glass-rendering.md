@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-10-22
+last_verified: 2026-10-28
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
