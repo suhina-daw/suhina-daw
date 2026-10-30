@@ -440,12 +440,21 @@ pub(super) fn track_header(
         .armable
         .then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(solo_width, header_row)));
     let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
-    let monitor = lane.plays_notes.then(|| {
-        Rect::from_min_size(
-            Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
-            Vec2::new(monitor_width, header_row),
-        )
-    });
+    // A track with take lanes has a button beside it that hides and shows them (#953).
+    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track)
+        || timeline.live_takes.iter().any(|t| t.track == lane.track && t.finished);
+    // Only where it ends inside its row, before the take lanes' button when that ends the row
+    // (#876); a narrower or lower header leaves the monitoring to the MIDI input menu.
+    let monitor_end = if has_takes && !narrow { row.right() - solo_width - 4.0 } else { row.right() };
+    let monitor = lane
+        .plays_notes
+        .then(|| {
+            Rect::from_min_size(
+                Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
+                Vec2::new(monitor_width, header_row),
+            )
+        })
+        .filter(|at| at.right() <= monitor_end);
     let controls_end = monitor.unwrap_or(arm.unwrap_or(cue)).right();
     // A lane tall enough for two rows has its volume and pan beside the buttons, where the
     // other level controls are, and the automation button, the name and the sends on the row
@@ -486,9 +495,6 @@ pub(super) fn track_header(
             &timeline.automation,
         );
     }
-    // A track with take lanes has a button beside it that hides and shows them (#953).
-    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track)
-        || timeline.live_takes.iter().any(|t| t.track == lane.track && t.finished);
     // Beside the automation button below the buttons, left of it at a narrow header's right end,
     // and at the right end of a one-row header, where the automation button starts the row.
     let takes_button = has_takes.then(|| {
