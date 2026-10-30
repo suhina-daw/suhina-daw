@@ -114,7 +114,16 @@ fn the_vst2_probe_tool_reports_on_the_mock() {
 #[test]
 #[ignore = "needs SUHINA_TEST_VST2; settles the spec's assumed facts against an installed plug-in"]
 fn an_installed_vst2_plug_in_answers_the_probe() {
-    let Some(path) = std::env::var_os("SUHINA_TEST_VST2") else {
+    // `SUHINA_TEST_VST2` names the file, or a `SUHINA_PLUGIN` naming a VST2 file does (set
+    // the same way the CLAP and VST3 manual tests take their plug-in).
+    let fallback = std::env::var_os("SUHINA_PLUGIN").and_then(|spec| {
+        let spec = spec.to_string_lossy().into_owned();
+        let path = spec.strip_prefix("vst2:").map(str::to_string).unwrap_or(spec);
+        path.to_ascii_lowercase().ends_with(".vst").then_some(path)
+    });
+    let Some(path) =
+        std::env::var_os("SUHINA_TEST_VST2").map(std::path::PathBuf::from).or_else(|| fallback.map(PathBuf::from))
+    else {
         eprintln!("SUHINA_TEST_VST2 not set; nothing to probe");
         return;
     };

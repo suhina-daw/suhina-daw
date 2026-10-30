@@ -380,7 +380,12 @@ another header (ADR 0022 decision 2).
 - The return conventions: the mock answers 0 for a filled request and the probe answers 1
   for its filled strings; what real plug-ins answer for theirs is recorded by the probe.
 - `effGetChunk`'s `index` meaning (bank against program) and the answer being the size.
-- The `CanDo` strings' spelling, and which side asks which.
+- The `CanDo` strings' spelling, and which side asks which. Arturia's Acid V answered
+  `effCanDo` with a third value, **-1**, on `receiveVstEvents` *(observed)*: the layer's
+  yes/no read of 1 and 0 stands, and a -1 means the plug-in declaring itself undecided.
+- The events a plug-in sends its host: Acid V sent real MIDI rastered to its own step
+  (`audioMasterProcessEvents` during `process`) *(observed)* — the window's "no channel yet"
+  note gains a real example.
 - A shell file (several plug-ins in one): the pinned header has `effShellGetNextPlugin` and
   nothing of the members' ids, so the scan lists the file's first plug-in and its spec
   checks the id it names; the members' own listing and loading is open until the probe sees
@@ -391,9 +396,11 @@ another header (ADR 0022 decision 2).
   `index` reading 1 (the current program) is unobserved.
 - VeSTige's `unkown_float` ("1.0f" in the pinned header) held 0 in the plug-ins the first
   run met *(observed)*; its use stays open.
-- Whether an installed plug-in keeps a latency in VeSTige's twelve zero bytes: the first
-  run's plug-ins held zeros there *(observed)*, matching "no latency" more than "no field";
-  a plug-in with delay is the observation that settles where its number lives.
+- Where an installed plug-in keeps its latency: Arturia's Acid V held 44 in the first four
+  of VeSTige's twelve zero bytes — an instrument with input delay — while the effect the
+  probe ran first (Filterstep) held zeros there *(observed)*. The host's read of the first
+  four as the delay, native byte order, is the one consistent with both; a plug-in whose
+  documented delay differs from what the field holds would disprove it.
 
 ## Sources
 
