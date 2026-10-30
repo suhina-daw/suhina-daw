@@ -766,6 +766,9 @@ pub struct LanesState {
     stretch: Option<Stretch>,
     /// Scale works around the bottom of the lane, not the points' middle (the window's choice).
     scale_bottom: bool,
+    /// Points moved together, picked again once the move is in: their lane, the beats they went
+    /// to, and how many frames are left to wait for the edit.
+    reselect: Option<(TrackId, LaneKey, Vec<f64>, u8)>,
     /// Smooth as the range menu shows it, and the smoothing it put in last.
     smooth: Option<Smoothed>,
     /// Simplify as the range menu shows it, with the line from before it.
@@ -1611,7 +1614,8 @@ fn lane(
         state.menu_at = Some((track, key.clone(), geometry.beat_of(pos.x).max(0.0)));
         state.menu_line = near_line(pos).then(|| geometry.snap(geometry.beat_of(pos.x), free));
     }
-    body.context_menu(|ui| {
+    // A click inside (Middle, Bottom, a slider) keeps the menu open; its commands close it.
+    egui::Popup::context_menu(&body).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         let Some(beat) = state.menu_at.as_ref().filter(|(t, k, _)| *t == track && k == key).map(|(_, _, b)| *b) else {
             return;
         };
@@ -1671,6 +1675,27 @@ fn lane(
         && let Some(pos) = ui.input(|i| i.pointer.primary_down().then(|| i.pointer.latest_pos()).flatten())
     {
         drag.now = dragged_to(drag.grab, geometry.beat_of(pos.x), position_of(plot, pos.y), plot, geometry, shift);
+    }
+    // Points moved together are picked again where they went, once the move is in.
+    if let Some((_, _, beats, frames)) = state.reselect.as_mut().filter(|(t, k, _, _)| *t == track && k == key) {
+        let mut found: Vec<usize> = Vec::new();
+        for beat in beats.iter() {
+            let next =
+                param.points.iter().enumerate().position(|(i, p)| (p.beat - beat).abs() < 1e-3 && !found.contains(&i));
+            if let Some(i) = next {
+                found.push(i);
+            }
+        }
+        if found.len() == beats.len() {
+            found.sort_unstable();
+            state.selection = Some(Selection { track, key: key.clone(), points: found });
+            state.reselect = None;
+        } else if *frames == 0 {
+            state.reselect = None;
+        } else {
+            *frames -= 1;
+            ui.ctx().request_repaint();
+        }
     }
     let points = shown_points(param, track, geometry, free, state);
     let ink = if param.enabled { color(lanes.color) } else { theme::text_hint() };
@@ -1924,13 +1949,22 @@ fn lane(
             if let Some(action) = drop_points(&drag, param, geometry, free) {
                 actions.push(action);
             }
-            // The moved points keep no selection: their indices change with the edit.
+            // The moved points stay picked: their indices change with the edit, so they are found
+            // again by the beats they went to once it is in.
             if drag.together.len() > 1 {
+                let (beats, _) = drag_delta(&drag, param, geometry, free);
+                let to: Vec<f64> = drag
+                    .together
+                    .iter()
+                    .filter_map(|&i| param.points.get(i))
+                    .map(|p| round((p.beat + beats).max(0.0), 1000.0))
+                    .collect();
                 state.selection = None;
+                state.reselect = Some((track, key.clone(), to, 10));
             }
         }
         let selected = state.is_selected(track, key, index);
-        response.context_menu(|ui| {
+        egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             // Edit value: a field beside the point takes the value typed, in the set command's unit.
             if ui.button("Edit value").clicked() {
                 state.editing = Some((track, key.clone(), index, param.scale.typed_text(point.value)));
@@ -2063,6 +2097,7 @@ fn range_menu(
         state.selection = None;
         state.smooth = None;
         state.simplify = None;
+        state.stretch = None;
         state.last_shape = Some(LastShape { track, key: key.clone(), start, end, shape, center });
     };
     if let Some(shape) = shape_menu(ui, "Insert shape", None) {
@@ -2125,9 +2160,11 @@ fn range_menu(
         params["continue"] = json!(again);
         params["replace"] = json!(again);
         actions.push(Action::new("automation.scaleRange", params));
-        // The shape is scaled now: Depth and Rate would put the unscaled one back.
+        // The shape is scaled now: Depth and Rate would put the unscaled one back, and Smooth and
+        // Simplify start again from the scaled line.
         state.last_shape = None;
         state.simplify = None;
+        state.smooth = None;
     }
     let kept = state.smooth.clone().filter(|s| s.of == of);
     let mut amount = kept.as_ref().map_or(0.0, |s| s.amount) * 100.0;
@@ -2150,6 +2187,7 @@ fn range_menu(
         state.selection = None;
         state.last_shape = None;
         state.simplify = None;
+        state.stretch = None;
     }
     // Simplify: fewer points, the rest bent to keep the line's shape, as far from it as the slider
     // lets them; the line from before is drawn faintly while the menu is open.
@@ -2182,6 +2220,7 @@ fn range_menu(
         state.selection = None;
         state.smooth = None;
         state.last_shape = None;
+        state.stretch = None;
     }
 }
 
@@ -2230,6 +2269,7 @@ fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
     let keys = state.grid_keys.clone();
     if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
         state.grid_picked = Some(picked);
+        ui.close();
     }
 }
 
