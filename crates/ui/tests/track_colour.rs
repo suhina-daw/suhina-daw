@@ -423,15 +423,20 @@ fn the_midi_monitor_chip_keeps_clear_of_the_automation_button() {
     };
     assert!(clear(&h).is_some(), "the default width shows the chip");
     chip_takes_its_click(&mut h);
-    // The headers are at the right: dragging their left edge right narrows them to the least.
-    let edge = h.get_by_label("Track Drums").rect().left_center() - egui::vec2(1.0, 0.0);
+    // With the headers at the right, dragging their left edge right narrows them to the least.
+    let mut settings = h.state().settings().clone();
+    settings.track_headers = Some(suhina_ui::settings::Side::Right);
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let ruler = h.get_by_label("Ruler").rect();
+    let edge = egui::pos2(ruler.right(), ruler.bottom() + 30.0);
     h.hover_at(edge);
     h.run();
     h.drag_at(edge);
+    h.hover_at(edge + egui::vec2(300.0, 0.0));
     h.run();
-    h.hover_at(edge + egui::vec2(200.0, 0.0));
-    h.run();
-    h.drop_at(edge + egui::vec2(200.0, 0.0));
+    h.drop_at(edge + egui::vec2(300.0, 0.0));
     h.run();
     assert_eq!(h.state().arrangement().header_width, 160.0);
     assert!(clear(&h).is_some(), "a two-row lane has room for the chip at the narrowest");

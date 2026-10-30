@@ -1411,20 +1411,20 @@ fn a_time_selection_painted_while_playing_moves_only_the_marker() {
     let (from, to) =
         (egui::pos2(clip.left() - 96.0, ruler.center().y), egui::pos2(clip.left() - 48.0, ruler.center().y));
     harness.hover_at(from);
-    harness.run();
+    harness.run_steps(2);
     harness.drag_at(from);
-    harness.run();
+    harness.run_steps(2);
     harness.hover_at(to);
-    harness.run();
+    harness.run_steps(2);
     harness.drop_at(to);
-    harness.run();
+    harness.run_steps(2);
     render_a_block(&mut renderer);
     let start = harness.state().arrangement().time_selection().map(|s| s.start).unwrap();
     assert!(monitor.running());
     assert_eq!(monitor.start_beat(), start);
     assert!(monitor.beat() < start, "playback did not jump: {before} -> {}", monitor.beat());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
-    harness.run();
+    harness.run_steps(2);
     assert!(harness.state().arrangement().time_selection().is_none(), "the clips take over");
 }
 
