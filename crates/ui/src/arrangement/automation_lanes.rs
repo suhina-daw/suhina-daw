@@ -769,6 +769,9 @@ pub struct LanesState {
     /// Points moved together, picked again once the move is in: their lane, the beats they went
     /// to, and how many frames are left to wait for the edit.
     reselect: Option<(TrackId, LaneKey, Vec<f64>, u8)>,
+    /// A point drag let go of this frame: still drawn where it went, as its command runs only
+    /// after the frame (else the line flashes back to where the drag began for a frame).
+    dropped: Option<PointDrag>,
     /// Smooth as the range menu shows it, and the smoothing it put in last.
     smooth: Option<Smoothed>,
     /// Simplify as the range menu shows it, with the line from before it.
@@ -1216,7 +1219,8 @@ fn shown_points(
     state: &LanesState,
 ) -> Vec<AutomationPoint> {
     let mut points = param.points.clone();
-    if let Some(drag) = state.point_drag.as_ref().filter(|d| d.track == track && d.key == param.key) {
+    let held = state.point_drag.as_ref().or(state.dropped.as_ref());
+    if let Some(drag) = held.filter(|d| d.track == track && d.key == param.key) {
         let (beats, delta) = drag_delta(drag, param, geometry, free);
         for &index in &drag.together {
             if let Some(point) = points.get_mut(index) {
@@ -1567,11 +1571,13 @@ fn lane(
     }
     // The button up ends a point held from the lane however it was held: a press held still
     // and let go is neither a click nor the end of a drag, and would leave the point held.
+    state.dropped.take_if(|d| d.track == track && &d.key == key);
     if body.drag_stopped_by(egui::PointerButton::Primary) || ui.input(|i| i.pointer.primary_released()) {
         if let Some(drag) = state.point_drag.take_if(|d| d.body && d.track == track && &d.key == key)
             && let Some(action) = drop_points(&drag, param, geometry, free)
         {
             actions.push(action);
+            state.dropped = Some(drag);
         }
         state.new_point.take_if(|d| d.track == track && &d.key == key);
     }

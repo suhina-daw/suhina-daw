@@ -101,7 +101,9 @@ and snapping) and is chosen from the same menu, at the right end of the Arrangem
 under **Grid** in the right-click menu of an empty spot of a lane and at the end of an automation
 lane's menus, all in the menu itself (no submenu): **Snap to grid**, an **adaptive** grid (Widest, Wide, Medium, Narrow, Narrowest:
 its lines follow the zoom) or a **fixed** value (`8 bars` … `1 bar`, `1/2` … `1/32`), **Narrow
-grid**, **Widen grid** and **Triplet grid**. While the Arrangement has the keyboard (it was
+grid**, **Widen grid** and **Triplet grid**. A fixed value or no snapping picked in a right-click menu (a lane's, or an automation lane's)
+also sets the control bar's grid box to it (`launcher.setQuantization`), so the two show the same;
+an adaptive grid, which the box has no value for, stays the Arrangement's alone. While the Arrangement has the keyboard (it was
 clicked last), Ctrl+1 makes the grid finer, Ctrl+2 coarser, Ctrl+3 turns triplets on or off and
 Ctrl+4 snapping; with the piano roll clicked last the same keys change its grid. Note values are
 quarter-note beats (`1/16` is a quarter of a beat, a triplet two thirds of that note), and bars are
