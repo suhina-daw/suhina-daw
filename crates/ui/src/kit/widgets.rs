@@ -44,6 +44,63 @@ pub(crate) fn fixed(value: f64, decimals: usize) -> String {
     }
 }
 
+/// A value drag in progress, while it holds the pointer. `raw` is set once the device has sent raw
+/// motion: from then on only raw motion moves the value, and the pointer is locked.
+#[derive(Clone, Copy)]
+struct ValueDrag {
+    raw: bool,
+}
+
+fn value_drag_id() -> Id {
+    Id::new("value-drag-holds-pointer")
+}
+
+/// How far a drag on a value control (knob, value field) moved this frame, called while it is
+/// dragged. The pointer hides while the drag lasts. A mouse sends raw motion, which is read and
+/// the pointer locked, so a long drag never stops at the screen's edge (X11 refuses the lock, and
+/// the pointer moves on hidden). A device with no relative motion (a pen in absolute mode, a remote
+/// session) sends none, so it keeps the pointer's own movement, which a lock would stop.
+/// [`release_value_drag`] gives the pointer back. Only a drag's first frame takes the pointer, in a
+/// window with focus; a drag whose release went to another window moves nothing when focus comes
+/// back, until the next press.
+pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
+    let ctx = ui.ctx();
+    let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
+    if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+        drag = Some(ValueDrag { raw: false });
+    }
+    let Some(mut drag) = drag else {
+        return Vec2::ZERO;
+    };
+    // egui shows the pointer again whenever the icon changes, so the icon stays hidden too.
+    ctx.set_cursor_icon(egui::CursorIcon::None);
+    let (motion, per_point) = ui.input(|i| (i.pointer.motion(), i.pixels_per_point));
+    if motion.is_some() && !drag.raw {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+        drag.raw = true;
+    }
+    ctx.data_mut(|d| d.insert_temp(value_drag_id(), drag));
+    if drag.raw {
+        // Raw motion is in the mouse's counts, not in points: scaled like the pointer on a display.
+        motion.unwrap_or(Vec2::ZERO) / per_point
+    } else {
+        response.drag_delta()
+    }
+}
+
+/// Gives the pointer back once the buttons are up after a value drag, or once the window loses
+/// focus (egui keeps the button down when the release went to another window). Called once a
+/// frame, so a control that went away mid-drag (hidden, its panel closed) cannot keep the pointer.
+pub fn release_value_drag(ctx: &egui::Context) {
+    let held = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some();
+    if held && !ctx.input(|i| i.pointer.any_down() && i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
+    }
+}
+
 /// A command for the session to run, made by a view: the same ids the CLI and MCP use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {
@@ -792,7 +849,8 @@ pub fn drag_value_axis(
     if response.dragged_by(egui::PointerButton::Primary) {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let start = preview.unwrap_or(value);
-        let delta = if horizontal { response.drag_delta().x } else { -response.drag_delta().y };
+        let moved = value_drag_delta(ui, response);
+        let delta = if horizontal { moved.x } else { -moved.y };
         let next = (start + f64::from(delta) * per_point * fine).clamp(range.0, range.1);
         *preview = Some(next);
         return Drag::Moving(next);
@@ -1027,5 +1085,113 @@ mod tests {
         assert_eq!(format_pan(0.0), "C");
         assert_eq!(format_pan(-0.3), "15L");
         assert_eq!(format_pan(1.0), "50R");
+    }
+
+    #[test]
+    fn a_value_drag_hides_the_pointer_until_the_button_is_up_or_the_window_loses_focus() {
+        use egui::{Event, PointerButton, ViewportCommand, ViewportId};
+        let ctx = egui::Context::default();
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(20.0));
+        let pointer = |pos: Pos2, pressed: Option<bool>| {
+            let mut events = vec![Event::PointerMoved(pos)];
+            if let Some(pressed) = pressed {
+                events.push(Event::PointerButton {
+                    pos,
+                    button: PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                });
+            }
+            egui::RawInput { events, ..Default::default() }
+        };
+        let moved = std::cell::Cell::new(Vec2::ZERO);
+        let frame = |input| {
+            let mut output = ctx.run_ui(input, |ui| {
+                release_value_drag(ui.ctx());
+                let response = ui.interact(rect, Id::new("knob"), Sense::drag());
+                if response.dragged() {
+                    moved.set(moved.get() + value_drag_delta(ui, &response));
+                }
+            });
+            output.textures_delta.clear();
+            output.viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default()
+        };
+        let held = |ctx: &egui::Context| ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some();
+        // egui hits the widgets of the frame before, so the pointer is over the knob first.
+        frame(pointer(Pos2::new(20.0, 20.0), None));
+        let hidden = [
+            frame(pointer(Pos2::new(20.0, 20.0), Some(true))),
+            frame(pointer(Pos2::new(20.0, 10.0), None)),
+            frame(pointer(Pos2::new(20.0, 0.0), None)),
+        ]
+        .concat();
+        assert!(held(&ctx), "the drag holds the pointer");
+        assert!(hidden.contains(&ViewportCommand::CursorVisible(false)), "{hidden:?}");
+        assert!(moved.get().y < 0.0, "dragging up moves up: {:?}", moved.get());
+        let shown = frame(pointer(Pos2::new(20.0, 0.0), Some(false)));
+        let shown = [shown, frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
+        assert!(!held(&ctx));
+        assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+        // The release went to another window: losing focus gives the pointer back all the same.
+        frame(pointer(Pos2::new(20.0, 20.0), None));
+        frame(pointer(Pos2::new(20.0, 20.0), Some(true)));
+        frame(pointer(Pos2::new(20.0, 10.0), None));
+        assert!(held(&ctx), "a second drag holds the pointer");
+        let unfocused = || egui::RawInput { focused: false, ..pointer(Pos2::new(20.0, 10.0), None) };
+        let shown = [frame(unfocused()), frame(unfocused())].concat();
+        assert!(!held(&ctx), "an unfocused window never holds the pointer");
+        assert!(shown.contains(&ViewportCommand::CursorVisible(true)), "{shown:?}");
+        // Focus back with the drag still going (the release never came): the pointer stays shown.
+        let back = [frame(pointer(Pos2::new(20.0, 5.0), None)), frame(pointer(Pos2::new(20.0, 0.0), None))].concat();
+        assert!(!held(&ctx), "only a new press takes the pointer again");
+        assert!(!back.contains(&ViewportCommand::CursorVisible(false)), "{back:?}");
+        let before = moved.get();
+        frame(pointer(Pos2::new(20.0, -5.0), None));
+        assert_eq!(moved.get(), before, "a drag that lost the pointer moves nothing");
+    }
+
+    #[test]
+    fn raw_motion_locks_the_pointer_and_is_scaled_to_points() {
+        use egui::{Event, PointerButton, ViewportCommand, ViewportId};
+        let ctx = egui::Context::default();
+        ctx.set_zoom_factor(2.0);
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(20.0));
+        let moved = std::cell::Cell::new(Vec2::ZERO);
+        let frame = |events: Vec<Event>| {
+            let input = egui::RawInput { events, ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| {
+                release_value_drag(ui.ctx());
+                let response = ui.interact(rect, Id::new("knob"), Sense::drag());
+                if response.dragged() {
+                    moved.set(moved.get() + value_drag_delta(ui, &response));
+                }
+            });
+            output.textures_delta.clear();
+            output.viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default()
+        };
+        let at = Pos2::new(20.0, 20.0);
+        let locked = ViewportCommand::CursorGrab(egui::CursorGrab::Locked);
+        frame(vec![Event::PointerMoved(at)]);
+        frame(vec![Event::PointerMoved(at)]);
+        frame(vec![
+            Event::PointerMoved(at),
+            Event::PointerButton {
+                pos: at,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+        ]);
+        // No raw motion: a pen. The pointer's own movement moves the value and nothing locks it.
+        let pen = frame(vec![Event::PointerMoved(Pos2::new(20.0, 10.0))]);
+        assert!(!pen.contains(&locked), "{pen:?}");
+        assert!(moved.get().y < 0.0, "{:?}", moved.get());
+        // Raw motion: a mouse. It locks the pointer, in points, and the pointer's movement no longer counts.
+        moved.set(Vec2::ZERO);
+        let mouse = frame(vec![Event::MouseMoved(Vec2::new(0.0, -8.0))]);
+        assert!(mouse.contains(&locked), "{mouse:?}");
+        assert_eq!(moved.get(), Vec2::new(0.0, -4.0));
+        frame(vec![Event::PointerMoved(Pos2::new(20.0, 0.0))]);
+        assert_eq!(moved.get(), Vec2::new(0.0, -4.0), "only raw motion counts once it has come");
     }
 }

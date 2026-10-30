@@ -2595,6 +2595,7 @@ impl App {
         );
         self.frame_trace.start();
         self.frame_trace.causes(ui.ctx());
+        crate::kit::widgets::release_value_drag(ui.ctx());
         // Closing: the dialog alone, so nothing of the window without its projects shows behind.
         if let Some((_, going)) = &self.quitting {
             let waiting: Vec<String> =
