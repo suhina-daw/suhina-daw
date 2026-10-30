@@ -22,6 +22,25 @@ use suhina_update::Channel;
 /// The keys of `keymap.json`, where the keys and the mouse switches are saved.
 pub(crate) const KEYMAP: &[&str] = &["keymap.json"];
 
+/// The note under Editors on macOS: the editors open in a window of their own, and what is
+/// missing is the device view's embed, which a host on this system cannot give (ADR 0006).
+const EDITORS_NOTE_EMBED: &str = "Editors open in a window of their own; the device view needs Windows or X11";
+/// The note under Editors where no editor opens at all: a system with no display (Linux without
+/// an X server, Wayland without editors yet).
+const EDITORS_NOTE_NONE: &str = "Editors need Windows or an X server (DISPLAY); they do not open here yet";
+
+/// The note under Editors where the device view's embedded editor cannot open. On macOS the
+/// editors still open, in a window of their own: a view of the plug-in host's process cannot
+/// attach to another process's window (ADR 0006), so the embed is what is missing, not the
+/// editors. On a system with no display at all (Linux without an X server), neither opens.
+/// Both notes are one line of the row's note width: a longer one is cut mid-word.
+pub(crate) fn editors_note(editors_embeddable: bool) -> Option<&'static str> {
+    if editors_embeddable {
+        return None;
+    }
+    Some(if cfg!(target_os = "macos") { EDITORS_NOTE_EMBED } else { EDITORS_NOTE_NONE })
+}
+
 /// Every setting the window shows, page by page.
 pub(crate) static ROWS: &[Entry] = &[
     row(
@@ -194,8 +213,8 @@ pub(crate) static ROWS: &[Entry] = &[
         "Whether a plug-in opens in a window of its own or inside the device panel",
         &["plugin_editors"],
         |cx, r| {
-            if !cx.about.editors_embeddable {
-                cx.note("Editors need Windows or an X server (DISPLAY); they do not open on this system yet");
+            if let Some(note) = editors_note(cx.about.editors_embeddable) {
+                cx.note(note);
             }
             let options = [("Window", EditorPlacement::Window), ("Device view", EditorPlacement::DeviceView)];
             cx.choose(r, &options, |s| &mut s.plugin_editors);
