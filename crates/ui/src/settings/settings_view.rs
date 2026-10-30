@@ -24,6 +24,10 @@ const SIDEBAR_ROW: f32 = 20.0;
 /// The search field over the list of pages.
 const SEARCH_FIELD: f32 = 18.0;
 const LABEL_WIDTH: f32 = 180.0;
+/// The width a row's note has: the page's width less the name column, one line of small text
+/// (a test guard measures the notes against it; a smaller window cuts a note).
+#[cfg(test)]
+pub(crate) const NOTE_WIDTH: f32 = PAGE_WIDTH - LABEL_WIDTH;
 const SETTING_ROW: f32 = 34.0;
 /// Where every setting's control starts: names in one column and controls in the next, lined
 /// up down the page, so the eye runs straight down either.

@@ -413,7 +413,7 @@
       ],
       "sourceFingerprint": "1e6893bd9f42545107fc3d748761dc4f5e345ef1fa7cd29fccff72f9ba78afc9",
       "helpStatus": "reviewed",
-      "description": "A plug-in editor is the instrument or effect’s own graphical controls. Window gives it a separate window above Suhina; Device view embeds it in the selected track’s device panel. Embedded editors are supported on Windows and X11. The Settings panel reports when editors cannot open on the current system; selecting Device view does not add platform support.",
+      "description": "A plug-in editor is the instrument or effect’s own graphical controls. Window gives it a separate window above Suhina; Device view embeds it in the selected track’s device panel. Embedded editors are supported on Windows and X11. On macOS a view of the plug-in host’s process cannot attach to Suhina’s window, so editors open in a window of their own instead; the note under the setting says what the current system cannot do. Selecting Device view does not add platform support.",
       "options": [
         {
           "name": "Window",
