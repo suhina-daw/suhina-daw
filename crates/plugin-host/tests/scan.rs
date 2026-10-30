@@ -229,7 +229,9 @@ fn a_folder_gives_only_its_formats_files() {
         (dir.join("vst3"), FolderFormat::Vst3),
         (dir.join("vst2"), FolderFormat::Vst2),
     ];
-    assert_eq!(name(find_files_of(&folders)), ["a.clap", "e.vst", "c.vst3"]);
+    // The found list sorts by its paths, and the folders' names decide that: clap/, then
+    // vst2/, then vst3/.
+    assert_eq!(name(find_files_of(&folders)), ["a.clap", vst2_file, "c.vst3"]);
     assert_eq!(name(find_files_of(&[(dir.join("clap"), FolderFormat::Any)])), ["a.clap", "b.vst3"]);
     // The VST2 folder for Any gives its own shape only.
     assert_eq!(
