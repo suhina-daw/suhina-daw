@@ -150,10 +150,16 @@ fn the_home_falls_back_to_the_windows_profile() {
     assert_eq!(home_folder(home.clone(), profile.clone()), home, "HOME comes first");
     assert_eq!(
         home_folder(None, profile.clone()),
-        if cfg!(windows) { profile } else { None },
+        if cfg!(windows) { profile.clone() } else { None },
         "where HOME is missing, Windows's profile stands in; elsewhere there is none"
     );
     assert_eq!(home_folder(None, None), None);
+    assert_eq!(
+        home_folder(Some(OsString::new()), profile.clone()),
+        if cfg!(windows) { profile } else { None },
+        "an empty HOME is a missing one"
+    );
+    assert_eq!(home_folder(None, Some(OsString::new())), None, "an empty profile too");
 }
 
 #[test]

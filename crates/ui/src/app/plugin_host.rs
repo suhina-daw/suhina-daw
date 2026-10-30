@@ -238,9 +238,14 @@ impl App {
             PluginRequest::AddFolder(folder, format) => {
                 let params = json!({ "folder": folder, "format": format.name() });
                 match self.projects.execute("plugin.addFolder", &params) {
-                    Ok(_) => {
+                    Ok(result) => {
                         self.plugins.new_folder.clear();
-                        self.status = Status::Hint(format!("Added {folder}; Scan looks in it for plug-ins"));
+                        // A folder already there with this format is not added again.
+                        self.status = Status::Hint(if result["added"] == json!(false) {
+                            format!("{folder} is already in the list")
+                        } else {
+                            format!("Added {folder}; Scan looks in it for plug-ins")
+                        });
                     }
                     Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }

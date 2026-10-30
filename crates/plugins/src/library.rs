@@ -221,9 +221,10 @@ fn user_home() -> Option<OsString> {
 }
 
 /// `home`, or where it is missing on Windows, `profile`; on other systems only `HOME` counts, as
-/// before.
+/// before. An empty value counts as missing: it would turn `~/x` into the relative `x`.
 fn home_folder(home: Option<OsString>, profile: Option<OsString>) -> Option<OsString> {
-    if cfg!(windows) { home.or(profile) } else { home }
+    let home = home.filter(|value| !value.is_empty());
+    if cfg!(windows) { home.or(profile.filter(|value| !value.is_empty())) } else { home }
 }
 
 /// The folders the user added and the catalog, loaded from the settings folder on first use.

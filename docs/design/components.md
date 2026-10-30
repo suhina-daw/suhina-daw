@@ -349,13 +349,15 @@ path text and a Remove button on the right. Add folder… opens the system folde
 The list scrolls with the page, and its note says that each grant includes subfolders.
 
 Options › Settings (Ctrl+,) opens a dialog over the window until it is closed (Close, Escape or
-Ctrl+, again): the view stays behind it, dimmed with `window.background` at 60 % and taking no
+Ctrl+, again): the view stays behind it, dimmed with `window.background` at 60 % (all but the status bar, which
+stays undimmed so a message from the page can be read) and taking no
 clicks, wheel or pinch (they reach only the dialog, as with every dialog over the window);
 embedded plug-in editors hide while it shows. Adjusting a control removes the tint during
 the adjustment; it returns immediately on release, while background input stays blocked.
 Drag the title to move the embedded panel within the main window.
 Open in window moves Settings to a native resizable window, with Dock to return;
-that window does not dim the main view or hide its plug-in editors. Detached Settings
+that window does not dim the main view or hide its plug-in editors, and shows the status in a
+20 px bar of its own at the bottom. Detached Settings
 uses a solid background rather than sampling the main window's content.
 The dialog is at most 772 × 720 px (6 px
 less than the window on each side when that is smaller), `window.background` with a 1 px

@@ -328,6 +328,16 @@ fn add_plugin_folder_opens_the_pickers_dialog_when_nothing_is_typed() {
     let kept = folder.canonicalize().map(suhina_plugins::library::plain).unwrap_or_else(|_| folder.clone());
     assert_eq!(added, [(kept, FolderFormat::Clap)], "the picked folder keeps the format chosen");
 
+    // The same folder with the same format again adds nothing, and the status says so.
+    harness.state_mut().set_picked(PickField::PluginFolder, folder.clone());
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 1, "no second row");
+    match harness.state().status() {
+        Status::Hint(message) => assert!(message.contains("already in the list"), "{message}"),
+        other => panic!("expected the folder to be named as there already, got {other:?}"),
+    }
+
     // And it can be removed again.
     harness.get_by_label_contains("Remove ").click();
     harness.run();

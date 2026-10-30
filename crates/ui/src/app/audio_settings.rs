@@ -151,8 +151,14 @@ impl App {
                 .with_min_inner_size([600.0, 320.0]);
             suhina_plugins::trace::timed("settings native viewport", || {
                 ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("settings-window"), builder, |ui, _| {
-                    let panel = ui.available_rect_before_wrap();
+                    let whole = ui.available_rect_before_wrap();
+                    // The main window's status bar may be out of sight: this window has its own.
+                    let top = (whole.bottom() - theme::STATUS_BAR).max(whole.top());
+                    let panel = Rect::from_min_max(whole.min, Pos2::new(whole.right(), top));
+                    let bar = Rect::from_min_max(Pos2::new(whole.left(), top), whole.max);
                     suhina_plugins::trace::timed("settings native contents", || self.settings_contents(ui, panel));
+                    let _status =
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| self.status_bar(ui, None));
                     if ui.input(|input| {
                         input.viewport().close_requested()
                             || (self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma))

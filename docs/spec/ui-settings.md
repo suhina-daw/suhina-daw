@@ -17,7 +17,8 @@ covers:
 
 Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
 bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
-it is open. How it is drawn (sizes, colours, the controls) is in
+it is open; moved into its own window, Settings has a status bar of its own at the bottom. How it
+is drawn (sizes, colours, the controls) is in
 [components](../design/components.md) › Settings; this spec says what is on each page, how the
 pages scroll and how a setting finds its place.
 
@@ -84,7 +85,7 @@ what is inside it).
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
-| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, remove) |
+| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
 | Plug-ins | Editors | Plug-in editors open in (Window, Device view) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
 | Devices | Device panels | Device chain layout, Detail area width |
