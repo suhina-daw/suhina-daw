@@ -172,7 +172,9 @@ unsafe extern "C" fn host_callback(
 ) -> isize {
     // The audio thread serves an instance now. The effect says who is asking; a call for the
     // instance this thread serves is answered from its lock-free slots, anything else by
-    // looking the effect up.
+    // looking the effect up. A call with a null effect is one from a plug-in's entry, which
+    // cannot know its effect yet — real plug-ins make it and decline to instantiate when the
+    // answers are dead (observed by the probe against installed plug-ins).
     let serving = SERVING.with(|serving| serving.borrow().clone());
     let shared = if effect.is_null() {
         None
@@ -182,9 +184,45 @@ unsafe extern "C" fn host_callback(
             _ => lookup(effect),
         }
     };
-    let Some(shared) = shared else { return 0 };
-    let serving_this = serving.is_some_and(|s| Arc::ptr_eq(&s, &shared));
-    answer(&shared, serving_this, opcode, index, ptr, opt)
+    match shared {
+        Some(shared) => {
+            let serving_this = serving.is_some_and(|s| Arc::ptr_eq(&s, &shared));
+            answer(&shared, serving_this, opcode, index, ptr, opt)
+        }
+        None => answer_at_entry(opcode, ptr),
+    }
+}
+
+/// What a plug-in is answered while its entry runs, before the effect exists: the host's
+/// identity and what it can do, and nothing with an instance's part in it. The version is
+/// the one an entry checks first — a dead answer there and the plug-in gives up (observed).
+fn answer_at_entry(opcode: i32, ptr: *mut c_void) -> isize {
+    match HostOp::from_value(opcode) {
+        Some(HostOp::Version) => HOST_VERSION,
+        // The id that is being loaded: the entry does not know it yet.
+        Some(HostOp::CurrentId) => 0,
+        Some(HostOp::CanDo) => {
+            // SAFETY: the plug-in's C string, read with a bound.
+            let asked = unsafe { c_str(ptr, 128) }.unwrap_or_default();
+            isize::from(CAN_DO.contains(&asked.as_str()))
+        }
+        Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
+        Some(HostOp::GetVendorString) => {
+            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
+            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            1
+        }
+        Some(HostOp::GetProductString) => {
+            // SAFETY: as above.
+            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            1
+        }
+        Some(HostOp::GetVendorVersion) => 1,
+        // The tempo and the time information have no instance yet.
+        Some(HostOp::TempoAt) | Some(HostOp::GetTime) => 0,
+        // Anything else: noted, not answered.
+        _ => 0,
+    }
 }
 
 /// The instance an effect belongs to, when its address is registered.
@@ -1011,21 +1049,7 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
     }
     let path = spec.strip_prefix("vst2:").ok_or_else(|| format!("not a VST2 plug-in name: {spec:?}"))?.to_string();
     let path = std::path::Path::new(&path);
-    // A macOS bundle's executable is looked up as a VST3 bundle's is.
-    let file = if path.is_file() {
-        path.to_path_buf()
-    } else if cfg!(target_os = "macos") {
-        let stem = path.file_stem().ok_or("not a VST2 bundle")?;
-        crate::vst3::macos_binary(&path.join("Contents/MacOS"), stem)
-            .ok_or_else(|| format!("no executable in {}/Contents/MacOS", path.display()))?
-    } else {
-        return Err(format!("no VST2 plug-in file at {}", path.display()));
-    };
-    // SAFETY: loading the library runs its initialisation code, which Rust cannot check; that
-    // is what this process is for (ADR 0006). The library stays loaded while the module holds
-    // it, which outlives the effect.
-    let library =
-        unsafe { libloading::Library::new(&file) }.map_err(|e| format!("could not load {}: {e}", file.display()))?;
+    let library = load_library(path)?;
     let mut effect = std::ptr::null_mut();
     for name in ENTRY_NAMES {
         // SAFETY: the symbol the library exports under the assumed name, if it does.
@@ -1040,7 +1064,11 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
         }
     }
     if effect.is_null() {
-        return Err(format!("no entry of {} answered (tried, in order: {})", file.display(), ENTRY_NAMES.join(", ")));
+        return Err(format!(
+            "no entry of {} answered (tried, in order: {})",
+            library_path_of(path).display(),
+            ENTRY_NAMES.join(", ")
+        ));
     }
     // The id a scan's spec carried, checked against what the file gave back.
     // SAFETY: the effect the entry gave, its id field, read on this thread.
@@ -1105,6 +1133,32 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
 /// The entry points a VST2 library is assumed to export, in the order the host tries them
 /// (the probe reports which answered; *assumed*).
 const ENTRY_NAMES: [&str; 3] = ["VSTPluginMain", "main_macho", "main"];
+
+/// The library for the plug-in at `path`: the file itself, or in a macOS `.vst` bundle the
+/// executable in `Contents/MacOS`, found as a VST3 bundle's is.
+///
+/// # Safety
+///
+/// Loading runs the file's initialisation code, which Rust cannot check; that is what this
+/// process is for ([ADR 0006](../../../docs/decisions/0006-plug-in-hosting.md)). The library
+/// stays loaded as long as the caller holds it, which must outlive every call on its effect.
+pub(crate) fn load_library(path: &std::path::Path) -> Result<libloading::Library, String> {
+    let file = library_path_of(path);
+    // SAFETY: as the contract says; this is the one load, shared by the host and the probe.
+    let library =
+        unsafe { libloading::Library::new(&file) }.map_err(|e| format!("could not load {}: {e}", file.display()))?;
+    Ok(library)
+}
+
+/// The executable that is loaded for the plug-in at `path`: the file itself, or in a bundle
+/// the one the loader takes.
+pub(crate) fn library_path_of(path: &std::path::Path) -> std::path::PathBuf {
+    if path.is_file() || !cfg!(target_os = "macos") {
+        return path.to_path_buf();
+    }
+    let Some(stem) = path.file_stem() else { return path.to_path_buf() };
+    crate::vst3::macos_binary(&path.join("Contents/MacOS"), stem).unwrap_or_else(|| path.to_path_buf())
+}
 
 /// The signature every entry is assumed to have.
 type Entry = unsafe extern "C" fn(vestige::AudioMasterCallback) -> *mut AEffect;

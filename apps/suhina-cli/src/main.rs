@@ -832,7 +832,7 @@ fn plugins(args: &[String]) -> Result<(), String> {
 /// How the host is asked to load the plug-in `name`: a `clap:`, `vst3:` or `test:` name as it
 /// is, else a name or id from the catalog.
 fn plugin_spec(library: &mut suhina_plugins::library::Library, name: &str) -> Result<String, String> {
-    if ["clap:", "vst3:", "test:"].iter().any(|p| name.starts_with(p)) {
+    if ["clap:", "vst3:", "vst2:", "test:"].iter().any(|p| name.starts_with(p)) {
         return Ok(name.to_string());
     }
     let found = library.catalog().find(name).ok_or_else(|| {

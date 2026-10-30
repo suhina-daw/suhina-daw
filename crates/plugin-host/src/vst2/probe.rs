@@ -173,14 +173,56 @@ unsafe extern "C" fn host_callback(
     opt: f32,
 ) -> isize {
     let key = effect as usize;
-    let state = REGISTRY
-        .lock()
-        .ok()
-        .and_then(|registry| registry.iter().find(|(effect, _)| *effect == key).map(|(_, state)| state.clone()));
-    let Some(state) = state else { return 0 };
-    let answer = answer(effect, opcode, index, value, ptr, opt, &state);
-    state.record(Call { op: opcode, index, value, opt, answer: Some(answer) });
+    let state = if effect.is_null() {
+        // A call from a plug-in's entry, before the effect exists: the probe's host answers
+        // its identity, as a real host does (observed against installed plug-ins).
+        None
+    } else {
+        REGISTRY
+            .lock()
+            .ok()
+            .and_then(|registry| registry.iter().find(|(effect, _)| *effect == key).map(|(_, state)| state.clone()))
+    };
+    let answer = match &state {
+        Some(state) => answer(effect, opcode, index, value, ptr, opt, state),
+        None => answer_at_entry(opcode, index, value, ptr, opt),
+    };
+    // An entry's call has no instance to record in; the report shows the entry's answers by
+    // the plug-in, whose own records carry them.
+    if let Some(state) = &state {
+        state.record(Call { op: opcode, index, value, opt, answer: Some(answer) });
+    }
     answer
+}
+
+/// What the probe answers while a plug-in's entry runs, before the effect exists: its
+/// identity and what it can do, and nothing an instance has a part in.
+fn answer_at_entry(opcode: i32, index: i32, value: isize, ptr: *mut c_void, opt: f32) -> isize {
+    let _ = (index, value, opt);
+    match HostOp::from_value(opcode) {
+        Some(HostOp::Version) => HOST_VERSION,
+        Some(HostOp::CanDo) => {
+            // SAFETY: the plug-in's C string, read with a bound.
+            let asked = unsafe { c_str(ptr, 128) }.unwrap_or_default();
+            isize::from(matches!(
+                asked.as_str(),
+                can_do::HOST_SENDS_EVENTS | can_do::HOST_SENDS_MIDI | can_do::HOST_SENDS_TIME
+            ))
+        }
+        Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
+        Some(HostOp::GetVendorString) => {
+            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
+            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            1
+        }
+        Some(HostOp::GetProductString) => {
+            // SAFETY: as above.
+            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina VST2 probe") };
+            1
+        }
+        Some(HostOp::GetVendorVersion) => 1,
+        _ => 0,
+    }
 }
 
 /// What the probe answers for one call of the plug-in.
@@ -329,15 +371,14 @@ impl Probe {
     /// The probe over the VST2 file at `path`: the library is loaded, its entry called with
     /// the probe's callback, and the effect it returned checked for VeSTige's magic. The
     /// callback serves the effect from the registry once it exists; a call a plug-in makes
-    /// from inside its entry, before the effect does, is answered 0 and recorded nowhere
+    /// the plug-in's entry calls, before the effect exists, are answered as a host's
     /// (see [`REGISTRY`]).
     pub(crate) fn file(path: &std::path::Path) -> Result<Self, String> {
         let state = HostState::new();
-        // SAFETY: loading the library runs its initialisation code, which Rust cannot check;
-        // that is what this disposable process is for (ADR 0006). The library stays loaded
-        // while the probe holds it, which outlives every call on the effect.
-        let library =
-            unsafe { libloading::Library::new(path) }.map_err(|e| format!("could not load {}: {e}", path.display()))?;
+        // The library, and the executable that is loaded for a bundle path — the resolution
+        // the host's own load uses ([`crate::vst2::host::load_library`]), so a probe and a
+        // host never disagree about where a plug-in's code is.
+        let library = crate::vst2::host::load_library(path)?;
         let mut answered_by = "";
         let mut effect = std::ptr::null_mut();
         for name in ENTRY_NAMES {
