@@ -1091,7 +1091,10 @@ impl App {
         // never from the clip's start (the plug-in's timeline is where the user points).
         // A click in the clip's body set where play starts; only a clip picked whole plays from
         // its start.
-        let clip = (selected || self.settings.play_from == PlayFrom::Clip)
+        // Picking a clip clears the time selection, so one there now was painted after the pick:
+        // plain Play starts at it (#937); playing from the selected clip still means the clip.
+        let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
+        let clip = (selected || (self.settings.play_from == PlayFrom::Clip && !painted))
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
