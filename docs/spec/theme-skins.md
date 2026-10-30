@@ -866,7 +866,7 @@ of bars, and a slider id per parameter.
 - **Sizes:** `.send { width; height }` within the sends row; `--suhina-track-height` (20–400
   points) on `.arrangement` for tracks without a height of their own; `.piano-tool { height }`
   grows the toolbar band to the height plus 6 points.
-- **Device panels:** a themed panel's generated list follows its width; `.device .value
+- **Device panels:** a themed panel's generated list keeps one column that follows its width and scrolls; `.device .value
   { width }`; `--suhina-param-columns` (1–8) and `--suhina-param-row` (16–160 points) on
   `.device` lay parameters a device places nowhere itself in columns. A plug-in's list is
   clipped below its header and buttons.
