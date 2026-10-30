@@ -358,17 +358,23 @@ engine's window where the device panel shows it. The op-code sequence is the int
 own: `effEditGetRect` for the size, `effEditOpen` given the window's native handle, `effEditIdle`
 pumped from the host's idle loop while it is open, `effEditClose` when it closes.
 
-Every shape this depends on is *assumed* and the mocked and installed editor tests are the
-ones that settle them, as ADR 0022 requires:
+Two of the shapes are settled by the editor tests against installed plug-ins; the rest are
+*assumed* as ADR 0022 requires, each with the test that keeps it:
 
-- The rect's four 16-bit fields (top, left, bottom, right — the size the corners span): the
-  pinned header has the op-code but not the struct.
+- The rect: `effEditGetRect`'s `ptr` is a pointer slot the plug-in fills with a pointer to
+  its own rect, whose four 16-bit fields are top, left, bottom and right — the size the
+  corners span *(observed*: the first read took the pointer's bytes for the rect and made a
+  window one pixel wide; with the indirection, an installed Filterstep editor reads
+  1024 × 768 and TAL-NoiseMaker's 1270 × 695, both their real sizes*)*. The host asks again
+  as the editor opens: many plug-ins fill the rect only then.
 - The native handle `effEditOpen` takes per platform: a Win32 `HWND` on Windows, the content
-  view's pointer on macOS, the X11 id on Linux.
-- `effEditIdle` served from the host's idle loop while the editor is open.
+  view's pointer on macOS, the X11 id on Linux (*assumed*; the editor tests' mock and the
+  ignored editor test against installed plug-ins are the checks).
+- `effEditIdle` served from the host's idle loop while the editor is open (*assumed*).
 - `audioMasterSizeWindow` asking for a window resize (the width in the call's `index` and
   the height in its `value`), answered confirmed only with an editor open, deferred to the
-  main loop to apply, and reported to the engine as an editor resize (`EditorResized`).
+  main loop to apply, and reported to the engine as an editor resize (`EditorResized`)
+  (*assumed*).
 
 A VST2 editor is not user-resizable, as the interface names no op-code to make one so; an
 embedded one is sized by the plug-in's ask alone. The room the engine names for an embedded

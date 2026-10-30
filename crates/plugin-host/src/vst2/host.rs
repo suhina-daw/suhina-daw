@@ -800,8 +800,8 @@ impl Vst2Plugin {
         if let Some(size) = self.editor.as_ref().map(|editor| editor.size) {
             return Ok(size);
         }
-        let rect = self.edit_rect()?;
-        let size = rect.size();
+        let before = self.edit_rect()?;
+        let size = before.size();
         let window = crate::window::Window::open_as(mode, &self.name, size, false)
             .map_err(|e| format!("the editor did not open: {e}"))?;
         self.shared.has_editor.store(true, Ordering::Release);
@@ -812,6 +812,16 @@ impl Vst2Plugin {
             self.editor_close();
             return Err("the plug-in's editor did not open".into());
         }
+        // Many plug-ins fill their rect only as they open: asked again, the editor's real
+        // size is what the window takes now.
+        let mut size = size;
+        if let Ok(after) = self.edit_rect() {
+            let real = after.size();
+            if real != size {
+                crate::window::resize(window.id(), real);
+                size = real;
+            }
+        }
         self.editor = Some(Vst2Editor { window, size, resized: None });
         Ok(size)
     }
@@ -819,9 +829,24 @@ impl Vst2Plugin {
     /// The editor's rectangle, as `effEditGetRect` filled it. Most plug-ins are around 300 ×
     /// 200 depending on third-party UI conventions; a refused rect keeps the window default.
     fn edit_rect(&mut self) -> Result<EditorRect, String> {
-        let mut rect = EditorRect::BLANK;
-        // SAFETY: the buffer is this function's own, the size the op-code is assumed to fill.
-        let answer = self.send(EffectOp::EditGetRect, 0, 0, &mut rect as *mut EditorRect as *mut c_void, 0.0);
+        // The op-code's `ptr` is a pointer slot the plug-in fills with a pointer to its own
+        // rect (*assumed*, observed through the editor tests: the first read took the
+        // pointer's bytes for the rect and made a window one pixel wide).
+        let mut slot: *const EditorRect = std::ptr::null();
+        // SAFETY: the buffer is this function's own, the pointer slot the op-code fills.
+        let answer = self.send(EffectOp::EditGetRect, 0, 0, &mut slot as *mut *const EditorRect as *mut c_void, 0.0);
+        if slot.is_null() {
+            return Ok(EditorRect::BLANK);
+        }
+        // SAFETY: the rect the plug-in pointed the host at, read by value, its 8 bytes.
+        let rect = unsafe { *slot };
+        suhina_plugins::trace!(
+            "vst2 rect: top {}, left {}, bottom {}, right {}",
+            rect.top,
+            rect.left,
+            rect.bottom,
+            rect.right
+        );
         match answer {
             Ok(answer) if answer != 0 => Ok(rect),
             Err(why) => Err(format!("the editor's rect is refused: {why}")),
@@ -935,6 +960,7 @@ unsafe fn call(dispatcher: Option<vestige::DispatcherFn>, effect: *mut AEffect, 
 /// left, bottom and right — the pinned header has the op-code but not the shape, and this is
 /// what the probe and the editor test settle).
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 struct EditorRect {
     top: i16,
     left: i16,
