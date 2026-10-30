@@ -573,8 +573,8 @@ a seek, which while playing waits for the next launch boundary (`transport.jump`
 
 **A painted time selection** (over the lanes or along the ruler) moves the marker to its start when
 the button goes up, so Play starts there (#937), even with a clip still picked whole; playing from
-the selected clip (Shift+Space) still starts at the clip. While playing it leaves playback alone, as picking
-clips does; the marker stays where it was.
+the selected clip (Shift+Space) still starts at the clip. While playing, the marker moves too and playback
+goes on where it is (`transport.setStart`), so Stop returns to the selection's start.
 
 **Where other DAWs stand** (their public manuals, October 2026): every one starts playback from a
 start position the user sets; they differ on the first Stop.
@@ -643,8 +643,8 @@ moving the marker there by hand first is a step too many. **Suhina:** the play/s
 Play button pass the setting **Play from** (Settings › Arrangement › Time and play): **Selected clip** (default) or
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole while stopped (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them. A click in a clip's body picks it but sets the play start where it was clicked, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
-selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with no
-clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
+time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
 from the marker. **Shift+Space** (`transport.playFromSelection` in the keymap) plays from the
 selected clip whatever the setting; while playing, it jumps there.
 

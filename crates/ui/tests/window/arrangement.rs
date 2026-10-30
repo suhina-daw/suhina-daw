@@ -1394,6 +1394,40 @@ fn a_painted_time_selection_moves_the_play_start_to_its_start() {
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
 }
 
+/// Painted during playback, a time selection moves the marker and playback goes on where it is;
+/// clips picked afterwards take over from the selection (#937).
+#[test]
+fn a_time_selection_painted_while_playing_moves_only_the_marker() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let ruler = harness.get_by_label("Ruler").rect();
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    let before = monitor.beat();
+    let (from, to) =
+        (egui::pos2(clip.left() - 96.0, ruler.center().y), egui::pos2(clip.left() - 48.0, ruler.center().y));
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    render_a_block(&mut renderer);
+    let start = harness.state().arrangement().time_selection().map(|s| s.start).unwrap();
+    assert!(monitor.running());
+    assert_eq!(monitor.start_beat(), start);
+    assert!(monitor.beat() < start, "playback did not jump: {before} -> {}", monitor.beat());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    assert!(harness.state().arrangement().time_selection().is_none(), "the clips take over");
+}
+
 #[test]
 fn touching_a_short_clips_edge_with_a_coarse_grid_changes_nothing() {
     let mut harness = arrangement_app();
