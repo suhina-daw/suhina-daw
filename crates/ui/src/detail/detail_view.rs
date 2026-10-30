@@ -301,7 +301,9 @@ fn graph_body(device: &DeviceBox, graph: &GraphBox) -> f32 {
     let cells =
         list_cells(graph, COMPACT_WIDTH, list_height(device, graph)).iter().map(|r| r.bottom()).fold(0.0f32, f32::max);
     let canvas = graph.canvas.as_ref().map_or(0.0, |c| c.size[1]);
-    graph.nodes.len() as f32 * NODE_ROW + cells.max(canvas)
+    let body = graph.nodes.len() as f32 * NODE_ROW + cells.max(canvas);
+    // A list without a canvas scrolls past the compact panel when it cannot widen (a themed width).
+    if graph.canvas.is_none() { body.min(COMPACT_HEIGHT) } else { body }
 }
 
 /// How far right a device's stock-control list reaches. An embedded editor hides the list, so it
