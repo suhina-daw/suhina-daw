@@ -1344,6 +1344,90 @@ fn ctrl_l_loops_the_time_selection_even_with_clips_in_it_selected() {
     assert_eq!(transport.loop_range.map(|r| (r.start, r.end)), Some(span), "the loop is the selection");
 }
 
+/// Painting a time selection, along the ruler or over the lanes, moves the play start marker to
+/// its start when the button goes up, so Play starts there (#937).
+#[test]
+fn a_painted_time_selection_moves_the_play_start_to_its_start() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let ruler = harness.get_by_label("Ruler").rect();
+    let mut paint = |harness: &mut Harness<'static, App>, y: f32, from: f32, to: f32| {
+        let (from, to) = (egui::pos2(from, y), egui::pos2(to, y));
+        harness.hover_at(from);
+        harness.run();
+        harness.drag_at(from);
+        harness.run();
+        harness.hover_at(to);
+        harness.run();
+        harness.drop_at(to);
+        harness.run();
+        render_a_block(&mut renderer);
+        harness.state().arrangement().time_selection().map(|s| s.start).unwrap()
+    };
+    // Along the ruler, painted right to left: the start is the earlier edge.
+    let start = paint(&mut harness, ruler.center().y, clip.right() - 33.0, clip.left() + 33.0);
+    assert_eq!(monitor.start_beat(), start);
+    assert!(start > 64.0, "{start}");
+    // Over the lanes, from the empty space before the clip.
+    let start = paint(&mut harness, clip.center().y, clip.left() - 64.0, clip.left() + 32.0);
+    assert_eq!(monitor.start_beat(), start);
+    assert!(start < 64.0, "{start}");
+    // A clip picked whole, then a span painted on the ruler before it: Play starts at the span,
+    // not at the clip still picked.
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
+    let start = paint(&mut harness, ruler.center().y, clip.left() - 96.0, clip.left() - 48.0);
+    assert!(harness.state().arrangement().selected_clip().is_some(), "the clip stays picked");
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, start));
+    // Playing from the selected clip (Shift+Space) still starts at the clip.
+    harness.get_by_label("Stop").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::Space);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
+}
+
+/// Painted during playback, a time selection moves the marker and playback goes on where it is;
+/// clips picked afterwards take over from the selection (#937).
+#[test]
+fn a_time_selection_painted_while_playing_moves_only_the_marker() {
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
+    let ruler = harness.get_by_label("Ruler").rect();
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    let before = monitor.beat();
+    let (from, to) =
+        (egui::pos2(clip.left() - 96.0, ruler.center().y), egui::pos2(clip.left() - 48.0, ruler.center().y));
+    harness.hover_at(from);
+    harness.run();
+    harness.drag_at(from);
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    render_a_block(&mut renderer);
+    let start = harness.state().arrangement().time_selection().map(|s| s.start).unwrap();
+    assert!(monitor.running());
+    assert_eq!(monitor.start_beat(), start);
+    assert!(monitor.beat() < start, "playback did not jump: {before} -> {}", monitor.beat());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    assert!(harness.state().arrangement().time_selection().is_none(), "the clips take over");
+}
+
 #[test]
 fn touching_a_short_clips_edge_with_a_coarse_grid_changes_nothing() {
     let mut harness = arrangement_app();
