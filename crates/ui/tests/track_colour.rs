@@ -398,3 +398,50 @@ fn midi_monitor_is_separate_from_arm_and_offers_contextual_choices() {
     h.run();
     assert!(h.query_by_label("MIDI monitoring of Drums: Auto").is_some());
 }
+
+/// The MIDI monitoring chip stays inside its header and clear of the automation button: at the
+/// default width and at the narrowest both take their own clicks, and a low lane at the narrowest,
+/// where the chip's row has no room for it, drops the chip (#876).
+#[test]
+fn the_midi_monitor_chip_keeps_clear_of_the_automation_button() {
+    let mut h = arrangement();
+    let clear = |h: &Harness<'static, App>| {
+        let lanes = h.get_by_label("Show automation of Drums").rect();
+        let header = h.get_by_label("Track Drums").rect();
+        assert!(header.contains_rect(lanes), "{lanes:?} in {header:?}");
+        h.query_by_label("MIDI monitoring of Drums: Auto").map(|chip| {
+            let chip = chip.rect();
+            assert!(!chip.intersects(lanes) && header.contains_rect(chip), "{chip:?} {lanes:?}");
+        })
+    };
+    let chip_takes_its_click = |h: &mut Harness<'static, App>| {
+        h.get_by_label("MIDI monitoring of Drums: Auto").click();
+        h.run();
+        assert!(h.query_by_label("Always on").is_some(), "the chip takes its click");
+        h.key_press(Key::Escape);
+        h.run();
+    };
+    assert!(clear(&h).is_some(), "the default width shows the chip");
+    chip_takes_its_click(&mut h);
+    // The headers are at the right: dragging their left edge right narrows them to the least.
+    let edge = h.get_by_label("Track Drums").rect().left_center() - egui::vec2(1.0, 0.0);
+    h.hover_at(edge);
+    h.run();
+    h.drag_at(edge);
+    h.run();
+    h.hover_at(edge + egui::vec2(200.0, 0.0));
+    h.run();
+    h.drop_at(edge + egui::vec2(200.0, 0.0));
+    h.run();
+    assert_eq!(h.state().arrangement().header_width, 160.0);
+    assert!(clear(&h).is_some(), "a two-row lane has room for the chip at the narrowest");
+    chip_takes_its_click(&mut h);
+    h.get_by_label("Resize all tracks").click();
+    h.run();
+    h.get_by_label("Tiny").click();
+    h.run();
+    assert!(clear(&h).is_none(), "a low lane at the narrowest drops the chip");
+    h.get_by_label("Show automation of Drums").click();
+    h.run();
+    assert!(h.query_by_label("Hide automation of Drums").is_some(), "the button takes its click");
+}

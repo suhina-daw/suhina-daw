@@ -998,13 +998,14 @@ apply live and persist as application settings without modifying project data.
 A note-playing track has one small control immediately after its record-arm button that reads
 the track's monitoring mode, Auto, In or Off (the chip shows In as **On**), before its name or volume controls. A click opens the three choices, with a tooltip
 explaining the current state; it is not a second record-arm button or headphone cue. The same
-choices appear in the MIDI input menu, beside port and channel selection. Auto (the default)
+choices appear in the MIDI input menu, beside port and channel selection; a header too narrow
+or too low for the chip to end inside its row, before the take lanes' button when that ends the row, leaves it out, and that menu is the way (#876). Auto (the default)
 hears the input while armed; In hears it independently of arming; Off never hears the live
 input. Recording still depends on arm and record, including when monitoring is Off; In alone
 never records. Monitoring does not suppress clip playback. The selected mode is project data,
 set through `track.setMidiInput` with `monitor: auto | in | off`, and supports undo and redo.
 Changing mode releases notes that are no longer monitored, without retriggering held keys.
-Old projects without this field retain Auto. Compact and expanded headers reserve space for the monitor control before names and level controls.
+Old projects without this field retain Auto. Where the chip shows, compact and expanded headers reserve its space before names and level controls; where it is left out, the name starts after the arm button.
 
 The popup is titled Hear your MIDI keyboard and offers three single-line choices: Automatic,
 Always on and Off. A fixed-height footer explains the hovered or keyboard-focused choice,
