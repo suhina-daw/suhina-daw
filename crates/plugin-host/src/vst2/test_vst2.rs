@@ -21,6 +21,7 @@
 //! field points at the [`Mock`] the caller holds for as long as the effect lives. That is the
 //! mock's own business; a host must never write a plug-in's fields.
 
+use std::ffi::c_char;
 use std::ffi::c_void;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -40,8 +41,16 @@ pub(crate) const MAX_CHUNK: usize = 1024 * 1024;
 pub(crate) const CHANNELS: usize = 2;
 /// The mock's unique id, four characters packed as VeSTige's `CCONST` does it.
 pub(crate) const UNIQUE_ID: i32 = vestige::CCONST(b'S', b'h', b'T', b'G');
+/// The latency the mock reports, in the field the host assumes holds it: the first of
+/// VeSTige's twelve "zero" bytes.
+pub(crate) const LATENCY: i32 = 32;
+/// Most entries each of the mock's records keeps: the mock runs for a whole session in the
+/// host's tests, so its records cannot grow without end — the newest are kept.
+const MAX_RECORDED: usize = 1024;
 
-/// What the mock has seen and what it holds, all behind one lock.
+/// What the mock has seen and what it holds, all behind one lock. The records are bounded
+/// ([`MAX_RECORDED`]): the mock runs for a whole session through the host, and its records
+/// are its product for the tests, not a log without end.
 #[derive(Default)]
 struct Inner {
     /// The host callback the mock was given, as an entry point hands it over.
@@ -66,6 +75,9 @@ struct Inner {
     program: i32,
     /// The event lists `effProcessEvents` brought, the events of each in order.
     events: Vec<Vec<MidiEvent>>,
+    /// The events of the last list, waiting for the block they belong to; taken by it, so
+    /// they play once.
+    pending: Vec<MidiEvent>,
     /// The chunk `effGetChunk` hands out and `effSetChunk` last brought.
     chunk: Vec<u8>,
     /// Whether the first `effEditIdle` has turned the gain.
@@ -92,6 +104,11 @@ pub(crate) fn mock(host: vestige::AudioMasterCallback) -> (Box<AEffect>, Arc<Moc
     if let Ok(mut inner) = mock.0.lock() {
         inner.host = host;
     }
+    // The latency, in the field the host assumes holds it (the pinned header names none).
+    let mut empty3 = [0 as c_char; 12];
+    for (slot, byte) in empty3.iter_mut().zip(LATENCY.to_ne_bytes()) {
+        *slot = byte as c_char;
+    }
     let effect = Box::new(AEffect {
         magic: vestige::kEffectMagic,
         dispatcher: Some(dispatcher),
@@ -105,7 +122,7 @@ pub(crate) fn mock(host: vestige::AudioMasterCallback) -> (Box<AEffect>, Arc<Moc
         flags: effect_flags::CAN_REPLACING | effect_flags::HAS_CHUNKS | effect_flags::HAS_EDITOR,
         ptr1: std::ptr::null_mut(),
         ptr2: std::ptr::null_mut(),
-        empty3: [0; 12],
+        empty3,
         unkown_float: 1.0,
         ptr3: std::ptr::null_mut(),
         user: Arc::as_ptr(&mock).cast_mut().cast(),
@@ -179,6 +196,7 @@ impl Mock {
     /// Records one call the host made.
     fn saw(&self, call: Call) {
         if let Ok(mut inner) = self.0.lock() {
+            bound(&mut inner.calls);
             inner.calls.push(call);
         }
     }
@@ -201,9 +219,19 @@ impl Mock {
             unsafe { callback(effect, op.value(), index, value, ptr, opt) }
         });
         if let Ok(mut inner) = self.0.lock() {
+            bound(&mut inner.asks);
             inner.asks.push(Call { op: op.value(), index, value, opt, answer });
         }
         answer
+    }
+}
+
+/// Keeps a record's newest entries when it is full: the mock runs for a whole session
+/// through the host, and its records are its product for the tests, not a log without end.
+fn bound<T>(list: &mut Vec<T>) {
+    if list.len() >= MAX_RECORDED {
+        let cut = list.len() / 2;
+        list.drain(..cut);
     }
 }
 
@@ -251,6 +279,8 @@ unsafe extern "C" fn dispatcher(
             }
             let _ = mock.ask(effect, HostOp::GetSampleRate, 0, 0, std::ptr::null_mut(), 0.0);
             let _ = mock.ask(effect, HostOp::GetBlockSize, 0, 0, std::ptr::null_mut(), 0.0);
+            // A plug-in with a panel asks for idle calls, where its editor's work belongs.
+            let _ = mock.ask(effect, HostOp::NeedIdle, 0, 0, std::ptr::null_mut(), 0.0);
             0
         }
         Some(EffectOp::Close) => 0,
@@ -319,16 +349,7 @@ unsafe extern "C" fn dispatcher(
         Some(EffectOp::EditIdle) => {
             // The user turns the knob once, through the host's edit calls (VeSTige's
             // op-codes; the parameter in `index` and the value in `opt` are assumed).
-            let first = mock.0.lock().map(|inner| !inner.automated).unwrap_or(false);
-            if first {
-                let _ = mock.ask(effect, HostOp::BeginEdit, 0, 0, std::ptr::null_mut(), 0.0);
-                let _ = mock.ask(effect, HostOp::Automate, 0, 0, std::ptr::null_mut(), EDIT_GAIN);
-                let _ = mock.ask(effect, HostOp::EndEdit, 0, 0, std::ptr::null_mut(), 0.0);
-                if let Ok(mut inner) = mock.0.lock() {
-                    inner.gain = EDIT_GAIN;
-                    inner.automated = true;
-                }
-            }
+            turn_the_knob(mock, effect);
             0
         }
         Some(EffectOp::ProcessEvents) => {
@@ -339,6 +360,8 @@ unsafe extern "C" fn dispatcher(
             let events = unsafe { read_events(ptr.cast::<VstEvents>(), MAX_EVENTS) }.unwrap_or_default();
             let count = events.len();
             if let Ok(mut inner) = mock.0.lock() {
+                bound(&mut inner.events);
+                inner.pending.clone_from(&events);
                 inner.events.push(events);
             }
             isize::try_from(count).unwrap_or(0)
@@ -371,7 +394,12 @@ unsafe extern "C" fn dispatcher(
             );
             isize::from(yes)
         }
-        Some(EffectOp::Idle) => 0,
+        Some(EffectOp::Idle) => {
+            // The host's idle call, where a plug-in's own work runs: the knob turns once
+            // here too, so a host without editors (this first one) still sees an edit.
+            turn_the_knob(mock, effect);
+            0
+        }
         Some(EffectOp::GetParameterProperties) => {
             if index == 0 && !ptr.is_null() {
                 let mut properties = blank_properties();
@@ -451,6 +479,7 @@ unsafe extern "C" fn set_parameter(effect: *mut AEffect, index: i32, value: f32)
     if let Some(mock) = unsafe { mock_of(effect) }
         && let Ok(mut inner) = mock.0.lock()
     {
+        bound(&mut inner.parameters);
         inner.parameters.push((index, value));
         if index == 0 && value.is_finite() {
             inner.gain = value;
@@ -465,15 +494,33 @@ unsafe extern "C" fn get_parameter(effect: *mut AEffect, index: i32) -> f32 {
     mock.0
         .lock()
         .map(|mut inner| {
+            bound(&mut inner.reads);
             inner.reads.push(index);
             inner.gain
         })
         .unwrap_or_default()
 }
 
-/// The mock's block: the gain over every channel, and the host asked what a plug-in asks
-/// while it runs. `inputs` and `outputs` are the call's channel pointers; a null channel is
-/// silence, and a null input buffer the same.
+/// Turns the knob once, as a user would: the gesture's three host calls and the gain's new
+/// value, the first idle or edit-idle only.
+fn turn_the_knob(mock: &Mock, effect: *mut AEffect) {
+    let first = mock.0.lock().map(|inner| !inner.automated).unwrap_or(false);
+    if !first {
+        return;
+    }
+    let _ = mock.ask(effect, HostOp::BeginEdit, 0, 0, std::ptr::null_mut(), 0.0);
+    let _ = mock.ask(effect, HostOp::Automate, 0, 0, std::ptr::null_mut(), EDIT_GAIN);
+    let _ = mock.ask(effect, HostOp::EndEdit, 0, 0, std::ptr::null_mut(), 0.0);
+    if let Ok(mut inner) = mock.0.lock() {
+        inner.gain = EDIT_GAIN;
+        inner.automated = true;
+    }
+}
+
+/// The mock's block: the gain over every channel, the notes it was given added at their
+/// frames (as `test:vst3` does, so an events path is audible through either format), and the
+/// host asked what a plug-in asks while it runs. `inputs` and `outputs` are the call's
+/// channel pointers; a null channel is silence, and a null input buffer the same.
 ///
 /// # Safety
 ///
@@ -530,7 +577,27 @@ unsafe fn run_block(effect: *mut AEffect, inputs: *mut *mut f32, outputs: *mut *
             None => target.fill(0.0),
         }
     }
+    // The notes this block's event list brought, added at their frames as `test:vst3` does,
+    // so an events path is audible through either format's tests; taken, so they play once.
+    let notes: Vec<MidiEvent> =
+        mock.0.lock().ok().map(|mut inner| std::mem::take(&mut inner.pending)).unwrap_or_default();
+    if !outputs.is_null() {
+        let target_pointer = outputs.wrapping_add(0);
+        // SAFETY: the mock declared outputs; the first channel's pointer.
+        let first = unsafe { *target_pointer };
+        if !first.is_null() {
+            // SAFETY: the first channel holds the block's frames, as the call says.
+            let target = unsafe { std::slice::from_raw_parts_mut(first, frames) };
+            for note in notes {
+                let (on, velocity) = (note.data[0] & 0xf0 == 0x90, f32::from(note.data[2]) / 127.0);
+                if on && let Some(at) = usize::try_from(note.delta_samples).ok().and_then(|at| target.get_mut(at)) {
+                    *at += velocity;
+                }
+            }
+        }
+    }
     if let Ok(mut inner) = mock.0.lock() {
+        bound(&mut inner.blocks);
         inner.blocks.push((frames, events));
     }
 }
