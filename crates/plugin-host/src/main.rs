@@ -352,7 +352,7 @@ impl Loaded {
             Self::Clap(plugin) => plugin.open_editor(mode),
             Self::Vst3(plugin) => plugin.open_editor(mode),
             #[cfg(feature = "vst2")]
-            Self::Vst2(_) => Err("a VST2 plug-in's editor is not hosted yet".into()),
+            Self::Vst2(plugin) => plugin.open_editor(mode),
             Self::Test { .. } => Err("the plug-in has no editor".into()),
         }
     }
@@ -363,7 +363,7 @@ impl Loaded {
             Self::Clap(plugin) => plugin.place_editor(placement),
             Self::Vst3(plugin) => plugin.place_editor(placement),
             #[cfg(feature = "vst2")]
-            Self::Vst2(_) => {}
+            Self::Vst2(plugin) => plugin.place_editor(placement),
             Self::Test { .. } => {}
         }
     }
@@ -413,7 +413,7 @@ impl Loaded {
             Self::Clap(plugin) => plugin.editor_resized(),
             Self::Vst3(plugin) => plugin.editor_resized(),
             #[cfg(feature = "vst2")]
-            Self::Vst2(_) => None,
+            Self::Vst2(plugin) => plugin.editor_resized(),
             Self::Test { .. } => None,
         }
     }
@@ -423,7 +423,7 @@ impl Loaded {
             Self::Clap(plugin) => plugin.close_editor(),
             Self::Vst3(plugin) => plugin.close_editor(),
             #[cfg(feature = "vst2")]
-            Self::Vst2(_) => {}
+            Self::Vst2(plugin) => plugin.close_editor(),
             Self::Test { .. } => {}
         }
     }
@@ -434,7 +434,7 @@ impl Loaded {
             Self::Clap(plugin) => plugin.editor_tick(),
             Self::Vst3(plugin) => plugin.editor_tick(),
             #[cfg(feature = "vst2")]
-            Self::Vst2(_) => false,
+            Self::Vst2(plugin) => plugin.editor_tick(),
             Self::Test { .. } => false,
         }
     }
@@ -533,7 +533,10 @@ impl Loaded {
             Self::Vst2(mut plugin) => {
                 suhina_plugins::trace!("vst2 unload: stop audio");
                 if plugin.stop_audio(UNLOAD_WAIT) {
-                    // The audio thread's exit suspended the plug-in; close it and let go.
+                    // The audio thread's exit suspended the plug-in; the editor closes next
+                    // (an embedded one is a child of the engine's window, whose messages the
+                    // engine answers only once it stops waiting), and then the plug-in goes.
+                    plugin.close_editor();
                     plugin.close();
                     drop(plugin);
                 } else {
@@ -980,6 +983,8 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             match instances.get_mut(&instance) {
                 Some(Loaded::Vst3(plugin)) => plugin.fit_editor(window::Size { width, height }),
                 Some(Loaded::Clap(plugin)) => plugin.fit_editor(window::Size { width, height }),
+                #[cfg(feature = "vst2")]
+                Some(Loaded::Vst2(plugin)) => plugin.fit_editor(window::Size { width, height }),
                 _ => {}
             }
             return None;

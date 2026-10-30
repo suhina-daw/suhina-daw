@@ -313,3 +313,59 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     assert_eq!(saved_gain(&heard), Some(SAVED_GAIN));
     assert!(!session.can_undo());
 }
+
+// ---- The editor ----------------------------------------------------------------------------
+
+/// The editor the mock declares, as `effEditGetRect`'s assumed shape reads it.
+const EDITOR_SIZE: (u32, u32) = (300, 200);
+
+/// The editor window code needs a display; on this runner there is one (Windows, or Linux
+/// under Xvfb), the check runs, macOS checks editors by hand (its editor tests open with the
+/// build's own window code, which the CI check job runs the Linux/Windows arms of).
+fn window_system() -> bool {
+    cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()))
+}
+
+/// The mock's editor opens in a window of its own at the size its rect declared, stays open
+/// across the boundary, and closes, its window taken down.
+#[test]
+fn the_mock_s_editor_opens_and_closes() {
+    if !window_system() {
+        eprintln!("no window system for editors; the editor part is skipped here");
+        return;
+    }
+    let (mut plugin, _audio) = start();
+    let (width, height) = plugin.open_editor().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((width, height), EDITOR_SIZE, "the size the rect declared");
+    assert!(plugin.editor_open(), "the editor is open as the engine sees it");
+    assert_eq!(plugin.editor_size(), Some(EDITOR_SIZE));
+    plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
+    assert!(!plugin.editor_open(), "closed as the engine sees it");
+}
+
+/// An embedded editor opens (Windows and X11; macOS reports its own kind and the rack falls
+/// back once to a window of its own, ADR 0006) and takes the placement.
+#[test]
+fn the_mock_s_embedded_editor_opens_and_takes_its_placement() {
+    if !window_system() {
+        eprintln!("no window system for editors; the editor part is skipped here");
+        return;
+    }
+    let (mut plugin, _audio) = start();
+    // The engine's owner: the test has no window of Suhina's to name, so the exit is the SAME
+    // one a non-windowing engine has: the host refuses it and reports why.
+    match plugin.open_editor_embedded(0) {
+        Ok((width, height)) => {
+            assert_eq!((width, height), EDITOR_SIZE, "the size the rect declared");
+            let placement =
+                suhina_plugins::Placement { x: 0, y: 0, clip_x: 0, clip_y: 0, clip_width: 100, clip_height: 100 };
+            assert!(plugin.place_editor(placement).unwrap_or_else(|e| panic!("{e}")), "the placement went out");
+            assert!(
+                plugin.fit_editor(EDITOR_SIZE.0, EDITOR_SIZE.1).unwrap_or_else(|e| panic!("{e}")),
+                "the fit went out"
+            );
+        }
+        Err(e) => eprintln!("embedded refused, as this runner's windowing says: {e}"),
+    }
+    plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
+}

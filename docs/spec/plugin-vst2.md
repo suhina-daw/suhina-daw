@@ -315,10 +315,13 @@ contract, as every host gives*).
   parameter listing and a set parameter, the idle knob reported as a parameter change, the
   state round trip through both bank forms, a reconfigure.
 - The host, through the engine's whole boundary (`tests/vst2.rs`): the same round trips with
-  the host process started and the control protocol between; and the central test of the
-  issue — a project naming a VST2 plug-in that only exists as VST2 opens, the plug-in loads
-  with its saved bank, plays with it, and the state read back is the settings (`found:
-  itself`).
+  the host process started and the control protocol between; the central test of the issue —
+  a project naming a VST2 plug-in that only exists as VST2 opens, the plug-in loads with its
+  saved bank, plays with it, and the state read back is the settings (`found: itself`); and
+  the editor: the mock's editor opens at its rect's size, stays open across the boundary,
+  closes (Windows and Linux under an X server; macOS's editor checks run by hand).
+- The editor over installed plug-ins: `tests/manual.rs`'s editor test takes a VST2 file, so
+  an installed editor's open-and-close is the observation for the rect and the handles.
 - The real world: `an_installed_vst2_plug_in_answers_the_probe` (ignored, `SUHINA_TEST_VST2`)
   prints the report of an installed plug-in. **Nothing is (observed) until this runs green
   against one.**
@@ -346,11 +349,37 @@ in for it (ADR 0006 decision 8); the plug-in **itself** — found by its id in t
 bank forms are one code path for the importer, the hand-over and this host
 ([`crates/plugins/src/vst2.rs`](../../crates/plugins/src/vst2.rs)).
 
+## Editors
+
+The editors follow ADR 0006's platform decisions, on the same windows the CLAP and VST3
+hosts use ([`crates/plugin-host/src/window.rs`](../../crates/plugin-host/src/window.rs)): a
+window of its own (owned by the engine's, when it named one) or an embedded child of the
+engine's window where the device panel shows it. The op-code sequence is the interface's
+own: `effEditGetRect` for the size, `effEditOpen` given the window's native handle, `effEditIdle`
+pumped from the host's idle loop while it is open, `effEditClose` when it closes.
+
+Every shape this depends on is *assumed* and the mocked and installed editor tests are the
+ones that settle them, as ADR 0022 requires:
+
+- The rect's four 16-bit fields (top, left, bottom, right — the size the corners span): the
+  pinned header has the op-code but not the struct.
+- The native handle `effEditOpen` takes per platform: a Win32 `HWND` on Windows, the content
+  view's pointer on macOS, the X11 id on Linux.
+- `effEditIdle` served from the host's idle loop while the editor is open.
+- `audioMasterSizeWindow` asking for a window resize (the width in the call's `index` and
+  the height in its `value`), answered confirmed only with an editor open, deferred to the
+  main loop to apply, and reported to the engine as an editor resize (`EditorResized`).
+
+A VST2 editor is not user-resizable, as the interface names no op-code to make one so; an
+embedded one is sized by the plug-in's ask alone. The room the engine names for an embedded
+editor (the fit, #689) is taken by no VST2 call — whether a sizing convention exists is
+another open question. On macOS an embedded editor cannot open across processes, and the
+rack falls back once to a window of the editor's own (ADR 0006 › 10).
+
 ## Not yet
 
-- Editors (step 7), the `plugin.*` command parts (step 8), and the settings guide's VST2
-  entries losing their "unavailable" wording in the same change that makes them work
-  (folders' wording is done).
+- The `plugin.*` command parts beyond the scan's and the folders' (step 8) — none left found
+  so far: the listing, the check and the manager name the format where a format is named.
 - The MIDI events a plug-in sends its host: counted, dropped — the engine has no channel for
   a plug-in's MIDI out in any format yet.
 - A channel-count change at `audioMasterIOChanged` does not rebuild the block's buffers; the

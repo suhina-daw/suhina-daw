@@ -483,8 +483,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   2026-10-31 amendment allows shipping) and built
   behind the `vst2` feature: the interface layer, the mock and the probe, the host that runs
   a VST2 plug-in on the same boundary as the other formats, the scan of the VST folders and
-  added folders, and a project's VST2 plug-in that has no VST3 or CLAP copy running through
-  it with its saved bank
+  added folders, a project's VST2 plug-in that has no VST3 or CLAP copy running through it
+  with its saved bank, and its editor in a window of its own or embedded where the platform
+  allows (Windows, X11)
   ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
   [spec](docs/spec/plugin-vst2.md)).
 

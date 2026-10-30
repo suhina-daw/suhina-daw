@@ -218,7 +218,7 @@ CHAPTERS = [
      "SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, "
      "graphs and custom panels, and support explicit revision updates. Missing A/B, "
      "hot-swap, preset browser depth, defaults, device delay review."),
-    (24, "Using Plug-Ins", 12, 0.80, "partial",
+    (24, "Using Plug-Ins", 12, 0.82, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
      "editors (Windows/X11), scans that try failures again and settle files built for another "
      "processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency "
@@ -236,7 +236,8 @@ CHAPTERS = [
      "transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio "
      "clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, "
      "one document a plug-in and project so its editor shows every track; warped and looped clips not "
-     "yet). Missing AU, VST2 editors, "
+     "yet), VST2 editors — a window of its own or embedded where the platform allows (Windows, "
+     "X11), the plug-in's own size ask followed by the editor and reported back. Missing AU, "
      "configure mode, VST preset banks, sidechain parameters."),
     (25, "Instrument, Drum and Effect Racks", 20, 0.25, "partial",
      "Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and "

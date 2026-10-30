@@ -48,6 +48,15 @@ pub(crate) const LATENCY: i32 = 32;
 /// host's tests, so its records cannot grow without end — the newest are kept.
 const MAX_RECORDED: usize = 1024;
 
+/// The mock's editor rectangle as it writes it, the shape the op-code is assumed to fill.
+#[repr(C)]
+struct EditorRect {
+    top: i16,
+    left: i16,
+    bottom: i16,
+    right: i16,
+}
+
 /// What the mock has seen and what it holds, all behind one lock. The records are bounded
 /// ([`MAX_RECORDED`]): the mock runs for a whole session through the host, and its records
 /// are its product for the tests, not a log without end.
@@ -82,6 +91,9 @@ struct Inner {
     chunk: Vec<u8>,
     /// Whether the first `effEditIdle` has turned the gain.
     automated: bool,
+    /// Whether an editor window's handle was handed over, and the handle as an address.
+    editor_open: bool,
+    editor_handle: usize,
     /// The sample rate the mock read out of the host's time information, if it asked.
     time_sample_rate: Option<f64>,
 }
@@ -191,6 +203,11 @@ impl Mock {
     /// The chunk the mock last saved or was given.
     pub(crate) fn chunk(&self) -> Vec<u8> {
         self.0.lock().map(|inner| inner.chunk.clone()).unwrap_or_default()
+    }
+
+    /// Whether an editor window's handle arrived, and the handle, from `effEditOpen`.
+    pub(crate) fn editor(&self) -> (bool, usize) {
+        self.0.lock().map(|inner| (inner.editor_open, inner.editor_handle)).unwrap_or((false, 0))
     }
 
     /// Records one call the host made.
@@ -342,10 +359,32 @@ unsafe extern "C" fn dispatcher(
             }
             0
         }
-        Some(EffectOp::EditGetRect)
-        | Some(EffectOp::EditOpen)
-        | Some(EffectOp::EditClose)
-        | Some(EffectOp::EditTop) => 0,
+        Some(EffectOp::EditGetRect) => {
+            // The editor's rectangle, as the op-code's assumed shape reads it: 300 × 200, as
+            // test:vst3's editor is.
+            if !ptr.is_null() {
+                // SAFETY: the caller's buffer, of the size the op-code is assumed to fill.
+                unsafe { *ptr.cast::<EditorRect>() = EditorRect { top: 0, left: 0, bottom: 200, right: 300 } };
+            }
+            1
+        }
+        Some(EffectOp::EditOpen) => {
+            // The window's native handle travels in `ptr` (*assumed* per platform); recorded
+            // so the tests can assert it arrived.
+            let (open, handle) = (!ptr.is_null(), ptr as usize);
+            if let Ok(mut inner) = mock.0.lock() {
+                inner.editor_open = open;
+                inner.editor_handle = handle;
+            }
+            1
+        }
+        Some(EffectOp::EditClose) => {
+            if let Ok(mut inner) = mock.0.lock() {
+                inner.editor_open = false;
+            }
+            0
+        }
+        Some(EffectOp::EditTop) => 0,
         Some(EffectOp::EditIdle) => {
             // The user turns the knob once, through the host's edit calls (VeSTige's
             // op-codes; the parameter in `index` and the value in `opt` are assumed).

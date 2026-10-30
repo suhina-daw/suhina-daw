@@ -75,6 +75,22 @@ pub(crate) struct Shared {
     /// The song's place for the block being processed, field by field in atomics: written by
     /// the audio thread before each block, read by the callback on any thread.
     time: TimeSlot,
+    /// Whether an editor of the plug-in is open: written by the main thread as it opens or
+    /// closes one, read by the callback for a size request.
+    has_editor: AtomicBool,
+    /// The window resize the plug-in asked for with `audioMasterSizeWindow`, pended for the
+    /// main loop to apply: width << 16 | height, 0 for none.
+    size_window: AtomicU64,
+}
+
+/// Packs a size into a pending `size_window` slot.
+const fn pack_size(width: u32, height: u32) -> u64 {
+    ((width as u64) << 16) | (height as u64)
+}
+
+/// Unpacks a pending `size_window` slot.
+const fn unpack_size(packed: u64) -> (i32, i32) {
+    ((packed >> 16) as i32, (packed & 0xffff) as i32)
 }
 
 /// The time information in atomics, one per field, so the audio thread can write it and the
@@ -166,7 +182,7 @@ unsafe extern "C" fn host_callback(
     effect: *mut AEffect,
     opcode: i32,
     index: i32,
-    _value: isize,
+    value: isize,
     ptr: *mut c_void,
     opt: f32,
 ) -> isize {
@@ -187,7 +203,7 @@ unsafe extern "C" fn host_callback(
     match shared {
         Some(shared) => {
             let serving_this = serving.is_some_and(|s| Arc::ptr_eq(&s, &shared));
-            answer(&shared, serving_this, opcode, index, ptr, opt)
+            answer(&shared, serving_this, opcode, index, value, ptr, opt)
         }
         None => answer_at_entry(opcode, ptr),
     }
@@ -240,7 +256,15 @@ fn lookup(effect: *mut AEffect) -> Option<Arc<Shared>> {
 /// What this host answers for one call of the plug-in. `serving_this` says the call came from
 /// the audio thread that is running this very instance, which is the only thread that may
 /// write its lock-free slots.
-fn answer(shared: &Shared, serving_this: bool, opcode: i32, index: i32, ptr: *mut c_void, opt: f32) -> isize {
+fn answer(
+    shared: &Shared,
+    serving_this: bool,
+    opcode: i32,
+    index: i32,
+    value: isize,
+    ptr: *mut c_void,
+    opt: f32,
+) -> isize {
     match HostOp::from_value(opcode) {
         // *Assumed* answer: 2400 stands for a 2.4 host.
         Some(HostOp::Version) => HOST_VERSION,
@@ -294,8 +318,21 @@ fn answer(shared: &Shared, serving_this: bool, opcode: i32, index: i32, ptr: *mu
         }
         // The gesture around a knob: noted, nothing to do.
         Some(HostOp::BeginEdit) | Some(HostOp::EndEdit) => 0,
-        // No window of its own to size yet (editors are a later step of #1066).
-        Some(HostOp::SizeWindow) => 0,
+        // The editor's window grows to the plug-in's ask, applied by the main loop (*assumed*:
+        // the width in the call's `index` and the height in its `value`; the pinned header
+        // says only that the op-code exists). Only with an editor open.
+        Some(HostOp::SizeWindow) => {
+            let (width, height) = (usize::try_from(index).unwrap_or(0), usize::try_from(value).unwrap_or(0));
+            if shared.has_editor.load(Ordering::Acquire)
+                && (1..=16_384).contains(&width)
+                && (1..=16_384).contains(&height)
+            {
+                shared.size_window.store(pack_size(width as u32, height as u32), Ordering::Release);
+                1
+            } else {
+                0
+            }
+        }
         // *Assumed:* the rate answers as a whole number; the size as itself.
         Some(HostOp::GetSampleRate) => f64::from_bits(shared.sample_rate.load(Ordering::Relaxed)) as isize,
         Some(HostOp::GetBlockSize) => shared.block_size.load(Ordering::Relaxed) as isize,
@@ -337,6 +374,14 @@ fn answer(shared: &Shared, serving_this: bool, opcode: i32, index: i32, ptr: *mu
     }
 }
 
+/// An open editor's window and what it is at, kept on the main thread.
+struct Vst2Editor {
+    window: crate::window::Window,
+    size: crate::window::Size,
+    /// The new size the plug-in asked for and the main loop applied, to tell the engine once.
+    resized: Option<crate::window::Size>,
+}
+
 /// What was loaded and must outlive the effect: a library, or the built-in mock. The
 /// library and the mock's state are held — and never read — to keep the plug-in's code and
 /// its state alive for as long as the effect is called.
@@ -373,6 +418,8 @@ pub(crate) struct Vst2Plugin {
     sample_rate: f64,
     max_frames: usize,
     shared: Arc<Shared>,
+    /// The open editor's window, when one is open, and what it is at, on the main thread.
+    editor: Option<Vst2Editor>,
     /// What [`Shared::notes`] has already reported (`Reads`).
     reads: crate::param_notes::Reads,
     /// Whether the plug-in ever asked for idle calls.
@@ -401,6 +448,8 @@ impl Vst2Plugin {
             need_idle: AtomicBool::new(false),
             midi_out: AtomicU32::new(0),
             unique_id: read.uniqueID as u32,
+            has_editor: AtomicBool::new(false),
+            size_window: AtomicU64::new(0),
             effect: effect as usize,
             sample_rate: AtomicU64::new(sample_rate.to_bits()),
             block_size: AtomicUsize::new(max_frames),
@@ -419,6 +468,7 @@ impl Vst2Plugin {
             name: String::new(),
             effect,
             module,
+            editor: None,
             dispatcher: read.dispatcher,
             process: read.process,
             process_replacing: read.processReplacing,
@@ -740,6 +790,102 @@ impl Vst2Plugin {
         Ok(())
     }
 
+    /// Opens the plug-in's editor as `mode` says, as the CLAP host does: the window first,
+    /// then the op-code `effEditOpen` given the window's native handle — a Win32 `HWND` on
+    /// Windows, the content view's pointer on macOS, the X11 id on Linux (*all assumed*: the
+    /// per-platform handle is not in the pinned header; the editor tests against the mock and
+    /// the ignored test against installed editors are what settle the conventions). The size
+    /// comes from `effEditGetRect`'s rect first (*assumed*: four 16-bit values).
+    pub(crate) fn open_editor(&mut self, mode: crate::window::Mode) -> Result<crate::window::Size, String> {
+        if let Some(size) = self.editor.as_ref().map(|editor| editor.size) {
+            return Ok(size);
+        }
+        let rect = self.edit_rect()?;
+        let size = rect.size();
+        let window = crate::window::Window::open_as(mode, &self.name, size, false)
+            .map_err(|e| format!("the editor did not open: {e}"))?;
+        self.shared.has_editor.store(true, Ordering::Release);
+        // SAFETY: the window's native handle, which stays open while the editor does.
+        let opened =
+            self.send(EffectOp::EditOpen, 0, 0, window.handle(), 0.0).map(|answer| answer != 0).unwrap_or(true);
+        if !opened {
+            self.editor_close();
+            return Err("the plug-in's editor did not open".into());
+        }
+        self.editor = Some(Vst2Editor { window, size, resized: None });
+        Ok(size)
+    }
+
+    /// The editor's rectangle, as `effEditGetRect` filled it. Most plug-ins are around 300 ×
+    /// 200 depending on third-party UI conventions; a refused rect keeps the window default.
+    fn edit_rect(&mut self) -> Result<EditorRect, String> {
+        let mut rect = EditorRect::BLANK;
+        // SAFETY: the buffer is this function's own, the size the op-code is assumed to fill.
+        let answer = self.send(EffectOp::EditGetRect, 0, 0, &mut rect as *mut EditorRect as *mut c_void, 0.0);
+        match answer {
+            Ok(answer) if answer != 0 => Ok(rect),
+            Err(why) => Err(format!("the editor's rect is refused: {why}")),
+            _ => Ok(rect),
+        }
+    }
+
+    /// Puts an embedded editor where the engine says.
+    pub(crate) fn place_editor(&self, placement: crate::window::Placement) {
+        if let Some(editor) = &self.editor {
+            crate::window::place(editor.window.id(), placement);
+        }
+    }
+
+    /// The room the engine has for an embedded editor: a VST2 has no op-code to ask a plug-in
+    /// to resize its editor that the pinned header names, so this takes none (the spec's open
+    /// questions).
+    pub(crate) fn fit_editor(&mut self, _size: crate::window::Size) {}
+
+    /// A size the editor got since this was last asked: the plug-in's `audioMasterSizeWindow`
+    /// ask, applied by the main loop.
+    pub(crate) fn editor_resized(&mut self) -> Option<crate::window::Size> {
+        self.editor.as_mut().and_then(|editor| editor.resized.take())
+    }
+
+    /// Keeps an open editor in step with its window and pumps the idle calls a VST2 editor's
+    /// drawing belongs to; whether the user closed its window. Called from the main loop
+    /// every turn while the editor is open.
+    pub(crate) fn editor_tick(&mut self) -> bool {
+        let Some(window) = self.editor.as_ref().map(|editor| (editor.window.id(), editor.size)) else { return false };
+        let (window_id, _) = window;
+        // The plug-in's size ask, applied now that the main loop is here for it.
+        let packed = self.shared.size_window.swap(0, Ordering::AcqRel);
+        if packed != 0 {
+            let (width, height) = unpack_size(packed);
+            let got =
+                crate::window::Size { width: width.clamp(1, 16_384) as u32, height: height.clamp(1, 16_384) as u32 };
+            if let Some(editor) = self.editor.as_mut().filter(|editor| got != editor.size) {
+                crate::window::resize(window_id, got);
+                editor.size = got;
+                editor.resized = Some(got);
+            }
+        }
+        // The idle calls the editor's drawing work falls out from (*assumed*: served from the
+        // host's idle loop, as the interface's own `effEditIdle` says).
+        let _ = self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0);
+        // The user's close of the window, told the engine like the other formats do.
+        crate::window::take_close_request(window_id)
+    }
+
+    fn editor_close(&mut self) {
+        self.shared.has_editor.store(false, Ordering::Release);
+        self.shared.size_window.store(0, Ordering::Release);
+        let _ = self.send(EffectOp::EditClose, 0, 0, std::ptr::null_mut(), 0.0);
+    }
+
+    /// Closes the editor, if one is open: the op-code first, then the window.
+    pub(crate) fn close_editor(&mut self) {
+        if self.editor.take().is_none() {
+            return;
+        }
+        self.editor_close();
+    }
+
     /// Closes the plug-in and lets go of it. Only called when its audio thread stopped; one
     /// that did not is left as it is (never closed or freed under a running plug-in).
     pub(crate) fn close(&mut self) {
@@ -783,6 +929,29 @@ unsafe fn call(dispatcher: Option<vestige::DispatcherFn>, effect: *mut AEffect, 
     // SAFETY: the plug-in's dispatcher with this call's arguments, on the thread that serves
     // its blocks.
     unsafe { dispatcher(effect, op.value(), 0, value, std::ptr::null_mut(), 0.0) };
+}
+
+/// The editor's rectangle as `effEditGetRect` fills it (*assumed* four 16-bit values, top,
+/// left, bottom and right — the pinned header has the op-code but not the shape, and this is
+/// what the probe and the editor test settle).
+#[repr(C)]
+struct EditorRect {
+    top: i16,
+    left: i16,
+    bottom: i16,
+    right: i16,
+}
+
+impl EditorRect {
+    const BLANK: Self = Self { top: 0, left: 0, bottom: 0, right: 0 };
+
+    /// The inside the rectangle says, cut to the room a window has.
+    fn size(&self) -> crate::window::Size {
+        crate::window::Size {
+            width: i32::from(self.right).saturating_sub(i32::from(self.left)).clamp(1, 16_384) as u32,
+            height: i32::from(self.bottom).saturating_sub(i32::from(self.top)).clamp(1, 16_384) as u32,
+        }
+    }
 }
 
 /// The event list a block's MIDI events go in, reused every block: the `VstEvents` head and
