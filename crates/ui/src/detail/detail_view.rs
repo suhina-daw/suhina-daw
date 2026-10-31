@@ -296,16 +296,9 @@ fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
     }
 }
 
-/// A track's devices' two heights in the detail area, within `room`: the lower is always a compact
-/// panel's; the upper is the height last dragged for a clip's view, at least twice the lower.
-pub fn device_row_heights(dragged: f32, room: f32) -> (f32, f32) {
-    let lower = (ROW + PAD * 2.0 + COMPACT_HEIGHT).min(room);
-    (lower, dragged.max(lower * 2.0).min(room))
-}
-
-/// Whether a drag let go at `height` is nearer the `upper` of the two heights.
-pub fn nearer_upper(height: f32, lower: f32, upper: f32) -> bool {
-    height > (lower + upper) / 2.0
+/// The detail area's height while it shows a track's devices: always a compact panel's.
+pub fn device_row_height() -> f32 {
+    ROW + PAD * 2.0 + COMPACT_HEIGHT
 }
 
 /// How many columns of a long generated list a panel shows until the header's chevron opens the rest.

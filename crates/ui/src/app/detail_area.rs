@@ -333,18 +333,11 @@ impl App {
             // default height. A chain of short panels (a plug-in whose editor is not embedded,
             // or no devices at all) would otherwise keep the area too short to drag up.
             self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
-            // A track's devices, reached by clicking the track, stand at one of two heights and follow
-            // the pointer only while dragged; the height the user drags freely is the clip's, its
-            // editor's and the devices reached from it.
+            // A track's devices, reached by clicking the track, are open at one height or closed; the
+            // height the user drags is the clip's, its editor's and the devices reached from it.
             let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
-            let room = (area.height() - MIN_VIEW).max(least);
             let shown_height = if track_devices {
-                let (lower, upper) = detail_view::device_row_heights(self.detail_height, room);
-                match self.detail_drag {
-                    Some(dragged) => dragged.clamp(least, room),
-                    None if self.detail_upper => upper,
-                    None => lower,
-                }
+                detail_view::device_row_height().min((area.height() - MIN_VIEW).max(least))
             } else {
                 self.detail_height
             };
@@ -366,7 +359,7 @@ impl App {
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
         if geometry.is_none() {
-            let two_heights = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
             let response =
                 ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
@@ -385,22 +378,17 @@ impl App {
                     let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
                     self.detail_drag = Some(height);
                     self.detail_max = pullable && height > area.height() - MIN_VIEW;
-                    if height < least / 2.0 {
+                    let closes_under = if open_or_closed { detail_view::device_row_height() } else { least };
+                    if height < closes_under / 2.0 {
                         // Dragged down past half its least height, the detail area closes; the same
                         // drag going back up opens it again (`collapsed_splitter`).
                         self.detail_max = false;
                         self.hide_editor();
-                    } else if !self.detail_max && !two_heights {
+                    } else if !self.detail_max && !open_or_closed {
                         self.detail_height = height.max(least);
                     }
                 }
             } else {
-                // Let go over a track's devices: the nearer of the two heights.
-                if two_heights && let Some(dragged) = self.detail_drag {
-                    let room = (area.height() - MIN_VIEW).max(least);
-                    let (lower, upper) = detail_view::device_row_heights(self.detail_height, room);
-                    self.detail_upper = detail_view::nearer_upper(dragged, lower, upper);
-                }
                 self.detail_drag = None;
             }
             let painter = ui.painter_at(splitter);
@@ -671,10 +659,13 @@ impl App {
             let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
             self.detail_drag = Some(height);
             let least = self.least_detail_height();
-            if height >= least / 2.0 {
+            // A track's devices open at their one height, at the point a drag down closes them.
+            let track_devices = self.shown_clip().is_none();
+            let opens_at = if track_devices { detail_view::device_row_height() } else { least };
+            if height >= opens_at / 2.0 {
                 self.show_editor();
-                // A track's devices have their two heights; the height dragged is a clip's view's.
-                if self.shown_clip().is_some() {
+                // The height dragged is a clip's view's.
+                if !track_devices {
                     self.detail_height = height.max(least);
                 }
             }

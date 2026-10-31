@@ -427,8 +427,6 @@ pub struct App {
     detail_height: f32,
     /// How tall the device chain's panels were last frame, when the detail area showed only the
     /// chain: the area is kept no taller.
-    /// A track's devices stand at the upper of their two heights.
-    detail_upper: bool,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -659,7 +657,6 @@ impl App {
             pending_device_remove: None,
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
-            detail_upper: false,
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
