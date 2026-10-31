@@ -86,7 +86,8 @@ comes in as it (otherwise as a placeholder):
 | Echo | modulation delay | own delay lines | planned |
 | Reverb | reverb ([spec](reverb.md)) | own | DSP done; import done |
 | Hybrid Reverb | convolution and algorithmic reverb | own convolution, the reverb | planned |
-| Saturator, Roar | multi-stage saturation | own, oversampled | planned |
+| Saturator | saturator ([spec](saturator.md)) | own, oversampled | DSP done; import done |
+| Roar | multi-stage saturation | own, oversampled | planned |
 | EQ Eight | EQ ([spec](eq.md)) | own (`dsp` state-variable filters) | DSP done; import done (no analyser, Audition or oversampling yet) |
 | Auto Filter | filter | own (`dsp` filters) | planned |
 | Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |
