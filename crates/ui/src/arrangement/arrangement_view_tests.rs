@@ -528,3 +528,20 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
     assert_eq!(clip::drag_place(6.2, 5.3, grid, false), 6.0);
     assert_eq!(clip::drag_place(5.6, 5.3, grid, true), 5.6);
 }
+
+#[test]
+fn dragging_a_selected_track_resizes_every_selected_track() {
+    let mut state = ArrangementViewState::default();
+    state.set_lane_height(TrackId(1), 100.0);
+    state.set_lane_height(TrackId(2), 60.0);
+    state.set_lane_height(TrackId(3), 80.0);
+    state.selected_tracks = vec![TrackId(1), TrackId(2)];
+    state.resize_lanes(TrackId(1), 20.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(2)), 80.0);
+    assert_eq!(state.lane_height(TrackId(3)), 80.0);
+    // A track not among them goes alone.
+    state.resize_lanes(TrackId(3), 10.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(3)), 90.0);
+}

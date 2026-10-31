@@ -906,3 +906,32 @@ fn an_embedded_editor_hides_the_list_so_the_list_takes_no_room() {
     device.plugin = plugin.devices[0].plugin.clone();
     assert_eq!(list_right(device, &graph), 0.0);
 }
+
+#[test]
+fn a_track_s_devices_stand_at_one_of_two_heights() {
+    let lower = ROW + PAD * 2.0 + COMPACT_HEIGHT;
+    // The lower is always the same; the upper is the height dragged, well above the lower.
+    assert_eq!(device_row_heights(500.0, 900.0), (lower, 500.0));
+    assert_eq!(device_row_heights(100.0, 900.0), (lower, lower * 2.0));
+    // Both stay in the room there is.
+    assert_eq!(device_row_heights(500.0, 150.0), (150.0, 150.0));
+    assert!(!nearer_upper(lower + 10.0, lower, 500.0));
+    assert!(nearer_upper(490.0, lower, 500.0));
+}
+
+#[test]
+fn a_long_list_shows_its_first_two_columns() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let graph = chain.devices[0].graph.as_ref().unwrap();
+    // Utility's list fills two columns of this height, so nothing is left out.
+    assert_eq!(list_fit(&graph.parameters, COMPACT_HEIGHT), None);
+    // Three rows a column: the rest wait behind the chevron.
+    let row = parameter_height(&graph.parameters[0]);
+    let fit = list_fit(&graph.parameters, row * 3.0).unwrap();
+    assert!((1..graph.parameters.len()).contains(&fit), "{fit}");
+    let cells = parameter_layout(&graph.parameters, COMPACT_WIDTH, row * 3.0, &[]);
+    assert!(cells[..fit].iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
+    assert!(cells[fit].left() >= COMPACT_WIDTH * 2.0, "{cells:?}");
+}

@@ -453,6 +453,9 @@ impl Default for ArrangementViewState {
     }
 }
 
+/// A track and each of its clips' id, start and end, for Select All.
+pub type LaneClips = (TrackId, Vec<(ClipId, f64, f64)>);
+
 /// A span of beats over some tracks, the selection rectangle's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeSelection {
@@ -524,7 +527,7 @@ impl ArrangementViewState {
 
     /// Select All: every clip of `lanes` (track, then each clip's id, start and end), and the time
     /// from the first start to the last end over all the tracks.
-    pub fn select_all_clips(&mut self, lanes: &[(TrackId, Vec<(ClipId, f64, f64)>)]) {
+    pub fn select_all_clips(&mut self, lanes: &[LaneClips]) {
         let keys: Vec<(TrackId, ClipId)> =
             lanes.iter().flat_map(|(track, clips)| clips.iter().map(|c| (*track, c.0))).collect();
         self.select_clips(keys);
@@ -655,6 +658,15 @@ impl ArrangementViewState {
     /// Sets a lane's height, as dragging its lower edge does.
     pub fn set_lane_height(&mut self, track: TrackId, height: f32) {
         self.heights.insert(track, height.clamp(MIN_LANE, MAX_LANE));
+    }
+
+    /// Changes `track`'s height by `by` as dragging its edge does; a track among the selected ones
+    /// takes them all with it, each from its own height.
+    pub(super) fn resize_lanes(&mut self, track: TrackId, by: f32) {
+        let tracks = if self.selected_tracks.contains(&track) { self.selected_tracks.clone() } else { vec![track] };
+        for track in tracks {
+            self.set_lane_height(track, self.kept_height(track) + by);
+        }
     }
 
     /// Scales every track lane's height by `factor`, keeping the content `anchor` points below

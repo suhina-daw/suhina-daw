@@ -862,8 +862,7 @@ pub(super) fn track_header(
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         if response.dragged_by(egui::PointerButton::Primary) {
             let dy = response.drag_delta().y;
-            let height = (state.height(lane) + if upward { -dy } else { dy }).clamp(MIN_LANE, MAX_LANE);
-            state.heights.insert(lane.track, height);
+            state.resize_lanes(lane.track, if upward { -dy } else { dy });
         }
     }
 }

@@ -652,7 +652,7 @@ impl App {
                 }
             }
             "selection.selectAll" => {
-                let lanes: Vec<(TrackId, Vec<(ClipId, f64, f64)>)> = self
+                let lanes: Vec<arrangement_view::LaneClips> = self
                     .session()
                     .map(|session| {
                         session
