@@ -356,8 +356,8 @@ control uses the SDK; the sampler definition contains no custom drawing primitiv
 
 In Sample mode, the source row keeps all controls on one line. Warp, the warp-mode
 selector and Source BPM sit to the right of the voice controls. The three warp
-controls appear after a nonempty source is loaded, on the normal and LFO pages;
-Envelopes and More replace this source row.
+controls appear after a nonempty source is loaded, on the normal, LFO and Envelopes
+pages; More replaces this source row.
 
 `warp` defaults off and `warp_mode` defaults to Rhythmic. Source BPM is the
 original tempo of the file. Loading a source initializes it from metadata or its

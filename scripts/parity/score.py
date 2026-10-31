@@ -238,7 +238,7 @@ CHAPTERS = [
      "solo in the group's panel, a mix against the dry signal and an output gain, instruments "
      "layered on the same notes, plug-ins inside, latency compensated, groups nested four deep, "
      "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain; "
-     "a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices. No macros, key/velocity/chain zones, drum pads or group "
+     "a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices, keeping the first eight macros' names and positions. No macro mappings, key/velocity/chain zones, drum pads or group "
      "presets."),
     (26, "Automation and Editing Envelopes", 22, 0.58, "partial",
      "Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints "

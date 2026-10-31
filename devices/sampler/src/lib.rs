@@ -67,7 +67,10 @@ fn value(ui: &mut DeviceUi, id: &str, caption: &str, bounds: [f32; 4], view: Opt
         ui,
         id,
         Widget::Number {
-            decimals: if matches!(id, "resonance" | "scan" | "lfo_rate" | "lfo_filter" | "lfo_pitch" | "warp_beats") {
+            decimals: if matches!(
+                id,
+                "resonance" | "scan" | "lfo_rate" | "lfo_filter" | "lfo_pitch" | "warp_beats" | "first_beat"
+            ) {
                 2
             } else {
                 0

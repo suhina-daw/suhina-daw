@@ -452,6 +452,9 @@ impl Reader {
             *room -= 1;
             if let Some(device) = self.device(node, track_name, depth, room) {
                 chain.push(device);
+            } else {
+                // Nothing came of it (a plug-in without a description): it takes no room.
+                *room += 1;
             }
         }
         chain

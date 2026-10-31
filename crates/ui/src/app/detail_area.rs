@@ -295,7 +295,8 @@ impl App {
         // With the switch on Devices the track's devices take the editor's place, and nothing is
         // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
-        let resizable = stacked || switch.is_some();
+        // An audio clip has no switch, but its properties need the room to show every row.
+        let resizable = stacked || switch.is_some() || clip.is_some();
         let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();

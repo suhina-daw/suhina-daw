@@ -128,7 +128,7 @@ pub(crate) struct GroupSlot {
     gain: Smoothed,
     /// Its parameter values, in [`GROUP_PARAMS`] order.
     values: Vec<f64>,
-    /// Whether its branches start with an instrument: it plays the notes and has no dry signal.
+    /// Whether a branch holds an instrument: it plays the notes and has no dry signal.
     pub(crate) instrument: bool,
     /// The dry signal of the current span, delayed by the group's latency.
     dry: Vec<f32>,
@@ -355,7 +355,8 @@ impl Builder<'_> {
         let values = group_param_values(&stored.params);
         let mix = values.get(MIX).copied().unwrap_or(1.0);
         let gain = values.get(GAIN).copied().unwrap_or(0.0);
-        let instrument = branches.iter().any(|b| b.slots.first().is_some_and(is_instrument));
+        // A MIDI effect may lead the instrument in its branch.
+        let instrument = branches.iter().any(|b| b.slots.iter().any(is_instrument));
         let cap = self.sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS);
         let (latency, delays) = compensation(branches.iter().map(|b| b.latency), cap);
         for (branch, delay) in branches.iter_mut().zip(delays) {

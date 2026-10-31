@@ -121,6 +121,9 @@ impl Layout {
                     "header controls larger than {HEADER_WIDTH} by {HEADER_HEIGHT} px"
                 ))));
             }
+            if header.controls.iter().any(|c| c.bounds[1] + c.bounds[3] > header.size[1]) {
+                return Err(fail(DeviceSdkError("a header control runs below the header's strip".into())));
+            }
             // A canvas is at least 24 px high; the header's strip is checked as one that tall.
             let mut checked = header.clone();
             checked.size[1] = 24.;

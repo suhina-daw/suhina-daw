@@ -257,12 +257,14 @@ fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
     ui.ctx().data_mut(|d| d.insert_temp(id, (track, key, until)));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sample_waveform(
     ui: &mut egui::Ui,
     bounds: Rect,
     parameters: &[GraphParameter],
     track: TrackId,
     device: usize,
+    address: serde_json::Value,
     actions: &mut Vec<Action>,
     inline_recording: bool,
 ) {
@@ -372,7 +374,7 @@ fn sample_waveform(
         }
     }
     let edit_boundary = |actions: &mut Vec<Action>, operation: &str, previous: Option<f64>, point: Option<f64>| {
-        let mut params_json = json!({"track":track.0,"device":device,"operation":operation});
+        let mut params_json = json!({"track":track.0,"device":address,"operation":operation});
         if let Some(point) = point {
             params_json["point"] = json!(point);
         }
@@ -517,7 +519,7 @@ fn sample_waveform(
                 if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
                     actions.push(Action::new(
                         "device.setParam",
-                        json!({"track":track.0,"device":device,"param":"grid_division","value":index}),
+                        json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
                     ));
                     ui.close();
                 }
@@ -535,10 +537,13 @@ fn sample_waveform(
             }
             ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
             if ui.button("Apply time signature").clicked() {
-                for (param, value) in [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)] {
+                // One undo step: the first stays open, the second closes it.
+                for (param, value, open) in
+                    [("source_numerator", meter.0.round(), true), ("source_denominator", meter.1 as f64, false)]
+                {
                     actions.push(Action::new(
                         "device.setParam",
-                        json!({"track":track.0,"device":device,"param":param,"value":value}),
+                        json!({"track":track.0,"device":address,"param":param,"value":value,"continuous":open,"gesture":"source_meter"}),
                     ));
                 }
                 ui.close();
@@ -548,7 +553,7 @@ fn sample_waveform(
         if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
             actions.push(Action::new(
                 "device.setParam",
-                json!({"track":track.0,"device":device,"param":"grid_snap","value":u8::from(snapping)}),
+                json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
             ));
         }
         if ui.button("Show whole sample").clicked() {
@@ -1800,6 +1805,7 @@ pub(crate) fn show(
                 parameters,
                 track,
                 device,
+                at.value(),
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
             );

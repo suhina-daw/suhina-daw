@@ -419,6 +419,23 @@ pub(crate) fn sampler(node: Node, warn: &mut dyn FnMut(String)) -> Option<Sample
                 Some("4") => p.set("warp_mode", Some(4.)),
                 other => warn(format!("sampler warp mode {other:?} is not mapped yet; using the default")),
             }
+            // The sample's own tempo, from its first and last warp markers; without them the
+            // tempo the file itself says is used when it loads.
+            let markers: Vec<(f64, f64)> = path(part, &["SampleWarpProperties", "WarpMarkers"])
+                .map(|m| {
+                    m.children()
+                        .filter(|n| n.has_tag_name("WarpMarker"))
+                        .filter_map(|n| {
+                            let read = |name: &str| n.attribute(name).and_then(|t| t.trim().parse::<f64>().ok());
+                            Some((read("SecTime")?, read("BeatTime")?))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let (Some(first), Some(last)) = (markers.first(), markers.last()) {
+                let bpm = 60. * (last.1 - first.1) / (last.0 - first.0);
+                p.set("source_bpm", Some(bpm).filter(|b| b.is_finite() && *b > 0.).map(|b| b.clamp(1., 999.)));
+            }
         }
     }
 
@@ -454,9 +471,10 @@ pub(crate) fn sampler(node: Node, warn: &mut dyn FnMut(String)) -> Option<Sample
     p.set("pitch", auto(node, &["Pitch", "TransposeKey"]).map(|st| st.clamp(-48., 48.)));
     let fine = auto(node, &["Pitch", "TransposeFine"]).unwrap_or(0.) + part_number(&["Detune"]).unwrap_or(0.);
     p.set("cents", Some(fine.clamp(-100., 100.)));
-    let part_gain = part_number(&["Volume"]).filter(|g| *g > 0.).unwrap_or(1.);
-    let volume = auto(node, &["VolumeAndPan", "Volume"]).unwrap_or(0.) + 20. * part_gain.log10();
-    p.set("gain", Some(volume.clamp(-60., 12.)));
+    // A zone at zero is silent whatever the device's gain; one with no volume is at unity.
+    let part_gain = part_number(&["Volume"]).unwrap_or(1.);
+    let volume = auto(node, &["VolumeAndPan", "Volume"]).unwrap_or(0.) + 20. * part_gain.max(1e-9).log10();
+    p.set("gain", Some(if part_gain > 0. { volume.clamp(-60., 12.) } else { -60. }));
     let pan = auto(node, &["VolumeAndPan", "Panorama"]).unwrap_or(0.) + part_number(&["Panorama"]).unwrap_or(0.);
     p.set("pan", Some(pan.clamp(-1., 1.)));
     p.set("velocity", auto(node, &["VolumeAndPan", "VolumeVelScale"]).map(|v| v.clamp(0., 1.)));

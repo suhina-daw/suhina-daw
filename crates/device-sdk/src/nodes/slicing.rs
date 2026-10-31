@@ -243,28 +243,43 @@ impl SliceAnalysis {
         let hop = ((rate * HOP) as usize).max(1);
         let pole = |hz: f64| if hz > 0. { (-std::f64::consts::TAU * hz / rate).exp() } else { 0. };
         // Each band: a one-pole high-pass at its low edge and low-pass at its high edge.
-        let mut bands: Vec<Band> = BANDS
+        // Filtered per channel: a hit in opposite phase on the two sides is no quieter for it.
+        let start: Vec<Band> = BANDS
             .iter()
             .map(|&(low, high)| Band { high_pass: pole(low), low_pass: pole(high), ..Band::default() })
             .collect();
+        let mut bands: Vec<Vec<Band>> = vec![start; channels];
         let mut levels: Vec<Vec<f64>> = vec![Vec::with_capacity(frames / hop + 1); BANDS.len()];
-        let mut previous = 0f64;
-        for (i, frame) in source.chunks(channels).enumerate() {
-            let x = frame.iter().filter(|v| v.is_finite()).map(|v| f64::from(*v)).sum::<f64>() / channels as f64;
-            for band in &mut bands {
-                let high = if band.high_pass > 0. { x - previous + band.high_pass * band.high } else { x };
-                band.high = high;
-                band.low =
-                    if band.low_pass > 0. { (1. - band.low_pass) * high + band.low_pass * band.low } else { high };
-                band.peak = band.peak.max(band.low.abs());
-            }
-            previous = x;
-            if (i + 1) % hop == 0 {
-                for (band, level) in bands.iter_mut().zip(&mut levels) {
-                    level.push(decibels(band.peak));
+        let mut previous = vec![0f64; channels];
+        let mut flush = |bands: &mut [Vec<Band>]| {
+            for (b, level) in levels.iter_mut().enumerate() {
+                let mut peak = 0f64;
+                for band in bands.iter_mut().filter_map(|channel| channel.get_mut(b)) {
+                    peak = peak.max(band.peak);
                     band.peak = 0.;
                 }
+                level.push(decibels(peak));
             }
+        };
+        for (i, frame) in source.chunks(channels).enumerate() {
+            for ((sample, last), channel) in frame.iter().zip(&mut previous).zip(&mut bands) {
+                let x = if sample.is_finite() { f64::from(*sample) } else { 0. };
+                for band in channel {
+                    let high = if band.high_pass > 0. { x - *last + band.high_pass * band.high } else { x };
+                    band.high = high;
+                    band.low =
+                        if band.low_pass > 0. { (1. - band.low_pass) * high + band.low_pass * band.low } else { high };
+                    band.peak = band.peak.max(band.low.abs());
+                }
+                *last = x;
+            }
+            if (i + 1) % hop == 0 {
+                flush(&mut bands);
+            }
+        }
+        // The last, shorter hop counts too: a rise can end in it.
+        if !frames.is_multiple_of(hop) {
+            flush(&mut bands);
         }
         let floor = levels.iter().flatten().copied().fold(f64::NEG_INFINITY, f64::max) + SILENCE;
         let lookback = ((rate * LOOKBACK) as usize / hop).max(1);

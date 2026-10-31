@@ -258,6 +258,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             &[],
             TrackId(1),
             0,
+            serde_json::json!(0),
             &mut Vec::new(),
             false,
         );
@@ -1304,6 +1305,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 &parameters,
                 TrackId(1),
                 0,
+                serde_json::json!(0),
                 &mut Vec::new(),
                 false,
             );
