@@ -323,6 +323,7 @@ pub struct ArrangementViewState {
     /// starts from the first of them, as the setting says. A click in a clip's body picks it
     /// too, but play starts where it was clicked, as the insert marker shows.
     pub picked_whole: bool,
+    pub whole_clip_clicked: bool,
     /// A clip moves by its name bar and selects time from its body (the default); off
     /// (Lower half), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
@@ -434,6 +435,7 @@ impl Default for ArrangementViewState {
             clip_opened: false,
             devices_clicked: false,
             picked_whole: true,
+            whole_clip_clicked: false,
             name_bar_moves: true,
             grid_in_clips: true,
             waveform_zoom: 1.0,

@@ -311,6 +311,14 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 
+/// Where a click `raw` beats into a clip's body puts the play start marker: on the grid line at or
+/// before it, never before the clip's start, so a click on the clip never plays from past it.
+fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
+    let free = free || !grid.snaps;
+    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true).max(clip_start) };
+    if beat.is_finite() { beat.max(0.0) } else { 0.0 }
+}
+
 fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
     Color32::from_rgb(color.0, color.1, color.2)
 }
