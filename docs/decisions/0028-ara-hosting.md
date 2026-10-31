@@ -227,7 +227,7 @@ the list below, in a first form). Where it differs from the decisions above it i
   loop asks on every move. The plug-in sees the arrangement's loop, however it was set, in each
   block's process context (`cycleStartMusic`, `cycleEndMusic`, `kCycleActive`). A click on a clip in the arrangement
   moves the play position there, so the editor follows the clip it shows (#717). The rules that play
-  from a selected clip's start (Settings › Play from, and a clip picked while stopped) give way
+  from a selected clip's start (Settings › Play from, and a clip picked) give way
   on a track with an ARA plug-in, except that a click on a clip's name bar moves the marker to its start: there the editor's timeline and a click set where
   play starts.
 - **Copies keep their edits** (decision 5). A clip that gets its own content (a paste, a split's

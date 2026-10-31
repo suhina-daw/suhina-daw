@@ -3233,7 +3233,7 @@ impl App {
                                     if rebuilt { "rebuilt" } else { "kept" },
                                 )
                             });
-                            // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
+                            // Clips picked, however (a click, a rectangle, Ctrl+A, a
                             // paste): play starts from the first of them, as the setting says (#721).
                             // A click on a name bar counts even when the clip was picked already.
                             let clicked = std::mem::take(&mut self.arrangement.whole_clip_clicked);
@@ -3261,9 +3261,11 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
-                                if !timeline.running && first.is_finite() && (first - timeline.start_beat).abs() > 1e-9
-                                {
-                                    actions.push(Action::new("transport.setPosition", json!({ "beats": first })));
+                                if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
+                                    // While playing, playback goes on and the next start begins there.
+                                    let id =
+                                        if timeline.running { "transport.setStart" } else { "transport.setPosition" };
+                                    actions.push(Action::new(id, json!({ "beats": first })));
                                 }
                                 self.clips_before = picked.to_vec();
                             }
