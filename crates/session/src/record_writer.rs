@@ -35,6 +35,10 @@ pub(crate) enum Order {
     Start { track: TrackId, path: PathBuf, start: f64, by_clock: bool },
     /// End `track`'s take `beats` beats after its start (now, when it has not started).
     End { track: TrackId, beats: f64 },
+    /// Answer on `ack` once the thread has emptied the rings and sent every report for what the
+    /// engine had recorded when this order was sent. With `flush`, no more audio is coming: an
+    /// ended take is finished at once rather than after [`END_WAIT`].
+    Sync { ack: Sender<()>, flush: bool },
 }
 
 /// What the thread tells the session.
@@ -90,6 +94,16 @@ impl RecordThread {
 
     pub(crate) fn send(&self, order: Order) -> Result<(), String> {
         self.orders.send(order).map_err(|_| "the recording thread has stopped".to_string())
+    }
+
+    /// Waits until the thread has taken in everything the engine recorded so far and reported it,
+    /// so the next [`RecordThread::report`] calls see it all: the synchronization offline renders
+    /// and tests use instead of waiting for the thread's own pace. `flush` as in [`Order::Sync`].
+    pub(crate) fn sync(&self, flush: bool) {
+        let (ack, answered) = channel();
+        if self.send(Order::Sync { ack, flush }).is_ok() {
+            let _ = answered.recv();
+        }
     }
 
     /// The next report, if one is waiting.
@@ -162,9 +176,13 @@ impl Take {
 fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>, reports: &Sender<Report>) {
     let mut takes: Vec<Take> = Vec::new();
     let mut last_report = Instant::now();
+    // An order that woke the thread from its rest, handled at the top of the next look.
+    let mut woken = None;
     loop {
+        let mut syncs: Vec<Sender<()>> = Vec::new();
+        let mut flush = false;
         loop {
-            match orders.try_recv() {
+            match woken.take().map_or_else(|| orders.try_recv(), Ok) {
                 Ok(Order::Start { track, path, start, by_clock }) => {
                     takes.retain(|t| t.track != track);
                     takes.push(Take {
@@ -190,6 +208,10 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
                         take.ended = Some(Instant::now());
                         take.end = Some(if beats.is_finite() { beats } else { 0.0 });
                     }
+                }
+                Ok(Order::Sync { ack, flush: f }) => {
+                    syncs.push(ack);
+                    flush |= f;
                 }
                 Err(TryRecvError::Empty) => break,
                 // The session is gone: what is open is finished and nobody hears of it.
@@ -231,7 +253,7 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
         while let Some(take) = takes.get_mut(index) {
             let reached = take.until().is_some_and(|until| take.written >= until);
             // Ended, and no chunk came for a while: the transport stopped or the device went.
-            let waited = take.ended.is_some_and(|at| at.elapsed() >= END_WAIT);
+            let waited = take.ended.is_some_and(|at| flush || at.elapsed() >= END_WAIT);
             let gone = receiver.is_abandoned() && take.ended.is_some();
             if reached || take.error.is_some() || waited || gone {
                 finish(take);
@@ -256,7 +278,12 @@ fn run(mut receiver: RecordReceiver, sample_rate: u32, orders: &Receiver<Order>,
                 let _ = reports.send(Report::Written { track: take.track, frames: take.written, peaks });
             }
         }
-        std::thread::sleep(if takes.is_empty() { LOOK_IDLE } else { LOOK_EVERY });
+        for ack in syncs {
+            let _ = ack.send(());
+        }
+        // Rest, but an order ends the rest at once.
+        let rest = if takes.is_empty() { LOOK_IDLE } else { LOOK_EVERY };
+        woken = orders.recv_timeout(rest).ok();
     }
 }
 

@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use suhina_engine::{AudioPool, LiveEvent, LiveSender, Renderer};
@@ -80,6 +79,8 @@ struct Rig {
     input: rtrb::Producer<f32>,
     /// Frames rendered.
     position: usize,
+    /// What the session said while rendering, for `settle` to give back.
+    notices: Vec<String>,
 }
 
 fn rig(project: Project) -> Rig {
@@ -90,7 +91,7 @@ fn rig(project: Project) -> Rig {
     let live = controller.take_live_input().unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(controller, None));
-    Rig { session, renderer, live, input, position: 0 }
+    Rig { session, renderer, live, input, position: 0, notices: Vec::new() }
 }
 
 impl Rig {
@@ -109,16 +110,15 @@ impl Rig {
             self.position += BLOCK;
             // As an audio device's blocks come, a little apart: the recording thread drains the
             // input between them, or a take of a few beats overflows its ring.
-            std::thread::sleep(Duration::from_micros(200));
+            let notices = self.session.sync_recording(false);
+            self.notices.extend(notices);
         }
     }
 
-    /// Lets the recording thread and the settling time pass, then looks.
+    /// Takes in everything rendered, with no more audio to come, and looks.
     fn settle(&mut self) -> Vec<String> {
-        std::thread::sleep(Duration::from_millis(350));
-        let mut notices = self.session.poll_recording();
-        std::thread::sleep(Duration::from_millis(50));
-        notices.extend(self.session.poll_recording());
+        let mut notices = std::mem::take(&mut self.notices);
+        notices.extend(self.session.sync_recording(true));
         notices
     }
 
@@ -388,18 +388,20 @@ fn moving_back_while_recording_keeps_each_pass_as_a_take_and_the_latest_plays() 
     rig.live.send(LiveEvent::NoteOff { key: 60 });
     rig.render_to(BEAT * 3, 0.0);
     // The window polls every frame; the notes come through the recording thread.
-    std::thread::sleep(Duration::from_millis(50));
-    rig.session.poll_recording();
+    rig.session.sync_recording(false);
     let live = rig.session.live_takes();
     assert_eq!(live.len(), 1, "the take is drawn while it records");
     assert!(close(live[0].start, 0.0) && (live[0].end - 3.0).abs() < 0.02, "{live:?}");
     assert_eq!(live[0].notes.len(), 1, "its note so far: {live:?}");
     rig.run("transport.setPosition", json!({ "beats": 0.0 })).unwrap();
     rig.render_to(BEAT * 3 + BLOCK * 2, 0.0);
-    rig.session.poll_recording();
+    rig.session.sync_recording(false);
     let live = rig.session.live_takes();
-    assert!(close(live[0].start, 0.0) && live[0].end < 0.1, "a new pass from beat 0: {live:?}");
-    assert!(live[0].notes.is_empty(), "the first pass's note is not in it: {live:?}");
+    // The pass the jump ended is drawn on, finished, with its note; the new one follows it.
+    assert_eq!(live.len(), 2, "both passes are drawn: {live:?}");
+    assert!(live[0].finished && live[0].notes.len() == 1, "the first pass keeps its note: {live:?}");
+    assert!(close(live[1].start, 0.0) && live[1].end < 0.1, "a new pass from beat 0: {live:?}");
+    assert!(!live[1].finished && live[1].notes.is_empty(), "the first pass's note is not in it: {live:?}");
     // The second pass: a note at its beat 0.5, ended at its beat 2.
     rig.render_to(BEAT * 3 + BEAT / 2, 0.0);
     rig.live.send(LiveEvent::NoteOn { key: 64, velocity: 1.0 });

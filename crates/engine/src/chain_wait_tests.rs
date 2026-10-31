@@ -4,8 +4,11 @@
 //! Chains that wait for their own plug-ins only (#151): a chain goes on to its next plug-in as
 //! soon as the one it handed its block to answers, while the other chains' plug-ins are still
 //! out, and a slow or hung plug-in holds up only its own chain, and that only until the block's
-//! deadline. Stand-in plug-ins answer after a set time, measured on the clock.
+//! deadline. Stand-in plug-ins answer after a set time, measured on the engine's manual clock
+//! (`Manual`): waiting moves it and nothing sleeps, so a test gives the same result on a slow
+//! machine as on a fast one.
 
+use crate::clock::{self, Manual};
 use crate::{RenderInputs, RenderOptions};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -52,29 +55,19 @@ impl Timed {
     }
 }
 
-/// Waits until `at`, spinning rather than sleeping or yielding: a short sleep ends on the
-/// system timer's tick on some systems (up to 15.6 ms late on Windows), and on a busy shared
-/// runner a yield can hand the core away for a whole scheduler slice (10 to 30 ms seen on the
-/// macOS and Windows runners), both much later than the engine's 50 µs look at a plug-in.
-fn sleep_until(at: Instant) {
-    while Instant::now() < at {
-        std::hint::spin_loop();
-    }
-}
-
 impl PluginProcessor for Timed {
     fn process(&mut self, buffer: &mut [f32], _: &[(usize, NoteEvent)], timeout: Duration) -> bool {
         if self.delay > timeout {
-            std::thread::sleep(timeout);
+            Manual::advance_to(clock::now() + timeout);
             return false;
         }
-        std::thread::sleep(self.delay);
+        Manual::advance_to(clock::now() + self.delay);
         buffer.iter_mut().for_each(|s| *s *= self.gain);
         true
     }
 
     fn send(&mut self, buffer: &[f32], _: &[(usize, NoteEvent)], _: Duration) -> Sent {
-        let sent = Instant::now();
+        let sent = clock::now();
         let due = sent + self.delay;
         self.due = Some(due);
         self.result = buffer.iter().map(|s| s * self.gain).collect();
@@ -84,18 +77,18 @@ impl PluginProcessor for Timed {
 
     fn poll(&mut self, until: Instant) -> bool {
         let Some(due) = self.due else { return true };
-        sleep_until(until.min(due));
-        Instant::now() >= due
+        Manual::advance_to(until.min(due));
+        clock::now() >= due
     }
 
     fn wait(&mut self, buffer: &mut [f32], timeout: Duration) -> bool {
         let Some(due) = self.due.take() else { return false };
-        let limit = Instant::now() + timeout;
+        let limit = clock::now() + timeout;
         if due > limit {
-            sleep_until(limit);
+            Manual::advance_to(limit);
             return false;
         }
-        sleep_until(due);
+        Manual::advance_to(due);
         buffer.copy_from_slice(&self.result[..buffer.len()]);
         true
     }
@@ -126,8 +119,10 @@ fn tracks(chains: Vec<Vec<Device>>) -> Project {
     p
 }
 
-/// The project's plug-ins, in order, running in `stands`.
+/// The project's plug-ins, in order, running in `stands`; and the manual clock they run on is
+/// started, at a standstill.
 fn plugins(p: &Project, stands: Vec<Timed>) -> Plugins {
+    Manual::start();
     let mut plugins = Plugins::new();
     for (found, stand) in plugin_devices(p).into_iter().zip(stands) {
         plugins.insert(found.key, EFFECT, Box::new(stand));
@@ -135,15 +130,15 @@ fn plugins(p: &Project, stands: Vec<Timed>) -> Plugins {
     plugins
 }
 
-/// Runs `count` blocks in real time; the longest a block took.
+/// Runs `count` blocks in real time (on the manual clock); the longest a block took.
 fn play(renderer: &mut Renderer, count: usize) -> (Vec<f32>, Duration) {
     let mut out = Vec::new();
     let mut block = vec![0.0f32; FRAMES * 2];
     let mut longest = Duration::ZERO;
     for _ in 0..count {
-        let started = Instant::now();
+        let started = clock::now();
         renderer.process(&mut block);
-        longest = longest.max(started.elapsed());
+        longest = longest.max(clock::now().duration_since(started));
         out.extend_from_slice(&block);
     }
     (out, longest)
@@ -179,19 +174,12 @@ fn a_queued_device_period_leaves_time_for_the_next_plugin_block() {
 /// as its own plug-in answers takes the block about one slow plug-in long.
 #[test]
 fn a_chain_goes_on_as_soon_as_its_own_plug_in_answers() {
-    // A shared runner can take the core away from the test for longer than a slow plug-in, which
-    // no engine can make up for: the best of three tries counts. In stages no try could pass.
-    let mut tries = Vec::new();
-    for _ in 0..3 {
-        match one_block_with_slow_plug_ins_at_different_places() {
-            Ok(()) => return,
-            Err(why) => tries.push(why),
-        }
+    if let Err(why) = one_block_with_slow_plug_ins_at_different_places() {
+        panic!("a chain did not go on as its own plug-in answered: {why}");
     }
-    panic!("no try went on as its own plug-in answered: {tries:#?}");
 }
 
-/// One block of [`a_chain_goes_on_as_soon_as_its_own_plug_in_answers`]; why it failed.
+/// The block of [`a_chain_goes_on_as_soon_as_its_own_plug_in_answers`]; why it failed.
 fn one_block_with_slow_plug_ins_at_different_places() -> Result<(), String> {
     let p = tracks(vec![vec![plug(), plug(), plug()], vec![plug(), plug(), plug()]]);
     let log = Arc::default();
@@ -253,7 +241,7 @@ fn a_hung_plug_in_holds_up_only_its_own_chain_and_only_until_the_deadline() {
     )
     .unwrap();
     let deadline = Duration::from_secs_f64(FRAMES as f64 / f64::from(SR) * crate::plugin::DEADLINE_SHARE);
-    let started = Instant::now();
+    let started = clock::now();
     let (_, longest) = play(&mut renderer, 1);
     let log = log.lock().unwrap().clone();
     // The quick chain finished in a few quick round trips, the slow one after its slow plug-in:
@@ -264,7 +252,7 @@ fn a_hung_plug_in_holds_up_only_its_own_chain_and_only_until_the_deadline() {
     assert!(c2.sent < started + SLOW + QUICK * 8, "{log:?}");
     // The block took until the deadline, for the hung plug-in, and no longer.
     assert!(longest >= deadline.mul_f64(0.9), "{longest:?}");
-    assert!(longest < deadline + Duration::from_millis(15), "{longest:?} past the {deadline:?} deadline");
+    assert!(longest <= deadline + QUICK, "{longest:?} past the {deadline:?} deadline");
     let missed: Vec<u64> = renderer.graph.chains.iter_mut().map(|c| c.missed()).collect();
     // The hung plug-in missed, and the one after it, handed the block past the deadline, too.
     assert!(missed[0] >= 1, "{missed:?}");
