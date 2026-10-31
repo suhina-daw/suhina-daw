@@ -1455,6 +1455,22 @@ pub(super) fn paint_clip(
     if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, motion::mix(body, ink, 0.45)), StrokeKind::Inside);
     }
+    if clip.take.is_some() {
+        paint_take_marker(painter, rect, ink);
+    }
+}
+
+/// The small mark in a clip's lower left corner that says it holds takes: three stacked lines, as
+/// the track header's button for the take lanes has (#1078).
+fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
+    if rect.height() < 16.0 || rect.width() < 14.0 {
+        return;
+    }
+    let (left, bottom) = (rect.left() + 4.0, rect.bottom() - 4.0);
+    for line in 0..3 {
+        let y = (bottom - line as f32 * 2.5).round() + 0.5;
+        painter.hline(egui::Rangef::new(left, left + 7.0), y, Stroke::new(1.0, ink));
+    }
 }
 
 /// The part of a clip a drag moves it from: its lower half, on a lane tall enough to have an
@@ -1527,12 +1543,11 @@ pub(super) struct TakeLanes {
     pub(super) bar_beats: f64,
 }
 
-use crate::arrangement::timeline::take_colour;
-
 /// Draws `lane`'s take lanes under it (`docs/spec/recording.md` › Take lanes): each take's
-/// clips dimmed in the take's own colour, as they do not play. A click on a take's clip puts the whole clip on the track,
-/// a drag across a take the part dragged over (`take.comp`); the take's name has Delete take in
-/// its menu.
+/// clips dimmed in the take's own colour, as they do not play. A double-click on a take's clip puts
+/// the whole clip on the track, a drag across a take the part dragged over (`take.comp`), a Ctrl
+/// drag paints an area across the lanes or moves pieces, and a piece's lower corners move its
+/// edges; the take's name has Delete take in its menu.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn take_lanes(
     ui: &mut Ui,
@@ -1551,14 +1566,18 @@ pub(super) fn take_lanes(
     let grid = arrangement_grid(state.grid, state.beat_width, at.bar_beats);
     let (scroll_x, beat_width) = (state.scroll.x, state.beat_width);
     let beat_of = |x: f32| ruler_beat(f64::from((x - at.time.min + scroll_x) / beat_width), grid, free);
+    let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
+    let (ctrl, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+    let mut rows: Vec<(usize, Rect)> = Vec::new();
     let mut y = at.top;
-    let take_row = state.take_row(lane.track);
     for take in timeline.takes.iter().filter(|t| t.track == lane.track) {
+        let take_row = state.take_row(lane.track, take.number);
         let row = Rect::from_x_y_ranges(at.time, egui::Rangef::new(y, y + take_row));
+        rows.push((take.number, row));
         let header = Rect::from_x_y_ranges(at.headers, row.y_range());
         y += take_row + 1.0;
-        // The line under a take lane resizes the track's take lanes, all alike; a double-click
-        // puts them back to the default height (#989).
+        // The line under a take lane resizes that lane, as a track's does; a double-click puts it
+        // back to a track's height (#1078).
         let edge = Rect::from_x_y_ranges(
             egui::Rangef::new(at.time.min.min(at.headers.min), at.time.max.max(at.headers.max)),
             egui::Rangef::new(row.bottom() - 2.0, row.bottom() + 3.0),
@@ -1572,11 +1591,10 @@ pub(super) fn take_lanes(
                 egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, format!("Height of {}", take.name))
             });
             if resize.double_clicked() {
-                state.take_heights.remove(&lane.track);
+                state.take_heights.remove(&(lane.track, take.number));
             } else if resize.dragged() {
-                let height =
-                    (state.take_row(lane.track) + resize.drag_delta().y).clamp(TAKE_ROW_RANGE.0, TAKE_ROW_RANGE.1);
-                state.take_heights.insert(lane.track, height);
+                let height = (take_row + resize.drag_delta().y).clamp(MIN_LANE, MAX_LANE);
+                state.take_heights.insert((lane.track, take.number), height);
             }
         }
         painter.hline(
@@ -1724,8 +1742,8 @@ pub(super) fn take_lanes(
         body.context_menu(|ui| menu(ui, actions, piece));
         // A take lane selects: the pointer is the text cursor, a drag picks the part to comp, and
         // the piece a double-click would take shows under the pointer (#953, #989). With Ctrl
-        // held it is the ordinary pointer: a click picks a piece, a drag comps nothing.
-        let ctrl = ui.input(|i| i.modifiers.command);
+        // held it is the ordinary pointer: a click picks a piece, a drag paints an area or moves
+        // pieces (#1078).
         for &(_, _, piece) in state.take_selected.iter().filter(|(t, n, _)| *t == lane.track && *n == take.number) {
             if let Some(clip) = take.clips.get(piece) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
@@ -1737,6 +1755,7 @@ pub(super) fn take_lanes(
         if body.clicked()
             && let Some(pointer) = body.interact_pointer_pos()
         {
+            state.take_area = None;
             if ctrl {
                 let beat = f64::from((pointer.x - at.time.min + scroll_x) / beat_width);
                 if let Some(piece) = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat)) {
@@ -1763,12 +1782,117 @@ pub(super) fn take_lanes(
                 painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
             }
         }
+        // With Ctrl the pointer says what a drag would do: move what is under it, or paint.
+        if ctrl
+            && state.take_area_drag.is_none()
+            && state.take_move.is_none()
+            && let Some(pointer) = body.hover_pos()
+        {
+            let beat = raw_beat(pointer.x);
+            let piece = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat));
+            let moves = piece.is_some_and(|p| shift || state.take_selected.contains(&(lane.track, take.number, p)));
+            ui.ctx().set_cursor_icon(if moves { egui::CursorIcon::Grab } else { egui::CursorIcon::Crosshair });
+        }
+        // Ctrl and a drag from a picked piece moves the pieces picked on the grid, and Ctrl+Shift
+        // from any piece moves it or them freely; from anywhere else it paints an area (#1078).
+        if body.drag_started()
+            && ctrl
+            && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
+        {
+            let beat = raw_beat(pointer.x);
+            let under = take.clips.iter().position(|c| (c.start..c.start + c.length).contains(&beat));
+            let picked = under.is_some_and(|p| state.take_selected.contains(&(lane.track, take.number, p)));
+            match under.and_then(|p| take.clips.get(p).map(|c| (p, c.start))) {
+                Some((piece, start)) if picked || shift => {
+                    let pieces = if picked {
+                        let mine = state.take_selected.iter().filter(|(t, ..)| *t == lane.track);
+                        mine.map(|(_, n, p)| (*n, *p)).collect()
+                    } else {
+                        vec![(take.number, piece)]
+                    };
+                    state.take_move = Some(TakeMove { track: lane.track, pieces, start, grab: beat });
+                    state.take_area = None;
+                }
+                _ => {
+                    state.take_area_drag = Some((lane.track, take.number, beat_of(pointer.x)));
+                    state.clear_take_selection();
+                }
+            }
+        }
+        // A piece's lower corners move its edges, bringing back the recording around it; a click
+        // and a drag elsewhere stay the lane's (#1078).
+        for (index, clip) in take.clips.iter().enumerate() {
+            let rect = clip_rect(row, clip.start, clip.length, x_of);
+            let lower = egui::Rangef::new(row.center().y, row.bottom() - 2.0);
+            // A narrow piece has only its right corner, the one that brings back what was cut.
+            let edges: &[bool] = if rect.width() < 16.0 { &[true] } else { &[true, false] };
+            for &end in edges {
+                let held = state
+                    .take_edge
+                    .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end);
+                // The edge being dragged shows where it would stop.
+                if let Some(edge) = held {
+                    let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
+                    let shown = clip_rect(row, from, (to - from).max(0.0), x_of);
+                    painter.rect_filled(shown, 0.0, theme::selection().gamma_multiply(0.25));
+                    painter.rect_stroke(shown, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+                }
+                let span = if end {
+                    egui::Rangef::new(rect.right() - 6.0, rect.right() + 2.0)
+                } else {
+                    egui::Rangef::new(rect.left() - 2.0, rect.left() + 6.0)
+                };
+                let corner = Rect::from_x_y_ranges(span, lower).intersect(at.visible);
+                if corner.width() <= 0.0 || corner.height() <= 0.0 || (ctrl && held.is_none()) {
+                    continue;
+                }
+                let side = if end { "End" } else { "Start" };
+                let id = Id::new(("take-piece-edge", lane.track.0, take.number, index, end));
+                let grip = ui.interact(corner, id, Sense::drag());
+                grip.widget_info(|| {
+                    let label = format!("{side} of {} piece {}", take.name, index + 1);
+                    egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, label)
+                });
+                let grip = grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                if grip.drag_started() {
+                    let at = if end { clip.start + clip.length } else { clip.start };
+                    state.take_edge = Some(TakeEdge { track: lane.track, take: take.number, piece: index, end, at });
+                }
+                if grip.dragged()
+                    && let Some(pointer) = ui.ctx().pointer_latest_pos()
+                    && let Some(edge) = state.take_edge.as_mut()
+                {
+                    let before = index.checked_sub(1).and_then(|n| take.clips.get(n));
+                    let after = take.clips.get(index + 1);
+                    let (low, high) = if end {
+                        let last =
+                            clip.latest_end.unwrap_or(f64::INFINITY).min(after.map_or(f64::INFINITY, |c| c.start));
+                        (clip.start + 1.0 / 64.0, last)
+                    } else {
+                        let first = clip.earliest_start.max(before.map_or(0.0, |c| c.start + c.length));
+                        (first.min(clip.start), clip.start + clip.length - 1.0 / 64.0)
+                    };
+                    edge.at = beat_of(pointer.x).clamp(low, high.max(low));
+                }
+                if grip.drag_stopped()
+                    && let Some(edge) = state.take_edge.take()
+                {
+                    let was = if end { clip.start + clip.length } else { clip.start };
+                    if (edge.at - was).abs() > 1e-6 {
+                        let mut trim = json!({ "track": lane.track.0, "take": take.number, "piece": index + 1 });
+                        trim[if end { "end" } else { "start" }] = json!(edge.at);
+                        actions.push(Action::new("take.trimPiece", trim));
+                    }
+                }
+            }
+        }
         // From where the button went down, not where the drag was recognised.
         if body.drag_started()
             && !ctrl
             && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
         {
             state.take_drag = Some((lane.track, take.number, beat_of(pointer.x)));
+            state.clear_take_selection();
         }
         if let Some((_, _, from)) = state.take_drag.filter(|d| d.0 == lane.track && d.1 == take.number)
             && let Some(pointer) = ui.ctx().pointer_latest_pos()
@@ -1802,37 +1926,85 @@ pub(super) fn take_lanes(
             }
         }
     }
-    // The passes of a take still recording that the loop or a jump already ended: take lanes
-    // at once, numbered after the kept ones, so each pass shows as soon as it is done (#909).
-    let kept = timeline.takes.iter().filter(|t| t.track == lane.track).count();
-    for (index, pass) in timeline.live_takes.iter().filter(|t| t.track == lane.track && t.finished).enumerate() {
-        let row = Rect::from_x_y_ranges(at.time, egui::Rangef::new(y, y + take_row));
-        let header = Rect::from_x_y_ranges(at.headers, row.y_range());
-        y += take_row + 1.0;
-        painter.hline(
-            egui::Rangef::new(at.time.min.min(at.headers.min), at.time.max.max(at.headers.max)),
-            row.bottom() + 0.5,
-            theme::hairline(theme::border()),
-        );
-        if row.bottom() < at.visible.top() || row.top() > at.visible.bottom() {
-            continue;
+    let down = ui.input(|i| i.pointer.primary_down());
+    let pointer = ui.ctx().pointer_latest_pos();
+    // The area being painted: from the take the drag began on to the one under the pointer, and
+    // from its first beat to the pointer's (on the grid, Alt for no grid).
+    if let Some((_, from_take, from)) = state.take_area_drag.filter(|d| d.0 == lane.track)
+        && let Some(pointer) = pointer
+    {
+        let first = rows.iter().position(|(n, _)| *n == from_take).unwrap_or(0);
+        let last = rows.iter().position(|(_, r)| pointer.y <= r.bottom() + 1.0).unwrap_or(rows.len().saturating_sub(1));
+        let covered = rows.get(first.min(last)..=first.max(last)).unwrap_or_default();
+        let to = beat_of(pointer.x);
+        let (start, end) = (from.min(to), from.max(to));
+        for (_, row) in covered {
+            let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
+            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
         }
-        // In its colour and named as the take it becomes ("3 Audio Take 2"), as the kept ones are.
-        let colour = take_colour(kept + index + 1);
-        let swatch = crate::interaction::colour_picker::color32(colour);
-        let shade = motion::mix(theme::window_background(), swatch, 0.35);
-        painter.rect_filled(header, 0.0, shade);
-        painter.rect_filled(Rect::from_min_size(header.min, Vec2::new(4.0, header.height())), 0.0, swatch);
-        widgets::text_in(
-            painter,
-            header.shrink2(Vec2::new(10.0, 0.0)),
-            Align2::LEFT_CENTER,
-            &format!("{} Take {}", lane.name, kept + index + 1),
-            theme::ui_font(theme::TEXT_SMALL),
-            ink_on(shade),
-        );
-        let look = Lane { mute: false, color: colour, ..lane.clone() };
-        paint_live_take(painter, row, &look, pass, x_of, beat_width, timeline);
+        if !down {
+            state.take_area_drag = None;
+            if end - start > 1e-6 {
+                let takes: Vec<usize> = covered.iter().map(|(n, _)| *n).collect();
+                // Pieces wholly inside are picked too, so a Ctrl drag from one moves them.
+                state.take_selected = timeline
+                    .takes
+                    .iter()
+                    .filter(|t| t.track == lane.track && takes.contains(&t.number))
+                    .flat_map(|t| t.clips.iter().enumerate().map(move |(p, c)| (t.number, p, c)))
+                    .filter(|(_, _, c)| start <= c.start + 1e-6 && c.start + c.length <= end + 1e-6)
+                    .map(|(n, p, _)| (lane.track, n, p))
+                    .collect();
+                state.take_area = Some(TakeArea { track: lane.track, takes, start, end });
+                state.clear_selected_clip();
+                state.time_selection = None;
+            }
+        }
+    }
+    // The area painted, lit on the lanes it covers.
+    if let Some(area) = state.take_area.as_ref().filter(|a| a.track == lane.track) {
+        for (_, row) in rows.iter().filter(|(n, _)| area.takes.contains(n)) {
+            let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(area.start), x_of(area.end)), row.y_range());
+            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+        }
+    }
+    // Pieces being moved, shown where they would land: Ctrl keeps the grid, Ctrl+Shift is free.
+    if let Some(drag) = state.take_move.clone().filter(|d| d.track == lane.track)
+        && let Some(pointer) = pointer
+    {
+        let piece = |&(number, index): &(usize, usize)| {
+            let take = timeline.takes.iter().find(|t| t.track == lane.track && t.number == number)?;
+            Some((number, take.clips.get(index)?))
+        };
+        let earliest = drag.pieces.iter().filter_map(piece).map(|(_, c)| c.start).fold(f64::INFINITY, f64::min);
+        let target = ruler_beat(drag.start + raw_beat(pointer.x) - drag.grab, grid, shift);
+        let by = (target - drag.start).max(-earliest);
+        for (number, clip) in drag.pieces.iter().filter_map(piece) {
+            if let Some((_, row)) = rows.iter().find(|(n, _)| *n == number) {
+                let landing = clip_rect(*row, clip.start + by, clip.length, x_of);
+                painter.rect_filled(landing, 0.0, theme::selection().gamma_multiply(0.25));
+                painter.rect_stroke(landing, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+            }
+        }
+        if !down {
+            state.take_move = None;
+            if by.abs() > 1e-6 {
+                let takes: Vec<usize> = drag.pieces.iter().map(|(n, _)| *n).collect();
+                let pieces: Vec<usize> = drag.pieces.iter().map(|(_, p)| p + 1).collect();
+                actions.push(Action::new(
+                    "take.movePieces",
+                    json!({ "track": lane.track.0, "takes": takes, "pieces": pieces, "by": by }),
+                ));
+                // Their numbers in their takes change with the move.
+                state.clear_take_selection();
+            }
+        }
+    }
+    // A corner scrolled out of view mid-drag has no widget left to say the drag ended.
+    if !down {
+        state.take_edge = state.take_edge.filter(|e| e.track != lane.track);
     }
 }
 
@@ -1912,7 +2084,8 @@ pub(super) fn paint_live_take(
         latest_end: None,
         color: lane.color,
         stack_key: (0, take.start.to_bits()),
-        take: None,
+        // It holds takes from its first pass on: the corner mark says so (#1078).
+        take: Some(0),
         ara: false,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false);

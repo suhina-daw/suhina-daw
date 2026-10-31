@@ -172,3 +172,133 @@ fn a_take_is_named_by_the_number_its_lane_shows() {
     let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["Take 2"]);
 }
+
+fn take_clips(session: &Session, take: usize) -> Vec<(f64, f64, f64)> {
+    session.project().arrangement.takes[take].clips.iter().map(|c| (c.start, c.length, c.offset)).collect()
+}
+
+/// Each pass is a window on one recording: pulled out to the right, every take goes on up to the
+/// end of the file, so the earliest is the longest, a staircase (#1078).
+#[test]
+fn a_takes_edge_brings_back_the_recording_up_to_its_end() {
+    let mut s = session();
+    for take in 1..=3 {
+        run(&mut s, "take.trimPiece", json!({ "track": 1, "take": take, "piece": 1, "end": 1000.0 })).unwrap();
+    }
+    assert_eq!(take_clips(&s, 0), [(0.0, 24.0, 0.0)]);
+    assert_eq!(take_clips(&s, 1), [(0.0, 16.0, 8.0)]);
+    assert_eq!(take_clips(&s, 2), [(0.0, 8.0, 16.0)]);
+    // The left edge moves the audio with it, and stops at the start of the recording.
+    run(&mut s, "take.trimPiece", json!({ "track": 1, "take": 2, "piece": 1, "start": 2.0 })).unwrap();
+    assert_eq!(take_clips(&s, 1), [(2.0, 14.0, 10.0)]);
+    run(&mut s, "take.trimPiece", json!({ "track": 1, "take": 2, "piece": 1, "start": 0.0 })).unwrap();
+    assert_eq!(take_clips(&s, 1), [(0.0, 16.0, 8.0)]);
+}
+
+/// What a recording's take trimmed by an area comes back by its edge, up to the take's next piece
+/// when there is one; a part on the track stays that take's part (#1078).
+#[test]
+fn an_area_deletes_across_takes_and_an_edge_brings_it_back() {
+    let mut s = session();
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 2.0 })).unwrap();
+    let area = json!({ "track": 1, "takes": [1, 2], "start": 2.0, "end": 4.0 });
+    run(&mut s, "take.deleteRange", area).unwrap();
+    assert_eq!(take_clips(&s, 0), [(0.0, 2.0, 0.0), (4.0, 4.0, 4.0)]);
+    assert_eq!(take_clips(&s, 1), [(0.0, 2.0, 8.0), (4.0, 4.0, 12.0)]);
+    assert_eq!(take_clips(&s, 2), [(0.0, 8.0, 16.0)], "a take not listed stays");
+    // The first piece stops at the second.
+    run(&mut s, "take.trimPiece", json!({ "track": 1, "take": 1, "piece": 1, "end": 7.0 })).unwrap();
+    assert_eq!(take_clips(&s, 0), [(0.0, 4.0, 0.0), (4.0, 4.0, 4.0)]);
+    assert_eq!(source(&s, &lane(&s)[0]), Some(0), "the part keeps its take");
+}
+
+#[test]
+fn an_area_that_empties_a_take_deletes_it_and_the_numbers_of_the_others_hold() {
+    let mut s = session();
+    run(&mut s, "take.deleteRange", json!({ "track": 1, "takes": [1], "start": 0.0, "end": 8.0 })).unwrap();
+    let names: Vec<&str> = s.project().arrangement.takes.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["Take 2", "Take 3"]);
+    assert_eq!(s.project().take_number(0), Some(2));
+    // Take 2 is still take 2 to the commands, not the first one left.
+    run(&mut s, "take.deleteRange", json!({ "track": 1, "takes": [2], "start": 0.0, "end": 4.0 })).unwrap();
+    assert_eq!(take_clips(&s, 0), [(4.0, 4.0, 12.0)]);
+    assert_eq!(take_clips(&s, 1), [(0.0, 8.0, 16.0)]);
+}
+
+#[test]
+fn a_cut_area_pastes_back_on_its_track() {
+    let mut s = session();
+    let area = json!({ "track": 1, "takes": [1], "start": 2.0, "end": 4.0 });
+    run(&mut s, "take.cutRange", area).unwrap();
+    assert_eq!(take_clips(&s, 0), [(0.0, 2.0, 0.0), (4.0, 4.0, 4.0)]);
+    run(&mut s, "clip.paste", json!({ "track": 1, "start": 16.0 })).unwrap();
+    let pasted = lane(&s).into_iter().find(|c| c.start == 16.0).unwrap();
+    assert_eq!((pasted.length, pasted.offset), (2.0, 2.0));
+}
+
+/// A moved piece keeps its audio, covers what is under it on its own lane and stops at the start
+/// of the timeline; a part comped from it after the move is its part (#1078).
+#[test]
+fn pieces_of_takes_move_along_the_timeline() {
+    let mut s = session();
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [2], "pieces": [1], "by": 16.0 })).unwrap();
+    assert_eq!(take_clips(&s, 1), [(16.0, 8.0, 8.0)]);
+    assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0)], "other lanes stay");
+    run(&mut s, "take.comp", json!({ "track": 1, "take": 2, "start": 16.0, "end": 24.0 })).unwrap();
+    let part = lane(&s).into_iter().find(|c| c.start == 16.0).unwrap();
+    assert_eq!(part.offset, 8.0, "the part plays what the piece plays");
+    assert_eq!(source(&s, &part), Some(1));
+    // Back past the start: it stops there.
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [2], "pieces": [1], "by": -100.0 })).unwrap();
+    assert_eq!(take_clips(&s, 1), [(0.0, 8.0, 8.0)]);
+    // Onto a neighbour on its own lane: it replaces what it covers.
+    run(&mut s, "take.deleteRange", json!({ "track": 1, "takes": [3], "start": 2.0, "end": 4.0 })).unwrap();
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [3], "pieces": [1], "by": 3.0 })).unwrap();
+    assert_eq!(take_clips(&s, 2), [(3.0, 2.0, 16.0), (5.0, 3.0, 21.0)]);
+}
+
+/// Several pieces move together and keep their places to each other at the timeline's start.
+#[test]
+fn pieces_moved_together_keep_their_distance() {
+    let mut s = session();
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [1], "pieces": [1], "by": 4.0 })).unwrap();
+    run(&mut s, "take.movePieces", json!({ "track": 1, "takes": [1, 2], "pieces": [1, 1], "by": -100.0 })).unwrap();
+    assert_eq!(take_clips(&s, 0)[0].0, 4.0);
+    assert_eq!(take_clips(&s, 1)[0].0, 0.0);
+}
+
+#[test]
+fn take_area_and_piece_commands_refuse_what_is_not_there() {
+    let mut s = session();
+    let before = s.project().arrangement.takes.clone();
+    for (id, params) in [
+        ("take.deleteRange", json!({ "track": 1, "takes": [9], "start": 0.0, "end": 1.0 })),
+        ("take.deleteRange", json!({ "track": 1, "takes": [1], "start": 4.0, "end": 2.0 })),
+        ("take.deleteRange", json!({ "track": 1, "takes": [1], "start": 100.0, "end": 200.0 })),
+        ("take.cutRange", json!({ "track": 1, "takes": [1], "start": 100.0, "end": 200.0 })),
+        ("take.movePieces", json!({ "track": 1, "takes": [1], "pieces": [2], "by": 1.0 })),
+        ("take.movePieces", json!({ "track": 1, "takes": [1], "pieces": [0], "by": 1.0 })),
+        ("take.movePieces", json!({ "track": 1, "takes": [1, 2], "pieces": [1], "by": 1.0 })),
+        ("take.trimPiece", json!({ "track": 1, "take": 1, "piece": 2, "end": 1.0 })),
+        ("take.trimPiece", json!({ "track": 1, "take": 1, "piece": 1 })),
+        ("take.trimPiece", json!({ "track": 1, "take": 9, "piece": 1, "end": 1.0 })),
+    ] {
+        assert!(run(&mut s, id, params.clone()).is_err(), "{id} {params}");
+    }
+    assert_eq!(s.project().arrangement.takes, before);
+}
+
+/// A MIDI pass has a content of its own: its edge stops where the pass does.
+#[test]
+fn a_midi_takes_edge_stops_at_the_end_of_its_pass() {
+    let mut project = ProjectBuilder::new().midi_track(1, "Keys").notes(1, "Pass", 8.0, Vec::new()).build();
+    project.arrangement.takes = vec![TakeLane {
+        track: TrackId(1),
+        name: "Take 1".into(),
+        clips: vec![Clip::new(ContentId(1), 0.0, 4.0)],
+        color: None,
+    }];
+    let mut s = Session::new(project);
+    run(&mut s, "take.trimPiece", json!({ "track": 1, "take": 1, "piece": 1, "end": 100.0 })).unwrap();
+    assert_eq!(take_clips(&s, 0), [(0.0, 8.0, 0.0)]);
+}

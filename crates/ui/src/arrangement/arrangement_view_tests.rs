@@ -420,9 +420,62 @@ fn a_tracks_take_lanes_show_under_it_and_fold_away() {
     assert_eq!(timeline.takes[0].clips.len(), 1);
     let mut state = ArrangementViewState::default();
     let automation = state.automation.height(track, &timeline.automation);
-    assert_eq!(state.below(track, &timeline), 2.0 * (TAKE_ROW + 1.0) + automation);
+    // As tall as a track that has not been resized, each (#1078).
+    let row = state.lane_height(TrackId(999));
+    assert_eq!(state.below(track, &timeline), 2.0 * (row + 1.0) + automation);
     state.takes_hidden.insert(track);
     assert_eq!(state.below(track, &timeline), automation, "folded away");
+}
+
+/// While a take records, the passes already done add no lanes under the track (#1078).
+#[test]
+fn a_take_still_recording_has_no_lanes_under_its_track() {
+    let project = crate::demo::demo_project();
+    let track = project.arrangement.lanes.iter().find_map(|l| l.track).unwrap();
+    let mut timeline = Timeline::build(&project, None);
+    let state = ArrangementViewState::default();
+    let before = state.below(track, &timeline);
+    let pass = |finished| suhina_session::LiveTake {
+        track,
+        start: 0.0,
+        end: 4.0,
+        notes: Vec::new(),
+        audio: false,
+        peaks: Vec::new(),
+        peaks_end: 0.0,
+        finished,
+    };
+    timeline.live_takes = vec![pass(true), pass(true), pass(false)];
+    assert_eq!(state.below(track, &timeline), before);
+}
+
+/// Each take lane has a height of its own, the lanes' zoom takes every one along, and a lane left
+/// alone stays as tall as a track (#1078).
+#[test]
+fn take_lanes_size_and_zoom_like_tracks() {
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    let take = |name: &str| suhina_engine::model::TakeLane {
+        track,
+        name: name.into(),
+        clips: vec![suhina_engine::model::Clip { id: ClipId::NONE, ..clip.clone() }],
+        color: None,
+    };
+    // A take deleted earlier: the lanes keep the numbers the commands know them by.
+    project.arrangement.takes = vec![take("Take 2"), take("Take 3")];
+    let timeline = Timeline::build(&project, None);
+    assert_eq!(timeline.takes.iter().map(|t| t.number).collect::<Vec<_>>(), [2, 3]);
+    let mut state = ArrangementViewState::default();
+    let row = state.lane_height(TrackId(999));
+    assert_eq!(state.take_row(track, 2), row);
+    state.take_heights.insert((track, 2), 100.0);
+    assert_eq!(state.take_row(track, 3), row, "the other lane stays");
+    state.zoom_lanes(&timeline.lanes, 2.0, 0.0);
+    assert_eq!(state.take_row(track, 2), 200.0);
+    assert_eq!(state.take_row(track, 3), state.lane_height(TrackId(999)));
+    assert!(state.take_row(track, 3) > row);
+    assert_eq!(state.takes_height(track, &timeline), 200.0 + 1.0 + state.take_row(track, 3) + 1.0);
 }
 
 #[test]

@@ -487,8 +487,7 @@ pub(super) fn track_header(
         );
     }
     // A track with take lanes has a button beside it that hides and shows them (#953).
-    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track)
-        || timeline.live_takes.iter().any(|t| t.track == lane.track && t.finished);
+    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track);
     // Beside the automation button below the buttons, left of it at a narrow header's right end,
     // and at the right end of a one-row header, where the automation button starts the row.
     let takes_button = has_takes.then(|| {

@@ -806,7 +806,7 @@ impl Session {
                 .takes
                 .iter()
                 .filter(|t| t.track == take.track)
-                .filter_map(|t| crate::commands::take::take_number(&t.name))
+                .filter_map(suhina_model::TakeLane::name_number)
                 .max()
                 .unwrap_or(0);
             for pass in &passes {

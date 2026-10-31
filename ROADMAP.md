@@ -800,6 +800,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   take's clip, or a drag across part of a take, copies it onto the track (`take.comp`), and takes
   can be deleted (`take.delete`) or folded away
   ([#909](https://github.com/suhina-daw/suhina-daw/issues/909)).
+- **Take lanes as child rows:** take lanes appear when a recording stops, with a mark on the clip
+  while it runs; each lane sizes and zooms like a track; Ctrl and a drag paints an area across lanes
+  to delete or cut (`take.deleteRange`, `take.cutRange`), pieces move along the timeline
+  (`take.movePieces`), and a piece's lower corners bring back the recording around it
+  (`take.trimPiece`) ([#1078](https://github.com/suhina-daw/suhina-daw/issues/1078)).
 - **Copying samples out:** Copy to folder… in a sample's menu in the browser or the sample map
   copies it, or every selected one, into a folder (`library.copyTo`, numbered names, nothing
   overwritten), and samples dragged out of Suhina onto the file manager or the desktop are copied

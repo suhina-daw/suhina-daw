@@ -7,12 +7,30 @@
 //! MIDI pass has a content of its own. No id is stored; a clip that is trimmed keeps its take, as
 //! its offset moves with its start.
 
-use crate::{Clip, Project, TrackId};
+use crate::{Clip, Project, TakeLane, TrackId};
 
 /// How far apart, in beats, two clips' alignments with their content may be and still be one.
 const ALIGNED: f64 = 1e-6;
 
+impl TakeLane {
+    /// The number in its name, "Take 3" giving 3.
+    pub fn name_number(&self) -> Option<usize> {
+        self.name.strip_prefix("Take ")?.trim().parse().ok().filter(|n| *n >= 1)
+    }
+}
+
 impl Project {
+    /// The number take `index` of `arrangement.takes` goes by on its track, as its lane shows and
+    /// the take commands name it: the one in its name, which stays its own after others are
+    /// deleted; a take named otherwise goes by its place among its track's takes named otherwise.
+    pub fn take_number(&self, index: usize) -> Option<usize> {
+        let take = self.arrangement.takes.get(index)?;
+        take.name_number().or_else(|| {
+            let same = |t: &&TakeLane| t.track == take.track && t.name_number().is_none();
+            Some(self.arrangement.takes.iter().take(index + 1).filter(same).count())
+        })
+    }
+
     /// Whether a take of `track` has a piece in `[from, to)`. Clips placed there replace what they
     /// cover even where stacking is allowed, so the comp stays one line of clips (#989).
     pub fn takes_cover(&self, track: TrackId, from: f64, to: f64) -> bool {

@@ -170,8 +170,18 @@ pub struct ArrangementViewState {
     /// The take piece a right-click on a take lane was over (track, take number, piece from 0),
     /// which the lane's Recolor colours (#989).
     pub(super) take_piece: Option<(TrackId, usize, usize)>,
-    /// The height `track`'s take lanes were dragged to (#989); the default for the rest.
-    pub(super) take_heights: HashMap<TrackId, f32>,
+    /// The height a take lane was dragged to (its track and number, #1078); the rest are as tall
+    /// as a track.
+    pub(super) take_heights: HashMap<(TrackId, usize), f32>,
+    /// The area painted across a track's take lanes with Ctrl and a drag (#1078), which Delete
+    /// and Cut act on.
+    pub take_area: Option<TakeArea>,
+    /// A Ctrl drag painting that area: the track, the take it started on and its first beat.
+    pub(super) take_area_drag: Option<(TrackId, usize, f64)>,
+    /// A drag moving pieces of takes along the timeline (#1078).
+    pub(super) take_move: Option<TakeMove>,
+    /// A drag on a lower corner of a piece of a take, moving that edge (#1078).
+    pub(super) take_edge: Option<TakeEdge>,
     /// Take pieces picked with Ctrl and a click (track, take number, piece from 0), which Delete
     /// deletes (#989).
     pub take_selected: Vec<(TrackId, usize, usize)>,
@@ -368,6 +378,10 @@ impl Default for ArrangementViewState {
             take_drag: None,
             take_piece: None,
             take_heights: HashMap::new(),
+            take_area: None,
+            take_area_drag: None,
+            take_move: None,
+            take_edge: None,
             take_selected: Vec::new(),
             take_solo: None,
             stack_audio: false,
@@ -451,6 +465,41 @@ impl Default for ArrangementViewState {
     }
 }
 
+/// An area painted across take lanes of one track: what Delete and Cut act on (#1078).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakeArea {
+    pub track: TrackId,
+    /// The takes it covers, by their numbers on the track.
+    pub takes: Vec<usize>,
+    pub start: f64,
+    pub end: f64,
+}
+
+/// Pieces of takes being dragged along the timeline.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct TakeMove {
+    pub(super) track: TrackId,
+    /// Each piece's take number and its place in the take, from 0.
+    pub(super) pieces: Vec<(usize, usize)>,
+    /// Where the piece under the pointer starts, which the grid lines up.
+    pub(super) start: f64,
+    /// The beat the drag began at.
+    pub(super) grab: f64,
+}
+
+/// A piece of a take whose edge is being dragged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct TakeEdge {
+    pub(super) track: TrackId,
+    pub(super) take: usize,
+    /// Its place in the take, from 0.
+    pub(super) piece: usize,
+    /// The right edge, or the left one.
+    pub(super) end: bool,
+    /// Where the edge is now, in beats.
+    pub(super) at: f64,
+}
+
 /// A span of beats over some tracks, the selection rectangle's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeSelection {
@@ -470,7 +519,17 @@ impl ArrangementViewState {
 
     /// Sets or clears the time selection: after a duplicate it moves onto the copy.
     pub fn set_time_selection(&mut self, selection: Option<TimeSelection>) {
+        if selection.is_some() {
+            self.clear_take_selection();
+        }
         self.time_selection = selection;
+    }
+
+    /// Lets go of the take pieces picked and the area painted across take lanes: the Delete and
+    /// Cut keys go back to the clips and the time selection.
+    pub(super) fn clear_take_selection(&mut self) {
+        self.take_area = None;
+        self.take_selected.clear();
     }
 
     /// The clip the views work on: the one clicked last.
@@ -509,6 +568,7 @@ impl ArrangementViewState {
     }
 
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
+        self.clear_take_selection();
         self.track_focus = false;
         self.picked_whole = true;
         self.anchor = keys.first().copied();
@@ -520,6 +580,7 @@ impl ArrangementViewState {
     /// the earlier start to the later end, every clip that touches it (#694); Ctrl (Cmd) adds it
     /// or takes it away, and a plain click leaves it the only one.
     pub(super) fn pick_clip(&mut self, key: (TrackId, ClipId), shift: bool, command: bool, order: &[ClipSpot]) {
+        self.clear_take_selection();
         self.track_focus = false;
         let spot = |k: (TrackId, ClipId)| order.iter().find(|s| s.key == k).copied();
         if shift
@@ -657,6 +718,10 @@ impl ArrangementViewState {
             let height = self.kept_height(lane.track) * factor;
             self.heights.insert(lane.track, height.clamp(MIN_LANE, MAX_LANE));
         }
+        // A take lane given its own height zooms with the rest; the others follow `lane_zoom`.
+        for height in self.take_heights.values_mut() {
+            *height = (*height * factor).clamp(MIN_LANE, MAX_LANE);
+        }
         // The zoom of a track added later, against the default size it starts from.
         let base = crate::kit::style_class::theme_track_height()
             .unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)))
@@ -687,7 +752,17 @@ impl ArrangementViewState {
                 self.heights.insert(lane.track, (kept * factor).clamp(MIN_LANE, MAX_LANE));
                 return;
             }
-            top += height + 1.0 + self.takes_height(lane.track, timeline);
+            top += height + 1.0;
+            if !self.takes_hidden.contains(&lane.track) {
+                for take in timeline.takes.iter().filter(|t| t.track == lane.track) {
+                    let row = self.take_row(lane.track, take.number);
+                    if y < top + row {
+                        self.take_heights.insert((lane.track, take.number), (row * factor).clamp(MIN_LANE, MAX_LANE));
+                        return;
+                    }
+                    top += row + 1.0;
+                }
+            }
             for key in self.automation.shown(lane.track, &timeline.automation) {
                 let lane_height = self.automation.lane_height(lane.track, &key);
                 if y < top + lane_height {
@@ -745,16 +820,14 @@ impl ArrangementViewState {
         if self.takes_hidden.contains(&track) {
             return 0.0;
         }
-        // The kept takes, and the passes of a take still recording that are already done.
-        let kept = timeline.takes.iter().filter(|t| t.track == track).count();
-        let recording = timeline.live_takes.iter().filter(|t| t.track == track && t.finished).count();
-        (kept + recording) as f32 * (self.take_row(track) + 1.0)
+        // The kept takes only: a take still recording shows no lanes until it stops (#1078).
+        timeline.takes.iter().filter(|t| t.track == track).map(|t| self.take_row(track, t.number) + 1.0).sum()
     }
 
-    /// How tall each of `track`'s take lanes is: the height its edge was dragged to, or the
-    /// default (#989).
-    pub(super) fn take_row(&self, track: TrackId) -> f32 {
-        self.take_heights.get(&track).copied().unwrap_or(TAKE_ROW)
+    /// How tall take lane `number` of `track` is: the height its edge was dragged to, or as tall
+    /// as a track that has not been resized, so the lanes' zoom takes it along (#1078).
+    pub(super) fn take_row(&self, track: TrackId, number: usize) -> f32 {
+        self.take_heights.get(&(track, number)).copied().unwrap_or_else(|| self.zoomed_height()).round()
     }
 
     /// What is drawn under `track`'s own row: its take lanes, then its automation lanes.
@@ -836,11 +909,15 @@ impl ArrangementViewState {
 
     /// `track`'s row height as kept, a fraction of a point too, for the next zoom step.
     fn kept_height(&self, track: TrackId) -> f32 {
-        self.heights.get(&track).copied().unwrap_or_else(|| {
-            let base = crate::kit::style_class::theme_track_height()
-                .unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)));
-            (base * self.lane_zoom).clamp(MIN_LANE, MAX_LANE)
-        })
+        self.heights.get(&track).copied().unwrap_or_else(|| self.zoomed_height())
+    }
+
+    /// How tall a row is that has not been resized: the theme's height or the default size, as far
+    /// as the lanes have been zoomed.
+    fn zoomed_height(&self) -> f32 {
+        let base =
+            crate::kit::style_class::theme_track_height().unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)));
+        (base * self.lane_zoom).clamp(MIN_LANE, MAX_LANE)
     }
 
     /// How tall the view is when it shows only `track` ([`Self::focus`]): the ruler, the loop

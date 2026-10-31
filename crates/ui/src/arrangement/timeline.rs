@@ -648,7 +648,8 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
         rows.extend(takes.into_iter().zip(indices).enumerate().map(|(i, (take, index))| {
             TakeRow {
                 track: track.id,
-                number: i + 1,
+                // The number the take commands know it by, which stays its own when another goes.
+                number: project.take_number(index).unwrap_or(i + 1),
                 name: take_name(project, take),
                 // Each piece in its own colour or the take's, named after the take.
                 clips: take
@@ -657,10 +658,16 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
                     .enumerate()
                     .map(|(piece, clip)| {
                         let own = take.color.unwrap_or_else(|| take_colour(i + 1));
+                        let shown = clip_box(project, clip, piece, clip.color.unwrap_or(own));
+                        // A MIDI pass ends where its content does, as an audio pass's recording does:
+                        // its edges stop there (`take.trimPiece`).
+                        let content = project.content(clip.content).map_or(f64::INFINITY, |c| c.length);
                         ClipBox {
                             name: take_name(project, take),
                             take: Some(i + 1),
-                            ..clip_box(project, clip, piece, clip.color.unwrap_or(own))
+                            earliest_start: (clip.start - clip.offset).max(0.0),
+                            latest_end: shown.latest_end.or(Some(clip.start - clip.offset + content)),
+                            ..shown
                         }
                     })
                     .collect(),

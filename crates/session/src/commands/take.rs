@@ -6,6 +6,13 @@
 
 use super::*;
 
+const TAKE_LIST: Param = param("takes", ParamType::Integers, "the takes, their numbers on the track, from 1");
+const AREA_START: Param = param("start", ParamType::Number, "where the area starts, in beats");
+const AREA_END: Param = param("end", ParamType::Number, "where the area ends, in beats");
+
+/// The least length a piece of a take is left with.
+const MIN_PIECE: f64 = 1.0 / 64.0;
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "take.comp",
@@ -101,6 +108,53 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::UNHEARD,
     },
     CommandSpec {
+        id: "take.deleteRange",
+        label: "Delete what some take lanes of a track hold between start and end (an area painted across them); a take left with nothing goes; the track's clips stay",
+        params: &[TRACK, TAKE_LIST, AREA_START, AREA_END],
+        kind: CommandKind::Edit,
+        run: delete_range,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "take.cutRange",
+        label: "Copy what some take lanes of a track hold between start and end for clip.paste and delete it, as one undo step",
+        params: &[TRACK, TAKE_LIST, AREA_START, AREA_END],
+        kind: CommandKind::Edit,
+        run: cut_range,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "take.movePieces",
+        label: "Move pieces of a track's takes along the timeline, each on its own take lane, over what they cover there; the parts already on the track stay as they are",
+        params: &[
+            TRACK,
+            param("takes", ParamType::Integers, "the take of each piece, its number on the track, from 1"),
+            param(
+                "pieces",
+                ParamType::Integers,
+                "the pieces, from 1 in time order within their takes, one per entry of takes",
+            ),
+            param("by", ParamType::Number, "how far, in beats (the pieces stop at the start of the timeline)"),
+        ],
+        kind: CommandKind::Edit,
+        run: move_pieces,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "take.trimPiece",
+        label: "Move the edges of a piece of a take, bringing back the recording around it: it stops where its recording does and at the take's other pieces",
+        params: &[
+            TRACK,
+            param("take", ParamType::Integer, "the take's number on the track, from 1"),
+            param("piece", ParamType::Integer, "the piece, from 1 in time order"),
+            optional("start", ParamType::Number, "where its left edge goes, in beats"),
+            optional("end", ParamType::Number, "where its right edge goes, in beats"),
+        ],
+        kind: CommandKind::Edit,
+        run: trim_piece,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "take.delete",
         label: "Delete a recorded take lane of a track; the track's clips stay",
         params: &[TRACK, param("take", ParamType::Integer, "the take's number on the track, from 1")],
@@ -111,24 +165,49 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
 ];
 
-/// The number in a take lane's name, "Take 3" giving 3.
-pub(crate) fn take_number(name: &str) -> Option<usize> {
-    name.strip_prefix("Take ")?.trim().parse().ok().filter(|n| *n >= 1)
-}
-
 /// The index in `project.arrangement.takes` of take number `take` (from 1) of `track`.
 fn take_index(p: &Project, track: TrackId, params: &Value) -> Result<usize, CommandError> {
-    let number =
-        params.get("take").and_then(Value::as_u64).filter(|n| *n >= 1).ok_or("take must be a number from 1")?;
-    let number = usize::try_from(number).map_err(|_| "take is out of range")?;
-    // The number the lane shows ("Take 3" is 3), which stays the take's after others are
-    // deleted; a take named otherwise is found by its place among the track's takes.
-    let mine = || p.arrangement.takes.iter().enumerate().filter(|(_, t)| t.track == track);
-    mine()
-        .find(|(_, t)| take_number(&t.name) == Some(number))
-        .or_else(|| mine().filter(|(_, t)| take_number(&t.name).is_none()).nth(number - 1))
-        .map(|(i, _)| i)
+    let number = params.get("take").and_then(Value::as_u64).ok_or("take must be a number from 1")?;
+    index_of_take(p, track, number)
+}
+
+/// The index in `project.arrangement.takes` of take `number` of `track`, the number its lane
+/// shows ([`Project::take_number`]).
+fn index_of_take(p: &Project, track: TrackId, number: u64) -> Result<usize, CommandError> {
+    let wanted = usize::try_from(number).ok().filter(|n| *n >= 1).ok_or("take must be a number from 1")?;
+    (0..p.arrangement.takes.len())
+        .find(|&i| p.arrangement.takes.get(i).is_some_and(|t| t.track == track) && p.take_number(i) == Some(wanted))
         .ok_or_else(|| format!("the track has no take {number}").into())
+}
+
+/// The indices in `project.arrangement.takes` of the takes `params` lists under `takes`, once each
+/// and in order.
+fn listed_takes(p: &Project, track: TrackId, params: &Value) -> Result<Vec<usize>, CommandError> {
+    let list = params.get("takes").and_then(Value::as_array).ok_or("takes must be a list")?;
+    let mut indices = Vec::new();
+    for entry in list {
+        let number = entry.as_u64().ok_or("each take is a number from 1")?;
+        indices.push(index_of_take(p, track, number)?);
+    }
+    indices.sort_unstable();
+    indices.dedup();
+    Ok(indices)
+}
+
+/// The `start` and `end` of an area across take lanes, in beats.
+fn area(params: &Value) -> Result<(f64, f64), CommandError> {
+    let beat = |key: &str| -> Result<f64, CommandError> {
+        params
+            .get(key)
+            .and_then(Value::as_f64)
+            .filter(|b| b.is_finite() && (0.0..=MAX_START_BEAT).contains(b))
+            .ok_or_else(|| format!("{key} must be a beat from 0 to {MAX_START_BEAT}").into())
+    };
+    let (start, end) = (beat("start")?, beat("end")?);
+    if end <= start {
+        return Err("end must be after start".into());
+    }
+    Ok((start, end))
 }
 
 /// `take.comp`: the take's clips, cut to `start` … `end`, laid on the track over what they
@@ -440,4 +519,155 @@ fn delete_take(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     let take = p.arrangement.takes.remove(index);
     session.take_solo = None;
     Ok(json!({ "track": track.0, "deleted": take.name }))
+}
+
+/// `take.deleteRange {track, takes, start, end}`: what the takes hold in the area goes, pieces
+/// crossing its edges keeping their parts outside it, and a take left with nothing goes too.
+fn delete_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &session.project;
+    let track = track_id(p, params)?;
+    let takes = listed_takes(p, track, params)?;
+    let (start, end) = area(params)?;
+    delete_area(session, track, &takes, start, end)
+}
+
+/// `take.cutRange {track, takes, start, end}`: `take.deleteRange`, with what goes copied first.
+fn cut_range(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &session.project;
+    let track = track_id(p, params)?;
+    let takes = listed_takes(p, track, params)?;
+    let (start, end) = area(params)?;
+    if crate::range::copy_take_span(session, track, &takes, start, end) == 0 {
+        return Err("the takes have nothing in the area".into());
+    }
+    delete_area(session, track, &takes, start, end)
+}
+
+fn delete_area(
+    session: &mut Session,
+    track: TrackId,
+    takes: &[usize],
+    start: f64,
+    end: f64,
+) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let holds = |clip: &Clip| clip.start < end && start < clip.start + clip.length;
+    let inside = takes.iter().filter_map(|&i| p.arrangement.takes.get(i)).any(|t| t.clips.iter().any(holds));
+    if !inside {
+        return Err("the takes have nothing in the area".into());
+    }
+    let mut emptied = 0usize;
+    // The last first, so the indices of the others hold when an emptied take goes.
+    for &index in takes.iter().rev() {
+        let Some(take) = p.arrangement.takes.get_mut(index) else { continue };
+        make_room(&mut take.clips, start, end);
+        if take.clips.is_empty() {
+            p.arrangement.takes.remove(index);
+            emptied += 1;
+        }
+    }
+    if emptied > 0 {
+        session.take_solo = None;
+    }
+    Ok(json!({ "track": track.0, "takes": takes.len(), "takes_deleted": emptied }))
+}
+
+/// `take.movePieces {track, takes, pieces, by}`: the pieces moved by `by` beats, each on its own
+/// take lane, over what they cover there. Their content goes along, so each plays the same; the
+/// parts comped from them earlier stay where they are, and no longer count as their parts.
+fn move_pieces(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let track = track_id(p, params)?;
+    let list = |key: &str| params.get(key).and_then(Value::as_array).ok_or(format!("{key} must be a list"));
+    let (takes, pieces) = (list("takes")?, list("pieces")?);
+    if takes.len() != pieces.len() {
+        return Err("takes and pieces must be as long as each other".into());
+    }
+    let by =
+        params.get("by").and_then(Value::as_f64).filter(|b| b.is_finite()).ok_or("by must be a number of beats")?;
+    let mut moved: Vec<(usize, usize)> = Vec::with_capacity(takes.len());
+    for (take, piece) in takes.iter().zip(pieces) {
+        let index = index_of_take(p, track, take.as_u64().ok_or("each take is a number from 1")?)?;
+        let count = p.arrangement.takes.get(index).map_or(0, |t| t.clips.len());
+        let piece = piece
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| n.checked_sub(1))
+            .filter(|&n| n < count)
+            .ok_or("each piece is a number from 1 up to its take's pieces")?;
+        moved.push((index, piece));
+    }
+    moved.sort_unstable();
+    moved.dedup();
+    let starts = || moved.iter().filter_map(|&(i, n)| p.arrangement.takes.get(i)?.clips.get(n)).map(|c| c.start);
+    // They stop together at the timeline's ends, so they keep their places to each other.
+    let by = by.max(-starts().fold(f64::INFINITY, f64::min)).min(MAX_START_BEAT - starts().fold(0.0, f64::max));
+    let mut indices: Vec<usize> = moved.iter().map(|(index, _)| *index).collect();
+    indices.dedup();
+    for index in indices {
+        let Some(take) = p.arrangement.takes.get_mut(index) else { continue };
+        let mut going = Vec::new();
+        // The last piece first, so the numbers of the others hold.
+        for &(_, piece) in moved.iter().rev().filter(|(i, _)| *i == index) {
+            going.push(take.clips.remove(piece));
+        }
+        for clip in &mut going {
+            clip.start += by;
+            make_room(&mut take.clips, clip.start, clip.start + clip.length);
+        }
+        take.clips.append(&mut going);
+        take.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+    }
+    Ok(json!({ "track": track.0, "pieces": moved.len(), "by": by }))
+}
+
+/// `take.trimPiece {track, take, piece, start?, end?}`: the piece's edges moved, the recording
+/// around it coming back as they go out. A pass is a window on the file its take was recorded
+/// into, so an audio piece goes on up to the end of that file; a MIDI pass has a content of its
+/// own, so a MIDI piece goes on up to the end of its pass. Edges stop at those limits and at the
+/// take's other pieces. The content stays lined up with the beats, so the piece's parts on the
+/// track stay its parts.
+fn trim_piece(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let track = track_id(p, params)?;
+    let index = take_index(p, track, params)?;
+    let take = p.arrangement.takes.get(index).ok_or("the take is missing")?;
+    let piece = params
+        .get("piece")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .and_then(|n| n.checked_sub(1))
+        .filter(|&n| n < take.clips.len())
+        .ok_or("piece must be a number from 1 up to the take's pieces")?;
+    let edge = |key: &str| -> Result<Option<f64>, CommandError> {
+        match params.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => {
+                let beat = v.as_f64().filter(|b| b.is_finite()).ok_or_else(|| format!("{key} must be a beat"))?;
+                Ok(Some(beat.max(0.0)))
+            }
+        }
+    };
+    let (start, end) = (edge("start")?, edge("end")?);
+    if start.is_none() && end.is_none() {
+        return Err("give start, end, or both".into());
+    }
+    let clip = take.clips.get(piece).ok_or("the piece is missing")?;
+    let old_end = clip.start + clip.length;
+    // The pieces are in time order, so its neighbours are the ones next to it.
+    let before = piece.checked_sub(1).and_then(|n| take.clips.get(n)).map_or(0.0, |c| c.start + c.length);
+    let after = take.clips.get(piece + 1).map_or(f64::INFINITY, |c| c.start);
+    let rate = crate::editing::content_rate(p, clip).max(1e-9);
+    let content_length = p.content(clip.content).map_or(f64::INFINITY, |c| c.length);
+    let earliest = before.max(clip.start - clip.offset / rate).min(clip.start);
+    let new_start = start.unwrap_or(clip.start).max(earliest).min(old_end - MIN_PIECE).max(0.0);
+    let offset = clip.offset + (new_start - clip.start) * rate;
+    let latest = after.min(new_start + (content_length - offset) / rate).max(new_start + MIN_PIECE);
+    let new_end = end.unwrap_or(old_end).min(latest).max(new_start + MIN_PIECE);
+    let clip = p.arrangement.takes.get_mut(index).and_then(|t| t.clips.get_mut(piece)).ok_or("the piece is missing")?;
+    clip.start = new_start;
+    clip.length = new_end - new_start;
+    clip.offset = offset;
+    clip.fit_fades();
+    Ok(json!({ "track": track.0, "start": new_start, "end": new_end }))
 }

@@ -109,7 +109,10 @@ or, for audio, its waveform drawn as they come in. After a jump it starts again 
 
 ### Take lanes
 
-A track that recorded into the arrangement has its passes as **take lanes** under it, oldest
+A track that recorded into the arrangement has its passes as **take lanes** under it, once the
+recording stops: while it runs nothing is added under the track, and the clip being recorded has a
+mark in its lower left corner, three stacked lines, as have the parts on the track and the pieces of
+the takes. Lanes a track already has stay as they are while it records again. The lanes go oldest
 first, shown with the track's name: **Drums Take 1**, **Drums Take 2** and so on (the project keeps
 "Take 1", so the names follow a renamed track). A take keeps its number when another is deleted, and
 a new pass takes the next number after the highest one the track's takes show, so no two have one
@@ -119,11 +122,30 @@ greyed. They are where the best parts of each pass are picked and put together o
 
 - The pointer over a take lane is the text cursor, as for selecting. A single click takes nothing;
   a **double-click** on a piece of a take copies the whole piece onto the track over what is there.
-  With **Ctrl** held the take lane takes ordinary clicks: the pointer is the arrow, a click adds a
-  piece to the pieces picked or takes it out (each outlined; **Recolor** colours the one clicked)
-  and a drag comps nothing. A click without Ctrl lets go of them all. **Delete** deletes the picked
-  pieces (`take.deletePieces {track, take, pieces}`, one undo step per take), and a take left with
-  no piece goes; the track's clips stay.
+  With **Ctrl** held the take lane takes ordinary clicks: a click adds a piece to the pieces picked
+  or takes it out (each outlined; **Recolor** colours the one clicked), and a drag comps nothing. A
+  click without Ctrl lets go of them all. **Delete** deletes the picked pieces
+  (`take.deletePieces {track, take, pieces}`, one undo step per take), and a take left with no piece
+  goes; the track's clips stay.
+- **Ctrl and a drag** from anywhere but a picked piece paints an **area** across the track's take
+  lanes: the lanes from the one the drag began on to the one under the pointer, between two beats
+  (on the grid; Alt for no grid). Pieces wholly inside it are picked too. **Delete** deletes what is
+  in the area (`take.deleteRange {track, takes, start, end}`) and **Ctrl+X** cuts it for pasting
+  (`take.cutRange`), one undo step either way: a piece crossing an edge keeps its parts outside, and
+  a take left with nothing goes. A click on a take lane, a clip or the time selection lets go of the
+  area.
+- **Moving a piece:** **Ctrl and a drag** from a picked piece moves the pieces picked along the
+  timeline on the grid, each on its own lane, and **Ctrl+Shift and a drag** from any piece moves it,
+  or the pieces picked when it is one of them, freely (`take.movePieces {track, takes, pieces, by}`,
+  one undo step). A moved piece covers what it lands on in its lane and plays what it played. Parts
+  comped from it earlier stay where they are on the track and no longer count as its parts; a part
+  comped after the move does.
+- **A piece's edges:** a piece's lower right and lower left corners drag its edges (on the grid; Alt
+  for no grid; `take.trimPiece {track, take, piece, start?, end?}`). So what an area cut away comes
+  back, and more: a take lane is a window on one continuous recording, its passes clips of one file
+  at different offsets, so an audio piece goes on up to the end of that file, and takes all starting
+  at bar 1 and pulled out fully form a staircase, the earliest the longest. A MIDI pass has a content
+  of its own, so a MIDI piece stops where its pass ends. An edge also stops at the take's other pieces.
 - **Drag** across a take: the part dragged over (on the grid; Alt for no grid) is copied onto the
   track over what is there, as new clips that start in the take where the part does. Each copy is
   one undo step.
@@ -138,8 +160,10 @@ greyed. They are where the best parts of each pass are picked and put together o
   take is heard in place of the track's clips, which grey; not saved and not an undo step,
   `take.solo`), the colour swatch recolours the lane, and **↑** puts the whole take on the track
   (`take.promote`).
-- Dragging the line under a take lane makes the track's take lanes taller or shorter, all alike
-  (20 to 240 px); a double-click on the line puts them back to 36 px.
+- A take lane is a child row of its track: as tall as a track that has not been resized, and the
+  lanes' zoom (Alt and the wheel) takes it along. Dragging the line under one makes that lane alone
+  taller or shorter, within a track's limits; a double-click on the line puts it back. The heights
+  are the view's, not saved with the project.
 
 The track's lane reads as the comp (#989). A clip on the track that plays a take's content from
 the same place is a **part** of that take, found by its content and by where in it each beat lands

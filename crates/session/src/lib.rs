@@ -205,9 +205,8 @@ impl Session {
     /// number on the track, from 1.
     pub fn take_solo(&self) -> Option<(suhina_model::TrackId, usize)> {
         let (track, index) = self.take_solo?;
-        let take = self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;
-        let number = self.project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
-        Some((track, number))
+        self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;
+        Some((track, self.project.take_number(index)?))
     }
 
     /// The project as the engine plays it: with a soloed take lane's clips in place of its
