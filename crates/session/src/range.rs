@@ -62,25 +62,28 @@ fn pieces(p: &Project, tracks: &[TrackId], start: f64, end: f64) -> Vec<(TrackId
     let mut out = Vec::new();
     for &track in tracks {
         let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) else { continue };
-        for clip in &lane.clips {
-            let (s, e) = (clip.start, clip.start + clip.length);
-            if e <= start + 1e-9 || s >= end - 1e-9 {
-                continue;
-            }
-            let Some(content) = p.content(clip.content).cloned() else { continue };
-            let from = s.max(start);
-            let rate = content_rate(p, clip);
-            let mut piece = clip.clone();
-            if from > s {
-                piece = split(&piece, from, rate).1;
-            }
-            if e > end {
-                piece = split(&piece, end, rate).0;
-            }
-            out.push((track, piece, content));
-        }
+        out.extend(lane.clips.iter().filter_map(|c| cut_to_span(p, c, start, end)).map(|(c, cc)| (track, c, cc)));
     }
     out
+}
+
+/// `clip` cut to the span and its content, when it has something inside the span.
+fn cut_to_span(p: &Project, clip: &Clip, start: f64, end: f64) -> Option<(Clip, ClipContent)> {
+    let (s, e) = (clip.start, clip.start + clip.length);
+    if e <= start + 1e-9 || s >= end - 1e-9 {
+        return None;
+    }
+    let content = p.content(clip.content).cloned()?;
+    let from = s.max(start);
+    let rate = content_rate(p, clip);
+    let mut piece = clip.clone();
+    if from > s {
+        piece = split(&piece, from, rate).1;
+    }
+    if e > end {
+        piece = split(&piece, end, rate).0;
+    }
+    Some((piece, content))
 }
 
 /// Places copies of `pieces` (each on its own track), moved by `offset` beats, replacing what
@@ -268,6 +271,12 @@ pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value,
     if parts.is_empty() {
         return Err("nothing plays in the selection".into());
     }
+    let count = copy_parts(session, parts);
+    Ok(json!({ "copied": count, "start": start, "end": end }))
+}
+
+/// Puts `parts` on the clip clipboard, with the automation under each, as `clip.paste` takes them.
+fn copy_parts(session: &mut Session, parts: Vec<(TrackId, Clip, ClipContent)>) -> usize {
     let count = parts.len();
     session.clipboards.under = parts
         .iter()
@@ -275,7 +284,21 @@ pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value,
         .collect();
     session.clipboards.tracks = parts.iter().map(|(track, _, _)| *track).collect();
     session.clipboards.clips = parts.into_iter().map(|(_, clip, content)| (clip, content)).collect();
-    Ok(json!({ "copied": count, "start": start, "end": end }))
+    count
+}
+
+/// What the take lanes `takes` (indices in `arrangement.takes`) of `track` hold inside the span,
+/// cut to it, copied for `clip.paste` as `range.copy` copies a track's clips; answers how many.
+pub(crate) fn copy_take_span(session: &mut Session, track: TrackId, takes: &[usize], start: f64, end: f64) -> usize {
+    let p = &session.project;
+    let parts: Vec<_> = takes
+        .iter()
+        .filter_map(|&index| p.arrangement.takes.get(index))
+        .flat_map(|take| &take.clips)
+        .filter_map(|clip| cut_to_span(p, clip, start, end))
+        .map(|(clip, content)| (track, clip, content))
+        .collect();
+    copy_parts(session, parts)
 }
 
 /// `range.cut {tracks, start, end}`: `range.copy`, then `range.delete`, as one undo step.

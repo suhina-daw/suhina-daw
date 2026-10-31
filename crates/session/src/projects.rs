@@ -460,6 +460,7 @@ impl Projects {
                 | "clip.cut"
                 | "range.copy"
                 | "range.cut"
+                | "take.cutRange"
                 | "device.copy"
                 | "note.copy"
                 | "note.cut"

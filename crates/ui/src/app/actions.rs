@@ -277,6 +277,18 @@ impl App {
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
                 self.status = Status::Hint("In the Launcher view, a slot's clip can be copied and pasted".into());
             }
+            // An area painted across take lanes with Ctrl and a drag: Delete and Cut take what is
+            // in it, in one undo step (#1078).
+            "selection.delete" | "selection.cut"
+                if self.shown == View::Arrangement && self.arrangement.take_area.is_some() =>
+            {
+                let Some(area) = self.arrangement.take_area.take() else { return };
+                self.arrangement.take_selected.clear();
+                let id = if action == "selection.cut" { "take.cutRange" } else { "take.deleteRange" };
+                let params =
+                    json!({ "track": area.track.0, "takes": area.takes, "start": area.start, "end": area.end });
+                actions.push(Action::new(id, params));
+            }
             // Take pieces picked with Ctrl and a click: Delete deletes them, the last take first so
             // the numbers of the others hold when an emptied take goes (#989).
             "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_selected.is_empty() => {
