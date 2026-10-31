@@ -40,6 +40,8 @@ const MAX_CHANNELS: usize = 64;
 const MAX_PARAMS: usize = 4096;
 /// Most bytes one state chunk may hold.
 const MAX_CHUNK: usize = 256 * 1024 * 1024;
+/// The room a plug-in's own edits have between main-loop drains.
+const EDITS_ROOM: usize = 256;
 /// The strings this host answers `audioMasterCanDo` with: it sends event lists and MIDI
 /// events, answers the time, and takes the MIDI events a plug-in sends (counted for now: the
 /// engine has no channel for a plug-in's MIDI out yet). *Assumed* spellings.
@@ -224,8 +226,10 @@ fn answer_at_entry(opcode: i32, ptr: *mut c_void) -> isize {
         }
         Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
         Some(HostOp::GetVendorString) => {
-            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
-            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            // SAFETY: the caller's buffer must hold the string and its NUL byte; writing
+            // only that needs the least of the buffer, whose size is the op-code's
+            // assumption.
+            unsafe { super::write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetProductString) => {
@@ -312,6 +316,12 @@ fn answer(
             if serving_this {
                 shared.notes.note(id, f64::from(opt));
             } else if let Ok(mut edits) = shared.edits.lock() {
+                // The values are re-read by the listing, so past the room the newest are
+                // what is kept.
+                if edits.len() >= EDITS_ROOM {
+                    let cut = edits.len() / 2;
+                    edits.drain(..cut);
+                }
                 edits.push((id, opt));
             }
             0
@@ -351,8 +361,10 @@ fn answer(
         Some(HostOp::GetAutomationState) => automation_state::OFF,
         // *Assumed:* the answer 1 says the string was filled.
         Some(HostOp::GetVendorString) => {
-            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
-            unsafe { super::write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            // SAFETY: the caller's buffer must hold the string and its NUL byte; writing
+            // only that needs the least of the buffer, whose size is the op-code's
+            // assumption.
+            unsafe { super::write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetProductString) => {
@@ -721,14 +733,18 @@ impl Vst2Plugin {
         if self.flags & effect_flags::HAS_CHUNKS != 0 {
             let mut pointer: *const c_void = std::ptr::null();
             let size = self.send(EffectOp::GetChunk, 0, 0, &mut pointer as *mut *const c_void as *mut c_void, 0.0)?;
-            let size = usize::try_from(size).unwrap_or(0).min(MAX_CHUNK);
+            let size = usize::try_from(size).unwrap_or(0);
+            // A size without the pointer it says it has is not a state to save: the caller
+            // is told, and nothing fabricated is written in its place.
+            if size > MAX_CHUNK || (size > 0 && pointer.is_null()) {
+                return Err(format!("the plug-in said {size} bytes of state but gave no readable chunk"));
+            }
             let mut chunk = vec![0u8; size];
-            if !pointer.is_null() {
-                for (slot, i) in chunk.iter_mut().zip(0..size) {
-                    let byte = pointer.cast::<u8>().wrapping_add(i);
-                    // SAFETY: one of the `size` bytes the plug-in said its chunk has, capped.
-                    *slot = unsafe { *byte };
-                }
+            for (slot, i) in chunk.iter_mut().zip(0..size) {
+                let byte = pointer.cast::<u8>().wrapping_add(i);
+                // SAFETY: one of the `size` bytes the plug-in said its chunk has, at the
+                // pointer it gave.
+                *slot = unsafe { *byte };
             }
             let current = self.program();
             return suhina_plugins::vst2::bank(&preset(suhina_plugins::vst2::CHUNK_BANK, current), &chunk);
