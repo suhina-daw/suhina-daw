@@ -3238,9 +3238,9 @@ impl App {
                             // A click on a name bar counts even when the clip was picked already.
                             let clicked = std::mem::take(&mut self.arrangement.whole_clip_clicked);
                             let picked = self.arrangement.selected_clips();
-                            // Never for a clip an ARA plug-in edits: its editor and a click on
-                            // the clip set the position there.
-                            let ara = picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
+                            // Not by itself for a clip an ARA plug-in edits, whose editor sets the
+                            // position; a click on its name bar asks for its start all the same.
+                            let ara = !clicked && picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
                             // Nor for a clip picked by a click in its body: play starts where
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
