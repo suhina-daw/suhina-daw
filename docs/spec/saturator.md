@@ -178,8 +178,13 @@ Each entry: what was chosen, what it costs, why.
    ideal 4x model to 0.1 dB, and Suhina's to 0.4 dB (Analog Clip, Digital Clip; the strongest
    lines of the Waveshaper and Sinoid Fold too). Recorded again at 48 kHz (`saturator-hiquality-types-48k`),
    the strongest lines still match to 0.5 dB (10 kHz: 22, 2 and 18 kHz at −33, −37 and −42 dB; 15 kHz:
-   3 kHz at −27 dB); the weaker ones, 14 kHz at −50 dB (Suhina 2 dB louder) and 9 and 21 kHz at
-   −49 and −53 dB (4 and 7 dB louder), are not matched. At 2x, the earlier design, the 10 kHz sine
+   3 kHz at −27 dB). The weaker ones (10 kHz: 6 and 14 kHz near −50 dB; 15 kHz: 9 and 21 kHz near
+   −49 and −53 dB) differ by 2 to 7 dB, and are not a fault of the filters: at exactly 10 or
+   15 kHz the clipped sine repeats on the oversampled grid, so many harmonics fold onto one bin
+   and their sum depends on where the sine sits against the grid, to a fraction of a sample.
+   An ideal 4x model moves these lines by up to 8 dB over a 0.05-frame shift, and averaged over
+   that shift Suhina's lines are within 0.3 dB of the ideal model's. They are therefore not in
+   the test. At 2x, the earlier design, the 10 kHz sine
    had lines 15 dB louder (18.2 kHz at −18 dB, 1.8 kHz at −21 dB), heard as chirps falling
    against the top of a sweep. The phase matches the measured one: 0.14, 0.65, 2.0 and 7.5
    frames more delay at 5, 10, 15 and 20 kHz against the measured 0.1, 0.6, 2.0 and 7.9 (2x:
