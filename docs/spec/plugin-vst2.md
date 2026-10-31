@@ -135,7 +135,7 @@ them are in `EffectOp` (`crates/plugin-host/src/vst2/mod.rs`).
 | 10 | `effSetSampleRate` | the rate in the call's `opt` float | number from VeSTige, meaning assumed |
 | 11 | `effSetBlockSize` | the size in the call's `value` | number from VeSTige, meaning assumed |
 | 12 | `effMainsChanged` | non-zero `value` resumes, zero suspends | number from VeSTige, meaning assumed |
-| 13–15, 19, 20 | editor op-codes (`effEditGetRect`, `effEditOpen`, `effEditClose`, `effEditIdle`, `effEditTop`) | a window id in `ptr` for open (assumed); nothing yet — editors are a later step | numbers from VeSTige |
+| 13–15, 19, 20 | editor op-codes (`effEditGetRect`, `effEditOpen`, `effEditClose`, `effEditIdle`, `effEditTop`) | a window id in `ptr` for open (assumed); the rect, close, idle and top requests as the editors section below sets them out | numbers from VeSTige |
 | 23 | `effGetChunk` | `index` 0 the bank or 1 the current program (assumed); `ptr` points at a pointer the plug-in fills (assumed); the answer is the chunk's size in bytes (assumed) | **(assumed)**: the number is not in the pinned header |
 | 24 | `effSetChunk` | `index` as above (assumed); `value` the size (assumed); `ptr` the bytes (assumed) | **(assumed)**, as above |
 | 25 | `effProcessEvents` | `ptr` the event list below | number from VeSTige, meaning assumed |
@@ -177,7 +177,8 @@ argument carries what is **(assumed)** per row where the layer has to read one.
 | 35, 36 | `VendorSpecific`, `SetIcon` | 0, noted | nothing |
 | 37 | `CanDo` | 1 for the three strings below, 0 for anything else | `ptr` a C string (assumed) |
 | 38 | `GetLanguage` | 1, VeSTige's `kVstLangEnglish` | from VeSTige |
-| 39–49 | window, file and offline op-codes | 0, noted | unused by this layer |
+| 39–42, 45–49 | window, file and offline op-codes | 0, noted | unused by this layer |
+| 43, 44 | `audioMasterBeginEdit`, `audioMasterEndEdit` | 0, noted | nothing; the mock sends them around a change of its gain, and the answer staying 0 is the host's choice (the layer keeps no gesture state) |
 
 The `CanDo` strings are **(assumed)** in spelling and in who asks whom for them: the plug-in
 asks the host for `sendVstEvents`, `sendVstMidiEvent` and `sendVstTimeInfo`; the host asks
@@ -208,7 +209,10 @@ the tempo, the bar start, the cycle's start and end, the time signature, the SMP
 and the clock remainder. Which fields hold a value is what `flags` says, with VeSTige's
 validity bits (`kVstTempoValid`, `kVstPpqPosValid`, `kVstTimeSigValid`, and the rest). The
 probe fills the rate, the tempo, the quarter-note position and a 4/4 signature, and marks
-exactly those valid.
+exactly those valid. The host serves the block's events onto it: what sits in a field when
+they reach it is the unit the engine named it in — the cycle's beats are quarter-note
+positions, and the arrangement's loop given in seconds takes no place in these fields (the
+formats that read seconds get it).
 
 ## State: chunks and banks
 
@@ -300,7 +304,9 @@ contract, as every host gives*).
   program bank's current program (set as the program, then its values as parameters,
   *(assumed)* order), or a bare chunk. A `effSetChunk` answer that is not zero is read as a
   refusal *(assumed)*: the plug-in runs with its defaults and the caller is told, never
-  silently restored.
+  silently restored. A payload whose shape is a standard bank's own (`CcnK` and a bank kind
+  in their places) that neither reader took is refused too: a cut-short bank is an error, not
+  raw bytes the plug-in would take for its own state.
 
 ## What keeps each fact true
 
@@ -313,13 +319,17 @@ contract, as every host gives*).
   carried, every call the mock made and what it was answered.
 - The state round trip: `a_chunk_round_trip_keeps_the_state_through_a_parameter_move`.
 - The reader's bounds: `event_lists_round_trip_and_a_lying_count_reads_to_its_bound`.
-- Missing calls: `a_plug_in_without_calls_is_refused_not_called`.
+- Missing calls: `a_plug_in_without_calls_is_refused_not_called`. And a flag that says it
+  replaces with no replacing call: `a_block_whose_replacing_is_gone_takes_the_deprecated_call`
+  runs the block, as the host takes the deprecated call for it.
 - The tool: `the_vst2_probe_tool_reports_on_the_mock` (in `tests/manual.rs`) runs
   `--vst2-probe test:vst2` as a process.
 - The host, in this process over a real link (`vst2/host_tests.rs`): the latency the assumed
   field holds, blocks with a note at its frame and a parameter the block carries, the
   parameter listing and a set parameter, the idle knob reported as a parameter change, the
-  state round trip through both bank forms, a reconfigure.
+  state round trip through both bank forms, a reconfigure; a bank's shape kept out of the
+  bare-chunk path, declared counts refused over the cap, the seconds-sized loop out of the
+  beat fields, and a lifecycle dispatch's asks served lock-free.
 - The host, through the engine's whole boundary (`tests/vst2.rs`): the same round trips with
   the host process started and the control protocol between; the central test of the issue —
   a project naming a VST2 plug-in that only exists as VST2 opens, the plug-in loads with its
@@ -331,8 +341,9 @@ contract, as every host gives*).
 - The editor over installed plug-ins: `tests/manual.rs`'s editor test takes a VST2 file, so
   an installed editor's open-and-close is the observation for the rect and the handles.
 - The real world: `an_installed_vst2_plug_in_answers_the_probe` (ignored, `SUHINA_TEST_VST2`)
-  prints the report of an installed plug-in. **Nothing is (observed) until this runs green
-  against one.**
+  prints the report of an installed plug-in. The facts marked **(observed)** above are the
+  probe's own runs against one machine's installed plug-ins; nothing here makes them what
+  *every* installation sees until the ignored test runs green against a plug-in of its own.
 
 The crate's CI runs clippy and these tests with the `vst2` feature on (its default since the
 ADR's 2026-10-31 amendment) and checks that a build without it still compiles.

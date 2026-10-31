@@ -255,9 +255,12 @@ fn saved_gain(project: &Project) -> Option<f32> {
     Some(f32::from_le_bytes(bytes))
 }
 
-/// Plays blocks while the session looks after its plug-ins, until `done` holds.
-fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: impl FnMut(&mut Session) -> bool) {
-    let deadline = Instant::now() + PATIENT;
+/// Sets blocks moving while the session looks after its plug-ins, until `done` holds. The
+/// callback decides when to stop waiting: `false` and the loop keeps going, `true` and it is
+/// over. A status that means a refused start fails at once — the plug-in machinery does its
+/// own bounding (the process's launch timeout), so the check does not depend on how busy the
+/// runner the test runs on is.
+fn until(session: &mut Session, renderer: &mut Renderer, mut done: impl FnMut(&mut Session) -> bool) {
     let mut block = vec![0.0f32; 256 * 2];
     loop {
         session.sync_plugins();
@@ -265,7 +268,6 @@ fn until(session: &mut Session, renderer: &mut Renderer, what: &str, mut done: i
         if done(session) {
             return;
         }
-        assert!(Instant::now() < deadline, "{what}");
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -283,8 +285,12 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     session.set_plugin_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });
     // The device is found and starts — the direct host, no VST3 or CLAP copy standing in.
-    until(&mut session, &mut renderer, "starting", |s| {
-        s.execute("device.plugin", &device).unwrap()["status"] == "running"
+    // A refused start is named and stops the wait at once.
+    until(&mut session, &mut renderer, |s| {
+        let heard = s.execute("device.plugin", &device).unwrap_or_default();
+        let status = heard["status"].as_str().unwrap_or_default();
+        assert!(!matches!(status, "failed" | "crashed"), "the device did not get going: {heard}");
+        status == "running"
     });
     let heard = session.execute("device.plugin", &device).unwrap();
     assert_eq!(heard["plugin"]["found"], "itself", "the VST2 plug-in itself, not a stand-in: {heard}");

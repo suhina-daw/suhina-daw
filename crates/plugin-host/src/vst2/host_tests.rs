@@ -7,6 +7,7 @@
 //! that the host and the mock agree; the *assumed* facts they both stand on are settled by
 //! the probe and the ignored test against installed plug-ins (ADR 0022 decision 4).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use suhina_ipc::{Event, EventKind, Link, Outcome, Served};
@@ -175,5 +176,111 @@ fn a_reconfigure_keeps_the_plug_in_running() {
     }
     // The same rate again changes nothing and answers at once.
     assert_eq!(plugin.reconfigure(96_000.0).unwrap_or_else(|e| panic!("{e}")), plugin.latency());
+    finished(plugin);
+}
+
+/// Whether a bank's bytes are cut short is the state's reader's to refuse, not the plug-in's
+/// to guess at: a bank whose shape says `CcnK` and a bank kind, and that neither reader took,
+/// is an error — never slipped in as a bare chunk the plug-in would take as its own bytes.
+#[test]
+fn a_bank_shape_neither_reader_took_is_refused() {
+    let (_link, mut plugin) = loaded(FIRST + 6);
+    let bank = suhina_plugins::vst2::bank(
+        &suhina_plugins::vst2::Preset {
+            kind: suhina_plugins::vst2::CHUNK_BANK,
+            id: 7,
+            version: 1,
+            programs: 1,
+            current: 0,
+            parameters: 1,
+            little_endian: false,
+        },
+        &0.25f32.to_le_bytes(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    // Neither reader takes it once it is cut short; its shape is a bank's just the same.
+    let cut = &bank[..bank.len().saturating_sub(4)];
+    assert!(suhina_plugins::vst2::chunk(cut).is_none());
+    let refused = plugin.set_state(cut);
+    assert!(refused.is_err(), "a cut-short bank is refused: {refused:?}");
+    // Nothing was handed to the plug-in: its gain is the one it opened with.
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.5);
+    finished(plugin);
+}
+
+/// The counts a plug-in declares are refused over the cap, as the block's are: a count too
+/// big to lay arrays out for is refused, not clamped to a shape its own code strays past.
+#[test]
+fn declared_channel_counts_over_the_cap_are_refused() {
+    assert!(super::channel_cap(0, 0).is_none(), "a silent plug-in's counts might be none");
+    assert!(super::channel_cap(super::MAX_CHANNELS, super::MAX_CHANNELS).is_none());
+    let Some(what) = super::channel_cap(super::MAX_CHANNELS + 1, 0) else {
+        panic!("over the cap is refused");
+    };
+    assert!(what.contains("inputs"), "{what}");
+    assert!(
+        !what.contains("outputs") || what.contains("0 outputs"),
+        "the message on the refused side names both counts: {what}"
+    );
+    let Some(what) = super::channel_cap(0, super::MAX_CHANNELS + 1) else {
+        panic!("either side over is refused");
+    };
+    assert!(what.contains("outputs"), "{what}");
+}
+
+/// The arrangement's loop in seconds is no fact of a VST2's cycle fields: the beat cycle's
+/// positions are what the fields hold, so a seconds-only block leaves the cycle validity off
+/// and the positions as they were.
+#[test]
+fn the_arrangement_s_loop_in_seconds_is_no_vst2_cycle() {
+    let (mut link, plugin) = loaded(FIRST + 7);
+    let looped = Event { frame: 0, note: -1, kind: EventKind::CycleSeconds { start: 4.5, end: 12.25 } };
+    let input: Vec<f32> = (0..512).map(|i| (i % 24) as f32 / 24.0).collect();
+    let _output = block(&mut link, &input, &[looped]);
+    let flags = plugin.shared.time.flags.load(Ordering::Relaxed);
+    assert_eq!(flags & super::vestige::kVstCyclePosValid, 0, "the cycle stays invalid without beats");
+    assert_eq!(plugin.shared.time.cycle_start.load(Ordering::Relaxed), 0, "no seconds in a beat field");
+    assert_ne!(flags & super::vestige::kVstTransportPlaying, 0, "the transport itself was told");
+    finished(plugin);
+}
+
+/// The holds-serving state around a lifecycle dispatch: a host ask the plug-in makes inside
+/// `MainsChanged`, `StartProcess` or `StopProcess` is answered from the lock-free slots and
+/// the state is gone after — never the instance table's lock, which the audio thread takes
+/// for a call it can wait for nothing.
+#[test]
+fn a_lifecycle_dispatch_serves_its_callback_without_the_table_lock() {
+    static SERVING_HELD: AtomicBool = AtomicBool::new(false);
+    // SAFETY: C ABI as the plug-in's dispatcher shape takes; the body reads this thread's
+    // serving state and answers nothing.
+    unsafe extern "C" fn serving_holding_dispatcher(
+        _effect: *mut super::AEffect,
+        _opcode: i32,
+        _index: i32,
+        _value: isize,
+        _ptr: *mut std::ffi::c_void,
+        _opt: f32,
+    ) -> isize {
+        let held = super::SERVING.with(|serving| serving.borrow().is_some());
+        SERVING_HELD.store(held, Ordering::Relaxed);
+        held as isize
+    }
+
+    let (_link, plugin) = loaded(FIRST + 8);
+    // The mock's dispatcher takes the test's for the dispatch, and is put back over.
+    // SAFETY: this process's own mock effect, changed and restored on this thread only.
+    let mock = unsafe { (*plugin.effect).dispatcher };
+    // SAFETY: as above, the test swopping its dispatcher in for the one dispatch.
+    unsafe { (*plugin.effect).dispatcher = Some(serving_holding_dispatcher) };
+    super::dispatch(&plugin.shared, plugin.effect, Some(serving_holding_dispatcher), super::EffectOp::MainsChanged, 1);
+    // SAFETY: the test's own effect, put back as it was.
+    unsafe { (*plugin.effect).dispatcher = mock };
+    assert!(SERVING_HELD.load(Ordering::Relaxed), "the callback ran with the serving state up");
+    assert!(
+        !super::SERVING.with(|serving| serving.borrow().is_some()),
+        "and the state is gone once the dispatch's own calls end"
+    );
+    // The real dispatcher is back before the plug-in finishes: its stop's own dispatches
+    // (StopProcess, MainsChanged) go through the mock again.
     finished(plugin);
 }

@@ -464,6 +464,14 @@ impl Vst2Plugin {
         if read.magic != vestige::kEffectMagic {
             return Err(format!("the plug-in {spec:?} did not give a VST2 effect"));
         }
+        // The counts it declares are hostile: over the cap and the arrays this host lays out
+        // cannot hold them, so the plug-in is refused rather than clamped to a shape its own
+        // code would not stay inside.
+        let inputs = usize::try_from(read.numInputs).unwrap_or(0);
+        let outputs = usize::try_from(read.numOutputs).unwrap_or(0);
+        if let Some(what) = channel_cap(inputs, outputs) {
+            return Err(format!("the plug-in {spec:?} {what}"));
+        }
         let count = |value: i32| usize::try_from(value).unwrap_or(0).min(MAX_CHANNELS);
         let shared = Arc::new(Shared {
             notes: Arc::new(crate::param_notes::ParamNotes::new()),
@@ -823,13 +831,24 @@ impl Vst2Plugin {
             let _ = self.send(EffectOp::BeginSetProgram, 0, 0, std::ptr::null_mut(), 0.0);
             let program = isize::try_from(program).unwrap_or(0);
             let _ = self.send(EffectOp::SetProgram, 0, program, std::ptr::null_mut(), 0.0);
-            for (index, value) in values.into_iter().enumerate().take(self.params) {
-                self.set_value(i32::try_from(index).unwrap_or(0), value)?;
-            }
+            let restored: Result<(), String> = values
+                .into_iter()
+                .enumerate()
+                .take(self.params)
+                .try_for_each(|(index, value)| self.set_value(i32::try_from(index).unwrap_or(0), value));
+            // The bracket closes however the values went: without the end, the plug-in is
+            // left thinking the program change is still going on.
             let _ = self.send(EffectOp::EndSetProgram, 0, 0, std::ptr::null_mut(), 0.0);
+            restored?;
             return Ok(());
         }
-        // Not a bank: a bare chunk, as a plug-in's own file would hold.
+        // Not a bank: a bare chunk, as a plug-in's own file would hold. A standard bank's
+        // shape first — `CcnK` and a bank kind in their places — is refused when neither
+        // reader took it: it stands for a bank that is cut short or lies, and the plug-in
+        // would run with whatever raw bytes remain, saved as the state.
+        if bank_shaped(data) {
+            return Err("the state's bank is not complete".into());
+        }
         if !data.is_empty() {
             let size = isize::try_from(data.len()).unwrap_or(0);
             let taken = self.send(EffectOp::SetChunk, 0, size, data.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
@@ -982,6 +1001,25 @@ impl Vst2Plugin {
     }
 }
 
+/// The refusal a claimed channel count carries: `Some` what is wrong when either count runs
+/// over the cap the arrays are laid out to hold. The counts are hostile numbers, and, like
+/// the block they would serve, one over the cap is refused, not clamped to a shape the
+/// plug-in's own code would not stay inside.
+fn channel_cap(inputs: usize, outputs: usize) -> Option<String> {
+    if inputs <= MAX_CHANNELS && outputs <= MAX_CHANNELS {
+        return None;
+    }
+    Some(format!("declares {inputs} inputs and {outputs} outputs, over the {MAX_CHANNELS}-channel cap"))
+}
+
+/// Whether `data`'s shape is a standard bank: `CcnK` in its place, then a bank kind
+/// (`FBCh`, a chunk bank, or `FxBk`, a bank of programs) in its own. The shapes the bank
+/// readers take before they read further, or the shape a cut-short or lying bank carries.
+fn bank_shaped(data: &[u8]) -> bool {
+    data.get(..4) == Some(b"CcnK".as_slice())
+        && (data.get(8..12) == Some(b"FBCh".as_slice()) || data.get(8..12) == Some(b"FxBk".as_slice()))
+}
+
 /// The latency field of an effect as this layer assumes it: the first of VeSTige's twelve
 /// "zero" bytes, native byte order, negative read as none. The pinned header names no latency
 /// field; the probe reports the twelve for every plug-in it meets, which is what settles
@@ -994,19 +1032,39 @@ fn latency_of(effect: &AEffect) -> u32 {
 /// Serves `served` on the calling thread, `instance`'s audio thread: resuming the plug-in for
 /// its blocks and suspending it when the thread stops. Returns the link for the next thread.
 fn serve(instance: u32, block: Vst2Block, mut served: Served, stop: &AtomicBool) -> Served {
+    let shared = block.shared.clone();
     // Resume, and open the process cycle, as a host does before the first block (*assumed*
-    // order; the pinned header says only that the op-codes exist).
-    // SAFETY: the plug-in's dispatcher, on this audio thread, before any block.
-    unsafe { call(block.dispatcher, block.effect, EffectOp::MainsChanged, 1) };
-    // SAFETY: as above.
-    unsafe { call(block.dispatcher, block.effect, EffectOp::StartProcess, 0) };
+    // order; the pinned header says only that the op-codes exist). A host ask the plug-in
+    // makes in these dispatches is served from its lock-free slots, as a block's asks are.
+    dispatch(&shared, block.effect, block.dispatcher, EffectOp::MainsChanged, 1);
+    dispatch(&shared, block.effect, block.dispatcher, EffectOp::StartProcess, 0);
     if let Some(block) = crate::audio::serve(instance, block, &mut served, stop) {
         // SAFETY: as above, after the last block.
-        unsafe { call(block.dispatcher, block.effect, EffectOp::StopProcess, 0) };
+        dispatch(&shared, block.effect, block.dispatcher, EffectOp::StopProcess, 0);
         // SAFETY: as above.
-        unsafe { call(block.dispatcher, block.effect, EffectOp::MainsChanged, 0) };
+        dispatch(&shared, block.effect, block.dispatcher, EffectOp::MainsChanged, 0);
     }
     served
+}
+
+/// One dispatcher call on the audio thread (`MainsChanged`, `StartProcess`, `StopProcess`):
+/// the serving state holds while the plug-in runs, so the host asks it makes there are
+/// answered from the lock-free slots and never the instance table's lock.
+fn dispatch(
+    shared: &Arc<Shared>,
+    effect: *mut AEffect,
+    dispatcher: Option<vestige::DispatcherFn>,
+    op: EffectOp,
+    value: isize,
+) {
+    SERVING.with(|serving| {
+        *serving.borrow_mut() = Some(shared.clone());
+        // SAFETY: the plug-in's dispatcher, with this call's arguments, on this audio
+        // thread, with the serving state before it.
+        unsafe { call(dispatcher, effect, op, value) };
+        // The dispatch's asks are served; the rest of this thread's time is no instance's.
+        *serving.borrow_mut() = None;
+    });
 }
 
 /// One dispatcher call from the audio thread, for the cycle around the blocks.
@@ -1176,11 +1234,17 @@ impl crate::audio::Block for Vst2Block {
                         .time_sig
                         .store((i32::from(numerator) << 16) | i32::from(denominator), Ordering::Relaxed);
                 }
-                EventKind::Cycle { start, end, .. } | EventKind::CycleSeconds { start, end } => {
+                // The cycle in beats: VST2's own fields want PPQ positions (*assumed*).
+                // The arrangement's loop in seconds is another kind of fact and faces no
+                // PPQ on its way in; a second-based start in a field of beats would be
+                // nonsense, so it is left for the formats that takes seconds.
+                EventKind::Cycle { start, end, .. } => {
                     self.time.cycle = true;
                     self.shared.time.cycle_start.store(f64::from(start).to_bits(), Ordering::Relaxed);
                     self.shared.time.cycle_end.store(f64::from(end).to_bits(), Ordering::Relaxed);
                 }
+                // Seconds: not a VST2 field's own unit; noted no further.
+                EventKind::CycleSeconds { .. } => {}
                 // A parameter's value reaches the plug-in through `setParameter` before the
                 // block's audio, at its frame's place in the order the engine sent (the
                 // interface has no sample-accurate parameters; *assumed*).
@@ -1367,6 +1431,12 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
     // The plug-in is opened first, as a host does: a plug-in that fills its identity in
     // `effOpen` gives the scan nothing without it.
     let _ = ask(EffectOp::Open, 0, std::ptr::null_mut());
+    // What it says about itself is what it became in `effOpen` too: counts, flags and the
+    // id are read again, from the opened state (a plug-in that fills any of them in
+    // `effOpen` gives the scan its real shape, not the blank it opened with).
+    // SAFETY: the effect the entry gave back, read by value, on this thread, before the
+    // plug-in is closed again.
+    let read = unsafe { *effect };
     let mut name = vec![0 as std::ffi::c_char; vestige::VestigeMaxNameLen];
     let mut vendor = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];
     let mut product = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];

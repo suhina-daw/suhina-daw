@@ -384,3 +384,21 @@ fn a_plug_in_without_calls_is_refused_not_called() {
     // SAFETY: a null pointer, which the reader refuses.
     assert_eq!(unsafe { EffectInfo::of(std::ptr::null()) }, None);
 }
+
+/// A flag that says it replaces with no replacing call takes the deprecated call for its
+/// block, over the buffers zeroed first (its outputs add to what the host left there): what
+/// the production host does, and what the probe reports it went by.
+#[test]
+fn a_block_whose_replacing_is_gone_takes_the_deprecated_call() {
+    let (mut effect, mock) = test_vst2::mock(Some(super::probe::host_callback));
+    // The flag stays; the replacing call is gone.
+    effect.processReplacing = None;
+    let probe = Probe::over_mock(effect, mock);
+    let report = probe.run();
+    assert!(
+        report.contains("process (deprecated; the flag said replacing and it had none)"),
+        "the fallback is what the report names\n{report}"
+    );
+    // The sound went through: the mock's gain (0.5) applied to the ramp the block carries.
+    assert!(!report.contains("the plug-in has no process call"));
+}

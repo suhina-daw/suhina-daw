@@ -159,7 +159,7 @@ static REGISTRY: Mutex<Vec<(usize, Arc<HostState>)>> = Mutex::new(Vec::new());
 /// The audio-master callback the probe hands the plug-in: records every call and answers as
 /// a host would. Which argument carries what, and what an answer means, is *assumed* per
 /// op-code (the spec lists each); the value of an answer is the host's own choice.
-unsafe extern "C" fn host_callback(
+pub(crate) unsafe extern "C" fn host_callback(
     effect: *mut AEffect,
     opcode: i32,
     index: i32,
@@ -717,8 +717,10 @@ impl Probe {
             Err(e) => self.line(format!("  {e}")),
         }
         // The block itself: `processReplacing` where the flag says so, the deprecated
-        // `process` otherwise. The channels are what the plug-in declared (a plug-in reads
-        // its own count against the arrays it is handed), capped; one over the cap is
+        // `process` otherwise; and a flag that says so with no replacing call falls back on
+        // the deprecated one too, over the buffers zeroed (its outputs add), as the
+        // production host chooses. The channels are what the plug-in declared (a plug-in
+        // reads its own count against the arrays it is handed), capped; one over the cap is
         // refused the block rather than read past the arrays.
         // SAFETY: the effect the probe holds, read by value.
         let info = unsafe { EffectInfo::of(self.effect()) };
@@ -738,23 +740,24 @@ impl Probe {
         let mut in_pointers: Vec<*mut f32> = channels.iter().map(|c| c.as_ptr() as *mut f32).collect();
         let mut out_pointers: Vec<*mut f32> = outs.iter_mut().map(|c| c.as_mut_ptr()).collect();
         let effect = self.effect();
-        let sent = if replacing {
+        let (process, what) = if replacing {
             // SAFETY: the effect the probe holds; one field read.
-            let process = unsafe { (*effect).processReplacing };
-            process.map(|process| {
-                // SAFETY: the plug-in's own call, with the buffers and frames given.
-                unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
-                "processReplacing"
-            })
+            match unsafe { (*effect).processReplacing } {
+                Some(call) => (Some(call), "processReplacing"),
+                None => {
+                    // SAFETY: as above, for the deprecated call.
+                    (unsafe { (*effect).process }, "process (deprecated; the flag said replacing and it had none)")
+                }
+            }
         } else {
             // SAFETY: as above, for the deprecated call.
-            let process = unsafe { (*effect).process };
-            process.map(|process| {
-                // SAFETY: the plug-in's own call, with the buffers and frames given.
-                unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
-                "process (deprecated; the flag said no replacing)"
-            })
+            (unsafe { (*effect).process }, "process (deprecated; the flag said no replacing)")
         };
+        let sent = process.map(|process| {
+            // SAFETY: the plug-in's own call, with the buffers and frames given.
+            unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
+            what
+        });
         match sent {
             Some(what) => self.line(format!(
                 "  {what} of {frames} frames ({ins} in, {outs_declared} out): in[0][0] {:.3} -> out[0][0] {:.3}, out[0][last] {:.3}",
