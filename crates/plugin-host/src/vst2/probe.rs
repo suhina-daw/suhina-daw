@@ -22,6 +22,7 @@ use std::ffi::c_char;
 use std::ffi::c_void;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::test_vst2;
 use super::vestige::{self, AEffect, VstTimeInfo};
@@ -78,6 +79,9 @@ enum Probed {
 struct HostState {
     /// Every call the plug-in made, in order, with the answers the host gave.
     calls: Mutex<Vec<Call>>,
+    /// Whether one of this probe's records was cut to its cap: the report's line about it,
+    /// this probe's own and no other's.
+    truncated: AtomicBool,
     /// The strings the plug-in asked `audioMasterCanDo` for, with the answers.
     can_do: Mutex<Vec<(String, isize)>>,
     /// The events the plug-in sent the host (its MIDI out).
@@ -96,6 +100,7 @@ impl HostState {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
+            truncated: AtomicBool::new(false),
             can_do: Mutex::new(Vec::new()),
             events: Mutex::new(Vec::new()),
             io: Mutex::new(None),
@@ -123,26 +128,24 @@ impl HostState {
     /// Records one call of the plug-in, with the answer it was given.
     fn record(&self, call: Call) {
         if let Ok(mut calls) = self.calls.lock() {
-            bound(&mut calls);
+            if bound(&mut calls) {
+                self.truncated.store(true, Ordering::Release);
+            }
             calls.push(call);
         }
     }
 }
 
-/// Keeps a record's newest entries when it is full.
-fn bound<T>(list: &mut Vec<T>) {
-    if list.len() >= MAX_CALLS {
-        let cut = list.len() / 2;
-        list.drain(..cut);
-        // The truncation is worth a line in the report, not silence.
-        if let Ok(mut cut_note) = TRUNCATED.lock() {
-            *cut_note = true;
-        }
+/// Keeps a record's newest entries when it is full; whether it cut, for the probe's report
+/// line about it.
+fn bound<T>(list: &mut Vec<T>) -> bool {
+    if list.len() < MAX_CALLS {
+        return false;
     }
+    let cut = list.len() / 2;
+    list.drain(..cut);
+    true
 }
-
-/// Whether any record was cut, for the report's one line about it.
-static TRUNCATED: Mutex<bool> = Mutex::new(false);
 
 /// The hosts of the probes this process runs, each under the effect it serves: the callback
 /// finds its host as a real host would look an effect up in its own registry, and two probes
@@ -211,7 +214,9 @@ fn answer(
             // SAFETY: the list the plug-in sent, read with a bound.
             let events = unsafe { read_events(ptr.cast::<vestige::VstEvents>(), MAX_EVENTS) }.unwrap_or_default();
             if let Ok(mut sent) = state.events.lock() {
-                bound(&mut sent);
+                if bound(&mut sent) {
+                    state.truncated.store(true, Ordering::Release);
+                }
                 sent.extend(events);
             }
             0
@@ -260,7 +265,9 @@ fn answer(
             let yes =
                 matches!(asked.as_str(), can_do::HOST_SENDS_EVENTS | can_do::HOST_SENDS_MIDI | can_do::HOST_SENDS_TIME);
             if let Ok(mut asked_for) = state.can_do.lock() {
-                bound(&mut asked_for);
+                if bound(&mut asked_for) {
+                    state.truncated.store(true, Ordering::Release);
+                }
                 asked_for.push((asked, isize::from(yes)));
             }
             isize::from(yes)
@@ -756,9 +763,7 @@ impl Probe {
             let answer = call.answer.map_or_else(String::new, |a| format!(" -> {a}"));
             self.line(format!("  {name}(index {}, value {}, opt {:.6}){answer}", call.index, call.value, call.opt));
         }
-        if let Ok(cut) = TRUNCATED.lock()
-            && *cut
-        {
+        if self.state.truncated.load(Ordering::Acquire) {
             self.line("  (some records were cut to the newest 4096 entries: a chatty plug-in)");
         }
         let asked = self.state.can_do.lock().map(|asked| asked.clone()).unwrap_or_default();
