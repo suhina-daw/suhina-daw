@@ -47,7 +47,6 @@ HEADER = "// Copyright (C) 2026 The Suhina contributors\n// SPDX-License-Identif
 
 # Files whose tests wait for the open pull requests that change them (see the docstring).
 WAITING = {
-    "crates/automation/src/confine.rs",
     "crates/device-sdk/src/lib.rs",
     "crates/model/src/lib.rs",
 }
