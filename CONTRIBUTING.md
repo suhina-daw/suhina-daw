@@ -292,6 +292,11 @@ documentation is published in a separate job that does not execute them. Changes
 `scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
 code out of jobs that use environment secrets.
 
+**The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
+so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a
+check fails a pull request that changes where the updater downloads from
+([`docs/spec/updates.md` › Where builds come from](docs/spec/updates.md#where-builds-come-from)).
+
 ## Clean-room
 
 Suhina reimplements the *behaviour* of commercial DAWs, Ableton Live in particular, without
