@@ -294,6 +294,8 @@ pub(super) fn clip_box<'a>(
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     let tool = state.tool;
+    let paints =
+        tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| !on_bar(p.y) && in_body(p.y));
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
     // lower half on a lane tall enough to have one, as the setting says; with the Range tool,
     // from anywhere (#991).
@@ -356,7 +358,7 @@ pub(super) fn clip_box<'a>(
         match response.interact_pointer_pos() {
             // The painting part of the clip (or the Range tool); where the clip is picked or moved,
             // it is picked whole, however its start lies on the grid.
-            Some(pointer) if tool == ArrangementTool::Range || (!on_bar(pointer.y) && in_body(pointer.y)) => {
+            Some(pointer) if paints => {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
                 let beat = clip_body_beat(raw, clip.start, grid, free);
