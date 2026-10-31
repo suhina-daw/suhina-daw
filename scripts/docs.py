@@ -149,7 +149,9 @@ def parse(path: Path) -> Doc:
 
 def documents() -> list[Doc]:
     generated = {path for path, _ in GENERATED}
-    paths = sorted(p for p in DOCS.rglob("*.md") if p not in generated)
+    # docs/works-now/ holds ROADMAP bullets waiting to be folded in (scripts/works_now.py), not documents.
+    works_now = DOCS / "works-now"
+    paths = sorted(p for p in DOCS.rglob("*.md") if p not in generated and works_now not in p.parents)
     return [parse(p) for p in paths]
 
 
