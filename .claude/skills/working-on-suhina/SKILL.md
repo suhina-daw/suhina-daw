@@ -117,7 +117,10 @@ CI runners are slow and uneven, so a test that depends on timing fails there now
   rings and report, and `finish` settles ended takes at once (`crates/session/tests/recording.rs`).
   Never `sleep` and hope. A new background thread gets such a barrier if its results are tested.
 - **Fake the clock.** Code with a deadline or settling time takes the time as an argument or
-  through an injectable clock, and the test moves it by a fixed step. Do not assert an elapsed
+  through an injectable clock, and the test moves it by a fixed step. The engine's plug-in
+  deadlines read `crate::clock::now()`; its own tests start `clock::Manual` and stand-in plug-ins
+  move it as they "wait" (`crates/engine/src/chain_wait_tests.rs`). It exists only under
+  `cfg(test)`, so nothing in a shipped build can set it. Do not assert an elapsed
   time, a latency bound or "within N ms".
 - **No retries, wider tolerances or `#[ignore]`** to hide a race: find what the test waits on.
 - Check a threaded test by running it many times with the machine busy
