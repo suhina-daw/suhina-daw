@@ -421,9 +421,6 @@ pub struct App {
     /// The detail area is showing, and its height (in a row) or width (stacked).
     detail_open: bool,
     detail_height: f32,
-    /// How tall the device chain's panels were last frame, when the detail area showed only the
-    /// chain: the area is kept no taller.
-    detail_cap: Option<f32>,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -653,7 +650,6 @@ impl App {
             pending_device_remove: None,
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
-            detail_cap: None,
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
@@ -2600,6 +2596,7 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
             d.insert_temp(egui::Id::new(crate::interaction::menus::NAME_FIELD), self.settings.view.menu_name_field)

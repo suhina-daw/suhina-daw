@@ -12,7 +12,8 @@ const fn continuous(id: &'static str, name: &'static str, min: f64, max: f64, de
     ParamInfo::continuous(id, name, (min, max), default, unit, Scale::Linear)
 }
 pub const PARAMS: &[ParamInfo] = &[
-    ParamInfo::choice("mode", "Mode", &["Simple", "Grain"], 0),
+    // Keep the historical Sample/Grain values; Slice is appended.
+    ParamInfo::choice("mode", "Mode", &["Sample", "Grain", "Slice"], 0),
     continuous("start", "Start", 0., 1., 0., Unit::Percent),
     continuous("end", "End", 0., 1., 1., Unit::Percent),
     continuous("loop_start", "Loop start", 0., 1., 0., Unit::Percent),
@@ -65,7 +66,7 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("filter_decay", "Filter decay", 0., 10., 0.22, Unit::Seconds),
     continuous("filter_sustain", "Filter sustain", 0., 1., 0.87, Unit::Percent),
     continuous("filter_release", "Filter release", 0., 10., 0.48, Unit::Seconds),
-    ParamInfo::choice("panel_view", "Panel view", &["Controls", "Envelopes", "LFO"], 0),
+    ParamInfo::choice("panel_view", "Panel view", &["Sample", "Controls", "Controls (LFO)", "More"], 0),
     continuous("lfo_filter", "LFO filter (oct)", 0., 8., 0., Unit::Octaves),
     continuous("lfo_volume", "LFO volume", 0., 1., 0., Unit::Percent),
     continuous("lfo_pan", "LFO pan", 0., 1., 0., Unit::Percent),
@@ -102,6 +103,25 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("lfo_time", "LFO time (ms)", 1., 20000., 1000., Unit::None),
     ParamInfo::integer("lfo_division", "LFO division", (1, 64), 4, Unit::None),
     continuous("source_bpm", "Source BPM", 0., 999., 0., Unit::None),
+    ParamInfo::choice("slice_release", "Slice release", &["Play to end", "Release on key up"], 0),
+    continuous("first_beat", "First beat", 0., 1., 0., Unit::Percent),
+    ParamInfo::choice(
+        "grid_division",
+        "Grid",
+        &["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"],
+        3,
+    ),
+    ParamInfo::choice("grid_snap", "Snap", &["Off", "On"], 1),
+    ParamInfo::choice(
+        "slice_division",
+        "Division",
+        &["1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"],
+        3,
+    ),
+    ParamInfo::integer("slice_regions", "Regions", (1, 128), 16, Unit::None),
+    ParamInfo::choice("slice_overlap", "Slice voices", &["Mono", "Poly", "Through"], 1),
+    ParamInfo::integer("source_numerator", "Beats per bar", (1, 16), 4, Unit::None),
+    ParamInfo::choice("source_denominator", "Beat unit", &["2", "4", "8", "16"], 1),
 ];
 use crate::modulation::lfo_hz;
 
@@ -174,6 +194,7 @@ pub struct Sampler {
     values: [f64; PARAMS.len()],
     analysis: Arc<SliceAnalysis>,
     manual_slices: Option<Arc<[f64]>>,
+    sample_edits: Option<Arc<suhina_device_api::sample_edits::SampleEdits>>,
     tempo: f64,
     rate: f64,
     source_rate: f64,
@@ -205,6 +226,7 @@ impl Sampler {
             values: std::array::from_fn(|i| PARAMS[i].default),
             analysis: Arc::new(SliceAnalysis::default()),
             manual_slices: None,
+            sample_edits: None,
             tempo: 120.,
             rate: 48000.,
             source_rate: 48000.,
@@ -260,7 +282,7 @@ impl Device for Sampler {
         let frames = self.frames();
         std::array::from_fn(|i| {
             let v = self.voices.get(i).filter(|v| v.active && frames > 0)?;
-            let position = if self.values[0] == 0. {
+            let position = if self.values[0] != 1. {
                 v.position
             } else {
                 let start = self.values[1] * frames as f64;
@@ -275,6 +297,12 @@ impl Device for Sampler {
     }
     fn swap_sample_slices(&mut self, slices: &mut Option<Arc<[f64]>>) {
         std::mem::swap(&mut self.manual_slices, slices);
+    }
+    fn load_sample_edits(&mut self, edits: Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
+        self.sample_edits = edits;
+    }
+    fn swap_sample_edits(&mut self, edits: &mut Option<Arc<suhina_device_api::sample_edits::SampleEdits>>) {
+        std::mem::swap(&mut self.sample_edits, edits);
     }
     fn load_sample_slices(&mut self, slices: Option<Arc<[f64]>>) {
         self.manual_slices = slices.map(|points| {
@@ -347,7 +375,7 @@ impl Device for Sampler {
                     voice.restart();
                 }
             }
-            if p.id == "playback" && next != *v {
+            if matches!(p.id, "playback" | "mode") && next != *v {
                 self.voices.fill(Voice::default());
                 for voice in &mut self.warp {
                     voice.restart();
@@ -383,11 +411,19 @@ impl Device for Sampler {
                 {
                     return;
                 }
-                let count = if p[40] > 0. { 1 } else { p[7] as usize };
-                let slices = p[0] == 0. && p[8] == 3.;
+                let count = if (p[0] == 2. && p[90] != 1.) || (p[0] != 2. && p[40] > 0.) { 1 } else { p[7] as usize };
+                let slices = p[0] == 2. || p[0] == 0. && p[8] == 3.;
                 let map = self.analysis.points(&p, self.frames(), self.source_rate, self.tempo);
                 let index = usize::from(key).checked_sub(p[30] as usize);
-                let slice = if p[60] == 3. && self.manual_slices.is_some() {
+                let slice = if let Some(edits) = self.sample_edits.as_ref().filter(|_| p[0] == 2.) {
+                    index.and_then(|index| {
+                        let mut points = std::iter::once(p[1])
+                            .chain(self.analysis.edited_points(&p, self.frames(), self.source_rate, self.tempo, edits))
+                            .chain(std::iter::once(p[2]));
+                        let start = points.nth(index)?;
+                        Some((start, points.next()?))
+                    })
+                } else if p[60] == 3. && self.manual_slices.is_some() {
                     index.and_then(|i| {
                         self.manual_slices.as_ref().and_then(|points| manual_slice(points, p[1], p[2], i))
                     })
@@ -398,6 +434,11 @@ impl Device for Sampler {
                     return;
                 }
                 let (slice_start, slice_end) = if slices { slice.unwrap_or((p[1], p[2])) } else { (p[1], p[2]) };
+                let (slice_start, slice_end) = if p[0] == 2. && p[90] == 2. {
+                    if p[10] > 0. { (p[1], slice_end) } else { (slice_start, p[2]) }
+                } else {
+                    (slice_start, slice_end)
+                };
                 let target_step = 2f64
                     .powf(((if slices { 0. } else { f64::from(key) - p[30] }) + p[5] + p[6] / 100.) / 12.)
                     * self.source_rate
@@ -441,7 +482,8 @@ impl Device for Sampler {
                 }
             }
             NoteEvent::Off { key, .. } | NoteEvent::On { key, velocity: 0. } => {
-                if self.values[8] != 1. && self.values[8] != 3. {
+                let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
+                if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
                     for v in &mut self.voices {
                         if v.key == key && v.active {
                             v.stage = 3;
@@ -678,7 +720,7 @@ impl Sampler {
         let end = p[2] * total;
         let lo = (p[3] * total).max(start);
         let hi = (p[4] * total).min(end);
-        let looping = p[8] == 2. && hi > lo + 1.;
+        let looping = p[0] != 2. && p[8] == 2. && hi > lo + 1.;
         let grain_limit = self.block_grain_limit;
         let target_grain_gain = self.block_grain_gain;
         let target_gain = self.block_gain;
@@ -702,11 +744,14 @@ impl Sampler {
                 if !v.active {
                     continue;
                 }
-                if index >= (if p[40] > 0. { 1 } else { p[7] as usize }) || end <= start + 1. || total < 2. {
+                if index >= (if (p[0] == 2. && p[90] != 1.) || (p[0] != 2. && p[40] > 0.) { 1 } else { p[7] as usize })
+                    || end <= start + 1.
+                    || total < 2.
+                {
                     v.active = false;
                     continue;
                 }
-                let slices = p[0] == 0. && p[8] == 3.;
+                let slices = p[0] == 2. || p[0] == 0. && p[8] == 3.;
                 let (start, end) = if slices { (v.slice_start * total, v.slice_end * total) } else { (start, end) };
                 if !crate::nodes::envelopes::step(
                     &mut v.env,
@@ -736,7 +781,7 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                if p[0] == 0. {
+                if p[0] != 1. {
                     if v.position < start || v.position >= end {
                         v.active = false;
                         continue;

@@ -26,7 +26,7 @@ armed track's selected audio input; `on:false` finishes and loads the take, as o
 undo step. Save the project and open an audio output before recording.
 
 Loading a sample initializes `source_bpm` from its metadata, filename or detected
-tempo, falling back to the current project/playback tempo; `device.loadSample`
+tempo, leaving it at zero when unknown; `device.loadSample`
 returns `source_bpm` too. Set `warp` to 1 to follow project BPM using that original
 tempo. Correct `source_bpm` explicitly when known, or set it to 0 to request fresh
 detection. The legacy `warp_beats` parameter remains readable; setting it explicitly
@@ -532,6 +532,16 @@ command validates, sorts and deduplicates the list and supports undo/redo; an
 empty list clears the map. Optional `continue` groups consecutive drag edits.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
+
+For the visible Slice mode (`mode: 2`), `device.editSampleSlice` edits automatic
+and pinned boundaries without replacing the automatic analysis. It takes `track`,
+`device`, and `operation` (`add`, `move`, `delete`, `regenerate`); add/move take
+`point`, move/delete take `previous`, and automatic boundaries also take their
+integer `identity`. Positions are normalized source fractions strictly inside
+0..1. Regenerate clears pins and suppressions for the current method. Every call
+is one undo step. `track.devices` includes `sample_edits` with its version, pins
+and method/identity suppressions. The method and source-axis controls remain
+ordinary `device.setParam` parameters, independent of project tempo.
 
 `device.updateSd` applies the same read-root confinement as `device.addSd` and
 `device.loadSample`, including symlink resolution.

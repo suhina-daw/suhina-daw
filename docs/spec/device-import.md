@@ -92,7 +92,9 @@ comes in as it (otherwise as a placeholder):
 | Operator | FM synth | MSFA (Apache-2.0) via Dexed | DX7-style engine done; Operator's algorithms, waveforms and filter, and import, planned |
 | Wavetable | wavetable synth | Vital (GPL-3.0), under its own name | planned |
 | Drift, Analog | subtractive synth | own, Surge XT (GPL-3.0) for reference | planned |
-| Simpler, Sampler, Drum Rack | sampler, drum sampler | own | planned |
+| Simpler, Sampler | sampler ([spec](sampler.md)) | own | DSP done; import done for Simpler and a Sampler with one sample ([`als-format.md`](als-format.md) › Simpler and Sampler); several samples wait for zones (#739) |
+| Audio Effect Rack, Instrument Rack | device group ([spec](device-groups.md)) | | import done: chains as branches with volume, pan, mute and solo, their devices read like a track's, macro names and positions ([`als-format.md`](als-format.md) › Audio Effect Rack and Instrument Rack); macro mappings and an Instrument Rack's key and velocity zones not yet |
+| Drum Rack | drum sampler | own | planned |
 | Collision, Tension, Electric | physical-modelling synth | Mutable Instruments Rings and Elements (MIT) | planned |
 
 ## Devices Suhina cannot run
