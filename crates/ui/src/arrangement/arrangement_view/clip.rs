@@ -294,8 +294,7 @@ pub(super) fn clip_box<'a>(
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     let tool = state.tool;
-    let paints =
-        tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| !on_bar(p.y) && in_body(p.y));
+    let paints = tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| in_body(p.y));
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
     // lower half on a lane tall enough to have one, as the setting says; with the Range tool,
     // from anywhere (#991).
