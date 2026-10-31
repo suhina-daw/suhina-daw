@@ -101,6 +101,14 @@ pub fn release_value_drag(ctx: &egui::Context) {
     }
 }
 
+/// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
+/// in a frame wins, and egui shows the pointer again for any other icon.
+pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {
+    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some() {
+        ctx.set_cursor_icon(egui::CursorIcon::None);
+    }
+}
+
 /// A command for the session to run, made by a view: the same ids the CLI and MCP use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Action {

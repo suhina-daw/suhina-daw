@@ -200,3 +200,24 @@ fn raw_motion_locks_the_pointer_and_is_scaled_to_points() {
     frame(vec![Event::PointerMoved(Pos2::new(20.0, 0.0))]);
     assert_eq!(moved.get(), Vec2::new(0.0, -4.0), "only raw motion counts once it has come");
 }
+
+#[test]
+fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
+    let ctx = egui::Context::default();
+    let run = |hold: bool, after: bool| {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            if hold {
+                ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true }));
+            }
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            if after {
+                hide_pointer_during_value_drag(ui.ctx());
+            }
+        })
+        .platform_output
+        .cursor_icon
+    };
+    assert_eq!(run(true, true), egui::CursorIcon::None);
+    ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
+    assert_eq!(run(false, true), egui::CursorIcon::ResizeVertical);
+}
