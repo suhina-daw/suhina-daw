@@ -906,6 +906,7 @@ fn set_volume(track: u32, v: f64, continued: bool) -> Action {
 fn volume_drag(
     ui: &Ui,
     response: &egui::Response,
+    fader: Rect,
     column: &Column,
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
@@ -917,17 +918,7 @@ fn volume_drag(
     };
     let continued = preview.is_some();
     let mut committed = None;
-    match widgets::drag_value_axis(
-        ui,
-        response,
-        &mut preview,
-        column.volume_db,
-        0.25,
-        1.0,
-        VOLUME_RANGE,
-        0.0,
-        horizontal_volume(),
-    ) {
+    match volume_gesture(ui, response, &mut preview, column.volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((track, Control::Volume, v));
             actions.push(set_volume(track.0, v, continued));
@@ -943,6 +934,40 @@ fn volume_drag(
         Some((t, Control::Volume, v)) if t == track => v,
         _ => committed.unwrap_or(column.volume_db),
     }
+}
+
+/// The dB a vertical fader's cap stands for with its centre at `y`.
+fn fader_db_at(y: f32, fader: Rect) -> f64 {
+    let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+    let position = f64::from((bottom - y) / (bottom - top).max(1.0)).clamp(0.0, 1.0);
+    suhina_engine::model::automation::volume_db(position).clamp(VOLUME_RANGE.0, VOLUME_RANGE.1)
+}
+
+/// A volume control's gesture. A drag on a vertical fader moves its cap with the pointer, which stays
+/// where it was grabbed on the cap (Shift: ten times finer, the pointer running ahead); everything
+/// else is an ordinary value drag.
+fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>, value: f64, fader: Rect) -> Drag {
+    let on_fader = !horizontal_volume() && fader.height() > cap_size().y && fader.contains(response.rect.center());
+    if on_fader
+        && response.dragged_by(egui::PointerButton::Primary)
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let grab_id = response.id.with("grab");
+        let mut grab =
+            ui.ctx().data(|d| d.get_temp::<f32>(grab_id)).filter(|_| !response.drag_started()).unwrap_or_else(|| {
+                let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+                let position = widgets::volume_position(value);
+                pointer.y - (bottom + (top - bottom) * position)
+            });
+        if ui.input(|i| i.modifiers.shift) {
+            grab += response.drag_delta().y * 0.9;
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(grab_id, grab));
+        let db = fader_db_at(pointer.y - grab, fader);
+        *preview = Some(db);
+        return Drag::Moving(db);
+    }
+    widgets::drag_value_axis(ui, response, preview, value, 0.25, 1.0, VOLUME_RANGE, 0.0, horizontal_volume())
 }
 
 /// The fader with its dB value over it: the column takes the drag, the wheel and the double-click.
@@ -962,7 +987,7 @@ fn fader_column(
     let label = widgets::format_db(shown(state, column, Control::Volume, column.volume_db));
     let response =
         volume_response(ui, painter, readout, fader, id.with("volume"), &format!("{} volume", column.name), &label);
-    let db = volume_drag(ui, &response, column, state, actions);
+    let db = volume_drag(ui, &response, fader, column, state, actions);
     paint_fader(ui, painter, readout, fader, db, &response, column.kind == ColumnKind::Return);
 }
 
@@ -1022,17 +1047,7 @@ pub fn main_fader(
         )
     };
     let mut db = volume_db;
-    match widgets::drag_value_axis(
-        ui,
-        &response,
-        &mut preview,
-        volume_db,
-        0.25,
-        1.0,
-        VOLUME_RANGE,
-        0.0,
-        horizontal_volume(),
-    ) {
+    match volume_gesture(ui, &response, &mut preview, volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((MAIN, Control::Volume, v));
             actions.push(send(v, continued));
@@ -1228,7 +1243,7 @@ fn compact_volume(
         format!("{} volume", column.name),
         label,
     );
-    let db = volume_drag(ui, &response, column, state, actions);
+    let db = volume_drag(ui, &response, Rect::NOTHING, column, state, actions);
     let hover = widgets::hover(ui, &response);
     let position = crate::kit::widgets::volume_position(db);
     let text = rect.shrink2(Vec2::new(4.0, 0.0));
