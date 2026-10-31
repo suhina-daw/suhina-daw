@@ -18,52 +18,19 @@
   DSP and engine code is tested by rendering offline and comparing against golden files.
   A test module over 150 lines lives in a `<file>_tests.rs` beside its source, not inline;
   `python scripts/inline_tests.py move <file>` moves one, and CI checks it (`--check`).
-- **Documentation:** a change that alters how something works updates the documents that
-  describe it in the same pull request (architecture, ADRs, specs, ROADMAP); `AGENTS.md` ›
-  *Before you finish a task* lists which document covers what. Leave out what `main` writes after
-  the merge: `docs/INDEX.md`, `docs/commands.md`, the parity report's marked parts and figures, and
-  the `last_verified` line of a document you change (it is stamped with the day of the merge).
-  [`docs/README.md`](docs/README.md) says what an ADR, a spec and a system document each hold and
-  how an ADR is amended; `python scripts/docs.py check` checks it.
-- **Settings help:** adding, removing, moving, renaming or changing a setting includes its website
-  help in the same pull request, automatically for agents. Read
-  [`docs/spec/settings-guide-export.md`](docs/spec/settings-guide-export.md), review the control
-  and implementation, and update `docs/guide-data/settings-help.json` with descriptions, choice
-  explanations, defaults, dependencies, when-to-change guidance, references and status. Review
-  behavior changes even when the source fingerprint stays unchanged; update fingerprints only
-  after checking the text. Migrate moved IDs and remove deleted entries. Run
-  `python scripts/settings_guide.py` and commit its `docs/guide-data/settings.json` output too;
-  this export is intentionally tracked. Verify with `python scripts/settings_guide.py --check`
-  and `python -m unittest discover -s scripts -p 'test_settings_guide.py'`. Check all changed
-  settings, not only the first reported error; do not defer the help to another repository,
-  a follow-up or a separate request.
-- **Parity measurement:** a pull request that adds, changes or removes something a user can do
-  updates its coverage in `scripts/parity/score.py` (and `scripts/parity/devices.json` for a
-  built-in effect or instrument) in the same pull request, and leaves the numbers in
-  `docs/research/parity-live-12.md` alone: they are regenerated on `main` after the merge. One
-  that moves no coverage writes `Parity: no change` and the
-  reason in its description. CI warns, without failing, when a change to `crates/`, `devices/` or
-  `apps/` does neither. `AGENTS.md` › *Before you finish a task* has the rule.
+- **Documentation, settings help, parity:** a pull request carries them as
+  [`docs/workflow.md`](docs/workflow.md) › What a pull request carries says: the documents that
+  describe what changed, the website help of a setting, the parity coverage it moves, and
+  *How to check it* steps.
 - **Style:** `cargo fmt`, and `cargo clippy --all-targets -- -D warnings`. Comments explain *why*.
-- **Names:** packages are `suhina-<name>` (`suhina-device-<name>` for devices), used in code as
-  `suhina_<name>`; directories have no prefix. `AGENTS.md` › *Crate names* says how a new crate
-  is added; CI rejects the project's old name (`python scripts/rename_suhina.py --check`).
-- **Licence header:** every new source file starts with the licence header; run
-  `python scripts/license_header.py` to add it (`AGENTS.md` › *Licence header*). CI checks it
-  with `--check`.
+- **Names and licence header:** packages are `suhina-<name>` (`suhina-device-<name>` for
+  devices), and every source file starts with the licence header
+  (`python scripts/license_header.py` adds it); [`docs/architecture.md`](docs/architecture.md) ›
+  Crate names, folders and source files has both. CI checks them.
 - **Commits:** small, focused, with a clear subject line, and signed off (see
   [Developer Certificate of Origin](#developer-certificate-of-origin)).
-- **Issues:** small and scoped, with acceptance criteria (the issue forms ask for them: Bug, Plug-in problem, Feature request, New effect or
-  instrument, Preset contribution, Task);
-  architecture belongs in an ADR under `docs/decisions/`, not in an issue thread. Every issue has
-  a type label (`bug`, `enhancement`, `documentation`, `question`) and one or more area labels
-  (`engine`, `ui`, `formats`, `browser`, `audio-io`, `plug-ins`, `devices`, `presets`, `tests`),
-  plus `windows`, `macos` or `linux` when it concerns one platform. The forms set the type, and
-  `.github/workflows/issue-labels.yml` adds area and platform labels from the form's answers.
-- **Pull request labels:** `.github/workflows/pr-labels.yml` keeps them as `.github/labeler.yml` maps
-  them: the kind from the branch name (`feature/` `enhancement`, `fix/` `bug`, `docs/`
-  `documentation`, `chore/` `chore`; also `documentation` when every file changed is a document)
-  and the areas from the paths changed. At every push it also takes off the ones that no longer match, so a rebased pull request loses the areas it no longer touches; labels it does not map (a platform, `test-build`, `ready to merge`) are left alone, and a platform label is added by hand.
+- **Issues, labels, branches:** [`docs/workflow.md`](docs/workflow.md) › Tasks: the issue types
+  and labels, claiming, branch names, overlapping work.
 - **CodeRabbit:** reviews every pull request that is not a draft against AGENTS.md
   (`.coderabbit.yaml`) and shows a **CodeRabbit** check beside CI. Its comments are suggestions, not requirements: answer or resolve
   them, and leave DSP and real-time behaviour to the tests and renders. The check is never red and
@@ -81,8 +48,7 @@
   maintainer's `ready to merge` label.
   Codex and CodeRabbit post through their own apps.
 - **Pull request description:** use the sections of `.github/pull_request_template.md`, all of them;
-  one line is enough where nothing applies. `.github/workflows/pr-description.yml` warns about a
-  missing section (`scripts/pr_description.py`); it never fails.
+  one line is enough where nothing applies.
 
 ## Dependencies
 
@@ -125,127 +91,11 @@ proved itself, the dependency is revisited ([docs/spec/export.md](docs/spec/expo
 
 ## Working on an issue
 
-A task's state lives in its issue and on the [Suhina project board](https://github.com/orgs/suhina-daw/projects/1),
-never in chat or in one person's window. The rules below keep two people from doing the same work
-twice without making anyone wait on someone who has gone quiet.
-
-**One issue per problem.** Before you open an issue, search the open ones; when one exists,
-comment there instead. A duplicate that slips through is closed with a link to the first one.
-
-**Free work** has no assignee and no open pull request that says `Closes #N` (the issue's
-*Linked pull requests* box shows it). On the board it is in `Backlog` or `Ready`, with one
-difference: a **feature request** (`enhancement`) in `Backlog` is not agreed yet. Write your idea or
-plan in the issue; a maintainer moves it to `Ready` when Suhina wants it, and only then is it open to
-claim. A trusted contributor, named in the repository variable `TRUSTED_CONTRIBUTORS`, may claim a
-feature in `Backlog` without waiting, or move it to `Ready` with `/ready` so others can claim it ([`docs/claim-bot.md`](docs/claim-bot.md) › Who is who). A bug in `Backlog` is free. `Do not start yet` means the order is deliberate: the issue and
-its comments say what the work waits for, so ask there instead of starting.
-
-**Bugs and small changes need no issue and no claim.** Open a pull request that says what it
-fixes. The *Overlap* notice ([`.github/workflows/overlap.yml`](.github/workflows/overlap.yml))
-comments on it when another open pull request or a claim changes the same files, and keeps the
-comment up to date with each push; it never fails. A fix you find along the way that is small and
-in the same code goes in the same pull request, under *Also fixed* in its description; one that is
-larger, elsewhere, or in code someone else is changing gets a pull request or an issue of its own.
-
-**Claim a feature or a piece of an epic** in a comment on the issue before you write code:
-
-> /claim Plan: … When: …
-> Touches: crates/ui/src/detail, crates/session
-
-The claim bot ([`docs/claim-bot.md`](docs/claim-bot.md)) moves the card to `In progress` and
-assigns you, and refuses the claim when the work is not free or another issue it is *Blocked by*
-is still open. The `Touches:` line names the paths you will change: give it, because the
-bot's answer and the *Overlap* notice on other people's pull requests find your claim by those paths. Without the bot, a plain comment
-("I'd like to take this. Plan: …") is the claim, and the first one wins: a bot that is down never
-means the issue is free. Hold at most five claims without a pull request at a time; the bot refuses
-the sixth until a draft pull request or an `/unclaim` frees one.
-
-A maintainer who hands an issue to someone writes `/claim @their-login`, with the plan after it if
-there is one: the bot makes the same checks for that person, assigns them and moves the card, also
-when they were assigned by hand and the card was never moved. Only a maintainer may claim for
-someone else.
-
-**Show the work within 48 hours.** Open a draft pull request that says `Closes #N` as soon as you
-have a first commit. A claim with no pull request after 48 hours lapses, and the next `/claim`
-takes it over. If you stop, comment `/unclaim`, so the card goes back to `Ready`.
-
-**One pull request per issue.** If a pull request for the issue is already open, continue there
-(push to it, or offer your change in its thread) instead of opening a second one; that holds for
-a new session of your own as well. When that pull request has stalled, ask its author in it; with
-no answer in three days, you may take the work over in that pull request, or in one that replaces
-it, names it and is linked from it.
-
-**Name the branch for its kind of work.** `feature/`, `fix/`, `docs/` or `chore/`, then two to
-five lowercase words joined by hyphens: `feature/piano-roll-workflow`, `fix/short-panes`,
-`docs/latency-readout`, `chore/branch-names`. Agents create such a branch before their first push,
-never opening a pull request from a `claude/...` branch (`AGENTS.md` › Tasks › Branch names). The
-*Branch name* check warns about other names; it never fails.
-
-**Build on overlapping work, do not repeat it.** Before you write code, look at the open pull
-requests that touch the same code (the claim bot lists them for your `Touches:` line). When one
-already builds what you need, build on it: stack on its branch when both are in this repository, or
-from a fork branch from its head and write `Depends on #N` on a line of its own in your description;
-the *Depends on* check keeps your pull request from merging before #N. When two pull requests change
-the same code for different reasons, say so in both; when they do the same thing two ways, a
-maintainer chooses. An issue that cannot start before another one is marked *Blocked by* that
-issue (its *Relationships* on GitHub), and cannot be claimed until it is closed. `AGENTS.md` › Tasks
-gives the same rules step by step.
-
-**Keep at most three pull requests open at a time**, unless you are a maintainer. Review time is
-what limits how fast Suhina moves, and a stack of open pull requests goes stale as `main` changes.
-
-`good first issue` marks work that needs no knowledge of the engine, `help wanted` work the
-maintainers would like a hand with. An `epic` is a container for other issues: claim one of its
-issues, not the epic.
-
-**An agent claims and reports like a person does.** An issue is the only context an agent gets
-apart from `AGENTS.md` and the documents those point at, so write it to stand on its own: goal,
-acceptance criteria, where the code goes. Keep the plan in the issue and the result in the pull
-request. An agent searches for an existing issue before it opens one, and for an open pull request
-before it opens one; it continues work that is open rather than starting it again. An agent run
-by someone with write access opens issues through the
-[Open issue](.github/workflows/open-issue.yml) workflow, so they show the bot `suhina-bot[bot]` as
-their author rather than that person, and posts the feedback it wrote onto a pull request's
-conversation through the [Comment on pull request](.github/workflows/comment-pr.yml) workflow, so it
-is the bot's comment and not that person's; it is a comment, not a GitHub review, and approves or
-blocks nothing (`AGENTS.md` › Tasks has the commands). The rules in
-[AI-assisted contributions](#ai-assisted-contributions) apply to what the agent wrote.
-
-**No elevated access just to post.** These bot workflows require existing repository write
-access, not admin access. An agent checks that access first
-(`gh api repos/suhina-daw/suhina-daw --jq .permissions.push`, or
-[`scripts/agent_post.py`](scripts/agent_post.py), which checks and posts either way); without it,
-or when a dispatch is answered with a 403 (whose message wrongly asks for admin rights), it uses
-the user's authenticated account to post ordinary issues and PR comments, within the user's
-authorization, names in an issue's body the labels and parent it could not set, and identifies
-agent-written feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
-not request admin/write access, broader token scopes or App secrets to follow the bot posting
-convention. Connector restrictions still apply: if no authorized posting route is available,
-explain the limit and give the user the prepared text.
-
-With triage access, the helper checks repository labels before creating an issue, applies only
-available labels and names missing ones in the body for a maintainer. A failed label lookup stops
-before creation; a failed create is never retried.
-
-The helper checks a supplied parent is an open epic before opening an issue under the user's
-account, and adds the AI-assisted note to both issues and comments. If a workflow posts but its
-successful completion cannot be confirmed, the helper reports an error with the created item's
-marker and the run id: inspect the run and finish any missing follow-up without posting again.
-If no marker can be read, the posting outcome is unknown and the workflow may still post;
-inspect the named run instead of starting another request.
-
-**Trusted bot actions.** Contributors listed in `TRUSTED_CONTRIBUTORS` may ask `suhina-bot`
-to create issues with `/open-issue`, close/reopen issues with `/close` and `/reopen`, and request
-a PR test build with `/test-build`. Each action records **On behalf of @login**, taken from
-the authenticated commenter. See [Trusted bot requests](docs/claim-bot.md#trusted-bot-requests)
-for the issue JSON and limits. The list grants neither repository write access nor merge approval.
-
-The repository variable `MAINTAINERS` controls the maintainer role across all bot workflows,
-including merge authorization. Both lists use comma/whitespace-separated GitHub logins, ignore
-case and accept an optional `@`. There is no hardcoded maintainer fallback when the variable
-is empty. Maintain the lists in Settings → Secrets and variables → Actions → Variables.
-For fork PR test builds, maintainers also use `/test-build`: fork runs may lack repository
-variables and therefore cannot identify a maintainer from a direct label alone.
+How to find free work, claim it, name the branch, build on overlapping work and open the pull
+request is in [`docs/workflow.md`](docs/workflow.md) › Tasks, the one copy for people and agents.
+In short: search before opening an issue; claim a feature or a piece of an epic with
+`/claim Plan: … Touches: …` and open a draft pull request within 48 hours; a bug or a small change
+needs no issue and no claim; one pull request per issue, at most three open at a time.
 
 ## Trying a pull request
 

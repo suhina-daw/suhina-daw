@@ -1,7 +1,7 @@
 name: Parity notice
 
 # A pull request that changes what a user can do updates the parity measurement in the same change
-# (AGENTS.md › Before you finish a task). This workflow reminds one that changes `crates/`,
+# (docs/workflow.md › Parity). This workflow reminds one that changes `crates/`,
 # `devices/` or `apps/` without touching `scripts/parity/score.py` or `scripts/parity/devices.json`
 # and whose description does not say `Parity: no change`. It is a warning only and never fails.
 #

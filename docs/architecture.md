@@ -41,7 +41,7 @@ How Suhina's parts fit together: the layers, how a project gets from a file to t
 which threads exist and what each may do, and where new code goes. The rules behind it are in
 [`AGENTS.md`](../AGENTS.md); the larger decisions in [`decisions/`](decisions/). This page
 describes the code as it is; planned parts are marked **(planned)**. A change that makes this
-page wrong updates it in the same pull request (AGENTS.md › Before you finish a task).
+page wrong updates it in the same pull request ([`workflow.md`](workflow.md) › Documents).
 
 ## Layers
 
@@ -184,6 +184,56 @@ goes through `interaction/` (the dragged data in `drop`) and the session's comma
 views share moves into `interaction/` or `kit/`. A view module is declared in its folder's module
 file (`arrangement.rs` for `arrangement/`), and code names it by its full path
 (`crate::arrangement::timeline::Timeline`).
+
+## Crate names, folders and source files
+
+Every package is named `suhina-*`; the directory has no prefix. The project had another name
+until October 2026 (README); nothing new may use it, in names, text or code.
+
+| Kind | Directory | Package (`Cargo.toml`) | In Rust code |
+|---|---|---|---|
+| Library crate | `crates/<name>` | `suhina-<name>` | `suhina_<name>` |
+| Built-in effect or instrument | `devices/<name>` | `suhina-device-<name>` | `suhina_device_<name>` |
+| App (binary) | `apps/<name>` | `suhina` or `suhina-<name>` | |
+
+A new crate inherits the workspace settings (`version.workspace = true`, `edition`, `license`,
+`rust-version`, `[lints] workspace = true`), is added to `[workspace.dependencies]` in the root
+`Cargo.toml` (`suhina-<name> = { path = "crates/<name>" }`), and other crates depend on it with
+`suhina-<name>.workspace = true`. Add its row to the crate table above, in its layer, and to the
+diagram. Environment variables start with `SUHINA_`. CI runs `python scripts/rename_suhina.py
+--check`, which fails when the old name is left anywhere in the tree (links to the repository and
+lines marked `rename_suhina: keep` excepted). A branch started before the rename catches up as the
+script's docstring describes.
+
+Beside the crates:
+
+- `docs/`: `architecture.md` (this), `decisions/` (ADRs; read 0001 before changing the model, 0004
+  before a device), `spec/` (clean-room specs written from observation), `design/` (the UI design
+  brief, component measurements and mockups, ADR 0009), `research/` (status analysis of our own
+  project: parity against another DAW's public manual, ADR 0016, and its figures), the generated
+  `INDEX.md` and `commands.md`, and `works-now/` when present;
+- `assets/brand/`: the logo as SVG (`suhina-logo.svg`, drawn on the splash by
+  `crates/ui/src/kit/logo.rs`; `suhina-mark.svg`, the wave alone) and `suhina-icon.png`, the app's
+  icon;
+- `third_party/`: vendored source, the ASIO SDK's host part (GPL-3.0, built with `asio`) and LAME
+  3.100's encoder (LGPL, ADR 0029);
+- `scripts/`: research helpers (extracting and diffing `.als` files), the parity measurement
+  (`parity/`, reading a manual the user owns; its output is never committed), `docs.py` (the docs
+  index and checks), `release_notes.py` and `discord_post.py`, `agent_post.py` (an agent's issue
+  or comment, [`workflow.md`](workflow.md) › Posting as the bot).
+
+**Licence header.** Every source file (`.rs`, `.py`, `.sh`, `.ps1`) starts with the licence
+header, after a `#!` line when there is one, then an empty line:
+
+```text
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+```
+
+(`#` instead of `//` in scripts). Run `python scripts/license_header.py` after adding a file; it
+adds the header where it is missing and nothing else, and CI runs it with `--check`. Ported code
+keeps its original notice and gets only the SPDX line of its own licence; the script's docstring
+lists those files and what else is left out (`third_party/`, fixtures, generated files).
 
 ## From a file to the speakers
 

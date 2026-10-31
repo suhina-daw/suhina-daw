@@ -175,7 +175,7 @@ Everything that is planned or being worked on is on the board,
 is an [issue](https://github.com/suhina-daw/suhina-daw/issues) in this repository. To start:
 
 1. **Read the rules once:** [`CONTRIBUTING.md`](CONTRIBUTING.md) (clean-room, licences, sign-off)
-   and [`AGENTS.md`](AGENTS.md) (golden rules, crate map, what to run before you finish). They
+   and [`AGENTS.md`](AGENTS.md) (golden rules, what to run before you finish, where to read more). They
    apply to people and to AI agents alike.
 2. **Pick an issue** on the board in *Backlog* or *Ready* with no open pull request for it; the
    [`good first issue`](https://github.com/suhina-daw/suhina-daw/labels/good%20first%20issue) and
@@ -204,7 +204,7 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 | [`docs/INDEX.md`](docs/INDEX.md) | Every document, what it is for, and the code it describes |
 | [`docs/commands.md`](docs/commands.md) | Every command the CLI, MCP server and UI run, with its parameters |
 | [`ROADMAP.md`](ROADMAP.md) | Milestones, what works now, what is next |
-| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and the crate map |
+| [`AGENTS.md`](AGENTS.md) | Rules for contributors and agents, and where to read more |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit: layers, data flow, threads, commands, where new code goes |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Clean-room rules, licences, sign-off (DCO), AI-assisted contributions |
 | [`IP.md`](IP.md) | Reporting a rights or clean-room problem, and how material is removed |
