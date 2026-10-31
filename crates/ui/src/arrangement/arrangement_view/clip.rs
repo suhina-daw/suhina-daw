@@ -5,6 +5,12 @@
 
 use super::*;
 
+/// Where a dragged clip goes: where it started until it has moved half a grid step sideways, so a
+/// clip off the grid keeps its place going to another track; on the grid from there on.
+pub(super) fn drag_place(raw: f64, origin: f64, grid: TimelineGrid, free: bool) -> f64 {
+    if !free && grid.snaps && (raw - origin).abs() < grid.step / 2.0 { origin } else { grid.place(raw, free, false) }
+}
+
 /// The keys held over a clip's edge drag: Alt alone lets the edge off the grid, as Alt does for
 /// every other drag; Shift (or Ctrl and Alt) stretches an audio clip's audio with it (Settings ›
 /// Arrangement).
@@ -202,10 +208,10 @@ pub(super) fn clip_box<'a>(
     let free = ui.input(|i| i.modifiers.alt);
     let snapped = |raw: f64| grid.place(raw, free, false);
     let at = match state.clip_drag {
-        Some(drag) if mine(&drag) => snapped(drag.start),
+        Some(drag) if mine(&drag) => drag_place(drag.start, drag.origin, grid, free),
         // Another clip of the selection is dragged: this one moves by as much.
         Some(drag) if state.is_selected(key) && state.is_selected((drag.track, drag.clip)) => {
-            (clip.start + snapped(drag.start) - drag.origin).max(0.0)
+            (clip.start + drag_place(drag.start, drag.origin, grid, free) - drag.origin).max(0.0)
         }
         _ => clip.start,
     };
@@ -425,7 +431,7 @@ pub(super) fn clip_box<'a>(
         && let Some(drag) = state.clip_drag.take()
         && (drag.track, drag.clip) == key
     {
-        let start = snapped(drag.start);
+        let start = drag_place(drag.start, drag.origin, grid, free);
         let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
         let moved = drag.new_track || drag.target != lane.track || (start - clip.start).abs() > 1e-9;
         // How many tracks down the drop is from this clip's own, among the tracks that hold clips:
@@ -970,7 +976,7 @@ pub(super) fn clip_box<'a>(
             if drag.copy || copy_key {
                 paint_at(clip.start);
             }
-            Some((lane, clip, snapped(drag.start)))
+            Some((lane, clip, drag_place(drag.start, drag.origin, grid, free)))
         }
         _ if copying => {
             paint_at(clip.start);

@@ -519,3 +519,12 @@ fn a_click_in_a_clip_body_stays_inside_the_clip() {
     assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, false), 5.25);
     assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, true), 5.3);
 }
+
+#[test]
+fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
+    let grid = arrangement_grid(PianoGrid::from_value("1/4"), 40.0, 4.0);
+    assert_eq!(clip::drag_place(5.3, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(6.2, 5.3, grid, false), 6.0);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, true), 5.6);
+}
