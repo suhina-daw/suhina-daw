@@ -99,10 +99,12 @@ fn the_mock_lists_its_parameters() {
     finished(plugin);
 }
 
-/// A state the mock was given comes back as a parameter change — its editor showing the
-/// restored value — reported once.
+/// A state the mock was given takes in the plug-in and is NOT reported as a parameter
+/// change: reading a state is neither a change nor an undo step (ADR 0010 decision 7), so a
+/// project that opens does not mark itself unsaved through its plug-in's own report of the
+/// restored value.
 #[test]
-fn a_restored_state_comes_back_as_a_parameter_change() {
+fn a_restored_state_is_not_reported_as_a_parameter_change() {
     let (_link, mut plugin) = loaded(FIRST + 2);
     let bank = suhina_plugins::vst2::bank(
         &suhina_plugins::vst2::Preset {
@@ -118,8 +120,9 @@ fn a_restored_state_comes_back_as_a_parameter_change() {
     )
     .unwrap_or_else(|e| panic!("{e}"));
     plugin.set_state(&bank).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(plugin.tick(), vec![(0, 0.25)]);
-    // Reported once.
+    // The value took (the plug-in runs with it) and nothing came back as an edit.
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.25);
+    assert_eq!(plugin.defaults.borrow().first().copied(), Some(0.5), "the default is the load-time value");
     assert!(plugin.tick().is_empty());
     finished(plugin);
 }

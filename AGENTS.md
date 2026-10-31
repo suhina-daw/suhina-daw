@@ -135,7 +135,7 @@ crates/
   plugins  L1 the engine's side of plug-in hosting: start a host process, control protocol, health, state, restart; scanning; offline runs
   test-support  dev-dependency only: ProjectBuilder, write_wav, test signals, golden files (SUHINA_BLESS)
   plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins;
-               behind the `vst2` feature (ADR 0022): the ported VeSTige definitions, the mock plug-in,
+               plus the vst2 layer, on by default (ADR 0022, amended): the ported VeSTige definitions, the mock plug-in,
                the probe with `--vst2-probe`, the host that runs `vst2:<file>` on the same boundary
                with its editor, and the scan of VST2 files; `matching` runs a project's VST2 device
                through it when no VST3 or CLAP copy stands in (ADR 0006 decision 8)

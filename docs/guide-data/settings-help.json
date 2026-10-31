@@ -305,8 +305,8 @@
         "description": "Include or skip the folder in subsequent scans. Turning a folder off removes its plug-ins from the catalog after the next scan."
       },
       {
-        "name": "Both",
-        "description": "Look for CLAP and VST3 files in an added folder."
+        "name": "All",
+        "description": "Look for every format Suhina hosts in an added folder: CLAP, VST3 and VST2 files."
       },
       {
         "name": "VST3",

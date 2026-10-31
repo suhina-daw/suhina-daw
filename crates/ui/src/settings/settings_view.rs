@@ -2013,7 +2013,7 @@ fn plugin_folders(
     widgets::input_line(ui, &edit);
     let width = formats.width() / 4.0;
     for (index, (format, title)) in [
-        (FolderFormat::Any, "Both"),
+        (FolderFormat::Any, "All"),
         (FolderFormat::Vst3, "VST3"),
         (FolderFormat::Clap, "CLAP"),
         (FolderFormat::Vst2, "VST2"),

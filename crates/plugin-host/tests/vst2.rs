@@ -115,11 +115,12 @@ fn a_state_round_trips_over_the_boundary() {
     assert_eq!(reopened.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.75);
 }
 
-/// A state given to the running plug-in comes back over the boundary as a parameter change
-/// — its editor showing the restored value — and the session keeps the project in step with
-/// it.
+/// A state given to the running plug-in takes and is NOT reported back as a parameter
+/// change: reading a state is neither a change nor an undo step (ADR 0010 decision 7), so a
+/// project that opens does not mark itself unsaved through its plug-in's own report of the
+/// restored value.
 #[test]
-fn a_state_given_to_a_running_plug_in_comes_back_as_an_edit() {
+fn a_state_given_to_a_running_plug_in_is_not_reported_as_an_edit() {
     let (mut plugin, _audio) = start();
     let bank = suhina_plugins::vst2::bank(
         &suhina_plugins::vst2::Preset {
@@ -135,17 +136,10 @@ fn a_state_given_to_a_running_plug_in_comes_back_as_an_edit() {
     )
     .unwrap_or_else(|e| panic!("{e}"));
     plugin.load_state(bank).unwrap_or_else(|e| panic!("{e}"));
-    let deadline = Instant::now() + PATIENT;
-    loop {
-        if plugin.take_param_edits() == vec![(0, 0.25)] {
-            break;
-        }
-        assert!(Instant::now() < deadline, "the restored value's edit never came");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    // Reported once.
-    std::thread::sleep(Duration::from_millis(50));
-    assert!(plugin.take_param_edits().is_empty());
+    // The value took (the listing reads it) and no edit comes back for it.
+    assert_eq!(plugin.params().unwrap_or_else(|e| panic!("{e}"))[0].value, 0.25);
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(plugin.take_param_edits().is_empty(), "the restore is not an edit");
 }
 
 // ---- The acceptance test -------------------------------------------------------------------

@@ -80,6 +80,10 @@ pub(crate) struct Shared {
     /// Whether an editor of the plug-in is open: written by the main thread as it opens or
     /// closes one, read by the callback for a size request.
     has_editor: AtomicBool,
+    /// Whether the main thread is restoring the plug-in's state right now: a plug-in's own
+    /// report of the value just restored is not an edit (reading a state is neither a change
+    /// nor an undo step, ADR 0010 decision 7), so the callback keeps it out of the records.
+    restoring: AtomicBool,
     /// The window resize the plug-in asked for with `audioMasterSizeWindow`, pended for the
     /// main loop to apply: width << 16 | height, 0 for none.
     size_window: AtomicU64,
@@ -313,6 +317,10 @@ fn answer(
         // threads may take.
         Some(HostOp::Automate) => {
             let id = u32::try_from(index).unwrap_or(0);
+            if shared.restoring.load(Ordering::Acquire) {
+                // The value the plug-in just had restored: not an edit.
+                return 0;
+            }
             if serving_this {
                 shared.notes.note(id, f64::from(opt));
             } else if let Ok(mut edits) = shared.edits.lock() {
@@ -426,6 +434,10 @@ pub(crate) struct Vst2Plugin {
     /// (inputs, outputs) as the plug-in declared them at load, and its parameter count.
     buses: (usize, usize),
     params: usize,
+    /// Each parameter's value as the plug-in was opened, before anything was set: the
+    /// closest thing to a default the interface has (it names no op-code for one), and what
+    /// a panel's reset restores.
+    defaults: std::cell::RefCell<Vec<f32>>,
     version: i32,
     sample_rate: f64,
     max_frames: usize,
@@ -461,6 +473,7 @@ impl Vst2Plugin {
             midi_out: AtomicU32::new(0),
             unique_id: read.uniqueID as u32,
             has_editor: AtomicBool::new(false),
+            restoring: AtomicBool::new(false),
             size_window: AtomicU64::new(0),
             effect: effect as usize,
             sample_rate: AtomicU64::new(sample_rate.to_bits()),
@@ -489,6 +502,7 @@ impl Vst2Plugin {
             flags: read.flags,
             buses: (count(read.numInputs), count(read.numOutputs)),
             params: usize::try_from(read.numParams).unwrap_or(0).min(MAX_PARAMS),
+            defaults: std::cell::RefCell::new(Vec::new()),
             version: read.version,
             sample_rate,
             max_frames,
@@ -499,6 +513,10 @@ impl Vst2Plugin {
         // Open it and set its sizes, as a host does before anything else (*assumed*: the rate
         // in the call's float, the size in its value).
         plugin.send(EffectOp::Open, 0, 0, std::ptr::null_mut(), 0.0)?;
+        // The defaults: what each parameter was as it opened, before anything is set.
+        plugin.defaults = std::cell::RefCell::new(
+            (0..plugin.params).map(|i| plugin.parameter(i32::try_from(i).unwrap_or(0)).unwrap_or_default()).collect(),
+        );
         plugin.send(EffectOp::SetSampleRate, 0, 0, std::ptr::null_mut(), sample_rate as f32)?;
         let size = isize::try_from(max_frames).unwrap_or(0);
         plugin.send(EffectOp::SetBlockSize, 0, size, std::ptr::null_mut(), 0.0)?;
@@ -577,8 +595,8 @@ impl Vst2Plugin {
     }
 
     /// The plug-in's parameters as they stand. The range is *assumed* to be 0 to 1 (the
-    /// pinned header says nothing about a range), and the default is the value now, as the
-    /// header names no op-code to ask for one.
+    /// pinned header says nothing about a range), and the default is the value the plug-in
+    /// was opened with, captured once at load (the header names no op-code to ask for one).
     pub(crate) fn params(&mut self) -> Result<Vec<ParamInfo>, String> {
         let mut out = Vec::new();
         for index in 0..self.params {
@@ -594,13 +612,14 @@ impl Vst2Plugin {
                 .send(EffectOp::CanBeAutomated, index, 0, std::ptr::null_mut(), 0.0)
                 .map(|answer| answer != 0)
                 .unwrap_or(true);
+            let default = self.defaults.borrow().get(index as usize).copied().map(f64::from).unwrap_or(value);
             out.push(ParamInfo {
                 id: u32::try_from(index).unwrap_or(0),
                 name: super::field_text(&name),
                 group: String::new(),
                 min: 0.0,
                 max: 1.0,
-                default: value,
+                default,
                 value,
                 text: super::field_text(&text),
                 steps: 0,
@@ -620,13 +639,14 @@ impl Vst2Plugin {
         }
         self.set_value(index, value.clamp(0.0, 1.0) as f32)?;
         let value = f64::from(self.parameter(index)?);
+        let default = self.defaults.borrow().get(id as usize).copied().map(f64::from).unwrap_or(value);
         Ok(ParamInfo {
             id,
             name: String::new(),
             group: String::new(),
             min: 0.0,
             max: 1.0,
-            default: value,
+            default,
             value,
             text: String::new(),
             steps: 0,
@@ -704,6 +724,7 @@ impl Vst2Plugin {
         self.send(EffectOp::SetBlockSize, 0, size, std::ptr::null_mut(), 0.0)?;
         self.sample_rate = sample_rate;
         self.shared.sample_rate.store(sample_rate.to_bits(), Ordering::Relaxed);
+        self.shared.time.sample_rate.store(sample_rate.to_bits(), Ordering::Relaxed);
         // SAFETY: as at load, on this thread, its audio stopped.
         let read = unsafe { *self.effect };
         self.latency = latency_of(&read);
@@ -777,6 +798,16 @@ impl Vst2Plugin {
     /// Hands the plug-in a state: a chunk bank's chunk, a program bank's current program
     /// (set as the program, then its values as parameters — *assumed* order), or a bare chunk.
     pub(crate) fn set_state(&mut self, data: &[u8]) -> Result<(), String> {
+        // A plug-in's own report of the value being restored is not an edit: the guard is
+        // set for the whole restore, on this main thread, and the callback keeps those out
+        // of the records (ADR 0010 decision 7).
+        self.shared.restoring.store(true, Ordering::Release);
+        let restored = self.set_state_inner(data);
+        self.shared.restoring.store(false, Ordering::Release);
+        restored
+    }
+
+    fn set_state_inner(&mut self, data: &[u8]) -> Result<(), String> {
         if let Some(chunk) = suhina_plugins::vst2::chunk(data) {
             let size = isize::try_from(chunk.len()).unwrap_or(0);
             let taken = self.send(EffectOp::SetChunk, 0, size, chunk.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
@@ -801,7 +832,10 @@ impl Vst2Plugin {
         // Not a bank: a bare chunk, as a plug-in's own file would hold.
         if !data.is_empty() {
             let size = isize::try_from(data.len()).unwrap_or(0);
-            let _ = self.send(EffectOp::SetChunk, 0, size, data.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+            let taken = self.send(EffectOp::SetChunk, 0, size, data.as_ptr().cast::<c_void>().cast_mut(), 0.0)?;
+            if taken != 0 {
+                return Err("the plug-in refused the state".into());
+            }
         }
         Ok(())
     }
@@ -1113,7 +1147,7 @@ impl crate::audio::Block for Vst2Block {
                 EventKind::Transport { playing, position } => {
                     self.time.changed |= self.time.playing.is_some_and(|was| was != playing);
                     self.time.playing = Some(playing);
-                    self.shared.time.sample_pos.store(position, Ordering::Relaxed);
+                    self.shared.time.sample_pos.store((position as f64).to_bits(), Ordering::Relaxed);
                 }
                 EventKind::Tempo { bpm } => {
                     self.time.tempo = true;
@@ -1220,8 +1254,13 @@ impl crate::audio::Block for Vst2Block {
             *serving.borrow_mut() = Some(self.shared.clone());
         });
         // `processReplacing` where the flag says so, the deprecated `process` otherwise (its
-        // outputs add, so they were zeroed).
-        let run = if self.flags & effect_flags::CAN_REPLACING != 0 { self.process_replacing } else { self.process };
+        // outputs add, so they were zeroed). A plug-in that declares the flag and gives no
+        // replacing call falls back to `process` too: the zeroed outputs make it the same.
+        let run = if self.flags & effect_flags::CAN_REPLACING != 0 {
+            self.process_replacing.or(self.process)
+        } else {
+            self.process
+        };
         if let Some(run) = run {
             let inputs = if self.in_pointers.is_empty() { std::ptr::null_mut() } else { self.in_pointers.as_mut_ptr() };
             // SAFETY: the plug-in's own call, with this block's buffers and frames, on this
@@ -1246,10 +1285,14 @@ fn open(spec: &str) -> Result<(Module, *mut AEffect), String> {
     let spec =
         if spec.starts_with("vst2:") || spec == super::probe::MOCK { spec.to_string() } else { format!("vst2:{spec}") };
     // The id a scan's spec carries (`vst2:<file>#<id>`): checked against what the file gives
-    // back, so a spec naming one member of a shell never silently loads another.
+    // back, so a spec naming one member of a shell never silently loads another. A suffix
+    // that is not the eight-hex-digit id form is part of the file's name (`Synth#1.dll`),
+    // not an id.
     let (spec, wanted) = match spec.rsplit_once('#') {
-        Some((path, id)) => (path.to_string(), Some(id.to_string())),
-        None => (spec, None),
+        Some((path, id)) if id.len() == 8 && id.chars().all(|c| c.is_ascii_hexdigit()) => {
+            (path.to_string(), Some(id.to_string()))
+        }
+        _ => (spec.to_string(), None),
     };
     if spec == super::probe::MOCK {
         let (effect, mock) = super::test_vst2::mock(Some(host_callback));
@@ -1310,6 +1353,9 @@ pub(crate) fn describe(spec: &str) -> Result<Vec<suhina_plugins::scan::PluginInf
         // before the plug-in is closed again.
         unsafe { dispatcher(effect, op.value(), index, 0, ptr, 0.0) }
     };
+    // The plug-in is opened first, as a host does: a plug-in that fills its identity in
+    // `effOpen` gives the scan nothing without it.
+    let _ = ask(EffectOp::Open, 0, std::ptr::null_mut());
     let mut name = vec![0 as std::ffi::c_char; vestige::VestigeMaxNameLen];
     let mut vendor = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];
     let mut product = vec![0 as std::ffi::c_char; vestige::VestigeMaxLabelLen];

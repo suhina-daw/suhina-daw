@@ -17,10 +17,10 @@ Suhina hosts VST2 plug-ins through the same out-of-process boundary as CLAP and 
 ([ADR 0006](../decisions/0006-plug-in-hosting.md)). This spec holds the interface itself:
 where each fact of it comes from, what our code does with it, and what keeps it true. The
 interface layer and the host are built, behind the `vst2` feature of `suhina-plugin-host`
-(off by default: nothing ships VST2 hosting until the legal advice ADR 0022 › 5 asks for is
-resolved): the ported definitions, the mock plug-in `test:vst2`, the probe with its
-`--vst2-probe` tool, and the host that loads `vst2:<file>` and `test:vst2` through the
-engine's boundary — instances, blocks, parameters, state, latency
+(on by default since the ADR's 2026-10-31 amendment lifted the shipping gate; a build can
+opt out with `--no-default-features`): the ported definitions, the mock plug-in `test:vst2`,
+the probe with its `--vst2-probe` tool, and the host that loads `vst2:<file>` and `test:vst2`
+through the engine's boundary — instances, blocks, parameters, state, latency
 ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066) steps 1–4). What is not built
 yet is below under *Not yet*.
 
@@ -41,9 +41,14 @@ this interface. Every fact below carries one of three marks:
   code at all: an op-code number it does not list, which argument of a call carries what,
   what an answer means. The choice is ours, named here, and *it is not established*: only a
   probe run or an ignored test against an installed plug-in can turn it **(observed)**.
-- **(observed)** our own probe or an ignored test has seen a real plug-in do it. Nothing in
-  this layer is observed yet: the mock is written from the same assumptions, so a
-  mock-and-probe pair proves only that our two halves agree.
+- **(observed)** our own probe or an ignored test has seen a real plug-in do it. The
+  observed set so far comes from the probe's runs against the installed plug-ins of one
+  machine (69 loaded): the entry point's name and its null-effect host calls, the latency
+  field, the chunk op-codes' behaviour, the editor rect's shape and indirection, the
+  categories, identity strings and parameter labels, a third (`-1`) `CanDo` answer, and
+  plug-ins sending MIDI out. The mock is written from the same assumptions, so a
+  mock-and-probe pair proves only that our two halves agree; what is *observed* is marked as
+  it is settled.
 
 A fact marked (assumed) that a later run disagrees with is a bug in this spec's assumption,
 to be fixed with what the run showed — never by reading another header.
@@ -326,9 +331,8 @@ contract, as every host gives*).
   prints the report of an installed plug-in. **Nothing is (observed) until this runs green
   against one.**
 
-The crate's CI runs clippy and these tests with the `vst2` feature on, so the gated code is
-checked although nothing ships it (ADR 0022 decision 5: legal advice precedes any release
-that does).
+The crate's CI runs clippy and these tests with the `vst2` feature on (its default since the
+ADR's 2026-10-31 amendment) and checks that a build without it still compiles.
 
 ## Scanning, folders and the project's choice
 

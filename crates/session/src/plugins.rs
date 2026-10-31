@@ -53,7 +53,10 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugin.addFolder",
         label: "Add a folder for scans to look in, besides the standard ones, for one plug-in format or every one Suhina hosts",
-        params: &[FOLDER, optional("format", ParamType::Text, "any (default: CLAP and VST3), vst3 or clap")],
+        params: &[
+            FOLDER,
+            optional("format", ParamType::Text, "any (default: every format Suhina hosts), vst3, clap or vst2"),
+        ],
         kind: CommandKind::Plugins,
         run: add_folder,
         policy: Policy {

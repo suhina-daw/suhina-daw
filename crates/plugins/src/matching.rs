@@ -187,10 +187,15 @@ impl Catalog {
         }
         self.match_name(name).or_else(|| {
             // No VST3 or CLAP copy stands in: the scanned VST2 plug-in itself, by its id
-            // (decision 8: the copies are preferred while any is installed).
-            self.plugins()
-                .find(|p| p.format() == "vst2" && p.id == format!("{id:08X}"))
-                .map(|plugin| Match { plugin, how: How::Itself })
+            // (decision 8: the copies are preferred while any is installed). Two plug-ins
+            // can share a four-character id, and the first of them is no answer: the device
+            // stays unresolved, for the user to relink by hand.
+            let wanted = format!("{id:08X}");
+            let mut found = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
+            match (found.next(), found.next()) {
+                (Some(plugin), None) => Some(Match { plugin, how: How::Itself }),
+                _ => None,
+            }
         })
     }
 
