@@ -55,24 +55,33 @@ pub fn editor_window(process_id: u32) -> windows_sys::Win32::Foundation::HWND {
 }
 
 /// Asks the editor's window to close, as the user does with its close button: the window
-/// manager's WM_DELETE_WINDOW message, sent to the newest window whose class is the editor's
-/// (the root's children come bottom to top).
+/// manager's WM_DELETE_WINDOW message, sent to the root child whose class is an editor's
+/// and whose `_NET_WM_PID` names `process_id` (the root's children come bottom to top).
+/// Each host names its process, so one test takes a window of its own host and no other's.
 #[cfg(target_os = "linux")]
-pub fn close_editor_window(_process_id: u32) {
+pub fn close_editor_window(process_id: u32) {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask};
     let (connection, screen) = x11rb::connect(None).unwrap();
     let root = connection.setup().roots[screen].root;
     let atom = |name: &[u8]| connection.intern_atom(false, name).unwrap().reply().unwrap().atom;
-    let (protocols, delete) = (atom(b"WM_PROTOCOLS"), atom(b"WM_DELETE_WINDOW"));
+    let (protocols, delete, pid_atom) = (atom(b"WM_PROTOCOLS"), atom(b"WM_DELETE_WINDOW"), atom(b"_NET_WM_PID"));
     let children = connection.query_tree(root).unwrap().reply().unwrap().children;
     let window = children
         .into_iter()
         .rfind(|w| {
             let class = connection.get_property(false, *w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64);
-            class.ok().and_then(|c| c.reply().ok()).is_some_and(|c| c.value.starts_with(b"suhina-plugin-editor"))
+            let editor =
+                class.ok().and_then(|c| c.reply().ok()).is_some_and(|c| c.value.starts_with(b"suhina-plugin-editor"));
+            if !editor {
+                return false;
+            }
+            let pid = connection.get_property(false, *w, pid_atom, AtomEnum::CARDINAL, 0, 4);
+            pid.ok().and_then(|p| p.reply().ok()).is_some_and(|reply| {
+                reply.value32().is_some_and(|mut answers| answers.any(|named| named == process_id))
+            })
         })
-        .unwrap_or_else(|| panic!("no editor window"));
+        .unwrap_or_else(|| panic!("no editor window for host {process_id}"));
     let message = ClientMessageEvent::new(32, window, protocols, [delete, 0, 0, 0, 0]);
     connection.send_event(false, window, EventMask::NO_EVENT, message).unwrap();
     // A round trip before the connection closes: closed straight after the request, the
