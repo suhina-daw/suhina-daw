@@ -462,7 +462,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | What is read from a format, or behaviour described in a spec | the spec in `docs/spec/` |
 | What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](docs/decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
-| What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and [`README.md`](README.md) if it shows it |
+| What works for users | a new bullet as a file of its own in [`docs/works-now/`](docs/works-now/README.md), folded into `ROADMAP.md` › What works now on `main`; a bullet already there is changed in `ROADMAP.md`; [`README.md`](README.md) if it shows it |
 | What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |
 | A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in this file | this file, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if it repeats it |
@@ -470,8 +470,8 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 A limit or a planned part that a change resolves is removed from the docs in the same change.
 
 **Write documents so parallel pull requests do not collide.** In a list that several changes add
-to (ROADMAP's *What works now*, the crate map), add a bullet or a row of your own rather than
-extending someone else's sentence. Leave generated files out of the change:
+to (the crate map), add a row of your own rather than extending someone else's sentence; a new
+*What works now* bullet is a file of its own in `docs/works-now/`. Leave generated files out of the change:
 [`docs/INDEX.md`](docs/INDEX.md) (from the documents' front matter) and
 [`docs/commands.md`](docs/commands.md) (from the command registry) are regenerated on `main` after
 every merge by [`.github/workflows/docs-generated.yml`](.github/workflows/docs-generated.yml), and

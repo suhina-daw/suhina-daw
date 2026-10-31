@@ -15,7 +15,8 @@ The documents under `docs/` are what agents and contributors read first, so each
 thing and a reader can tell *what is decided now* from *what was true once*.
 [`AGENTS.md`](../AGENTS.md) › *Documentation is part of the change* says which document a change
 updates; this says what goes into it and where. The clean-room rules for specs are in
-[`spec/README.md`](spec/README.md).
+[`spec/README.md`](spec/README.md). The files under `works-now/` are not documents but ROADMAP
+bullets waiting to be folded in ([`works-now/README.md`](works-now/README.md)); `docs.py` skips them.
 
 ## What each kind holds
 
