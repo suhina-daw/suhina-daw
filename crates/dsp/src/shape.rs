@@ -165,6 +165,9 @@ impl Waveshaper {
         if !v.is_finite() {
             return 0.0;
         }
+        if self.drive.is_nan() || self.drive <= 0.0 {
+            return v;
+        }
         // Keeps `v⁴` finite: no curve changes this far out, where every audio signal is long gone.
         let v = v.clamp(-1e30, 1e30);
         let unit = |x: f64| if x.is_finite() { x.clamp(0.0, 1.0) } else { 0.0 };

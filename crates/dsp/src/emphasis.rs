@@ -50,10 +50,10 @@ impl Emphasis {
     }
 
     /// Changes the coefficients of both filters and keeps their histories. Coefficients with a
-    /// field that is not finite, or whose `b0` is zero (no inverse), are ignored.
+    /// field that is not finite, or whose `b0` is so small that the inverse would overflow, are ignored.
     pub fn set(&mut self, coefficients: Coefficients) {
         let Coefficients { b0, b1, b2, a1, a2 } = coefficients;
-        if [b0, b1, b2, a1, a2].iter().all(|c| c.is_finite()) && b0 != 0.0 {
+        if [b0, b1, b2, a1, a2].iter().all(|c| c.is_finite()) && b0.abs() >= 1e-12 {
             self.c = coefficients;
         }
     }
@@ -106,6 +106,7 @@ mod tests {
         let good = Coefficients { b0: 1.0, b1: 0.5, b2: 0.0, a1: -0.2, a2: 0.0 };
         for bad in [
             Coefficients { b0: 0.0, ..good },
+            Coefficients { b0: 1e-320, ..good },
             Coefficients { a2: f64::NAN, ..good },
             Coefficients { b1: f64::INFINITY, ..good },
         ] {
