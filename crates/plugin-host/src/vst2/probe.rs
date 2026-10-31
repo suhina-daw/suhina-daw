@@ -595,7 +595,10 @@ impl Probe {
         // A size without the pointer it says it has is not a state to round-trip: the report
         // says so instead of handing fabricated zero bytes back.
         if claimed > 0 && chunk_pointer.is_null() {
-            self.line(format!("  {} -> {claimed} bytes claimed, but no chunk pointer came with them", EffectOp::GetChunk.name()));
+            self.line(format!(
+                "  {} -> {claimed} bytes claimed, but no chunk pointer came with them",
+                EffectOp::GetChunk.name()
+            ));
             return;
         }
         // Over the cap the copy would not be the plug-in's whole state: the round trip of a
@@ -672,9 +675,9 @@ impl Probe {
         // SAFETY: the effect the probe holds, read by value.
         let info = unsafe { EffectInfo::of(self.effect()) };
         let replacing = info.is_some_and(|info| info.flags & effect_flags::CAN_REPLACING != 0);
-        let (ins, outs_declared) =
-            info.map(|i| (usize::try_from(i.num_inputs).unwrap_or(0), usize::try_from(i.num_outputs).unwrap_or(0)))
-                .unwrap_or((2, 2));
+        let (ins, outs_declared) = info
+            .map(|i| (usize::try_from(i.num_inputs).unwrap_or(0), usize::try_from(i.num_outputs).unwrap_or(0)))
+            .unwrap_or((2, 2));
         if ins > MAX_CHANNELS || outs_declared > MAX_CHANNELS {
             self.line(format!(
                 "  the block is refused: the plug-in declares {ins} in and {outs_declared} out, over the {MAX_CHANNELS}-channel cap"
