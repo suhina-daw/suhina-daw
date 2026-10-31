@@ -5,7 +5,7 @@
 //! soon as the one it handed its block to answers, while the other chains' plug-ins are still
 //! out, and a slow or hung plug-in holds up only its own chain, and that only until the block's
 //! deadline. Stand-in plug-ins answer after a set time, measured on the engine's manual clock
-//! ([`Manual`]): waiting moves it and nothing sleeps, so a test gives the same result on a slow
+//! (`Manual`): waiting moves it and nothing sleeps, so a test gives the same result on a slow
 //! machine as on a fast one.
 
 use crate::clock::{self, Manual};

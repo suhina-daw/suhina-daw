@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The time the plug-in deadlines are read from. In a build it is `Instant::now()`, inlined; the
-//! engine's own tests can instead run it by hand ([`Manual`]), so a test of what happens when a
+//! engine's own tests can instead run it by hand (`Manual`), so a test of what happens when a
 //! plug-in answers late or never needs no real waiting and gives the same result on a slow
 //! machine as on a fast one. The manual clock exists only under `cfg(test)`: no setting, command
 //! or message can reach it, and a shipped build cannot contain it.
