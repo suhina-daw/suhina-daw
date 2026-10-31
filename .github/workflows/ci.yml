@@ -182,6 +182,12 @@ jobs:
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The VST2 interface layer is behind the `vst2` feature (ADR 0022), off by default
+      # because nothing ships VST2 hosting yet: it is clippy-checked and its tests run with
+      # the feature on, so the gated code cannot rot unseen. Its tests are pure computation,
+      # so the one job is enough (the macOS job mirrors the workspace steps only).
+      - run: cargo clippy -p suhina-plugin-host --all-targets --features vst2 -- -D warnings
+      - run: cargo test -p suhina-plugin-host --features vst2 vst2
       - name: ASIO driver initialization contract
         if: runner.os == 'Windows'
         env:

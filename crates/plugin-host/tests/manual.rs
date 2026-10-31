@@ -4,7 +4,8 @@
 //! Tools for looking into one installed plug-in by hand, run with `--ignored`: they take the
 //! plug-in from `SUHINA_PLUGIN` (`vst3:<bundle>` or `clap:<file>`, as the host takes it) and,
 //! if set, the host from `SUHINA_HOST` (a program that runs `suhina-plugin-host` with the
-//! arguments it is given).
+//! arguments it is given). With the `vst2` feature, `SUHINA_TEST_VST2` probes an installed
+//! VST2 plug-in the same way (ADR 0022).
 //!
 //! ```sh
 //! SUHINA_PLUGIN="vst3:<path to a .vst3 bundle>" \
@@ -77,4 +78,51 @@ fn an_installed_plugins_editor_opens() {
         assert_eq!(health, suhina_plugins::Health::Running, "the host did not stay alive");
     }
     plugin.close_editor().unwrap();
+}
+
+/// `--vst2-probe test:vst2`: the whole probe tool over the built-in mock, from the argument
+/// to the printed report, as it runs by hand. A test of the tool, not of the mock: the
+/// mock's own half of the conversation is checked in the crate's unit tests.
+#[cfg(feature = "vst2")]
+#[test]
+fn the_vst2_probe_tool_reports_on_the_mock() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_suhina-plugin-host"))
+        .arg("--vst2-probe")
+        .arg("test:vst2")
+        .output()
+        .expect("the host process runs");
+    assert!(out.status.success(), "the probe on the mock exits well: {}", String::from_utf8_lossy(&out.stderr));
+    let report = String::from_utf8_lossy(&out.stdout);
+    assert!(report.contains("plug-in: the built-in mock"), "{report}");
+    assert!(report.contains("effGetChunk (assumed 23)"), "{report}");
+    assert!(report.contains("audioMasterAutomate"), "{report}");
+}
+
+/// Runs the VST2 probe over an installed plug-in and prints its report: the observation that
+/// settles the interface's *assumed* facts — the entry point that answered, the op-codes the
+/// plug-in answers, what it asked of the host, what its chunks hold (ADR 0022 decision 4).
+/// Run it with `--nocapture`; the report is the result.
+///
+/// ```sh
+/// SUHINA_TEST_VST2="/path/to/a/vst2 plug.vst" \
+///   cargo test -p suhina-plugin-host --features vst2 --test manual -- --ignored --nocapture
+/// ```
+///
+/// The plug-in runs in a disposable process, as the scanner's plug-ins do: a plug-in that
+/// crashes the probe fails this test with the process's exit, which is itself an observation.
+#[cfg(feature = "vst2")]
+#[test]
+#[ignore = "needs SUHINA_TEST_VST2; settles the spec's assumed facts against an installed plug-in"]
+fn an_installed_vst2_plug_in_answers_the_probe() {
+    let Some(path) = std::env::var_os("SUHINA_TEST_VST2") else {
+        eprintln!("SUHINA_TEST_VST2 not set; nothing to probe");
+        return;
+    };
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_suhina-plugin-host"))
+        .arg("--vst2-probe")
+        .arg(&path)
+        .output()
+        .unwrap_or_else(|e| panic!("could not run the probe: {e}"));
+    println!("{}", String::from_utf8_lossy(&out.stdout));
+    assert!(out.status.success(), "the probe did not finish: {}", String::from_utf8_lossy(&out.stderr));
 }

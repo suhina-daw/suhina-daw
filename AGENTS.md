@@ -127,7 +127,9 @@ crates/
   realtime L0 real-time priority for audio threads: MMCSS Pro Audio on Windows, SCHED_FIFO or rtkit on Linux
   plugins  L1 the engine's side of plug-in hosting: start a host process, control protocol, health, state, restart; scanning; offline runs
   test-support  dev-dependency only: ProjectBuilder, write_wav, test signals, golden files (SUHINA_BLESS)
-  plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins
+  plugin-host  the suhina-plugin-host executable plug-ins run in (ADR 0006; may use unsafe): CLAP, VST3, test plug-ins;
+               behind the `vst2` feature (ADR 0022): the ported VeSTige definitions, the mock plug-in,
+               the probe and `--vst2-probe`
 devices/
   sampler  single-source sample and granular instrument; SDK runtime and theme-aware panel
   utility  gain, balance, width, mono, bass mono, phase, channels, DC filter; depends on dsp, device-api
