@@ -1,19 +1,17 @@
 name: Dependencies
 
-# Every dependency's licence must be GPLv3-compatible (AGENTS.md rule 9), come from crates.io and
+# Every dependency's licence must be GPLv3-compatible (AGENTS.md rule 10), come from crates.io and
 # have no open RustSec advisory. deny.toml says what is allowed and why; this runs it.
+#
+# Called from ci.yml as its `deny` job, so the `ci` check main requires goes red with it: a check of
+# its own, which main did not require, could fail without stopping a merge. Run by hand, it checks
+# the branch it is started on.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: deny-${{ github.ref }}
-  cancel-in-progress: true
 
 env:
   # Pinned, so a new release cannot change the result of a pull request by itself. To update:

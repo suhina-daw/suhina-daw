@@ -89,9 +89,10 @@
 Every crate in `Cargo.lock`, with all features on and for every platform, must have a licence
 that [`deny.toml`](deny.toml) allows: the list in AGENTS.md rule 10, plus a few exceptions, each
 named for one crate with the reason. Dependencies come from crates.io only, and a crate with an
-open RustSec advisory fails unless `deny.toml` ignores it with a reason. The **Dependencies**
-workflow (`.github/workflows/deny.yml`) runs this on every pull request. Run it locally with the
-version pinned in that workflow:
+open RustSec advisory fails unless `deny.toml` ignores it with a reason. The `ci` check runs this
+on every pull request and in the merge queue (`.github/workflows/deny.yml`, called from `ci.yml`),
+and `deny.toml` needs the owner's review like the workflows. Run it locally with the version pinned
+in that workflow:
 
 ```sh
 cargo install cargo-deny --version 0.20.2 --locked

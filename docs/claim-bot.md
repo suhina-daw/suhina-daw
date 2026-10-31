@@ -217,13 +217,15 @@ build on each other when stacking cannot. A pull request names each one it needs
 own in its description: `Depends on #123`, `Depends-On: #123`, or a link to an issue or pull request
 of this repository (lines inside HTML comments do not count). The check fails, naming them, while any
 is not done: a pull request is done when it is merged, an issue when it is closed, and a pull request
-closed without merging still blocks. It runs again when the description is edited or commits are
-pushed, and in the merge queue, where it reads the description of the pull request being tested
-(from the queue's branch name), so a dependency that was reopened is caught there too. Stacked pull
+closed without merging still blocks. It is a job of the `ci` check (`ci.yml` calls the workflow), so
+it runs with every push and in the merge queue, where it reads the description of the pull request
+being tested (from the queue's branch name), so a dependency that was reopened is caught there too.
+It also runs on its own when the description is edited, so a line added or removed shows at once;
+`ci` reads the description again on the next push, and the queue always does. Stacked pull
 requests in this repository (`gh stack`) are ordered by their base branches and need no line.
 
-For the check to stop the merge queue it has to be a required status check in the branch rules for
-`main` (Settings → Rules), as `Depends on / depends-on`.
+It stops the merge queue through `ci`, the one check the rules for `main` require: a check of its
+own that `main` did not require could fail without stopping a merge.
 
 ## Holding work
 
