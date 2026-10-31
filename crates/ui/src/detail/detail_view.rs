@@ -125,6 +125,8 @@ fn chain_row(
     // A group's panel, then the devices of its shown branch, in the row as the chain's own.
     let mut entries = Vec::new();
     flattened(ui, chain.track, &chain.devices, &mut entries);
+    let limited: Vec<Option<DeviceBox>> = entries.iter().map(|d| limited_list(ui, chain.track, d)).collect();
+    let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     // Each panel's width and height first, so the scroll knows how wide the chain is.
     let boxes: Vec<(f32, f32)> = entries
         .iter()
@@ -294,6 +296,60 @@ fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
     }
 }
 
+/// How many columns of a long generated list a panel shows until **View more** opens the rest.
+const LIST_COLUMNS: f32 = 2.0;
+
+/// A panel's **View more** state, for its list: how many parameters are left out, or the same count
+/// and that they show.
+#[derive(Clone, Copy)]
+pub(super) struct ListFold {
+    pub(super) more: usize,
+    pub(super) open: bool,
+}
+
+pub(super) fn list_fold_id(track: TrackId, at: &DeviceAt) -> Id {
+    Id::new(("list-fold", track.0, at))
+}
+
+/// How many of `parameters` fit the first columns of a list `max_height` tall, with room for the
+/// button under them; `None` when all of them do without the button's row.
+fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
+    let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
+    let all = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
+    if all.iter().all(|c| c.left() < limit) {
+        return None;
+    }
+    let room = parameter_layout(parameters, COMPACT_WIDTH, max_height - PARAM_ROW, &[]);
+    Some(room.iter().take_while(|c| c.left() < limit).count())
+}
+
+/// `device` with its long generated list cut to the first columns, unless **View more** is open;
+/// `None` keeps it as it is. A canvas, a themed width and an embedded editor lay out their own way.
+fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox> {
+    let id = list_fold_id(track, &device.at);
+    let open = ui.data(|d| d.get_temp::<ListFold>(id)).is_some_and(|f| f.open);
+    let graph = device.graph.as_ref().filter(|g| g.canvas.is_none() && device.file_device.is_none());
+    let graph = graph.filter(|_| device.plugin.as_ref().is_none_or(|p| p.embedded.is_none()));
+    let fit = graph.and_then(|g| {
+        let height = list_height(device, g);
+        height.is_finite().then(|| list_fit(&g.parameters, height)).flatten().map(|fit| (g, fit))
+    });
+    let Some((graph, fit)) = fit else {
+        ui.ctx().data_mut(|d| d.remove::<ListFold>(id));
+        return None;
+    };
+    let more = graph.parameters.len().saturating_sub(fit);
+    ui.ctx().data_mut(|d| d.insert_temp(id, ListFold { more, open }));
+    if open {
+        return None;
+    }
+    let mut limited = device.clone();
+    if let Some(graph) = limited.graph.as_mut() {
+        graph.parameters.truncate(fit);
+    }
+    Some(limited)
+}
+
 /// How tall a device's nodes and, beside each other, its canvas and parameter list are. The list
 /// continues in columns to the right rather than below the compact panel (ADR 0021 › Amendment:
 /// device panels, 5).
@@ -416,6 +472,8 @@ fn chain_stack(
     let mut y = area.top();
     let mut entries = Vec::new();
     flattened(ui, chain.track, &chain.devices, &mut entries);
+    let limited: Vec<Option<DeviceBox>> = entries.iter().map(|d| limited_list(ui, chain.track, d)).collect();
+    let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     for device in entries {
         if let Some(group) = &device.group {
             let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
