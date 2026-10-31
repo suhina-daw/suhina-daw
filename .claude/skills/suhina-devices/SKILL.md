@@ -32,7 +32,7 @@ its `INFO` and finds parameters by id, so the change is mostly the device's own 
    `crates/als/src/devices.rs` sets the new parameter, with a test in
    `crates/als/src/devices_tests.rs`, and `docs/spec/device-import.md` says so.
 6. **Documents:** the device's spec in `docs/spec/<name>.md`, when it has one.
-7. **Build the app and look at the panel** (AGENTS.md › Build and verify built-in devices).
+7. **Build the app and look at the panel** (`docs/workflow.md` › Built-in devices and settings).
 
 ## A new built-in device
 

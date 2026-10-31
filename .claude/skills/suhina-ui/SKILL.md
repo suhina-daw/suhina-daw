@@ -95,4 +95,4 @@ choice). The places to touch:
 3. **What reads it:** the view or the app, from `Settings`.
 4. **The spec and the website help:** the table in `docs/spec/ui-settings.md`, then
    `docs/guide-data/settings-help.json`, `python scripts/settings_guide.py`, and its `--check`
-   (AGENTS.md › Settings include their website help).
+   (`docs/workflow.md` › Built-in devices and settings).
