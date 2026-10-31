@@ -12,6 +12,9 @@ covers:
   - crates/update/src/install.rs
   - crates/ui/src/app/updates.rs
   - crates/ui/src/settings/update_settings.rs
+  - scripts/updater_source.py
+  - .github/workflows/updater-source.yml
+  - .github/CODEOWNERS
 ---
 
 # Updates
@@ -91,6 +94,32 @@ The new files go where the running `suhina` is: the folder the package was unpac
 
 The packages are not signed (releasing.md › Packages), so the update is as trusted as the
 download page: the checksum catches a broken download, not a replaced release.
+
+## Where builds come from
+
+Suhina installs and runs what the updater downloads, so a pull request that changes where it looks
+must not pass unnoticed, however large it is. Three things hold, and none of them can be turned off
+by the pull request alone:
+
+- **Code owner's review.** `.github/CODEOWNERS` names the repository owner for `crates/update/`,
+  `crates/ui/src/app/updates.rs` and `crates/ui/src/settings/update_settings.rs`, as it does for
+  `.github/` and `scripts/`. GitHub reads the file from the base branch, and the main ruleset
+  requires that review, so `ready to merge` alone does not merge a change here.
+- **The required check.** `scripts/updater_source.py` runs in the `docs` job of `ci.yml`, under the
+  `ci` check main requires, in the merge queue too. It fails when `crates/update/src/github.rs` no
+  longer holds the pinned lines (`REPOSITORY`, `NIGHTLY_URL`, `NIGHTLY_PAGE`, `ARTIFACTS_URL` and the
+  names that pick a package), or when a file the updater is built from holds a URL outside this
+  repository. Changing the check itself means changing `.github/` or `scripts/`: the first point
+  again.
+- **The same check from main.** `.github/workflows/updater-source.yml` runs the script as it is on
+  main against the pull request's commit, read as text and never run (`pull_request_target`). A pull
+  request cannot edit it, so it stays red with the lines that changed even when the pull request also
+  rewrites the pins, and the code owner sees it. It cannot be a required check, since
+  `pull_request_target` does not run in the merge queue.
+
+The script reads text, so a URL put together at run time is not seen; the code owner's review covers
+that. Moving the project to another repository changes the pinned lines and the constants together;
+the check from main is red on that pull request by design.
 
 ## Channels
 
