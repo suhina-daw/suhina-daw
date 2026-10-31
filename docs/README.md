@@ -7,6 +7,7 @@ last_verified: 2026-10-22
 covers:
   - scripts/docs.py
   - scripts/test_docs_structure.py
+  - scripts/test_docs_skills.py
 ---
 
 # How documents are written
@@ -89,6 +90,7 @@ checks the structure above:
 | `DECISION_STATUS`, `BUILT`, `SUPERSEDED_BY`, `SUPERSEDES` | The statuses above; `built` on every decision; the two supersession fields agree |
 | `STATUS_LINE` | No `- **Status:**` line in an ADR |
 | `LINE_REF` | A path or symbol is not followed by a line number |
+| `SKILL_PATH`, `SKILL_SYMBOL` | A repository path or a `suhina_*::` symbol that a skill in `.claude/skills/` names in backticks exists, so its checklists cannot go stale (an error, not a warning) |
 | `SOURCES_LAST` | Nothing after `## Sources` but sources |
 
 While the existing documents are brought in line (issue #759), these report warnings; they become
