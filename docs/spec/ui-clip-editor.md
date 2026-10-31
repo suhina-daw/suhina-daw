@@ -91,7 +91,7 @@ lane, the grid and zoom, and the `note.*` commands.
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or
   in a slot) shows its editor again, and in the Arrangement view so does a click on the clip
   already selected, so a single click on a clip keeps meaning "edit this clip". While the devices show, the piano roll's keys and Ctrl+U do nothing
-  (there are no notes on screen), the splitter's least height is the devices' 80 px, and nothing
+  (there are no notes on screen), the splitter's least height is the devices' 80 px (the height dragged is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, keep one height with no drag, and open or close only), and nothing
   is pulled to the top.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **double-click on a
   track** shows its devices: on an Arrangement track header ([arrangement

@@ -340,12 +340,22 @@ impl App {
                 self.detail_height = self.detail_height.min(cap.max(least).max(DETAIL_HEIGHT));
             }
             self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
+            // A track's devices, reached by clicking the track, keep one height; the height the
+            // user drags is the clip's, its editor's and the devices reached from it.
+            let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            let shown_height = if track_devices {
+                self.detail_cap
+                    .map_or(DETAIL_HEIGHT, |cap| cap.max(DETAIL_HEIGHT))
+                    .min((area.height() - MIN_VIEW).max(least))
+            } else {
+                self.detail_height
+            };
             let y = if pulled {
                 // Above it only the edited track, or nothing.
                 let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
                 (area.top() + above.min(area.height() - least) + SPLITTER).min(area.bottom() - least)
             } else {
-                area.bottom() - self.detail_height
+                area.bottom() - shown_height
             };
             (
                 Rect::from_min_max(area.min, Pos2::new(area.right(), (y - SPLITTER).max(area.top()))),
@@ -358,9 +368,16 @@ impl App {
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
         if geometry.is_none() {
-            let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let response =
-                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            let fixed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            let cursor = if stacked {
+                egui::CursorIcon::ResizeHorizontal
+            } else if fixed {
+                egui::CursorIcon::Default
+            } else {
+                egui::CursorIcon::ResizeVertical
+            };
+            let sense = if fixed { Sense::click() } else { Sense::click_and_drag() };
+            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
@@ -644,9 +661,14 @@ impl App {
     /// above it for the view.
     pub(super) fn collapsed_splitter(&mut self, ui: &mut Ui, area: Rect) -> Rect {
         let splitter = Rect::from_min_max(Pos2::new(area.left(), (area.bottom() - SPLITTER).max(area.top())), area.max);
-        let response = ui
-            .interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+        // A track's devices open at one height, so only a clip's view opens by dragging.
+        let fixed = self.settings.device_layout != DeviceLayout::Stack && self.shown_clip().is_none();
+        let (sense, cursor) = if fixed {
+            (Sense::click(), egui::CursorIcon::Default)
+        } else {
+            (Sense::click_and_drag(), egui::CursorIcon::ResizeVertical)
+        };
+        let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
         if response.double_clicked() {
             self.show_editor();
