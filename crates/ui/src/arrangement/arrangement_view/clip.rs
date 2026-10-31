@@ -354,7 +354,9 @@ pub(super) fn clip_box<'a>(
         // (Alt: free), as a click on an empty lane does, and play starts there however the clip
         // is picked; an ARA plug-in's editor follows it (#717).
         match response.interact_pointer_pos() {
-            Some(pointer) if !on_bar(pointer.y) => {
+            // The painting part of the clip (or the Range tool); where the clip is picked or moved,
+            // it is picked whole, however its start lies on the grid.
+            Some(pointer) if tool == ArrangementTool::Range || (!on_bar(pointer.y) && in_body(pointer.y)) => {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
                 let beat = clip_body_beat(raw, clip.start, grid, free);

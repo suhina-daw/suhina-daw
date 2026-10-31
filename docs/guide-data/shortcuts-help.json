@@ -83,18 +83,6 @@
       "docs/spec/recording.md"
     ]
   },
-  "transport.playFromSelection": {
-    "description": "Starts playback from the selected Arrangement clip. With no selected clip it uses the play start marker, regardless of the normal Play from setting.",
-    "context": "Requires an open project and an Arrangement clip selection to use that clip's start.",
-    "whenToUse": "Audition the beginning of one selected clip.",
-    "sourceFingerprint": "3e72182b91a2a6498d847c101d0fe23de52c1a80f26d13abdb7d7161b30c3862",
-    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
-    "references": [
-      "crates/ui/src/settings/keymap.rs",
-      "crates/ui/src/app.rs",
-      "docs/shortcuts.md"
-    ]
-  },
   "view.toggle": {
     "description": "Switches the main work area between Session, the clip-slot grid, and Arrangement, the song timeline.",
     "context": "Requires an open project; text fields keep Tab while they accept keyboard input.",

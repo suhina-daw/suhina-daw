@@ -1091,15 +1091,15 @@ impl App {
     /// Play as the Play button and the play/stop key start it: from the start of the clip
     /// selected in the Arrangement view when the setting **Play from** says so (or `selected`
     /// asks for it whatever the setting), from the play start marker otherwise.
-    fn play_action(&self, selected: bool) -> Action {
+    fn play_action(&self) -> Action {
         // A clip an ARA plug-in edits plays from where its editor and a click set the position,
         // never from the clip's start (the plug-in's timeline is where the user points).
         // A click in the clip's body set where play starts; only a clip picked whole plays from
         // its start.
         // Picking clips clears the time selection, so one there now was painted after the pick:
-        // plain Play starts at it (#937); playing from the selected clip still means the clip.
+        // Play starts at it (#937).
         let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
-        let clip = (selected || (self.settings.play_from == PlayFrom::Clip && !painted))
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)

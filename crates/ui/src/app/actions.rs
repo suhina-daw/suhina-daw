@@ -158,9 +158,8 @@ impl App {
             }
             "transport.toggle" => {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
-                actions.push(if running { self.stop_action() } else { self.play_action(false) });
+                actions.push(if running { self.stop_action() } else { self.play_action() });
             }
-            "transport.playFromSelection" => actions.push(self.play_action(true)),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
                 let clip = match self.shown {
