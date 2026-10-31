@@ -609,11 +609,11 @@ impl Probe {
                 EffectOp::GetChunk.name()
             ));
             let head: Vec<String> = (0..8)
-                .filter_map(|i| {
+                .map(|i| {
                     let byte = chunk_pointer.cast::<u8>().wrapping_add(i);
                     // SAFETY: the head bytes of the chunk the plug-in pointed at, at most
                     // the cap away.
-                    Some(format!("{:02x}", unsafe { *byte }))
+                    format!("{:02x}", unsafe { *byte })
                 })
                 .collect();
             self.line(format!("  head: {}", head.join(" ")));
