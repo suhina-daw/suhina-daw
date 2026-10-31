@@ -296,10 +296,10 @@ fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
     }
 }
 
-/// How many columns of a long generated list a panel shows until **View more** opens the rest.
+/// How many columns of a long generated list a panel shows until the header's chevron opens the rest.
 const LIST_COLUMNS: f32 = 2.0;
 
-/// A panel's **View more** state, for its list: how many parameters are left out, or the same count
+/// The state of a panel's list, for the chevron in its header: how many parameters are left out, or the same count
 /// and that they show.
 #[derive(Clone, Copy)]
 pub(super) struct ListFold {
@@ -311,19 +311,15 @@ pub(super) fn list_fold_id(track: TrackId, at: &DeviceAt) -> Id {
     Id::new(("list-fold", track.0, at))
 }
 
-/// How many of `parameters` fit the first columns of a list `max_height` tall, with room for the
-/// button under them; `None` when all of them do without the button's row.
+/// How many of `parameters` fit the first columns of a list `max_height` tall; `None` when all do.
 fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
     let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
-    let all = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
-    if all.iter().all(|c| c.left() < limit) {
-        return None;
-    }
-    let room = parameter_layout(parameters, COMPACT_WIDTH, max_height - PARAM_ROW, &[]);
-    Some(room.iter().take_while(|c| c.left() < limit).count())
+    let cells = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
+    let fit = cells.iter().take_while(|c| c.left() < limit).count();
+    (fit < cells.len()).then_some(fit)
 }
 
-/// `device` with its long generated list cut to the first columns, unless **View more** is open;
+/// `device` with its long generated list cut to the first columns, unless the chevron opened it;
 /// `None` keeps it as it is. A canvas, a themed width and an embedded editor lay out their own way.
 fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox> {
     let id = list_fold_id(track, &device.at);
@@ -808,6 +804,22 @@ fn device_panel(
     } else {
         painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
     }
+    // Beside the switch, on a panel with more parameters than its columns show: opens the rest.
+    let fold_id = list_fold_id(track, &device.at);
+    let mut name_left = switch.right() + PAD;
+    if let Some(fold) = ui.data(|d| d.get_temp::<ListFold>(fold_id)) {
+        let at = Rect::from_center_size(Pos2::new(switch.right() + 9.0, header.center().y), Vec2::splat(12.0));
+        name_left = at.right() + 2.0;
+        let label =
+            if fold.open { "Show fewer parameters".to_owned() } else { format!("Show {} more parameters", fold.more) };
+        let chevron = ui.interact(at, fold_id.with("chevron"), Sense::click()).on_hover_text(label.clone());
+        chevron.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+        if chevron.clicked() {
+            ui.ctx().data_mut(|d| d.insert_temp(fold_id, ListFold { open: !fold.open, ..fold }));
+        }
+        let ink = if chevron.hovered() { theme::text_primary() } else { theme::text_hint() };
+        widgets::chevron(painter, at.center(), fold.open, ink);
+    }
     let name_color = if device.enabled { theme::text_primary() } else { theme::text_hint() };
     // The X at the header's right end removes the device, as Remove device in its menu does.
     let close = Rect::from_center_size(Pos2::new(header.right() - PAD - 6.0, header.center().y), Vec2::splat(12.0));
@@ -856,8 +868,8 @@ fn device_panel(
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     let name = Rect::from_min_max(
-        Pos2::new(switch.right() + PAD, header.top()),
-        Pos2::new((kind_right - PAD - kind_width).max(switch.right() + PAD), header.bottom()),
+        Pos2::new(name_left, header.top()),
+        Pos2::new((kind_right - PAD - kind_width).max(name_left), header.bottom()),
     );
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &device.name, theme::ui_font(theme::TEXT), name_color);
     widgets::text_in(

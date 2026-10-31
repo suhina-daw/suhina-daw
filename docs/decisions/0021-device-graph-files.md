@@ -205,7 +205,7 @@ A generated list longer than the compact panel's 168 px scrolled inside it, so a
 many parameters (Utility, the FM synth, most plug-ins) showed a few rows at a time and its
 controls slid away under the pointer. Items 1 and 5 of the amendment above change in place: the
 list fills columns 260 px wide, each as tall as the compact panel (less a plug-in's rows and the
-graph's node rows) or a taller canvas beside them, from left to right, and the device's panel is as wide as its columns. A list longer than two columns shows those and **View more (N)** under them, which opens the rest; **View less** closes them again. Stock
+graph's node rows) or a taller canvas beside them, from left to right, and the device's panel is as wide as its columns. A list longer than two columns shows those, and a chevron beside the header's switch opens or closes the rest. Stock
 controls a canvas leaves shown go in the same columns to the canvas's right instead of under it.
 The chain already scrolls sideways, so a wide device needs nothing new; a detail area smaller
 than the panel still scrolls it, and the expanded panel is unchanged. Cells an `.sd` file places

@@ -192,11 +192,6 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
-/// A plain button's fill for its hover.
-pub fn motion_fill(ui: &Ui, response: &Response) -> Color32 {
-    motion::mix(theme::control_background(), theme::control_hover(), hover(ui, response))
-}
-
 pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, response: &Response, fill: Color32) {
     let _style = crate::kit::style_class::control("button", response);
     let radius = super::style_class::radius((rect.height() * 0.25).min(5.0));

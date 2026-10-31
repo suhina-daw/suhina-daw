@@ -146,21 +146,9 @@ pub(super) fn graph_controls(
             let cells = list_cells(graph, width, list_height);
             let custom_size = graph.canvas.as_ref().map_or(Vec2::ZERO, |c| Vec2::new(c.size[0], c.size[1]));
             let nodes_height = graph.nodes.len() as f32 * NODE_ROW;
-            // **View more** or **View less** under the last parameter.
-            let fold_id = super::list_fold_id(track, at);
-            let fold = ui.data(|d| d.get_temp::<super::ListFold>(fold_id));
-            let button = fold.and_then(|_| cells.last()).map(|last| {
-                Rect::from_min_size(
-                    Pos2::new(last.left() + 4.0, last.bottom() + 2.0),
-                    Vec2::new(width - 16.0, PARAM_ROW - 4.0),
-                )
+            let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
+                Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
-            let extent = cells
-                .iter()
-                .chain(&button)
-                .fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
-                    Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
-                });
             let (_, body) = ui.allocate_space(Vec2::new(extent.x, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
             node_rows(painter, body, graph);
@@ -171,18 +159,6 @@ pub(super) fn graph_controls(
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
             for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);
-            }
-            if let (Some(fold), Some(button)) = (fold, button) {
-                let text = if fold.open { "View less".to_owned() } else { format!("View more ({})", fold.more) };
-                let rect = button.translate(origin);
-                let response = widgets::button_area(ui, rect, fold_id.with("button"), &text);
-                let fill = widgets::motion_fill(ui, &response);
-                widgets::button_surface(painter, rect, &response, false, fill, 2.0);
-                let font = theme::ui_font(theme::TEXT_SMALL);
-                widgets::text_in(painter, rect, Align2::CENTER_CENTER, &text, font, theme::text_primary());
-                if response.clicked() {
-                    ui.ctx().data_mut(|d| d.insert_temp(fold_id, super::ListFold { open: !fold.open, ..fold }));
-                }
             }
         });
     });
