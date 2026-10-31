@@ -943,8 +943,8 @@ fn fader_db_at(y: f32, fader: Rect) -> f64 {
     suhina_engine::model::automation::volume_db(position).clamp(VOLUME_RANGE.0, VOLUME_RANGE.1)
 }
 
-/// A volume control's gesture. A drag on a vertical fader moves its cap with the pointer, which stays
-/// where it was grabbed on the cap (Shift: ten times finer, the pointer running ahead); everything
+/// A volume control's gesture. A drag on a vertical fader moves its cap with the pointer, hidden and
+/// staying where it was grabbed on the cap (Shift: ten times finer, the pointer running ahead); everything
 /// else is an ordinary value drag.
 fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>, value: f64, fader: Rect) -> Drag {
     let on_fader = !horizontal_volume() && fader.height() > cap_size().y && fader.contains(response.rect.center());
@@ -952,6 +952,7 @@ fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>,
         && response.dragged_by(egui::PointerButton::Primary)
         && let Some(pointer) = response.interact_pointer_pos()
     {
+        widgets::hide_pointer_for_drag(ui.ctx());
         let grab_id = response.id.with("grab");
         let mut grab =
             ui.ctx().data(|d| d.get_temp::<f32>(grab_id)).filter(|_| !response.drag_started()).unwrap_or_else(|| {

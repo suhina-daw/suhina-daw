@@ -101,6 +101,15 @@ pub fn release_value_drag(ctx: &egui::Context) {
     }
 }
 
+/// Hides the pointer for a drag that still moves with it (a fader's cap under it), without the lock
+/// of [`value_drag_delta`]; [`release_value_drag`] gives it back.
+pub fn hide_pointer_for_drag(ctx: &egui::Context) {
+    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_none() && ctx.input(|i| i.focused) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: false }));
+    }
+}
+
 /// Keeps the pointer hidden while a value drag holds it, called after the views: the last icon set
 /// in a frame wins, and egui shows the pointer again for any other icon.
 pub fn hide_pointer_during_value_drag(ctx: &egui::Context) {

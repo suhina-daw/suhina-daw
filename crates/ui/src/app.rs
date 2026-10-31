@@ -2567,6 +2567,7 @@ impl App {
         // The frame's placed controls, for anchors between them (`--suhina-anchor-*`).
         let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
+        crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
     }
 
     fn ui_content(&mut self, ui: &mut Ui) {
@@ -3458,7 +3459,6 @@ impl App {
         } else {
             self.actions_settle = None;
         }
-        crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
         if grid.is_some_and(|g| {
             g.running || g.columns.iter().any(|c| c.stop_queued || c.slots.iter().any(|s| s.state == SlotState::Queued))
         }) {
