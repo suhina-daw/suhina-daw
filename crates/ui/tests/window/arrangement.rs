@@ -1864,7 +1864,7 @@ fn ctrl_paints_an_area_across_take_lanes_and_delete_takes_it() {
     let mut harness = window_with_drums_takes(32.0);
     let before = take_pieces(&harness);
     let from = harness.get_by_label("Comp from Drums Take 1").rect().left_center() + egui::vec2(60.0, 0.0);
-    let to = harness.get_by_label("Comp from Drums Take 2").rect().left_center() + egui::vec2(260.0, 0.0);
+    let to = harness.get_by_label("Comp from Drums Take 2").rect().left_center() + egui::vec2(150.0, 0.0);
     harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
     drag_between(&mut harness, from, to);
     harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));

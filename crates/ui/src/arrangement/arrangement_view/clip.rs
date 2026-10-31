@@ -1823,11 +1823,10 @@ pub(super) fn take_lanes(
         // and a drag elsewhere stay the lane's (#1078).
         for (index, clip) in take.clips.iter().enumerate() {
             let rect = clip_rect(row, clip.start, clip.length, x_of);
-            if rect.width() < 16.0 {
-                continue;
-            }
             let lower = egui::Rangef::new(row.center().y, row.bottom() - 2.0);
-            for end in [true, false] {
+            // A narrow piece has only its right corner, the one that brings back what was cut.
+            let edges: &[bool] = if rect.width() < 16.0 { &[true] } else { &[true, false] };
+            for &end in edges {
                 let held = state
                     .take_edge
                     .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end);
