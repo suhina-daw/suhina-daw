@@ -73,8 +73,10 @@ the documents that match your task.
    import"), never as Suhina's own branding.
 10. **GPL-compatible dependencies only.** Suhina is GPL-3.0-or-later. Dependencies must be
    compatible with GPLv3: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0. Not GPL-2.0-only,
-   not proprietary or "non-commercial" licences. CI checks it with `cargo-deny`
-   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`); run `cargo deny check` before adding
+   not proprietary or "non-commercial" licences. The `ci` check runs `cargo-deny`
+   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`, called from `ci.yml`; `deny.toml` has a
+   code owner, so the pull request that adds a dependency is not the one that permits its
+   licence); run `cargo deny check` before adding
    or updating a dependency ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
 11. **No links to private agent sessions.** The repository is public. Never put a link to an
     agent's own session (such as `https://claude.ai/code/session_...`) in a commit message, a pull
