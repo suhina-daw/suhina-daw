@@ -471,7 +471,7 @@ figures:
 updates the coverage it moves in `score.py` (and `devices.json` for a built-in effect or
 instrument), in the same pull request, and leaves the marked parts to `main`; one that moves no
 coverage says `Parity: no change` and why in its description
-([AGENTS.md › Before you finish a task](../../AGENTS.md#4-before-you-finish-a-task)).
+([workflow.md › Parity](../workflow.md#parity)).
 `scripts/parity/pr_notice.py`, run by
 [`.github/workflows/parity-notice.yml`](../../.github/workflows/parity-notice.yml), warns on a pull
 request that changes `crates/`, `devices/` or `apps/` and does neither. It is a warning, not a

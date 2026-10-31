@@ -266,7 +266,7 @@ fn synced_lfo_follows_transport_position() {
 
 #[test]
 fn six_authoring_examples_save_restore_and_have_the_expected_sound() {
-    for name in ["stereo-utility", "auto-pan", "filter", "distortion", "delay", "compressor"] {
+    for name in ["stereo-utility", "lfo-pan", "filter", "distortion", "delay", "compressor"] {
         let g = examples::build(name).unwrap();
         assert_eq!(DeviceGraph::from_sd(&g.to_sd().unwrap()).unwrap(), g);
         let mut effect = g.compile().unwrap();
@@ -275,7 +275,7 @@ fn six_authoring_examples_save_restore_and_have_the_expected_sound() {
         assert!(out.iter().all(|v| v.is_finite()));
         match name {
             "stereo-utility" => assert_eq!(out, vec![0.5; 48000]),
-            "auto-pan" => {
+            "lfo-pan" => {
                 assert!((out[24000] - 0.0).abs() < 1e-5);
                 assert!((out[24001] - 0.5).abs() < 1e-5);
             }
@@ -537,7 +537,7 @@ fn lfo_disclosure_round_trips_without_changing_audio() {
 fn effect_examples_use_circular_knobs_and_square_value_controls() {
     use suhina_device_sdk::ControlShape;
 
-    for name in ["auto-pan", "compressor", "delay", "distortion", "filter", "stereo-utility"] {
+    for name in ["lfo-pan", "compressor", "delay", "distortion", "filter", "stereo-utility"] {
         let graph = examples::build(name).unwrap();
         for parameter in &graph.parameters {
             let expected = if matches!(parameter.control, ParameterControl::Knob | ParameterControl::LogKnob) {
