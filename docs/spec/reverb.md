@@ -3,7 +3,7 @@ description: The built-in algorithmic reverb - its parameters, signal flow (inpu
 read_when: reverb, algorithmic reverb, room, decay, early reflections, predelay, feedback delay network, FDN, damping, freeze, diffusion, importing Live's Reverb, Reverb elements
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-10-31
 covers:
   - devices/reverb/**
   - crates/dsp/src/first_order.rs

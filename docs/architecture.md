@@ -3,7 +3,7 @@ description: How the crates, threads and commands fit together, from a file to t
 read_when: adding a crate or feature, where does code go, threads, audio thread, data flow, layers, player, controller
 type: system
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-10-31
 covers:
   - crates/style/
   - apps/suhina/src/theme_io.rs
