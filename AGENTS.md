@@ -136,6 +136,7 @@ devices/
   eq       eight bands (cuts, shelves, bells, notch) on state-variable filters, two curves: Stereo, L/R, M/S
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled
   overdrive  pedal-style: band, drive, tone, dynamics, dry/wet; oversampled
+  saturator  eight curves, Color filters and their inverse, post clip, waveshaper; oversampled
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet
   fm-synth six operators, 32 algorithms, DX7 voice files; the engine is a port of MSFA (Apache-2.0)
   limiter  brickwall peak limiter with 1.5 ms lookahead; never over the ceiling
