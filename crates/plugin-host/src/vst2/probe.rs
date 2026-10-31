@@ -43,6 +43,13 @@ const MAX_PARAMS: usize = 64;
 const MAX_CHUNK: usize = 1024 * 1024;
 /// Most events the probe takes from one list.
 const MAX_EVENTS: usize = 1024;
+/// Most entries each of the probe's records keeps: a plug-in can call back without limit
+/// (a chatty one asked a vendor string hundreds of times in a second), so the newest are
+/// kept and the report says when a record was cut.
+const MAX_CALLS: usize = 4096;
+/// Most channels a plug-in may declare before the probe refuses its block (the probe's
+/// arrays are sized from the declaration, so the cap bounds them).
+const MAX_CHANNELS: usize = 64;
 /// The events the probe sends in its block: a note on and its off, a fifth and a quarter of
 /// the block in.
 pub(crate) const BLOCK_EVENTS: [([u8; 4], i32); 2] = [([0x90, 60, 100, 0], 100), ([0x80, 60, 64, 0], 200)];
@@ -116,10 +123,26 @@ impl HostState {
     /// Records one call of the plug-in, with the answer it was given.
     fn record(&self, call: Call) {
         if let Ok(mut calls) = self.calls.lock() {
+            bound(&mut calls);
             calls.push(call);
         }
     }
 }
+
+/// Keeps a record's newest entries when it is full.
+fn bound<T>(list: &mut Vec<T>) {
+    if list.len() >= MAX_CALLS {
+        let cut = list.len() / 2;
+        list.drain(..cut);
+        // The truncation is worth a line in the report, not silence.
+        if let Ok(mut cut_note) = TRUNCATED.lock() {
+            *cut_note = true;
+        }
+    }
+}
+
+/// Whether any record was cut, for the report's one line about it.
+static TRUNCATED: Mutex<bool> = Mutex::new(false);
 
 /// The hosts of the probes this process runs, each under the effect it serves: the callback
 /// finds its host as a real host would look an effect up in its own registry, and two probes
@@ -188,6 +211,7 @@ fn answer(
             // SAFETY: the list the plug-in sent, read with a bound.
             let events = unsafe { read_events(ptr.cast::<vestige::VstEvents>(), MAX_EVENTS) }.unwrap_or_default();
             if let Ok(mut sent) = state.events.lock() {
+                bound(&mut sent);
                 sent.extend(events);
             }
             0
@@ -215,14 +239,16 @@ fn answer(
         // *Assumed* values; the probe automates nothing.
         Some(HostOp::GetAutomationState) => automation_state::OFF,
         // *Assumed*: the answer 1 says the string was filled.
+        // The buffer's size is the op-code's assumption; writing only the string and its
+        // terminator needs the least of it.
         Some(HostOp::GetVendorString) => {
-            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
-            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            // SAFETY: the caller's buffer must hold the string and its NUL byte.
+            unsafe { write_text(ptr, "Suhina".len() + 1, "Suhina") };
             1
         }
         Some(HostOp::GetProductString) => {
             // SAFETY: as above.
-            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina VST2 probe") };
+            unsafe { write_text(ptr, "Suhina VST2 probe".len() + 1, "Suhina VST2 probe") };
             1
         }
         Some(HostOp::GetVendorVersion) => 1,
@@ -234,6 +260,7 @@ fn answer(
             let yes =
                 matches!(asked.as_str(), can_do::HOST_SENDS_EVENTS | can_do::HOST_SENDS_MIDI | can_do::HOST_SENDS_TIME);
             if let Ok(mut asked_for) = state.can_do.lock() {
+                bound(&mut asked_for);
                 asked_for.push((asked, isize::from(yes)));
             }
             isize::from(yes)
@@ -557,22 +584,45 @@ impl Probe {
     fn state_chunks(&mut self) {
         self.line("state as a chunk (the op-codes, and what `index` and the answer mean, are assumed):");
         let mut chunk_pointer: *const c_void = std::ptr::null();
-        let size =
+        let claimed =
             match self.send(EffectOp::GetChunk, 0, 0, &mut chunk_pointer as *mut *const c_void as *mut c_void, 0.0) {
-                Ok(size) => usize::try_from(size).unwrap_or(0).min(MAX_CHUNK),
+                Ok(size) => usize::try_from(size).unwrap_or(0),
                 Err(e) => {
                     self.line(format!("  {e}"));
                     return;
                 }
             };
+        // A size without the pointer it says it has is not a state to round-trip: the report
+        // says so instead of handing fabricated zero bytes back.
+        if claimed > 0 && chunk_pointer.is_null() {
+            self.line(format!("  {} -> {claimed} bytes claimed, but no chunk pointer came with them", EffectOp::GetChunk.name()));
+            return;
+        }
+        // Over the cap the copy would not be the plug-in's whole state: the round trip of a
+        // truncated chunk would read as evidence it round-trips when it has not.
+        if claimed > MAX_CHUNK {
+            self.line(format!(
+                "  {} -> {claimed} bytes, over the {MAX_CHUNK}-byte cap: the round trip is skipped, the report shows the head only",
+                EffectOp::GetChunk.name()
+            ));
+            let head: Vec<String> = (0..8)
+                .filter_map(|i| {
+                    let byte = chunk_pointer.cast::<u8>().wrapping_add(i);
+                    // SAFETY: the head bytes of the chunk the plug-in pointed at, at most
+                    // the cap away.
+                    Some(format!("{:02x}", unsafe { *byte }))
+                })
+                .collect();
+            self.line(format!("  head: {}", head.join(" ")));
+            return;
+        }
+        let size = claimed;
         let mut chunk = vec![0u8; size];
-        if !chunk_pointer.is_null() {
-            for (slot, i) in chunk.iter_mut().zip(0..size) {
-                let byte = chunk_pointer.cast::<u8>().wrapping_add(i);
-                // SAFETY: one of the `size` bytes the plug-in said its chunk has, at the
-                // pointer it gave; the size is capped at `MAX_CHUNK`.
-                *slot = unsafe { *byte };
-            }
+        for (slot, i) in chunk.iter_mut().zip(0..size) {
+            let byte = chunk_pointer.cast::<u8>().wrapping_add(i);
+            // SAFETY: one of the `size` bytes the plug-in said its chunk has, at the
+            // pointer it gave.
+            *slot = unsafe { *byte };
         }
         let head: Vec<String> = chunk.iter().take(8).map(|b| format!("{b:02x}")).collect();
         self.line(format!("  {} -> {size} bytes: {}", EffectOp::GetChunk.name(), head.join(" ")));
@@ -616,15 +666,26 @@ impl Probe {
             Err(e) => self.line(format!("  {e}")),
         }
         // The block itself: `processReplacing` where the flag says so, the deprecated
-        // `process` otherwise.
+        // `process` otherwise. The channels are what the plug-in declared (a plug-in reads
+        // its own count against the arrays it is handed), capped; one over the cap is
+        // refused the block rather than read past the arrays.
         // SAFETY: the effect the probe holds, read by value.
         let info = unsafe { EffectInfo::of(self.effect()) };
         let replacing = info.is_some_and(|info| info.flags & effect_flags::CAN_REPLACING != 0);
+        let (ins, outs_declared) =
+            info.map(|i| (usize::try_from(i.num_inputs).unwrap_or(0), usize::try_from(i.num_outputs).unwrap_or(0)))
+                .unwrap_or((2, 2));
+        if ins > MAX_CHANNELS || outs_declared > MAX_CHANNELS {
+            self.line(format!(
+                "  the block is refused: the plug-in declares {ins} in and {outs_declared} out, over the {MAX_CHANNELS}-channel cap"
+            ));
+            return;
+        }
         let frames = BLOCK_SIZE;
-        let mut channels: [Vec<f32>; 2] = [(0..frames).map(ramp).collect(), (0..frames).map(ramp).collect()];
-        let mut outs: [Vec<f32>; 2] = [vec![0.0; frames], vec![0.0; frames]];
-        let mut in_pointers = [channels[0].as_mut_ptr(), channels[1].as_mut_ptr()];
-        let mut out_pointers = [outs[0].as_mut_ptr(), outs[1].as_mut_ptr()];
+        let channels: Vec<Vec<f32>> = (0..ins.max(1)).map(|_| (0..frames).map(ramp).collect()).collect();
+        let mut outs: Vec<Vec<f32>> = (0..outs_declared.max(1)).map(|_| vec![0.0; frames]).collect();
+        let mut in_pointers: Vec<*mut f32> = channels.iter().map(|c| c.as_ptr() as *mut f32).collect();
+        let mut out_pointers: Vec<*mut f32> = outs.iter_mut().map(|c| c.as_mut_ptr()).collect();
         let effect = self.effect();
         let sent = if replacing {
             // SAFETY: the effect the probe holds; one field read.
@@ -645,15 +706,19 @@ impl Probe {
         };
         match sent {
             Some(what) => self.line(format!(
-                "  {what} of {frames} frames: in[0][0] {:.3} -> out[0][0] {:.3}, out[0][last] {:.3}",
+                "  {what} of {frames} frames ({ins} in, {outs_declared} out): in[0][0] {:.3} -> out[0][0] {:.3}, out[0][last] {:.3}",
                 channels[0].first().copied().unwrap_or_default(),
                 outs[0].first().copied().unwrap_or_default(),
                 outs[0].last().copied().unwrap_or_default(),
             )),
             None => self.line("  the plug-in has no process call"),
         }
-        // An editor's idle, where a plug-in with a panel reports the user's moves.
-        if let Err(e) = self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0) {
+        // An editor's idle, where a plug-in with a panel reports the user's moves: only a
+        // plug-in that declares an editor gets one (a call without an editor open is one
+        // some plug-ins take badly).
+        if info.is_some_and(|info| info.flags & effect_flags::HAS_EDITOR != 0)
+            && let Err(e) = self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0)
+        {
             self.line(format!("  {e}"));
         }
         for (op, value, what) in
@@ -687,6 +752,11 @@ impl Probe {
                 HostOp::from_value(call.op).map_or_else(|| format!("op-code {}", call.op), |op| op.name().to_owned());
             let answer = call.answer.map_or_else(String::new, |a| format!(" -> {a}"));
             self.line(format!("  {name}(index {}, value {}, opt {:.6}){answer}", call.index, call.value, call.opt));
+        }
+        if let Ok(cut) = TRUNCATED.lock()
+            && *cut
+        {
+            self.line("  (some records were cut to the newest 4096 entries: a chatty plug-in)");
         }
         let asked = self.state.can_do.lock().map(|asked| asked.clone()).unwrap_or_default();
         for (what, answer) in asked {

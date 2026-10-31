@@ -102,7 +102,7 @@ pub(crate) fn mock(host: vestige::AudioMasterCallback) -> (Box<AEffect>, Arc<Moc
         numParams: 1,
         numInputs: CHANNELS as i32,
         numOutputs: CHANNELS as i32,
-        flags: effect_flags::CAN_REPLACING | effect_flags::HAS_CHUNKS,
+        flags: effect_flags::CAN_REPLACING | effect_flags::HAS_CHUNKS | effect_flags::HAS_EDITOR,
         ptr1: std::ptr::null_mut(),
         ptr2: std::ptr::null_mut(),
         empty3: [0; 12],
