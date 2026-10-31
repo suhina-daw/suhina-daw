@@ -140,6 +140,8 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
+<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
+
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
 

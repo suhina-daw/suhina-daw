@@ -76,6 +76,9 @@ jobs:
         run: python3 scripts/docs.py check
       - name: Script tests (release notes)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      # Each file is a ROADMAP bullet that docs-generated.yml folds in on main.
+      - name: docs/works-now files
+        run: python3 scripts/works_now.py check
       # The claim bot writes to the project board, so a wrong branch would not fail anything else:
       # its commands are run here against mocked API clients, on the runner's Node.js.
       - name: The claim bot's commands answer as intended

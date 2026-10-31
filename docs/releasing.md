@@ -317,7 +317,10 @@ notes, so they say what changed for a user: "Clip fades: shapes and an adjustabl
   that are new or reworded since the previous release, by milestone, then *All changes*. A
   release candidate counts from the tag before it, a release from the previous release, the first
   from the beginning. Edit the draft before publishing: the ROADMAP bullets describe what works,
-  not what changed, and a reworded bullet may be a fix of its text.
+  not what changed, and a reworded bullet may be a fix of its text. A pull request writes a new
+  bullet as a file under `docs/works-now/`, which `docs-generated.yml` folds into ROADMAP.md on
+  `main` right after the merge ([`works-now/README.md`](works-now/README.md)), so the draft sees it
+  like any other.
 
 Its tests run in CI: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 
