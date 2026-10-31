@@ -4,6 +4,60 @@
 use super::*;
 
 #[test]
+fn sampler_mode_icons_have_distinct_geometry_and_keep_their_captions() {
+    let context = egui::Context::default();
+    for label in ["Sample", "Slice", "Grain"] {
+        let mut output = context.run_ui(Default::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            paint_sample_mode(
+                ui.painter(),
+                Rect::from_min_size(Pos2::new(10., 10.), Vec2::new(60., 46.)),
+                label,
+                true,
+                crate::kit::skin::State::Normal,
+                widget_palette(),
+            );
+        });
+        output.textures_delta.clear();
+        assert!(output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == label)));
+        match label {
+            // A wave between two bars, a strip cut in three, scattered grains.
+            "Sample" => {
+                assert!(output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Path(p) if p.points.len() == 25)));
+                assert_eq!(
+                    output.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::LineSegment { .. })).count(),
+                    2
+                );
+            }
+            "Slice" => assert!(output.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Rect(_))).count() >= 3),
+            _ => assert_eq!(output.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Circle(_))).count(), 7),
+        }
+    }
+}
+
+#[test]
+fn sample_zoom_keeps_the_source_point_under_the_pointer() {
+    let field = Rect::from_min_size(Pos2::new(70., 24.), Vec2::new(832., 110.));
+    let view = SampleView { start: 0.2, span: 0.5 };
+    let anchor = field.left() + field.width() * 0.7;
+    let zoomed = view.zoomed(anchor, 2., field, 48000);
+    assert!((view.point(anchor, field) - zoomed.point(anchor, field)).abs() < 1e-7);
+    assert_eq!(zoomed.span, 0.25);
+    assert_eq!(zoomed.zoomed(anchor, 0., field, 48000), zoomed);
+    assert_eq!(zoomed.zoomed(anchor, f32::NAN, field, 48000), zoomed);
+}
+
+#[test]
+fn sample_pan_and_zoom_stay_inside_the_file() {
+    let field = Rect::from_min_size(Pos2::ZERO, Vec2::new(800., 110.));
+    let view = SampleView { start: 0.25, span: 0.5 };
+    assert_eq!(view.panned(1e6, field).start, 0.);
+    assert_eq!(view.panned(-1e6, field).start, 0.5);
+    assert_eq!(view.zoomed(400., 0.01, field, 48000), SampleView::default());
+    assert_eq!(view.zoomed(400., 1e9, field, 1), SampleView::default());
+}
+
+#[test]
 fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispatch() {
     use crate::kit::{control_layout::Placement, skin};
     let canvas = Arc::new(DeviceUi {
@@ -160,7 +214,7 @@ fn sample_markers_have_one_solid_color_without_an_outline() {
             _ => None,
         })
         .collect();
-    assert_eq!(strokes, vec![Stroke::new(2., SAMPLE_MARKER)]);
+    assert_eq!(strokes, vec![Stroke::new(2., sample_marker_color())]);
     output.textures_delta.clear();
 }
 
@@ -204,6 +258,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             &[],
             TrackId(1),
             0,
+            serde_json::json!(0),
             &mut Vec::new(),
             false,
         );
@@ -214,8 +269,8 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
         .iter()
         .filter(|s| {
             matches!(&s.shape,
-                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(2., SAMPLE_MARKER)
-                    && points[0].x == points[1].x && points[0].y == 28.
+                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary)
+                    && points[0].x == points[1].x && points[0].y == 4.
             )
         })
         .count();
@@ -256,7 +311,7 @@ fn historical_sampler_waveforms_keep_recording_controls() {
         crate::kit::theme::install(ui.ctx());
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &[],
             TrackId(1),
@@ -300,7 +355,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
     let mut empty = egui_kittest::Harness::builder().with_size(Vec2::new(916., 184.)).build_ui(move |ui| {
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &empty_canvas,
             &empty_parameters,
             TrackId(1),
@@ -309,20 +364,26 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         );
     });
     empty.run_steps(2);
-    assert!(empty.query_by_label("warp").is_none());
-    for (position, param, expected) in [(Pos2::new(120., 10.), "mode", 1.), (Pos2::new(850., 10.), "panel_view", 1.)] {
-        let actions = click(&canvas, &parameters, position);
-        assert!(actions.iter().any(|a| a.params["param"] == param && a.params["value"] == expected), "{param}");
-    }
-    parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 1.;
-    for (current, position, expected) in [
-        (1., Pos2::new(850., 10.), 0.),
-        (1., Pos2::new(760., 10.), 2.),
-        (2., Pos2::new(760., 10.), 0.),
-        (2., Pos2::new(850., 10.), 1.),
-    ] {
+    assert!(empty.query_by_label("Warp").is_none());
+    // The middle of the control bound to `param` whose gesture sets `value`, in `canvas`.
+    let button = |canvas: &DeviceUi, param: &str, value: u16| {
+        let c = canvas
+            .controls
+            .iter()
+            .find(|c| {
+                c.x.as_ref().is_some_and(|b| b.parameter == param)
+                    && matches!(c.gesture, UiGesture::Set(v) | UiGesture::Tab(v) if v == value)
+            })
+            .unwrap();
+        Pos2::new(c.bounds[0] + c.bounds[2] / 2., c.bounds[1] + c.bounds[3] / 2.)
+    };
+    let actions = click(&canvas, &parameters, button(&canvas, "mode", 1));
+    assert!(actions.iter().any(|a| a.params["param"] == "mode" && a.params["value"] == 1.), "mode");
+    // The pages are in the header strip: Controls and More are tabs a second click closes.
+    let header = panel.header.clone().unwrap();
+    for (current, tab, expected) in [(0., 1, 1.), (1., 1, 0.), (1., 3, 3.), (3., 3, 0.), (3., 0, 0.)] {
         parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = current;
-        let actions = click(&canvas, &parameters, position);
+        let actions = click(&header, &parameters, button(&header, "panel_view", tab));
         assert!(
             actions.iter().any(|a| a.params["param"] == "panel_view" && a.params["value"] == expected),
             "{current} -> {expected}: {actions:?}"
@@ -366,7 +427,10 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         let offset = Vec2::new(3., 1.);
         let start = plot.points[index] + offset;
         assert!(click(&canvas, &parameters, start).is_empty(), "click must not jump {name}");
-        let time = 0.5
+        // Each drag moves its stage to `target`; release goes to 2 s, as 0.5 s is closer than a
+        // drag's least distance on the narrow graph.
+        let target = if index == 4 { 2. } else { 0.5 };
+        let time = target
             + if index == 2 {
                 0.1
             } else if index == 4 {
@@ -379,7 +443,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         assert!(
             actions
                 .iter()
-                .any(|a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - 0.5).abs() < 1e-5),
+                .any(|a| a.params["param"] == param && (a.params["value"].as_f64().unwrap() - target).abs() < 1e-5),
             "{param}: {actions:?}"
         );
         assert!(actions.iter().any(|a| a.params["continuous"] == false));
@@ -391,9 +455,10 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         );
     }
     for (name, index, param, expected) in [
-        ("AMP_envelope", 3, "sustain", 0.6 + 8. / 24.),
-        ("FILTER_envelope", 3, "filter_sustain", 0.6 + 8. / 24.),
-        ("PITCH_envelope", 1, "pitch_env", 44.),
+        // Eight pixels down (past a drag's least distance) of a 36 px graph's 20 px field.
+        ("AMP_envelope", 3, "sustain", 0.6 - 8. / 20.),
+        ("FILTER_envelope", 3, "filter_sustain", 0.6 - 8. / 20.),
+        ("PITCH_envelope", 1, "pitch_env", 12. - 96. * 8. / 20.),
     ] {
         let control = canvas.controls.iter().find(|c| c.id == name).unwrap();
         let [x, y, w, h] = control.bounds;
@@ -405,7 +470,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             adsr,
         );
         let start = plot.points[index];
-        let actions = pointer_gesture(&canvas, &parameters, start, Some(start - Vec2::new(0., 8.)));
+        let actions = pointer_gesture(&canvas, &parameters, start, Some(start + Vec2::new(0., 8.)));
         assert!(
             actions
                 .iter()
@@ -417,7 +482,10 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         parameters.iter_mut().find(|p| p.id == id).unwrap().value = value;
     }
     let zero = EnvelopePlot::new(
-        Rect::from_min_size(Pos2::new(8., 126.), Vec2::new(284., 40.)),
+        {
+            let c = canvas.controls.iter().find(|c| c.id == "AMP_envelope").unwrap();
+            Rect::from_min_size(Pos2::new(c.bounds[0], c.bounds[1]), Vec2::new(c.bounds[2], c.bounds[3]))
+        },
         [0., 0., 0.78, 0.3],
         30.,
         true,
@@ -430,28 +498,47 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             .any(|a| a.params["param"] == "decay" && (a.params["value"].as_f64().unwrap() - 0.05).abs() < 1e-5)
     );
     assert!(!actions.iter().any(|a| a.params["param"] == "attack"));
-    parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 2.;
-    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(200., 140.), Some(Pos2::new(244., 136.)));
+    parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 1.;
+    let preview = canvas.controls.iter().find(|c| c.id == "lfo_preview").unwrap().bounds;
+    // The rate follows the pointer across the drawing: half way is 0.01 · 2000^0.5 Hz.
+    let from = Pos2::new(preview[0] + 20., preview[1] + preview[3] / 2.);
+    let actions = pointer_gesture(&canvas, &parameters, from, Some(Pos2::new(preview[0] + preview[2] / 2., from.y)));
     assert!(actions.iter().any(
         |a| a.params["param"] == "lfo_rate" && (a.params["value"].as_f64().unwrap() - 0.4472136).abs() < 0.001
     ));
     assert!(!actions.iter().any(|a| a.params["param"] == "lfo_pitch"));
     parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
-    let actions = click(&canvas, &parameters, Pos2::new(639., 95.));
+    let middle = |param: &str| {
+        let c = canvas
+            .controls
+            .iter()
+            .find(|c| c.x.as_ref().or(c.y.as_ref()).is_some_and(|b| b.parameter == param))
+            .unwrap();
+        Pos2::new(c.bounds[0] + c.bounds[2] / 2., c.bounds[1] + c.bounds[3] / 2.)
+    };
+    let actions = click(&canvas, &parameters, middle("warp"));
     assert!(actions.iter().any(|a| a.params["param"] == "warp" && a.params["value"] == 1.));
-    let actions = pointer_gesture(&canvas, &parameters, Pos2::new(640., 136.), Some(Pos2::new(640., 126.)));
+    let gain = middle("gain");
+    let actions = pointer_gesture(&canvas, &parameters, gain, Some(gain - Vec2::new(0., 10.)));
     assert!(
         actions
             .iter()
             .any(|a| a.params["param"] == "gain" && (a.params["value"].as_f64().unwrap() - 1.8).abs() < 0.001),
         "{actions:?}"
     );
-    let actions = click(&canvas, &parameters, Pos2::new(286., 158.));
-    assert!(actions.iter().any(|a| a.params["param"] == "filter_slope" && a.params["value"] == 1.));
+    assert!(
+        canvas
+            .controls
+            .iter()
+            .any(|c| c.x.as_ref().is_some_and(|b| b.parameter == "filter_slope")
+                && matches!(c.widget, Some(Widget::Menu)))
+    );
     for (mode, playback, param) in [(0., 0., "start"), (0., 1., "start"), (0., 2., "loop_start"), (1., 2., "start")] {
         parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = mode;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
-        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(8., 30.), Some(Pos2::new(229., 30.)));
+        // The S marker at the waveform's left (62 + 6) and 6 px into its field (4 + 6); a quarter
+        // of the field's 826 px further.
+        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(68., 10.), Some(Pos2::new(68. + 206.5, 10.)));
         assert!(
             actions
                 .iter()
@@ -465,7 +552,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         parameters.iter_mut().find(|p| p.id == "mode").unwrap().value = 0.;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = 2.;
         for control in &canvas.controls {
-            if control.widget.is_none() {
+            if control.widget.is_none() || matches!(control.widget, Some(Widget::Number { bordered: true, .. })) {
                 continue;
             }
             let Some(binding) = control.x.as_ref().or(control.y.as_ref()) else {
@@ -483,7 +570,14 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             }
             let mut edited = parameters.clone();
             let p = edited.iter_mut().find(|p| p.id == binding.parameter).unwrap();
-            p.value = if p.default == p.min { p.max } else { p.min };
+            // Playback's last value (Slices) puts the slice controls in its place; One shot keeps it.
+            p.value = if p.id == "playback" {
+                1.
+            } else if p.default == p.min {
+                p.max
+            } else {
+                p.min
+            };
             let expected = p.default;
             let [x, y, w, h] = control.bounds;
             let actions = pointer_gesture_with_clicks(&canvas, &edited, Pos2::new(x + w / 2., y + h / 2.), None, 2);
@@ -499,7 +593,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         }
     }
     for playback in [0., 1., 2.] {
-        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+        parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 3.;
         parameters.iter_mut().find(|p| p.id == "playback").unwrap().value = playback;
         for id in ["loop_start", "loop_end"] {
             let visible = canvas.controls.iter().filter(|c| c.y.as_ref().is_some_and(|b| b.parameter == id)).any(|c| {
@@ -509,11 +603,13 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
                     .evaluate(&|id, _, _| parameters.iter().find(|p| p.id == id).unwrap().value)
                     > 0.
             });
-            assert_eq!(visible, playback == 2.);
+            assert!(visible);
         }
     }
-    for (id, x, expected) in [("cutoff", 336., 3100. * 1000_f64.powf(0.05)), ("resonance", 394., 0.707 + 9.9 * 0.05)] {
-        let actions = pointer_gesture(&canvas, &parameters, Pos2::new(x, 142.), Some(Pos2::new(x, 132.)));
+    parameters.iter_mut().find(|p| p.id == "panel_view").unwrap().value = 0.;
+    for (id, expected) in [("cutoff", 3100. * 1000_f64.powf(0.05)), ("resonance", 0.707 + 9.9 * 0.05)] {
+        let at = middle(id);
+        let actions = pointer_gesture(&canvas, &parameters, at, Some(at - Vec2::new(0., 10.)));
         assert!(
             actions
                 .iter()
@@ -581,7 +677,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
         harness.run_steps(4);
         snapshot(&mut harness, filename);
         if filename == "sampler-simple.png" {
-            assert!(harness.query_by_label("warp").is_some());
+            assert!(harness.query_by_label("Warp").is_some());
             harness.get_by_label("warp mode").click();
             harness.run_steps(4);
             for mode in ["Repitch", "Rhythmic", "Tonal", "Texture", "Smooth", "HighQuality"] {
@@ -900,7 +996,7 @@ fn sampler_slice_controls_replace_loop_fields() {
         crate::kit::theme::install(ui.ctx());
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -965,7 +1061,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
                 crate::kit::theme::install(ui.ctx());
                 show(
                     ui,
-                    Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+                    Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
                     &canvas,
                     &parameters,
                     TrackId(1),
@@ -983,7 +1079,8 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
                 points.dedup();
                 ctx.data_mut(|d| d.insert_temp(id.with("manual-points"), Arc::<[f64]>::from(points)));
                 edits.push(action);
-            } else {
+            } else if !action.id.starts_with("preview.") {
+                // A click on a slice plays it (preview); anything else is not expected.
                 panic!("unexpected edit {action:?}");
             }
         }
@@ -992,8 +1089,10 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         }
         output
     };
-    let field = Rect::from_min_max(Pos2::new(8., 32.), Pos2::new(892., 74.));
-    let line = Pos2::new(SampleView::default().x(0.3, field), 50.);
+    // The waveform at (62, 0) of a canvas drawn at (0, 0), its field 6 px in at the sides and 4 at
+    // the top and bottom.
+    let field = Rect::from_min_max(Pos2::new(68., 4.), Pos2::new(894., 92.));
+    let line = Pos2::new(SampleView::default().x(0.3, field), 80.);
     frame(line, None);
     let output = frame(line, None);
     assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::ResizeHorizontal);
@@ -1001,16 +1100,16 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         output
             .shapes
             .iter()
-            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==Color32::GRAY))
+            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==crate::kit::theme::palette().text_primary.gamma_multiply(0.18)))
     );
     frame(line, Some(true));
-    let moved = Pos2::new(SampleView::default().x(0.6, field), 50.);
+    let moved = Pos2::new(SampleView::default().x(0.6, field), 80.);
     let preview = frame(moved, None);
     assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.3, 0.5]);
     assert!(
         preview.shapes.iter().any(|s| matches!(&s.shape,
             egui::Shape::LineSegment { points, stroke }
-                if stroke.color == SAMPLE_MARKER && (points[0].x - moved.x).abs() < 0.01
+                if stroke.color == slice_line(sample_marker_color()) && (points[0].x - moved.x).abs() < 0.01
         )),
         "the marker follows the pointer before the command is committed"
     );
@@ -1025,7 +1124,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         frame(moved, Some(false));
     }
     assert_eq!(ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap().as_ref(), &[0.5]);
-    let empty = Pos2::new(SampleView::default().x(0.4, field), 50.);
+    let empty = Pos2::new(SampleView::default().x(0.4, field), 80.);
     frame(empty, None);
     frame(empty, Some(true));
     frame(empty, Some(false));
@@ -1034,11 +1133,12 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     let points = ctx.data(|d| d.get_temp::<Arc<[f64]>>(id.with("manual-points"))).unwrap();
     assert_eq!(points.len(), 2);
     assert!((points[0] - 0.4).abs() < 1e-6);
-    let blank = Pos2::new(SampleView::default().x(0.7, field), 50.);
+    let blank = Pos2::new(SampleView::default().x(0.7, field), 34.);
     frame(blank, None);
     frame(blank, Some(true));
-    frame(blank + Vec2::new(-25., -20.), None);
-    frame(blank + Vec2::new(-25., -20.), Some(false));
+    // Dragging the waveform away from a line: down zooms in, sideways moves.
+    frame(blank + Vec2::new(-25., 20.), None);
+    frame(blank + Vec2::new(-25., 20.), Some(false));
     let view =
         ctx.data(|d| d.get_temp::<(Option<Arc<suhina_engine::AudioData>>, SampleView)>(id.with("view"))).unwrap().1;
     assert!(view.span < 1.);
@@ -1058,9 +1158,9 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     assert_eq!(edits.len(), 3, "navigation must not emit project edits; line drag commits once on release");
     assert_eq!(edits[0].params["continue"], false);
     assert!(edits.iter().all(|a| a.params["continue"] == false));
-    let zoomed = view.dragged(blank, Vec2::new(1e6, 1e6), field, 48000);
+    let zoomed = view.dragged(blank, Vec2::new(1e6, -1e6), field, 48000);
     assert_eq!(zoomed, SampleView::default());
-    let zoomed = view.dragged(blank, Vec2::new(-1e6, -1e6), field, 48000);
+    let zoomed = view.dragged(blank, Vec2::new(-1e6, 1e6), field, 48000);
     assert!(zoomed.span >= 1. / 48000.);
     assert!(zoomed.start + zoomed.span <= 1.);
     ctx.data_mut(|d| {
@@ -1069,7 +1169,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -1094,7 +1194,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         });
         show(
             ui,
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 168.)),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
             &canvas,
             &parameters,
             TrackId(1),
@@ -1104,6 +1204,117 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
     });
     harness.run_steps(2);
     snapshot(&mut harness, "sampler-manual-navigation.png");
+}
+
+#[test]
+fn automatic_boundary_drag_dispatches_one_correction_on_release() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.clone().unwrap();
+    let parameters: Vec<_> = panel
+        .parameters
+        .iter()
+        .map(|parameter| {
+            let value = match parameter.id.as_str() {
+                "mode" | "slice_by" => 2.,
+                "slice_regions" => 4.,
+                _ => parameter.default,
+            };
+            GraphParameter::new(parameter, value)
+        })
+        .collect();
+    // The waveform at (62, 0) of a canvas drawn at (0, 0), its field 6 px in at the sides and 4 at
+    // the top and bottom.
+    let field = Rect::from_min_max(Pos2::new(68., 4.), Pos2::new(894., 92.));
+    let from = Pos2::new(SampleView::default().x(0.25, field), 80.);
+    let to = Pos2::new(SampleView::default().x(0.3, field), 80.);
+    let actions = pointer_gesture(&canvas, &parameters, from, Some(to));
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0].id, "device.editSampleSlice");
+    assert_eq!(actions[0].params["operation"], "move");
+    assert_eq!(actions[0].params["identity"], 1);
+    assert!((actions[0].params["point"].as_f64().unwrap() - 0.3).abs() < 1e-6);
+}
+
+#[test]
+fn stereo_peaks_preserve_separate_channel_levels() {
+    let source = suhina_engine::AudioData { sample_rate: 48000, channels: 2, samples: [0.1, 0.8].repeat(16) };
+    assert!(sample_channel_peaks(&source, (0, 16), Some(0)).iter().all(|peak| *peak == 0.1));
+    assert!(sample_channel_peaks(&source, (0, 16), Some(1)).iter().all(|peak| *peak == 0.8));
+}
+
+#[test]
+fn exactly_one_sampler_mode_is_selected_for_each_mode() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.as_ref().unwrap();
+    for mode in [0., 1., 2.] {
+        let parameters: Vec<_> = panel
+            .parameters
+            .iter()
+            .map(|p| GraphParameter::new(p, if p.id == "mode" { mode } else { p.default }))
+            .collect();
+        let selected: Vec<_> = canvas
+            .controls
+            .iter()
+            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == "mode") && control_selected(c, &parameters))
+            .collect();
+        assert_eq!(selected.len(), 1);
+        assert!(matches!(selected[0].gesture, UiGesture::Set(target) if f64::from(target) == mode));
+    }
+}
+
+#[test]
+fn sampler_fits_fixed_height_without_shrinking_parameter_rows() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    let canvas = panel.ui.as_ref().unwrap();
+    for available in [168., 180., 200., 220.] {
+        let size = fitted_size(canvas, available);
+        assert_eq!(size.y, 168., "the compact sampler never grows the fixed device row");
+        let reduction = canvas.size[1] - size.y;
+        for control in &canvas.controls {
+            let [_, y, _, height] = fitted_control_bounds(control, reduction);
+            assert!(y >= 0. && y + height <= available, "{} outside {available}px: {y}+{height}", control.id);
+            if control.bounds[1] >= 138. {
+                assert_eq!(height, control.bounds[3], "parameter row must retain readable size");
+            }
+        }
+    }
+    assert_eq!(fitted_size(canvas, 120.).y, 168., "smaller hosts scroll instead of crushing controls");
+}
+
+#[test]
+fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
+    let panel = suhina_device_registry::panel("sampler").unwrap();
+    for grid in [0., 3.] {
+        let parameters: Vec<_> = panel
+            .parameters
+            .iter()
+            .map(|p| GraphParameter::new(p, if p.id == "grid_division" { grid } else { p.default }))
+            .collect();
+        let context = egui::Context::default();
+        let mut output = context.run_ui(Default::default(), |ui| {
+            crate::kit::theme::install(ui.ctx());
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(
+                    sample_source_id(TrackId(1), 0),
+                    Arc::new(suhina_engine::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.; 20544] }),
+                )
+            });
+            sample_waveform(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(832., 110.)),
+                &parameters,
+                TrackId(1),
+                0,
+                serde_json::json!(0),
+                &mut Vec::new(),
+                false,
+            );
+        });
+        let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
+        output.textures_delta.clear();
+        // The times sit on their lines, so the lines stay with Grid off too.
+        assert!(lines > 2, "grid setting {grid}: {lines} lines");
+    }
 }
 fn snapshot<State>(harness: &mut egui_kittest::Harness<'_, State>, name: &str) {
     if std::env::var_os("SUHINA_UI_SNAPSHOTS").is_some() {

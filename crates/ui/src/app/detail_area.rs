@@ -295,6 +295,8 @@ impl App {
         // With the switch on Devices the track's devices take the editor's place, and nothing is
         // pulled to the top (› Where it opens in `docs/spec/ui-clip-editor.md`).
         let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
+        // An audio clip has no switch, but its properties need the room to show every row.
+        let resizable = stacked || switch.is_some() || clip.is_some();
         let ara = ara.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| self.detail_showing == detail_view::Showing::Clip);
         let edits = piano.is_some() || ara.is_some();
@@ -329,23 +331,16 @@ impl App {
                 Rect::from_min_max(Pos2::new(x, area.top()), area.max),
             )
         } else {
-            // Only the chain shown: no taller than its panels, but never held under the area's
-            // default height. A chain of short panels (a plug-in whose editor is not embedded,
-            // or no devices at all) would otherwise keep the area too short to drag up.
-            if piano.is_none()
-                && clip.is_none()
-                && !self.editor_in_chain
-                && let Some(cap) = self.detail_cap
-            {
-                self.detail_height = self.detail_height.min(cap.max(least).max(DETAIL_HEIGHT));
-            }
             self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
+            // A device row alone is open at its full height or closed, never in between, where it
+            // would cut its panels off. The clip editor, its Devices tab too, keeps its height.
+            let height = if resizable { self.detail_height } else { DETAIL_HEIGHT.min(area.height()) };
             let y = if pulled {
                 // Above it only the edited track, or nothing.
                 let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
                 (area.top() + above.min(area.height() - least) + SPLITTER).min(area.bottom() - least)
             } else {
-                area.bottom() - self.detail_height
+                area.bottom() - height
             };
             (
                 Rect::from_min_max(area.min, Pos2::new(area.right(), (y - SPLITTER).max(area.top()))),
@@ -359,8 +354,8 @@ impl App {
         // double-click takes it there and back.
         if geometry.is_none() {
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let response =
-                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            let sense = Sense::click_and_drag();
+            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
@@ -381,7 +376,7 @@ impl App {
                         // drag going back up opens it again (`collapsed_splitter`).
                         self.detail_max = false;
                         self.hide_editor();
-                    } else if !self.detail_max {
+                    } else if resizable && !self.detail_max {
                         self.detail_height = height.max(least);
                     }
                 }
@@ -434,6 +429,15 @@ impl App {
                             return;
                         }
                         d.insert_temp(id.with("manual-revision"), version);
+                        if let Some(edits) =
+                            device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode)
+                        {
+                            d.insert_temp(id.with("slice-edits"), std::sync::Arc::new(edits));
+                        } else {
+                            d.remove::<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>(
+                                id.with("slice-edits"),
+                            );
+                        }
                         if let Some(points) = device.sample_slices() {
                             d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
                         } else {
@@ -599,7 +603,6 @@ impl App {
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
-        self.detail_cap = picked.inner.content_height.map(|h| h as f32);
         if let Some((track, at)) = picked.inner.clicked {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
             self.pick_device(track, at, add, run);

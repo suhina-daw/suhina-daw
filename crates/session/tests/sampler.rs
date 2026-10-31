@@ -6,6 +6,54 @@ use suhina_model::*;
 use suhina_session::Session;
 
 #[test]
+fn slice_corrections_persist_and_regenerate_in_one_undo_step() {
+    use suhina_device_api::sample_edits::SampleEdits;
+    let mut session = Session::new(Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: true, audio: false },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Keys")
+        }],
+        channels: vec![Channel::new(ChannelId(1), "Keys")],
+        ..Project::default()
+    });
+    session.execute("device.add", &json!({"track":1,"id":"sampler"})).unwrap();
+    session.execute("device.setParam", &json!({"track":1,"device":0,"param":"slice_by","value":2})).unwrap();
+    let initial = session.project().clone();
+    session
+        .execute(
+            "device.editSampleSlice",
+            &json!({"track":1,"device":0,"operation":"move","previous":0.25,"point":0.3,"identity":4}),
+        )
+        .unwrap();
+    let changed = session.project().clone();
+    let edits = SampleEdits::decode(changed.channels[0].devices[0].sample_edit_data().unwrap()).unwrap();
+    assert_eq!(edits.pins(), &[0.3]);
+    assert!(edits.excludes(2, 4));
+    assert_eq!(suhina_project_file::from_json(&suhina_project_file::to_json(&changed)).unwrap(), changed);
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(*session.project(), initial);
+    session.execute("edit.redo", &json!({})).unwrap();
+    assert_eq!(*session.project(), changed);
+    for operation in [
+        json!({"operation":"add","point":1}),
+        json!({"operation":"move","previous":0.2,"point":0.3}),
+        json!({"operation":"invalid"}),
+    ] {
+        let mut params = operation;
+        params["track"] = json!(1);
+        params["device"] = json!(0);
+        assert!(session.execute("device.editSampleSlice", &params).is_err());
+        assert_eq!(*session.project(), changed);
+    }
+    session.execute("device.editSampleSlice", &json!({"track":1,"device":0,"operation":"regenerate"})).unwrap();
+    let edits = SampleEdits::decode(session.project().channels[0].devices[0].sample_edit_data().unwrap()).unwrap();
+    assert!(edits.pins().is_empty() && edits.suppressed().is_empty());
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(*session.project(), changed);
+}
+
+#[test]
 fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
     let folder = std::env::temp_dir().join(format!("suhina-source-tempo-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
@@ -21,7 +69,7 @@ fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
     session.execute("device.add", &json!({"track":1,"id":"sampler"})).unwrap();
     let param =
         |s: &Session, id: &str| s.project().channels[0].devices[0].params.iter().find(|p| p.id == id).unwrap().value;
-    for (name, seconds, bpm) in [("drums_120bpm.wav", 8, 120.), ("drums_90bpm.wav", 4, 90.), ("unknown.wav", 8, 120.)] {
+    for (name, seconds, bpm) in [("drums_120bpm.wav", 8, 120.), ("drums_90bpm.wav", 4, 90.), ("unknown.wav", 8, 0.)] {
         let file = folder.join(name);
         let mut writer = hound::WavWriter::create(
             &file,
@@ -41,7 +89,9 @@ fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
         let loaded = session.execute("device.loadSample", &json!({"track":1,"device":0,"path":file})).unwrap();
         assert_eq!(loaded["source_bpm"], bpm);
         assert_eq!(param(&session, "source_bpm"), bpm);
-        assert!((param(&session, "warp_beats") - seconds as f64 * bpm / 60.).abs() < 1e-6);
+        assert!(
+            (param(&session, "warp_beats") - seconds as f64 * if bpm > 0. { bpm } else { 120. } / 60.).abs() < 1e-6
+        );
         session.execute("device.setParam", &json!({"track":1,"device":0,"param":"warp","value":1})).unwrap();
         assert_eq!(param(&session, "source_bpm"), bpm);
         session.execute("edit.undo", &json!({})).unwrap();
