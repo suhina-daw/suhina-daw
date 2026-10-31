@@ -653,7 +653,7 @@ impl App {
                 }
             }
             "selection.selectAll" => {
-                let clips: Vec<(TrackId, ClipId)> = self
+                let lanes: Vec<(TrackId, Vec<(ClipId, f64, f64)>)> = self
                     .session()
                     .map(|session| {
                         session
@@ -661,12 +661,14 @@ impl App {
                             .arrangement
                             .lanes
                             .iter()
-                            .filter_map(|lane| lane.track.map(|track| (track, &lane.clips)))
-                            .flat_map(|(track, clips)| clips.iter().map(move |clip| (track, clip.id)))
+                            .filter_map(|lane| {
+                                let clips = lane.clips.iter().map(|c| (c.id, c.start, c.start + c.length)).collect();
+                                lane.track.map(|track| (track, clips))
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
-                self.arrangement.select_clips(clips);
+                self.arrangement.select_all_clips(&lanes);
             }
             "selection.paste"
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>

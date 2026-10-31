@@ -141,7 +141,7 @@ A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection 
 and **Shift** takes the rectangle from the clip clicked last to this one: the lanes between them,
 as the view draws them, by the time from the earlier start to the later end, every clip that
 touches it (#694). Ctrl+A selects every clip
-in the arrangement. Pressing a clip that is part of the selection keeps the selection, so a drag can
+in the arrangement and the time from the first clip's start to the last clip's end over all the tracks. Pressing a clip that is part of the selection keeps the selection, so a drag can
 start there; pressing one that is not selects that clip alone. Dragging a clip of the selection
 moves all of it by the same beats, at once (`clip.moveMany {clips, beats, toTrack?, tracksBy?,
 toNewTrack?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up

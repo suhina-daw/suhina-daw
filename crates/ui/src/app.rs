@@ -3439,6 +3439,12 @@ impl App {
         if self.revision != revision {
             ui.ctx().request_repaint();
         }
+        // A transport command changes no revision: the play start marker moved by this frame's
+        // action shows at once, without waiting for the pointer to move.
+        if ran > 0 {
+            ui.ctx().request_repaint();
+        }
+        crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
         if grid.is_some_and(|g| {
             g.running || g.columns.iter().any(|c| c.stop_queued || c.slots.iter().any(|s| s.state == SlotState::Queued))
         }) {

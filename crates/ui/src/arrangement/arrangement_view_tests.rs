@@ -487,3 +487,23 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     };
     assert_eq!(edge_extent(midi.1, before, &grid, false, false).0, midi.1.start - 2.0);
 }
+
+#[test]
+fn select_all_spans_every_track_from_the_first_clip_to_the_last() {
+    let mut state = ArrangementViewState::default();
+    let lanes = vec![
+        (TrackId(1), vec![(ClipId(1), 8.0, 12.0)]),
+        (TrackId(2), vec![(ClipId(2), 4.0, 6.0), (ClipId(3), 16.0, 20.0)]),
+        (TrackId(3), Vec::new()),
+    ];
+    state.select_all_clips(&lanes);
+    assert_eq!(state.selected.len(), 3);
+    let span = state.time_selection().expect("a time selection");
+    assert_eq!((span.start, span.end), (4.0, 20.0));
+    assert_eq!(span.tracks, vec![TrackId(1), TrackId(2), TrackId(3)]);
+    // An empty project leaves a selection already painted.
+    let painted = TimeSelection { tracks: vec![TrackId(1)], start: 1.0, end: 2.0, row: None };
+    state.set_time_selection(Some(painted));
+    state.select_all_clips(&[(TrackId(1), Vec::new())]);
+    assert_eq!(state.time_selection().map(|s| s.start), Some(1.0));
+}

@@ -520,6 +520,21 @@ impl ArrangementViewState {
         self.selected = keys;
     }
 
+    /// Select All: every clip of `lanes` (track, then each clip's id, start and end), and the time
+    /// from the first start to the last end over all the tracks.
+    pub fn select_all_clips(&mut self, lanes: &[(TrackId, Vec<(ClipId, f64, f64)>)]) {
+        let keys: Vec<(TrackId, ClipId)> =
+            lanes.iter().flat_map(|(track, clips)| clips.iter().map(|c| (*track, c.0))).collect();
+        self.select_clips(keys);
+        let spans = || lanes.iter().flat_map(|(_, clips)| clips);
+        let start = spans().map(|c| c.1).fold(f64::INFINITY, f64::min);
+        let end = spans().map(|c| c.2).fold(f64::NEG_INFINITY, f64::max);
+        if end > start {
+            let tracks = lanes.iter().map(|(track, _)| *track).collect();
+            self.time_selection = Some(TimeSelection { tracks, start, end, row: None });
+        }
+    }
+
     /// Picks the clip at `key` the way a click on it does: Shift takes the rectangle from the last
     /// one picked to this one, the lanes between them (as the view draws them) by the time from
     /// the earlier start to the later end, every clip that touches it (#694); Ctrl (Cmd) adds it
