@@ -30,7 +30,7 @@ one table (a file that loads and holds no plug-ins is not in it):
 | **On** | A checkbox for a plug-in: on (the default) or switched off; greyed out while a scan runs, since the scan's result replaces the list. Files have none. |
 | **Name** | The plug-in's name; for a file's row, the file's name. |
 | **Vendor**, **Type**, **Version** | From the scan; the type is `instrument` or `effect`. |
-| **Format** | `vst3` or `clap` (`vst2` once hosted); for a file, its extension. |
+| **Format** | `vst3`, `clap` or `vst2` (`vst2` where the host's `vst2` feature is on); for a file, its extension. |
 | **Status** | `on`, `switched off`, `failed` (in red) or `other processor`. |
 | **File** | The plug-in's file; for a file that gave none, why (in red for a failure). |
 | (action) | **Scan again** for a file that failed or is built for another processor. |
@@ -87,17 +87,19 @@ plug-ins leave the list with the next scan, and it stays listed to switch on aga
 adding, removing or switching a folder is refused with a message to wait: the scan's result
 replaces the library, so a change made meanwhile would be lost.
 
-Each folder is for a format: a standard one for the format its name says (`…/VST3`, `…/CLAP`),
-an added one for both CLAP and VST3 (**Both**, the default), **VST3** or **CLAP**, chosen beside
-the field that adds it (`plugin.addFolder { folder, format }`, `suhina-cli plugins add-folder
-<dir> --format vst3`). Adding a folder already there with another format changes its format. A
-folder for one format gives only that format's files, so a folder of mixed plug-ins can be split
-between formats.
+Each folder is for a format: a standard one for the format its name says (`…/VST3`, `…/CLAP`,
+`…/VST`), an added one for every format Suhina hosts (**Both**, the default), **VST3**,
+**CLAP** or **VST2**, chosen beside the field that adds it (`plugin.addFolder { folder,
+format }`, `suhina-cli plugins add-folder <dir> --format vst2`). Adding a folder already
+there with another format changes its format. A folder for one format gives only that
+format's files, so a folder of mixed plug-ins can be split between formats.
 
-**VST2** is a format already (shown, not choosable): VST2 plug-ins are not hosted yet, and a
-VST2 plug-in is a plain library file that only its folder marks as one, so VST2 folders will be
-added this way, as many as the user keeps, when VST2 hosting lands. `plugin.addFolder` refuses
-`vst2` until then.
+**VST2** (behind the host's `vst2` feature, [ADR 0022](../decisions/0022-vst2-interface-description.md)):
+a VST2 plug-in is a plain library file — a `.vst` bundle on macOS, a `.dll` on Windows, a
+`.so` on Linux — that only its folder marks as one, so a VST2 folder is added this way, as
+many as the user keeps. The system's VST folders are standard ones. Without the feature
+nothing changes: a VST2 folder is kept and gives no files, and `plugin.addFolder` refuses
+`vst2`.
 
 The folders file (`plugin-folders.json`) is `{ "added": [{ "path", "format" }], "off": [path] }`;
 the earlier form, a list of paths, is read as folders for both formats.

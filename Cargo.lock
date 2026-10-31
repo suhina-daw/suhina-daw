@@ -5240,6 +5240,7 @@ dependencies = [
  "suhina-device-pitch",
  "suhina-engine",
  "suhina-model",
+ "suhina-plugins",
 ]
 
 [[package]]

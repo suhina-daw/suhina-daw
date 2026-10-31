@@ -11,7 +11,6 @@
 
 mod devices;
 mod scale;
-mod vst2;
 
 use std::fmt;
 use std::io::Read;
@@ -501,20 +500,21 @@ impl Reader {
                 let preset = path(info, &["Preset", "VstPreset"]);
                 let buffer = preset.and_then(|p| self.hex_state(p, "Buffer", track_name));
                 let state = match (preset, buffer) {
-                    (Some(preset), Some(buffer)) => match vst2_preset(preset, id).and_then(|p| vst2::bank(&p, &buffer))
-                    {
-                        Ok(bank) => Some(bank),
-                        Err(why) => {
-                            // Keep the bytes as they were, so nothing is lost.
-                            self.warn(format!("track {track_name}: VST2 state not read ({why}); kept as it was"));
-                            extensions.0.push(Extension {
-                                format: "als".into(),
-                                key: "VstPresetBuffer".into(),
-                                data: buffer,
-                            });
-                            None
+                    (Some(preset), Some(buffer)) => {
+                        match vst2_preset(preset, id).and_then(|p| suhina_plugins::vst2::bank(&p, &buffer)) {
+                            Ok(bank) => Some(bank),
+                            Err(why) => {
+                                // Keep the bytes as they were, so nothing is lost.
+                                self.warn(format!("track {track_name}: VST2 state not read ({why}); kept as it was"));
+                                extensions.0.push(Extension {
+                                    format: "als".into(),
+                                    key: "VstPresetBuffer".into(),
+                                    data: buffer,
+                                });
+                                None
+                            }
                         }
-                    },
+                    }
                     _ => None,
                 };
                 if let Some(plugin_path) = value(info, &["Path"]).filter(|p| !p.is_empty()) {
@@ -946,7 +946,7 @@ fn parse_number(text: &str) -> Option<f64> {
 }
 
 /// What `VstPreset` says about its `Buffer` besides the bytes.
-fn vst2_preset(preset: Node, id: u32) -> Result<vst2::Preset, String> {
+fn vst2_preset(preset: Node, id: u32) -> Result<suhina_plugins::vst2::Preset, String> {
     let int = |name: &str| value(preset, &[name]).and_then(|v| v.trim().parse::<i64>().ok());
     let count = |name: &str| int(name).and_then(|n| usize::try_from(n).ok()).ok_or(format!("no {name}"));
     let kind = int("Type").ok_or("no Type")? as u32;
@@ -956,7 +956,7 @@ fn vst2_preset(preset: Node, id: u32) -> Result<vst2::Preset, String> {
         Some(1) => false,
         Some(other) => return Err(format!("unknown ByteOrder {other}")),
     };
-    Ok(vst2::Preset {
+    Ok(suhina_plugins::vst2::Preset {
         kind,
         id,
         version: int("PluginVersion").unwrap_or(1) as i32,

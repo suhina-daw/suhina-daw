@@ -182,6 +182,9 @@ jobs:
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The vst2 feature is on by default (ADR 0022's amendment), so the workspace steps
+      # above check it; this checks that a build opting out still compiles.
+      - run: cargo clippy -p suhina-plugin-host --all-targets --no-default-features -- -D warnings
       - name: ASIO driver initialization contract
         if: runner.os == 'Windows'
         env:

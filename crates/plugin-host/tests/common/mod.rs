@@ -6,7 +6,7 @@
 //! a thread that serves its messages, as the app's window does: a host making a window owned
 //! by it or a child of it waits for that thread. On X11 it is a plain window on a connection
 //! of the test's own.
-#![allow(dead_code, clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
+#![allow(dead_code, unused_imports, clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
 
 /// Whether editors can open here: on Windows, and on Linux with an X server.
 pub fn editors_open_here() -> bool {
@@ -22,6 +22,82 @@ pub fn embeds_editors_here() -> bool {
     cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()))
 }
 
+/// Asks the editor's window to close, as the user does with its close button (an
+/// editor's own window, floating or not, whatever plug-in format opened it).
+#[cfg(windows)]
+pub fn close_editor_window(process_id: u32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+    let window = editor_window(process_id);
+    assert!(!window.is_null(), "no editor window for host {process_id}");
+    // SAFETY: a window found just now; WM_CLOSE carries no pointers.
+    assert_ne!(unsafe { PostMessageW(window, WM_CLOSE, 0, 0) }, 0);
+}
+
+#[cfg(windows)]
+pub fn editor_window(process_id: u32) -> windows_sys::Win32::Foundation::HWND {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetWindowThreadProcessId};
+    let class: Vec<u16> = "SuhinaPluginEditor".encode_utf16().chain([0]).collect();
+    let mut window = std::ptr::null_mut();
+    loop {
+        // SAFETY: the class name outlives the call; null parent enumerates top-level windows,
+        // and window is null or the previous result. No pointers are retained by Windows.
+        window = unsafe { FindWindowExW(std::ptr::null_mut(), window, class.as_ptr(), std::ptr::null()) };
+        if window.is_null() {
+            return window;
+        }
+        let mut owner = 0;
+        // SAFETY: Windows validates the handle; owner is a writable u32 for the result.
+        let thread = unsafe { GetWindowThreadProcessId(window, &raw mut owner) };
+        if thread != 0 && owner == process_id {
+            return window;
+        }
+    }
+}
+
+/// Asks the editor's window to close, as the user does with its close button: the window
+/// manager's WM_DELETE_WINDOW message, sent to the root child whose class is an editor's
+/// and whose `_NET_WM_PID` names `process_id` (the root's children come bottom to top).
+/// Each host names its process, so one test takes a window of its own host and no other's.
+#[cfg(target_os = "linux")]
+pub fn close_editor_window(process_id: u32) {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ClientMessageEvent, ConnectionExt, EventMask};
+    let (connection, screen) = x11rb::connect(None).unwrap();
+    let root = connection.setup().roots[screen].root;
+    let atom = |name: &[u8]| connection.intern_atom(false, name).unwrap().reply().unwrap().atom;
+    let (protocols, delete, pid_atom) = (atom(b"WM_PROTOCOLS"), atom(b"WM_DELETE_WINDOW"), atom(b"_NET_WM_PID"));
+    let children = connection.query_tree(root).unwrap().reply().unwrap().children;
+    let window = children
+        .into_iter()
+        .rfind(|w| {
+            let class = connection.get_property(false, *w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64);
+            let editor =
+                class.ok().and_then(|c| c.reply().ok()).is_some_and(|c| c.value.starts_with(b"suhina-plugin-editor"));
+            if !editor {
+                return false;
+            }
+            let pid = connection.get_property(false, *w, pid_atom, AtomEnum::CARDINAL, 0, 4);
+            pid.ok().and_then(|p| p.reply().ok()).is_some_and(|reply| {
+                reply.value32().is_some_and(|mut answers| answers.any(|named| named == process_id))
+            })
+        })
+        .unwrap_or_else(|| panic!("no editor window for host {process_id}"));
+    let message = ClientMessageEvent::new(32, window, protocols, [delete, 0, 0, 0, 0]);
+    connection.send_event(false, window, EventMask::NO_EVENT, message).unwrap();
+    // A round trip before the connection closes: closed straight after the request, the
+    // server could drop the message unsent, and the test waited for a close that never
+    // came (#237). Xlib's XCloseDisplay does the same (XSync).
+    connection.get_input_focus().unwrap().reply().unwrap();
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn close_editor_window(_process_id: u32) {}
+
+/// Whether the test can close the host's window from here, as the user would: another
+/// process's window cannot be reached on macOS.
+pub fn user_closes_windows() -> bool {
+    cfg!(windows) || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()))
+}
 #[cfg(windows)]
 mod imp {
     use windows_sys::Win32::UI::WindowsAndMessaging::{

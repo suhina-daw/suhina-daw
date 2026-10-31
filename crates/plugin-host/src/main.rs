@@ -14,7 +14,9 @@
 //!
 //! What it can load: CLAP plug-ins ([`clap`]), the CLAP test plug-ins built in for tests
 //! ([`test_clap`], [`test_clap_delay`], [`test_clap_ports`]), and simple test processors
-//! ([`processors`]) that crash or hang on purpose.
+//! ([`processors`]) that crash or hang on purpose. With the `vst2` feature (ADR 0022) it
+//! gains the VST2 interface layer (`vst2`, under the feature, so no link here): the ported VeSTige definitions, the mock
+//! plug-in `test:vst2` and the `--vst2-probe` tool.
 //!
 //! A plug-in may report another latency while it runs. Between messages the main thread asks
 //! each instance whether it did (restarting its processing first where the format asks for
@@ -43,6 +45,8 @@ mod test_clap;
 mod test_clap_delay;
 mod test_clap_ports;
 mod test_vst3;
+#[cfg(feature = "vst2")]
+mod vst2;
 mod vst3;
 mod vst3_editor;
 mod vst3_events;
@@ -157,7 +161,15 @@ fn main() {
         (Some("--control"), Some(address)) => address,
         (Some("--scan"), Some(file)) => scan(file),
         (Some("--scan-worker"), None) => scan_worker(),
+        #[cfg(feature = "vst2")]
+        (Some("--vst2-probe"), Some(name)) => vst2_probe(name),
         _ => {
+            #[cfg(feature = "vst2")]
+            eprintln!(
+                "usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker | \
+                 --vst2-probe <plug-in>"
+            );
+            #[cfg(not(feature = "vst2"))]
             eprintln!("usage: suhina-plugin-host --control <address> | --scan <file> | --scan-worker");
             std::process::exit(2);
         }
@@ -165,6 +177,24 @@ fn main() {
     if let Err(e) = run(address) {
         eprintln!("suhina-plugin-host: {e}");
         std::process::exit(1);
+    }
+}
+
+/// `--vst2-probe <plug-in>`: prints the report of the probe over the VST2 plug-in the name
+/// gives (a VST2 file, or `test:vst2` for the built-in mock) and exits. A tool of the `vst2`
+/// feature (ADR 0022): what the probe learns settles the interface's *assumed* facts, and
+/// this process is disposable, as a scanner's is.
+#[cfg(feature = "vst2")]
+fn vst2_probe(name: &str) -> ! {
+    match vst2::probe::run_tool(name) {
+        Ok(report) => {
+            println!("{report}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("suhina-plugin-host: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -196,8 +226,20 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
         },
         "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
         "test:vst3" | "test:vst3-mix" => vst3::describe(file),
+        #[cfg(feature = "vst2")]
+        "test:vst2" => vst2::host::describe(file),
         #[cfg(debug_assertions)]
         _ if file.starts_with(FLAKY) => flaky(file),
+        // A VST2 plug-in: a `.vst` bundle, a `.dll` or a `.so`, behind the `vst2` feature
+        // (ADR 0022); a build without it lists the file as failed.
+        _ if suhina_plugins::scan::is_vst2(std::path::Path::new(file)) => {
+            #[cfg(feature = "vst2")]
+            {
+                vst2::host::describe(file)
+            }
+            #[cfg(not(feature = "vst2"))]
+            Err("VST2 plug-ins are not hosted in this build (ADR 0022)".into())
+        }
         _ if file.to_ascii_lowercase().ends_with(".vst3") => vst3::describe(&format!("vst3:{file}")),
         _ => clap::describe(&format!("clap:{file}")),
     }
@@ -246,6 +288,8 @@ fn scan_worker() -> ! {
 enum Loaded {
     Clap(clap::ClapPlugin),
     Vst3(vst3::Vst3Plugin),
+    #[cfg(feature = "vst2")]
+    Vst2(vst2::host::Vst2Plugin),
     /// `reported` is the latency the engine was last told.
     Test {
         processor: Arc<dyn Processor>,
@@ -260,6 +304,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.latency(),
             Self::Vst3(plugin) => plugin.latency(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.latency(),
             Self::Test { processor, .. } => processor.latency(),
         }
     }
@@ -271,6 +317,8 @@ impl Loaded {
         match self {
             Self::Vst3(plugin) => plugin.take_ara_analysis(),
             Self::Clap(_) | Self::Test { .. } => None,
+            #[cfg(feature = "vst2")]
+            Self::Vst2(_) => None,
         }
     }
 
@@ -278,6 +326,8 @@ impl Loaded {
         match self {
             Self::Vst3(plugin) => plugin.take_ara_notes(),
             Self::Clap(_) | Self::Test { .. } => Vec::new(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(_) => Vec::new(),
         }
     }
 
@@ -285,6 +335,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.latency_changed(),
             Self::Vst3(plugin) => plugin.latency_changed(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.latency_changed(),
             Self::Test { processor, reported, .. } => {
                 let now = processor.latency();
                 (now != *reported).then(|| {
@@ -299,6 +351,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.open_editor(mode),
             Self::Vst3(plugin) => plugin.open_editor(mode),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.open_editor(mode),
             Self::Test { .. } => Err("the plug-in has no editor".into()),
         }
     }
@@ -308,6 +362,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.place_editor(placement),
             Self::Vst3(plugin) => plugin.place_editor(placement),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.place_editor(placement),
             Self::Test { .. } => {}
         }
     }
@@ -338,7 +394,10 @@ impl Loaded {
 
     /// Whether the plug-in supports ARA.
     fn edits_clips(&self) -> bool {
-        matches!(self, Self::Vst3(plugin) if plugin.edits_clips())
+        match self {
+            Self::Vst3(plugin) => plugin.edits_clips(),
+            _ => false,
+        }
     }
 
     /// Tells a plug-in bound to an ARA document which region the engine has selected.
@@ -353,6 +412,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.editor_resized(),
             Self::Vst3(plugin) => plugin.editor_resized(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.editor_resized(),
             Self::Test { .. } => None,
         }
     }
@@ -361,6 +422,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.close_editor(),
             Self::Vst3(plugin) => plugin.close_editor(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.close_editor(),
             Self::Test { .. } => {}
         }
     }
@@ -370,6 +433,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.editor_tick(),
             Self::Vst3(plugin) => plugin.editor_tick(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.editor_tick(),
             Self::Test { .. } => false,
         }
     }
@@ -378,6 +443,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => Ok(plugin.params()),
             Self::Vst3(plugin) => Ok(plugin.params()),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.params(),
             Self::Test { .. } => Ok(Vec::new()),
         }
     }
@@ -386,6 +453,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.set_param(id, value),
             Self::Vst3(plugin) => plugin.set_param(id, value),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.set_param(id, value),
             Self::Test { .. } => Err(format!("no parameter {id}")),
         }
     }
@@ -395,6 +464,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => Ok((plugin.state()?, None)),
             Self::Vst3(plugin) => Ok((plugin.state()?, plugin.controller_state())),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => Ok((plugin.state()?, None)),
             Self::Test { processor, .. } => Ok((processor.state(), None)),
         }
     }
@@ -403,6 +474,8 @@ impl Loaded {
         match self {
             Self::Clap(plugin) => plugin.set_state(data),
             Self::Vst3(plugin) => plugin.set_state(data, controller),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.set_state(data),
             Self::Test { processor, .. } => processor.set_state(data),
         }
     }
@@ -414,6 +487,8 @@ impl Loaded {
             // again as they stand.
             Self::Clap(plugin) => plugin.tick(),
             Self::Vst3(plugin) => plugin.tick(),
+            #[cfg(feature = "vst2")]
+            Self::Vst2(plugin) => plugin.tick(),
             Self::Test { .. } => Vec::new(),
         }
     }
@@ -454,6 +529,21 @@ impl Loaded {
                     let _ = audio.join();
                 }
             }
+            #[cfg(feature = "vst2")]
+            Self::Vst2(mut plugin) => {
+                suhina_plugins::trace!("vst2 unload: stop audio");
+                if plugin.stop_audio(UNLOAD_WAIT) {
+                    // The audio thread's exit suspended the plug-in; the editor closes next
+                    // (an embedded one is a child of the engine's window, whose messages the
+                    // engine answers only once it stops waiting), and then the plug-in goes.
+                    plugin.close_editor();
+                    plugin.close();
+                    drop(plugin);
+                } else {
+                    // Stuck in the plug-in: left as it is, never closed or freed under it.
+                    std::mem::forget(plugin);
+                }
+            }
         }
     }
 }
@@ -489,6 +579,13 @@ fn start(
     }
     if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
         return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(Loaded::Vst3);
+    }
+    #[cfg(feature = "vst2")]
+    if plugin.starts_with("vst2:") || plugin == "test:vst2" {
+        if ara.is_some() {
+            return Err("only a VST3 plug-in can be bound to an ARA document".into());
+        }
+        return vst2::host::Vst2Plugin::load(plugin, instance, served, sample_rate).map(Loaded::Vst2);
     }
     if ara.is_some() {
         return Err("only a VST3 plug-in can be bound to an ARA document".into());
@@ -813,6 +910,8 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             let result = match instances.get_mut(&instance) {
                 Some(Loaded::Clap(plugin)) => plugin.reconfigure(sample_rate),
                 Some(Loaded::Vst3(plugin)) => plugin.reconfigure(sample_rate),
+                #[cfg(feature = "vst2")]
+                Some(Loaded::Vst2(plugin)) => plugin.reconfigure(sample_rate),
                 Some(Loaded::Test { .. }) => Err("this test processor cannot reconfigure".into()),
                 None => return Some(missing(instance)),
             };
@@ -884,6 +983,8 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
             match instances.get_mut(&instance) {
                 Some(Loaded::Vst3(plugin)) => plugin.fit_editor(window::Size { width, height }),
                 Some(Loaded::Clap(plugin)) => plugin.fit_editor(window::Size { width, height }),
+                #[cfg(feature = "vst2")]
+                Some(Loaded::Vst2(plugin)) => plugin.fit_editor(window::Size { width, height }),
                 _ => {}
             }
             return None;
