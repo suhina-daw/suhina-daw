@@ -95,6 +95,8 @@ const RECENT_IN_MENU: usize = 10;
 /// The projects a closing window is letting go of: their names and threads.
 type LettingGo = Vec<(String, std::thread::JoinHandle<()>)>;
 
+/// How long frames keep coming after a command, for the audio thread to take it at a large buffer.
+const ACTION_SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 /// How long a closing window waits for its projects' plug-ins to be let go of before it closes
 /// anyway ([`closing_dialog`]).
 const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -343,6 +345,8 @@ pub struct App {
     quit_now: bool,
     /// Projects whose state checks are still on control workers before the save prompt.
     quit_checks: Option<Vec<ProjectId>>,
+    /// Until when frames keep coming after the last command ran.
+    actions_settle: Option<std::time::Instant>,
     /// The window is closing: the projects being let go of and since when; it closes once they
     /// are, or after [`QUIT_WAIT`].
     quitting: Option<(std::time::Instant, LettingGo)>,
@@ -615,6 +619,7 @@ impl App {
             quit_confirmed: false,
             quit_now: false,
             quit_checks: None,
+            actions_settle: None,
             quitting: None,
             missing: crate::app::missing_files::MissingFiles::default(),
             remember_choice: false,
@@ -3439,10 +3444,16 @@ impl App {
         if self.revision != revision {
             ui.ctx().request_repaint();
         }
-        // A transport command changes no revision: the play start marker moved by this frame's
-        // action shows at once, without waiting for the pointer to move.
+        // A transport command changes no revision, and the audio thread takes it at its next block:
+        // frames keep coming until then, so the play start marker it moved shows without waiting
+        // for the pointer to move.
         if ran > 0 {
-            ui.ctx().request_repaint();
+            self.actions_settle = Some(std::time::Instant::now() + ACTION_SETTLE);
+        }
+        if self.actions_settle.is_some_and(|until| std::time::Instant::now() < until) {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        } else {
+            self.actions_settle = None;
         }
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
         if grid.is_some_and(|g| {
