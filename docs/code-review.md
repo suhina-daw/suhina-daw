@@ -7,6 +7,7 @@ last_verified: 2026-10-24
 covers:
   - AGENTS.md
   - CONTRIBUTING.md
+  - docs/workflow.md
   - .github/pull_request_template.md
 ---
 
@@ -83,15 +84,16 @@ to a maintainer.
 
 ## 3. Check the repository's rules
 
-Use [AGENTS.md](../AGENTS.md) as the source of truth instead of maintaining another copy of its
-exceptions. Read its golden rules and the rules for the affected paths. In particular, check:
+Use [AGENTS.md](../AGENTS.md) and [`workflow.md`](workflow.md) as the source of truth instead of
+maintaining another copy of their exceptions. Read the golden rules and the rules for the affected
+paths. In particular, check:
 
 - clean-room provenance, GPL-compatible dependencies, crash prevention, real-time safety,
   the shared render path and the out-of-process plug-in boundary;
 - command-based user behaviour, the current device SDK architecture and naming rules;
-- the claim, linked issue and overlapping work under Tasks;
+- the claim, linked issue and overlapping work under `workflow.md` › Tasks;
 - meaningful regression coverage, *How to check it*, `Parity:` and updates to documents that
-  describe the changed behaviour under Before you finish a task;
+  describe the changed behaviour under `workflow.md` › What a pull request carries;
 - generated files and `last_verified` dates that a pull request must leave alone.
 - a setting added or moved in `settings_rows.rs`: report a row on the wrong page for its task, a
   group past about seven entries outside Advanced, or a status readout or command among the
@@ -228,6 +230,6 @@ remains, or before required CI checks are green.
 
 Review output does not grant permission to send formal GitHub Approve or Request changes events,
 merge, or queue a pull request. Person-run agents post feedback through the bot workflow in
-AGENTS.md; installed reviewers post through their own apps. Only a maintainer adds `ready to merge`
+`workflow.md` › Posting as the bot; installed reviewers post through their own apps. Only a maintainer adds `ready to merge`
 under [the current policy](../CONTRIBUTING.md#merging-many-pull-requests). Changing those authorities
 requires a separate maintainer-authorized policy and workflow change.

@@ -3,21 +3,21 @@ run-name: "Open issue: ${{ inputs.title }}"
 
 # Opens an issue as the GitHub App `suhina-bot` (`suhina-bot[bot]`) rather than as the person who
 # starts the run. Agent sessions write to GitHub with the account of the person who runs them;
-# issues they open through this workflow show the bot as their author (AGENTS.md › Tasks). The
+# issues they open through this workflow show the bot as their author (docs/workflow.md › Tasks). The
 # Discord bot writes as the same App (suhina-daw/suhina-bot#1). A pull request itself, its
 # description and its merge stay under the person's account; a review comment on one can be posted
 # as the bot through the Comment on pull request workflow (comment-pr.yml).
 #
 # Start it from Actions › Open issue › Run workflow, with
 # `gh workflow run open-issue.yml --json < request.json` (the inputs as JSON on stdin, so a long body
-# is not cut off by the command line; AGENTS.md › Tasks), or with the GitHub MCP's
+# is not cut off by the command line; docs/workflow.md › Tasks), or with the GitHub MCP's
 # `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in its log and puts the link
 # in its summary; re-running a failed run does not open the issue twice.
 #
 # Only an account with write access can start it; GitHub answers anyone else's dispatch with
 # `HTTP 403: Must have admin rights to Repository`. Without write access an agent opens the issue
 # under the person's own account instead: scripts/agent_post.py checks the access and takes the
-# right path (AGENTS.md › Tasks).
+# right path (docs/workflow.md › Tasks).
 #
 # The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
 # private key, and a tag can be moved to other code.

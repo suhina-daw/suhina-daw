@@ -5,7 +5,7 @@ name: Depends on
 #   Depends on #123
 #
 # This check fails while any of them is still open, so the merge queue never merges a pull request
-# before the work it builds on (AGENTS.md › Tasks). It names what it waits for. A pull request
+# before the work it builds on (docs/workflow.md › Tasks). It names what it waits for. A pull request
 # counts as done when it is merged, an issue when it is closed; a pull request closed without
 # merging still blocks, because the code it was to bring never landed. Stacked pull requests on
 # this repository (`gh stack`) are ordered by their base branches instead and need no line; the line

@@ -13,15 +13,15 @@ tests look like. Find the documents for a task with `python scripts/docs.py find
 - **A review, or a question about the code:** read the sources and report findings. Write
   nothing to GitHub (no `/claim`, no branch, no issue) unless the user asks for it.
 - **New work:** check the issue's linked pull requests and the open ones that touch the same
-  paths, then claim and work as in [AGENTS.md › Tasks](../../../AGENTS.md#3-tasks).
+  paths, then claim and work as in [`docs/workflow.md`](../../../docs/workflow.md) › Tasks.
 - **Continuing an open pull request:** work on its branch. Do not claim again or open a second
   pull request. A pull request from a fork can only be pushed to by its author (or a maintainer
   when the author allows edits); otherwise report what to change.
 
 ## Where code goes
 
-The crate map and layers are in [AGENTS.md › Workspace map](../../../AGENTS.md#2-workspace-map)
-and [`docs/architecture.md`](../../../docs/architecture.md). The usual decisions:
+The layers and the crate table are in [`docs/architecture.md`](../../../docs/architecture.md). The
+usual decisions:
 
 - Something a user does to a project: a command in `crates/session/src/commands/<namespace>.rs` (id, params, policy,
   tests in `crates/session/tests/`). The view turns the gesture into

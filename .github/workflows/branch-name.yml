@@ -1,7 +1,7 @@
 name: Branch name
 
 # A pull request's branch is named `feature/`, `fix/`, `docs/` or `chore/` and two to five
-# lowercase words joined by hyphens (AGENTS.md › Tasks › Branch names). This workflow reminds a
+# lowercase words joined by hyphens (docs/workflow.md › Branch names). This workflow reminds a
 # pull request whose branch does not follow the rule with a warning annotation; it never fails, so
 # a branch opened before the rule can still merge.
 on:
