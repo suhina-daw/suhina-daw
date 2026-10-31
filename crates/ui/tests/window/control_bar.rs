@@ -143,6 +143,15 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
 }
 
 #[test]
+fn the_control_bar_box_leaves_the_arrangement_grid_alone() {
+    let mut harness = arrangement_app();
+    choose_arrangement_grid(&mut harness, "1/16");
+    choose_grid(&mut harness, "1/2");
+    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(2.0)));
+    assert_eq!(harness.state().arrangement().grid.label(), "1/16");
+}
+
+#[test]
 fn the_arrangement_grid_sets_where_a_dragged_clip_lands() {
     let mut harness = arrangement_app();
     // The control bar's value is the launch quantisation only; the Arrangement has its own grid.

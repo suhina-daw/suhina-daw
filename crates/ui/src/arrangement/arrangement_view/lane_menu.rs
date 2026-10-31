@@ -34,7 +34,7 @@ pub(super) fn empty_lane_menu(
     // The Arrangement's grid, in the menu itself, as its toolbar offers it.
     let keys = state.grid_keys.clone();
     if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
-        super::pick_grid(state, picked, actions);
+        state.grid = picked;
     }
     ui.separator();
     let beat = state.menu_beat.unwrap_or(0.0);

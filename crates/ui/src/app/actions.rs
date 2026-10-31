@@ -1126,7 +1126,7 @@ pub(super) fn describe(action: &Action) -> Option<String> {
             mapping_target(p)
         ),
         "launcher.removeMapping" => format!("Removed the keys of {}", mapping_target(p)),
-        "launcher.setQuantization" => format!("Grid {}", p["value"].as_str().unwrap_or_default()),
+        "launcher.setQuantization" => format!("Launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLaunchMode" => format!("Launch mode {}", p["mode"].as_str().unwrap_or_default()),
         "clip.setQuantization" => format!("Clip launch quantisation {}", p["value"].as_str().unwrap_or_default()),
         "clip.setLegato" => {

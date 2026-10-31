@@ -311,7 +311,7 @@ pull up.
 - **Built ([#442](https://github.com/suhina-daw/suhina-daw/issues/442), [#346](https://github.com/suhina-daw/suhina-daw/issues/346)):**
   the piano roll has its own grid value; it lives in the window, not the project, and is a
   snapping 1/16 until another is picked. The control bar's grid value (the launch quantisation,
-  `launcher.setQuantization`) applies to the Arrangement view only. The grid value draws the
+  `launcher.setQuantization`) sets when launched clips start, and the piano roll uses it only with the setting below. The grid value draws the
   vertical lines and is the step that notes snap to. The lines and snapping are the
   Arrangement view's ([arrangement editing](arrangement-editing.md) › The grid), from the same code
   ([#734](https://github.com/suhina-daw/suhina-daw/issues/734)): lines start again at every bar
