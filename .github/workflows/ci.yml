@@ -132,9 +132,9 @@ jobs:
             echo "::error::Live files are not committed; test sets stay in corpus/ (see CONTRIBUTING.md)."
             exit 1
           fi
-      - name: No old project name (AGENTS.md › Crate names)
+      - name: No old project name (docs/architecture.md › Crate names)
         run: python3 scripts/rename_suhina.py --check
-      - name: Licence header in every source file (AGENTS.md › Licence header)
+      - name: Licence header in every source file (docs/architecture.md › Licence header)
         run: python3 scripts/license_header.py --check
       - name: No long test modules inside source files (scripts/inline_tests.py)
         run: python3 scripts/inline_tests.py --check

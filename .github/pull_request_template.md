@@ -65,4 +65,4 @@
       `scripts/parity/score.py` (and `scripts/parity/devices.json` for a built-in effect or
       instrument), or the description says `Parity: no change` and why. The report's numbers and
       the `last_verified` dates are written on `main` after the merge; leave them alone
-      ([AGENTS.md › Before you finish a task](https://github.com/suhina-daw/suhina-daw/blob/main/AGENTS.md#4-before-you-finish-a-task)).
+      ([docs/workflow.md › Parity](https://github.com/suhina-daw/suhina-daw/blob/main/docs/workflow.md#parity)).

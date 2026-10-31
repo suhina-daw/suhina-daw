@@ -277,7 +277,7 @@ only `main`'s automation for the build lookup, never running the pull request's 
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
-The merge method is the queue's (squash). Agents never add the label (`AGENTS.md` › Tasks).
+The merge method is the queue's (squash). Agents never add the label (`docs/workflow.md` › Tasks).
 
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
