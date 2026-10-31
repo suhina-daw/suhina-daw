@@ -162,6 +162,10 @@ fn renderer_with_gate(specs: &[&str], sample_rate: u32, gate: bool) -> (Renderer
 fn stopping_a_transport_sensitive_instrument_fades_its_waveform() {
     for frames in [32, 512, 2048] {
         let (mut render, _controls, _) = renderer_with_gate(&["test:transport-cut"], 48_000, true);
+        // Offline waits for the plug-in's answer to every block. In real time a 32-frame block's
+        // deadline is under a millisecond, and a host process the scheduler runs late misses it
+        // and the sound passes through: a step this test would read as a bad fade.
+        render.set_offline(true);
         render.handle(LaunchCommand::Play);
         let mut block = vec![0.0; frames * 2];
         for _ in 0..17 {

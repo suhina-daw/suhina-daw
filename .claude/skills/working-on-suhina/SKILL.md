@@ -103,6 +103,26 @@ it no longer does.
   `renderer.handle(LaunchCommand::...)`, `renderer.process(&mut block)`; the monitor reads back what
   plays and what is queued.
 
+## Tests that do not depend on timing
+
+CI runners are slow and uneven, so a test that depends on timing fails there now and then
+(AGENTS.md rule 7). Do not write one; do this instead:
+
+- **Drive the engine by hand.** Call `renderer.process(&mut block)` a fixed number of times; never
+  run it against the clock or an audio device. For a plug-in in a host process, call
+  `renderer.set_offline(true)`: it waits for every answer, where real time drops a block that
+  misses a deadline of under a millisecond (`stopping_a_transport_sensitive_instrument_fades_its_waveform`).
+- **Wait on a signal, not on time.** To read what a background thread made of what you gave it,
+  synchronize with it: `Session::sync_recording(finish)` makes the recording thread empty its
+  rings and report, and `finish` settles ended takes at once (`crates/session/tests/recording.rs`).
+  Never `sleep` and hope. A new background thread gets such a barrier if its results are tested.
+- **Fake the clock.** Code with a deadline or settling time takes the time as an argument or
+  through an injectable clock, and the test moves it by a fixed step. Do not assert an elapsed
+  time, a latency bound or "within N ms".
+- **No retries, wider tolerances or `#[ignore]`** to hide a race: find what the test waits on.
+- Check a threaded test by running it many times with the machine busy
+  (`yes > /dev/null &` per core, then a loop of `cargo test -p <crate> <name>`).
+
 ## Before finishing
 
 The checks are in [AGENTS.md › Before you finish a task](../../../AGENTS.md#4-before-you-finish-a-task).
