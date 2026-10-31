@@ -162,7 +162,7 @@ fn groups_move_controls_together_without_changing_bindings_drawings_or_order() {
 fn migrated_examples_preserve_serialized_contracts_and_offline_renders() {
     for (name, text) in [
         ("filter", include_str!("fixtures/authoring/filter.sd")),
-        ("auto-pan", include_str!("fixtures/authoring/auto-pan.sd")),
+        ("lfo-pan", include_str!("fixtures/authoring/lfo-pan.sd")),
         ("delay", include_str!("fixtures/authoring/delay.sd")),
     ] {
         let mut before = DeviceGraph::from_sd(text).unwrap();
