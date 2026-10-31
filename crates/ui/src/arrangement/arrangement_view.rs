@@ -315,15 +315,6 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
     Color32::from_rgb(color.0, color.1, color.2)
 }
 
-/// The Arrangement's grid chosen in a menu or its toolbar: the control bar's grid shows the same
-/// value when it has it (a fixed grid or none; an adaptive grid is the Arrangement's alone).
-pub(crate) fn pick_grid(state: &mut ArrangementViewState, picked: PianoGrid, actions: &mut Vec<Action>) {
-    state.grid = picked;
-    if let Some(value) = picked.control_bar_value() {
-        actions.push(Action::new("launcher.setQuantization", serde_json::json!({ "value": value })));
-    }
-}
-
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
@@ -333,7 +324,7 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
 
     // The lanes' menus show the Arrangement's grid and change it.
     if let Some(picked) = state.automation.grid_picked.take() {
-        pick_grid(state, picked, actions);
+        state.grid = picked;
     }
     state.automation.grid = state.grid;
     state.automation.grid_keys = state.grid_keys.clone();
