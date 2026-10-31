@@ -943,28 +943,18 @@ fn fader_db_at(y: f32, fader: Rect) -> f64 {
     suhina_engine::model::automation::volume_db(position).clamp(VOLUME_RANGE.0, VOLUME_RANGE.1)
 }
 
-/// A volume control's gesture. A drag on a vertical fader moves its cap with the pointer, hidden and
-/// staying where it was grabbed on the cap (Shift: ten times finer, the pointer running ahead); everything
-/// else is an ordinary value drag.
+/// A volume control's gesture. A drag on a vertical fader moves its cap as far as the pointer moves,
+/// the pointer hidden and held, so past either end the cap waits and turns back at once; on release
+/// the pointer is on the cap. Shift: ten times finer. Everything else is an ordinary value drag.
 fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>, value: f64, fader: Rect) -> Drag {
     let on_fader = !horizontal_volume() && fader.height() > cap_size().y && fader.contains(response.rect.center());
-    if on_fader
-        && response.dragged_by(egui::PointerButton::Primary)
-        && let Some(pointer) = response.interact_pointer_pos()
-    {
-        widgets::hide_pointer_for_drag(ui.ctx());
-        let grab_id = response.id.with("grab");
-        let mut grab =
-            ui.ctx().data(|d| d.get_temp::<f32>(grab_id)).filter(|_| !response.drag_started()).unwrap_or_else(|| {
-                let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
-                let position = widgets::volume_position(value);
-                pointer.y - (bottom + (top - bottom) * position)
-            });
-        if ui.input(|i| i.modifiers.shift) {
-            grab += response.drag_delta().y * 0.9;
-        }
-        ui.ctx().data_mut(|d| d.insert_temp(grab_id, grab));
-        let db = fader_db_at(pointer.y - grab, fader);
+    if on_fader && response.dragged_by(egui::PointerButton::Primary) {
+        let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+        let cap_y = |db: f64| bottom + (top - bottom) * widgets::volume_position(db);
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+        let moved = widgets::value_drag_delta(ui, response).y * fine;
+        let db = fader_db_at(cap_y(preview.unwrap_or(value)) + moved, fader);
+        widgets::value_drag_returns_to(ui.ctx(), Pos2::new(fader.center().x, cap_y(db)));
         *preview = Some(db);
         return Drag::Moving(db);
     }

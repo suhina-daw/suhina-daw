@@ -49,6 +49,8 @@ pub(crate) fn fixed(value: f64, decimals: usize) -> String {
 #[derive(Clone, Copy)]
 struct ValueDrag {
     raw: bool,
+    /// Where the pointer goes on release, for a control that moves under it (a fader's cap).
+    back: Option<Pos2>,
 }
 
 fn value_drag_id() -> Id {
@@ -68,7 +70,7 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
     let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
     if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
-        drag = Some(ValueDrag { raw: false });
+        drag = Some(ValueDrag { raw: false, back: None });
     }
     let Some(mut drag) = drag else {
         return Vec2::ZERO;
@@ -93,20 +95,23 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
 /// focus (egui keeps the button down when the release went to another window). Called once a
 /// frame, so a control that went away mid-drag (hidden, its panel closed) cannot keep the pointer.
 pub fn release_value_drag(ctx: &egui::Context) {
-    let held = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_some();
-    if held && !ctx.input(|i| i.pointer.any_down() && i.focused) {
+    let held = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
+    if let Some(drag) = held
+        && !ctx.input(|i| i.pointer.any_down() && i.focused)
+    {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+        if let Some(at) = drag.back {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
+        }
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     }
 }
 
-/// Hides the pointer for a drag that still moves with it (a fader's cap under it), without the lock
-/// of [`value_drag_delta`]; [`release_value_drag`] gives it back.
-pub fn hide_pointer_for_drag(ctx: &egui::Context) {
-    if ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())).is_none() && ctx.input(|i| i.focused) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
-        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: false }));
+/// Where the pointer comes back when this value drag ends.
+pub fn value_drag_returns_to(ctx: &egui::Context, at: Pos2) {
+    if let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) {
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { back: Some(at), ..drag }));
     }
 }
 
