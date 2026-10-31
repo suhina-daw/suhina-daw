@@ -30,6 +30,9 @@ class SkillChecks(unittest.TestCase):
         )
         self.assertEqual(check(text), [])
 
+    def test_a_type_is_found_where_it_is_defined_without_being_re_exported(self):
+        self.assertEqual(check("`suhina_engine::launcher::Launcher::new()`"), [])
+
     def test_a_path_that_is_gone_fails(self):
         self.assertEqual(
             check("See `crates/session/src/no_such_file.rs`."),

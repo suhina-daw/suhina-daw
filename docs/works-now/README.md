@@ -19,4 +19,6 @@ to the end of its section on `main` and deletes it (`python scripts/works_now.py
 the files with `python scripts/works_now.py check`. A change to a bullet already in `ROADMAP.md`
 (rewording it, or removing a limit it names) is still made in `ROADMAP.md`.
 
+If a local `fold` stops after it wrote `ROADMAP.md` but before it deleted the files, delete the files that are already folded by hand, and do not run `fold` again: it would add their bullets a second time. (CI is not affected: it folds on a fresh checkout and pushes only when the run completes.)
+
 These files are not documents: `scripts/docs.py` skips this folder, and they carry no front matter.

@@ -390,7 +390,7 @@ def check_skill(rel: str, text: str, files: list[str], crates: dict[str, str]) -
                     continue
                 sources = [f for f in files if f.startswith(folder.rstrip("/") + "/") and f.endswith(".rs")]
                 *modules, name = m.group(2).strip(":").split("::")
-                missing = [mod for mod in modules if not defines(sources, mod, module=True)]
+                missing = [mod for mod in modules if not defines(sources, mod, module=not mod[:1].isupper())]
                 if missing or not defines(sources, name, module=False):
                     out.append(Finding(rel, number, "SKILL_SYMBOL", f"{span}: not found in {folder}"))
     return out

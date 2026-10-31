@@ -74,12 +74,12 @@ def problems(paths: list[Path], known: dict[str, int]) -> list[str]:
         if parts[0] not in known:
             out.append(f"{rel}: no section {parts[0]!r}; one of {', '.join(known)}")
         text = path.read_text(encoding="utf-8")
-        lines = text.rstrip("\n").splitlines()
+        lines = text.splitlines()
         if not lines or not lines[0].startswith("- "):
             out.append(f"{rel}: starts with a bullet, '- '")
         for n, line in enumerate(lines, 1):
-            if not (line.startswith("- ") or (line.startswith("  ") and line.strip())):
-                out.append(f"{rel}:{n}: only bullets ('- ') and their continuation lines (two spaces), no blank lines")
+            if not ((line.startswith("- ") and line[2:].strip()) or (line.startswith("  ") and line.strip())):
+                out.append(f"{rel}:{n}: only bullets ('- ' and some text) and their continuation lines (two spaces), no blank lines")
                 break
     return out
 

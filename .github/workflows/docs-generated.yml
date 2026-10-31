@@ -173,7 +173,7 @@ jobs:
             exit 1
           fi
           # In ROADMAP.md, lines only added, and each one a line of a deleted docs/works-now file.
-          lines() { grep -E "^[$1]" | grep -Ev '^(\+\+\+|---) ' | cut -c2- | grep -v '^$' | LC_ALL=C sort || true; }
+          lines() { grep -E "^[$1]" | grep -Ev '^(\+\+\+|---) ' | cut -c2- | tr -d '\r' | grep -v '^$' | LC_ALL=C sort || true; }
           removed=$(git diff -U0 -- ROADMAP.md | lines -)
           added=$(git diff -U0 -- ROADMAP.md | lines +)
           folded=$(git diff -U0 -- docs/works-now | lines -)

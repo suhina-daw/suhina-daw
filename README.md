@@ -181,8 +181,8 @@ is an [issue](https://github.com/suhina-daw/suhina-daw/issues) in this repositor
    [`good first issue`](https://github.com/suhina-daw/suhina-daw/labels/good%20first%20issue) and
    [`help wanted`](https://github.com/suhina-daw/suhina-daw/labels/help%20wanted) labels mark good
    places to begin. Say in the issue that you take it, with a short plan.
-3. **Find the documents for it** in [`docs/INDEX.md`](docs/INDEX.md), by what you are about to do
-   or by the code you change, and read [`docs/architecture.md`](docs/architecture.md) to see where
+3. **Find the documents for it** with `python scripts/docs.py find WORDS` (by what you are about
+   to do) or `python scripts/docs.py covers PATH` (by the code you change), and read [`docs/architecture.md`](docs/architecture.md) to see where
    the code goes.
 4. **Build and test** as [Building](#building) shows; before the pull request run `cargo fmt --all`,
    `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and
