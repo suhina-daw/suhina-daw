@@ -3,7 +3,7 @@ description: The Live Set (.als) format as observed: container, tracks, clips, n
 read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
 type: spec
 status: current
-last_verified: 2026-10-23
+last_verified: 2026-10-29
 covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs

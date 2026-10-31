@@ -3,7 +3,7 @@ description: How a device stored in a Live Set is brought into Suhina: the three
 read_when: device import, importing devices, importing MIDI effects, device mapping, placeholder device, Operator, Live device to Suhina device, which device imports into what, golden renders of imported sets
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-10-29
 covers:
   - crates/als/src/devices.rs
 ---

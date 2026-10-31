@@ -3,7 +3,7 @@ description: The built-in saturator - its parameters, its eight curves as formul
 read_when: saturator, saturation, waveshaper, distortion curves, analog clip, soft sine, bass shaper, sinoid fold, digital clip, post clip, color filters, drive, importing Live's Saturator, Saturator elements, IIR oversampler, half-band
 type: spec
 status: planned
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - devices/saturator/**
   - crates/dsp/src/shape.rs
