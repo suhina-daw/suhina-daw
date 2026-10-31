@@ -288,11 +288,12 @@ contract, as every host gives*).
   twelve bytes for every plug-in it meets, which is what settles where a real one keeps its
   delay. A channel-count change with `audioMasterIOChanged` is noted but does not rebuild the
   block's buffers — a limit of this first version, in *Not yet*.
-- Parameters: the range is 0 to 1 and the default is the value now *(assumed* both: the
-  pinned header says nothing of a range and names no op-code for a default*)*. What the
-  plug-in changes itself comes back over the protocol as parameter changes, as an editor's
-  move does; the idle calls a plug-in asks for (`audioMasterNeedIdle` → `effIdle`) are served
-  from the process's main loop.
+- Parameters: the range is 0 to 1 and each parameter's default is the value it was when the
+  plug-in opened, captured once on load *(assumed* both: the pinned header says nothing of a
+  range and names no op-code for a default; the value at the opening is the closest to one,
+  and a panel's "reset" is that)*. What the plug-in changes itself comes back over the
+  protocol as parameter changes, as an editor's move does; the idle calls a plug-in asks for
+  (`audioMasterNeedIdle` → `effIdle`) are served from the process's main loop.
 - State, as the standard bank above: a chunk plug-in's chunk in a `CcnK`…`FBCh` bank; a
   chunk-less one's parameters as one program in a `CcnK`…`FxBk` bank (the other programs are
   not saved — a limit, below). Loading takes the chunk bank's chunk (`effSetChunk`), a
@@ -324,7 +325,9 @@ contract, as every host gives*).
   a project naming a VST2 plug-in that only exists as VST2 opens, the plug-in loads with its
   saved bank, plays with it, and the state read back is the settings (`found: itself`); and
   the editor: the mock's editor opens at its rect's size, stays open across the boundary,
-  closes (Windows and Linux under an X server; macOS's editor checks run by hand).
+  closes (Windows and Linux under an X server; macOS's editor checks run by hand); and the
+  editor whose own window the user closed is taken down and told to the engine the same, so
+  the panel opens it again (Windows and Linux; elsewhere the hand check).
 - The editor over installed plug-ins: `tests/manual.rs`'s editor test takes a VST2 file, so
   an installed editor's open-and-close is the observation for the rect and the handles.
 - The real world: `an_installed_vst2_plug_in_answers_the_probe` (ignored, `SUHINA_TEST_VST2`)
@@ -379,6 +382,12 @@ Two of the shapes are settled by the editor tests against installed plug-ins; th
   the height in its `value`), answered confirmed only with an editor open, deferred to the
   main loop to apply, and reported to the engine as an editor resize (`EditorResized`)
   (*assumed*).
+- The user's close of the editor's window (its X) closes the editor as the engine's
+  "Close Editor" does: the host sees the window ask to close, sends `effEditClose` while the
+  window the plug-in opened with still exists, then takes the window down, and tells the
+  engine once (`EditorClosed`) — never leaving the editor open to the host alone, so the
+  panel's "Open Editor" works again. (*assumed*: the close is the window's and the host's
+  observation, no op-code asks a plug-in whether it wants to stay).
 
 A VST2 editor is not user-resizable, as the interface names no op-code to make one so; an
 embedded one is sized by the plug-in's ask alone. The room the engine names for an embedded
@@ -408,9 +417,10 @@ another header (ADR 0022 decision 2).
   *(assumed)*. The probe reports the twelve and the "1.0f" float for every plug-in it meets;
   a real plug-in's delay showing there — and the host's latency reading matching what its
   maker documents — is the observation that settles it.
-- A parameter's default: the pinned header names no op-code to ask; the host reports the
-  value now as the default, so a panel's "reset" is a no-op until something better is
-  observed.
+- A parameter's default: the pinned header names no op-code to ask; the host captures each
+  value as the plug-in opened and reports it as the default. Whether a plug-in's parameters
+  move between `effOpen` and its first block (some initialise there) is what the probe
+  settles: if they do, the captured values are the wrong snapshot.
 - The encoding of `audioMasterGetSampleRate`'s answer (whole number, or a float's bits?).
   The probe answers a whole number; the question is what a real plug-in reads from it.
 - The unit of `audioMasterTempoAt`'s answer.

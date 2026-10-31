@@ -943,8 +943,17 @@ impl Vst2Plugin {
         // The idle calls the editor's drawing work falls out from (*assumed*: served from the
         // host's idle loop, as the interface's own `effEditIdle` says).
         let _ = self.send(EffectOp::EditIdle, 0, 0, std::ptr::null_mut(), 0.0);
-        // The user's close of the window, told the engine like the other formats do.
-        crate::window::take_close_request(window_id)
+        // The user's close of the window, told the engine like the other formats do: the
+        // editor is taken down here, as a close through the panel is — the op-code goes out
+        // and the window leaves the screen (Windows' WM_CLOSE only marked the request;
+        // macOS's user close only hid the window, which is still this struct's). Taken down
+        // and told to the engine, a closed editor is not open for anyone, and "Open Editor"
+        // asks the plug-in afresh.
+        let closed = crate::window::take_close_request(window_id);
+        if closed {
+            self.close_editor();
+        }
+        closed
     }
 
     fn editor_close(&mut self) {
@@ -953,12 +962,14 @@ impl Vst2Plugin {
         let _ = self.send(EffectOp::EditClose, 0, 0, std::ptr::null_mut(), 0.0);
     }
 
-    /// Closes the editor, if one is open: the op-code first, then the window.
+    /// Closes the editor, if one is open: the op-code first, then the window. The
+    /// plug-in's `effEditClose` goes out while the window it was opened with still exists,
+    /// whose handle it holds to the end (tearing its own things down with it); the
+    /// window's destruction after is what takes a user-closed one off the screen.
     pub(crate) fn close_editor(&mut self) {
-        if self.editor.take().is_none() {
-            return;
-        }
+        let Some(editor) = self.editor.take() else { return };
         self.editor_close();
+        drop(editor.window);
     }
 
     /// Closes the plug-in and lets go of it. Only called when its audio thread stopped; one

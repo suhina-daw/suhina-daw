@@ -10,6 +10,10 @@
 #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
 #![cfg(feature = "vst2")]
 
+mod common;
+
+use common::user_closes_windows;
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -335,6 +339,42 @@ fn the_mock_s_editor_opens_and_closes() {
     assert_eq!(plugin.editor_size(), Some(EDITOR_SIZE));
     plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
     assert!(!plugin.editor_open(), "closed as the engine sees it");
+}
+
+/// The editor the user closed from its own window goes down as a close through the engine
+/// does: the host takes the editor down when the window asks to close — the op-code out, the
+/// window off the screen, the engine told — so "Open Editor" is live again. Whether the test
+/// can ask the close from here is *user_closes_windows'*; where it cannot (macOS: another
+/// process's window is beyond its reach), the close is the engine's own, and a real plug-in
+/// there is the hand check.
+#[test]
+fn the_editor_the_user_closed_is_taken_down_and_opens_again() {
+    if !window_system() {
+        eprintln!("no window system for editors; the editor part is skipped here");
+        return;
+    }
+    let (mut plugin, _audio) = start();
+    plugin.open_editor().unwrap_or_else(|e| panic!("{e}"));
+    assert!(plugin.editor_open(), "opened");
+    if user_closes_windows() {
+        common::close_editor_window(plugin.process_id());
+        let deadline = Instant::now() + PATIENT;
+        while plugin.editor_open() {
+            assert!(Instant::now() < deadline, "the editor the user closed never closed for the host");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    } else {
+        plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
+        assert!(!plugin.editor_open());
+    }
+    // And the editor opens again: the one it had is gone, so the open asks the plug-in
+    // afresh — the window of its own, the size the rect declares.
+    let (width, height) = plugin.open_editor().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((width, height), EDITOR_SIZE, "the size the rect declared");
+    assert!(plugin.editor_open());
+    assert_eq!(plugin.editor_size(), Some(EDITOR_SIZE));
+    plugin.close_editor().unwrap_or_else(|e| panic!("{e}"));
+    assert!(!plugin.editor_open(), "closed once more, as the engine sees it");
 }
 
 /// An embedded editor opens (Windows and X11; macOS reports its own kind and the rack falls
