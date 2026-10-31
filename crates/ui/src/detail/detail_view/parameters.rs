@@ -238,15 +238,26 @@ pub(super) fn parameter_widget(
         // Edits clamping: the slider rounds a value to its step and decimals only when it is
         // edited, not every time it is drawn, so a value automation plays between steps is not
         // sent back as an edit (which turns the lane off).
-        control => ui.add(
-            egui::Slider::new(value, parameter.min..=parameter.max)
-                .clamping(egui::SliderClamping::Edits)
-                .show_value(false)
-                .trailing_fill(style.accent.is_some())
-                .max_decimals(style.decimals)
-                .logarithmic(control == ParameterControl::LogSlider)
-                .step_by(if control == ParameterControl::Integer { 1.0 } else { style.step }),
-        ),
+        control => {
+            let step = if control == ParameterControl::Integer { 1.0 } else { style.step };
+            let slider = ui.add(
+                egui::Slider::new(value, parameter.min..=parameter.max)
+                    .clamping(egui::SliderClamping::Edits)
+                    .show_value(false)
+                    .trailing_fill(style.accent.is_some())
+                    .max_decimals(style.decimals)
+                    .logarithmic(control == ParameterControl::LogSlider)
+                    .step_by(step),
+            );
+            // Over the slider, which only draws: a drag holds the pointer, as a knob's does.
+            let hit = ui.interact(slider.rect, slider.id.with("drag"), Sense::click_and_drag());
+            let log = control == ParameterControl::LogSlider && parameter.min > 0.0;
+            let mut slider = slider.union(hit.clone());
+            if slider_gesture(ui, &hit, slider.rect, slider.rect.height(), parameter, log, step, value) {
+                slider.mark_changed();
+            }
+            slider
+        }
     }
 }
 
@@ -254,6 +265,64 @@ pub(super) fn parameter_widget(
 pub(crate) fn slider_as_knob() -> bool {
     let _style = crate::kit::style_class::enter("slider");
     crate::kit::style_class::knob_preference(false)
+}
+
+/// A click or drag on a horizontal slider in `rect`, `handle` wide, as a fader's: a click sets the
+/// value there; a drag from the handle moves it as far as the pointer moves, the pointer hidden and
+/// held, so past either end it waits and turns back at once, and on release the pointer is on the
+/// handle (Shift: ten times finer). Whether the value changed.
+#[allow(clippy::too_many_arguments)]
+fn slider_gesture(
+    ui: &Ui,
+    hit: &egui::Response,
+    rect: Rect,
+    handle: f32,
+    parameter: &GraphParameter,
+    logarithmic: bool,
+    step: f64,
+    value: &mut f64,
+) -> bool {
+    let (min, max) = (parameter.min, parameter.max);
+    let travel = (rect.width() - handle).max(1.0);
+    let at_pointer = |x: f32| f64::from(((x - rect.left() - handle / 2.0) / travel).clamp(0.0, 1.0));
+    let held_id = hit.id.with("position");
+    let dragging = hit.dragged_by(egui::PointerButton::Primary);
+    let position = if dragging {
+        let current = if logarithmic {
+            (*value / min).ln() / (max / min).ln()
+        } else {
+            (*value - min) / (max - min).max(f64::EPSILON)
+        };
+        let held = ui.ctx().data(|d| d.get_temp::<f64>(held_id)).filter(|_| !hit.drag_started());
+        let from = held.unwrap_or_else(|| {
+            let press = ui.input(|i| i.pointer.press_origin()).map_or(rect.center().x, |p| p.x);
+            let on_handle = (f64::from(press - rect.left() - handle / 2.0) / f64::from(travel) - current).abs()
+                * f64::from(travel)
+                <= f64::from(handle);
+            if on_handle { current.clamp(0.0, 1.0) } else { at_pointer(press) }
+        });
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+        let moved = f64::from(widgets::value_drag_delta(ui, hit).x / travel) * fine;
+        let position = (from + moved).clamp(0.0, 1.0);
+        ui.ctx().data_mut(|d| d.insert_temp(held_id, position));
+        let back = rect.left() + handle / 2.0 + travel * position as f32;
+        widgets::value_drag_returns_to(ui.ctx(), Pos2::new(back, rect.center().y));
+        position
+    } else if hit.clicked() {
+        let Some(pointer) = hit.interact_pointer_pos() else {
+            return false;
+        };
+        at_pointer(pointer.x)
+    } else {
+        return false;
+    };
+    let mut next = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
+    if step > 0.0 {
+        next = (min + ((next - min) / step).round() * step).clamp(min, max);
+    }
+    let changed = next != *value;
+    *value = next;
+    changed
 }
 
 /// Whether the theme gives sliders parts of their own: `.slider-rail`, `.slider-fill` or
@@ -290,15 +359,8 @@ fn themed_slider_widget(
         crate::kit::style_class::computed().and_then(|c| c.width).unwrap_or(8.0).clamp(2.0, rect.width().max(2.0))
     };
     let travel = (rect.width() - handle_width).max(1.0);
-    if let Some(pointer) = response.interact_pointer_pos().filter(|_| response.dragged() || response.clicked()) {
-        let position = f64::from(((pointer.x - rect.left() - handle_width / 2.0) / travel).clamp(0.0, 1.0));
-        let mut next = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
-        let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
-        if step > 0.0 {
-            next = (min + ((next - min) / step).round() * step).clamp(min, max);
-        }
-        *value = next;
-    }
+    let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
+    slider_gesture(ui, &response, rect, handle_width, parameter, logarithmic, step, value);
     let position = to_position(*value).clamp(0.0, 1.0) as f32;
     let state = State::response(&response, false);
     let painter = ui.painter_at(rect);

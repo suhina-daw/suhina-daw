@@ -51,6 +51,9 @@ struct ValueDrag {
     raw: bool,
     /// Where the pointer goes on release, for a control that moves under it (a fader's cap).
     back: Option<Pos2>,
+    /// Let go of: the pointer has been moved back and shows at the next frame, so it never flashes
+    /// where it was held.
+    released: bool,
 }
 
 fn value_drag_id() -> Id {
@@ -70,9 +73,9 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
     let mut drag = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
     if drag.is_none() && response.drag_started() && ctx.input(|i| i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
-        drag = Some(ValueDrag { raw: false, back: None });
+        drag = Some(ValueDrag { raw: false, back: None, released: false });
     }
-    let Some(mut drag) = drag else {
+    let Some(mut drag) = drag.filter(|d| !d.released) else {
         return Vec2::ZERO;
     };
     // egui shows the pointer again whenever the icon changes, so the icon stays hidden too.
@@ -95,16 +98,19 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
 /// focus (egui keeps the button down when the release went to another window). Called once a
 /// frame, so a control that went away mid-drag (hidden, its panel closed) cannot keep the pointer.
 pub fn release_value_drag(ctx: &egui::Context) {
-    let held = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id()));
-    if let Some(drag) = held
-        && !ctx.input(|i| i.pointer.any_down() && i.focused)
-    {
+    let Some(drag) = ctx.data(|d| d.get_temp::<ValueDrag>(value_drag_id())) else {
+        return;
+    };
+    if drag.released {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
+    } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
         if let Some(at) = drag.back {
             ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
-        ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
+        ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { released: true, ..drag }));
+        ctx.request_repaint();
     }
 }
 

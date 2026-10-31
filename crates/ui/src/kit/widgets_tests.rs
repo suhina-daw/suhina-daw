@@ -207,7 +207,8 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     let run = |hold: bool, after: bool| {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             if hold {
-                ui.ctx().data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None }));
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: false }));
             }
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             if after {
