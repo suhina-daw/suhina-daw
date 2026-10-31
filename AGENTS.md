@@ -44,7 +44,12 @@ the documents that match your task.
 6. **Everything is a command.** User-visible behaviour is a command in the engine with an id,
    params and tests. The UI, CLI and MCP all dispatch the same commands.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
-   formats, golden-file renders for DSP and engine behaviour.
+   formats, golden-file renders for DSP and engine behaviour. A test never depends on timing: no
+   `sleep` to give a thread time, no wall-clock deadline or elapsed-time bound, no polling loop
+   that waits for another thread, no result that depends on the order threads run in. CI runners
+   are slow and uneven, and such a test fails there once in a while and teaches everyone to
+   re-run the job. Render a fixed number of frames with `process`, use a fake clock, or wait
+   on an explicit signal (a barrier such as `Session::sync_recording`, a channel, a join).
 8. **Build every device's panel on the SDK, and its DSP from shared blocks.** Every built-in MIDI
    effect, instrument and audio effect is native code, never an `.sd` graph, and gets its panel
    from the `device-sdk` UI system: the generated parameter list, or a layout (the `.sd` UI part
