@@ -24,14 +24,14 @@ and a panel is drawn by the UI thread at its own pace.
 
 ## Decision
 
-1. **`Device::readouts() -> Option<[f32; MAX_READOUTS]>`** (32 values, default `None`), read after
+1. **`Device::readouts() -> Option<[f32; MAX_READOUTS]>`** (35 values, default `None`), read after
    each block. The device keeps the values in its own fixed array, updated in `process`; their
    order is the device's and its panel's agreement, written down in the device's spec.
 2. **One device per track publishes**, the first in its chain that returns `Some`, like the
    Sampler's read head: `Chain::readouts` finds it and `Levels::finish` stores its values in the
-   track's meter row (32 `AtomicU32`s and the device's position + 1). Storing is a handful of
+   track's meter row (35 `AtomicU32`s and the device's position + 1). Storing is a handful of
    relaxed atomic writes per block; nothing allocates or waits. A graph swap clears the row.
-3. **The UI hands them to the canvas as values `#r0` … `#r31`** beside the parameters
+3. **The UI hands them to the canvas as values `#r0` … `#r34`** beside the parameters
    (`MeterMonitor::readouts(track, device)`, then `GraphParameter::readout`). They are never listed
    or changed by a control. A canvas reads them with the `readout` expression or names them in a
    drawing; validation accepts these ids in drawings, never in bindings. The UI repaints at about

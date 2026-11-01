@@ -263,7 +263,7 @@ Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `
 current value and unit to the prefix `text`. `decimals` is 0..8. Unknown fields are rejected.
 
 A value expression uses `op`: `parameter` has `parameter` (id), `normalized` (false), `logarithmic`
-(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 31) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r31` and `#expanded` (1 while the device's expanded panel is open) as parameters, bindings never; `sin` and `cos` have `value` (radians).
+(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 34) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r31` and `#expanded` (1 while the device's expanded panel is open) as parameters, bindings never; `sin` and `cos` have `value` (radians).
 The `equal` expression has `a` and `b` and returns 1 when their difference is less than 0.0001, otherwise 0; use it for selected segment highlights.
 The parameter expression returns raw units unless `normalized` is true. Use the same
 `logarithmic` flag on bindings and normalized drawings.

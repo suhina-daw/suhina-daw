@@ -253,4 +253,22 @@ fn the_readouts_show_the_compressing_band_and_rest_after_a_reset() {
     let idle = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
     assert_eq!(idle[2 * MID + 1], 0.0);
     assert!(idle[readout::SPECTRUM] <= LEVEL_FLOOR_DB as f32);
+    assert!(idle[readout::BAND_PEAK + MID] <= LEVEL_FLOOR_DB as f32);
+}
+
+#[test]
+fn band_peaks_show_their_own_band_and_the_meters_fall_to_the_floor_in_seconds() {
+    let mut d = device(&[]);
+    let mut signal = sine(1_000.0, -6.0, 24_000);
+    d.process(&ProcessContext::default(), &mut signal);
+    let r = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
+    assert!(r[readout::BAND_PEAK + MID] > -12.0, "mid peak {}", r[readout::BAND_PEAK + MID]);
+    assert!(r[readout::BAND_PEAK] < -30.0, "low peak {}", r[readout::BAND_PEAK]);
+    // Two seconds of silence: every meter is at the floor, however loud it was.
+    let mut silence = vec![0.0; 2 * (2.0 * SR) as usize];
+    d.process(&ProcessContext::default(), &mut silence);
+    let r = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
+    for slot in [readout::OUTPUT_LEFT, readout::OUTPUT_RIGHT, readout::BAND_PEAK, readout::BAND_PEAK + MID] {
+        assert!(r[slot] <= LEVEL_FLOOR_DB as f32, "readout {slot}: {}", r[slot]);
+    }
 }

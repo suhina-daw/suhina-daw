@@ -477,7 +477,7 @@ impl<const N: usize> ParamBank<N> {
 }
 
 /// Most live values a device hands its panel ([`Device::readouts`]).
-pub const MAX_READOUTS: usize = 32;
+pub const MAX_READOUTS: usize = 35;
 
 /// A built-in instrument or effect.
 ///

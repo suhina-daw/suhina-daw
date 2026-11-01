@@ -50,15 +50,16 @@ pub const SPECTRUM_HIGH: f64 = 20_000.0;
 const SPECTRUM_RISE_SECONDS: f64 = 0.01;
 const SPECTRUM_FALL_SECONDS: f64 = 0.3;
 const DISPLAY_SECONDS: f64 = 0.08;
-const METER_FALL_SECONDS: f64 = 0.3;
+const METER_FALL_SECONDS: f64 = 0.145;
 
 /// What the panel reads ([`Device::readouts`]): band `b`'s level at `2 b`, its gain change at
 /// `2 b + 1` (dB), the output's peak left and right at 6 and 7 (dBFS), the input spectrum's
-/// bands from 8 on (dB).
+/// bands from 8 on (dB), and each band's own output peak (dBFS) from 32.
 pub mod readout {
     pub const OUTPUT_LEFT: usize = 6;
     pub const OUTPUT_RIGHT: usize = 7;
     pub const SPECTRUM: usize = 8;
+    pub const BAND_PEAK: usize = 32;
 }
 
 /// The bands, in parameter order.
@@ -253,6 +254,8 @@ pub struct Multiband {
     /// The input's spectrum and the output's falling peak, for the panel only.
     spectrum: Analyser<SPECTRUM_BANDS>,
     meter: [f64; 2],
+    /// Each band's own falling peak, after its gain.
+    band_meters: [f64; 3],
     meter_fall: f64,
     /// The one-pole coefficient that smooths the bands' level and gain change for the panel.
     display: f64,
@@ -302,6 +305,7 @@ impl Multiband {
                 (SPECTRUM_RISE_SECONDS, SPECTRUM_FALL_SECONDS),
             ),
             meter: [0.0; 2],
+            band_meters: [0.0; 3],
             meter_fall: 0.0,
             display: 0.0,
         };
@@ -404,6 +408,7 @@ impl Multiband {
             (SPECTRUM_RISE_SECONDS, SPECTRUM_FALL_SECONDS),
         );
         self.meter = [0.0; 2];
+        self.band_meters = [0.0; 3];
         self.meter_fall = suhina_dsp::smooth::time_constant(METER_FALL_SECONDS, self.sample_rate);
         self.display = suhina_dsp::smooth::time_constant(DISPLAY_SECONDS, self.sample_rate);
     }
@@ -488,6 +493,10 @@ impl Device for Multiband {
                 if !on {
                     sum[0] += l * audible;
                     sum[1] += r * audible;
+                    if let Some(meter) = self.band_meters.get_mut(index) {
+                        let peak = (l * audible).abs().max((r * audible).abs());
+                        *meter = if peak > *meter { peak } else { *meter * self.meter_fall };
+                    }
                     if let Some([level, change]) = self.readouts.get_mut(index * 2..index * 2 + 2) {
                         let k = self.display as f32;
                         *level = LEVEL_FLOOR_DB as f32 + (*level - LEVEL_FLOOR_DB as f32) * k;
@@ -515,6 +524,10 @@ impl Device for Multiband {
                 let gain = db_to_gain_f64((change_db + gain_db) * amount);
                 sum[0] += l * gain * audible;
                 sum[1] += r * gain * audible;
+                if let Some(meter) = self.band_meters.get_mut(index) {
+                    let peak = (l * gain * audible).abs().max((r * gain * audible).abs());
+                    *meter = if peak > *meter { peak } else { *meter * self.meter_fall };
+                }
             }
             let output = db_to_gain_f64(f64::from(self.output.next_value()) * amount);
             for ((sample, x), meter) in frame.iter_mut().zip(sum).zip(&mut self.meter) {
@@ -529,6 +542,9 @@ impl Device for Multiband {
         }
         for (slot, level) in self.readouts.iter_mut().skip(readout::SPECTRUM).zip(self.spectrum.levels()) {
             *slot = level as f32;
+        }
+        for (slot, meter) in self.readouts.iter_mut().skip(readout::BAND_PEAK).zip(self.band_meters) {
+            *slot = db(meter) as f32;
         }
     }
 }

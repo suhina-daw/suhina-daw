@@ -91,9 +91,9 @@ Source identity participates in graph transfer,
 so replacing a sample cannot keep an old voice reading the previous source.
 The sample instrument publishes up to 32 independent voice positions through the
 Device API and fixed atomic meter slots; the UI polls them without audio-thread
-allocation or locking. Any built-in device hands its panel up to 32 live values the same way
+allocation or locking. Any built-in device hands its panel up to 35 live values the same way
 (`Device::readouts`, a track's first device that has them; the UI gives them to its canvas as
-`#r0` … `#r31`, [ADR 0032](decisions/0032-device-readouts.md)).
+`#r0` … `#r34`, [ADR 0032](decisions/0032-device-readouts.md)).
 
 | Crate | Owns | Depends on |
 |---|---|---|

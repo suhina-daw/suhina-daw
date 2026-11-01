@@ -49,6 +49,23 @@ pub struct Level {
     pub clipped: bool,
 }
 
+/// A device's live values as bits: an array this long has no `Default` of its own.
+#[derive(Debug)]
+struct Readouts([AtomicU32; suhina_device_api::MAX_READOUTS]);
+
+impl Default for Readouts {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| AtomicU32::new(0)))
+    }
+}
+
+impl std::ops::Deref for Readouts {
+    type Target = [AtomicU32; suhina_device_api::MAX_READOUTS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Default)]
 struct Row {
     track: AtomicU32,
@@ -59,7 +76,7 @@ struct Row {
     voices: [AtomicU32; 32],
     /// The device (its position + 1, 0 for none) whose live values `readouts` holds.
     readout_device: AtomicU32,
-    readouts: [AtomicU32; suhina_device_api::MAX_READOUTS],
+    readouts: Readouts,
 }
 
 impl Row {

@@ -35,7 +35,7 @@ BANDS = [("low", "Low", [3, 0, 2, 255]), ("mid", "Mid", [3, 0, 3, 255]), ("high"
 GLOBALS = ["lowCrossover", "highCrossover", "peak", "softKnee", "amount", "time", "output"]
 BAND_PARAMETERS = ["On", "Input", "AboveThreshold", "AboveSlope", "BelowThreshold", "BelowSlope", "Attack", "Release", "Gain"]
 # The device's readouts (devices/multiband/src/lib.rs › readout).
-OUTPUT_LEFT, OUTPUT_RIGHT, SPECTRUM = 6, 7, 8
+OUTPUT_LEFT, OUTPUT_RIGHT, SPECTRUM, BAND_PEAK = 6, 7, 8, 32
 SPECTRUM_BANDS = 24
 CROSSOVER_RANGES = {"lowCrossover": (30.0, 3_000.0), "highCrossover": (300.0, 15_000.0)}
 INVISIBLE = [0, 0, 0, 0]
@@ -460,6 +460,28 @@ def ott():
     return {"name": "OTT", "values": values}
 
 
+def band_meters(cid, bounds, visible=None):
+    """Each band's own output peak, after its gain: a bar in the band's colour under its letter, on
+    the output meter's scale (`meterRange`), which dragging changes here too."""
+    _, _, w, h = bounds
+    top, bottom = 30.0, h - 6.0
+    span = bottom - top
+    rng = par("meterRange")
+    drawing = [text(w / 2.0, 0.0, "Bands", tint(TEXT, 150), 10.0, center=True)]
+    for i, (_, name, color) in enumerate(BANDS):
+        bx = w / 2.0 - 13.0 + i * 10.0
+        peak = readout(BAND_PEAK + i)
+        level = maximum(0.0, add(1.0, mul(maximum(mul(rng, -1.0), minimum(0.0, peak)), reciprocal(rng))))
+        drawing.append(text(bx + 3.0, 13.0, name[0], color, 10.0, center=True))
+        drawing.append(rect(bx, top, 6.0, span, CONTROL, 2.0))
+        drawing.append(rect(bx, sub(bottom, mul(level, span)), 6.0, mul(level, span), color, 2.0))
+    return {"visible_when": visible, "id": cid, "name": "Band meters",
+            "tooltip": "Each band's output peak. Drag up or down to change the meters' range; "
+                       "double click resets it to 60 dB", "bounds": bounds,
+            "gesture": "drag", "x": None, "y": {"parameter": "meterRange", "logarithmic": False, "drag_scale": -1.0},
+            "drawing": drawing}
+
+
 def default_preset():
     """Every sound parameter at the device's default (devices/multiband/src/lib.rs › PARAMS)."""
     values = {"lowCrossover": 120.0, "highCrossover": 2500.0, "peak": 0.0, "softKnee": 1.0, "amount": 1.0,
@@ -526,11 +548,11 @@ def band_knobs(bid, x0, y0, visible, tag):
 
 
 def compact():
-    """Design D in the device row (886 x 168): the band view at the left; a row of switches and
+    """Design D in the device row (924 x 168): the band view at the left; a row of switches and
     presets over the chosen band's column (name, curve, power, solo), its knob grid, the global
-    column (Amount, Time, Output), the meters and the presets. While the strip is open the band view gives way
+    column (Amount, Time, Output), the bands' and the output's meters and the presets. While the strip is open the band view gives way
     to the three bands' curves and the rest moves left into the chosen band's column."""
-    w, h = 886.0, 168.0
+    w, h = 924.0, 168.0
     sx, sy, sw, sh = 4.0, 4.0, 416.0, 160.0
     controls = [graphic("band_view", "Band view", [sx, sy, sw, sh], band_view(0.0, 0.0, sw, sh), closed())]
     for i, (bid, name, color) in enumerate(BANDS):
@@ -566,12 +588,14 @@ def compact():
         controls.append(knob("time", "Time", [702.0 + dx, 96.0, 36.0, 70.0], mul(par("time"), 100.0), " %", 0, True,
                              state, tag))
         controls.append(knob("output", "Output", [738.0 + dx, 96.0, 36.0, 70.0], par("output"), "", 1, False, state, tag))
-        # The meter after the global column, then the presets in a column of their own at the right edge.
+        # The bands' meters and the output's after the global column, then the presets in a column
+        # of their own at the right edge.
         controls.append(separator(f"sep_meter{tag}", 777.0 + dx, 24.0, 140.0, state))
-        controls.append(meter(f"meter{tag}", [782.0 + dx, 4.0, 48.0, 148.0], state))
-        controls.append(separator(f"sep_presets{tag}", 833.0 + dx, 24.0, 140.0, state))
-        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [838.0 + dx, 24.0, 44.0, 18.0], state))
-        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [838.0 + dx, 46.0, 44.0, 18.0], state))
+        controls.append(band_meters(f"band_meters{tag}", [782.0 + dx, 4.0, 36.0, 148.0], state))
+        controls.append(meter(f"meter{tag}", [820.0 + dx, 4.0, 48.0, 148.0], state))
+        controls.append(separator(f"sep_presets{tag}", 871.0 + dx, 24.0, 140.0, state))
+        controls.append(preset_button(f"preset_default{tag}", "Default", 0, [876.0 + dx, 24.0, 44.0, 18.0], state))
+        controls.append(preset_button(f"preset_ott{tag}", "OTT", 1, [876.0 + dx, 46.0, 44.0, 18.0], state))
     # Handles last, so they are over everything they cross.
     controls += handles("", sx, sy, sw, sh, closed())
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,

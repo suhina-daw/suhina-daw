@@ -12,7 +12,7 @@ fn readouts_read_the_hosts_values_and_refuse_an_index_past_the_last() {
     let lookup = |id: &str, _: bool, _: bool| if id == "#r3" { -4.5 } else { 0.0 };
     assert_eq!(readout(3).evaluate(&lookup), -4.5);
     assert!(readout(31).validate(&HashSet::new(), 0, &mut 32768).is_ok());
-    assert!(readout(32).validate(&HashSet::new(), 0, &mut 32768).is_err());
+    assert!(readout(35).validate(&HashSet::new(), 0, &mut 32768).is_err());
     let min = UiValue::Expression(Box::new(UiExpression::Min { a: 2.0.into(), b: readout(3) }));
     assert_eq!(min.evaluate(&lookup), -4.5);
 }

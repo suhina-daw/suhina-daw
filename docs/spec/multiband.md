@@ -136,7 +136,7 @@ the three band colours and the gain line are theme tokens (`--device-display`,
   frequency; each band's name with its gain change, the chosen band boxed; the frequency axis; and
   a grey veil over a band that is off or not heard because another is soloed. The crossovers are
   dragged sideways and the thresholds up and down within their band; a double click resets one.
-- **Compact** (886 × 168, the device row's height): the band view at the left; over the right part
+- **Compact** (924 × 168, the device row's height): the band view at the left; over the right part
   a row of Low / Mid / High (the `band` parameter), RMS / Peak, Soft knee, and the Default and OTT
   quick presets; the chosen band's column (its name, transfer curve, power button and Solo); its knobs
   Threshold, Ratio, Up thresh., Up ratio, Attack, Release, Input, Gain. Ratio shows the above
@@ -146,8 +146,8 @@ the three band colours and the gain line are theme tokens (`--device-display`,
   (both stages at once, their knees with Soft knee's width, the limit held at ±36 dB), so crossed
   thresholds and the knee show as they sound; the input level is a line through it, the cut or lift
   there a segment off the diagonal and a dot; after a divider Amount (large, in the
-  accent), Time and Output; the output's peak in dB centred over
-  its two meters, which end with the knobs' values and are dragged up or down to change their range (`meterRange`, its bottom number); and at the right edge the Default and OTT presets in a column of their own. While the expanded strip is open the band view gives way to the
+  accent), Time and Output; each band's own output peak (after its gain) as a bar in the band's colour; the output's peak in dB centred over
+  its two meters, which end with the knobs' values and are dragged up or down to change their range (`meterRange`, its bottom number; the band bars share that scale, and every meter falls to nothing within two seconds of silence); and at the right edge the Default and OTT presets in a column of their own. While the expanded strip is open the band view gives way to the
   three bands' curves side by side, each with its power button and Solo, and the rest moves left
   into the chosen band's column.
 - **Expanded** (1200 × 160, `strip`: a strip over the device row scaled to its width, its header
