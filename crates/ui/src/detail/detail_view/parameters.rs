@@ -567,6 +567,29 @@ pub(super) fn parameter_layout(
         .collect()
 }
 
+/// Which column of `width` a cell starting at `left` is in.
+fn column_of(left: f32, width: f32) -> f32 {
+    (left / width.max(1.0) + 0.001).floor()
+}
+
+/// Whether `graph`'s list gets room and a line between its columns: a generated list, not one with a
+/// canvas or cells it places itself, which keep their own positions.
+pub(super) fn list_spreads(graph: &GraphBox) -> bool {
+    graph.canvas.is_none() && graph.parameters.iter().all(|p| p.ui.position.is_none())
+}
+
+/// Moves each cell by the room before its column, a theme's cells inside a column staying together.
+/// Returns where the lines between the columns go.
+pub(super) fn spread_columns(cells: &mut [Rect], width: f32) -> Vec<f32> {
+    let mut columns = 0.0f32;
+    for cell in cells.iter_mut() {
+        let column = column_of(cell.left(), width);
+        columns = columns.max(column);
+        *cell = cell.translate(Vec2::new(column * super::LIST_GAP, 0.0));
+    }
+    (1..=columns as u32).map(|k| k as f32 * width + (k as f32 - 0.5) * super::LIST_GAP).collect()
+}
+
 /// The stock controls of `graph` from the top left of the part under its nodes. With a canvas, the
 /// list flows to the canvas's right and a cell the file places itself stays under the canvas, where
 /// its position has always been measured from.

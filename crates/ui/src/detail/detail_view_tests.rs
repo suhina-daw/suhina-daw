@@ -938,3 +938,40 @@ fn a_tall_list_stays_in_two_columns() {
     assert!(cells.iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
     assert!(cells.iter().any(|c| c.left() >= COMPACT_WIDTH), "{cells:?}");
 }
+
+#[test]
+fn columns_get_room_between_them_as_many_as_there_are() {
+    let cell = |left: f32| Rect::from_min_size(Pos2::new(left, 0.0), Vec2::new(100.0, 20.0));
+    let mut cells = [cell(0.0), cell(100.0), cell(200.0), cell(200.0)];
+    let lines = spread_columns(&mut cells, 100.0);
+    let lefts: Vec<f32> = cells.iter().map(|c| c.left()).collect();
+    assert_eq!(lefts, [0.0, 100.0 + LIST_GAP, 200.0 + LIST_GAP * 2.0, 200.0 + LIST_GAP * 2.0]);
+    assert_eq!(lines, [100.0 + LIST_GAP / 2.0, 200.0 + LIST_GAP * 1.5]);
+    // Each line stands between the end of a column and the start of the next.
+    assert!(cells[0].right() < lines[0] && lines[0] < cells[1].left());
+    assert!(cells[1].right() < lines[1] && lines[1] < cells[2].left());
+}
+
+#[test]
+fn a_theme_s_cells_in_one_column_stay_together() {
+    // Three cells to a 300 point column: no room and no line between them.
+    let cell = |left: f32| Rect::from_min_size(Pos2::new(left, 0.0), Vec2::new(100.0, 48.0));
+    let mut cells = [cell(0.0), cell(100.0), cell(200.0), cell(0.0)];
+    let before = cells;
+    assert!(spread_columns(&mut cells, 300.0).is_empty());
+    assert_eq!(cells, before);
+}
+
+#[test]
+fn a_list_with_a_canvas_or_placed_cells_keeps_its_positions() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let mut graph = chain.devices[0].graph.clone().unwrap();
+    assert!(list_spreads(&graph));
+    // Two columns: the panel is as wide as them and the room between them.
+    assert_eq!(list_right(&chain.devices[0], &graph), COMPACT_WIDTH * 2.0 + LIST_GAP);
+    graph.parameters[0].ui.position = Some([0.0, 0.0]);
+    assert!(!list_spreads(&graph));
+    assert!(list_spreads(&chain.devices[0].graph.clone().unwrap()));
+}

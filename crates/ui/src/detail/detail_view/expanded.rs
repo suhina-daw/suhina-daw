@@ -149,18 +149,7 @@ pub(super) fn graph_controls(
             let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
-            // Its columns' left edges, with room between them.
-            let mut separators: Vec<f32> = Vec::new();
-            if graph.canvas.is_none() {
-                for cell in &mut cells {
-                    if cell.left() > 0.0 {
-                        if separators.last().is_none_or(|x| *x < cell.left()) {
-                            separators.push(cell.left());
-                        }
-                        *cell = cell.translate(Vec2::new(super::LIST_GAP, 0.0));
-                    }
-                }
-            }
+            let separators = if list_spreads(graph) { spread_columns(&mut cells, width) } else { Vec::new() };
             let gaps = separators.len() as f32 * super::LIST_GAP;
             let (_, body) = ui.allocate_space(Vec2::new(extent.x + gaps, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
@@ -170,9 +159,8 @@ pub(super) fn graph_controls(
                 crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
-            for (index, x) in separators.iter().enumerate() {
-                let x = origin.x + x + super::LIST_GAP * (index as f32 + 0.5);
-                painter.vline(x, body.y_range(), theme::hairline(theme::border_strong()));
+            for x in &separators {
+                painter.vline(origin.x + x, body.y_range(), theme::hairline(theme::border_strong()));
             }
             for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);

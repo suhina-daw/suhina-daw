@@ -393,15 +393,11 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
     if device.plugin.as_ref().is_some_and(|p| p.embedded.is_some()) {
         return 0.0;
     }
-    let cells = list_cells(graph, COMPACT_WIDTH, list_height(device, graph));
-    let right = cells.iter().fold(0.0f32, |right, c| right.max(c.right()));
-    // A generated list has room and a line between its columns.
-    if graph.canvas.is_some() {
-        return right;
+    let mut cells = list_cells(graph, COMPACT_WIDTH, list_height(device, graph));
+    if list_spreads(graph) {
+        spread_columns(&mut cells, COMPACT_WIDTH);
     }
-    let mut lefts: Vec<u32> = cells.iter().map(|c| c.left() as u32).filter(|x| *x > 0).collect();
-    lefts.dedup();
-    right + lefts.len() as f32 * LIST_GAP
+    cells.iter().fold(0.0f32, |right, c| right.max(c.right()))
 }
 
 /// How tall a device's stock-control list may grow before it continues in a new column: the
