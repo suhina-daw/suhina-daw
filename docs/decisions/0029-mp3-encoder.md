@@ -2,7 +2,8 @@
 description: Why the MP3 export encodes with LAME 3.100 vendored as C source in third_party/lame and behind the safe suhina-mp3 crate, which files are vendored, how the licence was read, why fft.c is replaced with Suhina's own Hartley transform, and why crates/mp3 is allowed unsafe like the plug-in-host crates
 read_when: MP3, mp3 export, LAME, libmp3lame, encoder crate, why C, vendored encoder, fft.c, Hartley, joint stereo, unsafe crate, lossy export
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-23
 covers:
   - third_party/lame
@@ -12,7 +13,6 @@ covers:
 
 # 0029: MP3 encoder — LAME 3.100, vendored, own fft.c
 
-- **Status:** accepted
 - **Date:** 2026-10-20
 - **Issue:** [#760](https://github.com/suhina-daw/suhina-daw/issues/760)
 

@@ -160,7 +160,7 @@ pub struct PluginReport {
     pub no_time: u32,
     /// Why it runs with its own defaults, when it did not take the saved state.
     pub state_refused: Option<String>,
-    /// It is bound to an ARA document of its track's audio clips (ADR 0028), so its editor
+    /// It is bound to an ARA document of its track's audio clips (ADR 0033), so its editor
     /// edits them.
     pub ara: bool,
     /// Its parameters as it last listed them, for its generated panel (#679); `None` until it
@@ -248,7 +248,7 @@ fn ranges(list: &[suhina_plugins::ParamInfo]) -> Vec<(u32, f64, f64)> {
 /// How long a clip's edits wait for the other track's plug-in to run with the clip.
 const CARRY_FOR: Duration = Duration::from_secs(60);
 
-/// A clip's ARA edits on their way from one track's plug-in to another's (ADR 0028 step 6): a
+/// A clip's ARA edits on their way from one track's plug-in to another's (ADR 0033 step 6): a
 /// clip moved or copied there with its edits kept. Stored from the first (`from_key`) at once,
 /// then given to the plug-in that edits clips on `to_track` once it runs with the clip.
 pub(crate) struct Carry {
@@ -356,7 +356,7 @@ struct Instance {
     /// When the last listing for the panel ended, answered or not; a plug-in that refuses to
     /// list is asked as seldom as one that answers.
     list_tried: Option<Instant>,
-    /// For a plug-in that edits clips (ADR 0028): its track's clips as it was loaded with them.
+    /// For a plug-in that edits clips (ADR 0033): its track's clips as it was loaded with them.
     ara_layout: Option<crate::ara::Layout>,
     /// The audio sources of the ARA document it was loaded with, kept for as long as it runs;
     /// empty without a document.
@@ -545,7 +545,7 @@ pub struct Rack {
     /// The notes ARA plug-ins found in the clips they edit, by clip (#720); none for a plug-in
     /// that is bypassed or not running.
     ara_notes: HashMap<suhina_model::ClipId, crate::ara::ClipNotes>,
-    /// Of those, the clips whose plug-in is bypassed: kept, not shown (ADR 0028).
+    /// Of those, the clips whose plug-in is bypassed: kept, not shown (ADR 0033).
     ara_notes_hidden: std::collections::HashSet<suhina_model::ClipId>,
     /// Clips' edits on their way to another track's plug-in ([`Rack::carry`]).
     carries: Vec<Carry>,
@@ -1176,7 +1176,7 @@ impl Rack {
                 continue;
             };
             let state = self.kept.remove(&found.key).or_else(|| saved_state(device));
-            // A plug-in that edits clips gets its track's audio clips (ADR 0028).
+            // A plug-in that edits clips gets its track's audio clips (ADR 0033).
             let spec = matched.plugin.spec();
             let edits_clips =
                 matched.plugin.ara || self.ara_found.contains(&found.key) || self.ara_plugins.contains(&spec);
@@ -1227,7 +1227,7 @@ impl Rack {
     }
 
     /// Carries a clip's edits from the plug-in `from_key` to the one that edits clips on
-    /// `to_track` (ADR 0028 step 6): its modification `from` there becomes `to` here, of
+    /// `to_track` (ADR 0033 step 6): its modification `from` there becomes `to` here, of
     /// `source`; it arrives as region `region`. Done over the next syncs; a notice when it
     /// cannot be.
     pub(crate) fn carry(
@@ -1355,7 +1355,7 @@ impl Rack {
     /// Notices plug-ins that edit clips whose track's clips changed (moved, cut, added or
     /// removed): once the clips have stayed put a moment, each is stopped and, when its state
     /// with its edits is back, loaded again with the new clips; the edits of clips that are
-    /// still there come back with it (ADR 0028). Returns whether one was stopped.
+    /// still there come back with it (ADR 0033). Returns whether one was stopped.
     fn follow_clips(&mut self, project: &Project, audio: &AudioPool, devices: &[suhina_engine::PluginDevice]) -> bool {
         let mut rebind = Vec::new();
         let mut updates = Vec::new();
@@ -1390,7 +1390,7 @@ impl Rack {
                 instance.ara_changed = None;
                 continue;
             }
-            // Bound to a document: the change goes to it at once, as an edit (ADR 0028
+            // Bound to a document: the change goes to it at once, as an edit (ADR 0033
             // decision 3). Moved and trimmed clips change in place; nothing reloads.
             if !instance.ara_sources.is_empty()
                 && let Some(mut document) = now.document_with(audio, &mut instance.ara_sources)

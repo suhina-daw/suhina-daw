@@ -1427,7 +1427,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     if !instrument {
         check_effect_position(first_effect, channel.devices.len(), position)?;
     }
-    // A plug-in that edits clips (ARA, ADR 0028) plays the clips from their files, so a device
+    // A plug-in that edits clips (ARA, ADR 0033) plays the clips from their files, so a device
     // before it would not be heard: it goes first, wherever it was asked for.
     let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
     let position = if plugin.ara { 0 } else { position };

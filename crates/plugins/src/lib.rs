@@ -16,6 +16,21 @@
 //! in turn. When a restart replaces the group's process, the group's generation goes up; the
 //! instances loaded into the earlier process then report [`Health::Crashed`], and their own
 //! restart loads them into the new process.
+//!
+//! In detail: The engine's side of plug-in hosting: `Plugin::start` loads an instance into a
+//! `suhina-plugin-host` process (the one its group shares, `Launch::group`, or one of its own) and
+//! returns a control half (health, ping, state, parameters, restart) and an audio half
+//! (`PluginAudio::process`, real-time safe). Control messages are JSON lines over a local socket
+//! (`protocol`; the host also reports its process's resident memory once a second, unasked, and
+//! `host_memory` reads the running hosts' reports for the control bar). A host that exits is
+//! *crashed*; one that leaves 32 blocks in a row unanswered is *hung*; `restart` brings it back
+//! with its last saved state. `scan` and `scan_pool` find installed CLAP and VST3 plug-ins
+//! (standard folders, `CLAP_PATH`, folders the user adds), read VST3 bundles' `moduleinfo.json`
+//! without loading them and load the rest in a few long-lived `--scan-worker` processes with
+//! per-file timeouts, into a catalog that can be saved. `PluginAudio::process_with_events` sends an
+//! instrument its notes. `offline::render` runs audio (and `render_with_events` notes) through a
+//! plug-in without a deadline (`suhina-cli plugin run`, `plugin run-device`). The session starts a
+//! project's plug-ins with it and hands their audio halves to the engine.
 
 pub mod arch;
 pub mod library;
@@ -117,7 +132,7 @@ pub struct Launch {
     /// the instance a process of its own.
     pub group: Option<String>,
     /// The ARA document to bind the plug-in to as it loads, for an ARA plug-in on a track
-    /// (ADR 0028); `None` for every other plug-in.
+    /// (ADR 0033); `None` for every other plug-in.
     pub ara: Option<protocol::AraDocument>,
 }
 
@@ -839,7 +854,7 @@ impl Plugin {
         self.latency
     }
 
-    /// Whether the plug-in supports ARA (it can edit clips, ADR 0028), as the host found when
+    /// Whether the plug-in supports ARA (it can edit clips, ADR 0033), as the host found when
     /// it loaded it: true even when the scan did not see it, or it was loaded without a document.
     pub fn edits_clips(&self) -> bool {
         self.edits_clips
@@ -1187,7 +1202,7 @@ impl Plugin {
     }
 
     /// The edits of one modification (`content-<id>`) of a plug-in bound to an ARA document and
-    /// its source (the pool key), stored on their own to give another track's plug-in (ADR 0028
+    /// its source (the pool key), stored on their own to give another track's plug-in (ADR 0033
     /// step 6): the plug-in's document archive id and the bytes. Waits for the answer.
     pub fn ara_export(&mut self, modification: &str, source: &str) -> Result<(String, Vec<u8>), PluginError> {
         let instance = self.instance;

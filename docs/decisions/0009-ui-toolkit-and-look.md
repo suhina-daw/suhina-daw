@@ -2,7 +2,8 @@
 description: Why the UI is built with egui, and how close it may get to Live: same structure and behaviour, Suhina's own look
 read_when: UI toolkit, egui, look and feel, trade dress, design rights, screenshots, how close to Ableton
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-22
 covers:
   - apps/suhina/Cargo.toml
@@ -12,7 +13,6 @@ covers:
 
 # 0009: egui for the UI; familiar workflow, Suhina's own look
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 
 ## Context

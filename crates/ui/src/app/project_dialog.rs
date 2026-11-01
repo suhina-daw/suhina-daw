@@ -417,7 +417,7 @@ fn draw_unsaved(ui: &mut Ui, area: Rect, name: &str, doing: &str) -> Option<Unsa
     closed
 }
 
-/// What the user answered when clips a plug-in edits go to another track (ADR 0028 step 6).
+/// What the user answered when clips a plug-in edits go to another track (ADR 0033 step 6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AraEditsChoice {
     /// Their edits go along; the plug-in is put on that track when it has none.

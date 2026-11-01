@@ -158,18 +158,18 @@ impl AraNote {
     }
 }
 
-/// The ARA document a plug-in instance is bound to as it loads ([ADR 0028]): the audio sources
+/// The ARA document a plug-in instance is bound to as it loads ([ADR 0033]): the audio sources
 /// it may read and the playback regions it renders and edits, on one region sequence (the
 /// track) at one tempo. Ids are persistent: built from the project's stable ids, never from
 /// positions.
 ///
-/// [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
+/// [ADR 0033]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0033-ara-hosting.md
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AraDocument {
     pub name: String,
     /// The document this track belongs to: the instances of one plug-in in one host process
     /// with the same key share one document, each track a region sequence of it, so the
-    /// plug-in sees every track (ADR 0028 decision 2). Empty: a document of its own.
+    /// plug-in sees every track (ADR 0033 decision 2). Empty: a document of its own.
     pub document: String,
     /// The region sequence's name: the track's.
     pub sequence: String,
@@ -366,7 +366,7 @@ pub enum Message {
         plugin: String,
         link: String,
         sample_rate: f64,
-        /// For an ARA plug-in (ADR 0028): the document to bind it to before it is activated.
+        /// For an ARA plug-in (ADR 0033): the document to bind it to before it is activated.
         ara: Option<AraDocument>,
     },
     /// `edits_clips`: the plug-in supports ARA (a VST3 component that answers
@@ -467,14 +467,14 @@ pub enum Message {
         width: u32,
         height: u32,
     },
-    /// Tell a plug-in bound to an ARA document (ADR 0028) which playback region the host has
+    /// Tell a plug-in bound to an ARA document (ADR 0033) which playback region the host has
     /// selected, by its persistent id (`clip-<id>`), so its editor shows it; `None` selects
     /// nothing. Not answered; a plug-in without a document ignores it.
     AraSelect {
         instance: u32,
         region: Option<String>,
     },
-    /// Bring the ARA document of a plug-in loaded with one (ADR 0028) in line with `document`,
+    /// Bring the ARA document of a plug-in loaded with one (ADR 0033) in line with `document`,
     /// its track's clips as they are now: moved or trimmed clips are updated in place, new
     /// ones added, gone ones taken out, matched by their persistent ids. Answered with
     /// `AraUpdated`, or an error after which the document is as it was or partly changed (the
@@ -486,7 +486,7 @@ pub enum Message {
     AraUpdated {
         instance: u32,
     },
-    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0028),
+    /// The edits of one audio modification of a plug-in loaded with an ARA document (ADR 0033),
     /// by its persistent id (`content-<id>`), with its audio source's (`source`, the pool key):
     /// stored on their own (a partial archive), to give another track's plug-in. Answered with
     /// `AraExported`, or an error when the plug-in cannot store them.

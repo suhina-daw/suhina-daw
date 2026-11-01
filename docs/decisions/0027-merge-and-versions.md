@@ -2,7 +2,8 @@
 description: Merging two project folders without git and the version browser over both storages; assets merge as a union of content hashes, the document merges three-way against a common ancestor and refuses rather than guesses, and one merge driver makes git merge work
 read_when: merge, three-way merge, conflict, common ancestor, version, version browser, musical diff, compare versions, merge driver, gitattributes, git merge, branch, undo, set_audio, version switch, CRDT
 type: decision
-status: draft
+status: proposed
+built: no
 last_verified: 2026-10-15
 covers:
   - crates/project-file/src/lib.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0027: Merge and versions
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** part of the collaboration and project-version work
   ([ADR 0023](0023-collaboration-and-project-versions.md)). Depends on

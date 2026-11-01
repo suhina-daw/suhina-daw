@@ -633,7 +633,7 @@ fn plugin_button(
     }
 }
 
-/// The Clip part of an audio clip on a track whose plug-in edits clips (ARA, ADR 0028): the
+/// The Clip part of an audio clip on a track whose plug-in edits clips (ARA, ADR 0033): the
 /// plug-in's editor in `area`, where a MIDI clip has its piano roll. Embedded, it lands there
 /// (`places`); in a window of its own, or closed, the area says so with a button to open or
 /// close it. `device` is the plug-in's index in `chain`.

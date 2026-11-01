@@ -54,7 +54,7 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 (`partial`, or `contained` when one clip lies within the other) and both clips with their `id`
 (what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
 there were more. ARA's first version refuses such overlaps for the clips it edits
-([ADR 0028](../decisions/0028-ara-hosting.md)); ordinary stacking is unaffected.
+([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
 ## Tools
 
@@ -149,7 +149,7 @@ or down, a selection on one track goes to the track under the pointer, and a sel
 tracks moves each clip by as many tracks from its own (`tracksBy`), refused where a clip would
 land on a track that cannot hold it. A clip an ARA plug-in (Melodyne) edits, going to another
 track, asks first: **Keep edits** takes its edits along and puts the plug-in on that track when it
-has none, **Copy as new** starts it there without them (`araEdits`, ADR 0028). Dropped on the empty space under the tracks, outlined there
+has none, **Copy as new** starts it there without them (`araEdits`, ADR 0033). Dropped on the empty space under the tracks, outlined there
 as **New track** while carried, the clips (moved or copied) go to a new track of their kind made
 after the last (`toNewTrack`), in the same undo step.
 

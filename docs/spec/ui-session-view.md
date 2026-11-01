@@ -113,6 +113,11 @@ then the main track at the far right. **Rows are scenes.** The main track's colu
 launch buttons, numbered from 1; an extra empty area below the last scene accepts drops to
 create a new scene or track.
 
+The wheel scrolls the view (Shift and the wheel, or a sideways swipe, along the tracks).
+Holding the middle mouse button over the slots, the headers or the mixer moves the view with
+the pointer both ways, as in the Arrangement, with a grabbing cursor; nothing under it is
+clicked, launched or selected (#920).
+
 ### Track header
 
 **Suhina:** the whole header is the track colour, with the name in a text colour that reads on
@@ -137,6 +142,8 @@ Files). A file dropped on a slot or below the stop row becomes a clip in that sl
 added below when needed); a device dropped on a column joins the track's chain. Samples and MIDI
 files dragged from the system's file manager land the same way ([browser](browser.md) › Files
 from the system).
+
+The column header shows the track type before its name: a miniature keyboard for MIDI, a waveform for audio, and both for mixed-content tracks. This remains visible when the mixer is collapsed. Groups retain their fold arrow and returns do not receive a MIDI/audio marker. The marker is read-only; clicking or dragging the header still selects or moves the track.
 
 ### Clip slots
 
@@ -370,6 +377,12 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   its name row is filled with it too. A click on the band opens the colour palette (Track
   colour).
 
+The pan and the volume are dragged up or down, and the wheel over either changes it a step at a
+time (1 dB, or 0.02 of pan; Shift is finer) instead of scrolling the view. With Settings ›
+Launcher and mixer › **Mixer controls** on Knob, the volume is drawn as a knob beside the pan
+knob, and its value stays beside them
+([arrangement editing](arrangement-editing.md) › Volume, pan, mute and solo).
+
 ### Track colour
 
 **Suhina:** a track's colour shows over an area large enough to tell tracks apart: the Launcher
@@ -420,17 +433,6 @@ the detail area shows the header clicked; #208); the Arrangement view shows only
 Every change runs `clip.setFollowAction` with only what changed, one undo step each. Typing a
 time or a chance is planned, as for every value field.
 
-The pan and the volume are dragged up or down, and the wheel over either changes it a step at a
-time (1 dB, or 0.02 of pan; Shift is finer) instead of scrolling the view. With Settings ›
-Launcher and mixer › **Mixer controls** on Knob, the volume is drawn as a knob beside the pan
-knob, and its value stays beside them
-([arrangement editing](arrangement-editing.md) › Volume, pan, mute and solo).
-
-The wheel scrolls the view (Shift and the wheel, or a sideways swipe, along the tracks).
-Holding the middle mouse button over the slots, the headers or the mixer moves the view with
-the pointer both ways, as in the Arrangement, with a grabbing cursor; nothing under it is
-clicked, launched or selected (#920).
-
 ## Detail area: device chain
 
 Devices left to right in chain order. Each device has a header (on/off switch, name, fold,
@@ -443,6 +445,13 @@ Device view, the editor opens inside the panel under that line: in a row the dev
 editor and the panel as tall as the tallest open editor; stacked, the device grows as tall as
 its editor, which is cut off at the column's right edge; what does not fit is cut off at the
 panel's edge, and the editor goes with its track (shown only while the track is).
+
+Suhina SDK effects display their declared stock parameter controls and optional authored canvas.
+Canvas backgrounds, embedded images and custom parameter controls are described by the
+[custom panel contract](sdk-custom-ui.md). The horizontal device card uses the declared canvas
+width by default; `viewport_size` overrides the preferred body width and height in both chain
+orientations. Constrained views scroll the contents. Custom controls use the same parameter commands,
+undo history and smoothing as stock controls.
 
 ## Shortcuts (to observe and list)
 
@@ -460,14 +469,3 @@ regular track when none is selected).
 - Clip editor (piano roll, sample editor): separate spec.
 - Arrangement view: separate spec.
 - Hot-swapping a device or sample from the browser ([browser](browser.md) › Not decided yet).
-
-## SDK effect panels
-
-Suhina SDK effects display their declared stock parameter controls and optional authored canvas.
-Canvas backgrounds, embedded images and custom parameter controls are described by the
-[custom panel contract](sdk-custom-ui.md). The horizontal device card uses the declared canvas
-width by default; `viewport_size` overrides the preferred body width and height in both chain
-orientations. Constrained views scroll the contents. Custom controls use the same parameter commands,
-undo history and smoothing as stock controls.
-
-The column header shows the track type before its name: a miniature keyboard for MIDI, a waveform for audio, and both for mixed-content tracks. This remains visible when the mixer is collapsed. Groups retain their fold arrow and returns do not receive a MIDI/audio marker. The marker is read-only; clicking or dragging the header still selects or moves the track.

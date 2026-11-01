@@ -7,7 +7,9 @@ name: Generated docs
 #   - the marked parts of the parity report, from scripts/parity/score.py, devices.json and the
 #     command count of docs/commands.md (scripts/parity/update_report.py);
 #   - docs/INDEX.md, from the documents' front matter;
-#   - the parity figures, from scripts/parity/.
+#   - the parity figures, from scripts/parity/;
+#   - ROADMAP.md › What works now, with each file under docs/works-now/ folded in and deleted
+#     (scripts/works_now.py), so pull requests add a file of their own there rather than editing it.
 # Pull requests leave all of them alone, so two pull requests never conflict on them (issue #462).
 # A pull request changes only the inputs; ci.yml checks that they render.
 #
@@ -62,6 +64,8 @@ jobs:
       # After commands.md, whose rows it counts for the command count.
       - name: The parity report's marked parts
         run: python3 scripts/parity/update_report.py
+      - name: docs/works-now into ROADMAP.md
+        run: python3 scripts/works_now.py fold
       - name: docs/INDEX.md
         run: python3 scripts/docs.py index --write
       # The parity figures: pure Python over the recorded numbers, so they cannot drift from the
@@ -82,6 +86,12 @@ jobs:
             docs/**/*.md
             docs/research/parity-live-12-by-area.png
             docs/research/parity-live-12-overview.png
+          retention-days: 1
+      # Apart, since a second root would move every path in the artifact above.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: generated-roadmap
+          path: ROADMAP.md
           retention-days: 1
 
   publish:
@@ -106,9 +116,14 @@ jobs:
         with:
           name: generated-docs
           path: ${{ runner.temp }}/generated
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: generated-roadmap
+          path: ${{ runner.temp }}/roadmap
       - name: Commit and push when they changed
         env:
           GENERATED: ${{ runner.temp }}/generated
+          ROADMAP: ${{ runner.temp }}/roadmap/ROADMAP.md
         run: |
           for name in INDEX.md commands.md research/parity-live-12.md; do
             source="$GENERATED/$name"
@@ -136,19 +151,38 @@ jobs:
             fi
             cp "$source" "docs/research/$name"
           done
+          # ROADMAP.md with the docs/works-now files folded in, and those files deleted: the ones
+          # tracked here that the generated set no longer has.
+          if [ ! -f "$ROADMAP" ] || [ -L "$ROADMAP" ]; then
+            echo "::error::ROADMAP.md is missing from the generated files or is not a regular file."
+            exit 1
+          fi
+          cp "$ROADMAP" ROADMAP.md
+          git --literal-pathspecs ls-files -z -- docs/works-now | while IFS= read -r -d '' path; do
+            [ -e "$GENERATED/${path#docs/}" ] || rm -f -- "$path"
+          done
           changed=$(git status --porcelain)
           if [ -z "$changed" ]; then
             echo "Generated documentation is current."
             exit 0
           fi
-          # Only modified (" M") or new ("??") files, never a deletion or a rename, and only the
-          # files generated above; any other document only modified.
-          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^( M|\?\?) docs/research/parity-live-12-(by-area|overview)\.png$|^ M docs/.*\.md$'; then
-            echo "::error::Only the generated docs, the parity report, the parity figures and last_verified dates may change (above: anything else)."
+          # Only modified (" M") or new ("??") files, never a rename, and only the files generated
+          # above; any other document only modified; deleted (" D") only a folded docs/works-now file.
+          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^( M|\?\?) docs/research/parity-live-12-(by-area|overview)\.png$|^ M docs/.*\.md$|^ M ROADMAP\.md$|^ D docs/works-now/[^/]+/[^/]+\.md$'; then
+            echo "::error::Only the generated docs, the parity report, the parity figures, last_verified dates and the folded ROADMAP bullets may change (above: anything else)."
+            exit 1
+          fi
+          # In ROADMAP.md, lines only added, and each one a line of a deleted docs/works-now file.
+          lines() { grep -E "^[$1]" | grep -Ev '^(\+\+\+|---) ' | cut -c2- | tr -d '\r' | grep -v '^$' | LC_ALL=C sort || true; }
+          removed=$(git diff -U0 -- ROADMAP.md | lines -)
+          added=$(git diff -U0 -- ROADMAP.md | lines +)
+          folded=$(git diff -U0 -- docs/works-now | lines -)
+          if [ -n "$removed" ] || [ "$added" != "$folded" ]; then
+            echo "::error::ROADMAP.md changed in more than the bullets of the deleted docs/works-now files."
             exit 1
           fi
           # In those other documents, nothing but the last_verified line.
-          other=$(git diff -U0 -- 'docs/*.md' ':!docs/INDEX.md' ':!docs/commands.md' ':!docs/research/parity-live-12.md' \
+          other=$(git diff -U0 -- 'docs/*.md' ':!docs/INDEX.md' ':!docs/commands.md' ':!docs/research/parity-live-12.md' ':!docs/works-now' \
             | grep -E '^[-+]' | grep -Ev '^(\+\+\+|---) ' \
             | grep -Ev '^[-+]last_verified: [0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
           if [ -n "$other" ]; then
@@ -173,7 +207,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/INDEX.md docs/commands.md docs/research/parity-live-12-by-area.png \
             docs/research/parity-live-12-overview.png
-          git add -u -- 'docs/*.md'
+          git add -u -- 'docs/*.md' ROADMAP.md
           # The subject starts "Docs: regenerate", which `docs.py stamp` skips (scripts/docs.py).
           git commit -m "Docs: regenerate INDEX.md, commands.md, the parity report and figures, and last_verified dates"
           if ! git push origin HEAD:main; then

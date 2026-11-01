@@ -106,6 +106,26 @@ other, except in ping-pong.
   LFO depths and the mix law ramp over 20 ms; the band is retuned every 4 frames while it moves.
   Every block size gives the same output (the conformance tests check it).
 
+## Panel layout
+
+Built from the SDK's widgets ([custom panels](sdk-custom-ui.md)).
+
+Delay uses independent SDK UI nodes throughout its 944 by 168 logical-pixel panel.
+Including the host header and padding, it fits a 200-pixel device slot.
+Time and Feedback occupy the left; Tone and Motion follow, with Mix at the far right. The only graph is Tone's filter response. All sections stay visible.
+
+Left and Right timing columns flank the link icon in Time; the link button shares the
+vertical center of the timing menus. Beats/ms buttons switch between
+explicit note-length menus and millisecond fields. Link mirrors timing edits; each column has a synchronized offset field. Freeze sits
+below Feedback and Ping Pong below Mix. Repitch/Fade/Jump remain in Time. Tone exposes filter enable,
+centre frequency and octave width; Motion exposes rate mode/value, waveform,
+delay/filter depth and morph. Speed appears once: a number in Hz/Time modes and
+a ValueMenu in synchronized modes. The obsolete `lfo_expanded` parameter remains hidden for
+saved-parameter compatibility and no longer affects presentation.
+
+The host resolves widget text, surfaces, borders and accents from the active Suhina
+theme at render time. No authored purple accent or device header is required.
+
 ## Import
 
 Live's Delay is the element `Delay`; every value is `<Element>/Manual@Value`

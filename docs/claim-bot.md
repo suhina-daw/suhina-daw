@@ -195,7 +195,7 @@ line, and adds to its answer the other open work on those paths:
 - **other claims**: open issues with someone assigned (the 50 most recently updated) whose newest
   `/claim`, not followed by an `/unclaim`, has a `Touches:` line that overlaps.
 
-It lists at most ten, each with the paths that overlap, and points at `AGENTS.md` › Tasks for what to
+It lists at most ten, each with the paths that overlap, and points at [`workflow.md`](workflow.md) › Tasks for what to
 do about them. It never refuses a claim for an overlap: two pieces of work on the same crate are
 often fine, and only the people doing them can tell. A claim without the line is answered with a
 sentence saying what the line does. A lookup that fails leaves its part out of the answer.

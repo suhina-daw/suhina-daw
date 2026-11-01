@@ -2,7 +2,8 @@
 description: What Suhina's latency number is and what it includes, where it is shown, how output and round-trip latency are established, and when a readout warns
 read_when: latency, output latency, round-trip latency, monitoring latency, buffer size, engine block, control bar, performance readout, CPU load, RAM, underruns, xruns, audio.info, device buffer, WASAPI shared period, live playing, live input latency
 type: decision
-status: draft
+status: proposed
+built: no
 last_verified: 2026-10-15
 covers:
   - crates/output/src/lib.rs
@@ -14,7 +15,6 @@ covers:
 
 # 0020: Latency: what the number is, and where it is shown
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Issue:** [#449](https://github.com/suhina-daw/suhina-daw/issues/449) — this ADR is its decision
   step; the issue stays open until the readout itself is built.
@@ -38,7 +38,7 @@ Two facts decide the shape of this:
    rewritten on every callback.
 2. **Half of it is not ours to set.** The device's own buffer is Suhina's to choose on ASIO and in
    WASAPI exclusive mode, and Windows' in WASAPI shared mode, where the stream plays the period the
-   system gives the device (ADR 0006 › the block). A readout that does not say which of the two it
+   system gives the device ([plug-in hosting](../spec/plugin-hosting.md) › Block sync and the deadline). A readout that does not say which of the two it
    is showing cannot be acted on.
 
 ## What the number is, and what it is not
@@ -47,7 +47,8 @@ Two facts decide the shape of this:
   speaker. It includes the ring Suhina keeps ahead of the device and the device's own delay.
 - It does **not** include the time the engine spends rendering a block: that is what the CPU load
   measures, and what a block's deadline is about.
-- It does **not** include input, because there is none yet (#267).
+- It does **not** include input. Audio input came later ([#267](https://github.com/suhina-daw/suhina-daw/issues/267),
+  [ADR 0017](0017-inputs-and-latency.md) › 9); its half is not in this number.
 - It follows the block size: a larger block is more frames queued, and so a larger number. That is
   the trade the buffer setting exists for.
 
@@ -75,7 +76,8 @@ Two facts decide the shape of this:
 
 ## The round trip (deferred, and what it needs)
 
-- Input does not exist (#267), and a round trip needs one; measuring it is asked for in #265.
+- A round trip needs input, which exists since #267 ([ADR 0017](0017-inputs-and-latency.md) › 9);
+  measuring it is asked for in #265.
 - There are two honest ways to state a round trip. **Summed**: what the driver and the plug-ins
   report, which is what the chain claims. **Measured**: a signal that leaves and comes back, which
   is what happens. They answer different questions and will disagree.
@@ -86,7 +88,7 @@ Two facts decide the shape of this:
 ## The buffer is a separate decision
 
 What a chosen buffer size means, what may be asked of a device's driver, and how Suhina renders
-when the device's buffer is not hers to set, is ADR 0006 › the block. This ADR assumes it and does
+when the device's buffer is not hers to set, is in [plug-in hosting](../spec/plugin-hosting.md) › Block sync and the deadline. This ADR assumes it and does
 not repeat it; a readout that shows the two numbers apart is what makes that decision visible.
 
 ## Consequences
