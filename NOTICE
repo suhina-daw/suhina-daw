@@ -33,4 +33,11 @@ Third-party material
   or any later version (third_party/lame/COPYING, VENDORED.md). Its fft.c is not redistributed
   and is replaced by Suhina's own implementation. MP3's patents expired in 2017.
 
+- third_party/asio-sys is asio-sys 0.4.0 from the RustAudio cpal contributors,
+  Apache License 2.0 (third_party/asio-sys/LICENSE), with a local driver
+  initialization fix described in its VENDORED.md.
+
+- third_party/cpal is CPAL 0.18.2 by the RustAudio contributors, Apache License 2.0
+  (third_party/cpal/LICENSE), with an ASIO callback-cycle fix described in VENDORED.md.
+
 Other bundled material is listed per file (author, source, license) in ATTRIBUTION.md.

@@ -33,7 +33,7 @@ mod source;
 mod sweep;
 
 pub use events::{Event, EventKind, MAX_EVENTS};
-pub use keyboard::take_keyboard_back;
+pub use keyboard::{keys_to_engine, pointer_on_screen, set_keys_to_engine, take_keyboard_back};
 pub use source::{AudioSource, MAX_SOURCE_FRAMES};
 pub use sweep::sweep_leftovers;
 

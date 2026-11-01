@@ -24,7 +24,7 @@ fn tab_and_the_view_switch_change_the_view() {
     harness.run();
     assert_eq!(harness.state().view(), View::Arrangement);
     assert!(harness.query_by_label("Clip Beat B on Drums at bar 17").is_some());
-    harness.get_by_label("Session view").click();
+    harness.get_by_label("Launcher view").click();
     harness.run();
     assert_eq!(harness.state().view(), View::Session);
 }
@@ -97,7 +97,7 @@ fn the_view_switch_is_the_last_control_at_the_right_with_the_cpu_and_ram_left_of
     let ram = harness.get_by_label_contains("RAM usage").rect();
     let cpu = harness.get_by_label_contains("CPU load").rect();
     let arrangement = harness.get_by_label("Arrangement view").rect();
-    let session = harness.get_by_label("Session view").rect();
+    let session = harness.get_by_label("Launcher view").rect();
     let switch_left = arrangement.left().min(session.left());
     let switch_right = arrangement.right().max(session.right());
     assert!(ram.right() <= cpu.left(), "RAM {ram:?} left of CPU {cpu:?}");
@@ -126,7 +126,7 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
     harness.run();
     let transport_end = size.0 / 2.0 + (28.0 * 2.0 + 1.0 + theme::PAD + 64.0) / 2.0;
     let arrangement = harness.get_by_label("Arrangement view").rect();
-    let session = harness.get_by_label("Session view").rect();
+    let session = harness.get_by_label("Launcher view").rect();
     let switch_left = arrangement.left().min(session.left());
     assert!(switch_left > transport_end, "the switch at {switch_left} clears the position");
     let cpu = harness.query_by_label_contains("CPU load").map(|n| n.rect());
@@ -143,13 +143,12 @@ fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
 }
 
 #[test]
-fn the_grid_value_in_the_control_bar_sets_where_a_dragged_clip_lands() {
+fn the_arrangement_grid_sets_where_a_dragged_clip_lands() {
     let mut harness = arrangement_app();
-    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Bars(1)));
-    // No audio engine is needed to choose the grid.
-    choose_grid(&mut harness, "1/16");
-    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(0.25)));
-    assert!(matches!(harness.state().status(), Status::Done(s) if s == "Grid 1/16"));
+    // The control bar's value is the launch quantisation only; the Arrangement has its own grid.
+    choose_grid(&mut harness, "1/4");
+    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(1.0)));
+    choose_arrangement_grid(&mut harness, "1/16");
     zoom_in_at_beat_b(&mut harness);
 
     // 1.3 beats right (83.2 points at 64 a beat): on the nearest sixteenth, beat 65.25.
@@ -171,7 +170,7 @@ fn the_grid_value_in_the_control_bar_sets_where_a_dragged_clip_lands() {
     harness.run();
 
     // 1 bar: 3.5 beats right lands on the next bar, beat 68, at the same zoom.
-    choose_grid(&mut harness, "1 bar");
+    choose_arrangement_grid(&mut harness, "1 bar");
     drag_beat_b(&mut harness, egui::vec2(224.0, 0.0));
     assert_eq!(beat_b_start(&harness), Some(68.0));
 }
@@ -179,7 +178,7 @@ fn the_grid_value_in_the_control_bar_sets_where_a_dragged_clip_lands() {
 #[test]
 fn a_triplet_or_none_grid_places_a_dragged_clip_by_its_own_rule() {
     let mut harness = arrangement_app();
-    choose_grid(&mut harness, "1/16T");
+    choose_arrangement_grid(&mut harness, "1/16T");
     zoom_in_at_beat_b(&mut harness);
     // 1.3 beats right: the nearest sixth of a beat is 64 + 8/6.
     drag_beat_b(&mut harness, egui::vec2(83.2, 0.0));
@@ -188,10 +187,68 @@ fn a_triplet_or_none_grid_places_a_dragged_clip_by_its_own_rule() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
 
-    // none: nothing snaps, as if Alt were held.
-    choose_grid(&mut harness, "none");
-    assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::None));
+    // Snap off: nothing snaps, as if Alt were held.
+    choose_arrangement_grid(&mut harness, "none");
     drag_beat_b(&mut harness, egui::vec2(83.2, 0.0));
     let free = beat_b_start(&harness).unwrap_or_default();
     assert!((free - 65.3).abs() < 0.02 && (free * 4.0).fract().abs() > 0.01, "{free}");
+}
+
+/// The tempo takes a typed number: click it, type, Enter; a comma reads as the point (#707,
+/// #829).
+#[test]
+fn a_typed_tempo_is_set_on_enter() {
+    let mut harness = window(demo_app());
+    let tempo = |h: &Harness<'static, App>| h.state().session().map(|s| s.project().transport.tempo_bpm);
+    harness.get_by_label("Tempo").click();
+    harness.run();
+    harness.get_by_label("Tempo").type_text("128,5");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(tempo(&harness), Some(128.5));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_ne!(tempo(&harness), Some(128.5));
+}
+
+/// A volume set on one of several selected tracks is set on all of them (#707).
+#[test]
+fn a_volume_set_on_one_selected_track_is_set_on_all_of_them() {
+    let mut harness = window(demo_app());
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.state_mut().run(&suhina_ui::kit::widgets::Action::new(
+        "track.setVolume",
+        serde_json::json!({ "tracks": [1], "db": -6.0 }),
+    ));
+    let volumes: Vec<f64> = harness
+        .state()
+        .session()
+        .map(|s| {
+            let p = s.project();
+            p.tracks.iter().take(2).filter_map(|t| p.channel_of_track(t.id)).map(|c| c.volume).collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(volumes.len(), 2);
+    assert!(volumes.iter().all(|v| (v - 0.5012).abs() < 1e-3), "{volumes:?}");
+}
+
+/// Ctrl+K turns the computer keyboard on: the control bar shows the octave of A, and Z and X
+/// move it (#944).
+#[test]
+fn ctrl_k_turns_the_computer_keyboard_on_and_x_raises_its_octave() {
+    let mut harness = window(demo_app());
+    assert!(harness.query_by_label("Computer keyboard").is_some());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    harness.run();
+    assert!(harness.query_by_label("Computer keyboard on, C3").is_some());
+    harness.key_press(Key::X);
+    harness.run();
+    assert!(harness.query_by_label("Computer keyboard on, C4").is_some(), "X raised the octave");
+    harness.get_by_label("Computer keyboard on, C4").click();
+    harness.run();
+    assert!(harness.query_by_label("Computer keyboard").is_some(), "a click turns it off");
 }

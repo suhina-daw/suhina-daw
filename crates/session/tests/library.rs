@@ -217,3 +217,71 @@ fn library_commands_are_listed_and_need_no_project() {
     }
     let _ = std::fs::remove_dir_all(&settings);
 }
+
+#[test]
+fn move_to_moves_files_numbering_taken_names_and_carries_their_tags_and_pins() {
+    let settings = temp("move-settings");
+    let samples = temp("move-samples");
+    let out = temp("move-out");
+    wav(&samples.join("Kick.wav"));
+    wav(&samples.join("Snare.wav"));
+    std::fs::write(out.join("Kick.wav"), b"mine").unwrap();
+    let mut p = projects(&settings);
+    let kick = samples.join("Kick.wav").display().to_string();
+    run(&mut p, "library.pin", json!({ "item": kick })).unwrap();
+    run(&mut p, "library.tag", json!({ "item": kick, "tag": "Red", "on": true })).unwrap();
+    let gone = samples.join("Gone.wav").display().to_string();
+    let snare = samples.join("Snare.wav").display().to_string();
+    let items = json!([kick, snare, gone]);
+    let done = run(&mut p, "library.moveTo", json!({ "items": items, "folder": out.display().to_string() })).unwrap();
+    assert_eq!(done["moved"].as_array().unwrap().len(), 2, "{done}");
+    assert_eq!(done["missing"], json!([gone]));
+    // The originals are gone; the name taken there got a number and the file there is left alone.
+    assert!(!samples.join("Kick.wav").exists() && !samples.join("Snare.wav").exists());
+    assert_eq!(std::fs::read(out.join("Kick.wav")).unwrap(), b"mine");
+    assert!(out.join("Kick 2.wav").is_file() && out.join("Snare.wav").is_file());
+    // The pin and the tag went with the file.
+    let moved = out.join("Kick 2.wav").display().to_string();
+    let library = p.file_library_mut();
+    assert_eq!(library.pinned(), std::slice::from_ref(&moved));
+    assert_eq!(library.item_tags(&moved), ["Red"]);
+    assert!(library.item_tags(&kick).is_empty());
+    // A file already in the folder stays.
+    let again = json!({ "items": [moved], "folder": out.display().to_string() });
+    let done = run(&mut p, "library.moveTo", again).unwrap();
+    assert_eq!(done["kept"].as_array().unwrap().len(), 1, "{done}");
+    assert!(out.join("Kick 2.wav").is_file());
+}
+
+#[test]
+fn copy_to_copies_files_into_a_folder_numbering_taken_names_and_lists_the_missing() {
+    let settings = temp("copy-settings");
+    let samples = temp("copy-samples");
+    let out = temp("copy-out");
+    wav(&samples.join("Kick.wav"));
+    wav(&samples.join("Snare.wav"));
+    std::fs::write(out.join("Kick.wav"), b"mine").unwrap();
+    let mut p = projects(&settings);
+    let gone = samples.join("Gone.wav");
+    let items: Vec<String> = [samples.join("Kick.wav"), samples.join("Snare.wav"), gone.clone()]
+        .iter()
+        .map(|f| f.display().to_string())
+        .collect();
+    let done = run(&mut p, "library.copyTo", json!({ "items": items, "folder": out.display().to_string() })).unwrap();
+    // The name taken there gets a number; the file that was there is left alone.
+    assert_eq!(std::fs::read(out.join("Kick.wav")).unwrap(), b"mine");
+    assert_eq!(std::fs::read(out.join("Kick 2.wav")).unwrap(), std::fs::read(samples.join("Kick.wav")).unwrap());
+    assert!(out.join("Snare.wav").is_file());
+    assert_eq!(done["copied"].as_array().unwrap().len(), 2, "{done}");
+    assert_eq!(done["missing"], json!([gone.display().to_string()]));
+    // The originals stay where they are.
+    assert!(samples.join("Kick.wav").is_file() && samples.join("Snare.wav").is_file());
+    // A second copy takes the next number.
+    let again =
+        json!({ "items": [samples.join("Kick.wav").display().to_string()], "folder": out.display().to_string() });
+    let done = run(&mut p, "library.copyTo", again).unwrap();
+    assert!(done["copied"][0]["to"].as_str().unwrap().ends_with("Kick 3.wav"), "{done}");
+    assert!(run(&mut p, "library.copyTo", json!({ "items": [], "folder": out.display().to_string() })).is_err());
+    let nowhere = out.join("no such folder").display().to_string();
+    assert!(run(&mut p, "library.copyTo", json!({ "items": items, "folder": nowhere })).is_err());
+}

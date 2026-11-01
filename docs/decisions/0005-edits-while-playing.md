@@ -3,7 +3,7 @@ description: How edits reach an engine that is already playing — a new graph b
 read_when: edit while playing, graph swap, renderer rebuild, Controller::update, live edits, volume change not heard, LOOP-26
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/lib.rs
   - crates/engine/src/swap.rs
@@ -107,7 +107,7 @@ plug-ins keep running and their state across the reopen.
 ## Amendment: edits in the next block (2026-10-12)
 
 In a DAW an edit should be heard at once; with a graph per edit taken one per audio block and
-0.15 s ahead, two edits in a row took two blocks, and a fader moved only the next note. As in
+0.08 s ahead (0.15 s until #916), two edits in a row took two blocks, and a fader moved only the next note. As in
 other real-time audio graphs (structural changes built off the audio thread and swapped
 atomically, parameter changes as lock-free messages applied at a block boundary, as Firewheel,
 klingt and JUCE's graph do), now:
@@ -115,7 +115,7 @@ klingt and JUCE's graph do), now:
 1. **Every graph due in a block is taken in that block,** at its frame, in order; the swap
    queue holds 16 graphs.
 2. **`SWAP_AHEAD_SECONDS` only when it is needed:** a graph with stretched arrangement clips still
-   takes over 0.15 s ahead, so their stretch voices are moved and their rings filled first; any
+   takes over 0.08 s ahead, so their stretch voices are moved and their rings filled first; any
    other graph takes over at the start of the next block.
 3. **Device parameters are messages, not graphs.** `Controller::set_device_param(track,
    device, param, value)` sends a numbered message through a lock-free queue; the renderer
@@ -133,10 +133,22 @@ klingt and JUCE's graph do), now:
    velocity; at a swap it takes the new graph's volume, pan and mute (and bus, if the track's
    chain changed) at once instead of keeping them until the note ends.
 
+## Amendment: notes an edit takes away (2026-10-28)
+
+A chain that carries over keeps its held notes, and a sine voice keeps sounding, until the end
+they were started with. An arrangement note deleted, shortened or moved while it sounded (or
+its clip deleted or moved away) therefore played on to its old end, until the transport stopped
+(#916). The engine now marks the notes the arrangement started, per chain key and per voice, and
+when a graph takes over while playing it looks each one up in the new graph's notes on the same
+bus and key that have started and not ended: found, the note ends where it now ends; not found,
+it is released at once. Notes from the launcher, the piano roll's keys and live input are not
+marked, so an edit leaves them alone. Audio clips needed nothing: the new graph's list of
+sounding clips is rebuilt from the edited project at the swap.
+
 ## Consequences
 
 - An edit is rendered from the next engine block after the command returns, plus the time to
-  build the graph (with stretched arrangement clips, 0.15 s after), and heard once that block
+  build the graph (with stretched arrangement clips, 0.08 s after), and heard once that block
   leaves the output's ring, which runs up to two blocks ahead of the device (`crates/output`). A
   device parameter is rendered from the next block without building anything.
 - Structural edits still rebuild the whole graph. Building did become too slow for knob drags in

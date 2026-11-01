@@ -85,9 +85,22 @@ impl App {
             );
             session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
         }
+        let changes = self.session().map(suhina_session::Session::change_count);
         let notices = self.projects.poll_plugins();
+        // A take kept while polling changed the project: the views are built again now, so its
+        // clip and take lanes show at once, not at the next command (#909).
+        if self.session().map(suhina_session::Session::change_count) != changes {
+            self.revision += 1;
+            self.timeline = None;
+        }
         if let Some(last) = notices.last() {
             self.status = Status::Hint(last.clone());
+        }
+        // A take that records, or waits a moment for its last notes and its file after Stop,
+        // keeps the window drawing, so it grows on screen and becomes a clip once it is done,
+        // not at the next click (#909).
+        if self.session().is_some_and(suhina_session::Session::is_recording) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         if self
             .session()
@@ -210,6 +223,7 @@ impl App {
             && matches!(
                 request,
                 PluginRequest::AddFolder(..)
+                    | PluginRequest::PickFolder
                     | PluginRequest::RemoveFolder(..)
                     | PluginRequest::SetFolderEnabled(..)
                     | PluginRequest::SetEnabled(..)
@@ -224,11 +238,20 @@ impl App {
             PluginRequest::AddFolder(folder, format) => {
                 let params = json!({ "folder": folder, "format": format.name() });
                 match self.projects.execute("plugin.addFolder", &params) {
-                    Ok(_) => self.plugins.new_folder.clear(),
+                    Ok(result) => {
+                        self.plugins.new_folder.clear();
+                        // A folder already there with this format is not added again.
+                        self.status = Status::Hint(if result["added"] == json!(false) {
+                            format!("{folder} is already in the list")
+                        } else {
+                            format!("Added {folder}; Scan looks in it for plug-ins")
+                        });
+                    }
                     Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.plugins_read = false;
             }
+            PluginRequest::PickFolder => self.ask_pick(PickField::PluginFolder),
             PluginRequest::SetFolderEnabled(folder, enabled) => {
                 let params = json!({ "folder": folder, "enabled": enabled });
                 if let Err(e) = self.projects.execute("plugin.setFolderEnabled", &params) {

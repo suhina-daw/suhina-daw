@@ -14,7 +14,7 @@ use suhina_library::{FileKind, Group, Item, Library, Query};
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::devices::role_name;
-use crate::{Agents, CommandError, PathKind, Policy, Projects};
+use crate::{Agents, CommandError, PathKind, Policy, Projects, Session};
 
 const FOLDER: Param = param("folder", ParamType::Path(PathKind::Folder), "a folder, as library.folders lists them");
 const ITEM: Param = param(
@@ -180,6 +180,39 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
         ],
         kind: CommandKind::Library,
         run: crate::relink::find_files,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "library.moveTo",
+        label: "Move files into another folder: a name taken there gets a number (kick 2.wav), nothing is overwritten; the files' pins, recent places and tags go with them and the browser's index follows; a file an open project plays stays where it is",
+        params: &[
+            param(
+                "items",
+                ParamType::Path(PathKind::Files),
+                "the files' paths, as library.search gives them; at most 4096",
+            ),
+            param("folder", ParamType::Path(PathKind::WriteFolder), "a folder that exists, to move them into"),
+        ],
+        kind: CommandKind::Library,
+        run: move_to,
+        // Moves files on disk: kept from agents, as removing a file from where it was is not
+        // something `confine` can undo.
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "library.copyTo",
+        label: "Copy files into a folder, leaving the originals where they are: a name taken there gets a number (kick 2.wav), nothing is overwritten; files that are gone are listed as missing",
+        params: &[
+            param(
+                "items",
+                ParamType::Path(PathKind::Files),
+                "the files' paths, as library.search gives them; at most 4096",
+            ),
+            param("folder", ParamType::Path(PathKind::WriteFolder), "a folder that exists, to copy them into"),
+        ],
+        kind: CommandKind::Library,
+        run: copy_to,
+        // Copies files on disk: open to agents, below the roots `confine` keeps them in.
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -665,6 +698,134 @@ fn pin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
     let pinned = projects.file_library_mut().pin(&item.key()).map_err(CommandError)?;
     Ok(json!({ "item": item.key(), "pinned": true, "changed": pinned }))
+}
+
+/// The most files one `library.copyTo` copies.
+const MAX_COPIES: usize = 4096;
+/// The most numbered names tried for one file before it is given up.
+const MAX_COPY_NAMES: u32 = 9999;
+
+/// `library.copyTo` (#865): each file into `folder` under its own name, or the first numbered
+/// one free there. A copy is made with a file that must not exist yet, so nothing in the folder
+/// is ever overwritten, even by a file that appeared meanwhile.
+fn copy_to(_projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let folder = PathBuf::from(text(params, "folder")?);
+    if !folder.is_dir() {
+        return Err(format!("{} is not a folder that exists", folder.display()).into());
+    }
+    let items = params.get("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
+    if items.is_empty() || items.len() > MAX_COPIES {
+        return Err(format!("items must list from 1 to {MAX_COPIES} files").into());
+    }
+    let (mut copied, mut missing, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+    for item in items {
+        let from = PathBuf::from(item.as_str().ok_or("items must be a list of file paths")?);
+        if !from.is_file() {
+            missing.push(from.display().to_string());
+            continue;
+        }
+        match copy_into(&from, &folder) {
+            Ok(to) => copied.push(json!({ "from": from.display().to_string(), "to": to.display().to_string() })),
+            Err(e) => failed.push(json!({ "file": from.display().to_string(), "error": e })),
+        }
+    }
+    Ok(json!({ "folder": folder.display().to_string(), "copied": copied, "missing": missing, "failed": failed }))
+}
+
+/// `library.moveTo` (#943): each file into `folder` under its own name, or the first numbered
+/// one free there, as `library.copyTo` names them. A file already in that folder, one gone, or one
+/// an open project plays is left where it is and listed.
+fn move_to(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let folder = PathBuf::from(text(params, "folder")?);
+    if !folder.is_dir() {
+        return Err(format!("{} is not a folder that exists", folder.display()).into());
+    }
+    let items = params.get("items").and_then(Value::as_array).ok_or("items must be a list of file paths")?;
+    if items.is_empty() || items.len() > MAX_COPIES {
+        return Err(format!("items must list from 1 to {MAX_COPIES} files").into());
+    }
+    let in_use: Vec<PathBuf> =
+        projects.ids().into_iter().filter_map(|id| projects.get(id)).flat_map(Session::loaded_audio_paths).collect();
+    let (mut moved, mut missing, mut kept, mut failed) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for item in items {
+        let from = PathBuf::from(item.as_str().ok_or("items must be a list of file paths")?);
+        if !from.is_file() {
+            missing.push(from.display().to_string());
+            continue;
+        }
+        let here = from.parent().is_some_and(|p| same_place(p, &folder));
+        if here || in_use.iter().any(|p| same_place(p, &from)) {
+            kept.push(from.display().to_string());
+            continue;
+        }
+        match move_into(&from, &folder) {
+            Ok(to) => {
+                projects.file_library_mut().relocate(&from, &to).map_err(CommandError)?;
+                moved.push(json!({ "from": from.display().to_string(), "to": to.display().to_string() }));
+            }
+            Err(e) => failed.push(json!({ "file": from.display().to_string(), "error": e })),
+        }
+    }
+    Ok(json!({
+        "folder": folder.display().to_string(),
+        "moved": moved,
+        "missing": missing,
+        "kept": kept,
+        "failed": failed,
+    }))
+}
+
+/// Whether two paths name the same file or folder, as the system resolves them.
+fn same_place(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// Moves `from` into `folder` under the first of its name, `name 2`, … not taken: renamed when
+/// both are on one drive, else copied and the original removed once the copy is whole.
+fn move_into(from: &Path, folder: &Path) -> Result<PathBuf, String> {
+    let stem = from.file_stem().map(|s| s.to_string_lossy().into_owned()).ok_or("the file has no name")?;
+    let extension = from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let free = (1..=MAX_COPY_NAMES)
+        .map(|n| if n == 1 { format!("{stem}{extension}") } else { format!("{stem} {n}{extension}") })
+        .map(|name| folder.join(name))
+        .find(|to| !to.exists())
+        .ok_or_else(|| format!("no free name for {stem}{extension} in {}", folder.display()))?;
+    if std::fs::rename(from, &free).is_ok() {
+        return Ok(free);
+    }
+    let to = copy_into(from, folder)?;
+    if let Err(e) = std::fs::remove_file(from) {
+        let _ = std::fs::remove_file(&to);
+        return Err(e.to_string());
+    }
+    Ok(to)
+}
+
+/// Copies `from` into `folder` under the first of its name, `name 2`, `name 3`, … not taken.
+fn copy_into(from: &Path, folder: &Path) -> Result<PathBuf, String> {
+    let stem = from.file_stem().map(|s| s.to_string_lossy().into_owned()).ok_or("the file has no name")?;
+    let extension = from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let mut source = std::fs::File::open(from).map_err(|e| e.to_string())?;
+    for n in 1..=MAX_COPY_NAMES {
+        let name = if n == 1 { format!("{stem}{extension}") } else { format!("{stem} {n}{extension}") };
+        let to = folder.join(name);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&to) {
+            Ok(mut target) => {
+                if let Err(e) = std::io::copy(&mut source, &mut target) {
+                    drop(target);
+                    let _ = std::fs::remove_file(&to);
+                    return Err(e.to_string());
+                }
+                return Ok(to);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(format!("no free name for {stem}{extension} in {}", folder.display()))
 }
 
 fn set_plugins_view(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {

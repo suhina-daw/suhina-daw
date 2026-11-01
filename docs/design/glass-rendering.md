@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-10-22
+last_verified: 2026-10-28
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
@@ -62,7 +62,7 @@ maximum displacement is 18% of that band, scaled by Panel strength and small-sur
 fading. Coordinates remain monotonic (no folded image), clamped to the captured screen.
 The centre has zero displacement and zero sharp-overlay opacity. All labels and controls
 are painted afterward. Missing sharp sources fall back to the blurred current backdrop.
-Arrangement and Session track headers and clip backgrounds get a lightweight optical
+Arrangement and Launcher track headers and clip backgrounds get a lightweight optical
 coating (a narrow rounded rim with directional highlights, an inner shade and a
 weaker opposing light return, over a source-coloured directional body gradient),
 painted before labels, controls,

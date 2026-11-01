@@ -539,8 +539,8 @@ fn an_editor_opens_in_a_window_and_closes() {
         assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
         assert_eq!(edited.save_state().unwrap().data, 0.125f32.to_le_bytes());
     }
-    // A plug-in without an editor says so.
-    let (mut plain, _audio) = start("test:clap");
+    // A plug-in without an editor says so (the delay plug-in registers no gui).
+    let (mut plain, _audio) = start("test:clap-delay");
     assert!(matches!(plain.open_editor(), Err(PluginError::Host(_))));
     plain.close_editor().unwrap();
 }

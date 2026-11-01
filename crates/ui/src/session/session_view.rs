@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view: tracks as columns, scenes as rows, scene launch on the right, the mixer
+//! The Launcher view: tracks as columns, scenes as rows, scene launch on the right, the mixer
 //! along the bottom (`docs/spec/ui-session-view.md`, sizes in `docs/design/components.md`).
 //! It draws a [`TrackGrid`] and turns clicks into [`Action`]s; it never changes the project itself.
 
@@ -62,6 +62,10 @@ pub struct SessionViewState {
     /// The selected track (its header was clicked, or a clip on it selected); the detail area
     /// shows its devices.
     pub selected: Option<TrackId>,
+    /// The track headers selected (a click, Ctrl adds or takes one out, Shift takes the run
+    /// between): the same selection the Arrangement's headers have, which the window copies in
+    /// before each frame and back after it (#208). `selected` is the one the detail area shows.
+    pub selected_tracks: Vec<TrackId>,
     /// The selected clip slot, its track and scene from 0: a click on the clip's name, a launch,
     /// or a click on an empty slot selected it. The detail area shows its clip; Ctrl+C and Ctrl+V
     /// act on it.
@@ -71,12 +75,21 @@ pub struct SessionViewState {
     pub track_focus: bool,
     /// Something has been copied, so a slot's menu can paste it; the window says so each frame.
     pub can_paste: bool,
+    /// Whole tracks have been copied, so a header's menu can paste them (#919); the window says
+    /// so each frame.
+    pub tracks_copied: bool,
     /// A clip slot whose drag started this frame (track, scene from 0): the window carries the
     /// clip from there (`docs/spec/ui-session-view.md` › Between the views).
     pub slot_drag: Option<(TrackId, usize)>,
-    /// Launching a clip leaves the selection as it is (Settings › Detail area › Select on
+    /// Launching a clip leaves the selection as it is (Settings › Session and mixer › Select on
     /// launch is off); by default a launch selects the clip.
     pub keep_selection_on_launch: bool,
+    /// The middle button is held after being pressed over the view: the view follows the
+    /// pointer both ways, as the Arrangement's does (#920).
+    pub(crate) panning: bool,
+    /// A track to scroll into view on the next frame: one just added or selected from the
+    /// keyboard (#918).
+    pub reveal: Option<TrackId>,
     /// A column header being dragged to move its track, and where it was let go.
     track_drag: Option<TrackId>,
     track_drop: Option<(TrackId, f32)>,
@@ -91,7 +104,7 @@ pub struct SessionViewState {
     /// over them alone, with or without Alt.
     pub(crate) scroll_areas: Vec<Rect>,
     /// The volume as a knob beside the pan knob instead of a plain value
-    /// (Settings › Session and mixer › Mixer controls).
+    /// (Settings › Launcher and mixer › Mixer controls).
     pub knobs: bool,
     /// A drag from the browser over the window: the view says which target is under the
     /// pointer (`docs/spec/browser.md` › Dragging into the project).
@@ -118,7 +131,7 @@ pub struct SessionViewState {
     pub shown_device: Option<(TrackId, usize)>,
     /// The devices picked in the window (the strips' lists and the detail area's chain light the
     /// same ones); the window sets it before each frame.
-    pub device_picks: Vec<(TrackId, usize)>,
+    pub device_picks: Vec<(TrackId, crate::detail::detail_view::DeviceAt)>,
     /// What a strip's device list was asked this frame, for the window to do.
     pub device_event: Option<DeviceEvent>,
     /// A strip's device row was clicked: the window opens the detail area on the track.
@@ -129,6 +142,11 @@ pub struct SessionViewState {
     /// A double-click on an empty slot does nothing (Settings › Arrangement › Double-click makes a
     /// clip is off); by default it makes an empty clip of the track's kind.
     pub double_click_does_nothing: bool,
+    /// A slot's clip was double-clicked: the window opens its editor (#916).
+    pub clip_opened: bool,
+    /// A click on a track that was not on a clip (its header, its strip, an empty slot): the
+    /// window shows its devices (#950).
+    pub devices_clicked: bool,
 }
 
 impl SessionViewState {
@@ -147,6 +165,18 @@ impl SessionViewState {
         self.track_focus = false;
         self.selected_slot = Some((track, scene));
         self.selected = Some(track);
+        self.selected_tracks = vec![track];
+    }
+
+    /// The tracks a header click selected, for the edit keys and Delete: the selection, or the
+    /// selected track alone when the selection is empty; never Main.
+    pub(crate) fn header_tracks(&self) -> Vec<TrackId> {
+        let tracks = if self.selected_tracks.is_empty() {
+            self.selected.into_iter().collect()
+        } else {
+            self.selected_tracks.clone()
+        };
+        tracks.into_iter().filter(|t| *t != TrackId::MAIN).collect()
     }
 }
 
@@ -200,7 +230,7 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// the whole column in its track's colour.
 const EMPTY_TINT: f32 = 0.12;
 
-/// Draws the Session view in the space left in `ui` and adds what the user asked for to
+/// Draws the Launcher view in the space left in `ui` and adds what the user asked for to
 /// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
 pub fn show(
     ui: &mut Ui,
@@ -260,6 +290,41 @@ pub fn show(
             state.scroll -= delta;
         }
     }
+    // Free movement with the middle button held over the view: it follows the pointer both
+    // ways, and nothing under it is clicked.
+    let (middle_pressed, middle_down, delta) = ui.input(|i| {
+        (
+            i.pointer.button_pressed(egui::PointerButton::Middle),
+            i.pointer.button_down(egui::PointerButton::Middle),
+            i.pointer.delta(),
+        )
+    });
+    if middle_pressed {
+        state.panning = widgets::pointer_over(ui, area).is_some();
+    }
+    if !middle_down {
+        state.panning = false;
+    }
+    if state.panning {
+        state.scroll -= delta;
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    // A track asked to be shown comes into view, its whole column when it fits (#918).
+    if let Some(track) = state.reveal.take() {
+        let mut left = 0.0;
+        for column in grid.columns.iter().filter(|c| c.kind != ColumnKind::Return && !hidden.contains(&c.track)) {
+            let width = column_width(column) + 1.0;
+            if column.track == track {
+                if left < state.scroll.x {
+                    state.scroll.x = left;
+                } else if left + width > state.scroll.x + tracks_clip.width() {
+                    state.scroll.x = left + width - tracks_clip.width();
+                }
+                break;
+            }
+            left += width;
+        }
+    }
     // Past the last track, room for the buttons that add one, so they keep their width (and
     // their text) however many tracks there are.
     let room = crate::interaction::empty_space::empty_space_width(ui);
@@ -275,6 +340,8 @@ pub fn show(
     let bands = Bands {
         midi_ports: &grid.midi_ports,
         input_channels: grid.input_channels,
+        tracks_copied: state.tracks_copied,
+        order: grid.columns.iter().map(|c| c.track).collect(),
         header,
         body,
         mixer,
@@ -325,7 +392,10 @@ pub fn show(
     if empty.width() > 24.0 {
         // Under the buttons, so they keep their clicks; a right-click there inserts tracks.
         let space = ui.interact(empty, Id::new("session-empty-space"), Sense::click());
-        crate::interaction::empty_space::empty_space_menu(&space, actions);
+        let selection = state.header_tracks();
+        let menu =
+            crate::interaction::empty_space::EmptyMenu { selection: &selection, tracks_copied: state.tracks_copied };
+        crate::interaction::empty_space::empty_space_menu(&space, &menu, actions);
         empty_space(ui, &painter, empty, actions);
     }
     if let Some(probe) = state.drop.as_mut() {
@@ -429,8 +499,32 @@ pub fn show(
         actions,
     );
     let main_mixer = Rect::from_x_y_ranges(scene_span, mixer.y_range());
+    // Main: a click on its header or its strip selects it, so the detail area shows its devices,
+    // and devices dropped there go onto it (#687). Under the strip's own controls, which keep
+    // their clicks.
+    let main_selected = state.selected == Some(TrackId::MAIN);
+    for (rect, id) in [(header_rect, "session-main-header"), (main_mixer, "session-main-strip")] {
+        let response = ui.interact(rect, Id::new(id), Sense::click());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Select Main"));
+        if response.clicked() {
+            state.selected = Some(TrackId::MAIN);
+            state.selected_tracks = vec![TrackId::MAIN];
+            state.selected_slot = None;
+            state.track_focus = false;
+        }
+    }
+    if let Some(probe) = state.drop.as_mut()
+        && probe.devices
+        && !probe.files
+        && !probe.clip
+    {
+        probe.offer(header_rect.union(main_mixer), DropTarget::Track(TrackId::MAIN));
+    }
     painter.fill_background(main_mixer, 0.0, theme::panel_background());
     crate::kit::liquid::paint(&painter, main_mixer, theme::panel_background(), crate::kit::liquid::Surface::Track);
+    if main_selected {
+        painter.rect_stroke(header_rect.shrink(0.5), 0.0, egui::Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
+    }
     let level = state.meters.main;
     // The main meter stands where a track's does: beside the fader, or at the top of the strip
     // while the mixer is too low for a fader.
@@ -538,6 +632,10 @@ struct Bands<'a> {
     /// menus.
     midi_ports: &'a [String],
     input_channels: u16,
+    /// Whole tracks have been copied, so a header's menu can paste them.
+    tracks_copied: bool,
+    /// The columns' tracks left to right, for a Shift-click's run of headers.
+    order: Vec<TrackId>,
     header: Rect,
     body: Rect,
     mixer: Rect,
@@ -580,9 +678,8 @@ fn draw_column(
                 egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{} column", column.name))
             });
             if response.clicked() {
-                state.selected = Some(column.track);
-                state.selected_slot = None;
-                state.track_focus = true;
+                let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+                select_header(state, &bands.order, column.track, command, shift);
             }
             track_menu_on(&response, column, bands, actions);
         }
@@ -604,6 +701,42 @@ fn draw_column(
     // Column separator through header, grid and mixer.
     let full = egui::Rangef::new(bands.header.top(), bands.mixer.bottom());
     painter.with_clip_rect(clip).vline(span.max + 0.5, full, theme::hairline(theme::border_strong()));
+    // A selected track is outlined along its whole column, header, slots and strip (#916).
+    if state.selected_tracks.contains(&column.track) || state.selected == Some(column.track) {
+        let outline = Rect::from_x_y_ranges(span, full);
+        let colour = colour_picker::fill(column.color, false);
+        painter.with_clip_rect(clip).rect_stroke(outline, 0.0, egui::Stroke::new(1.5, colour), StrokeKind::Inside);
+    }
+}
+
+/// A click on `track`'s header (#208): alone it selects the track; with Ctrl (Cmd) it adds the
+/// track to the selection or takes it out; with Shift it selects the run of columns (in
+/// `order`) from the track selected last to this one. The detail area shows the one clicked, or
+/// the first left.
+fn select_header(state: &mut SessionViewState, order: &[TrackId], track: TrackId, command: bool, shift: bool) {
+    state.selected_slot = None;
+    state.track_focus = true;
+    state.devices_clicked = true;
+    if shift && let Some(anchor) = state.selected.filter(|a| *a != TrackId::MAIN) {
+        let at = |t: TrackId| order.iter().position(|o| *o == t);
+        if let (Some(a), Some(b)) = (at(anchor), at(track)) {
+            let (from, to) = (a.min(b), a.max(b));
+            state.selected_tracks = order.get(from..=to).map(<[TrackId]>::to_vec).unwrap_or_default();
+            return;
+        }
+    }
+    if command {
+        if let Some(index) = state.selected_tracks.iter().position(|t| *t == track) {
+            state.selected_tracks.remove(index);
+            state.selected = state.selected_tracks.first().copied();
+        } else {
+            state.selected_tracks.push(track);
+            state.selected = Some(track);
+        }
+        return;
+    }
+    state.selected_tracks = vec![track];
+    state.selected = Some(track);
 }
 
 /// The track's right-click menu on `response`: its header, its strip, a return's column.
@@ -626,6 +759,7 @@ fn track_menu_on(response: &Response, column: &Column, bands: &Bands, actions: &
             out: nesting::out_of_group(&bands.places, column.track),
             midi: column.plays_notes.then_some((&column.midi_input, bands.midi_ports)),
             audio: column.plays_audio.then_some((&column.audio_input, bands.input_channels)),
+            tracks_copied: bands.tracks_copied,
         };
         menus::track_menu(ui, &menu, actions);
     });
@@ -664,9 +798,8 @@ fn column_header(
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Track {}", column.name)));
     track_menu_on(&response, column, bands, actions);
     if response.clicked() {
-        state.selected = Some(column.track);
-        state.selected_slot = None;
-        state.track_focus = true;
+        let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+        select_header(state, &bands.order, column.track, command, shift);
     }
     if response.double_clicked() {
         state.open_devices = Some(column.track);
@@ -695,7 +828,7 @@ fn column_header(
     crate::kit::native_css::background(painter, rect);
     // Ink that reads on the fill, unless the sheet gives the name a colour.
     let color = crate::kit::style_class::foreground(theme::text_on(shown));
-    if state.selected == Some(column.track) {
+    if state.selected == Some(column.track) || state.selected_tracks.contains(&column.track) {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
     }
     // Nested tracks step in a little; a group's name follows its fold arrow.
@@ -726,7 +859,8 @@ fn column_header(
     // The name's place, for a rename in place (Ctrl+R, #696).
     let pass = ui.ctx().cumulative_pass_nr();
     ui.ctx().data_mut(|d| {
-        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(column.track.0))), (text, pass));
+        let spot = crate::app::NameSpot { rect: text, pass, fill, text: color, size: theme::TEXT };
+        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(column.track.0))), spot);
     });
 }
 
@@ -881,6 +1015,17 @@ fn column_body(
         }
         if select.as_ref().is_some_and(Response::clicked) {
             state.select_slot(column.track, scene);
+            // An empty slot shows its track's devices (#950).
+            if !has_clip {
+                state.devices_clicked = true;
+            }
+        }
+        if has_clip
+            && (select.as_ref().is_some_and(Response::double_clicked)
+                || launch.as_ref().is_some_and(Response::double_clicked))
+        {
+            state.select_slot(column.track, scene);
+            state.clip_opened = true;
         }
         if editable {
             // The slot's rename draft dies with its menu — either of the slot's two responses may
@@ -927,7 +1072,13 @@ fn column_body(
         ui.ctx().data_mut(|d| {
             d.insert_temp(
                 egui::Id::new((crate::app::NAME_RECT_SLOT, u64::from(column.track.0), number as u64)),
-                (rect, pass),
+                crate::app::NameSpot {
+                    rect,
+                    pass,
+                    fill: colour_picker::fill(slot.color.unwrap_or(column.color), false),
+                    text: theme::text_on(colour_picker::fill(slot.color.unwrap_or(column.color), false)),
+                    size: theme::TEXT,
+                },
             );
         });
         slot_cell(painter, rect, column, slot, hover, pulse, progress, selectable && selected);

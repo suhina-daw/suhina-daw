@@ -6,7 +6,7 @@
 use super::*;
 
 impl App {
-    /// A double-click on a track (an Arrangement header, a Session column's name or channel
+    /// A double-click on a track (an Arrangement header, a Launcher column's name or channel
     /// strip) selects it and shows its devices, opening the detail area; a clip selected on
     /// another track is no longer selected (`docs/spec/ui-clip-editor.md` › Where it opens).
     pub(super) fn devices_asked(&mut self) {
@@ -26,6 +26,21 @@ impl App {
             }
             self.show_devices();
         }
+        // A click anywhere on a track that is not a clip shows its devices too, the selection
+        // as the click left it (#950). A hidden detail area stays hidden: opening it under the
+        // pointer would move what a double-click's second click lands on.
+        if std::mem::take(&mut self.arrangement.devices_clicked) | std::mem::take(&mut self.view.devices_clicked)
+            && self.detail_open
+        {
+            self.detail_showing = detail_view::Showing::Devices;
+        }
+    }
+
+    /// Selects `track` (Main too) and shows its devices, opening the detail area: after a device
+    /// was dropped on it (#950).
+    pub(super) fn show_devices_of(&mut self, track: TrackId) {
+        self.select_tracks(vec![track]);
+        self.show_devices();
     }
 
     /// Shows the shown track's devices in the detail area, opening it when it is hidden.
@@ -53,11 +68,28 @@ impl App {
     /// index in the track's chain.
     pub(super) fn ara_clip(&mut self) -> Option<(TrackId, ClipId, usize)> {
         let ClipRef::Arrangement(track, clip) = self.shown_clip()? else { return None };
-        if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_some() {
+        if self.piano_clip(Some(ClipRef::Arrangement(track, clip))).is_some() || !self.clip_uses_ara(track, clip) {
             return None;
         }
         let device = self.session()?.ara_device(track)?;
         Some((track, clip, device))
+    }
+
+    /// Whether `clip` on `track` plays through its channel's ARA plug-in: it names it, or the
+    /// track's ARA plug-in is one from before clips named their own, which edits all of them
+    /// (#990).
+    pub(super) fn clip_uses_ara(&self, track: TrackId, clip: ClipId) -> bool {
+        self.session().is_some_and(|s| {
+            let p = s.project();
+            let hosted = p.channel_of_track(track).and_then(|c| c.devices.first()).is_some_and(|d| d.clip_host);
+            !hosted
+                || p.arrangement
+                    .lanes
+                    .iter()
+                    .filter(|l| l.track == Some(track))
+                    .flat_map(|l| &l.clips)
+                    .any(|c| c.id == clip && c.ara)
+        })
     }
 
     /// Opens the selected clip in its track's plug-in that edits clips (ARA): the detail area
@@ -103,23 +135,12 @@ impl App {
         self.show_editor();
         // It opens on its own once it runs bound to the clips (`detail_area`).
         self.ara_opened = None;
-        let on_track = self.session().is_some_and(|s| {
-            let project = s.project();
-            project
-                .tracks
-                .iter()
-                .find(|t| t.id == track)
-                .and_then(|t| t.channel)
-                .and_then(|c| project.channel(c))
-                .is_some_and(|c| c.devices.iter().any(|d| d.name == name))
-        });
-        if on_track {
-            self.status = Status::Hint(format!("{name} is starting with the track's clips; it opens when it is ready"));
-            return;
-        }
-        self.run(&Action::new("device.addPlugin", json!({ "track": track.0, "plugin": spec })));
+        // The clip plays through it from now on: the track's clip host when it has one, else the
+        // installed one becomes it (#990). Its editor opens with the clip once it runs.
+        self.run(&Action::new("clip.setAra", json!({ "clips": [{ "clip": clip.0 }], "on": true, "plugin": spec })));
         if !matches!(self.status, Status::Error(_)) {
-            self.status = Status::Hint(format!("{name} added to the track; it opens with the clip when it is ready"));
+            self.ara_armed = Some((track, clip));
+            self.status = Status::Hint(format!("{name} edits the clip; it opens with the clip when it is ready"));
         }
     }
 
@@ -153,16 +174,9 @@ impl App {
             && let Ok(session) = self.projects.session_mut(None)
         {
             // Every device's path, inside device groups too.
-            let paths: Vec<Vec<usize>> = session
-                .project()
-                .tracks
-                .iter()
-                .find(|t| t.id == shown_track)
-                .and_then(|t| t.channel)
-                .and_then(|c| session.project().channel(c))
-                .map_or_else(Vec::new, |c| {
-                    suhina_engine::model::walk_devices(&c.devices).into_iter().map(|(path, _)| path).collect()
-                });
+            let paths: Vec<Vec<usize>> = session.project().channel_of_track(shown_track).map_or_else(Vec::new, |c| {
+                suhina_engine::model::walk_devices(&c.devices).into_iter().map(|(path, _)| path).collect()
+            });
             for path in paths {
                 // Its generated panel follows the parameters it lists (#679).
                 session.list_plugin_params_at(shown_track, &path);
@@ -180,8 +194,14 @@ impl App {
             .map(|(k, r)| (k.clone(), r.editor_embedded))
             .collect();
         self.editor_in_chain = !embedded.is_empty();
+        // What an editor in the chain needs at its full size: it may take the view's room above.
+        let scale = ui.ctx().pixels_per_point();
+        let editor_needs = embedded
+            .iter()
+            .filter_map(|(_, embedded)| *embedded)
+            .map(|(_, height)| detail_view::row_height_with_editor(height, scale))
+            .fold(0.0, f32::max);
         if !stacked {
-            let scale = ui.ctx().pixels_per_point();
             let needed = embedded
                 .iter()
                 .filter(|(key, _)| !self.fitted_editors.contains(key))
@@ -198,12 +218,19 @@ impl App {
         if let (Some(piano), Some(clip), Some(session)) = (piano.as_mut(), clip, self.session()) {
             piano.ghosts =
                 crate::detail::piano_roll_ghosts::ghosts(session.project(), clip, self.piano_roll.ghost_source);
+            // Several MIDI clips picked: the others' notes faint where they play, the edited one
+            // (the focus) the one picked last or chosen in the clip column (#1054).
+            if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                let picked: Vec<ClipRef> =
+                    self.arrangement.selected_clips().iter().map(|(t, c)| ClipRef::Arrangement(*t, *c)).collect();
+                crate::detail::piano_roll_ghosts::add_picked(session.project(), clip, &picked, &mut piano.ghosts);
+            }
         }
         // An audio clip on a track whose plug-in edits clips (ARA) has that plug-in's editor in
         // the piano roll's place: the plug-in is told the clip is selected, and its editor opens
         // on its own the first time the clip is shown.
         let ara = match clip {
-            Some(ClipRef::Arrangement(t, c)) if piano.is_none() => {
+            Some(ClipRef::Arrangement(t, c)) if piano.is_none() && self.clip_uses_ara(t, c) => {
                 // An ARA plug-in sits first in the track's own chain, never inside a device group.
                 let mut found: Vec<_> = reports
                     .iter()
@@ -231,7 +258,16 @@ impl App {
         // The editor opens in the clip's place on its own, and again until it is open: a plug-in
         // that is busy or loading again misses the first ask. Closed by the user while its clip
         // is shown, it stays closed for that clip (#719).
-        match ara.filter(|_| self.detail_showing == detail_view::Showing::Clip) {
+        // Only a double-clicked clip opens the editor on its own (#916).
+        if let Some((t, c, _, _)) = ara
+            && std::mem::take(&mut self.clip_opened)
+        {
+            self.ara_armed = Some((t, c));
+            self.ara_opened = None;
+        }
+        match ara.filter(|(t, c, _, _)| {
+            self.detail_showing == detail_view::Showing::Clip && self.ara_armed == Some((*t, *c))
+        }) {
             Some((t, c, device, open)) => {
                 let key = (t, c);
                 if open {
@@ -302,20 +338,22 @@ impl App {
             // Only the chain shown: no taller than its panels, but never held under the area's
             // default height. A chain of short panels (a plug-in whose editor is not embedded,
             // or no devices at all) would otherwise keep the area too short to drag up.
-            if piano.is_none()
-                && clip.is_none()
-                && !self.editor_in_chain
-                && let Some(cap) = self.detail_cap
-            {
-                self.detail_height = self.detail_height.min(cap.max(least).max(DETAIL_HEIGHT));
-            }
-            self.detail_height = self.detail_height.clamp(least, (area.height() - MIN_VIEW).max(least));
+            let most = (area.height() - MIN_VIEW).max(editor_needs.min(area.height() - SPLITTER)).max(least);
+            self.detail_height = self.detail_height.clamp(least, most);
+            // A track's devices, reached by clicking the track, are open at one height or closed; the
+            // height the user drags is the clip's, its editor's and the devices reached from it.
+            let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            let shown_height = if track_devices {
+                detail_view::device_row_height().min((area.height() - MIN_VIEW).max(least))
+            } else {
+                self.detail_height
+            };
             let y = if pulled {
                 // Above it only the edited track, or nothing.
                 let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
                 (area.top() + above.min(area.height() - least) + SPLITTER).min(area.bottom() - least)
             } else {
-                area.bottom() - self.detail_height
+                area.bottom() - shown_height
             };
             (
                 Rect::from_min_max(area.min, Pos2::new(area.right(), (y - SPLITTER).max(area.top()))),
@@ -328,9 +366,10 @@ impl App {
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
         if geometry.is_none() {
+            let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
             let cursor = if stacked { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
-            let response =
-                ui.interact(splitter, Id::new("detail-splitter"), Sense::click_and_drag()).on_hover_cursor(cursor);
+            let sense = Sense::click_and_drag();
+            let response = ui.interact(splitter, Id::new("detail-splitter"), sense).on_hover_cursor(cursor);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Detail area splitter"));
             // A double-click closes the detail area, as a double-click on a split view's divider does
             // on macOS; a double-click on the closed splitter opens it at its default size.
@@ -346,12 +385,13 @@ impl App {
                     let height = self.detail_drag.unwrap_or(detail.height()) - delta.y;
                     self.detail_drag = Some(height);
                     self.detail_max = pullable && height > area.height() - MIN_VIEW;
-                    if height < least / 2.0 {
+                    let closes_under = if open_or_closed { detail_view::device_row_height() } else { least };
+                    if height < closes_under / 2.0 {
                         // Dragged down past half its least height, the detail area closes; the same
                         // drag going back up opens it again (`collapsed_splitter`).
                         self.detail_max = false;
                         self.hide_editor();
-                    } else if !self.detail_max {
+                    } else if !self.detail_max && !open_or_closed {
                         self.detail_height = height.max(least);
                     }
                 }
@@ -371,12 +411,11 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
-        // Automated parameters show what plays, while it plays (#706).
-        if let Some(session) = self.session()
-            && let Some(monitor) = session.player().map(suhina_session::Player::monitor)
-            && monitor.running()
-        {
-            shown.follow_automation(session.project(), monitor.beat());
+        // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
+        // without a player, at the start.
+        if let Some(session) = self.session() {
+            let beat = session.player().map_or(0.0, |p| p.monitor().beat());
+            shown.follow_automation(session.project(), beat);
         }
         // Devices' live values (a band's level and gain change), for their canvases.
         if let Some(monitor) = self.session().and_then(|s| s.player()).map(suhina_session::Player::meter_monitor)
@@ -425,6 +464,15 @@ impl App {
                             return;
                         }
                         d.insert_temp(id.with("manual-revision"), version);
+                        if let Some(edits) =
+                            device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode)
+                        {
+                            d.insert_temp(id.with("slice-edits"), std::sync::Arc::new(edits));
+                        } else {
+                            d.remove::<std::sync::Arc<suhina_device_api::sample_edits::SampleEdits>>(
+                                id.with("slice-edits"),
+                            );
+                        }
                         if let Some(points) = device.sample_slices() {
                             d.insert_temp(id.with("manual-points"), std::sync::Arc::<[f64]>::from(points));
                         } else {
@@ -469,6 +517,45 @@ impl App {
         }
         if let detail_view::Detail::Clip(info, _) = &mut shown {
             info.switch = switch;
+            // Several arrangement clips picked: the column says how many, and its switches turn
+            // them all.
+            if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                let this = match info.at {
+                    Some(detail_view::ClipRef::Arrangement(_, clip)) => Some(clip),
+                    _ => None,
+                };
+                info.others = self
+                    .arrangement
+                    .selected_clips()
+                    .iter()
+                    .filter(|(_, id)| Some(*id) != this)
+                    .map(|(_, id)| id.0)
+                    .collect();
+                // The picked MIDI clips, each a row that gives it the piano roll's focus (#1054).
+                if !info.audio
+                    && let Some(session) = self.session()
+                {
+                    let p = session.project();
+                    info.picked = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter_map(|&(track, id)| {
+                            let lane = p.arrangement.lanes.iter().find(|l| l.track == Some(track))?;
+                            let clip = lane.clips.iter().find(|c| c.id == id)?;
+                            let content = p.content(clip.content)?;
+                            let notes = content
+                                .lanes
+                                .iter()
+                                .any(|l| matches!(l.data, suhina_engine::model::LaneData::Notes(_)));
+                            notes.then(|| {
+                                let name = format!("{} - {}", p.shown_track_name(track), content.name);
+                                (track, id, name, Some(id) == this)
+                            })
+                        })
+                        .collect();
+                }
+            }
         }
         // A selected slot clip's follow action comes first, the rest of the detail beside or
         // under it.
@@ -512,6 +599,12 @@ impl App {
                 self.session().and_then(|s| s.player()).map(|p| p.monitor()).filter(|m| m.running()).map(|m| m.beat())
             }
         };
+        // Where playback starts next, for an arrangement clip's piano roll (#951).
+        let start_marker = (self.shown == View::Arrangement)
+            .then(|| self.session().and_then(|s| s.player()).map(|p| p.monitor().start_beat()))
+            .flatten();
+        detail_view::set_list_vertical(ui.ctx(), self.settings.view.device_list_vertical);
+        detail_view::set_list_project(ui.ctx(), self.projects.active().map_or(0, |project| project.0));
         let picks = self.device_picks();
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
@@ -530,7 +623,8 @@ impl App {
                     };
                     rest = crate::detail::midi_tools::show(ui, rest, &tools, piano_roll, actions);
                 }
-                let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead };
+                let seeks = matches!(piano.address.get("clip"), Some(serde_json::Value::Number(_)));
+                let cx = piano_roll::Context { options, keymap: &keymap, copied, playhead, start_marker, seeks };
                 piano_roll::show(ui, rest, piano, piano_roll, cx, actions);
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
@@ -546,10 +640,9 @@ impl App {
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
         }
-        self.detail_cap = picked.inner.content_height.map(|h| h as f32);
-        if let Some((track, index)) = picked.inner.clicked {
+        if let Some((track, at)) = picked.inner.clicked {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
-            self.pick_device(track, index, add, run);
+            self.pick_device(track, at, add, run);
             // A fresh pick says where the user is now: a removal's undo or redo no longer
             // moves the selection for them.
             self.pending_device_remove = None;
@@ -604,9 +697,15 @@ impl App {
             let height = self.detail_drag.unwrap_or(0.0) - response.drag_delta().y;
             self.detail_drag = Some(height);
             let least = self.least_detail_height();
-            if height >= least / 2.0 {
+            // A track's devices open at their one height, at the point a drag down closes them.
+            let track_devices = self.shown_clip().is_none();
+            let opens_at = if track_devices { detail_view::device_row_height() } else { least };
+            if height >= opens_at / 2.0 {
                 self.show_editor();
-                self.detail_height = height.max(least);
+                // The height dragged is a clip's view's.
+                if !track_devices {
+                    self.detail_height = height.max(least);
+                }
             }
         } else {
             self.detail_drag = None;
@@ -626,7 +725,7 @@ impl App {
         if piano { piano_roll::LEAST_HEIGHT } else { 80.0 }
     }
 
-    /// The clip the detail area shows: the Arrangement view's selected clip, or the Session view's
+    /// The clip the detail area shows: the Arrangement view's selected clip, or the Launcher view's
     /// selected slot's.
     pub(super) fn shown_clip(&self) -> Option<ClipRef> {
         match self.shown {
@@ -648,7 +747,7 @@ impl App {
 
     /// The piano roll for the selected arrangement clip, when it is a MIDI clip; its grid is its
     /// own grid value, or the control bar's when Settings says so.
-    /// The piano roll for the shown clip: an arrangement clip's, or the Session view's selected
+    /// The piano roll for the shown clip: an arrangement clip's, or the Launcher view's selected
     /// slot's clip.
     pub(super) fn piano_clip(&self, clip: Option<detail_view::ClipRef>) -> Option<piano_roll::PianoClip> {
         let follows = self.settings.piano_grid_follows;
@@ -705,6 +804,8 @@ impl App {
                 .selected_slot
                 .map(|(t, s)| detail_view::ClipRef::Slot(t, s))
                 .and_then(|clip| self.piano_clip(Some(clip)))?,
+            // Several clips picked: the keys are theirs, not one clip's notes.
+            View::Arrangement if self.arrangement.selected_clips().len() > 1 => return None,
             View::Arrangement => self
                 .arrangement
                 .selected_clip()

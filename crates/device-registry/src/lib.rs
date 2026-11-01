@@ -12,7 +12,7 @@ use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const DEVICES: [&DeviceInfo; 16] = [
+pub const DEVICES: [&DeviceInfo; 17] = [
     &suhina_device_fm_synth::INFO,
     &suhina_device_sampler::INFO,
     &suhina_device_utility::INFO,
@@ -21,6 +21,7 @@ pub const DEVICES: [&DeviceInfo; 16] = [
     &suhina_device_eq::INFO,
     &suhina_device_vinyl_distortion::INFO,
     &suhina_device_overdrive::INFO,
+    &suhina_device_saturator::INFO,
     &suhina_device_compressor::INFO,
     &suhina_device_multiband::INFO,
     &suhina_device_limiter::INFO,
@@ -107,6 +108,7 @@ pub fn create(id: &str) -> Option<Box<dyn Device>> {
         "eq" => Box::new(suhina_device_eq::Eq::new()),
         "vinyl-distortion" => Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
         "overdrive" => Box::new(suhina_device_overdrive::Overdrive::new()),
+        "saturator" => Box::new(suhina_device_saturator::Saturator::new()),
         "compressor" => Box::new(suhina_device_compressor::Compressor::new()),
         "multiband" => Box::new(suhina_device_multiband::Multiband::new()),
         "limiter" => Box::new(suhina_device_limiter::Limiter::new()),

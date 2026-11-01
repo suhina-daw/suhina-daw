@@ -78,13 +78,18 @@ fn gain() -> ParamInfo {
 
 #[test]
 fn every_message_round_trips() {
-    assert_eq!(VERSION, 13);
+    assert_eq!(VERSION, 14);
     let messages = [
         Message::Hello { version: VERSION },
+        Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },
+        Message::Reconfigured { instance: 7, latency: 512 },
         Message::TransportKey,
+        Message::TypedKey { key: b'A', pressed: true },
         Message::AraPlayback(AraPlayback::Start),
         Message::AraPlayback(AraPlayback::Stop),
         Message::AraPlayback(AraPlayback::Position(12.5)),
+        Message::AraPlayback(AraPlayback::Cycle(4.0, 2.5)),
+        Message::AraPlayback(AraPlayback::CycleOn(true)),
         Message::AraNotes {
             instance: 4,
             region: "clip-12".into(),
@@ -125,6 +130,8 @@ fn every_message_round_trips() {
         Message::Params { instance: 4, params: Vec::new() },
         Message::SetParam { instance: 5, id: 7, value: -0.5 },
         Message::Param { instance: 5, param: gain() },
+        Message::ParamChanged { instance: 5, id: 7, value: 0.125 },
+        Message::ParamChanged { instance: u32::MAX, id: u32::MAX, value: f64::MAX },
         Message::OpenEditor { instance: 6, owner: None, embedded: false },
         Message::OpenEditor { instance: 6, owner: Some(0x0012_0F3A), embedded: true },
         Message::EditorOpened { instance: 6, width: 800, height: 600 },
@@ -167,10 +174,25 @@ fn every_message_round_trips() {
 }
 
 #[test]
+fn reconfiguration_rejects_invalid_rates_and_identifiers() {
+    for line in [
+        r#"{"op":"reconfigure","instance":1,"sample_rate":0}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":-1}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":1e100}"#,
+        r#"{"op":"reconfigure","instance":1,"sample_rate":"48000"}"#,
+        r#"{"op":"reconfigure","sample_rate":48000}"#,
+        r#"{"op":"reconfigured","instance":1,"latency":-1}"#,
+    ] {
+        assert_eq!(Message::decode(line), None, "{line}");
+    }
+}
+
+#[test]
 fn messages_name_their_instance() {
     assert_eq!(Message::Unload { instance: 4 }.instance(), Some(4));
     assert_eq!(Message::EditorClosed { instance: 2 }.instance(), Some(2));
     assert_eq!(Message::LatencyChanged { instance: 3, latency: 64 }.instance(), Some(3));
+    assert_eq!(Message::ParamChanged { instance: 3, id: 7, value: 0.0 }.instance(), Some(3));
     assert_eq!(Message::Error { instance: Some(1), message: String::new() }.instance(), Some(1));
     assert_eq!(Message::Error { instance: None, message: String::new() }.instance(), None);
     assert_eq!(Message::Ping { id: 1 }.instance(), None);
@@ -202,6 +224,9 @@ fn malformed_lines_are_refused() {
         r#"{"op":"set_param","instance":1,"id":1}"#,
         r#"{"op":"set_param","instance":1,"id":-1,"value":0.5}"#,
         r#"{"op":"set_param","id":1,"value":0.5}"#,
+        r#"{"op":"param_changed","instance":1,"id":1}"#,
+        r#"{"op":"param_changed","instance":1,"id":-1,"value":0.5}"#,
+        r#"{"op":"param_changed","instance":1,"value":0.5}"#,
         r#"{"op":"params","instance":1,"params":[{"id":1}]}"#,
         r#"{"op":"param","instance":1}"#,
         r#"{"op":"editor_opened","instance":1,"width":800}"#,

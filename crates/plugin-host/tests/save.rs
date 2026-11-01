@@ -62,6 +62,7 @@ fn project() -> Project {
         enabled: true,
         state: Some(bank(0.25)),
         params: Vec::new(),
+        clip_host: false,
         extensions: Extensions(vec![Extension {
             format: "vst3".into(),
             key: CONTROLLER.into(),

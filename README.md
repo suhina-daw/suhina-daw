@@ -19,7 +19,7 @@ Suhina was called Loopwerk until October 2026; settings kept under the old name 
 
 > **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
 > real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,
-> or sine tones), and lets agents edit them over MCP. The desktop app has the Session and
+> or sine tones), and lets agents edit them over MCP. The desktop app has the Launcher and
 > Arrangement views, a browser with a sample map, and settings. See [`ROADMAP.md`](ROADMAP.md) for what works and what comes next.
 
 Suhina is an independent clean-room project. It is not affiliated with, sponsored by or
@@ -144,7 +144,11 @@ folders. Build into a folder without the label (Cargo's `build.target-dir` outsi
 
 ### ASIO on Windows
 
-A default Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
+Windows release, nightly and test packages include ASIO: in Settings › Audio, choose **ASIO**
+under **Driver**, then an installed driver under **Device**. WASAPI remains available.
+ASIO drivers are installed separately; the package does not install a driver.
+
+A default local Windows build plays through WASAPI (shared, or exclusive when chosen in Settings ›
 Audio). ASIO, which talks to an audio interface's own driver, is a Cargo feature, because
 building it compiles the Steinberg ASIO SDK with the C++ compiler and generates its bindings with
 bindgen, which needs libclang:

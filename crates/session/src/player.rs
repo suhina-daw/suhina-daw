@@ -57,6 +57,14 @@ impl Player {
         self.output.as_ref().map(|o| o.info())
     }
 
+    pub fn control_panel_open(&self) -> bool {
+        self.output.as_ref().is_some_and(|output| output.control_panel_open())
+    }
+
+    pub fn open_control_panel(&self) -> Result<(), String> {
+        self.output.as_ref().ok_or("no audio output is open")?.open_control_panel()
+    }
+
     /// The controller and whatever keeps the output open, for the output layer to close it in
     /// its own way (taking its plug-ins back) before opening another.
     pub fn into_parts(self) -> (Controller, Option<Box<dyn OutputHandle>>) {
@@ -153,6 +161,12 @@ impl Player {
     /// Plug-in blocks not answered in time, and the plug-in (its key) that missed most.
     pub fn plugin_misses(&self) -> (u64, u64, u64) {
         self.controller.plugin_misses()
+    }
+
+    /// Plug-in blocks refused while the host was busy, and the longest answered
+    /// real-time round trip in microseconds.
+    pub fn plugin_time(&self) -> (u64, u32) {
+        self.controller.plugin_time()
     }
 
     /// The level meters of the main output and every track.

@@ -234,6 +234,25 @@ impl Project {
         self.channels.iter_mut().find(|c| c.id == id)
     }
 
+    /// The main channel, the one every other plays into in the end.
+    pub fn main_channel(&self) -> Option<&Channel> {
+        self.channels.iter().find(|c| c.role == crate::ChannelRole::Master)
+    }
+
+    /// The mixer channel of track `track`, or the main channel for [`TrackId::MAIN`].
+    pub fn channel_of_track(&self, track: TrackId) -> Option<&Channel> {
+        if track == TrackId::MAIN {
+            return self.main_channel();
+        }
+        self.track(track).and_then(|t| t.channel).and_then(|id| self.channel(id))
+    }
+
+    /// The mixer channel of track `track`, or the main channel for [`TrackId::MAIN`], to change.
+    pub fn channel_of_track_mut(&mut self, track: TrackId) -> Option<&mut Channel> {
+        let id = self.channel_of_track(track)?.id;
+        self.channel_mut(id)
+    }
+
     /// The channels the sound of channel `from` passes through after it, nearest first: its
     /// output, that channel's output, and so on (#764 › 7). A channel with no output ends the
     /// walk (it plays into the main output), and so does an output that names no channel, after

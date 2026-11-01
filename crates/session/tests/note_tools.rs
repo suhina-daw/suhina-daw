@@ -54,6 +54,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 clips: vec![clip(1), clip(2), clip(3)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

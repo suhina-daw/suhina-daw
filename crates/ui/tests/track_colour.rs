@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Track colours in the window: the Arrangement header's colour band, the Session column's
+//! Track colours in the window: the Arrangement header's colour band, the Launcher column's
 //! coloured header and the channel strip's band down its edge are drawn in the track's colour over their area;
 //! a click on a colour area opens the palette, a swatch sets the colour in one undo step
 //! (`docs/design/components.md` › Colour palette).
@@ -342,7 +342,7 @@ fn named_track_default_can_be_changed_from_settings_search() {
     h.run();
     h.get_by_label("Search settings").type_text("default track size");
     h.run();
-    assert!(h.query_by_label("Advanced track sizes: On").is_some(), "search keeps Advanced visible");
+    assert!(h.query_by_label("Exact track heights").is_some(), "search keeps Advanced visible");
     assert!(h.query_by_label("Medium height").is_some(), "search keeps size tuning visible");
     h.get_by_label("Default track size: Medium").click();
     h.run();
@@ -352,7 +352,7 @@ fn named_track_default_can_be_changed_from_settings_search() {
         64.0,
         "default applies live before closing Settings, even after Resize all"
     );
-    h.get_by_label("Advanced track sizes: On").click();
+    h.get_by_label("Exact track heights").click();
     h.run();
     h.get_by_label("Medium height").click();
     h.run();
@@ -397,4 +397,56 @@ fn midi_monitor_is_separate_from_arm_and_offers_contextual_choices() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run();
     assert!(h.query_by_label("MIDI monitoring of Drums: Auto").is_some());
+}
+
+/// The MIDI monitoring chip stays inside its header and clear of the automation button: at the
+/// default width and at the narrowest both take their own clicks, and a low lane at the narrowest,
+/// where the chip's row has no room for it, drops the chip (#876).
+#[test]
+fn the_midi_monitor_chip_keeps_clear_of_the_automation_button() {
+    let mut h = arrangement();
+    let clear = |h: &Harness<'static, App>| {
+        let lanes = h.get_by_label("Show automation of Drums").rect();
+        let header = h.get_by_label("Track Drums").rect();
+        assert!(header.contains_rect(lanes), "{lanes:?} in {header:?}");
+        h.query_by_label("MIDI monitoring of Drums: Auto").map(|chip| {
+            let chip = chip.rect();
+            assert!(!chip.intersects(lanes) && header.contains_rect(chip), "{chip:?} {lanes:?}");
+        })
+    };
+    let chip_takes_its_click = |h: &mut Harness<'static, App>| {
+        h.get_by_label("MIDI monitoring of Drums: Auto").click();
+        h.run();
+        assert!(h.query_by_label("Always on").is_some(), "the chip takes its click");
+        h.key_press(Key::Escape);
+        h.run();
+    };
+    assert!(clear(&h).is_some(), "the default width shows the chip");
+    chip_takes_its_click(&mut h);
+    // With the headers at the right, dragging their left edge right narrows them to the least.
+    let mut settings = h.state().settings().clone();
+    settings.track_headers = Some(suhina_ui::settings::Side::Right);
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let ruler = h.get_by_label("Ruler").rect();
+    let edge = egui::pos2(ruler.right(), ruler.bottom() + 30.0);
+    h.hover_at(edge);
+    h.run();
+    h.drag_at(edge);
+    h.hover_at(edge + egui::vec2(300.0, 0.0));
+    h.run();
+    h.drop_at(edge + egui::vec2(300.0, 0.0));
+    h.run();
+    assert_eq!(h.state().arrangement().header_width, 160.0);
+    assert!(clear(&h).is_some(), "a two-row lane has room for the chip at the narrowest");
+    chip_takes_its_click(&mut h);
+    h.get_by_label("Resize all tracks").click();
+    h.run();
+    h.get_by_label("Tiny").click();
+    h.run();
+    assert!(clear(&h).is_none(), "a low lane at the narrowest drops the chip");
+    h.get_by_label("Show automation of Drums").click();
+    h.run();
+    assert!(h.query_by_label("Hide automation of Drums").is_some(), "the button takes its click");
 }

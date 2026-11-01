@@ -84,6 +84,10 @@ or full of odd names.
 - On Linux a folder too large for the watch budget is polled; raising the system limit
   (`sysctl fs.inotify.max_user_watches`) lets it be watched.
 - Moving a folder that is in the library makes it *missing* until it is added again.
+- A file moved through the browser (`library.moveTo`, #943) keeps what the library holds for
+  it: its pin, its places among the recent items and its tags move to its new path, and the
+  folders that held it and hold it now are read again at once, without waiting for the watch.
+  A file moved outside Suhina loses them, as they are kept by path.
 
 ## Alternatives considered
 

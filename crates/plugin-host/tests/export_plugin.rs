@@ -81,6 +81,7 @@ fn project() -> Project {
                 enabled: true,
                 state: None,
                 params: Vec::new(),
+                clip_host: false,
                 extensions: Extensions::default(),
                 automation: Vec::new(),
             }],
@@ -106,6 +107,7 @@ fn project() -> Project {
                 clips: vec![Clip::new(ContentId(1), 0.0, 4.0)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

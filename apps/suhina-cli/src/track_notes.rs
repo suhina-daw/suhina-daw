@@ -114,6 +114,7 @@ mod tests {
                     clips,
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Project::default()
         }

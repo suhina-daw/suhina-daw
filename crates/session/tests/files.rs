@@ -80,7 +80,7 @@ fn midi(dir: &Path, name: &str, tracks: &[TrackNotes<'_>]) -> PathBuf {
 }
 
 fn names(p: &Project) -> Vec<String> {
-    p.tracks.iter().map(|t| t.name.clone()).collect()
+    p.tracks.iter().map(|t| p.shown_track_name(t.id)).collect()
 }
 
 fn text(path: &Path) -> String {
@@ -123,7 +123,7 @@ fn a_track_is_added_before_the_returns_with_its_channel_slots_and_lane() {
     let added = run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
     let id = TrackId(added["track"].as_u64().unwrap() as u32);
     let p = session.project();
-    assert_eq!(names(p), ["1 MIDI", "2 MIDI", "3 Audio", "4 Audio", "Audio 3", "A Return", "B Return"]);
+    assert_eq!(names(p), ["1 MIDI", "2 MIDI", "3 Audio", "4 Audio", "5 Audio", "A Return", "B Return"]);
     let track = p.track(id).unwrap();
     assert_eq!(track.content, ContentKinds { notes: false, audio: true });
     let channel = p.channels.iter().find(|c| Some(c.id) == track.channel).unwrap();
@@ -229,6 +229,31 @@ fn a_sample_with_a_tempo_in_its_name_is_warped_to_the_project() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A loop of known tempo stretched with warp off, then warped again, is back at its own tempo:
+/// warp on sets it to the file's tempo, not to the stretch.
+#[test]
+fn warp_on_sets_a_loop_of_known_tempo_back_to_its_own_tempo() {
+    let dir = temp_dir("warp-back");
+    let looped = wav(&dir, "loop 60bpm.wav", 2.0, 0.5);
+    let mut session = Session::new(blank_project());
+    run(&mut session, "clip.addFiles", json!({ "paths": [text(&looped)], "track": 3, "start": 0.0 })).unwrap();
+    let clip = |s: &Session| {
+        let p = s.project();
+        p.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(3))).unwrap().clips[0].clone()
+    };
+    let id = clip(&session).id.0;
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.stretch", json!({ "clip": id, "end": 3.0 })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": true })).unwrap();
+    let c = clip(&session);
+    let p = session.project();
+    let LaneData::Audio(region) = &p.content(c.content).unwrap().lanes[0].data else { panic!() };
+    assert!(region.warped);
+    assert_eq!(region.warp_markers.last().map(|m| (m.time, m.audio_time)), Some((2.0, 2.0)), "60 BPM again");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The slot clip in `scene` (from 1) of `track`.
 fn slot_clip(p: &Project, track: u32, scene: usize) -> &Clip {
     let column = p.launcher.columns.iter().find(|c| c.track == TrackId(track)).unwrap();
@@ -328,7 +353,7 @@ fn separate_puts_each_file_on_a_track_of_its_own() {
     .unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
-    assert_eq!(names(p)[2..6], ["3 Audio", "snare", "hat", "4 Audio"]);
+    assert_eq!(names(p)[2..6], ["3 Audio", "snare", "hat", "6 Audio"]);
     for lane in p.arrangement.lanes.iter().filter(|l| l.clips.len() == 1) {
         assert_eq!(lane.clips[0].start, 8.0, "side by side, at the same beat");
     }
@@ -346,7 +371,7 @@ fn mixed_files_on_empty_space_make_an_audio_and_a_midi_track() {
         run(&mut session, "clip.addFiles", json!({ "paths": [text(&a), text(&m), text(&b)], "scene": 1 })).unwrap();
     assert_eq!(out["tracks"].as_array().map(Vec::len), Some(2));
     let p = session.project();
-    assert_eq!(names(p)[4..6], ["Audio 3", "groove"]);
+    assert_eq!(names(p)[4..6], ["5 Audio", "groove"]);
     let midi_track = p.tracks.iter().find(|t| t.name == "groove").unwrap();
     assert_eq!(midi_track.content, ContentKinds { notes: true, audio: false });
     // The MIDI clip is a bar long (its notes end at beat 3) and loops in its slot.
@@ -376,7 +401,7 @@ fn files_a_track_cannot_hold_go_on_a_new_track_after_it() {
     run(&mut session, "clip.addFiles", json!({ "paths": [text(&m), text(&a)], "track": "1 MIDI", "start": 0.0 }))
         .unwrap();
     let p = session.project();
-    assert_eq!(names(p)[..3], ["1 MIDI", "vox", "2 MIDI"]);
+    assert_eq!(names(p)[..3], ["1 MIDI", "vox", "3 MIDI"]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

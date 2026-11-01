@@ -184,8 +184,8 @@ pub async fn attach_stdio(folder: &std::path::Path) -> Result<(), String> {
         Ok(stream) => stream,
         Err(e) if endpoint::is_absent(&e) => {
             return Err(match endpoint::connect(&key, Endpoint::App).await {
-                Ok(_) => "Suhina is running, but it does not let agents in: turn on Settings › General › \
-                          Let agents work on open projects"
+                Ok(_) => "Suhina is running, but it does not let agents in: turn on Settings › Agents and updates › Agents › \
+                          AI agents edit projects"
                     .into(),
                 Err(_) => format!(
                     "Suhina is not running: start the suhina app in {} (an agent reaches the app of its own build)",

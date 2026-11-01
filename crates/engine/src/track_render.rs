@@ -96,6 +96,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
         arrangement: Arrangement {
             lanes: project.arrangement.lanes.iter().filter(|l| l.track == Some(track)).cloned().collect(),
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Default::default(),
         extensions: Extensions::default(),
@@ -155,6 +156,7 @@ mod tests {
                     }],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Default::default()
         };

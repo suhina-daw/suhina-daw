@@ -52,6 +52,8 @@ pub struct DeviceBox {
     /// The id of a device that runs a file ([docs/spec/nam-amp-and-cab.md]); the file is the
     /// state's path.
     pub file_device: Option<&'static str>,
+    /// Its opened long list scrolls down in two columns, as Settings › Devices says.
+    pub list_tall: bool,
     /// The file's path, when the device runs one.
     pub file: Option<String>,
     pub graph: Option<GraphBox>,
@@ -77,6 +79,36 @@ impl DeviceAt {
     /// Whether it is on the track itself, not inside a group.
     pub fn top(&self) -> bool {
         self.0.len() == 1
+    }
+
+    /// The device at `index` on the track itself.
+    pub fn at(index: usize) -> Self {
+        Self(vec![index])
+    }
+
+    /// From a device command's `device` parameter: an index, or a path `"2/1/0"`.
+    pub fn parse(value: &serde_json::Value) -> Option<Self> {
+        if let Some(index) = value.as_u64() {
+            return usize::try_from(index).ok().map(Self::at);
+        }
+        let path: Option<Vec<usize>> = value.as_str()?.split('/').map(|n| n.trim().parse().ok()).collect();
+        path.filter(|p| !p.is_empty()).map(Self)
+    }
+
+    /// Its index on the track, when it is on the track itself.
+    pub fn index(&self) -> Option<usize> {
+        match self.0.as_slice() {
+            [index] => Some(*index),
+            _ => None,
+        }
+    }
+
+    /// The chain or branch it is in (the path to it without its own index), and its index there.
+    pub fn split(&self) -> (&[usize], usize) {
+        match self.0.split_last() {
+            Some((last, parent)) => (parent, *last),
+            None => (&[], 0),
+        }
     }
 }
 
@@ -107,6 +139,8 @@ pub struct GraphBox {
     pub canvas: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
     /// The device's larger panel, opened from its header over the main area, if it has one.
     pub expanded: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
+    /// Controls a built-in's layout puts in its header row, right of its name.
+    pub header: Option<std::sync::Arc<suhina_device_sdk::ui::DeviceUi>>,
     /// The visible nodes form one chain, so the list marks each step with an arrow.
     pub linear: bool,
     /// The names of an `.sd` graph's visible nodes, in signal order; empty for the others.
@@ -314,6 +348,9 @@ pub struct ClipInfo {
     pub at: Option<ClipRef>,
     /// Fade-in and fade-out in beats (`clip.setFades`).
     pub fades: (f64, f64),
+    /// The start and end markers in content beats: where in its content the clip starts and
+    /// stops playing (`clip.setStart`, `clip.setLength`).
+    pub markers: (f64, f64),
     pub notes: usize,
     /// What the piano roll has selected in this clip (› Clip column in
     /// `docs/spec/ui-clip-editor.md`).
@@ -321,6 +358,12 @@ pub struct ClipInfo {
     /// The Clip / Devices switch at the end of the title row, and which part is on: only for a
     /// clip with an editor (› Where it opens in `docs/spec/ui-clip-editor.md`).
     pub switch: Option<Showing>,
+    /// The other arrangement clips selected with it, by id: the title says how many are
+    /// selected, and a switch (Loop) turns all of them as it turns this one.
+    pub others: Vec<u32>,
+    /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
+    /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
+    pub picked: Vec<(TrackId, ClipId, String, bool)>,
 }
 
 /// What the detail area shows for a clip that has an editor: the editor, or its track's devices.
@@ -334,11 +377,12 @@ pub enum Showing {
 
 /// What the detail area's frame picked: the Clip / Devices switch's value, and a device panel
 /// clicked (to select it).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Picked {
     pub showing: Option<Showing>,
-    /// A device panel was clicked: the track and the device's index, to select.
-    pub clicked: Option<(TrackId, usize)>,
+    /// A device panel was clicked: the track and where the device is, to select (one inside a
+    /// group too).
+    pub clicked: Option<(TrackId, DeviceAt)>,
     /// How tall the device chain's panels are, in points, when the area shows only the chain:
     /// the detail area is kept no taller.
     pub content_height: Option<u32>,
@@ -419,6 +463,9 @@ pub struct Chain {
     pub track: TrackId,
     pub name: String,
     pub devices: Vec<DeviceBox>,
+    /// The channel's clip host, the plug-in that edits its clips (#990): not among `devices`, as
+    /// it belongs to the clips, but its editor shows in the clip's place.
+    pub host: Option<DeviceBox>,
     /// The NAM panels' folders' files and a file's names and notes
     /// ([docs/spec/nam-amp-and-cab.md] › Folders).
     pub nam: crate::detail::nam_panel::Lists,
@@ -529,7 +576,7 @@ pub fn build_with(
     nam: crate::detail::nam_panel::Lists,
 ) -> Detail {
     let bar = bar_beats(project);
-    let track_name = |id: TrackId| project.track(id).map(|t| t.name.clone()).unwrap_or_default();
+    let track_name = |id: TrackId| project.shown_track_name(id);
     let found = clip.and_then(|clip| match clip {
         ClipRef::Arrangement(id, clip) => project
             .arrangement
@@ -583,9 +630,12 @@ pub fn build_with(
                     None => ClipRef::Arrangement(id, placed.id),
                 }),
                 fades: (placed.fade_in, placed.fade_out),
+                markers: (placed.offset, placed.offset + placed.length),
                 notes,
                 selection: SelectionInfo::default(),
                 switch: None,
+                others: Vec::new(),
+                picked: Vec::new(),
             }),
             chain(project, id, plugins, nam.clone()),
         );
@@ -600,12 +650,24 @@ pub(super) fn chain(
     plugins: &mut dyn FnMut(TrackId, &[usize]) -> Option<PluginReport>,
     nam: crate::detail::nam_panel::Lists,
 ) -> Chain {
-    let track_name = project.track(id).map(|t| t.name.clone()).unwrap_or_default();
-    let channel = project.track(id).and_then(|t| t.channel).and_then(|c| project.channel(c));
+    // Main has no track: its name and devices are the main channel's (#687).
+    let track_name = if id == TrackId::MAIN { "Main".to_string() } else { project.shown_track_name(id) };
+    let channel = project.channel_of_track(id);
+    // The clip host is the clips' (#990): not in the track's chain as the area shows it.
     let devices = channel
-        .map(|c| c.devices.iter().enumerate().map(|(index, d)| device_box(d, &[index], id, plugins)).collect())
+        .map(|c| {
+            c.devices
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| !d.clip_host)
+                .map(|(index, d)| device_box(d, &[index], id, plugins))
+                .collect()
+        })
         .unwrap_or_default();
-    Chain { track: id, name: track_name, devices, nam }
+    let host = channel.and_then(|c| {
+        c.devices.iter().enumerate().find(|(_, d)| d.clip_host).map(|(index, d)| device_box(d, &[index], id, plugins))
+    });
+    Chain { track: id, name: track_name, devices, host, nam }
 }
 
 /// One device as the detail area shows it, at `path` on track `id`; a group with its branches.
@@ -672,6 +734,7 @@ pub(super) fn device_box(
         } else {
             Vec::new()
         },
+        list_tall: false,
         file_device: match &d.kind {
             DeviceKind::Builtin(id) if suhina_device_registry::is_file_device(id) => {
                 suhina_device_registry::info(id).map(|info| info.id)
@@ -690,6 +753,7 @@ pub(super) fn device_box(
             (DeviceKind::Builtin(id), _) => suhina_device_registry::panel(id).map(|panel| GraphBox {
                 canvas: panel.ui.clone(),
                 expanded: panel.expanded.clone(),
+                header: panel.header.clone(),
                 linear: false,
                 nodes: vec![],
                 parameters: graph_parameters(&panel.parameters, d),
@@ -699,6 +763,7 @@ pub(super) fn device_box(
                 GraphBox {
                     canvas: cached.canvas.clone(),
                     expanded: cached.expanded.clone(),
+                    header: None,
                     linear: graph.connections.len() == graph.nodes.len().saturating_sub(1)
                         && graph
                             .nodes
@@ -756,7 +821,7 @@ pub(super) fn plugin_graph(d: &suhina_engine::model::Device, list: &[suhina_plug
             }
         })
         .collect();
-    GraphBox { canvas: None, expanded: None, linear: false, nodes: vec![], parameters }
+    GraphBox { canvas: None, expanded: None, header: None, linear: false, nodes: vec![], parameters }
 }
 
 /// A device group's settings and its branches with their devices.

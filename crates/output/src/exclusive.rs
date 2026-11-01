@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use wasapi::{Direction, SampleType, StreamMode, WaveFormat};
 
-use crate::{Progress, RING_CHANNELS, Ring, channel_sample, cue_channel, measure_latency, read_ring};
+use crate::{Progress, RING_CHANNELS, Ring, channel_sample, cue_channel, measure_latency, read_device_ring};
 
 /// How long the loop waits for the device before checking whether it should stop, in ms.
 const WAIT_MS: u32 = 100;
@@ -172,7 +172,11 @@ pub(crate) fn capable_devices() -> Vec<String> {
         if wasapi::initialize_mta().is_err() {
             return Vec::new();
         }
-        let Ok(collection) = wasapi::DeviceCollection::new(&Direction::Render) else { return Vec::new() };
+        let Ok(collection) =
+            wasapi::DeviceEnumerator::new().and_then(|devices| devices.get_device_collection(&Direction::Render))
+        else {
+            return Vec::new();
+        };
         let count = collection.get_nbr_devices().unwrap_or(0);
         (0..count)
             .filter_map(|i| {
@@ -234,6 +238,7 @@ fn run(
     }
     let _realtime = suhina_realtime::RealTime::join(frames, sample_rate);
     let period = Duration::from_secs_f64(frames as f64 / f64::from(sample_rate.max(1)));
+    let mut envelope = crate::transition::Envelope::new(sample_rate);
     while !stop.load(Ordering::Acquire) {
         if event.wait_for_event(WAIT_MS).is_err() {
             continue;
@@ -249,7 +254,7 @@ fn run(
         let Some(out) = ringed.get_mut(..space * RING_CHANNELS) else { continue };
         if go.load(Ordering::Acquire) {
             let queued = ring.slots() / RING_CHANNELS;
-            read_ring(&mut ring, out, progress);
+            read_device_ring(&mut ring, out, progress, &mut envelope, period);
             progress.set_latency(measure_latency(queued, period, sample_rate));
         } else {
             out.fill(0.0);
@@ -311,17 +316,18 @@ fn reason(code: Option<u32>) -> Option<&'static str> {
 fn set_up(name: Option<&str>, sample_rate: u32, buffer_frames: Option<u32>) -> Result<Device, String> {
     let error = |what: &str, e: wasapi::WasapiError| format!("{what}: {e}");
     wasapi::initialize_mta().ok().map_err(|e| format!("could not start COM: {e}"))?;
+    let devices = wasapi::DeviceEnumerator::new().map_err(|e| error("no output devices", e))?;
     let device = match name {
         Some(name) => {
             let collection =
-                wasapi::DeviceCollection::new(&Direction::Render).map_err(|e| error("no output devices", e))?;
+                devices.get_device_collection(&Direction::Render).map_err(|e| error("no output devices", e))?;
             let count = collection.get_nbr_devices().map_err(|e| error("no output devices", e))?;
             (0..count)
                 .filter_map(|i| collection.get_device_at_index(i).ok())
-                .find(|d| d.get_friendlyname().is_ok_and(|n| crate::devices::same_name(&n, name)))
+                .find(|d| d.get_friendlyname().is_ok_and(|n: String| crate::devices::same_name(&n, name)))
                 .ok_or_else(|| format!("no output device {name:?}"))?
         }
-        None => wasapi::get_default_device(&Direction::Render).map_err(|e| error("no default output", e))?,
+        None => devices.get_default_device(&Direction::Render).map_err(|e| error("no default output", e))?,
     };
     let mut client = device.get_iaudioclient().map_err(|e| error("could not open the device", e))?;
     let channels = client.get_mixformat().map(|m| m.get_nchannels()).unwrap_or(2).clamp(1, 64);

@@ -16,7 +16,7 @@ use suhina_model::Project;
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional};
 use crate::{CommandError, Policy, ProjectId, Projects};
 
-/// When backups are written (Settings › General › Backups, `project.autosave`'s `interval`).
+/// When backups are written (Settings › Projects and backups › Backup interval, `project.autosave`'s `interval`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interval {
     /// Just before each critical operation (a command whose [`crate::Policy::critical`] is set,

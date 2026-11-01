@@ -3,7 +3,7 @@ description: Backups (autosave) of open projects - when they are written (an int
 read_when: backup, backups, autosave, auto save, recovery, crash, lost work, .backup folder, project.autosave, critical operation, clean-up, power cut
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 covers:
   - crates/session/src/backup.rs
   - crates/ui/src/app/project_dialog.rs
@@ -32,7 +32,7 @@ last save. The next time Suhina starts it offers the copy back.
 
 ## When a backup is written
 
-A setting, **Backups** in Settings › General, says when:
+A setting, **Backup interval** in Settings › Projects and backups, says when:
 
 | Choice | Settings file (`backup =`) | A backup is written |
 |---|---|---|
@@ -107,12 +107,12 @@ this list.
 - A backup that cannot be written (a read-only folder, a full disk) is reported in the status bar
   and changes nothing else; the next one is tried at the next interval or critical operation.
 - The status bar's right end says when the active project was last backed up ("backed up
-  14:05"), and Settings › General shows the last backup's time and file under the setting.
+  14:05"), and Settings › Projects and backups shows the last backup's time and file under the setting.
   `project.autosave` reports them too.
 
 ## Clean-up
 
-A setting, **Clean up backups** in Settings › General (`backup_clean_up = on|off`, on by default),
+A setting, **Delete old backups** in Settings › Projects and backups (`backup_clean_up = on|off`, on by default),
 deletes old backups:
 
 - After each backup is written, the newest **20** backups of that project in that folder are kept

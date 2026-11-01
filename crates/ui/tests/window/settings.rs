@@ -36,10 +36,10 @@ fn a_saved_zoom_is_used_from_the_start_and_settings_can_change_it() {
     harness.run();
     harness.get_by_label("Settings page: Appearance").click();
     harness.run();
-    harness.get_by_label("Zoom: -").click();
+    harness.get_by_label("Window zoom: -").click();
     harness.run();
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.zoom), Some(140));
-    harness.get_by_label("Zoom: 140 %").click();
+    harness.get_by_label("Window zoom: 140 %").click();
     harness.run();
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.zoom), Some(100));
     assert_eq!(harness.ctx.zoom_factor(), 1.0);
@@ -53,11 +53,13 @@ fn settings_change_right_away_and_are_handed_out_to_be_saved() {
     assert!(harness.state().settings_open());
     harness.get_by_label("Settings page: Appearance").click();
     harness.run();
-    harness.get_by_label("Animations: Off").click();
+    harness.get_by_label("Animations").click();
     harness.run();
     harness.get_by_label("Settings page: Arrangement").click();
     harness.run();
-    harness.get_by_label("Track headers: Left").click();
+    harness.get_by_label("Track header side: Left").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Track header side: Left").click();
     harness.run();
     let saved = harness.state_mut().take_changed_settings();
     assert_eq!(saved.as_ref().map(|s| s.animations), Some(false));
@@ -183,7 +185,7 @@ fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
     for _ in 0..3 {
         harness.step();
     }
-    harness.get_by_label("MIDI input Pads In: Off").click();
+    harness.get_by_label("MIDI input Pads In").click();
     harness.step();
     harness.step();
     assert_eq!(harness.state().projects().midi_inputs_off(), ["Pads In"]);
@@ -284,11 +286,74 @@ fn settings_add_and_remove_plugin_folders_and_scan_in_the_background() {
 }
 
 #[test]
+fn add_plugin_folder_opens_the_pickers_dialog_when_nothing_is_typed() {
+    use suhina_ui::interaction::pick::PickField;
+    let base = std::env::temp_dir().join(format!("suhina-ui-plugin-pick-{}", std::process::id()));
+    let folder = base.join("picked plug-ins");
+    std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("{e}"));
+    let library = suhina_plugins::library::Library::new(Some(base.join("settings")), base.join("no-such-host"))
+        .without_standard_folders();
+    let mut app = App::with_library(library);
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = window(app);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: Plug-ins").click();
+    harness.run();
+
+    // Nothing typed: Add asks for the system's folder dialog instead of doing nothing. The
+    // format the row has chosen (CLAP here) goes with what the picker brings back.
+    harness.get_by_label("Folder format: CLAP").click();
+    harness.run();
+    harness.get_by_label("Add plug-in folder").click();
+    harness.run();
+    assert_eq!(harness.state_mut().take_pick_request().map(|r| r.field), Some(PickField::PluginFolder));
+    assert!(harness.query_all_by_label_contains("Remove ").count() == 0, "nothing was added yet");
+
+    // What the picker brings back is added through `plugin.addFolder` with the format chosen.
+    harness.state_mut().set_picked(PickField::PluginFolder, folder.clone());
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 1, "the picked folder is listed");
+    match harness.state().status() {
+        Status::Hint(message) => assert!(message.contains(&folder.display().to_string()), "{message}"),
+        other => panic!("expected the added folder to be confirmed, got {other:?}"),
+    }
+    use suhina_plugins::scan::FolderFormat;
+    let list = harness.state_mut().projects_mut().library_mut().folder_list();
+    let added: Vec<(std::path::PathBuf, FolderFormat)> =
+        list.iter().filter(|f| !f.standard).map(|f| (f.path.clone(), f.format)).collect();
+    // The library keeps the folder canonical, so `/var/…` is `/private/var/…` on macOS, and
+    // without Windows' extended-length prefix (Library::add_folder_as keeps it the same way).
+    let kept = folder.canonicalize().map(suhina_plugins::library::plain).unwrap_or_else(|_| folder.clone());
+    assert_eq!(added, [(kept, FolderFormat::Clap)], "the picked folder keeps the format chosen");
+
+    // The same folder with the same format again adds nothing, and the status says so.
+    harness.state_mut().set_picked(PickField::PluginFolder, folder.clone());
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 1, "no second row");
+    match harness.state().status() {
+        Status::Hint(message) => assert!(message.contains("already in the list"), "{message}"),
+        other => panic!("expected the folder to be named as there already, got {other:?}"),
+    }
+
+    // And it can be removed again.
+    harness.get_by_label_contains("Remove ").click();
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 0);
+    let _cleanup = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn a_key_set_in_settings_runs_its_action_and_is_saved() {
     let mut harness = window(demo_app());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
+    harness.run();
+    harness.get_by_label("Change keys of view.arrangement").scroll_to_me();
     harness.run();
     harness.get_by_label("Change keys of view.arrangement").click();
     harness.run();
@@ -312,11 +377,11 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
     harness.get_by_label("Settings page: Clip editor").click();
     harness.run();
     // The piano roll's row shows the size in use, Large by default.
-    assert!(harness.query_by_label("Toolbar size: Large").is_some(), "the row reads its value");
-    assert!(harness.query_by_label("Toolbar size: Normal").is_some());
-    assert!(harness.query_by_label("Toolbar size: Larger").is_some());
+    assert!(harness.query_by_label("Piano roll toolbar size: Large").is_some(), "the row reads its value");
+    assert!(harness.query_by_label("Piano roll toolbar size: Normal").is_some());
+    assert!(harness.query_by_label("Piano roll toolbar size: Larger").is_some());
     assert_eq!(harness.state().settings().toolbar_size, suhina_ui::settings::ToolbarSize::Large);
-    harness.get_by_label("Toolbar size: Larger").click();
+    harness.get_by_label("Piano roll toolbar size: Larger").click();
     harness.run();
     assert_eq!(harness.state().settings().toolbar_size, suhina_ui::settings::ToolbarSize::Larger);
     assert_eq!(
@@ -324,6 +389,8 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         Some(suhina_ui::settings::ToolbarSize::Larger)
     );
 
+    harness.get_by_label("Settings page: Keys").click();
+    harness.run();
     // The workflow settings write to the keymap, which is handed out to be saved. They are the
     // page's last rows: the wheel scrolls them into view.
     for _ in 0..20 {
@@ -365,7 +432,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         assert!(harness.query_by_label(row).is_some(), "{row}");
     }
     // A preset chosen on the Shortcuts page turns all four mouse switches on.
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     harness.get_by_label("Preset: Mouse-first").click();
     harness.run();
@@ -375,7 +442,7 @@ fn settings_set_the_toolbar_size_and_the_mouse_switches() {
         Some(suhina_ui::settings::keymap::MouseSettings::ALL_ON)
     );
     assert!(harness.query_by_label("Preset: Custom").is_some(), "Custom is one of the modes there too");
-    harness.get_by_label("Settings page: Clip editor").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     assert!(harness.query_by_label("Right click on a note: Every tool").is_some());
     harness.get_by_label("Close settings").click();
@@ -427,7 +494,7 @@ fn settings_audio_names_the_engine_block_on_wasapi_shared() {
     assert!(harness.query_by_label("Buffer size: Default (1024 frames)").is_none());
     // Exclusive mode takes the device for Suhina alone and asks it for the size, so the row says
     // what the number is there.
-    harness.get_by_label("Exclusive mode: On").click();
+    harness.get_by_label("Exclusive mode").click();
     for _ in 0..3 {
         harness.step();
     }

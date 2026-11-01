@@ -18,11 +18,14 @@ mod buses_tests;
 mod chain;
 #[cfg(test)]
 mod chain_tests;
+mod clock;
 mod count_in;
 mod cpu;
+mod crossfade;
 mod cue;
 #[cfg(test)]
 mod cue_tests;
+mod declick;
 #[cfg(test)]
 mod fade_cost_tests;
 #[cfg(test)]
@@ -105,7 +108,9 @@ pub use plugin::{
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
-pub use record::{RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedNote};
+pub use record::{
+    RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedJump, RecordedNote,
+};
 use stretch::StretchVoice;
 pub use suhina_device_api::NoteEvent as DeviceEvent;
 use suhina_device_api::{MusicalScale, ProcessContext};
@@ -250,6 +255,23 @@ struct StretchEvent {
     bus: u32,
     /// The track's meter slot (`meters::meter_slot`).
     meter: u32,
+    /// Its track's chain has a clip host that this clip does not play through: it is added
+    /// after the host (#990).
+    past_host: bool,
+}
+
+/// An ARA clip on a track whose chain has a clip host (#990): the host plays it, and the gains
+/// and fades it takes are applied to the host's output from `start` to `end` (arrangement
+/// frames).
+struct HostedClip {
+    start: u64,
+    end: u64,
+    gain_left: f32,
+    gain_right: f32,
+    fades: Fades,
+    column: u32,
+    /// 1 + the index of the track's chain.
+    bus: u32,
 }
 
 /// A note with its position resolved to sample frames and its mix resolved from the channel.
@@ -297,6 +319,10 @@ pub(crate) struct Voice {
     bus: u32,
     /// The track's meter slot.
     meter: u32,
+    /// Its key, and whether an arrangement note started it: an edit that takes that note away
+    /// ends the voice (#916).
+    key: u8,
+    arranged: bool,
 }
 
 /// An arrangement audio clip and the launcher column of its track.
@@ -309,6 +335,8 @@ struct ArrangedAudio {
     /// Which clip of the project this is (arrangement lane, clip, content lane), so a graph swap
     /// can find the same clip in the old graph (ADR 0005).
     key: (usize, usize, usize),
+    /// Its track's chain has a clip host that this clip does not play through (#990).
+    past_host: bool,
 }
 
 /// A source render's capture: the chain whose output the render reads, which chains are inside
@@ -333,6 +361,8 @@ pub(crate) struct Graph {
     audio_events: Vec<ArrangedAudio>,
     /// Warped clips stretched as they play (ADR 0003), rendered ahead and mixed block by block.
     stretch_events: Vec<StretchEvent>,
+    /// The ARA clips a clip host plays, by start (#990).
+    hosted: Vec<HostedClip>,
     ahead: AheadReader,
     length: u64,
     launcher: Launcher,
@@ -362,6 +392,9 @@ pub struct Renderer {
     sample_rate: u32,
     graph: Box<Graph>,
     next_event: usize,
+    /// A jump asked for on the playback strip: where it goes and the launcher beat it waits for
+    /// (#657).
+    pending_jump: Option<(f64, f64)>,
     /// The transport started or jumped: the notes that span the playhead start on the next
     /// frame, as if their beginning were there (`docs/spec/arrangement-editing.md` › Play
     /// position).
@@ -378,6 +411,9 @@ pub struct Renderer {
     /// waited so far: the transport rolls once they are, so their beginnings are heard (a
     /// locate waits for the read-ahead in OSS hosts too), or after [`START_WAIT_SECONDS`].
     start_waiting: Option<u64>,
+    /// A reopened output resumes here after read-ahead, without moving the play start marker.
+    start_target: Option<f64>,
+    start_guard: declick::StartGuard,
     stretch_scratch: Vec<f32>,
     /// Frames rendered since the renderer was built.
     position: u64,
@@ -401,9 +437,15 @@ pub struct Renderer {
     block_frame: usize,
     /// Rendering offline: plug-ins are waited for without a real-time deadline (ADR 0006).
     offline: bool,
+    /// The last frame written, and the step a new graph made from it, eased away over
+    /// [`DECLICK_FRAMES`] frames so an edit while playing (warp turned on, a clip moved) does not
+    /// click where the old graph's sound ends and the new one's begins.
+    declick: Declick,
     /// What the device has queued ahead of the next block and how much it takes at once, in
     /// frames ([`Renderer::set_render_lead`]): how long the block's plug-ins may take.
     render_lead: Option<(usize, usize)>,
+    #[cfg(test)]
+    observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
     plugin_info: HashMap<u64, PluginSlotInfo>,
     /// The browser's preview voice (ADR 0011).
@@ -474,6 +516,55 @@ impl RenderOptions {
     pub const STOPPED: Self = Self { stopped: true, source: None };
 }
 
+/// Frames over which the step a new graph makes is eased away (about 1.5 ms at 44.1 kHz).
+pub(crate) const DECLICK_FRAMES: usize = 64;
+/// How far the new graph's first frame may be from where the old graph's sound was heading
+/// before it counts as a step and is eased: sound that goes on through an edit is left exact.
+const DECLICK_STEP: f32 = 0.05;
+
+/// Eases away the step between the last frame of one graph and the first of the next.
+#[derive(Debug, Default)]
+struct Declick {
+    /// The last two frames written, the latest first.
+    last: [[f32; 2]; 2],
+    step: [f32; 2],
+    left: usize,
+    /// A new graph took over: the next frame written measures the step.
+    pending: bool,
+}
+
+impl Declick {
+    /// Corrects `frames` (interleaved stereo) for a step still being eased, and remembers their
+    /// last frames. Never allocates.
+    fn ease(&mut self, frames: &mut [f32]) {
+        if self.pending && frames.len() >= 2 {
+            self.pending = false;
+            // Where the old sound was heading: on along its last slope.
+            let [latest, before] = self.last;
+            let heading = [2.0 * latest[0] - before[0], 2.0 * latest[1] - before[1]];
+            let step = [heading[0] - frames[0], heading[1] - frames[1]];
+            if step.iter().all(|s| s.is_finite()) && step.iter().any(|s| s.abs() > DECLICK_STEP) {
+                self.step = step;
+                self.left = DECLICK_FRAMES;
+            }
+        }
+        for frame in frames.as_chunks_mut::<2>().0 {
+            if self.left == 0 {
+                break;
+            }
+            let weight = self.left as f32 / DECLICK_FRAMES as f32;
+            frame[0] += self.step[0] * weight;
+            frame[1] += self.step[1] * weight;
+            self.left -= 1;
+        }
+        match frames {
+            [.., l0, r0, l1, r1] => self.last = [[*l1, *r1], [*l0, *r0]],
+            [l, r] => self.last = [[*l, *r], self.last[0]],
+            _ => {}
+        }
+    }
+}
+
 impl Renderer {
     /// A renderer for the project's notes; audio clips stay silent. See [`Renderer::build`].
     pub fn new(project: &Project, sample_rate: u32) -> Result<Self, RenderError> {
@@ -493,7 +584,14 @@ impl Renderer {
         options: RenderOptions,
     ) -> Result<Self, RenderError> {
         let RenderInputs { audio, assets, mut plugins } = inputs;
-        let graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        let mut graph = Graph::build(project, &audio, &assets, sample_rate, &mut plugins, options.source)?;
+        if plugins.carried {
+            // The old note-off schedule died with its renderer, but the retained
+            // instruments did not. Release those voices before chasing notes here.
+            for chain in &mut graph.chains {
+                chain.release_retained();
+            }
+        }
         graph.launcher.monitor.running.store(!options.stopped, std::sync::atomic::Ordering::Relaxed);
         let mut meters = meters::MeterWriter::new(sample_rate);
         meters.assign(graph.levels.tracks());
@@ -507,12 +605,15 @@ impl Renderer {
             graph,
             next_event: 0,
             chase: false,
+            pending_jump: None,
             voices: [Voice::default(); MAX_VOICES],
             next_audio: 0,
             active_audio: [0; MAX_AUDIO_VOICES],
             active_audio_count: 0,
             stretch_fresh: true,
             start_waiting: None,
+            start_target: None,
+            start_guard: declick::StartGuard::new(sample_rate),
             stretch_scratch: vec![0.0; STRETCH_BLOCK * 2],
             position: 0,
             origin: 0,
@@ -526,7 +627,10 @@ impl Renderer {
             metronome: metronome::Metronome::new(sample_rate),
             block_frame: 0,
             offline: false,
+            declick: Declick::default(),
             render_lead: None,
+            #[cfg(test)]
+            observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
             preview: preview::Preview::new(sample_rate),
             cue: cue::Cue::new(),
@@ -571,7 +675,7 @@ impl Renderer {
         for key in processors.keys() {
             info.entry(*key).or_default();
         }
-        Plugins { info, processors }
+        Plugins { info, processors, carried: true }
     }
 
     /// The delay latency compensation adds to everything, in frames: the most any track's
@@ -631,7 +735,7 @@ impl Renderer {
     /// it, every note plays at the first frame of the next block. Never allocates.
     /// How far the output is ahead of the device as the next block starts: `queued` frames are
     /// waiting to be played before it, and the device takes `device` frames at once. The block's
-    /// plug-ins may take the time those queued frames play, less the device's buffer and a
+    /// plug-ins may take the time the complete queued device periods play, less a
     /// margin, instead of a fixed share of the block: a return's plug-ins, which run after every
     /// track that sends to them, missed the share left to them in a large project and crackled.
     /// Call it before every [`Renderer::process`] while a device plays. Never allocates.
@@ -671,10 +775,13 @@ impl Renderer {
     /// Publishes the plug-in blocks missed so far and the plug-in that missed most. Never
     /// allocates.
     fn publish_plugin_misses(&mut self) {
-        let (mut total, mut worst) = (0u64, (0u64, 0u64));
+        let (mut total, mut blocked, mut worst) = (0u64, 0u64, (0u64, 0u64));
+        let mut worst_trip = 0u32;
         for chain in &mut self.graph.chains {
             for slot in chain.plugin_slots() {
                 total += slot.missed;
+                blocked += slot.busy;
+                worst_trip = worst_trip.max(slot.longest_us);
                 if slot.missed > worst.1 {
                     worst = (slot.key, slot.missed);
                 }
@@ -682,6 +789,8 @@ impl Renderer {
         }
         let monitor = &self.graph.launcher.monitor;
         monitor.plugin_misses.store(total, std::sync::atomic::Ordering::Relaxed);
+        monitor.plugin_blocked.store(blocked, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_trip.store(worst_trip, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_plugin.store(worst.0, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_misses.store(worst.1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -707,6 +816,7 @@ impl Renderer {
                 bus: event.bus,
                 meter: event.meter,
                 scale: event.scale,
+                arranged: true,
             };
             let Self { voices, graph, position, sample_rate, .. } = self;
             start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
@@ -730,8 +840,13 @@ impl Renderer {
     fn process_parts(&mut self, out: &mut [f32], cue: Option<&mut [f32]>) {
         // The CPU load is measured only in real time: an offline render runs flat out.
         let measured = if self.offline { None } else { Some(Instant::now()) };
+        // The device needs this whole batch at one instant. Splitting it into
+        // internal chunks must neither shorten that budget nor renew it.
+        let batch_deadline = self.render_lead.and_then(|_| self.deadline(out.len() / 2));
         self.receive_swap();
         self.receive_plugins();
+        let misses_before = self.plugin_misses();
+        let render_frames = out.len() / 2;
         let mut rest = out;
         let mut cue_rest = cue;
         // Every new graph whose frame falls in this block takes over at its frame: the frames
@@ -744,9 +859,11 @@ impl Renderer {
                     let (before, after) = rest.split_at_mut(split);
                     let (cue_before, cue_after) = split_cue(cue_rest, split);
                     if !before.is_empty() {
-                        self.process_block(before, cue_before);
+                        self.process_block(before, cue_before, batch_deadline);
+                        self.declick.ease(before);
                     }
                     self.apply_swap();
+                    self.declick.pending = true;
                     rest = after;
                     cue_rest = cue_after;
                 }
@@ -754,33 +871,50 @@ impl Renderer {
             }
         }
         if !rest.is_empty() {
-            self.process_block(rest, cue_rest);
+            self.process_block(rest, cue_rest, batch_deadline);
+            self.declick.ease(rest);
         }
         self.publish_position();
         self.publish_plugin_misses();
         self.publish_count_in();
         if let Some(started) = measured {
-            self.cpu.measured(started, Instant::now());
+            let ended = Instant::now();
+            if self.plugin_misses() > misses_before {
+                let (queued, period) = self.render_lead.unwrap_or_default();
+                self.cpu.monitor.record_late_render(
+                    ended.saturating_duration_since(started),
+                    queued,
+                    period,
+                    render_frames,
+                );
+            }
+            self.cpu.measured(started, ended);
         }
     }
 
-    fn process_block(&mut self, mut out: &mut [f32], mut cue: Option<&mut [f32]>) {
+    fn process_block(&mut self, mut out: &mut [f32], mut cue: Option<&mut [f32]>, deadline: Option<Instant>) {
         // Device chains hold at most MAX_BLOCK frames; longer blocks are rendered in pieces. A
         // piece also ends at the loop end, where the transport wraps to the loop start, so the
         // wrap lands on its exact frame. Commands are applied first: they can start the
         // transport or move it, which changes where the loop end falls.
         while !out.is_empty() {
+            // A jump due at the loop end is made before the wrap, else the wrap moves the
+            // playhead to the loop start first and the jump waits for a boundary it has passed.
+            self.jump_if_due();
             self.wrap_loop();
             self.drain_commands();
+            self.jump_if_due();
             // A count-in that has counted its beats starts the transport on this frame.
             self.end_count_in();
             let frames = (out.len() / 2).min(MAX_BLOCK);
             self.wait_to_start(frames as u64);
             let frames = self.frames_to_loop_end().map_or(frames, |to_end| frames.min(to_end.max(1)));
             let frames = self.frames_to_count_in_end().map_or(frames, |to_end| frames.min(to_end.max(1)));
+            // A pending jump lands on its boundary's frame (#657).
+            let frames = self.frames_to_jump().map_or(frames, |to_jump| frames.min(to_jump.max(1)));
             let (chunk, rest) = std::mem::take(&mut out).split_at_mut(frames * 2);
             let (cue_chunk, cue_after) = split_cue(cue, chunk.len());
-            self.process_chunk(chunk, cue_chunk);
+            self.process_chunk(chunk, cue_chunk, deadline);
             // A source render's file audio is the node's captured sum; the master mix the chunk
             // holds first is the whole mix's, which a node render does not read.
             if let Some(capture) = self.graph.capture.as_ref() {
@@ -798,27 +932,46 @@ impl Renderer {
     /// of the block's playing time, so a late plug-in costs its own sound, not the device's
     /// deadline. `None` offline.
     fn deadline(&self, frames: usize) -> Option<Instant> {
+        self.deadline_at(frames, crate::clock::now())
+    }
+
+    fn deadline_at(&self, frames: usize, now: Instant) -> Option<Instant> {
         if self.offline {
             return None;
         }
         let rate = f64::from(self.sample_rate.max(1));
         let block = frames as f64 / rate;
         let seconds = match self.render_lead {
-            // What is queued plays while this block is made; the device's own buffer and a
-            // margin are kept for it. Never less than a quarter of the block, never past it.
+            // A complete queued period covers even an immediate callback, leaving
+            // until the following callback to supply more. Only a partial period
+            // is discounted; subtracting a whole period starves return effects
+            // every time a large callback drains the ring to exactly one period.
+            // Keep a margin. A partially primed ring still gives half a batch;
+            // otherwise use its actual reserve, including for a brief start burst.
             Some((queued, device)) => {
-                let room = (queued as f64 - device as f64) / rate - LEAD_MARGIN_SECONDS;
-                room.clamp(block * 0.25, block * 0.95)
+                let period = device.max(1);
+                let covered = queued / period * period;
+                let room = covered as f64 / rate - LEAD_MARGIN_SECONDS;
+                room.max(block * 0.5)
             }
             None => block * DEADLINE_SHARE,
         };
-        Some(Instant::now() + Duration::from_secs_f64(seconds))
+        let duration = Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO);
+        Some(now.checked_add(duration).unwrap_or(now))
     }
 
-    fn process_chunk(&mut self, out: &mut [f32], cue: Option<&mut [f32]>) {
+    fn process_chunk(&mut self, out: &mut [f32], cue: Option<&mut [f32]>, batch_deadline: Option<Instant>) {
         let frames = out.len() / 2;
         self.cue.begin(frames);
-        let deadline = if self.graph.chains.is_empty() { None } else { self.deadline(frames) };
+        let deadline =
+            if self.graph.chains.is_empty() { None } else { batch_deadline.or_else(|| self.deadline(frames)) };
+        #[cfg(test)]
+        {
+            if let Some(observed) = self.observed_deadlines.1.get_mut(self.observed_deadlines.0) {
+                *observed = deadline;
+            }
+            self.observed_deadlines.0 = self.observed_deadlines.0.saturating_add(1);
+        }
         for chain in &mut self.graph.chains {
             chain.begin(frames, deadline);
         }
@@ -943,6 +1096,7 @@ impl Renderer {
                         bus: event.bus,
                         meter: event.meter,
                         scale: event.scale,
+                        arranged: true,
                     };
                     let Self { voices, graph, position, sample_rate, .. } = self;
                     start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
@@ -996,6 +1150,7 @@ impl Renderer {
         }
         if running {
             self.mix_stretched(out, block_start);
+            self.host_gains(frames, block_start);
         }
         // What went straight to the output waits for the slowest chain (latency compensation).
         self.graph.direct_delay.run(out);
@@ -1025,6 +1180,9 @@ impl Renderer {
             self.preview.finish(preview, frames, &mut self.graph.chains);
         }
         self.cue.finish(out, frames);
+        if let Some(bus) = self.cue.bus.get_mut(..frames * 2) {
+            self.start_guard.process(out, bus);
+        }
         if let Some(cue) = cue
             && let Some(bus) = self.cue.bus.get(..frames * 2)
         {
@@ -1034,6 +1192,34 @@ impl Renderer {
         }
         self.meters.measure(meters::Meter::Main, out, frames);
         self.block_frame = 0;
+    }
+
+    /// Sets the gains the clip hosts' output takes over the block of `frames` frames starting at
+    /// frame `block_start`: each playing ARA clip's gain and fades (#990). Never allocates.
+    fn host_gains(&mut self, frames: usize, block_start: u64) {
+        let time_start = block_start - self.origin + self.time_at_origin;
+        let time_end = time_start + frames as u64;
+        let launcher = &self.graph.launcher;
+        let chains = &mut self.graph.chains;
+        for clip in &self.graph.hosted {
+            if clip.start >= time_end {
+                break;
+            }
+            if clip.end <= time_start {
+                continue;
+            }
+            let Some(chain) = bus_chain(chains, clip.bus) else { continue };
+            for frame in clip.start.max(time_start)..clip.end.min(time_end) {
+                let at = (frame - time_start) as usize;
+                let (left, right) = if launcher.overrides_at(clip.column, frame - time_start + block_start) {
+                    (0.0, 0.0)
+                } else {
+                    let fade = clip.fades.gain((frame - clip.start) as f64, (clip.end - frame) as f64);
+                    (clip.gain_left * fade, clip.gain_right * fade)
+                };
+                chain.set_host_gain(at, left, right);
+            }
+        }
     }
 
     /// Adds the stretched clips that overlap the block starting at frame `block_start` to `out`.
@@ -1072,7 +1258,11 @@ impl Renderer {
                     let at = (frame - time_start) as usize;
                     let (l, r) = (left * event.gain_left * fade, right * event.gain_right * fade);
                     if let Some(chain) = bus_chain(chains, event.bus) {
-                        chain.add(at, l, r);
+                        if event.past_host {
+                            chain.add_past_host(at, l, r);
+                        } else {
+                            chain.add(at, l, r);
+                        }
                     } else if let Some([ol, or]) =
                         out.get_mut(at * 2..at * 2 + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok())
                     {
@@ -1111,6 +1301,7 @@ impl Renderer {
                     if !self.graph.launcher.overrides(arranged.column) {
                         let (l, r) = arranged.event.sample(time);
                         match bus_chain(&mut self.graph.chains, arranged.bus) {
+                            Some(chain) if arranged.past_host => chain.add_past_host(frame, l, r),
                             Some(chain) => chain.add(frame, l, r),
                             None => {
                                 self.graph.levels.add(arranged.meter, frame, l, r);
@@ -1150,6 +1341,8 @@ pub(crate) struct NoteStart {
     pub(crate) meter: u32,
     /// The scale of the note's clip.
     pub(crate) scale: Option<MusicalScale>,
+    /// Whether it is an arrangement note, which an edit can take away while it sounds.
+    pub(crate) arranged: bool,
 }
 
 /// The chain behind `bus`, or `None` for the output.
@@ -1173,6 +1366,9 @@ pub(crate) fn start_note(
     if let Some(chain) = bus_chain(chains, note.bus).filter(|c| c.instrument) {
         chain.set_scale(frame, note.scale);
         chain.note_on(frame, position, note.key, note.velocity, end);
+        if note.arranged {
+            chain.mark_arranged(note.key);
+        }
         return;
     }
     let slot = match voices.iter().position(|v| !v.active) {
@@ -1193,6 +1389,8 @@ pub(crate) fn start_note(
             column: note.column,
             bus: note.bus,
             meter: note.meter,
+            key: note.key,
+            arranged: note.arranged,
         };
     }
 }
@@ -1299,8 +1497,12 @@ impl Graph {
         let mut stretch_events = Vec::new();
         let mut stretch_voices = Vec::new();
         let mut stretch_heard = Vec::new();
+        let mut hosted = Vec::new();
         for (lane_index, lane) in project.arrangement.lanes.iter().enumerate() {
-            for (clip_index, clip) in lane.clips.iter().enumerate().filter(|(_, c)| c.enabled) {
+            for (clip_index, placed) in lane.clips.iter().enumerate().filter(|(_, c)| c.enabled) {
+                // A part of a comp crossfades with a part of another take it meets (#989).
+                let crossfaded = crossfade::crossfaded(project, lane, placed, bpm);
+                let clip = crossfaded.as_ref();
                 let Some(content) = project.content(clip.content) else { continue };
                 for (content_index, content_lane) in content.lanes.iter().enumerate() {
                     let Some(track) = content_lane.target.or(lane.track) else { continue };
@@ -1319,6 +1521,28 @@ impl Graph {
                         LaneData::Audio(region) => {
                             let Some(data) = audio.files.get(region.pool_key().as_ref()) else { continue };
                             let gains = (gain_left * AUDIO_HEADROOM, gain_right * AUDIO_HEADROOM);
+                            // A track whose chain has a clip host: its ARA clips are the host's to
+                            // play, at their gains and fades; its other clips go past it (#990).
+                            let has_host = usize::try_from(bus)
+                                .ok()
+                                .and_then(|b| b.checked_sub(1))
+                                .and_then(|i| chains.get(i))
+                                .is_some_and(|c| c.ara.is_some());
+                            if has_host && clip.ara {
+                                let gain = if region.gain.is_finite() { region.gain.max(0.0) as f32 } else { 0.0 };
+                                let to_frame = |beats: f64| tempo::frame_of(&tempo, beats);
+                                hosted.push(HostedClip {
+                                    start: to_frame(clip.start),
+                                    end: to_frame(clip.start + clip.length),
+                                    gain_left: gains.0 * gain,
+                                    gain_right: gains.1 * gain,
+                                    fades: Fades::on_map(clip, &tempo, sample_rate),
+                                    column,
+                                    bus,
+                                });
+                                continue;
+                            }
+                            let past_host = has_host;
                             // Warped clips are time-stretched as they play; the rest, and clips
                             // the stretcher cannot handle, are re-pitched.
                             let voice_began = std::time::Instant::now();
@@ -1343,6 +1567,7 @@ impl Graph {
                                     column,
                                     bus,
                                     meter,
+                                    past_host,
                                 });
                                 continue;
                             }
@@ -1355,6 +1580,7 @@ impl Graph {
                                     bus,
                                     meter,
                                     key: (lane_index, clip_index, content_index),
+                                    past_host,
                                 },
                             ));
                         }
@@ -1364,6 +1590,7 @@ impl Graph {
         }
         events.sort_by_key(|e| e.start);
         audio_events.sort_by_key(|a| a.event.start);
+        hosted.sort_by_key(|h: &HostedClip| h.start);
 
         let release = (RELEASE_SECONDS * f64::from(sample_rate)) as u64;
         let notes_end = events.iter().map(|e| e.end.saturating_add(release)).max().unwrap_or(0);
@@ -1428,6 +1655,7 @@ impl Graph {
             events,
             audio_events,
             stretch_events,
+            hosted,
             ahead,
             length,
             launcher,
@@ -1621,9 +1849,16 @@ pub(crate) fn track_gains(project: &Project, track: TrackId) -> Option<(f32, f32
     let mut volume = 1.0;
     let mut visited = Vec::new();
     let mut next = Some(channel);
+    // A main channel with a chain of its own applies its volume and mute after it (#687), also
+    // for a track routed to it by name.
+    let main_chain = buses::main_runs_chain(project);
     // Bounded, so a routing cycle in a malformed project cannot loop forever.
     while let Some(c) = next.take() {
-        if c.mute || visited.len() > 64 || visited.contains(&c.id) {
+        if main_chain && c.role == ChannelRole::Master {
+            break;
+        }
+        // A solo outranks a mute: a muted track soloed is heard (its muted clips are not).
+        if (c.mute && !c.solo) || visited.len() > 64 || visited.contains(&c.id) {
             return None;
         }
         visited.push(c.id);
@@ -1633,7 +1868,11 @@ pub(crate) fn track_gains(project: &Project, track: TrackId) -> Option<(f32, f32
     if !heard_with_solo(project, channel, &visited) {
         return None;
     }
-    if let Some(master) = project.channels.iter().find(|c| c.role == ChannelRole::Master && !visited.contains(&c.id)) {
+    // The main channel's volume and mute apply after its chain when it has one (#687).
+    if !buses::main_runs_chain(project)
+        && let Some(master) =
+            project.channels.iter().find(|c| c.role == ChannelRole::Master && !visited.contains(&c.id))
+    {
         if master.mute {
             return None;
         }

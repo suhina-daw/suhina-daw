@@ -66,6 +66,7 @@ fn project_sources_cannot_escape_by_absolute_path_parent_or_symlink() {
             state: None,
             params: vec![],
             automation: vec![],
+            clip_host: false,
             extensions: Extensions::default(),
         });
         project.channels[0].devices[0].set_sample_file(&name);

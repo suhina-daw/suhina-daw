@@ -158,9 +158,8 @@ impl App {
             }
             "transport.toggle" => {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
-                actions.push(if running { self.stop_action() } else { self.play_action(false) });
+                actions.push(if running { self.stop_action() } else { self.play_action() });
             }
-            "transport.playFromSelection" => actions.push(self.play_action(true)),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
                 let clip = match self.shown {
@@ -186,13 +185,35 @@ impl App {
                 actions.push(edit)
             }
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
-            // In the Session view copy and paste act on the selected clip slot.
+            // A range painted on an automation lane: copy, cut, paste (from its start), duplicate
+            // (right after it) and delete act on it (#916).
+            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate" | "selection.delete"
+                if self.shown == View::Arrangement && self.arrangement.automation.range.is_some() =>
+            {
+                let edit = action.trim_start_matches("selection.");
+                if edit == "paste" && !self.session().is_some_and(Session::copied_automation) {
+                    self.status = Status::Hint("Copy a range of automation first".into());
+                    return;
+                }
+                actions.extend(self.arrangement.automation.range_actions(edit));
+            }
+            // Points selected on an automation lane, with no range: copy and cut take them, and
+            // paste puts copied automation on the lane clicked last from the play position (#916).
+            "selection.copy" | "selection.cut" | "selection.paste"
+                if self.shown == View::Arrangement
+                    && self.arrangement.automation.range.is_none()
+                    && self.arrangement.automation.takes_point_keys(action.trim_start_matches("selection."))
+                    && (action != "selection.paste" || self.session().is_some_and(Session::copied_automation)) =>
+            {
+                let at = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.beat);
+                actions.extend(self.arrangement.automation.point_actions(action.trim_start_matches("selection."), at));
+            }
+            // In the Launcher view copy and paste act on the selected clip slot.
             // Picked devices (a click on a strip's device or a panel of the chain): copy, cut
             // and paste act on them, before any clip.
             "selection.copy" | "selection.cut" if self.device_focus && self.selected_device.is_some() => {
-                let picks = self.device_picks();
-                let Some((track, _)) = picks.first().copied() else { return };
-                let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                let Some((track, _)) = self.device_picks().first().cloned() else { return };
+                let devices = self.picked_devices();
                 actions.push(Action::new("device.copy", json!({ "track": track.0, "devices": devices })));
                 if action == "selection.cut" {
                     self.selected_device = None;
@@ -206,16 +227,41 @@ impl App {
                     && self.session().is_some_and(|s| s.copied_devices() > 0) =>
             {
                 let picks = self.device_picks();
-                let Some((track, _)) = picks.first().copied() else { return };
-                let after = picks.iter().map(|(_, i)| *i).max().unwrap_or(0) + 1;
+                let Some((track, _)) = picks.first().cloned() else { return };
+                // After the last picked device on the track itself (one inside a group: after
+                // its group).
+                let after = picks.iter().filter_map(|(_, at)| at.0.first().copied()).max().unwrap_or(0) + 1;
                 actions.push(Action::new("device.paste", json!({ "track": track.0, "position": after })));
             }
             // Ctrl+D copies the picked devices right after the last of them (#685).
             "selection.duplicate" if self.device_focus && self.selected_device.is_some() => {
-                let picks = self.device_picks();
-                let Some((track, _)) = picks.first().copied() else { return };
-                let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                let Some((track, _)) = self.device_picks().first().cloned() else { return };
+                let devices = self.picked_devices();
                 actions.push(Action::new("device.duplicateMany", json!({ "track": track.0, "devices": devices })));
+            }
+            // Track headers clicked last: the edit keys act on the selected tracks (#919); paste
+            // only when tracks were copied, else a copied clip pastes on the track as before.
+            "selection.copy" | "selection.cut" | "selection.paste" | "selection.duplicate"
+                if !self.focused_tracks().is_empty()
+                    && (action != "selection.paste" || self.session().is_some_and(|s| s.copied_tracks() > 0)) =>
+            {
+                let tracks = self.focused_tracks();
+                let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
+                match action {
+                    "selection.copy" => actions.push(Action::new("track.copy", json!({ "tracks": ids }))),
+                    "selection.cut" => actions.push(Action::new("track.cut", json!({ "tracks": ids }))),
+                    "selection.duplicate" => actions.push(Action::new("track.duplicate", json!({ "tracks": ids }))),
+                    _ => {
+                        let after = tracks.last().map(|t| t.0);
+                        actions.push(Action::new("track.paste", json!({ "after": after })));
+                    }
+                }
+            }
+            // A header clicked last but its tracks gone (cut): Ctrl+V still pastes the copied
+            // tracks, after the last regular track (#919).
+            "selection.paste" if self.track_keys_on() && self.session().is_some_and(|s| s.copied_tracks() > 0) => {
+                let suffix = self.settings.view.copy_suffix();
+                actions.push(Action::new("track.paste", json!({ "after": null, "suffix": suffix })));
             }
             "selection.copy" | "selection.paste" if self.shown == View::Session => {
                 let Some((track, scene)) = self.view.selected_slot else {
@@ -228,7 +274,23 @@ impl App {
             // Cut and duplicate of a slot's clip wait for launcher clip commands; Delete works,
             // in the arm below.
             "selection.cut" | "selection.duplicate" if self.shown == View::Session => {
-                self.status = Status::Hint("In the Session view, a slot's clip can be copied and pasted".into());
+                self.status = Status::Hint("In the Launcher view, a slot's clip can be copied and pasted".into());
+            }
+            // Take pieces picked with Ctrl and a click: Delete deletes them, the last take first so
+            // the numbers of the others hold when an emptied take goes (#989).
+            "selection.delete" if self.shown == View::Arrangement && !self.arrangement.take_selected.is_empty() => {
+                let mut picked = std::mem::take(&mut self.arrangement.take_selected);
+                picked.sort_unstable_by_key(|(t, n, p)| (t.0, std::cmp::Reverse(*n), *p));
+                let mut takes: Vec<(TrackId, usize)> = picked.iter().map(|(t, n, _)| (*t, *n)).collect();
+                takes.dedup();
+                for (track, take) in takes {
+                    let pieces: Vec<usize> =
+                        picked.iter().filter(|(t, n, _)| *t == track && *n == take).map(|(_, _, p)| p + 1).collect();
+                    actions.push(Action::new(
+                        "take.deletePieces",
+                        json!({ "track": track.0, "take": take, "pieces": pieces }),
+                    ));
+                }
             }
             // A time selection in the Arrangement: the keys act on what plays inside it, as in
             // clips picked by a click act whole (the arm below).
@@ -307,24 +369,25 @@ impl App {
                 // clip, while the detail shows the chain.
                 if action == "selection.delete"
                     && (self.detail_shows_devices() || self.device_focus)
-                    && let Some((track, index)) = self.selected_device
+                    && let Some((track, at)) = self.selected_device.clone()
                     && self.session().is_some_and(|s| {
                         let p = s.project();
                         p.tracks
                             .iter()
                             .find(|t| t.id == track)
                             .and_then(|t| t.channel)
-                            .is_some_and(|c| p.channels.iter().any(|ch| ch.id == c && ch.devices.get(index).is_some()))
+                            .and_then(|c| p.channels.iter().find(|ch| ch.id == c))
+                            .is_some_and(|ch| suhina_engine::model::device_at(&ch.devices, &at.0).is_some())
                     })
                 {
                     let picks = self.device_picks();
+                    let devices = self.picked_devices();
                     self.selected_device = None;
                     self.device_picks.clear();
                     if picks.len() > 1 {
-                        let devices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
                         actions.push(Action::new("device.removeMany", json!({ "track": track.0, "devices": devices })));
                     } else {
-                        actions.push(Action::new("device.remove", json!({ "track": track.0, "device": index })));
+                        actions.push(Action::new("device.remove", json!({ "track": track.0, "device": at.value() })));
                     }
                     return;
                 }
@@ -333,7 +396,7 @@ impl App {
                     let tracks: Vec<TrackId> = match self.shown {
                         View::Arrangement if self.arrangement.track_focus => self.arrangement.selected_tracks.clone(),
                         View::Session if self.view.track_focus && self.view.selected_slot.is_none() => {
-                            self.view.selected.into_iter().collect()
+                            self.view.header_tracks()
                         }
                         _ => Vec::new(),
                     };
@@ -342,13 +405,14 @@ impl App {
                         self.arrangement.track_focus = false;
                         self.view.track_focus = false;
                         self.view.selected = None;
+                        self.view.selected_tracks.clear();
                         for track in tracks {
                             actions.push(Action::new("track.delete", json!({ "track": track.0 })));
                         }
                         return;
                     }
                 }
-                // The Session view: Delete takes the selected slot's clip off its slot, and the
+                // The Launcher view: Delete takes the selected slot's clip off its slot, and the
                 // detail area falls back to the track's devices.
                 if self.shown == View::Session {
                     if action == "selection.delete"
@@ -419,7 +483,7 @@ impl App {
                     self.rename = Some((json!({ "clip": id.0, "clips": clips }), name, false));
                     return;
                 }
-                // The selected clip: the Arrangement's, or the Session view's slot.
+                // The selected clip: the Arrangement's, or the Launcher view's slot.
                 let target = match self.shown {
                     View::Arrangement => self.arrangement.selected_clip().map(|(track, id)| {
                         let name = self
@@ -479,17 +543,65 @@ impl App {
                 // A device panel clicked last: the key turns that device off or on again, as its
                 // header's square does.
                 if (self.detail_shows_devices() || self.device_focus)
-                    && let Some((track, index)) = self.selected_device
+                    && let Some((track, at)) = self.selected_device.clone()
                     && let Some(enabled) = self.session().and_then(|s| {
                         let p = s.project();
                         let channel = p.track(track).and_then(|t| t.channel)?;
-                        p.channel(channel)?.devices.get(index).map(|d| d.enabled)
+                        suhina_engine::model::device_at(&p.channel(channel)?.devices, &at.0).map(|d| d.enabled)
                     })
                 {
-                    actions.push(Action::new(
-                        "device.setEnabled",
-                        json!({ "track": track.0, "device": index, "enabled": !enabled }),
-                    ));
+                    // Every picked device follows the one clicked last (#948).
+                    let picks = self.device_picks();
+                    if picks.len() > 1 && picks.iter().all(|(t, _)| *t == track) {
+                        let devices = self.picked_devices();
+                        actions.push(Action::new(
+                            "device.setEnabledMany",
+                            json!({ "track": track.0, "devices": devices, "enabled": !enabled }),
+                        ));
+                    } else {
+                        actions.push(Action::new(
+                            "device.setEnabled",
+                            json!({ "track": track.0, "device": at.value(), "enabled": !enabled }),
+                        ));
+                    }
+                    return;
+                }
+                // Track headers clicked last: the key mutes the selected tracks, or unmutes them
+                // when the first is muted (#948).
+                let tracks = self.focused_tracks();
+                if !tracks.is_empty() {
+                    let muted = self.session().is_some_and(|s| {
+                        let p = s.project();
+                        tracks.first().and_then(|t| p.channel_of_track(*t)).is_some_and(|c| c.mute)
+                    });
+                    let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
+                    actions.push(Action::new("track.setMute", json!({ "tracks": ids, "mute": !muted })));
+                    return;
+                }
+                // A range painted in the Arrangement: the clips under it on its tracks (in its
+                // row of a stack, when it is in one), turned off or on as one.
+                if self.shown == View::Arrangement
+                    && let Some(span) = self.arrangement.time_selection().cloned()
+                    && let Some((_, _, timeline)) = self.timeline.as_ref()
+                {
+                    let under: Vec<(serde_json::Value, bool)> = timeline
+                        .lanes
+                        .iter()
+                        .filter(|l| span.tracks.contains(&l.track))
+                        .flat_map(|l| {
+                            l.clips.iter().filter(move |c| {
+                                c.start < span.end
+                                    && c.start + c.length > span.start
+                                    && span.row.is_none_or(|(row, rows)| c.row == row && c.rows == rows)
+                            })
+                        })
+                        .map(|c| (json!({ "clip": c.id.0 }), c.enabled))
+                        .collect();
+                    if !under.is_empty() {
+                        let enabled = under.iter().any(|(_, on)| *on);
+                        let clips: Vec<serde_json::Value> = under.into_iter().map(|(c, _)| c).collect();
+                        actions.push(Action::new("clip.setEnabled", json!({ "clips": clips, "enabled": !enabled })));
+                    }
                     return;
                 }
                 let clips = self.selected_clip_list();
@@ -501,8 +613,46 @@ impl App {
                 let enabled = self.any_selected_clip_plays();
                 actions.push(Action::new("clip.setEnabled", json!({ "clips": clips, "enabled": !enabled })));
             }
+            // A device clicked last: Ctrl+A picks every device of its chain, or of the group's
+            // branch it is in.
+            "selection.selectAll" if self.device_focus && self.selected_device.is_some() => {
+                let Some((track, at)) = self.selected_device.clone() else { return };
+                let parent = at.split().0.to_vec();
+                let siblings: Vec<usize> = self
+                    .session()
+                    .and_then(|s| {
+                        let p = s.project();
+                        let devices = &p.channel(p.track(track)?.channel?)?.devices;
+                        let list = match parent.split_last() {
+                            None => devices.as_slice(),
+                            Some((branch, group)) => {
+                                &suhina_engine::model::device_at(devices, group)?
+                                    .as_group()?
+                                    .branches
+                                    .get(*branch)?
+                                    .devices
+                            }
+                        };
+                        Some(list.iter().enumerate().filter(|(_, d)| !d.clip_host).map(|(i, _)| i).collect())
+                    })
+                    .unwrap_or_default();
+                if siblings.is_empty() {
+                    return;
+                }
+                self.device_picks = siblings
+                    .into_iter()
+                    .map(|i| {
+                        let mut path = parent.clone();
+                        path.push(i);
+                        (track, detail_view::DeviceAt(path))
+                    })
+                    .collect();
+                if !self.device_picks.contains(&(track, at)) {
+                    self.selected_device = self.device_picks.last().cloned();
+                }
+            }
             "selection.selectAll" => {
-                let clips: Vec<(TrackId, ClipId)> = self
+                let lanes: Vec<arrangement_view::LaneClips> = self
                     .session()
                     .map(|session| {
                         session
@@ -510,12 +660,14 @@ impl App {
                             .arrangement
                             .lanes
                             .iter()
-                            .filter_map(|lane| lane.track.map(|track| (track, &lane.clips)))
-                            .flat_map(|(track, clips)| clips.iter().map(move |clip| (track, clip.id)))
+                            .filter_map(|lane| {
+                                let clips = lane.clips.iter().map(|c| (c.id, c.start, c.start + c.length)).collect();
+                                lane.track.map(|track| (track, clips))
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
-                self.arrangement.select_clips(clips);
+                self.arrangement.select_all_clips(&lanes);
             }
             "selection.paste"
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>
@@ -559,8 +711,13 @@ impl App {
             // each other on one track, in the place of the first.
             "selection.group" if self.device_focus && self.selected_device.is_some() => {
                 let picks = self.device_picks();
-                let Some((track, _)) = picks.first().copied() else { return };
-                let mut indices: Vec<usize> = picks.iter().map(|(_, i)| *i).collect();
+                let Some((track, primary)) = picks.first().cloned() else { return };
+                let parent = primary.split().0.to_vec();
+                if picks.iter().any(|(_, at)| at.split().0 != parent.as_slice()) {
+                    self.status = Status::Hint("Group devices of one chain or branch".into());
+                    return;
+                }
+                let mut indices: Vec<usize> = picks.iter().map(|(_, at)| at.split().1).collect();
                 indices.sort_unstable();
                 indices.dedup();
                 let (Some(&first), Some(&last)) = (indices.first(), indices.last()) else { return };
@@ -568,18 +725,21 @@ impl App {
                     self.status = Status::Hint("Group devices that sit next to each other".into());
                     return;
                 }
+                let mut path = parent;
+                path.push(first);
+                let at = detail_view::DeviceAt(path);
                 actions.push(Action::new(
                     "device.group",
-                    json!({ "track": track.0, "device": first, "count": indices.len() }),
+                    json!({ "track": track.0, "device": at.value(), "count": indices.len() }),
                 ));
-                self.selected_device = Some((track, first));
-                self.device_picks = vec![(track, first)];
+                self.selected_device = Some((track, at.clone()));
+                self.device_picks = vec![(track, at)];
             }
             "selection.ungroup" => {
                 if self.device_focus
-                    && let Some((track, index)) = self.selected_device
+                    && let Some((track, at)) = self.selected_device.clone()
                 {
-                    actions.push(Action::new("device.ungroup", json!({ "track": track.0, "device": index })));
+                    actions.push(Action::new("device.ungroup", json!({ "track": track.0, "device": at.value() })));
                 } else {
                     self.status = Status::Hint("Click a device group first".into());
                 }
@@ -591,6 +751,42 @@ impl App {
                 let tracks: Vec<u32> = self.arrangement.selected_tracks.iter().map(|t| t.0).collect();
                 actions.push(Action::new("track.group", json!({ "tracks": tracks })));
                 self.arrangement.selected_tracks.clear();
+                self.view.selected_tracks.clear();
+            }
+            "view.computerKeyboard" => self.toggle_typing_keys(),
+            // The Arrangement's tool keys, while its toolbar shows (#991).
+            id if let Some(grid) = crate::arrangement::arrangement_view::grid_key(id, self.arrangement.grid) => {
+                self.arrangement.grid = grid;
+                self.status = Status::Hint(format!("Arrangement grid: {}", grid.label()));
+            }
+            id if id.starts_with("arrangement.tool") => {
+                let index =
+                    id.trim_start_matches("arrangement.tool").parse::<usize>().ok().and_then(|n| n.checked_sub(1));
+                if self.arrangement.toolbar
+                    && self.shown == View::Arrangement
+                    && let Some((tool, _)) = index.and_then(|i| arrangement_view::ArrangementTool::ALL.get(i))
+                {
+                    self.arrangement.tool = *tool;
+                }
+            }
+            // The selected parts of a comp take the same span of the take above or below (#989).
+            "selection.takeUp" | "selection.takeDown" => {
+                let direction = if action == "selection.takeUp" { "up" } else { "down" };
+                let Some(session) = self.session() else { return };
+                let p = session.project();
+                for (track, id) in self.arrangement.selected_clips() {
+                    let comped = p
+                        .arrangement
+                        .lanes
+                        .iter()
+                        .filter(|l| l.track == Some(*track))
+                        .flat_map(|l| &l.clips)
+                        .find(|c| c.id == *id)
+                        .is_some_and(|c| p.comp_source(*track, c).is_some());
+                    if comped {
+                        actions.push(Action::new("take.swap", json!({ "clip": id.0, "direction": direction })));
+                    }
+                }
             }
             "marker.addAtPlayhead" => {
                 // Where the playhead is while playing; stopped, where playback would start.
@@ -602,6 +798,19 @@ impl App {
             "selection.launch" => {
                 if let (View::Session, Some((track, scene))) = (self.shown, self.view.selected_slot) {
                     actions.push(Action::new("clip.launch", json!({ "track": track.0, "scene": scene + 1 })));
+                }
+            }
+            // Points selected on an automation lane: the arrows move them, a grid step in time or a
+            // small step of value (#916).
+            "selection.up" | "selection.down" | "selection.left" | "selection.right"
+                if self.shown == View::Arrangement && self.arrangement.automation.selected_points().is_some() =>
+            {
+                let Some((_, _, timeline)) = self.timeline.as_ref() else { return };
+                let step = self.arrangement.grid_step(timeline.bar_beats);
+                let step = if step > 0.0 { step } else { 1.0 };
+                let direction = action.trim_start_matches("selection.");
+                if let Some(nudge) = self.arrangement.automation.nudge(&timeline.automation, direction, step) {
+                    actions.push(nudge);
                 }
             }
             "selection.up" | "selection.down" | "selection.left" | "selection.right" => {
@@ -641,12 +850,12 @@ impl App {
             return action;
         }
         let track = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
-        let index = action.params["device"].as_u64().and_then(|i| usize::try_from(i).ok());
-        let (Some(track), Some(index)) = (track, index) else { return action };
-        if !self.device_picks.contains(&(track, index)) || self.device_picks.iter().any(|(t, _)| *t != track) {
+        let at = detail_view::DeviceAt::parse(&action.params["device"]);
+        let (Some(track), Some(at)) = (track, at) else { return action };
+        if !self.device_picks.contains(&(track, at)) || self.device_picks.iter().any(|(t, _)| *t != track) {
             return action;
         }
-        let devices: Vec<usize> = self.device_picks.iter().map(|(_, i)| *i).collect();
+        let devices: Vec<Value> = self.device_picks.iter().map(|(_, at)| at.value()).collect();
         self.selected_device = None;
         self.device_picks.clear();
         Action::new("device.removeMany", json!({ "track": track.0, "devices": devices }))
@@ -729,12 +938,33 @@ impl App {
         }
     }
 
+    /// Whether the edit keys act on tracks: a track header was the last thing clicked (in the
+    /// Launcher view, with no slot selected).
+    pub(super) fn track_keys_on(&self) -> bool {
+        match self.shown {
+            View::Arrangement => self.arrangement.track_focus,
+            View::Session => self.view.track_focus && self.view.selected_slot.is_none(),
+        }
+    }
+
+    /// The tracks the edit keys act on: the selected ones while [`Self::track_keys_on`], in
+    /// project order.
+    pub(super) fn focused_tracks(&self) -> Vec<TrackId> {
+        let selected: Vec<TrackId> = match self.shown {
+            View::Arrangement if self.arrangement.track_focus => self.arrangement.selected_tracks.clone(),
+            View::Session if self.view.track_focus && self.view.selected_slot.is_none() => self.view.header_tracks(),
+            _ => Vec::new(),
+        };
+        let Some(session) = self.session() else { return Vec::new() };
+        session.project().tracks.iter().map(|t| t.id).filter(|id| selected.contains(id)).collect()
+    }
+
     /// Where a track added from the keyboard goes: after the lowest selected track that is not a
     /// return track; `None` (after the last regular track) without one.
     pub(super) fn add_track_after(&self) -> Option<TrackId> {
         let project = self.session()?.project();
         let selected: Vec<TrackId> = match self.shown {
-            View::Session => self.view.selected.into_iter().collect(),
+            View::Session => self.view.header_tracks(),
             View::Arrangement => self.arrangement.selected_tracks.clone(),
         };
         project
@@ -812,6 +1042,59 @@ impl App {
         }
     }
 
+    /// `action` widened to the selection it is part of (#948): `device.setEnabled` on one of
+    /// several devices picked on its track becomes `device.setEnabledMany` on all of them, and
+    /// `track.setMute`, `track.setVolume` or `track.setPan` on one of several selected tracks
+    /// sets them all; `None` otherwise.
+    pub(super) fn to_selection(&self, action: &Action) -> Option<Action> {
+        let id = |v: &serde_json::Value| v.as_u64().and_then(|n| u32::try_from(n).ok());
+        match action.id {
+            "device.setEnabled" => {
+                let track = TrackId(id(&action.params["track"])?);
+                let device = detail_view::DeviceAt::parse(&action.params["device"])?;
+                let picks = self.device_picks();
+                if picks.len() < 2 || !picks.contains(&(track, device)) || picks.iter().any(|(t, _)| *t != track) {
+                    return None;
+                }
+                let devices = self.picked_devices();
+                let enabled = action.params["enabled"].clone();
+                Some(Action::new(
+                    "device.setEnabledMany",
+                    json!({ "track": track.0, "devices": devices, "enabled": enabled }),
+                ))
+            }
+            // A value set on one of several selected tracks, by a click, a drag, a typed number or
+            // the arrow keys, is set on all of them (#707, #948).
+            "track.setMute" | "track.setVolume" | "track.setPan" => {
+                let [one] = action.params["tracks"].as_array()?.as_slice() else { return None };
+                let track = TrackId(id(one)?);
+                let selected = &self.arrangement.selected_tracks;
+                if selected.len() < 2 || !selected.contains(&track) {
+                    return None;
+                }
+                let tracks: Vec<u32> = selected.iter().filter(|t| **t != TrackId::MAIN).map(|t| t.0).collect();
+                let mut params = action.params.clone();
+                params["tracks"] = json!(tracks);
+                Some(Action::new(action.id, params))
+            }
+            _ => None,
+        }
+    }
+
+    /// Selects `tracks` in both views as a header click would, the first one shown in the
+    /// detail area and scrolled into view (#918); nothing for none.
+    pub(super) fn select_tracks(&mut self, tracks: Vec<TrackId>) {
+        let Some(&first) = tracks.first() else { return };
+        self.arrangement.selected_tracks.clone_from(&tracks);
+        self.arrangement.track_focus = true;
+        self.arrangement.reveal = Some(first);
+        self.view.selected = Some(first);
+        self.view.selected_tracks = tracks;
+        self.view.selected_slot = None;
+        self.view.track_focus = true;
+        self.view.reveal = Some(first);
+    }
+
     /// The track selected in the view shown.
     pub(super) fn selected_track(&self) -> Option<TrackId> {
         match self.shown {
@@ -862,4 +1145,33 @@ pub(super) fn describe(action: &Action) -> Option<String> {
         "edit.redo" => "Redone".into(),
         _ => return None,
     })
+}
+
+/// The track to select once `removed` are deleted: the first track after the last of them that
+/// stays, or the last one before them when nothing stays after; returns and Main are left out
+/// (#918).
+pub(super) fn track_after_removing(project: &suhina_engine::model::Project, removed: &[TrackId]) -> Option<TrackId> {
+    let numbered: Vec<TrackId> =
+        project.tracks.iter().map(|t| t.id).filter(|id| project.track_number(*id).is_some()).collect();
+    let last = numbered.iter().rposition(|id| removed.contains(id))?;
+    let first = numbered.iter().position(|id| removed.contains(id))?;
+    // A deleted group takes the tracks inside it along.
+    let inside = |track: TrackId| {
+        let mut parent = project.track(track).and_then(|t| t.parent);
+        for _ in 0..project.tracks.len() {
+            let Some(group) = parent else { return false };
+            if removed.contains(&group) {
+                return true;
+            }
+            parent = project.track(group).and_then(|t| t.parent);
+        }
+        false
+    };
+    let gone = |id: &TrackId| removed.contains(id) || inside(*id);
+    numbered
+        .iter()
+        .skip(last + 1)
+        .find(|id| !gone(id))
+        .or_else(|| numbered.iter().take(first).rev().find(|id| !gone(id)))
+        .copied()
 }

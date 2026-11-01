@@ -3,7 +3,7 @@ description: Suhina's own project file (.suhina): versioned JSON of the model, w
 read_when: project file, save, open, backup, autosave, recovery, .suhina, .locr, file extension, native format, project.save, templates, new project, blank project, unsaved changes, recent projects
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/project-file
   - crates/session/src/lib.rs
@@ -74,10 +74,10 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
 8. **New projects.** A blank project is two note tracks, two audio tracks, two returns, the main
    channel and eight scenes (`suhina_session::blank_project`); `track.add` adds more. A
    project from a template is any project file opened untitled; its audio is still
-   found next to the template.
+   found next to the template. *Amended 2026-10-24, see Amendment: new projects without returns.*
 9. **The window** offers New or open (Ctrl+T): a new blank project, one from a template in the
    templates folder, or a project to open from a typed path or the recent list (kept in
-   `recent.txt`). Started without a project given, it opens what Settings › General › At start
+   `recent.txt`). Started without a project given, it opens what Settings › Projects and backups › Startup project
    says (`at_start` in `settings.txt`, #234): the start panel (the default, `panel`; #318),
    a new blank project, a new one from the start template (`start_template`: a name in the
    templates folder or a path), or the project opened last (the newest in `recent.txt`); a
@@ -105,7 +105,7 @@ Suhina (October 2026) the extension followed: files are `.suhina` from 2026-10-1
     `project.save` without a path, or a path that ends in `.locr`), so no file is renamed
     behind the user's back. Save as offers `.suhina`; the file saved then names the format
     `"suhina"`, which a Suhina from before the change does not read.
-11. **Backups** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
+11. **Backup interval** (2026-10-15, [#202](https://github.com/suhina-daw/suhina-daw/issues/202)): a
     setting writes a backup of each project with unsaved changes before every critical operation,
     every 1, 5 (the default), 10, 15, 30 or 60 minutes, every 4 hours, or never; a timed backup is
     written only when the project changed since the last one. Backups go to `.backup/` beside the
@@ -148,6 +148,17 @@ dropped that data on its next save, without a word. Decided ([#763](https://gith
 
 ## Consequences
 
+### Sampler source corrections (2026-10-27, issue #1026)
+
+Project version 5 stores sampler source corrections in the versioned
+`suhina/sample_edits` extension, described in [the sampler spec](../spec/sampler.md#source-correction-storage).
+Only user-authored pins and suppressed candidate identities persist; transient
+analysis is derived from the source. Both lists have a 4096-entry limit. The old
+source reference and manual map remain readable. Loading a replacement source
+clears its source-specific corrections in the same undoable command. Preparation
+decodes immutable correction resources before graph adoption, so audio processing
+does not parse files or allocate their storage.
+
 - Edits can be kept; templates and new projects work.
 - `.suhina` files can be read and written by agents and scripts without Suhina.
 - Readers accept `.suhina` and `"format": "suhina"` only (`suhina_project_file::is_project_file`,
@@ -157,6 +168,13 @@ dropped that data on its next save, without a word. Decided ([#763](https://gith
 - Large note-heavy projects are bigger than a binary format would make them.
 - A crash loses at most the work since the last backup (decision 11). A project's `.backup`
   folder grows by one file per backup; with clean-up on it holds at most 20 per project.
+
+## Amendment: new projects without returns (2026-10-24, #898)
+
+A blank project need not have returns. With Settings › Arrangement › Returns in new projects on
+None (`new_project_returns = none`) it has none, so no track shows sends until a return is
+inserted (`suhina_session::blank_project_with`); New or open offers the other kind for one
+project too. A project that has returns always shows them, whatever the setting.
 
 ## Not decided yet
 

@@ -111,6 +111,15 @@ impl Default for SongPosition {
 /// The audio half of a running plug-in, as the engine sees it. Implemented outside the engine
 /// (the session, over `suhina-plugins`); test doubles implement it too.
 pub trait PluginProcessor: Send {
+    /// The instrument softens its own transport stop before handing audio to effects.
+    fn smooth_transport_stop(&self) -> bool {
+        false
+    }
+    /// Reconfigures a retained processor between renderers, with audio fully stopped.
+    /// This control operation is NOT real-time safe. Returns its new latency in frames.
+    fn reconfigure(&mut self, _sample_rate: u32, _timeout: Duration) -> Result<u32, String> {
+        Err("this processor does not support audio reconfiguration".into())
+    }
     /// Runs `buffer`, interleaved stereo (the chain's sound so far), through the plug-in in
     /// place, with `events` at frames counted from the start of `buffer`, waiting at most
     /// `timeout`. Returns false when the plug-in did not answer in time or is gone; `buffer` is
@@ -263,7 +272,12 @@ pub fn plugin_key(channel: ChannelId, kind: &DeviceKind, nth: u32) -> Option<u64
 pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
     let mut list = Vec::new();
     for channel in &project.channels {
-        let track = project.tracks.iter().find(|t| t.channel == Some(channel.id)).map(|t| t.id);
+        let track = project
+            .tracks
+            .iter()
+            .find(|t| t.channel == Some(channel.id))
+            .map(|t| t.id)
+            .or_else(|| (channel.role == suhina_model::ChannelRole::Master).then_some(suhina_model::TrackId::MAIN));
         let mut seen: Vec<(u64, u32)> = Vec::new();
         for (path, device) in walk_devices(&channel.devices) {
             let position = path.first().copied().unwrap_or(0);
@@ -293,9 +307,29 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
 pub struct Plugins {
     pub(crate) info: HashMap<u64, PluginSlotInfo>,
     pub(crate) processors: HashMap<u64, Box<dyn PluginProcessor>>,
+    /// Processors retained from a closed renderer can still hold its sounding notes.
+    pub(crate) carried: bool,
 }
 
 impl Plugins {
+    /// Reconfigures all retained processors before building a renderer at a new rate.
+    /// Never called from rendering. Failure aborts opening the new renderer: mixing
+    /// processors configured at different rates would produce incorrect sound.
+    pub fn reconfigure(&mut self, sample_rate: u32, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        for (key, processor) in &mut self.processors {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err("plug-in audio reconfiguration timed out".into());
+            }
+            let latency = processor.reconfigure(sample_rate, left).map_err(|why| format!("plug-in {key}: {why}"))?;
+            if let Some(info) = self.info.get_mut(key) {
+                info.latency = latency;
+            }
+        }
+        Ok(())
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -326,6 +360,13 @@ pub(crate) struct PluginSlot {
     pub(crate) enabled: bool,
     /// Round trips it did not answer in time or refused; tests read it.
     pub(crate) missed: u64,
+    /// Blocks the host refused outright (still busy with an earlier one), of `missed`.
+    pub(crate) busy: u64,
+    /// The longest trip it answered within a real-time deadline, in microseconds; for the
+    /// trace's health line.
+    pub(crate) longest_us: u32,
+    /// When the block out was sent, for [`PluginSlot::longest_us`].
+    pub(crate) sent_at: Option<Instant>,
     /// The parameter values it sends: set ones and automation.
     pub(crate) params: SlotParams,
 }
@@ -364,11 +405,16 @@ impl PluginSlot {
         if !self.enabled || span.is_empty() {
             return;
         }
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
+        let started = crate::clock::now();
         let answered = match self.processor.as_mut() {
             Some(processor) => processor.process(span, events, timeout),
             None => false,
         };
+        if deadline.is_some() && answered {
+            self.longest_us = self.longest_us.max(u32::try_from(started.elapsed().as_micros()).unwrap_or(u32::MAX));
+        }
+        self.sent_at = None;
         if !answered {
             if self.processor.is_some() {
                 self.missed += 1;
@@ -392,6 +438,16 @@ impl PluginSlot {
         let Some(processor) = self.processor.as_mut() else { return Sent::Unsupported };
         let patience = if deadline.is_some() { Duration::ZERO } else { OFFLINE_TIMEOUT };
         let sent = processor.send(span, events, patience);
+        if deadline.is_some() {
+            self.sent_at = match sent {
+                Sent::Out => Some(crate::clock::now()),
+                Sent::Refused => {
+                    self.busy += 1;
+                    None
+                }
+                Sent::Unsupported => None,
+            };
+        }
         if sent == Sent::Refused {
             self.missed += 1;
             if self.instrument {
@@ -405,8 +461,14 @@ impl PluginSlot {
     /// result in `span`; a miss passes the sound through, or is silent for an instrument.
     /// Returns whether it was answered.
     pub(crate) fn finish(&mut self, span: &mut [f32], deadline: Option<Instant>) -> bool {
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
+        let sent_at = deadline.is_some().then(|| self.sent_at.take()).flatten();
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
         let answered = self.processor.as_mut().is_some_and(|processor| processor.wait(span, timeout));
+        if let Some(sent_at) = sent_at
+            && answered
+        {
+            self.longest_us = self.longest_us.max(u32::try_from(sent_at.elapsed().as_micros()).unwrap_or(u32::MAX));
+        }
         if !answered {
             if self.processor.is_some() {
                 self.missed += 1;
@@ -462,6 +524,18 @@ impl PluginSlot {
         let Some(processor) = self.processor.as_mut() else { return Sent::Unsupported };
         let patience = if deadline.is_some() { Duration::ZERO } else { OFFLINE_TIMEOUT };
         let sent = processor.send_joint(span, events, followers, patience);
+        // The lead slot's round trip is recorded as a plain one's is: the wait that follows is
+        // timed (`finish`), and a refused one counts as busy.
+        if deadline.is_some() {
+            self.sent_at = match sent {
+                Sent::Out => Some(crate::clock::now()),
+                Sent::Refused => {
+                    self.busy += 1;
+                    None
+                }
+                Sent::Unsupported => None,
+            };
+        }
         if sent == Sent::Refused {
             self.missed += 1;
             if self.instrument {

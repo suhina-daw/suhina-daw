@@ -3,6 +3,17 @@
 
 use super::*;
 
+#[test]
+fn the_labels_size_scales_every_label_and_keeps_bigger_clusters_larger() {
+    let (small, big) = (crowd::label_scale(8, 8), crowd::label_scale(64, 8));
+    for size in [0.5, 0.75, 1.0] {
+        assert!(label_font_size(size, big) > label_font_size(size, small), "at {size}");
+        assert!((label_font_size(size, small) - label_font_size(1.0, small) * size).abs() < 1e-4);
+    }
+    assert_eq!(label_font_size(1.0, 1.0), theme::TEXT * 1.6, "100 % is the size before");
+    assert_eq!(label_font_size(0.0, big), 0.0);
+}
+
 fn point(x: f32, y: f32, kind: Kind) -> MapPoint {
     MapPoint {
         name: format!("{x},{y}"),

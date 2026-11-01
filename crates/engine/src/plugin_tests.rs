@@ -30,6 +30,9 @@ enum Behaviour {
     Delay(usize),
     /// Never answers.
     Gone,
+    /// Plays 1.0 on both sides for its first this many frames, then silence, whatever comes in:
+    /// an ARA renderer playing its regions (#990).
+    Render(usize),
 }
 
 struct Stand {
@@ -111,6 +114,12 @@ impl PluginProcessor for Stand {
                 }
             }
             Behaviour::Gone => return false,
+            Behaviour::Render(until) => {
+                for (frame, pair) in buffer.chunks_mut(2).enumerate() {
+                    let value = if self.frames + frame < until { 1.0 } else { 0.0 };
+                    pair.iter_mut().for_each(|s| *s = value);
+                }
+            }
         }
         self.frames += frames;
         true
@@ -396,6 +405,7 @@ fn a_block_a_plug_in_refuses_is_one_miss_and_is_not_run_again() {
     assert_eq!(processes.load(Ordering::SeqCst), 0, "a refused block is not run again");
     // Each block here is one round trip, so one miss a block.
     assert_eq!(renderer.graph.chains[0].missed(), 20, "one miss a round trip");
+    assert_eq!(renderer.controller().plugin_time(), (20, 0), "refused blocks publish busy, not completed trips");
     // The effect is skipped: the dry sound.
     assert!(max_diff(&out, &dry) < 1e-6);
 }
@@ -1136,4 +1146,278 @@ fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
     // A restart reaches it inside the group.
     controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
+}
+
+/// An audio track playing a 0.5 file (or `level`) in two one-beat clips, the first marked for
+/// the clip host, with `devices` on its channel.
+fn hosted_project(level: f32, devices: Vec<Device>, first_ara: bool, second: bool) -> (Project, AudioPool) {
+    let mut p = project(Vec::new(), 2.0, devices);
+    p.tracks[0].content = ContentKinds { notes: false, audio: true };
+    p.launcher.columns.clear();
+    p.contents[0].lanes = vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("dc.wav")) }];
+    let clip = |start: f64, ara: bool| Clip { ara, ..Clip::new(ContentId(1), start, 1.0) };
+    p.arrangement.lanes[0].clips =
+        if second { vec![clip(0.0, first_ara), clip(1.0, false)] } else { vec![clip(0.0, first_ara)] };
+    let mut pool = AudioPool::new();
+    let data = crate::AudioData { sample_rate: SR, channels: 1, samples: vec![level; BEAT * 2] };
+    pool.files.insert("dc.wav".into(), Arc::new(data));
+    (p, pool)
+}
+
+/// The channel's clip host plays the ARA clips at their gains and fades, the other clips go past
+/// it; disabled, every clip plays as it is (#990).
+#[test]
+fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
+    let mut host = plug(vst3());
+    host.clip_host = true;
+    let (p, pool) = hosted_project(0.5, vec![host.clone()], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let out = render_offline_from(
+        &p,
+        RenderInputs::from_audio(&pool).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    let out = left(&out);
+    // The first beat: the host's 1.0, at the gains a 1.0 file plays the clip at.
+    let (reference, ref_pool) = hosted_project(1.0, Vec::new(), false, false);
+    let full = left(&render_offline_from(&reference, RenderInputs::from_audio(&ref_pool), SR, 512, None).unwrap());
+    let middle = BEAT / 2;
+    assert!(full[middle] > 0.0);
+    assert!((out[middle] - full[middle]).abs() < 1e-5, "{} vs {}", out[middle], full[middle]);
+    // The click guard at the clip's start scales the host's output too.
+    assert!(out[0].abs() < 1e-6, "{}", out[0]);
+    // The second beat: the plain clip, past the host (which is silent there).
+    let (plain, plain_pool) = hosted_project(0.5, Vec::new(), false, true);
+    let raw = left(&render_offline_from(&plain, RenderInputs::from_audio(&plain_pool), SR, 512, None).unwrap());
+    let later = BEAT + BEAT / 2;
+    assert!((out[later] - raw[later]).abs() < 1e-5, "{} vs {}", out[later], raw[later]);
+
+    // A disabled host: every clip plays as it is.
+    host.enabled = false;
+    let (p, pool) = hosted_project(0.5, vec![host], true, true);
+    let stand = Stand::new(Behaviour::Render(BEAT));
+    let off = left(
+        &render_offline_from(
+            &p,
+            RenderInputs::from_audio(&pool).with_plugins(plugins(&p, vec![(stand, EFFECT)])),
+            SR,
+            512,
+            None,
+        )
+        .unwrap(),
+    );
+    assert!((off[middle] - raw[middle]).abs() < 1e-5, "{} vs {}", off[middle], raw[middle]);
+}
+
+#[test]
+fn a_carried_instrument_releases_old_notes_before_the_new_engine_chases_them() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut current = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut current, 1, 1024);
+    for size in [1024, 2048, 1024, 2048] {
+        seen.lock().unwrap().clear();
+        let carried = current.into_plugins();
+        current = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(carried),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
+        current.handle(crate::LaunchCommand::SetPosition { beat: 1.0 });
+        current.handle(crate::LaunchCommand::Play);
+        blocks(&mut current, 1, size);
+        let events = seen.lock().unwrap();
+        let off = events.iter().position(|(_, e)| matches!(e, NoteEvent::Off { key: 69, .. }));
+        let on = events.iter().position(|(_, e)| matches!(e, NoteEvent::On { .. }));
+        assert!(off.zip(on).is_some_and(|(off, on)| off < on), "old voices must be released before chase: {events:?}");
+    }
+}
+
+#[test]
+fn play_chases_a_plugin_note_without_a_step_from_silence() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new())
+            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    let before = blocks(&mut renderer, 1, 128);
+    assert_eq!(peak(&before), 0.0);
+    renderer.handle(crate::LaunchCommand::SetPosition { beat: 2.0 });
+    renderer.handle(crate::LaunchCommand::Play);
+    let after = blocks(&mut renderer, 4, 32);
+    assert_eq!(after[0], 0.0, "Play must begin continuously from the previous output sample");
+    assert!(after[after.len() - 2] > 0.4, "the guard must not mute the note");
+    let largest_step = left(&after).windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+    assert!(largest_step < 0.01, "the attack must be short and smooth: {largest_step}");
+}
+
+#[test]
+fn play_guard_reaches_a_plugin_note_after_reported_processing_latency() {
+    for beat in [0.0, 2.0] {
+        let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3()), plug(vst3())]);
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
+                &p,
+                vec![
+                    (Stand::new(Behaviour::Instrument), INSTRUMENT),
+                    (Stand::new(Behaviour::Delay(512)), PluginSlotInfo { latency: 512, ..EFFECT }),
+                ],
+            )),
+            SR,
+            RenderOptions::STOPPED,
+        )
+        .unwrap();
+        blocks(&mut renderer, 1, 128);
+        renderer.handle(crate::LaunchCommand::SetPosition { beat });
+        renderer.handle(crate::LaunchCommand::Play);
+        let after = blocks(&mut renderer, 24, 32);
+        assert!(peak(&after) > 0.4);
+        let largest_step = left(&after).windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+        assert!(largest_step < 0.01, "delayed onset at beat {beat} has step {largest_step}");
+    }
+}
+
+#[test]
+fn pitch_releases_the_transposed_plugin_note_on_repeated_transport_starts() {
+    let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("pitch", &[("pitch", 12.0)]), plug(vst3())]);
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::STOPPED,
+    )
+    .unwrap();
+    for beat in [0.0, 2.0, 2.0, 0.0] {
+        seen.lock().unwrap().clear();
+        renderer.handle(crate::LaunchCommand::SetPosition { beat });
+        renderer.handle(crate::LaunchCommand::Play);
+        blocks(&mut renderer, 1, 256);
+        renderer.handle(crate::LaunchCommand::Stop);
+        blocks(&mut renderer, 1, 256);
+        let events = seen.lock().unwrap();
+        let notes: Vec<_> = events
+            .iter()
+            .filter_map(|(_, e)| match e {
+                NoteEvent::On { key, .. } => Some((true, *key)),
+                NoteEvent::Off { key, .. } => Some((false, *key)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(notes, vec![(true, 81), (false, 81)], "beat {beat}");
+    }
+}
+
+#[test]
+fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
+    for latency in [0, 512] {
+        for stop in [crate::LaunchCommand::Stop, crate::LaunchCommand::StopHere] {
+            let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3()), plug(vst3())]);
+            let mut renderer = Renderer::build(
+                &p,
+                RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins(
+                    &p,
+                    vec![
+                        (Stand::new(Behaviour::Instrument), INSTRUMENT),
+                        (Stand::new(Behaviour::Delay(latency)), PluginSlotInfo { latency: latency as u32, ..EFFECT }),
+                    ],
+                )),
+                SR,
+                RenderOptions::STOPPED,
+            )
+            .unwrap();
+            renderer.handle(crate::LaunchCommand::SetPosition { beat: 2.0 });
+            renderer.handle(crate::LaunchCommand::Play);
+            let before = blocks(&mut renderer, 32, 32);
+            assert!(before.last().copied().unwrap() > 0.4);
+            renderer.handle(stop);
+            let after = blocks(&mut renderer, 32, 32);
+            let mut joined = vec![*before.last().unwrap()];
+            joined.extend(left(&after));
+            let largest_step = joined.windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+            assert!(largest_step < 0.01, "stop with latency {latency} has step {largest_step}");
+            assert_eq!(*after.last().unwrap(), 0.0);
+        }
+    }
+}
+
+fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
+    crate::plugin::PluginSlot {
+        key: 1,
+        processor: Some(processor),
+        instrument: false,
+        latency: 0,
+        enabled: true,
+        missed: 0,
+        busy: 0,
+        longest_us: 0,
+        sent_at: None,
+        params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64),
+    }
+}
+
+#[test]
+fn unanswered_trips_do_not_replace_the_longest_answered_trip() {
+    use std::time::Instant;
+    let mut slot = diagnostic_slot(Box::new(Stand::new(Behaviour::Gone)));
+    slot.longest_us = 7;
+    let deadline = Some(Instant::now() + Duration::from_secs(1));
+    let mut samples = [0.0; 16];
+    slot.run(&mut samples, &[], deadline);
+    assert_eq!(slot.longest_us, 7);
+    slot.sent_at = Instant::now().checked_sub(Duration::from_millis(10));
+    assert!(!slot.finish(&mut samples, deadline));
+    assert_eq!(slot.longest_us, 7);
+    assert!(slot.sent_at.is_none());
+}
+
+#[test]
+fn joint_sends_record_busy_and_successful_trip_timing() {
+    use std::time::Instant;
+    struct JointProbe(bool);
+    impl PluginProcessor for JointProbe {
+        fn process(&mut self, _: &mut [f32], _: &[(usize, NoteEvent)], _: Duration) -> bool {
+            false
+        }
+        fn send_joint(&mut self, _: &[f32], _: &[(usize, NoteEvent)], _: &[u32], _: Duration) -> Sent {
+            if self.0 { Sent::Out } else { Sent::Refused }
+        }
+        fn wait(&mut self, _: &mut [f32], _: Duration) -> bool {
+            self.0
+        }
+    }
+    let deadline = Some(Instant::now() + Duration::from_secs(1));
+    let mut samples = [0.0; 16];
+    let mut slot = diagnostic_slot(Box::new(JointProbe(false)));
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], deadline), Sent::Refused);
+    assert_eq!((slot.busy, slot.missed), (1, 1));
+    assert!(slot.sent_at.is_none());
+    slot.processor = Some(Box::new(JointProbe(true)));
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], deadline), Sent::Out);
+    assert!(slot.sent_at.is_some());
+    slot.sent_at = Instant::now().checked_sub(Duration::from_millis(10));
+    assert!(slot.finish(&mut samples, deadline));
+    assert!(slot.longest_us >= 10_000);
+    let longest = slot.longest_us;
+    assert_eq!(slot.send_joint(&mut samples, &[], &[2], None), Sent::Out);
+    assert!(slot.finish(&mut samples, None));
+    assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
 }

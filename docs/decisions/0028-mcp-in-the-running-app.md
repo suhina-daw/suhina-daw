@@ -3,7 +3,7 @@ description: Why the desktop app serves MCP for the projects it has open, how an
 read_when: MCP in the app, attach, suhina-cli mcp --attach, live agent edits, agent and window share a project, shared undo, agent connection, allow agent, consent, named pipe, unix socket, control channel, single instance, one instance per build, --new-instance, open file in running app, agent roots
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-28
 covers:
   - crates/automation/src/attach.rs
   - crates/automation/src/endpoint.rs
@@ -44,8 +44,8 @@ anything listens, so the rules are decided here, before the code.
 ### 1. The app serves MCP for its open tabs, off by default
 
 The desktop app can serve the same MCP tools as `suhina-cli mcp` (one `SuhinaMcp`, not a second
-server) for the projects it has open. It is off until the person turns on **Settings › General ›
-Agents › Let agents work on open projects**; with it off, nothing listens.
+server) for the projects it has open. It is off until the person turns on **Settings › Agents and updates ›
+Agents › AI agents edit projects**; with it off, nothing listens.
 
 The tools run on the app's own `Projects`, on the thread that runs the window's commands: the
 server hands each tool call to the window as a job, the window runs the jobs between frames, in order
@@ -88,7 +88,7 @@ stdout to it and back, so a client changes only its arguments.
 
 An attached agent works on the projects open as tabs, not on files of its choosing.
 
-- **It writes inside the folders the person allows in Settings › Export**, including their
+- **It writes inside the folders the person allows in Settings › Agents and updates**, including their
   subfolders. The saved project's folder is allowed by default, shown on that page, and can be
   switched off. Additional folders are added through a folder picker and can be removed. An
   unsaved project can write only when the person has granted an additional folder. With no

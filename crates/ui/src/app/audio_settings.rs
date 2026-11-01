@@ -64,7 +64,12 @@ impl App {
                         result["cue_db"].as_f64().map_or_else(|| "silent".to_string(), |db| format!("{db:+.0} dB"));
                     self.status = Status::Done(format!("Cue volume: {db}"));
                 }
-                Err(e) => self.status = Status::Error(e.message().to_owned()),
+                Err(e) => {
+                    // A rejected command leaves the old choice; an open failure keeps the
+                    // requested choice for retry. Reflect whichever the session retained.
+                    self.settings.set_output_choice(self.projects.output_choice());
+                    self.status = Status::Error(e.message().to_owned());
+                }
             }
             return;
         }
@@ -80,10 +85,17 @@ impl App {
                         (None, None) => Status::Done("Cue: with the main output".to_string()),
                     };
                 }
-                Err(e) => self.status = Status::Error(e.message().to_owned()),
+                Err(e) => {
+                    // A rejected command leaves the old choice; an open failure keeps the
+                    // requested choice for retry. Reflect whichever the session retained.
+                    self.settings.set_output_choice(self.projects.output_choice());
+                    self.status = Status::Error(e.message().to_owned());
+                }
             }
             return;
         }
+        let previous_output_open =
+            self.session().and_then(Session::player).and_then(suhina_session::Player::output_info).is_some();
         let params = choice.to_json();
         let params = json!({
             "host": params["host"].as_str().unwrap_or(""),
@@ -95,6 +107,12 @@ impl App {
         });
         match self.projects.execute("audio.setOutput", &params) {
             Ok(result) => {
+                let default = self.about.audio_hosts.iter().find(|h| h.default).map(|h| h.name.as_str());
+                // A failed choice remains selected for retry, but is not a working device.
+                if previous_output_open {
+                    self.settings.remember_output(&current, default);
+                }
+                self.settings.remember_output(choice, default);
                 self.status = match result["notice"].as_str() {
                     Some(notice) => Status::Hint(notice.to_string()),
                     None => Status::Done(format!(
@@ -106,7 +124,12 @@ impl App {
                     )),
                 };
             }
-            Err(e) => self.status = Status::Error(e.message().to_owned()),
+            Err(e) => {
+                // A rejected command leaves the old choice; an open failure keeps the
+                // requested choice for retry. Reflect whichever the session retained.
+                self.settings.set_output_choice(self.projects.output_choice());
+                self.status = Status::Error(e.message().to_owned());
+            }
         }
     }
 
@@ -128,8 +151,14 @@ impl App {
                 .with_min_inner_size([600.0, 320.0]);
             suhina_plugins::trace::timed("settings native viewport", || {
                 ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("settings-window"), builder, |ui, _| {
-                    let panel = ui.available_rect_before_wrap();
+                    let whole = ui.available_rect_before_wrap();
+                    // The main window's status bar may be out of sight: this window has its own.
+                    let top = (whole.bottom() - theme::STATUS_BAR).max(whole.top());
+                    let panel = Rect::from_min_max(whole.min, Pos2::new(whole.right(), top));
+                    let bar = Rect::from_min_max(Pos2::new(whole.left(), top), whole.max);
                     suhina_plugins::trace::timed("settings native contents", || self.settings_contents(ui, panel));
+                    let _status =
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| self.status_bar(ui, None));
                     if ui.input(|input| {
                         input.viewport().close_requested()
                             || (self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma))
@@ -147,15 +176,14 @@ impl App {
                 let behind = ui.interact(window, Id::new("settings-behind"), Sense::click_and_drag());
                 let _swallowed = behind.clicked();
                 let tint = ui.painter().add(egui::Shape::Noop);
-                let size = Vec2::new(
-                    SETTINGS_SIZE.x.min(window.width() - 2.0 * PAD),
-                    SETTINGS_SIZE.y.min(window.height() - 2.0 * PAD),
-                );
+                // The panel stays above the status bar, which shows what the page reports.
+                let mut bounds = window.shrink(PAD);
+                bounds.max.y = bounds.max.y.min(window.bottom() - theme::STATUS_BAR);
+                let size = Vec2::new(SETTINGS_SIZE.x.min(bounds.width()), SETTINGS_SIZE.y.min(bounds.height()));
                 let position = ui
                     .ctx()
                     .data(|data| data.get_temp::<Pos2>(Id::new("settings-panel-position")))
                     .unwrap_or(window.center() - size / 2.0);
-                let bounds = window.shrink(PAD);
                 let position = egui::pos2(
                     position.x.clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
                     position.y.clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),
@@ -170,10 +198,12 @@ impl App {
                     );
                 }
                 if !previewing {
-                    ui.painter().set(
-                        tint,
-                        egui::Shape::rect_filled(window, 0.0, theme::window_background().gamma_multiply(0.6)),
-                    );
+                    // The status bar stays undimmed at the bottom: an error or a confirmation from
+                    // the page is seen while the dialog is open, not only behind it.
+                    let top = (window.bottom() - theme::STATUS_BAR).max(window.min.y);
+                    let dim = Rect::from_min_max(window.min, Pos2::new(window.right(), top));
+                    ui.painter()
+                        .set(tint, egui::Shape::rect_filled(dim, 0.0, theme::window_background().gamma_multiply(0.6)));
                 }
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
             },
@@ -268,6 +298,11 @@ impl App {
         if outcome.audio_refresh {
             self.list_audio_devices();
         }
+        if outcome.audio_control_panel
+            && let Err(error) = self.projects.execute("audio.openControlPanel", &json!({}))
+        {
+            self.status = Status::Error(error.message().to_string());
+        }
         if let Some(field) = outcome.pick {
             self.ask_pick(field);
         }
@@ -314,3 +349,7 @@ impl App {
             })
     }
 }
+
+#[cfg(test)]
+#[path = "audio_settings_tests.rs"]
+mod tests;

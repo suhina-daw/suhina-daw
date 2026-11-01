@@ -1,9 +1,9 @@
 ---
 description: How launching clips and scenes behaves: quantisation, stop buttons, scene tempo, launched clip fades, follow actions, launch modes, legato, per-clip quantisation, launching from computer keys and MIDI notes, launcher over arrangement
-read_when: clip launching, scenes, launch quantisation, stop, session view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
+read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-10-23
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -26,7 +26,7 @@ covers:
 
 # Clip launching
 
-- **Sources:** the behaviour of the Session View as the public Live 12 manual describes it
+- **Sources:** the behaviour of the Launcher view as the public Live 12 manual describes it
   (launching clips and scenes, launch quantisation, stop buttons, scene tempo, clip launch
   modes, legato and clip quantisation), and the Live Set
   fields in [`als-format.md`](als-format.md) (scenes, clip slots, `HasStop`, scene tempo, clip
@@ -50,8 +50,8 @@ decides something the sources do not settle, the text says so (**Suhina:**).
   from the moment it starts. A bar is `numerator × 4 / denominator` beats.
 - **Launch quantisation:** the grid that launches wait for. Choices: none, 8, 4, 2 or 1 bars,
   or a note value (1/2, 1/4, 1/8, 1/16, 1/32, and the triplets 1/2T, 1/4T, 1/8T, 1/16T).
-  Default: 1 bar. The same value is the Arrangement view's grid, its lines and what snaps to
-  them ([arrangement editing](arrangement-editing.md) › The grid). Each open project's session
+  Default: 1 bar. It is the control bar's **Quantize** box; the Arrangement view has a grid of
+  its own ([arrangement editing](arrangement-editing.md) › The grid). Each open project's session
   keeps it, without an audio engine too, and hands it to an engine when one is attached; it is
   not saved in the project.
 
@@ -164,7 +164,7 @@ own decision (**Suhina:**), not yet compared with Live 12 (see *To observe*).
    (N a scene number, from 1). `project.launcher` lists each slot clip's `follow_action`. The
    project file stores it as the clip's `follow` ([suhina-format](suhina-format.md)). The
    detail area shows a selected slot clip's follow action and changes it through the same
-   command ([Session view](ui-session-view.md) › Detail area: follow action).
+   command ([Launcher view](ui-session-view.md) › Detail area: follow action).
 8. **While playing.** Editing a follow action swaps in a new graph (ADR 0005); a clip that is
    playing keeps its launch time, so a follow time now shorter than what it has played runs at
    once.
@@ -241,8 +241,8 @@ profiles) are planned separately and can take these over.
    stays in the project and does nothing; `launcher.mappings` reports it as `broken`, and an undo
    that brings the track back makes it work again.
 4. **Where keys count.** In the window a mapped key wins over a shortcut on the same key only
-   while the Session view is shown and nothing else has the keyboard
-   ([Session view](ui-session-view.md#launch-keys)).
+   while the Launcher view is shown and nothing else has the keyboard
+   ([Launcher view](ui-session-view.md#launch-keys)).
 5. **MIDI notes.** **Suhina:** a mapped note launches and does not also play on a track. The
    mappings, the commands and the press and release logic for notes are in place; Suhina reads no
    live MIDI input yet ([#264](https://github.com/suhina-daw/suhina-daw/issues/264)). When live
@@ -324,7 +324,7 @@ The project file keeps them under the launcher ([Suhina format](suhina-format.md
 ## Clips between the arrangement and the slots
 
 **Suhina**, our own design: a clip gets into a slot from the arrangement, and from a slot onto
-the arrangement, by copying ([Session view](ui-session-view.md) › Between the views).
+the arrangement, by copying ([Launcher view](ui-session-view.md) › Between the views).
 
 - `clip.copy {track, scene}` copies the clip in a track's slot (scene from 1); `clip.copy
   {track, index}` an arrangement clip. Both fill the same clipboard.

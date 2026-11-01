@@ -23,7 +23,7 @@ suhina-realtime.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI in exclusive mode, which cpal does not open.
-wasapi = "0.19"  # MIT
+wasapi = "0.26"  # MIT
 
 [dev-dependencies]
 suhina-model.workspace = true

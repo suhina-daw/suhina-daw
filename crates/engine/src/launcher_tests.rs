@@ -35,6 +35,7 @@ pub(super) fn clip(content: u32, length: f64, looping: bool) -> Clip {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     }
 }
@@ -992,4 +993,105 @@ fn a_scene_shift_is_found_between_two_launchers() {
     assert_eq!(SceneShift::Removed(1).map(2), Some(1));
     assert_eq!(SceneShift::Inserted(1).map(0), Some(0));
     assert_eq!(SceneShift::Inserted(1).map(usize::MAX), None);
+}
+
+/// A click in the track area while playing moves the play start marker and leaves playback
+/// where it is; the next start begins at the marker (#657).
+#[test]
+fn set_start_moves_the_marker_but_not_playback() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = vec![0.0f32; 2 * 512];
+    renderer.process(&mut block);
+    let before = renderer.monitor().beat();
+    renderer.handle(LaunchCommand::SetStart { beat: 12.0 });
+    renderer.process(&mut block);
+    let monitor = renderer.monitor();
+    assert!(monitor.beat() < 1.0 && monitor.beat() > before, "{}", monitor.beat());
+    assert_eq!(monitor.start_beat(), 12.0);
+    renderer.handle(LaunchCommand::Stop);
+    assert_eq!(renderer.monitor().beat(), 12.0, "stopped at the marker");
+    // Stopped, it moves the playhead with the marker, as SetPosition does.
+    renderer.handle(LaunchCommand::SetStart { beat: 4.0 });
+    assert_eq!(renderer.monitor().beat(), 4.0);
+}
+
+/// A seek on the playback strip while playing waits for the next bar of the global launch
+/// quantisation (1 bar by default), shows as pending until then, and lands on it; a stop
+/// cancels it, and with no quantisation it jumps at once (#657).
+#[test]
+fn a_jump_on_the_grid_waits_for_the_next_bar() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = vec![0.0f32; 2 * 512];
+    // Half a bar in (two beats at 120 BPM, a second).
+    for _ in 0..(2 * BEAT / 512) {
+        renderer.process(&mut block);
+    }
+    renderer.handle(LaunchCommand::JumpOnGrid { beat: 16.0 });
+    renderer.process(&mut block);
+    let monitor = renderer.monitor();
+    assert_eq!(monitor.pending_jump(), Some(16.0));
+    assert!(monitor.beat() < 4.0, "still playing on: {}", monitor.beat());
+    // Past the bar line: playback is at the target, the marker with it, nothing pending.
+    for _ in 0..(2 * BEAT / 512 + 2) {
+        renderer.process(&mut block);
+    }
+    let monitor = renderer.monitor();
+    assert_eq!(monitor.pending_jump(), None);
+    assert!((16.0..16.5).contains(&monitor.beat()), "{}", monitor.beat());
+    assert_eq!(monitor.start_beat(), 16.0);
+    // A stop cancels one that waits.
+    renderer.handle(LaunchCommand::JumpOnGrid { beat: 2.0 });
+    renderer.process(&mut block);
+    assert_eq!(renderer.monitor().pending_jump(), Some(2.0));
+    renderer.handle(LaunchCommand::Stop);
+    renderer.process(&mut block);
+    assert_eq!(renderer.monitor().pending_jump(), None);
+    // With no quantisation it jumps at once.
+    renderer.handle(LaunchCommand::SetQuantization(Quantization::None));
+    renderer.handle(LaunchCommand::Play);
+    renderer.handle(LaunchCommand::JumpOnGrid { beat: 8.0 });
+    renderer.process(&mut block);
+    assert!((8.0..8.1).contains(&renderer.monitor().beat()), "{}", renderer.monitor().beat());
+}
+
+#[test]
+fn reopening_during_stretch_preparation_resumes_at_the_playhead() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    // Hold the real read-ahead worker so Play must wait, as on a reopened device.
+    let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
+    renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+    renderer.handle(LaunchCommand::Play);
+    assert!(renderer.start_waiting.is_some());
+    renderer.handle(LaunchCommand::Locate { beat: 8.0 });
+    renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
+    renderer.handle(LaunchCommand::SetLaunchTempo { bpm: 135.0 });
+    // Exhaust the bounded preparation wait without relying on thread scheduling.
+    renderer.wait_to_start(SR as u64);
+    renderer.wait_to_start(0);
+    assert!(renderer.running);
+    assert_eq!(renderer.graph.launcher.beat, 8.0, "resume must not go back to the marker");
+    assert_eq!(renderer.start_beat, 1.0, "the play start marker stays");
+    assert_eq!(renderer.graph.launcher.tempo_bpm, 135.0, "a restored scene tempo stays");
+    assert_eq!(renderer.graph.launcher.columns[0].playing.as_ref().map(|p| p.slot), Some(0));
+}
+
+#[test]
+fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
+    let mut renderer = Renderer::stopped(&two_loops(), &AudioPool::new(), SR).unwrap();
+    let _worker = renderer.graph.ahead.take_worker_unfilled().unwrap();
+    renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+    renderer.handle(LaunchCommand::Play);
+    renderer.handle(LaunchCommand::Locate { beat: 8.0 });
+    renderer.handle(LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: 2.0 });
+    renderer.handle(LaunchCommand::Stop);
+    assert!(!renderer.running);
+    assert!(renderer.start_waiting.is_none());
+    assert_eq!(renderer.start_beat, 1.0);
+    renderer.handle(LaunchCommand::Play);
+    renderer.wait_to_start(SR as u64);
+    renderer.wait_to_start(0);
+    assert_eq!(renderer.graph.launcher.beat, 1.0);
+    assert!(renderer.graph.launcher.columns[0].playing.is_none());
 }

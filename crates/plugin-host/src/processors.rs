@@ -58,6 +58,8 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
     let after = |prefix: &str| plugin.strip_prefix(prefix).and_then(|n| n.parse::<u32>().ok());
     if plugin == "test:gain" {
         Ok(std::sync::Arc::new(Gain(AtomicU32::new(0.5f32.to_bits()))))
+    } else if plugin == "test:transport-cut" {
+        Ok(std::sync::Arc::new(TransportCut(AtomicU32::new(0))))
     } else if let Some(n) = after("test:crash-after:") {
         Ok(std::sync::Arc::new(Failing { after: n, blocks: AtomicU32::new(0), hang: false }))
     } else if let Some(ms) = after("test:slow-load:") {
@@ -83,6 +85,45 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
 }
 
 struct Gain(AtomicU32);
+
+/// A low-frequency instrument that resets its output instantly when transport stops.
+/// This models the discontinuity observed in an installed instrument without its preset.
+struct TransportCut(AtomicU32);
+
+impl Processor for TransportCut {
+    fn process(&self, input: &[f32], output: &mut [f32]) {
+        self.process_events(input, &[], output);
+    }
+    fn process_events(&self, _input: &[f32], events: &[suhina_ipc::Event], output: &mut [f32]) {
+        let playing =
+            events.iter().any(|event| matches!(event.kind, suhina_ipc::EventKind::Transport { playing: true, .. }));
+        let previous = self.0.load(Ordering::Relaxed);
+        let mut phase = previous >> 2;
+        let mut live = previous & 2 != 0;
+        if previous & 1 != 0 && !playing {
+            live = false;
+        }
+        for event in events {
+            match event.kind {
+                suhina_ipc::EventKind::NoteOn { .. } => live = true,
+                suhina_ipc::EventKind::NoteOff { .. } => live = false,
+                _ => {}
+            }
+        }
+        for pair in output.as_chunks_mut::<2>().0 {
+            let sample = if playing || live { (phase as f32 * std::f32::consts::TAU / 960.0).sin() * 0.5 } else { 0.0 };
+            pair.fill(sample);
+            phase = (phase + 1) % 960;
+        }
+        self.0.store((phase << 2) | u32::from(playing) | (u32::from(live) << 1), Ordering::Relaxed);
+    }
+    fn state(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn set_state(&self, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 impl Processor for Gain {
     fn process(&self, input: &[f32], output: &mut [f32]) {

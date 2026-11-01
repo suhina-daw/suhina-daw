@@ -352,7 +352,7 @@ style: `piano-roll note:selected { radius: 2px }`, `session track { width: 86px 
 `session slot { height: 18px }`, `arrangement track { height: 20px }`. Rendering, scrolling, hit
 testing and drop targets read the same metrics, so they always agree.
 
-Settings that change the layout today (Settings › Detail area › Detail area layout, the browser
+Settings that change the layout today (Settings › Devices › Detail area width, the browser
 shown or hidden) become classes on `window` (`window.detail-full-width`, `window.browser-hidden`),
 so the default style sheet states every layout in one place. Splitters stay: a drag stores a size
 for the grid track or element it moves, in the UI state (serialisable, ADR 0009 decision 5), which

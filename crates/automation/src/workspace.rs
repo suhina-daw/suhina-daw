@@ -68,7 +68,8 @@ impl Workspace {
                 self.write_roots.push(real);
             }
         }
-        self.missing_write = "no MCP write folder was granted; the person chooses folders in Settings > Export";
+        self.missing_write =
+            "no MCP write folder was granted; the person chooses folders in Settings > Agents and updates";
         self
     }
 

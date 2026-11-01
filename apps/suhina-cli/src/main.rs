@@ -46,7 +46,7 @@ commands:
             --audio, opened projects play on the default output so agents can launch clips,
             and audio.setOutput chooses another; with --attach, the agent works on the
             projects open in the running suhina app of this build instead, once the app
-            lets agents in (Settings › General) and the person allows the connection
+            lets agents in (Settings › Agents and updates) and the person allows the connection
   audio     audio devices: list the audio hosts (WASAPI, ASIO, ALSA...) and each one's output
             devices with their sample rates and buffer sizes
   plugins   find installed plug-ins: scan looks in the standard folders and the added ones
@@ -437,6 +437,7 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
         state: None,
         params,
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     };
     let channels: Vec<ChannelId> =
@@ -1077,6 +1078,7 @@ fn demo_project() -> Project {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     };
 
@@ -1103,6 +1105,7 @@ fn demo_project() -> Project {
                 },
             ],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

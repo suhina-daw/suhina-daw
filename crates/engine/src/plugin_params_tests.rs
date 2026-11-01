@@ -188,3 +188,27 @@ fn an_edit_resends_only_the_values_that_changed() {
     assert_eq!(seen.len(), 3, "{seen:?}");
     assert_eq!((seen[2].1, seen[2].2), (1, 0.9));
 }
+
+/// A device added beside a running plug-in changes its chain, which is built again: the
+/// plug-in keeps running with what it was sent, so a value turned in its own window meanwhile
+/// is not set back to the project's (#916).
+#[test]
+fn a_device_added_beside_a_plug_in_does_not_send_its_set_values_again() {
+    let project = automated(4.0, &[("0", 0.5), ("1", 0.5)], &[]);
+    let (plugins, seen) = with_level(&project);
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&AudioPool::new()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let _ = blocks(&mut renderer, 10, 480);
+    let mut edited = project.clone();
+    edited.channels[0].devices.push(device("utility", &[]));
+    controller.update(&edited).unwrap();
+    let _ = blocks(&mut renderer, 40, 480);
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 2, "only the first two set values, at the start: {seen:?}");
+}

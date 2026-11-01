@@ -3,7 +3,7 @@ description: How ARA plug-ins (audio editors such as pitch editors) are hosted o
 read_when: ARA, ARA2, Melodyne, pitch editor, audio random access, playback region, audio source, audio modification, region sequence, document controller, overlapping audio clips, audio overlap, arrangement.audioOverlaps, stacked clips and ARA
 type: decision
 status: draft
-last_verified: 2026-10-25
+last_verified: 2026-10-31
 covers:
   - crates/model/src/overlap.rs
   - crates/session/src/commands.rs
@@ -88,8 +88,9 @@ protocol (`crates/plugins/src/protocol.rs`).
    updates, playback control) and forwards what the engine must know.
 
 2. **One document per ARA plug-in product per project, in one process.** Every instance bound to a
-   document (one per track the plug-in sits on) must live in the process that holds its document
-   controller. ADR 0006's default, one process per plug-in file, already does this; the
+   document (one per track whose clips the plug-in edits) must live in the process that holds its
+   document controller.
+   *Amended 2026-10-25, see Amendment: the ARA plug-in belongs to the clip.* ADR 0006's default, one process per plug-in file, already does this; the
    *own process per instance* choice is refused for an ARA plug-in, with the reason.
    *Built (#589):* the scan marks each VST3 plug-in that supports ARA (`PluginInfo::ara`, shown
    by `plugin.list`): its module declares a class in the category `ARA Main Factory Class`
@@ -122,12 +123,13 @@ protocol (`crates/plugins/src/protocol.rs`).
    process that makes a link or a source.
 
 5. **The model maps onto the document like this:**
+   *Amended 2026-10-25, see Amendment: the ARA plug-in belongs to the clip.*
 
    | ARA object | Suhina | Persistent id |
    |---|---|---|
    | Audio source | an audio content's file (`AudioRegion`, by its pool key) | from the content id |
    | Audio modification | the edits of one content; clips that share the content share them | from the content id and a counter |
-   | Playback region | an arrangement clip: start, length and offset as samples through the tempo map | from the clip id ([#568](https://github.com/suhina-daw/suhina-daw/issues/568)) |
+   | Playback region | an arrangement clip that names the plug-in: start, length and offset as samples through the tempo map | from the clip id ([#568](https://github.com/suhina-daw/suhina-daw/issues/568)) |
    | Region sequence | a track's arrangement lane | from the track id |
    | Musical context | the tempo and time-signature changes ([ADR 0024](0024-musical-time-and-tempo.md)) | one per project |
 
@@ -218,11 +220,15 @@ the list below, in a first form). Where it differs from the decisions above it i
   moves the transport. Until the engine reports the position asked for (or a second has passed),
   the host shows the plug-in that position in its process context while the transport is stopped:
   the request goes to the engine and back, and the plug-in otherwise drew the old position from the
-  next block, its playhead flickering back for a moment. The loop (cycle) requests
-  are not followed; the loop region is set in the ruler. A click on a clip in the arrangement
+  next block, its playhead flickering back for a moment. A loop made or switched in the
+  editor is the arrangement's loop (`ara_playback` `cycle` and `cycle_on`, protocol version 14):
+  its start and length in seconds become beats through the tempo map and `transport.setLoop`, its
+  switch `transport.setLoopEnabled`, and a newer loop replaces one not taken yet, as a dragged
+  loop asks on every move. The plug-in sees the arrangement's loop, however it was set, in each
+  block's process context (`cycleStartMusic`, `cycleEndMusic`, `kCycleActive`). A click on a clip in the arrangement
   moves the play position there, so the editor follows the clip it shows (#717). The rules that play
-  from a selected clip's start (Settings › Play from, and a clip picked while stopped) give way
-  on a track with an ARA plug-in, always: there the editor's timeline and a click set where
+  from a selected clip's start (Settings › Play from, and a clip picked) give way
+  on a track with an ARA plug-in, except that a click on a clip's name bar moves the marker to its start: there the editor's timeline and a click set where
   play starts.
 - **Copies keep their edits** (decision 5). A clip that gets its own content (a paste, a split's
   second part, notes copied on edit) names in the update the modification it is a copy of
@@ -350,6 +356,32 @@ the list below, in a first form). Where it differs from the decisions above it i
   `notifyDocumentDataChanged` flag is kept but not read yet: the edits are noticed when the
   state is read. `test:ara` (decision 10) does not exist yet; the test VST3 plug-in, listed as an
   ARA one, checks that a document reaches the host and that a refusal is reported.
+
+## Amendment: the ARA plug-in belongs to the clip (2026-10-25)
+
+[#990](https://github.com/suhina-daw/suhina-daw/issues/990). An ARA edit is the clip's, not the
+track's, so the plug-in is no longer one of the track's effects:
+
+- **A clip names its ARA plug-in** (`Clip::ara`, `clip.setAra {clips, on, plugin?}`, the clip
+  menu's **Edit with** and **Stop editing with**); a clip holds no other effect. Only clips that
+  name it are its playback regions (decision 5). A track's clips use one ARA plug-in in the first
+  version.
+- **Signal flow:** the clip's raw audio → its ARA plug-in → the clip's gain and fades → the track's
+  devices → Main. The plug-in reads the source itself (decision 4), so gain never reaches its
+  analysis; the host applies each clip's gain and fades to the renderer's output, as the ARA API
+  describes for per-region processing in the host. The track's other clips go past the plug-in.
+- **Hosting:** the plug-in is the channel's first device, marked as its clip host
+  (`Device::clip_host`), which the device lists leave out and a device command never puts behind
+  another device. The engine runs it on its own (never in a joint block with the plug-ins after
+  it), fed with nothing, its output scaled frame by frame by the playing ARA clip's gain and fade
+  (1 while stopped, so the editor's auditions sound). Overlaps of ARA clips stay refused (decision
+  6), so one renderer per track is enough; overlaps would need one per concurrently sounding
+  region, round robin. A disabled or missing host leaves the clips playing as they are.
+- **The editor** opens with a double-click on an ARA clip, the host's view selection set to it.
+- **Copies and moves** keep the clip's flag and its edits.
+- **Old projects:** a track's ARA device from before keeps editing every audio clip of its track;
+  the first **Edit with** or `clip.setAra` there makes it the clip host and names those clips. An
+  ARA plug-in dropped on a track becomes its clip host for all its audio clips, as before.
 
 ## Alternatives considered
 

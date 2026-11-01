@@ -3,7 +3,7 @@ description: The interface of built-in effects and instruments (Device trait, pa
 read_when: device, built-in effect or instrument, effect, instrument, dsp, filter, parameter, automation, utility, device-api, conformance
 type: decision
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-30
 covers:
   - crates/dsp/**
   - crates/device-api/**
@@ -124,6 +124,9 @@ decision 9.
    track, so held notes and tails carry on through an edit and the new parameter values
    apply; otherwise the new chain starts fresh and the old devices are freed with the old
    graph, off the audio thread. A render with chains is 2 s longer, for releases and tails.
+   The main channel runs a chain of its own too, last, over the mix that reaches the main
+   output, when it holds devices or its volume, pan or mute follows a lane. *Amended
+   2026-10-25, see Amendment: a chain on the main channel.*
 
 10. **A group with devices is a bus** (added 2026-10-12, with Stems files, whose mastering
    compressor and limiter must act on the sum of the stems). When a group track's channel holds
@@ -224,10 +227,22 @@ decision 9.
     and the launcher all start notes through it, so the offline renders in
     `crates/engine/src/midi_effect_tests.rs` are the oracle for playback as well.
 
+## Amendment: a chain on the main channel (2026-10-25, #687)
+
+The main channel runs a chain of its own when it holds devices or its volume, pan or mute
+follows a lane (`buses::main_runs_chain`). It is built for `TrackId::MAIN`, the id commands, the
+engine and the views name the main channel by (it has no track), and comes last among the
+graph's chains: what reaches the main output (sources without a chain, and every chain that
+plays into the main output after its gains) is its input, its devices run over that mix, and its
+volume, mute and lanes apply after them, so a limiter on Main is fed the same level whatever the
+main fader says. The main volume then no longer scales each track's gains. Its plug-ins are hosted,
+carried over at a swap and taken back like any chain's. Its latency delays the whole output
+equally, so it needs no compensation of its own; a node render (Stems) stops below it. The
+metronome's click is mixed in before it, as it is into the main output. Without devices or lanes
+nothing changes: the main volume scales every source as before.
+
 ## Not decided yet
 
-- **A chain on the master channel:** how it runs after every other chain, and how latency
-  compensation (10, 11 and 12 above) extends to it.
 - **Mono, multichannel and side-chain inputs.** The trait is stereo in, stereo out.
   Side-chained dynamics extend it when the first one is built.
 - **Per-note expression.** `NoteEvent` has no channel and no per-note controls yet (MIDI

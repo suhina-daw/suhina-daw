@@ -14,8 +14,13 @@ run-name: "Open issue: ${{ inputs.title }}"
 # `actions_run_trigger`. The run prints `OPENED_ISSUE=#<number> <url>` in its log and puts the link
 # in its summary; re-running a failed run does not open the issue twice.
 #
-# The actions are pinned to commits (the tag in the comment beside each): this job holds the App's
-# private key, and a tag can be moved to other code.
+# Only an account with write access can start it; GitHub answers anyone else's dispatch with
+# `HTTP 403: Must have admin rights to Repository`. Without write access an agent opens the issue
+# under the person's own account instead: scripts/agent_post.py checks the access and takes the
+# right path (AGENTS.md › Tasks).
+#
+# The actions are pinned to commits, as in every workflow here (CONTRIBUTING.md › Dependencies):
+# this job holds the App's private key, and a tag can be moved to other code.
 #
 # Setup, by a maintainer only: the App `suhina-bot` has Repository permissions › Issues: Read and
 # write, Pull requests: Read and write (for comment-pr.yml), Organization permissions › Projects:

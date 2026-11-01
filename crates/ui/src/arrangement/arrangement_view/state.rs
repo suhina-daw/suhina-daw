@@ -47,6 +47,17 @@ pub(super) enum EdgeGrab {
     Right,
 }
 
+/// A clip of a selection just moved or trimmed: where it is drawn until the project has it
+/// ([`ArrangementViewState::settling`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Settling {
+    pub(super) key: (TrackId, ClipId),
+    pub(super) from: f64,
+    pub(super) to: f64,
+    pub(super) moved: bool,
+    pub(super) until: u64,
+}
+
 /// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far;
 /// the beat it was at and where the button went down, which the edge follows the pointer from.
 #[derive(Debug, Clone, Copy)]
@@ -101,24 +112,90 @@ pub(super) struct ValueDrag {
 
 /// What the view keeps between frames: scrolling, zoom, lane heights, the header column, the
 /// selected clip and whatever is being dragged.
+/// The Arrangement's tools (#991), chosen on its toolbar or with the tool keys while it has the
+/// focus: what a press on a clip or a lane does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ArrangementTool {
+    /// Moves, trims and selects clips, as the view does without a toolbar.
+    #[default]
+    Select,
+    /// A drag selects time, across the tracks it crosses.
+    Range,
+    /// A click cuts a clip where it is clicked (on the grid; Alt: free).
+    Split,
+    /// A click deletes a clip.
+    Erase,
+    /// A drag on a lane makes an empty clip as long as the drag.
+    Draw,
+    /// A click mutes a clip, or unmutes it.
+    Mute,
+}
+
+impl ArrangementTool {
+    pub const ALL: [(Self, &'static str); 6] = [
+        (Self::Select, "Select"),
+        (Self::Range, "Range"),
+        (Self::Split, "Split"),
+        (Self::Erase, "Erase"),
+        (Self::Draw, "Draw"),
+        (Self::Mute, "Mute"),
+    ];
+}
+
 #[derive(Debug)]
 pub struct ArrangementViewState {
     pub scroll: Vec2,
     /// Points per beat.
     pub beat_width: f32,
-    /// The value chosen in the control bar, which the grid is drawn from and clips snap to
-    /// (`launcher.setQuantization`); the window sets it before each frame.
-    pub grid: Quantization,
+    /// The furthest beat a zoom at the pointer has shown at the view's right edge: the timeline
+    /// scrolls at least that far, so zooming past the end of the content keeps the time under
+    /// the pointer in place instead of pulling the view back (#910).
+    pub(super) zoom_reach: f64,
+    /// The Arrangement's own grid, which its lines are drawn from and clips, fades, points and
+    /// ruler clicks snap to: adaptive or fixed, triplets, snap on or off, as the piano roll's.
+    /// It is apart from the control bar's launch quantisation.
+    pub grid: PianoGrid,
     /// Track headers on the left of the timeline instead of the right.
     pub headers_left: bool,
     /// The return tracks' rows are left out (the "Hide returns" button by the ruler).
     pub returns_hidden: bool,
+    /// Whole tracks have been copied, so a header's menu can paste them (#919); the window says
+    /// so each frame.
+    pub tracks_copied: bool,
+    /// Tracks whose take lanes are folded away (Hide take lanes in the lane's menu).
+    pub takes_hidden: HashSet<TrackId>,
+    /// A drag across a take lane that picks the part to comp: the track, the take's number and
+    /// the beat it started at.
+    pub(super) take_drag: Option<(TrackId, usize, f64)>,
+    /// The take piece a right-click on a take lane was over (track, take number, piece from 0),
+    /// which the lane's Recolor colours (#989).
+    pub(super) take_piece: Option<(TrackId, usize, usize)>,
+    /// The height `track`'s take lanes were dragged to (#989); the default for the rest.
+    pub(super) take_heights: HashMap<TrackId, f32>,
+    /// Take pieces picked with Ctrl and a click (track, take number, piece from 0), which Delete
+    /// deletes (#989).
+    pub take_selected: Vec<(TrackId, usize, usize)>,
+    /// The take lane heard in place of its track (track, take number), as the session says
+    /// (`take.solo`): its S lit and the track's lane greyed.
+    pub take_solo: Option<(TrackId, usize)>,
     /// Moved clips stack on others instead of replacing them: audio clips, MIDI clips.
     pub stack_audio: bool,
     pub stack_midi: bool,
     /// How a drag over a clip selects time (Settings › Arrangement › Time selection): with Ctrl
     /// held when true; from the clip's upper half when false. A drag on empty lanes or on the ruler selects time either way.
     pub time_select_ctrl: bool,
+    /// The toolbar shows (Settings › Arrangement › Toolbar, #991), the tool chosen on it, the
+    /// keys of the tool actions for its tooltips, and whether the view has the focus: the tool
+    /// keys act on it, and it is outlined.
+    pub toolbar: bool,
+    pub tool: ArrangementTool,
+    pub tool_keys: Vec<Option<String>>,
+    /// The keys of the grid's snap, narrower, wider and triplet (`GRID_KEYS`), as its menus
+    /// show them; the window sets them.
+    pub grid_keys: [String; 4],
+    pub has_focus: bool,
+    /// A drag of the Draw tool on a lane: the track and the beat it started at.
+    pub(super) draw_drag: Option<(TrackId, f64)>,
     /// Alt held while an audio clip's edge is dragged stretches its audio to the new length
     /// (Settings › Arrangement › Ctrl+Alt-drag on an edge stretches audio).
     pub stretch_alt: bool,
@@ -133,6 +210,10 @@ pub struct ArrangementViewState {
     pub ara_default: Option<String>,
     pub header_width: f32,
     pub(super) heights: HashMap<TrackId, f32>,
+    /// How far Alt and the wheel have zoomed the lanes since the project opened: a track added
+    /// later is this much taller than the default, so it matches the tracks around it rather
+    /// than coming in at the height a new project starts with.
+    lane_zoom: f32,
     pub(super) sizes: TrackSizes,
     pub(super) apply_track_default: bool,
     pub(super) apply_return_default: bool,
@@ -162,9 +243,17 @@ pub struct ArrangementViewState {
     /// It is drawn there until the project has it, or the frame the button came up showed the
     /// clip as it was before the drag for an instant.
     pub(super) edge_released: Option<((TrackId, ClipId), f64, f64, u8)>,
+    /// Clips of a selection just moved or trimmed together: each clip, the start and end it
+    /// was given, whether it moved (its content with it) and the pass it is drawn there until
+    /// at most. It is drawn there until the project has it, so the selection does not show
+    /// where it was for a few frames, or flicker between there and here.
+    pub(super) settling: Vec<Settling>,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     pub(super) menu_beat: Option<f64>,
     pub(super) clip_drag: Option<ClipDrag>,
+    /// A clip dropped on another track this frame: drawn there until the project has moved it,
+    /// not back on its own track for a frame (#916).
+    pub(super) landing: Option<ClipDrag>,
     /// The empty space under the tracks this frame, top to bottom: a clip dropped there goes to
     /// a new track.
     pub(super) below_tracks: Option<(f32, f32)>,
@@ -197,7 +286,7 @@ pub struct ArrangementViewState {
     /// Where the waveform zoom slider was drawn last frame: the wheel over it steps the zoom
     /// and leaves the view where it is.
     pub(super) zoom_area: Option<Rect>,
-    /// Volume and pan as knobs instead of fields (Settings › Session and mixer).
+    /// Volume and pan as knobs instead of fields (Settings › Launcher and mixer).
     pub knobs: bool,
     /// The track the user last worked on: the header they clicked, or the track of the clip they
     /// selected. A folded group shows that track while it is one of its own.
@@ -207,6 +296,12 @@ pub struct ArrangementViewState {
     pub(super) track_drop: Option<(TrackId, f32)>,
     /// The middle button is held after being pressed over the timeline: the view follows it.
     pub(super) panning: bool,
+    /// A track to scroll into view on the next frame: one just added or selected from the
+    /// keyboard (#918).
+    pub reveal: Option<TrackId>,
+    /// Alt and the wheel change only the lane under the pointer, a track's or an automation
+    /// lane's, rather than every lane (Settings › Arrangement, #957). The window sets it.
+    pub zoom_one: bool,
     /// A drag from the browser over the window: the view says which target is under the
     /// pointer (`docs/spec/browser.md` › Dragging into the project).
     pub drop: Option<DropProbe>,
@@ -219,12 +314,18 @@ pub struct ArrangementViewState {
     /// opens a clip editor closed by hand again (`docs/spec/ui-clip-editor.md` › Least height
     /// and closing).
     pub clip_clicked: bool,
+    /// A clip was double-clicked: the window opens its editor (#916).
+    pub clip_opened: bool,
+    /// A click on a track that was not on a clip (its header, an empty part of its lane): the
+    /// window shows its devices (#950).
+    pub devices_clicked: bool,
     /// The clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste): play
     /// starts from the first of them, as the setting says. A click in a clip's body picks it
     /// too, but play starts where it was clicked, as the insert marker shows.
     pub picked_whole: bool,
+    pub whole_clip_clicked: bool,
     /// A clip moves by its name bar and selects time from its body (the default); off
-    /// (Mirror), its lower half moves it and its upper half selects time.
+    /// (Lower half), its lower half moves it and its upper half selects time.
     pub name_bar_moves: bool,
     /// The grid's lines show through the clips' bodies, faintly (Settings › Arrangement ›
     /// TimelineGrid in clips; on by default).
@@ -258,19 +359,34 @@ impl Default for ArrangementViewState {
     fn default() -> Self {
         Self {
             scroll: Vec2::ZERO,
+            zoom_reach: 0.0,
             beat_width: DEFAULT_BEAT_WIDTH,
-            grid: Quantization::Bars(1),
+            grid: PianoGrid::from_value("1 bar"),
             headers_left: false,
             returns_hidden: false,
+            tracks_copied: false,
+            takes_hidden: HashSet::new(),
+            take_drag: None,
+            take_piece: None,
+            take_heights: HashMap::new(),
+            take_selected: Vec::new(),
+            take_solo: None,
             stack_audio: false,
             stack_midi: false,
             time_select_ctrl: false,
+            toolbar: false,
+            tool: ArrangementTool::Select,
+            tool_keys: Vec::new(),
+            grid_keys: Default::default(),
+            has_focus: false,
+            draw_drag: None,
             stretch_alt: true,
             double_click_does_nothing: false,
             ara_tracks: Vec::new(),
             ara_default: None,
             header_width: HEADER_COLUMN,
             heights: HashMap::new(),
+            lane_zoom: 1.0,
             sizes: TrackSizes::default(),
             apply_track_default: false,
             apply_return_default: false,
@@ -285,8 +401,10 @@ impl Default for ArrangementViewState {
             ruler_select: None,
             edge_drag: None,
             edge_released: None,
+            settling: Vec::new(),
             menu_beat: None,
             clip_drag: None,
+            landing: None,
             below_tracks: None,
             value_drag: None,
             gain_drag: None,
@@ -308,11 +426,16 @@ impl Default for ArrangementViewState {
             track_drag: None,
             track_drop: None,
             panning: false,
+            reveal: None,
+            zoom_one: false,
             drop: None,
             meters: Meters::default(),
             focus: None,
             clip_clicked: false,
+            clip_opened: false,
+            devices_clicked: false,
             picked_whole: true,
+            whole_clip_clicked: false,
             name_bar_moves: true,
             grid_in_clips: true,
             waveform_zoom: 1.0,
@@ -329,6 +452,9 @@ impl Default for ArrangementViewState {
         }
     }
 }
+
+/// A track and each of its clips' id, start and end, for Select All.
+pub type LaneClips = (TrackId, Vec<(ClipId, f64, f64)>);
 
 /// A span of beats over some tracks, the selection rectangle's.
 #[derive(Debug, Clone, PartialEq)]
@@ -353,6 +479,11 @@ impl ArrangementViewState {
     }
 
     /// The clip the views work on: the one clicked last.
+    /// The Arrangement grid's step at the view's zoom, in beats, for `bar_beats` beats a bar.
+    pub fn grid_step(&self, bar_beats: f64) -> f64 {
+        arrangement_grid(self.grid, self.beat_width, bar_beats).step
+    }
+
     pub fn selected_clip(&self) -> Option<(TrackId, ClipId)> {
         self.anchor
     }
@@ -374,11 +505,39 @@ impl ArrangementViewState {
     }
 
     /// Selects every clip in `keys`, as Ctrl+A does.
+    /// Gives `key`, one of the picked clips, the piano roll's focus: it is the clip shown and
+    /// edited, the others staying picked (#1054).
+    pub fn focus_clip(&mut self, key: (TrackId, ClipId)) {
+        if self.selected.contains(&key) {
+            self.anchor = Some(key);
+        }
+    }
+
     pub fn select_clips(&mut self, keys: Vec<(TrackId, ClipId)>) {
         self.track_focus = false;
         self.picked_whole = true;
+        // Clips picked: the time selection gives way to them, so one left was painted after them.
+        // Nothing picked (Select All in an empty project) leaves it be.
+        if !keys.is_empty() {
+            self.time_selection = None;
+        }
         self.anchor = keys.first().copied();
         self.selected = keys;
+    }
+
+    /// Select All: every clip of `lanes` (track, then each clip's id, start and end), and the time
+    /// from the first start to the last end over all the tracks.
+    pub fn select_all_clips(&mut self, lanes: &[LaneClips]) {
+        let keys: Vec<(TrackId, ClipId)> =
+            lanes.iter().flat_map(|(track, clips)| clips.iter().map(|c| (*track, c.0))).collect();
+        self.select_clips(keys);
+        let spans = || lanes.iter().flat_map(|(_, clips)| clips);
+        let start = spans().map(|c| c.1).fold(f64::INFINITY, f64::min);
+        let end = spans().map(|c| c.2).fold(f64::NEG_INFINITY, f64::max);
+        if end > start {
+            let tracks = lanes.iter().map(|(track, _)| *track).collect();
+            self.time_selection = Some(TimeSelection { tracks, start, end, row: None });
+        }
     }
 
     /// Picks the clip at `key` the way a click on it does: Shift takes the rectangle from the last
@@ -501,6 +660,17 @@ impl ArrangementViewState {
         self.heights.insert(track, height.clamp(MIN_LANE, MAX_LANE));
     }
 
+    /// Changes `track`'s height from the `drawn` one by `by` as dragging its edge does; a track among
+    /// the selected ones takes the others with it, each from its own height.
+    pub(super) fn resize_lanes(&mut self, track: TrackId, drawn: f32, by: f32) {
+        if self.selected_tracks.contains(&track) {
+            for other in self.selected_tracks.clone().into_iter().filter(|other| *other != track) {
+                self.set_lane_height(other, self.kept_height(other) + by);
+            }
+        }
+        self.set_lane_height(track, drawn + by);
+    }
+
     /// Scales every track lane's height by `factor`, keeping the content `anchor` points below
     /// the top of the lanes where it is, as Alt and the wheel do.
     pub(super) fn zoom_lanes(&mut self, lanes: &[Lane], factor: f32, anchor: f32) {
@@ -519,11 +689,50 @@ impl ArrangementViewState {
         let content = |state: &Self| lanes.iter().map(|l| state.height(l) + 1.0).sum::<f32>();
         let before = content(self);
         for lane in &lanes {
-            let height = self.height(lane) * factor;
+            // From the height as kept, not as drawn: small steps would round back to it.
+            let height = self.kept_height(lane.track) * factor;
             self.heights.insert(lane.track, height.clamp(MIN_LANE, MAX_LANE));
         }
+        // The zoom of a track added later, against the default size it starts from.
+        let base = crate::kit::style_class::theme_track_height()
+            .unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)))
+            .max(1.0);
+        self.lane_zoom = (self.lane_zoom * factor).clamp(MIN_LANE / base, MAX_LANE / base);
         let ratio = if before > 0.0 { content(self) / before } else { 1.0 };
         self.scroll.y = ((self.scroll.y + anchor) * ratio - anchor).max(0.0);
+    }
+
+    /// Alt and the wheel over the lanes, `offset` points below their top (#957): every track lane
+    /// and every shown automation lane by `factor`, or with [`Self::zoom_one`] only the lane under
+    /// the pointer.
+    pub(super) fn zoom_wheel(&mut self, drawn: &[&Lane], timeline: &Timeline, factor: f32, offset: f32) {
+        if !factor.is_finite() || factor <= 0.0 {
+            return;
+        }
+        if !self.zoom_one {
+            self.zoom_lanes(&timeline.lanes, factor, offset);
+            self.automation.zoom_all(factor);
+            return;
+        }
+        let y = offset + self.scroll.y;
+        let mut top = 0.0;
+        for lane in drawn {
+            let height = self.height(lane);
+            if y < top + height {
+                let kept = if lane.kind == ColumnKind::Return { height } else { self.kept_height(lane.track) };
+                self.heights.insert(lane.track, (kept * factor).clamp(MIN_LANE, MAX_LANE));
+                return;
+            }
+            top += height + 1.0 + self.takes_height(lane.track, timeline);
+            for key in self.automation.shown(lane.track, &timeline.automation) {
+                let lane_height = self.automation.lane_height(lane.track, &key);
+                if y < top + lane_height {
+                    self.automation.set_lane_height(lane.track, &key, lane_height * factor);
+                    return;
+                }
+                top += lane_height + 1.0;
+            }
+        }
     }
 
     /// What the clip at `key` shows: the project's gain and fades, or the value of a drag in
@@ -554,13 +763,39 @@ impl ArrangementViewState {
                 }
             }
         }
-        if let Some(drag) = self.curve_drag.filter(|d| d.key == key) {
+        // Another selected clip's curve dragged: this one's takes it too.
+        let curve = self.curve_drag.filter(|d| {
+            d.key == key || (clip.audio && self.selected.len() > 1 && self.is_selected(d.key) && self.is_selected(key))
+        });
+        if let Some(drag) = curve {
             match drag.edge {
                 FadeEdge::In => shown.fade_in_curve.curve = drag.curve,
                 FadeEdge::Out => shown.fade_out_curve.curve = drag.curve,
             }
         }
         shown
+    }
+
+    /// How much taller `track`'s row is for its take lanes, while they show.
+    pub(super) fn takes_height(&self, track: TrackId, timeline: &Timeline) -> f32 {
+        if self.takes_hidden.contains(&track) {
+            return 0.0;
+        }
+        // The kept takes, and the passes of a take still recording that are already done.
+        let kept = timeline.takes.iter().filter(|t| t.track == track).count();
+        let recording = timeline.live_takes.iter().filter(|t| t.track == track && t.finished).count();
+        (kept + recording) as f32 * (self.take_row(track) + 1.0)
+    }
+
+    /// How tall each of `track`'s take lanes is: the height its edge was dragged to, or the
+    /// default (#989).
+    pub(super) fn take_row(&self, track: TrackId) -> f32 {
+        self.take_heights.get(&track).copied().unwrap_or(TAKE_ROW)
+    }
+
+    /// What is drawn under `track`'s own row: its take lanes, then its automation lanes.
+    pub(super) fn below(&self, track: TrackId, timeline: &Timeline) -> f32 {
+        self.takes_height(track, timeline) + self.automation.height(track, &timeline.automation)
     }
 
     pub(super) fn height(&self, lane: &Lane) -> f32 {
@@ -627,11 +862,20 @@ impl ArrangementViewState {
         }
     }
 
-    /// How tall a track's row is: its own height once its edge is dragged or it is resized, else
-    /// the theme's (`--suhina-track-height`), else the default size.
+    /// How tall a track's row is drawn: its own height once its edge is dragged or it is resized,
+    /// else the theme's (`--suhina-track-height`) or the default size as far as the lanes have
+    /// been zoomed, in whole points, so tracks zoomed alike are as tall as each other and a header
+    /// never falls a fraction under the height its rows need (#916).
     pub fn lane_height(&self, track: TrackId) -> f32 {
+        self.kept_height(track).round()
+    }
+
+    /// `track`'s row height as kept, a fraction of a point too, for the next zoom step.
+    fn kept_height(&self, track: TrackId) -> f32 {
         self.heights.get(&track).copied().unwrap_or_else(|| {
-            crate::kit::style_class::theme_track_height().unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)))
+            let base = crate::kit::style_class::theme_track_height()
+                .unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)));
+            (base * self.lane_zoom).clamp(MIN_LANE, MAX_LANE)
         })
     }
 

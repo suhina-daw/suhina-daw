@@ -25,8 +25,8 @@ pub fn embeds_editors_here() -> bool {
 #[cfg(windows)]
 mod imp {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DestroyWindow, DispatchMessageW, FindWindowExW, GetMessageW, MSG, PostThreadMessageW, WM_QUIT,
-        WS_OVERLAPPEDWINDOW,
+        CreateWindowExW, DestroyWindow, DispatchMessageW, FindWindowExW, GW_OWNER, GWL_STYLE, GetMessageW, GetWindow,
+        GetWindowLongW, MSG, PostThreadMessageW, WM_QUIT, WS_OVERLAPPEDWINDOW,
     };
 
     pub struct ParentWindow {
@@ -81,19 +81,31 @@ mod imp {
         }
 
         /// How many editor windows (the host's class) are children of this window.
+        /// The embedded editors shown over this window: on Windows a frameless window of the
+        /// editor's class that this window owns (not a child, which the engine's
+        /// DirectComposition drawing would cover).
         pub fn editor_children(&self) -> usize {
             let class: Vec<u16> = "SuhinaPluginEditor".encode_utf16().chain([0]).collect();
             let mut count = 0;
             let mut after = std::ptr::null_mut();
             loop {
-                // SAFETY: this window and a class name that outlive the call; the previous
-                // child found, or none.
-                let child = unsafe { FindWindowExW(self.handle as _, after, class.as_ptr(), std::ptr::null()) };
-                if child.is_null() {
+                // SAFETY: a class name that outlives the call; the previous top-level window
+                // found, or none.
+                let window = unsafe { FindWindowExW(std::ptr::null_mut(), after, class.as_ptr(), std::ptr::null()) };
+                if window.is_null() {
                     return count;
                 }
-                count += 1;
-                after = child;
+                // SAFETY: a window just found; the calls only read its owner and its style. An
+                // editor in a window of its own has a caption; an embedded one has none.
+                let owned = unsafe { GetWindow(window, GW_OWNER) } == self.handle as _;
+                // SAFETY: as above.
+                let framed = unsafe { GetWindowLongW(window, GWL_STYLE) } as u32
+                    & windows_sys::Win32::UI::WindowsAndMessaging::WS_CAPTION
+                    != 0;
+                if owned && !framed {
+                    count += 1;
+                }
+                after = window;
             }
         }
     }

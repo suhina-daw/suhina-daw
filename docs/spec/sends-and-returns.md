@@ -3,7 +3,7 @@ description: How sends and return tracks behave: what a send taps (before or aft
 read_when: send, sends, return track, returns, pre-fader, post-fader, track.setSend, track.setSendMode, return.add, return.remove, return.rename, send knob, effect return, aux
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-10-28
 covers:
   - crates/engine/src/sends.rs
   - crates/engine/src/sends_tests.rs
@@ -69,7 +69,7 @@ dB, mode).
 
 ## In the window
 
-The Session view's mixer strip has one knob per return beside the pan knob, as many as the row
+The Launcher view's mixer strip has one knob per return beside the pan knob, as many as the row
 holds (three in a track column), with the return's letter in it
 ([components](../design/components.md) › Mixer strip). A vertical drag sets the level
 (`track.setSend`, 0.25 dB a point, Shift finer, −70 dB and below is off), a double-click turns

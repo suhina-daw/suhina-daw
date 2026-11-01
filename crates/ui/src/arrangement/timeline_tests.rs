@@ -98,7 +98,7 @@ fn a_split_clip_in_a_stack_keeps_both_parts_on_its_row() {
 }
 
 #[test]
-fn headers_show_what_automation_plays_while_it_plays() {
+fn headers_show_what_automation_plays_at_the_playhead_running_or_stopped() {
     use suhina_engine::model::{AutomationLane, AutomationPoint};
     let mut project = demo_project();
     let track = project.tracks[0].id;
@@ -116,9 +116,18 @@ fn headers_show_what_automation_plays_while_it_plays() {
     timeline.beat = 8.0;
     timeline.follow_automation(&project);
     assert!((volume(&timeline) + 6.02).abs() < 0.05, "{}", volume(&timeline));
+    // Stopped, the playhead moved back to the start: the automation's value there (#811).
     timeline.running = false;
+    timeline.beat = 0.0;
     timeline.follow_automation(&project);
-    assert!(volume(&timeline).abs() < 1e-9, "stopped: the project's own value");
+    assert!(volume(&timeline).abs() < 1e-9, "stopped at beat 0: {}", volume(&timeline));
+    timeline.beat = 8.0;
+    timeline.follow_automation(&project);
+    assert!((volume(&timeline) + 6.02).abs() < 0.05, "stopped at beat 8: {}", volume(&timeline));
+    // A lane turned off by a change by hand leaves the project's own value.
+    project.channel_mut(channel).unwrap().automation[0].enabled = false;
+    timeline.follow_automation(&project);
+    assert!(volume(&timeline).abs() < 1e-9, "off: the project's own value");
 }
 
 #[test]

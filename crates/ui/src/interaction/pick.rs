@@ -11,13 +11,13 @@ use std::path::PathBuf;
 /// The field a chosen path goes into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickField {
-    /// User-owned background PNG; no desktop capture.
+    /// Settings › Appearance › Background image: a user-owned PNG; no desktop capture.
     BackgroundImage,
-    /// Settings › General › Projects folder.
+    /// Settings › Projects and backups › Projects folder.
     ProjectsFolder,
-    /// Settings › General › Templates folder.
+    /// Settings › Projects and backups › Templates folder.
     TemplatesFolder,
-    /// Settings › General › Start template.
+    /// Settings › Projects and backups › Startup template.
     StartTemplate,
     /// The folder of the save prompt (File › Save as…).
     SaveFolder,
@@ -25,18 +25,22 @@ pub enum PickField {
     ExportFile,
     /// A folder the person allows attached MCP agents to write in.
     McpWriteFolder,
+    /// A folder to look in for plug-ins (Settings › Plug-ins, added with nothing typed).
+    PluginFolder,
     /// A project to open (File › Open…, the start panel's Open…).
     OpenProject,
     /// A folder for the browser (+ Add folder).
     BrowserFolder,
-    /// Settings › General › NAM models folder (docs/spec/nam-amp-and-cab.md).
+    /// Amp models folder (docs/spec/nam-amp-and-cab.md).
     NamModelsFolder,
-    /// Settings › Appearance › Themes folder.
+    /// Settings › Themes › Themes folder.
     ThemesFolder,
-    /// Settings › General › Settings folder.
+    /// Settings › Projects and backups › Settings folder.
     DataFolder,
-    /// Settings › General › IR folder (docs/spec/nam-amp-and-cab.md).
+    /// Cabinet sounds folder (docs/spec/nam-amp-and-cab.md).
     IrFolder,
+    /// The folder Copy to folder… copies samples into (`library.copyTo`, #865).
+    CopyToFolder,
 }
 
 impl PickField {
@@ -55,12 +59,14 @@ impl PickField {
             Self::SaveFolder => "Folder to save in",
             Self::ExportFile => "Export audio to",
             Self::McpWriteFolder => "Allow MCP writes in",
+            Self::PluginFolder => "Add a plug-in folder",
             Self::OpenProject => "Open a project",
             Self::BrowserFolder => "Add a folder to the browser",
-            Self::NamModelsFolder => "NAM models folder",
+            Self::NamModelsFolder => "Amp models folder",
             Self::ThemesFolder => "Themes folder",
             Self::DataFolder => "Settings folder",
-            Self::IrFolder => "IR folder",
+            Self::IrFolder => "Cabinet sounds folder",
+            Self::CopyToFolder => "Copy the samples to",
         }
     }
 

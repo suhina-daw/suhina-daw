@@ -95,6 +95,10 @@ impl App {
                 browser_view::show(ui, panel, &mut self.browser, cx)
             })
             .inner;
+        // A press anywhere outside the browser gives the arrow keys back to the window.
+        if ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !panel.contains(p))) {
+            self.browser.list_focused = false;
+        }
         if map_settings != self.settings {
             self.settings = map_settings;
             self.settings_changed = true;
@@ -111,6 +115,13 @@ impl App {
         }
         if out.pick_folder {
             self.ask_pick(PickField::BrowserFolder);
+        }
+        let copy_to = std::mem::take(&mut self.sample_map.copy_to);
+        for files in [out.copy_to, copy_to] {
+            if !files.is_empty() {
+                self.copy_to = files;
+                self.ask_pick(PickField::CopyToFolder);
+            }
         }
         if out.toggle_autoplay {
             self.settings.preview_autoplay = !self.settings.preview_autoplay;
@@ -164,6 +175,20 @@ impl App {
                 let main = ctx.input(|i| i.viewport().inner_rect).map_or(Pos2::ZERO, |r| r.min);
                 remote.screen.map(|p| p - main.to_vec2())
             }
+            // Files dragged in from the system: Windows sends the window no pointer moves
+            // while they hover, so the pointer is read from the screen, or the drop went where
+            // the pointer last was before the drag came in.
+            None if ctx.input(|i| !i.raw.hovered_files.is_empty()) => {
+                let screen = suhina_plugins::pointer_on_screen();
+                let main = ctx.input(|i| i.viewport().inner_rect);
+                match (screen, main) {
+                    (Some((x, y)), Some(main)) => {
+                        let scale = ctx.pixels_per_point();
+                        Some(Pos2::new(x as f32 / scale, y as f32 / scale) - main.min.to_vec2())
+                    }
+                    _ => ctx.pointer_latest_pos(),
+                }
+            }
             None => ctx.pointer_latest_pos(),
         }
     }
@@ -188,6 +213,10 @@ impl App {
             Some([x, y, w, h]) => builder.with_position([x as f32, y as f32]).with_inner_size([w as f32, h as f32]),
             None => builder.with_inner_size(MAP_WINDOW_SIZE),
         };
+        let (main_focused, main_minimised) = ctx.input_for(egui::ViewportId::ROOT, |i| {
+            (i.viewport().focused.unwrap_or(false), i.viewport().minimized.unwrap_or(false))
+        });
+        builder = builder.with_window_level(map_window_level(main_focused, self.map_window.focused));
         let revision = self.revision;
         let had_drag = self.browser.drag.is_some();
         let mut settings = self.settings.clone();
@@ -231,8 +260,19 @@ impl App {
                 escape: i.key_pressed(Key::Escape),
                 ctrl: i.modifiers.command,
                 time: i.time,
+                focused: i.viewport().focused.unwrap_or(false),
             })
         });
+        self.map_window.focused = frame.focused;
+        if frame.place.is_some() {
+            self.map_window.place = frame.place;
+        }
+        if !frame.embedded
+            && let Some(minimise) = follow_main_minimised(main_minimised, self.map_window.minimised_with_main)
+        {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Minimized(minimise));
+            self.map_window.minimised_with_main = minimise;
+        }
         if frame.changed || settings != self.settings {
             self.settings = settings;
             self.settings_changed = true;
@@ -289,7 +329,7 @@ impl App {
     }
 
     /// Adds browser items to the selected track, as Enter and a double-click do: devices to its
-    /// chain, files in the Arrangement at the play start marker, in the Session from its first
+    /// chain, files in the Arrangement at the play start marker, in the Launcher from its first
     /// empty slot; without a selected track, on new tracks.
     pub(super) fn add_to_selected(&mut self, items: Vec<BrowserItem>) {
         let Some(session) = self.session() else {
@@ -335,6 +375,82 @@ pub(super) struct MapWindow {
     pub(super) moved: Option<([i32; 4], f64)>,
     /// A drag from the browser that started in this window.
     pub(super) drag: Option<RemoteDrag>,
+    /// Whether this window had the keyboard focus in its last frame.
+    pub(super) focused: bool,
+    /// Whether it was minimised because the main window was, to be restored with it.
+    pub(super) minimised_with_main: bool,
+    /// Where it is on the desktop (`left, top, width, height`), as its last frame said.
+    pub(super) place: Option<[i32; 4]>,
+}
+
+/// The sample files among dragged items: what a drag out of the window hands the system.
+pub(super) fn drag_out_files(items: &[BrowserItem]) -> Vec<PathBuf> {
+    items
+        .iter()
+        .filter(|i| i.kind == drop::ItemKind::Sample)
+        .filter_map(BrowserItem::path)
+        .filter(|p| p.is_absolute())
+        .collect()
+}
+
+/// What the status line says after `library.copyTo`.
+pub(super) fn copied_status(result: Result<Value, suhina_session::CommandError>) -> Status {
+    let done = match result {
+        Ok(done) => done,
+        Err(e) => return Status::Error(e.message().to_owned()),
+    };
+    let count = |key: &str| done[key].as_array().map_or(0, Vec::len);
+    let (copied, missing, failed) = (count("copied"), count("missing"), count("failed"));
+    let folder = done["folder"].as_str().unwrap_or_default();
+    let mut text = format!("Copied {copied} {} to {folder}", if copied == 1 { "sample" } else { "samples" });
+    if missing > 0 {
+        text.push_str(&format!("; {missing} not found"));
+    }
+    if failed > 0 {
+        text.push_str(&format!("; {failed} could not be copied"));
+        return Status::Error(text);
+    }
+    if missing > 0 { Status::Hint(text) } else { Status::Done(text) }
+}
+
+/// What the status line says after `library.moveTo` (#943).
+pub(super) fn moved_status(result: Result<Value, suhina_session::CommandError>) -> Status {
+    let done = match result {
+        Ok(done) => done,
+        Err(e) => return Status::Error(e.message().to_owned()),
+    };
+    let count = |key: &str| done[key].as_array().map_or(0, Vec::len);
+    let (moved, missing, kept, failed) = (count("moved"), count("missing"), count("kept"), count("failed"));
+    let folder = done["folder"].as_str().unwrap_or_default();
+    let mut text = format!("Moved {moved} {} to {folder}", if moved == 1 { "sample" } else { "samples" });
+    if kept > 0 {
+        text.push_str(&format!("; {kept} left where they are (in that folder already, or played by an open project)"));
+    }
+    if missing > 0 {
+        text.push_str(&format!("; {missing} not found"));
+    }
+    if failed > 0 {
+        text.push_str(&format!("; {failed} could not be moved"));
+        return Status::Error(text);
+    }
+    if missing > 0 || kept > 0 { Status::Hint(text) } else { Status::Done(text) }
+}
+
+/// The map window's level: above Suhina's main window while Suhina is the program in use, so a
+/// click in the main window does not hide it, and an ordinary window once another program is
+/// (#863). egui gives no owner to a viewport, so this stands in for an owned tool window.
+pub(super) fn map_window_level(main_focused: bool, map_focused: bool) -> egui::WindowLevel {
+    if main_focused || map_focused { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal }
+}
+
+/// What the map window does when the main window is minimised or restored: `Some(true)` to
+/// minimise it along, `Some(false)` to restore it when it went down with the main window.
+pub(super) fn follow_main_minimised(main_minimised: bool, minimised_with_main: bool) -> Option<bool> {
+    match (main_minimised, minimised_with_main) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
 }
 
 /// A drag that started in the map's own window, read from that window's input.
@@ -360,4 +476,5 @@ pub(super) struct MapWindowFrame {
     pub(super) escape: bool,
     pub(super) ctrl: bool,
     pub(super) time: f64,
+    pub(super) focused: bool,
 }

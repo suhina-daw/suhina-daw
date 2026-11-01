@@ -45,7 +45,22 @@ pub(crate) fn split_clip(session: &mut Session, params: &Value) -> Result<Value,
     lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     let (first_id, second_id) = (first.id, second.id);
     let first = lane.clips.iter().position(|c| c.id == first_id).unwrap_or_default();
-    let second = lane.clips.iter().position(|c| c.id == second_id).unwrap_or_default();
+    let track = lane.track;
+    // The track's take lanes are cut at the same beat, so they stay cut where the comp is (#989).
+    for take in p.arrangement.takes.iter_mut().filter(|t| Some(t.track) == track) {
+        if let Some(i) = take.clips.iter().position(|c| at > c.start + MIN_PART && at < c.start + c.length - MIN_PART)
+            && let Some(clip) = take.clips.get(i).cloned()
+        {
+            let (head, tail) = split(&clip, at, 1.0);
+            if let Some(slot) = take.clips.get_mut(i) {
+                *slot = head;
+            }
+            take.clips.insert(i + 1, tail);
+        }
+    }
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == track && l.clips.iter().any(|c| c.id == first_id));
+    let first = lane.and_then(|l| l.clips.iter().position(|c| c.id == first_id)).unwrap_or(first);
+    let second = lane.and_then(|l| l.clips.iter().position(|c| c.id == second_id)).unwrap_or_default();
     Ok(json!({ "first": first, "second": second, "first_clip": first_id.0, "second_clip": second_id.0, "at": at }))
 }
 
@@ -180,6 +195,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Default::default(),
     };
     let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
@@ -331,7 +347,7 @@ fn bar_beats(p: &Project) -> f64 {
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
-    p.track(track).map(|t| t.name.clone()).unwrap_or_default()
+    p.shown_track_name(track)
 }
 
 /// A track name made safe as part of a file name on every system.

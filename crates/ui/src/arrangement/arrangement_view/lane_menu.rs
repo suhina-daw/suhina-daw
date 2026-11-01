@@ -11,10 +11,32 @@ pub(super) fn empty_lane_menu(
     ui: &mut Ui,
     track: TrackId,
     notes: bool,
-    state: &ArrangementViewState,
+    has_takes: bool,
+    state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(180.0);
+    // The take lanes under the track fold away and back (`docs/spec/recording.md` › Take lanes).
+    if has_takes {
+        let hidden = state.takes_hidden.contains(&track);
+        if ui.button(if hidden { "Show take lanes" } else { "Hide take lanes" }).clicked() {
+            if !state.takes_hidden.remove(&track) {
+                state.takes_hidden.insert(track);
+            }
+            ui.close();
+        }
+        if ui.button("Delete unused takes").clicked() {
+            actions.push(Action::new("take.deleteUnused", json!({ "track": track.0 })));
+            ui.close();
+        }
+        ui.separator();
+    }
+    // The Arrangement's grid, in the menu itself, as its toolbar offers it.
+    let keys = state.grid_keys.clone();
+    if let Some(picked) = crate::detail::piano_roll::grid_entries(ui, state.grid, &keys, &|_| true) {
+        super::pick_grid(state, picked, actions);
+    }
+    ui.separator();
     let beat = state.menu_beat.unwrap_or(0.0);
     if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {
         let stack = state.stack_midi;

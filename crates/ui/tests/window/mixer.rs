@@ -93,7 +93,7 @@ fn the_plugin_key_says_when_a_track_has_no_running_plug_in() {
     // (the keymap tests cover the default and the conflicts).
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     assert!(harness.query_by_label_contains("Open or close the selected track's plug-in editor").is_some());
     harness.key_press(Key::Escape);

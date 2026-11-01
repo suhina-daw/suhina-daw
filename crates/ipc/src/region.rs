@@ -28,6 +28,9 @@ const AT_REQUEST: usize = 64;
 const AT_RESPONSE: usize = 128;
 const AT_FRAMES: usize = 192;
 const AT_EVENTS: usize = 196;
+/// Whether the app's computer keyboard plays notes ([`crate::keys_to_engine`]): written with
+/// every block, so each host knows to hand those keys back from its editors.
+const AT_KEYS: usize = 200;
 /// Bytes of the events area.
 const EVENTS_BYTES: usize = MAX_EVENTS * EVENT_BYTES;
 /// Bytes of the followers area: their count, then each one's instance number.
@@ -152,10 +155,12 @@ impl Region {
 
     /// Frames in the current block; at most `max_frames`, whatever the other side wrote.
     pub(crate) fn frames(&self) -> u32 {
+        crate::keyboard::heard_keys_to_engine(self.word(AT_KEYS).load(Ordering::Relaxed) != 0);
         self.word(AT_FRAMES).load(Ordering::Acquire).min(self.max_frames)
     }
 
     pub(crate) fn set_frames(&self, frames: u32) {
+        self.word(AT_KEYS).store(u32::from(crate::keyboard::keys_to_engine()), Ordering::Relaxed);
         self.word(AT_FRAMES).store(frames, Ordering::Release);
     }
 

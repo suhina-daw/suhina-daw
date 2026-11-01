@@ -53,6 +53,7 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
                 })
                 .collect(),
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }

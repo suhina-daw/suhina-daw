@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Session view's channel strip: the part of a column under its slots, which shows more the
+//! The Launcher view's channel strip: the part of a column under its slots, which shows more the
 //! taller the mixer is (`docs/spec/ui-session-view.md` › Mixer, sizes and steps in
 //! `docs/design/components.md` › Mixer strip). [`layout`] says where each part goes for a height;
 //! [`show`] draws a column's strip and turns what is done there into [`Action`]s.
@@ -62,7 +62,7 @@ const FADER_COLUMN: f32 = 20.0;
 const SCALE_WIDTH: f32 = 14.0;
 const METER_GAP: f32 = 4.0;
 const SEND_HEIGHT: f32 = 22.0;
-/// Session meters use wider stereo bars than compact Arrangement headers.
+/// Launcher meters use wider stereo bars than compact Arrangement headers.
 pub const METER_WIDTH: f32 = 14.0;
 const CAP: Vec2 = Vec2::new(20.0, 26.0);
 
@@ -448,6 +448,8 @@ pub fn show(
     // A click on the strip selects its track, a return's too; a slot selected on that track stays.
     if strip.clicked() {
         state.selected = Some(column.track);
+        state.selected_tracks = vec![column.track];
+        state.devices_clicked = true;
         if state.selected_slot.is_some_and(|(track, _)| track != column.track) {
             state.selected_slot = None;
         }
@@ -692,9 +694,12 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
     } else {
         state.device_scroll.remove(&track);
     }
-    for (index, device) in column.devices.iter().enumerate() {
-        let top = rect.top() - scroll + index as f32 * DEVICE_ROW;
+    let mut slots = Vec::new();
+    for (row_index, device) in column.devices.iter().enumerate() {
+        let index = device.at;
+        let top = rect.top() - scroll + row_index as f32 * DEVICE_ROW;
         let row = Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), DEVICE_ROW));
+        slots.push((index, row));
         if !row.intersects(clip) {
             continue;
         }
@@ -710,6 +715,9 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
                 Some(crate::session::session_view::DeviceEvent::Open { track, index, plugin: device.plugin });
         } else if response.clicked() {
             state.selected = Some(track);
+            if !state.selected_tracks.contains(&track) {
+                state.selected_tracks = vec![track];
+            }
             state.selected_slot = None;
             state.shown_device = Some((track, index));
             state.open_detail = true;
@@ -717,7 +725,7 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             state.device_event = Some(crate::session::session_view::DeviceEvent::Pick { track, index, add, run });
         }
         // Lit as the detail area's chain lights it: the devices picked in either.
-        let lit = state.device_picks.contains(&(track, index));
+        let lit = state.device_picks.iter().any(|(t, at)| *t == track && at.index() == Some(index));
         let fill = if lit {
             theme::control_active()
         } else {
@@ -754,6 +762,28 @@ fn devices(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, state:
             );
         }
     }
+    // A device of this track carried over its list: a line where it would go, and its place
+    // for the drop (#688).
+    let carrying = ui.data(|d| {
+        d.get_temp::<(suhina_engine::model::TrackId, usize)>(Id::new(crate::interaction::drop::DEVICE_CARRYING))
+    });
+    if let Some((_, from)) = carrying.filter(|(t, _)| *t == track)
+        && let Some(pointer) = ui.ctx().pointer_latest_pos().filter(|p| clip.contains(*p))
+        && let Some(to) = crate::interaction::drop::device_slot_at(&slots, pointer.y, true)
+        && to != from
+        && to != from + 1
+    {
+        let y = slots
+            .iter()
+            .find(|(i, _)| *i == to)
+            .map_or_else(|| slots.last().map_or(rect.top(), |(_, r)| r.bottom()), |(_, r)| r.top());
+        list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, theme::accent()));
+    }
+    let pass = ui.ctx().cumulative_pass_nr();
+    crate::interaction::drop::note_device_slots(
+        ui.ctx(),
+        crate::interaction::drop::DeviceSlots { track, area: clip, slots, vertical: true, pass },
+    );
 }
 
 /// The audio tracking's block above the toggles: "Audio From" with a dropdown of where the
@@ -876,6 +906,7 @@ fn set_volume(track: u32, v: f64, continued: bool) -> Action {
 fn volume_drag(
     ui: &Ui,
     response: &egui::Response,
+    fader: Rect,
     column: &Column,
     state: &mut SessionViewState,
     actions: &mut Vec<Action>,
@@ -887,17 +918,7 @@ fn volume_drag(
     };
     let continued = preview.is_some();
     let mut committed = None;
-    match widgets::drag_value_axis(
-        ui,
-        response,
-        &mut preview,
-        column.volume_db,
-        0.25,
-        1.0,
-        VOLUME_RANGE,
-        0.0,
-        horizontal_volume(),
-    ) {
+    match volume_gesture(ui, response, &mut preview, column.volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((track, Control::Volume, v));
             actions.push(set_volume(track.0, v, continued));
@@ -907,12 +928,47 @@ fn volume_drag(
             committed = Some(v);
             actions.push(set_volume(track.0, v, continued));
         }
-        Drag::None => {}
+        Drag::None => {
+            if continued {
+                state.drag = None;
+            }
+        }
     }
     match state.drag {
         Some((t, Control::Volume, v)) if t == track => v,
         _ => committed.unwrap_or(column.volume_db),
     }
+}
+
+/// The dB a vertical fader's cap stands for with its centre at `y`.
+fn fader_db_at(y: f32, fader: Rect) -> f64 {
+    let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+    let position = f64::from((bottom - y) / (bottom - top).max(1.0)).clamp(0.0, 1.0);
+    suhina_engine::model::automation::volume_db(position).clamp(VOLUME_RANGE.0, VOLUME_RANGE.1)
+}
+
+/// A volume control's gesture. A drag on a vertical fader moves its cap as far as the pointer moves,
+/// the pointer hidden and held, so past either end the cap waits and turns back at once; on release
+/// the pointer is on the cap. Shift: ten times finer. Everything else is an ordinary value drag.
+fn volume_gesture(ui: &Ui, response: &egui::Response, preview: &mut Option<f64>, value: f64, fader: Rect) -> Drag {
+    let on_fader = !horizontal_volume() && fader.height() > cap_size().y && fader.contains(response.rect.center());
+    if on_fader && response.dragged_by(egui::PointerButton::Primary) {
+        // The arrows and typing go to the fader dragged last, as to any value.
+        let _ = widgets::value_keys(ui, response);
+        let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
+        let cap_y = |db: f64| bottom + (top - bottom) * widgets::volume_position(db);
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+        let moved = widgets::value_drag_delta(ui, response).y * fine;
+        let db = fader_db_at(cap_y(preview.unwrap_or(value)) + moved, fader);
+        widgets::value_drag_returns_to(ui.ctx(), Pos2::new(fader.center().x, cap_y(db)));
+        *preview = Some(db);
+        return Drag::Moving(db);
+    }
+    // A drag cut off by losing focus ends here, so the next one is its own undo step.
+    if !response.dragged() && !response.drag_stopped() {
+        *preview = None;
+    }
+    widgets::drag_value_axis(ui, response, preview, value, 0.25, 1.0, VOLUME_RANGE, 0.0, horizontal_volume())
 }
 
 /// The fader with its dB value over it: the column takes the drag, the wheel and the double-click.
@@ -932,7 +988,7 @@ fn fader_column(
     let label = widgets::format_db(shown(state, column, Control::Volume, column.volume_db));
     let response =
         volume_response(ui, painter, readout, fader, id.with("volume"), &format!("{} volume", column.name), &label);
-    let db = volume_drag(ui, &response, column, state, actions);
+    let db = volume_drag(ui, &response, fader, column, state, actions);
     paint_fader(ui, painter, readout, fader, db, &response, column.kind == ColumnKind::Return);
 }
 
@@ -992,17 +1048,7 @@ pub fn main_fader(
         )
     };
     let mut db = volume_db;
-    match widgets::drag_value_axis(
-        ui,
-        &response,
-        &mut preview,
-        volume_db,
-        0.25,
-        1.0,
-        VOLUME_RANGE,
-        0.0,
-        horizontal_volume(),
-    ) {
+    match volume_gesture(ui, &response, &mut preview, volume_db, fader) {
         Drag::Moving(v) => {
             state.drag = Some((MAIN, Control::Volume, v));
             actions.push(send(v, continued));
@@ -1013,7 +1059,11 @@ pub fn main_fader(
             actions.push(send(v, continued));
             db = v;
         }
-        Drag::None => {}
+        Drag::None => {
+            if continued {
+                state.drag = None;
+            }
+        }
     }
     paint_fader(ui, painter, readout, fader, db, &response, true);
 }
@@ -1198,7 +1248,7 @@ fn compact_volume(
         format!("{} volume", column.name),
         label,
     );
-    let db = volume_drag(ui, &response, column, state, actions);
+    let db = volume_drag(ui, &response, Rect::NOTHING, column, state, actions);
     let hover = widgets::hover(ui, &response);
     let position = crate::kit::widgets::volume_position(db);
     let text = rect.shrink2(Vec2::new(4.0, 0.0));

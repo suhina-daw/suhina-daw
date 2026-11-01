@@ -54,6 +54,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
         arrangement: Arrangement {
             lanes: vec![ArrangementLane { id: Default::default(), name: "l".into(), track: Some(TrackId(1)), clips }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -75,6 +76,7 @@ fn clip(start: f64, length: f64) -> Clip {
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     }
 }
@@ -272,9 +274,25 @@ fn solo_leaves_only_soloed_tracks_their_groups_and_returns() {
     project.channels[0].output = Some(ChannelId(5));
     assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
 
-    // Muting still wins over solo.
+    // A track muted is silent though the group it plays into is soloed.
     project.channels[0].mute = true;
     assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    // Soloed itself, a muted track is heard: a solo outranks the track's own mute.
+    project.channels[0].solo = true;
+    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
+}
+
+#[test]
+fn a_muted_track_soloed_is_heard_but_its_muted_clips_are_not() {
+    let mut project = project_with(untargeted(vec![note(0.0, 0.25, 36)]), vec![clip(0.0, 1.0), clip(1.0, 1.0)], 2);
+    let beat = SR as usize / 2;
+    project.channels[0].mute = true;
+    assert_eq!(render_offline(&project, SR, 256), Ok(Vec::new()));
+    project.channels[0].solo = true;
+    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0, beat]);
+    // A clip turned off stays silent.
+    project.arrangement.lanes[0].clips[1].enabled = false;
+    assert_onsets(&render_offline(&project, SR, 256).unwrap(), &[0]);
 }
 
 #[test]
@@ -525,7 +543,7 @@ fn rms(out: &[f32], from: usize, to: usize) -> f64 {
 /// Frame where an update sent after `blocks` blocks of 480 frames takes over, for a project
 /// with stretched clips; one without takes over at the next block, `blocks * 480`.
 fn swap_frame(blocks: usize) -> usize {
-    blocks * 480 + (0.15 * f64::from(SR)) as usize
+    blocks * 480 + (0.08 * f64::from(SR)) as usize
 }
 
 #[test]
@@ -554,7 +572,9 @@ fn an_edit_is_heard_from_the_frame_it_takes_over() {
             let mut reference =
                 Renderer::build(&edited, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
             let reference = blocks(&mut reference, 150, 480, |_| {});
-            assert_eq!(max_diff(&out[at * 2..], &reference[at * 2..]), 0.0);
+            // Sample for sample once the step the edit made has been eased away.
+            let eased = (at + crate::DECLICK_FRAMES) * 2;
+            assert_eq!(max_diff(&out[eased..], &reference[eased..]), 0.0);
         }
     }
 }
@@ -774,6 +794,7 @@ fn with_utility(project: &mut Project) {
         state: None,
         params: Vec::new(),
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
 }
@@ -799,7 +820,7 @@ fn edits_sent_together_all_take_the_next_block() {
 
 #[test]
 fn a_device_parameter_is_heard_from_the_next_block_and_outlives_an_older_graph() {
-    // Stretched audio, so a new graph waits 0.15 s before it takes over.
+    // Stretched audio, so a new graph waits 0.08 s before it takes over.
     let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
     with_utility(&mut project);
     let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
@@ -816,10 +837,40 @@ fn a_device_parameter_is_heard_from_the_next_block_and_outlives_an_older_graph()
     // Heard from the next block, after the utility's 20 ms ramp...
     let soon = rms(&out, now + 1_200, now + 6_000) / rms(&reference, now + 1_200, now + 6_000);
     assert!((soon - 0.5).abs() < 0.01, "{soon}");
-    // ... and still after the older graph took over at 0.15 s.
+    // ... and still after the older graph took over at 0.08 s.
     let at = swap_frame(50);
     let later = rms(&out, at + 2_400, at + 12_000) / rms(&reference, at + 2_400, at + 12_000);
     assert!((later - 0.5).abs() < 0.01, "{later}");
+}
+
+/// A Utility on the main channel hears its gain turned while playing, as a track's does (#687).
+#[test]
+fn a_device_parameter_on_the_main_channel_is_heard_from_the_next_block() {
+    let (mut project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Smooth);
+    let mut main = Channel { id: ChannelId(9), role: ChannelRole::Master, ..project.channels[0].clone() };
+    main.devices.clear();
+    main.output = None;
+    project.channels.push(main);
+    if let Some(main) = project.channels.last_mut() {
+        main.devices.push(Device {
+            name: "Utility".into(),
+            kind: DeviceKind::Builtin("utility".into()),
+            enabled: true,
+            state: None,
+            params: Vec::new(),
+            automation: Vec::new(),
+            clip_host: false,
+            extensions: Extensions::default(),
+        });
+    }
+    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.set_device_param(TrackId::MAIN, 0, 0, -6.0206).unwrap();
+    out.extend(blocks(&mut renderer, 50, 480, |_| {}));
+    let now = 50 * 480;
+    let ratio = rms(&out, now + 1_200, now + 6_000) / rms(&out, now - 6_000, now - 1_200);
+    assert!((ratio - 0.5).abs() < 0.02, "{ratio}");
 }
 
 #[test]
@@ -1052,4 +1103,55 @@ fn the_cpu_load_is_measured_only_in_real_time() {
         renderer.cpu.measured(started, started + Duration::from_millis(10));
     }
     assert!(controller.cpu_monitor().load_milli() > 200);
+}
+
+/// An edit that jumps the sound (warp turned off moves where a clip reads) does not click: the
+/// step between the old graph's last frame and the new one's first is eased away over a few
+/// frames, and sound that goes on smoothly through an edit is left exact (#916).
+#[test]
+fn an_edit_that_jumps_the_sound_is_eased_and_smooth_sound_is_left_exact() {
+    let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, StretchMode::Repitch);
+    let mut silent = project.clone();
+    silent.channels[0].volume = 0.0;
+    let mut renderer = Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+    let mut controller = renderer.controller();
+    let mut out = blocks(&mut renderer, 50, 480, |_| {});
+    controller.update(&silent).unwrap();
+    out.extend(blocks(&mut renderer, 10, 480, |_| {}));
+    let at = 50 * 480;
+    // The largest step between two frames around the edit stays near the sine's own.
+    let steps =
+        |from: usize, to: usize| (from..to).map(|f| (out[(f + 1) * 2] - out[f * 2]).abs()).fold(0.0f32, f32::max);
+    let before = steps(at - 960, at - 1);
+    let around = steps(at - 1, at + crate::DECLICK_FRAMES);
+    assert!(around <= before * 1.5 + 1e-3, "a step of {around} at the edit, {before} before it");
+    // And silence after it.
+    assert!(out[(at + crate::DECLICK_FRAMES + 1) * 2..].iter().all(|s| s.abs() < 1e-6));
+}
+
+#[test]
+fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
+    // Deleted, the clip falls silent from the edit; moved later, it plays only at its new place.
+    for mode in [StretchMode::Repitch, StretchMode::Smooth] {
+        for moved in [false, true] {
+            let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, mode);
+            let mut edited = project.clone();
+            if moved {
+                edited.arrangement.lanes[0].clips[0].start = 100.0;
+            } else {
+                edited.arrangement.lanes[0].clips.clear();
+            }
+            let mut renderer =
+                Renderer::build(&project, RenderInputs::from_audio(&pool), SR, RenderOptions::PLAYING).unwrap();
+            let mut controller = renderer.controller();
+            controller.run_stretch_worker(&mut renderer).unwrap();
+            let pace = |_| std::thread::sleep(std::time::Duration::from_millis(5));
+            let mut out = blocks(&mut renderer, 50, 480, pace);
+            controller.update(&edited).unwrap();
+            out.extend(blocks(&mut renderer, 100, 480, pace));
+            let at = swap_frame(50) + crate::DECLICK_FRAMES;
+            let after = rms(&out, at, at + 9_600);
+            assert!(after < 1e-4, "{mode:?}, moved {moved}: still playing at {after}");
+        }
+    }
 }

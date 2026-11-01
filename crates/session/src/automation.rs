@@ -14,20 +14,23 @@ use suhina_model::automation::{
 };
 use suhina_model::{AutomationLane, AutomationPoint, DeviceKind, TrackId};
 
-use crate::commands::{channel_param, number, to_db, track_id};
+use crate::commands::{device_channel, number, to_db, track_or_main_id};
 use crate::devices::{device_index, is_plugin, plugin_param_id, plugin_value, sd_graph};
 use crate::{CommandError, Session};
 
 /// Below this many decibels a volume point is silence, as for `track.setVolume`.
 const SILENCE_DB: f64 = -150.0;
+/// The bottom of a volume lane as the arrangement shows it: points moved together leave silence
+/// from here, and a level moved down to it or below is silent.
+const LANE_FLOOR_DB: f64 = -70.0;
 
 /// The parameter a command names, checked.
-struct Target {
+pub(crate) struct Target {
     track: TrackId,
     /// The device's index on the track; `None` for the track's mixer.
     device: Option<usize>,
     /// The parameter's id as lanes store it.
-    param: String,
+    pub(crate) param: String,
     kind: Kind,
 }
 
@@ -45,9 +48,9 @@ enum Kind {
     Plugin(u32),
 }
 
-fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
+pub(crate) fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
     let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id")?;
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     let channel = channel_of(session, track)?;
     match params.get("device") {
         None | Some(Value::Null) => {
@@ -96,8 +99,7 @@ fn target(session: &Session, params: &Value) -> Result<Target, CommandError> {
 }
 
 fn channel_of(session: &Session, track: TrackId) -> Result<&suhina_model::Channel, CommandError> {
-    let id = session.project.track(track).and_then(|t| t.channel);
-    id.and_then(|id| session.project.channel(id)).ok_or_else(|| "the track has no mixer channel".into())
+    session.project.channel_of_track(track).ok_or_else(|| "the track has no mixer channel".into())
 }
 
 impl Target {
@@ -124,6 +126,69 @@ impl Target {
         }
     }
 
+    /// Whether the lane holds each value up to the next point (on/off and choices), as the
+    /// lanes draw it.
+    pub(crate) fn stepped(&self) -> bool {
+        match &self.kind {
+            Kind::Plain => self.param == MUTE,
+            Kind::Builtin(spec) => {
+                matches!(spec.kind, suhina_device_api::ParamKind::Toggle | suhina_device_api::ParamKind::Choice(_))
+            }
+            Kind::Sd(parameter) => parameter.control.is_stepped(),
+            Kind::Volume | Kind::Plugin(_) => false,
+        }
+    }
+
+    /// A plug-in parameter's range, when its host has said it.
+    fn plugin_range(&self, session: &Session, id: u32) -> Option<(f64, f64)> {
+        let key = crate::plugin_key_at_path(&session.project, self.track, &[self.device?])?;
+        session.plugins.param_range(key, id).flatten().filter(|(min, max)| max > min)
+    }
+
+    /// Where a lane's `value` sits on the lane, 0 at the bottom to 1 at the top, as the lanes
+    /// draw it.
+    pub(crate) fn position(&self, session: &Session, value: f64) -> f64 {
+        let position = match &self.kind {
+            Kind::Volume => suhina_model::automation::Taper::position(&suhina_model::automation::VolumeTaper, value),
+            Kind::Plain => match mixer_range(&self.param) {
+                Some((min, max)) if max > min => (value - min) / (max - min),
+                _ => value,
+            },
+            Kind::Builtin(spec) => spec.to_normalized(value),
+            Kind::Sd(parameter) => parameter.lane_position(value),
+            Kind::Plugin(id) => match self.plugin_range(session, *id) {
+                Some((min, max)) => (value - min) / (max - min),
+                None => value,
+            },
+        };
+        if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 }
+    }
+
+    /// The lane's value at `position` (0 … 1): the inverse of [`Target::position`], as the
+    /// parameter takes it.
+    pub(crate) fn value_at_position(&self, session: &Session, position: f64) -> f64 {
+        let position = if position.is_finite() { position.clamp(0.0, 1.0) } else { 0.0 };
+        match &self.kind {
+            Kind::Volume => suhina_model::automation::Taper::value(&suhina_model::automation::VolumeTaper, position),
+            Kind::Plain => {
+                let (min, max) = mixer_range(&self.param).unwrap_or((0.0, 1.0));
+                let value = min + position * (max - min);
+                if self.param == MUTE { value.round() } else { value }
+            }
+            // A whole-number parameter moves along the line and the device rounds, as the
+            // engine plays it.
+            Kind::Builtin(spec) if matches!(spec.kind, suhina_device_api::ParamKind::Integer) => {
+                spec.min + position * (spec.max - spec.min)
+            }
+            Kind::Builtin(spec) => spec.clamp(spec.from_normalized(position)),
+            Kind::Sd(parameter) => parameter.lane_value(position),
+            Kind::Plugin(id) => match self.plugin_range(session, *id) {
+                Some((min, max)) => min + position * (max - min),
+                None => position,
+            },
+        }
+    }
+
     /// A lane's value as commands show it.
     fn show(&self, value: f64) -> Value {
         match &self.kind {
@@ -133,15 +198,15 @@ impl Target {
     }
 
     /// The lanes the parameter's lane is among.
-    fn lanes<'a>(&self, session: &'a mut Session) -> Result<&'a mut Vec<AutomationLane>, CommandError> {
-        let channel = channel_param(session, &json!({ "track": self.track.0 }))?;
+    pub(crate) fn lanes<'a>(&self, session: &'a mut Session) -> Result<&'a mut Vec<AutomationLane>, CommandError> {
+        let channel = device_channel(session, &json!({ "track": self.track.0 }))?;
         match self.device {
             None => Ok(&mut channel.automation),
             Some(index) => Ok(&mut channel.devices.get_mut(index).ok_or("the device is missing")?.automation),
         }
     }
 
-    fn matches(&self, lane: &AutomationLane) -> bool {
+    pub(crate) fn matches(&self, lane: &AutomationLane) -> bool {
         match &self.kind {
             Kind::Plugin(id) => param_id(&lane.param) == Some(*id),
             _ => lane.param == self.param,
@@ -286,7 +351,15 @@ pub(crate) fn add_point(session: &mut Session, params: &Value) -> Result<Value, 
         }
     };
     let index = lane.insert(point);
-    Ok(json!({ "param": target.param, "point": index, "points": lane.points.len(), "enabled": lane.enabled }))
+    let enabled = lane.enabled;
+    if let Some(shape) = params.get("shape").and_then(Value::as_str) {
+        if crate::automation_range::shape_points(shape).is_none() {
+            return Err(format!("no shape {shape:?}; automation.insertShape lists them").into());
+        }
+        crate::automation_range::shape_new_segment(session, &target, index, shape)?;
+    }
+    let points = target.lanes(session)?.iter().find(|l| target.matches(l)).map_or(0, |l| l.points.len());
+    Ok(json!({ "param": target.param, "point": index, "points": points, "enabled": enabled }))
 }
 
 /// A point at `beat` on `lane`'s envelope, so it plays as before: the envelope's value there, and
@@ -386,11 +459,12 @@ impl Target {
     /// A lane value moved by `delta` in the unit of the parameter's set command, kept in range.
     fn shift(&self, session: &Session, value: f64, delta: f64) -> Result<f64, CommandError> {
         match &self.kind {
-            // Silence stays silent; a level never goes past the fader's top.
-            Kind::Volume => match to_db(value) {
-                None => Ok(0.0),
-                Some(db) => self.store(session, (db + delta).min(6.0)),
-            },
+            // Silence moves from the lane's bottom, so points picked at the bottom rise with the
+            // rest; a level moved down to the bottom is silent, and none goes past the fader's top.
+            Kind::Volume => {
+                let db = to_db(value).unwrap_or(LANE_FLOOR_DB).max(LANE_FLOOR_DB) + delta;
+                if db <= LANE_FLOOR_DB { Ok(0.0) } else { self.store(session, db.min(6.0)) }
+            }
             Kind::Plain => {
                 let (min, max) = mixer_range(&self.param).unwrap_or((value, value));
                 self.store(session, (value + delta).clamp(min, max))
@@ -494,12 +568,12 @@ pub(crate) fn clear(session: &mut Session, params: &Value) -> Result<Value, Comm
         return Ok(json!({ "cleared": before - lanes.len() }));
     }
     // Every lane of the mixer, or of the device.
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     let device = match params.get("device") {
         None | Some(Value::Null) => None,
         Some(_) => Some(device_index(channel_of(session, track)?.devices.len(), params)?),
     };
-    let channel = channel_param(session, params)?;
+    let channel = device_channel(session, params)?;
     let lanes = match device {
         None => &mut channel.automation,
         Some(index) => &mut channel.devices.get_mut(index).ok_or("the device is missing")?.automation,
@@ -519,7 +593,7 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
 
 /// Every lane of a track: its mixer's, then each device's.
 pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     let channel = channel_of(session, track)?;
     let lanes = |lanes: &[AutomationLane], volume_db: bool| -> Vec<Value> {
         lanes

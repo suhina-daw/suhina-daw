@@ -136,7 +136,7 @@ jobs:
             core.setOutput('allowed', true);
       # Every branch and the pull request's merge commit, whose second parent is its head; no
       # code is built or run but scripts/branch_update.py.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.authorize.outputs.allowed == 'true' && github.event.action == 'synchronize'
         with:
           fetch-depth: 0
@@ -201,7 +201,7 @@ jobs:
     steps:
       # The merge of the pull request's head into main as it was when the event happened
       # (github.sha), so a push after the label is not what gets built.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 2
@@ -219,7 +219,7 @@ jobs:
             *) echo "::error::the merge commit is not of the pull request's head $HEAD_SHA"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'workflow_dispatch'
         with:
           ref: main
@@ -284,13 +284,13 @@ jobs:
       - name: Install ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.targets }}
       # Restores main's cache (the `cache` job) and saves none: a cache saved here only this pull
       # request could restore, and at 0.6 to 0.8 GB per system these filled the repository's
       # 10 GB and evicted main's caches, ci.yml's among them.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: test-build-${{ matrix.name }}
           save-if: false
@@ -315,8 +315,13 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
           TARGETS: ${{ matrix.targets }}
         run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
           for target in ${TARGETS//,/ }; do
-            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
 
       - name: Collect and smoke-test the package
@@ -340,6 +345,10 @@ jobs:
           cp devices/fm-synth/LICENSE-APACHE crates/stretch/LICENSE-signalsmith.txt "dist/$PACKAGE/"
           exe="dist/$PACKAGE/suhina-cli"
           if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$exe" audio devices > audio-devices.json
+            jq -e '.hosts | any(.name == "ASIO")' audio-devices.json
+          fi
           output=$("$exe" --version)
           echo "$output"
           if [ "$output" != "suhina-cli $VERSION" ]; then
@@ -356,7 +365,7 @@ jobs:
           fi
 
       # The artifact is a zip: of the package folder on Windows, of its .tar.gz elsewhere.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         id: upload
         with:
           name: ${{ steps.name.outputs.package }}
@@ -407,16 +416,16 @@ jobs:
       cancel-in-progress: false
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.targets }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: test-build-${{ matrix.name }}
       - name: Build
@@ -425,6 +434,11 @@ jobs:
           RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
           TARGETS: ${{ matrix.targets }}
         run: |
+          features=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LIBCLANG_PATH="C:/Program Files/LLVM/bin"
+            features=(--features suhina/asio,suhina-cli/asio)
+          fi
           for target in ${TARGETS//,/ }; do
-            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target"
+            cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done

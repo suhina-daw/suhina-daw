@@ -12,7 +12,7 @@ memmap2 = "0.9"  # MIT OR Apache-2.0
 libc = "0.2"  # MIT OR Apache-2.0
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Memory", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse"] }  # MIT OR Apache-2.0
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Memory", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }  # MIT OR Apache-2.0
 
 # The workspace lints, except that this crate may use `unsafe` (ADR 0006). It cannot inherit
 # them with `workspace = true` and change one, so they are repeated here; keep them in step.

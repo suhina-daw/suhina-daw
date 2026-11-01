@@ -37,7 +37,7 @@ use crate::{Graph, MAX_AUDIO_VOICES, Renderer};
 /// How far ahead of the playhead a new graph with stretched clips takes over, in seconds: time
 /// to move its stretch voices and fill their rings before the audio thread reaches it. A graph
 /// without stretched clips takes over at the next block.
-const SWAP_AHEAD_SECONDS: f64 = 0.15;
+const SWAP_AHEAD_SECONDS: f64 = 0.08;
 /// How far, in frames, a swap may land from where its stretch voices were rendered for and
 /// still play them as they are.
 const SWAP_TOLERANCE: u64 = 1024;
@@ -223,6 +223,34 @@ impl Renderer {
         }
     }
 
+    /// After an edit while playing, the arrangement notes that sound follow the new graph
+    /// (#916): one whose note is gone (deleted, or its clip deleted or moved away) is released,
+    /// one still there ends where its note now ends. Arranged time `time`. Never allocates.
+    fn follow_arranged_notes(&mut self, time: u64) {
+        let position = self.position;
+        let Self { graph, voices, next_event, .. } = self;
+        let started = graph.events.get(..*next_event).unwrap_or_default();
+        let launcher = &graph.launcher;
+        // The renderer frame a sounding note on `bus` and `key` now ends at, if one still sounds.
+        let wanted = |bus: u32, key: u8| {
+            started
+                .iter()
+                .filter(|e| e.bus == bus && e.key == key && e.end > time && !launcher.overrides(e.column))
+                .map(|e| position + (e.end - time))
+                .max()
+        };
+        for (index, chain) in graph.chains.iter_mut().enumerate() {
+            let bus = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            chain.follow_arranged(0, |key| wanted(bus, key));
+        }
+        for voice in voices.iter_mut().filter(|v| v.active && v.arranged) {
+            match wanted(voice.bus, voice.key) {
+                Some(end) => voice.end = end,
+                None => voice.end = voice.end.min(position),
+            }
+        }
+    }
+
     /// The frame the pending graph takes over at, if one is waiting.
     pub(crate) fn swap_at(&self) -> Option<u64> {
         self.swap.pending.as_ref().map(|s| s.at)
@@ -258,12 +286,19 @@ impl Renderer {
         // them changed, and waiting ones take theirs if it has them now.
         for chain in &mut self.graph.chains {
             for slot in chain.plugin_slots().filter(|s| s.processor.is_none()) {
-                slot.processor = old
+                if let Some(running) = old
                     .chains
                     .iter_mut()
                     .flat_map(|c| c.plugin_slots())
                     .find(|o| o.key == slot.key && o.processor.is_some())
-                    .and_then(|o| o.processor.take());
+                {
+                    slot.processor = running.processor.take();
+                    // The running plug-in keeps what it was sent: only values the edit changed
+                    // go to it, not every set value again, which would undo what was turned in
+                    // its own window meanwhile (#916).
+                    std::mem::swap(&mut slot.params, &mut running.params);
+                    slot.params.adopt(&mut running.params);
+                }
                 if slot.processor.is_none()
                     && let Some(index) = self.swap.parked.iter().position(|(key, _)| *key == slot.key)
                 {
@@ -313,6 +348,9 @@ impl Renderer {
         let time = self.time();
         // Cursors into the new lists: what has started by now has been handled.
         self.next_event = self.graph.events.partition_point(|e| e.start < time);
+        if self.running {
+            self.follow_arranged_notes(time);
+        }
         self.next_audio = self.graph.audio_events.partition_point(|a| a.event.start < time);
         self.active_audio_count = 0;
         if self.running {
@@ -484,7 +522,7 @@ impl Controller {
         let collect_began = std::time::Instant::now();
         updater.collect();
         let collect_took = collect_began.elapsed();
-        let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new() };
+        let mut plugins = Plugins { info: updater.plugin_info.clone(), processors: HashMap::new(), carried: false };
         let mut graph = Graph::build(project, &updater.audio, &updater.assets, updater.sample_rate, &mut plugins, None)
             .map_err(|e| e.to_string())?;
         crate::build_report::add(&format!("old graphs dropped {:.1} ms", collect_took.as_secs_f64() * 1000.0));
@@ -720,5 +758,12 @@ impl Controller {
             m.worst_plugin.load(Ordering::Relaxed),
             m.worst_misses.load(Ordering::Relaxed),
         )
+    }
+
+    /// Plug-in blocks that were not sent at all (their host was still busy with an earlier
+    /// one), and the longest round trip a plug-in answered in, in microseconds.
+    pub fn plugin_time(&self) -> (u64, u32) {
+        let m = &self.monitor;
+        (m.plugin_blocked.load(Ordering::Relaxed), m.worst_trip.load(Ordering::Relaxed))
     }
 }

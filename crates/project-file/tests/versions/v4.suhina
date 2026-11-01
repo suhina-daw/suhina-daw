@@ -97,6 +97,36 @@
           "beat": 16.0,
           "name": ""
         }
+      ],
+      "takes": [
+        {
+          "clips": [
+            {
+              "content": 1,
+              "enabled": true,
+              "fade_in": 0.25,
+              "fade_in_curve": -0.5,
+              "fade_in_shape": "s_curve",
+              "fade_out": 1.0,
+              "fade_out_curve": 0.75,
+              "fade_out_shape": "equal_power",
+              "launch": {
+                "legato": true,
+                "mode": "gate",
+                "quantization": "1/8T"
+              },
+              "length": 4.0,
+              "loop": [
+                0.0,
+                2.0
+              ],
+              "offset": 0.5,
+              "start": 0.0
+            }
+          ],
+          "name": "Take 1",
+          "track": 2
+        }
       ]
     },
     "channels": [

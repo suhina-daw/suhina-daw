@@ -4,9 +4,9 @@
 //! The control messages between the engine and a plug-in host process (ADR 0006): one JSON
 //! object per line over a local socket. Audio does not go here; it goes through `suhina-ipc`.
 //!
-//! Every message has an `op`. Engine to host: `hello`, `load`, `unload`, `ping`, `get_state`,
+//! Every message has an `op`. Engine to host: `hello`, `load`, `reconfigure`, `unload`, `ping`, `get_state`,
 //! `set_state`, `get_params`, `set_param`, `open_editor`, `place_editor`, `close_editor`,
-//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `unloaded`, `pong`, `state`, `params`, `param`,
+//! `fit_editor`, `ara_select`, `ara_update`, `ara_export`, `ara_import`, `quit`. Host to engine: `hello`, `loaded`, `reconfigured`, `unloaded`, `pong`, `state`, `params`, `param`,
 //! `editor_opened`, `editor_closed`, `editor_resized`, `latency_changed`, `ara_updated`, `ara_exported`, `ara_imported`, `memory`,
 //! `transport_key`, `ara_playback`, `ara_notes`, `error`. Every message is answered, except `place_editor`, `fit_editor`,
 //! `ara_select` and `quit` (so the engine never waits on them).
@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 13;
+pub const VERSION: u64 = 14;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -338,10 +338,24 @@ pub enum AraPlayback {
     Stop,
     /// Move the play position to this many seconds of song time.
     Position(f64),
+    /// Make the loop (cycle) this span: its start and its length, in seconds of song time.
+    Cycle(f64, f64),
+    /// Turn the loop on or off.
+    CycleOn(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    /// Reconfigure a quiescent instance without destroying it. The shared audio link's
+    /// maximum block capacity stays unchanged. Answered only after reactivation.
+    Reconfigure {
+        instance: u32,
+        sample_rate: f64,
+    },
+    Reconfigured {
+        instance: u32,
+        latency: u32,
+    },
     Hello {
         version: u64,
     },
@@ -406,6 +420,14 @@ pub enum Message {
     Param {
         instance: u32,
         param: ParamInfo,
+    },
+    /// Set by the user in the plug-in's own editor: the host reports it so the session keeps
+    /// the project's values in step (decision 6). Comes unasked; `value` is what the plug-in
+    /// now runs with.
+    ParamChanged {
+        instance: u32,
+        id: u32,
+        value: f64,
     },
     /// Open the plug-in's editor; answered with `EditorOpened` and the size of its inside.
     /// `owner` is the engine's window (a Win32 `HWND`, an X11 window id). Not `embedded`: the
@@ -506,6 +528,12 @@ pub enum Message {
     /// Space was pressed in one of the host's editor windows (unasked): the engine plays or
     /// stops as Space does in its own window, since the key never reaches it there.
     TransportKey,
+    /// A key the app's computer keyboard plays, pressed or let go in an editor window while
+    /// that keyboard plays notes: its Windows virtual-key code.
+    TypedKey {
+        key: u8,
+        pressed: bool,
+    },
     /// An ARA plug-in asked the host's transport to play, stop or move (unasked): its own
     /// transport buttons and a click in its editor's timeline (#717).
     AraPlayback(AraPlayback),
@@ -544,6 +572,8 @@ impl Message {
     pub fn instance(&self) -> Option<u32> {
         match self {
             Self::Load { instance, .. }
+            | Self::Reconfigure { instance, .. }
+            | Self::Reconfigured { instance, .. }
             | Self::Loaded { instance, .. }
             | Self::Unload { instance }
             | Self::Unloaded { instance }
@@ -554,6 +584,7 @@ impl Message {
             | Self::Params { instance, .. }
             | Self::SetParam { instance, .. }
             | Self::Param { instance, .. }
+            | Self::ParamChanged { instance, .. }
             | Self::OpenEditor { instance, .. }
             | Self::EditorOpened { instance, .. }
             | Self::PlaceEditor { instance, .. }
@@ -577,6 +608,7 @@ impl Message {
             | Self::Pong { .. }
             | Self::Memory { .. }
             | Self::TransportKey
+            | Self::TypedKey { .. }
             | Self::AraPlayback(_)
             | Self::Quit => None,
         }
@@ -598,6 +630,12 @@ impl Message {
             Self::Loaded { instance, latency, edits_clips } => {
                 json!({ "op": "loaded", "instance": instance, "latency": latency, "edits_clips": edits_clips })
             }
+            Self::Reconfigure { instance, sample_rate } => {
+                json!({ "op": "reconfigure", "instance": instance, "sample_rate": sample_rate })
+            }
+            Self::Reconfigured { instance, latency } => {
+                json!({ "op": "reconfigured", "instance": instance, "latency": latency })
+            }
             Self::Unload { instance } => json!({ "op": "unload", "instance": instance }),
             Self::Unloaded { instance } => json!({ "op": "unloaded", "instance": instance }),
             Self::Ping { id } => json!({ "op": "ping", "id": id }),
@@ -618,6 +656,9 @@ impl Message {
                 json!({ "op": "set_param", "instance": instance, "id": id, "value": value })
             }
             Self::Param { instance, param } => json!({ "op": "param", "instance": instance, "param": param.to_json() }),
+            Self::ParamChanged { instance, id, value } => {
+                json!({ "op": "param_changed", "instance": instance, "id": id, "value": value })
+            }
             Self::OpenEditor { instance, owner, embedded } => {
                 json!({ "op": "open_editor", "instance": instance, "owner": owner, "embedded": embedded })
             }
@@ -663,10 +704,17 @@ impl Message {
             }
             Self::Memory { bytes } => json!({ "op": "memory", "bytes": bytes }),
             Self::TransportKey => json!({ "op": "transport_key" }),
+            Self::TypedKey { key, pressed } => json!({ "op": "typed_key", "key": key, "pressed": pressed }),
             Self::AraPlayback(AraPlayback::Start) => json!({ "op": "ara_playback", "request": "start" }),
             Self::AraPlayback(AraPlayback::Stop) => json!({ "op": "ara_playback", "request": "stop" }),
             Self::AraPlayback(AraPlayback::Position(seconds)) => {
                 json!({ "op": "ara_playback", "request": "position", "seconds": seconds })
+            }
+            Self::AraPlayback(AraPlayback::Cycle(start, length)) => {
+                json!({ "op": "ara_playback", "request": "cycle", "seconds": start, "length": length })
+            }
+            Self::AraPlayback(AraPlayback::CycleOn(on)) => {
+                json!({ "op": "ara_playback", "request": "cycle_on", "on": on })
             }
             Self::CloseEditor { instance } => json!({ "op": "close_editor", "instance": instance }),
             Self::EditorClosed { instance } => json!({ "op": "editor_closed", "instance": instance }),
@@ -693,6 +741,14 @@ impl Message {
         let instance = || small("instance");
         Some(match value.get("op")?.as_str()? {
             "hello" => Self::Hello { version: number("version")? },
+            "reconfigure" => Self::Reconfigure {
+                instance: instance()?,
+                sample_rate: value
+                    .get("sample_rate")
+                    .and_then(Value::as_f64)
+                    .filter(|r| r.is_finite() && *r > 0.0 && *r <= 768_000.0)?,
+            },
+            "reconfigured" => Self::Reconfigured { instance: instance()?, latency: small("latency")? },
             "load" => Self::Load {
                 instance: instance()?,
                 plugin: text("plugin")?,
@@ -749,6 +805,11 @@ impl Message {
                 value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
             },
             "param" => Self::Param { instance: instance()?, param: ParamInfo::from_json(value.get("param")?)? },
+            "param_changed" => Self::ParamChanged {
+                instance: instance()?,
+                id: small("id")?,
+                value: value.get("value").and_then(Value::as_f64).filter(|v| v.is_finite())?,
+            },
             "open_editor" => Self::OpenEditor {
                 instance: instance()?,
                 owner: match value.get("owner") {
@@ -819,12 +880,21 @@ impl Message {
             "latency_changed" => Self::LatencyChanged { instance: instance()?, latency: small("latency")? },
             "memory" => Self::Memory { bytes: number("bytes")? },
             "transport_key" => Self::TransportKey,
+            "typed_key" => Self::TypedKey {
+                key: value.get("key").and_then(Value::as_u64).and_then(|k| u8::try_from(k).ok())?,
+                pressed: value.get("pressed").and_then(Value::as_bool)?,
+            },
             "ara_playback" => Self::AraPlayback(match text("request")?.as_str() {
                 "start" => AraPlayback::Start,
                 "stop" => AraPlayback::Stop,
                 "position" => AraPlayback::Position(
                     value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
                 ),
+                "cycle" => AraPlayback::Cycle(
+                    value.get("seconds").and_then(Value::as_f64).filter(|s| s.is_finite() && *s >= 0.0)?,
+                    value.get("length").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0)?,
+                ),
+                "cycle_on" => AraPlayback::CycleOn(value.get("on").and_then(Value::as_bool)?),
                 _ => return None,
             }),
             "close_editor" => Self::CloseEditor { instance: instance()? },

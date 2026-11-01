@@ -89,6 +89,7 @@ impl Clip {
             follow_action: FollowAction::default(),
             launch: LaunchSettings::default(),
             color: None,
+            ara: false,
             extensions: Extensions::default(),
         }
     }
@@ -124,6 +125,7 @@ impl Device {
             state: None,
             params: Vec::new(),
             automation: Vec::new(),
+            clip_host: false,
             extensions: Extensions::default(),
         }
     }

@@ -32,6 +32,7 @@ mod range;
 mod registry;
 mod returns;
 mod scene;
+pub(crate) mod take;
 mod tempo;
 mod time_signature;
 mod track;
@@ -249,12 +250,23 @@ pub(crate) const fn optional(name: &'static str, ty: ParamType, doc: &'static st
 }
 
 const TRACK: Param = param("track", ParamType::Track, "track id or name, from project.tracks");
+/// The track of a command on a channel's devices or lanes, which may be the main channel (#687).
+const DEVICE_TRACK: Param =
+    param("track", ParamType::Track, "track id or name, from project.tracks, or \"main\" for the main channel");
 /// Lets the calls of one drag make one undo step.
 const CONTINUE: Param = optional(
     "continue",
     ParamType::Bool,
     "true adds the change to the undo step of the previous call of this command on this track, \
      when no other edit came between (one drag, one step)",
+);
+/// With `continue`, starts each call from the project as it was before the step it continues, so
+/// a slider's live value replaces the one before instead of adding to it.
+const REPLACE: Param = optional(
+    "replace",
+    ParamType::Bool,
+    "with continue: the change starts from where the step it continues began, so each call replaces \
+     the last (a slider's live value) instead of adding to it",
 );
 const TRACKS: Param = param("tracks", ParamType::Tracks, "the tracks to act on (ids or names), at least one");
 const RANGE_START: Param =
@@ -550,6 +562,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     automation::COMMANDS,
     returns::COMMANDS,
     note::COMMANDS,
+    take::COMMANDS,
     history::COMMANDS,
 ];
 
@@ -596,7 +609,8 @@ fn tracks(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
                     p.arrangement.lanes.iter().filter(|l| l.track == Some(t.id)).map(|l| l.clips.len()).sum::<usize>();
                 json!({
                     "id": t.id.0,
-                    "name": t.name,
+                    "name": p.shown_track_name(t.id),
+                    "written_name": t.name,
                     "plays": if t.content.notes { "notes" } else if t.content.audio { "audio" } else { "none" },
                     "volume_db": channel.map(|c| to_db(c.volume)),
                     "pan": channel.map(|c| c.pan),
@@ -732,7 +746,7 @@ pub(crate) fn track_list(p: &Project, params: &Value) -> Result<Vec<TrackId>, Co
 }
 
 fn channel_id_of(p: &Project, track: TrackId) -> Option<ChannelId> {
-    p.track(track).and_then(|t| t.channel)
+    p.channel_of_track(track).map(|c| c.id)
 }
 
 pub(crate) fn group_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -809,6 +823,7 @@ pub(crate) fn remove_track(p: &mut Project, track: TrackId, channel: ChannelId) 
         c.sends.retain(|s| s.target != channel);
     }
     p.arrangement.lanes.retain(|l| l.track != Some(track));
+    p.arrangement.takes.retain(|t| t.track != track);
     p.launcher.columns.retain(|c| c.track != track);
     for content in &mut p.contents {
         content.lanes.retain(|l| l.target != Some(track));
@@ -1124,7 +1139,7 @@ pub(crate) fn scene_index(p: &Project, params: &Value) -> Result<usize, CommandE
 }
 
 fn track_name(p: &Project, track: TrackId) -> String {
-    p.track(track).map_or_else(|| track.0.to_string(), |t| t.name.clone())
+    p.track(track).map_or_else(|| track.0.to_string(), |_| p.shown_track_name(track))
 }
 
 fn undo(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
@@ -1135,6 +1150,30 @@ fn undo(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
 /// ignoring case, and must be unambiguous.
 pub(crate) fn track_id(p: &Project, params: &Value) -> Result<TrackId, CommandError> {
     track_at(p, params, "track")
+}
+
+/// Like [`track_id`], for the commands that act on a channel's devices and lanes: `"main"` (where
+/// no track is named so) or [`TrackId::MAIN`]'s number names the main channel, which has no
+/// track of its own (#687). Commands that change tracks themselves use [`track_id`], which never
+/// gives it.
+pub(crate) fn track_or_main_id(p: &Project, params: &Value) -> Result<TrackId, CommandError> {
+    track_or_main_at(p, params, "track")
+}
+
+/// [`track_or_main_id`] for `params[key]`.
+pub(crate) fn track_or_main_at(p: &Project, params: &Value, key: &str) -> Result<TrackId, CommandError> {
+    let main = p.main_channel().is_some();
+    match params.get(key) {
+        Some(Value::Number(n)) if main && n.as_u64() == Some(u64::from(TrackId::MAIN.0)) => Ok(TrackId::MAIN),
+        Some(Value::String(name))
+            if main
+                && name.eq_ignore_ascii_case("main")
+                && !p.tracks.iter().any(|t| t.name.eq_ignore_ascii_case(name)) =>
+        {
+            Ok(TrackId::MAIN)
+        }
+        _ => track_at(p, params, key),
+    }
 }
 
 /// Resolves the track id or name in `params[key]`.
@@ -1149,12 +1188,19 @@ pub(crate) fn track_at(p: &Project, params: &Value, key: &str) -> Result<TrackId
                 .ok_or_else(|| format!("track {id} does not exist").into())
         }
         Some(Value::String(name)) => {
-            if let Some(t) = p.tracks.iter().find(|t| t.name == *name) {
-                return Ok(t.id);
-            }
-            let matches: Vec<&Track> = p.tracks.iter().filter(|t| t.name.eq_ignore_ascii_case(name)).collect();
+            // A name as the views show it ("2 MIDI" for "# MIDI", #946) or as it is written.
+            let names: Vec<(TrackId, String, &str)> =
+                p.tracks.iter().map(|t| (t.id, p.shown_track_name(t.id), t.name.as_str())).collect();
+            let found = |same: &dyn Fn(&str) -> bool| -> Vec<TrackId> {
+                let mut ids: Vec<TrackId> =
+                    names.iter().filter(|(_, shown, written)| same(shown) || same(written)).map(|n| n.0).collect();
+                ids.dedup();
+                ids
+            };
+            let exact = found(&|n: &str| n == name.as_str());
+            let matches = if exact.is_empty() { found(&|n: &str| n.eq_ignore_ascii_case(name)) } else { exact };
             match matches.as_slice() {
-                [t] => Ok(t.id),
+                [id] => Ok(*id),
                 [] => Err(format!("no track named {name:?}; project.tracks lists them").into()),
                 _ => Err(format!("several tracks are named {name:?}; use the track id").into()),
             }
@@ -1165,27 +1211,20 @@ pub(crate) fn track_at(p: &Project, params: &Value, key: &str) -> Result<TrackId
 
 pub(crate) fn channel_param<'a>(session: &'a mut Session, params: &Value) -> Result<&'a mut Channel, CommandError> {
     let track = track_id(&session.project, params)?;
-    let channel = session
-        .project
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .ok_or("the track has no mixer channel")?;
-    session.project.channel_mut(channel).ok_or_else(|| "the track's channel is missing".into())
+    session.project.channel_of_track_mut(track).ok_or_else(|| "the track has no mixer channel".into())
 }
 
-/// The read-only form of [`channel_param`], for the `Read` commands that do not edit.
-pub(crate) fn channel_read<'a>(session: &'a Session, params: &Value) -> Result<&'a Channel, CommandError> {
-    let track = track_id(&session.project, params)?;
-    let channel = session
-        .project
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .ok_or("the track has no mixer channel")?;
-    session.project.channel(channel).ok_or_else(|| "the track's channel is missing".into())
+/// [`channel_param`] for the commands on a channel's devices and lanes, which reach the main
+/// channel too ([`track_or_main_id`], #687).
+pub(crate) fn device_channel<'a>(session: &'a mut Session, params: &Value) -> Result<&'a mut Channel, CommandError> {
+    let track = track_or_main_id(&session.project, params)?;
+    session.project.channel_of_track_mut(track).ok_or_else(|| "the track has no mixer channel".into())
+}
+
+/// The read-only form of [`device_channel`], for the `Read` commands that do not edit.
+pub(crate) fn device_channel_read<'a>(session: &'a Session, params: &Value) -> Result<&'a Channel, CommandError> {
+    let track = track_or_main_id(&session.project, params)?;
+    session.project.channel_of_track(track).ok_or_else(|| "the track has no mixer channel".into())
 }
 
 fn channel_of<'a>(p: &'a Project, track: &Track) -> Option<&'a Channel> {

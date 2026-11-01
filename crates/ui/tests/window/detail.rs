@@ -49,6 +49,7 @@ fn clicking_a_second_device_moves_the_selection_so_delete_takes_it() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();
@@ -92,6 +93,7 @@ fn a_removals_undo_puts_the_selection_back_on_its_device() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();
@@ -312,6 +314,7 @@ fn removing_a_device_below_the_selected_one_moves_the_selection_with_it() {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     let mut app = App::new();
@@ -368,4 +371,23 @@ fn a_devices_switch_bypasses_it_and_a_click_again_enables_it() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert!(!enabled(&harness), "the undo undid the enable");
+}
+
+/// Without a player (no audio output), a device's automated parameter still shows the
+/// automation's value at the start, not its own (#811).
+#[test]
+fn an_automated_parameter_shows_its_lane_without_a_player() {
+    use egui_kittest::kittest::NodeT;
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
+    let mut project = project_with_a_device();
+    let mut lane = AutomationLane::new("gain");
+    lane.points = vec![AutomationPoint::new(0.0, -12.0)];
+    project.channels[0].devices[0].automation.push(lane);
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let gain = harness.get_by_label("Gain").accesskit_node().numeric_value();
+    assert_eq!(gain, Some(-12.0), "the lane's value, not the device's -3.5");
 }

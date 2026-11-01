@@ -43,7 +43,10 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream, ToFsName,
     ToNsName,
 };
-pub use suhina_ipc::{AudioSource, Event, EventKind, MAX_EVENTS, Outcome, take_keyboard_back};
+pub use suhina_ipc::{
+    AudioSource, Event, EventKind, MAX_EVENTS, Outcome, keys_to_engine, pointer_on_screen, set_keys_to_engine,
+    take_keyboard_back,
+};
 use suhina_ipc::{IpcError, Link};
 
 use protocol::{AraDocument, MAX_LINE, Message, VERSION};
@@ -130,6 +133,9 @@ pub enum Health {
 
 /// The audio thread's half: runs blocks through the plug-in.
 pub struct PluginAudio {
+    /// Used only while the renderer is quiescent, never by a render callback.
+    group: std::sync::Weak<Mutex<Group>>,
+    sample_rate: Arc<AtomicU64>,
     link: Link,
     unanswered: Arc<AtomicU32>,
     /// The instance's number in its host process.
@@ -149,6 +155,37 @@ pub struct Seat {
 }
 
 impl PluginAudio {
+    /// Reconfigures a quiescent audio link. Not real-time safe: call only after the old
+    /// renderer has stopped and before the new one starts. The control half may stay on
+    /// its session thread, including while an editor is open.
+    pub fn reconfigure(&mut self, sample_rate: f64, timeout: Duration) -> Result<u32, PluginError> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 || sample_rate > 768_000.0 {
+            return Err(PluginError::Protocol("invalid sample rate".into()));
+        }
+        let shared = self.group.upgrade().ok_or_else(|| PluginError::Protocol("the plug-in was unloaded".into()))?;
+        let deadline = Instant::now() + timeout;
+        let mut group = lock_until(&shared, deadline).ok_or(PluginError::Timeout("reconfigure"))?;
+        if group.generation != self.process {
+            return Err(PluginError::Protocol("the host process was replaced".into()));
+        }
+        let instance = self.instance;
+        let reply = group.request(
+            Some(instance),
+            &Message::Reconfigure { instance, sample_rate },
+            "reconfigure",
+            deadline.saturating_duration_since(Instant::now()),
+            |m| matches!(m, Message::Reconfigured { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::Reconfigured { latency, .. } => {
+                self.sample_rate.store(sample_rate.to_bits(), Ordering::Release);
+                group.note(&Message::LatencyChanged { instance, latency });
+                Ok(latency)
+            }
+            _ => Err(PluginError::Protocol("expected reconfiguration acknowledgement".into())),
+        }
+    }
+
     /// One block through the plug-in, waiting at most `timeout`; see [`Link::process`].
     /// Real-time safe.
     pub fn process(&mut self, input: &[f32], output: &mut [f32], timeout: Duration) -> Outcome {
@@ -164,6 +201,9 @@ impl PluginAudio {
         output: &mut [f32],
         timeout: Duration,
     ) -> Outcome {
+        if self.link.ready() {
+            self.unanswered.store(0, Ordering::Relaxed);
+        }
         let outcome = self.link.process_with_events(input, events, output, timeout);
         self.note(outcome);
         outcome
@@ -180,7 +220,11 @@ impl PluginAudio {
         if !sent && !patience.is_zero() && self.link.wait_ready(Instant::now() + patience) {
             sent = self.link.send_with_events(input, events, room);
         }
-        if !sent {
+        if sent {
+            // Accepting a new request proves the previous one was answered, even
+            // if its reply arrived too late to be used for audio.
+            self.unanswered.store(0, Ordering::Relaxed);
+        } else {
             self.note(Outcome::Busy);
         }
         sent
@@ -210,7 +254,9 @@ impl PluginAudio {
         if !sent && !patience.is_zero() && self.link.wait_ready(Instant::now() + patience) {
             sent = self.link.send_joint(input, events, followers, room);
         }
-        if !sent {
+        if sent {
+            self.unanswered.store(0, Ordering::Relaxed);
+        } else {
             self.note(Outcome::Busy);
         }
         sent
@@ -220,6 +266,11 @@ impl PluginAudio {
     /// a block its host did not answer counts against this instance too, as it may be the one
     /// that is stuck. Real-time safe.
     pub fn followed(&self, outcome: Outcome) {
+        // A missed joint request was accepted, so the previous joint request
+        // finished. Busy means no new request could go and keeps the hang count.
+        if outcome == Outcome::Missed {
+            self.unanswered.store(0, Ordering::Relaxed);
+        }
         self.note(outcome);
     }
 
@@ -417,6 +468,9 @@ struct Group {
     resized_editors: Vec<(u32, (u32, u32))>,
     /// Instances whose plug-in reported another latency (the latest), not yet taken in.
     latencies: Vec<(u32, u32)>,
+    /// Parameters the host said the user moved in a plug-in's editor (the latest per instance
+    /// and id), not yet taken in.
+    param_edits: Vec<(u32, u32, f64)>,
     /// The notes ARA plug-ins found in their regions (the latest per instance and region), not
     /// yet taken in (#720).
     ara_notes: Vec<(u32, String, Vec<protocol::AraNote>)>,
@@ -436,6 +490,7 @@ impl Group {
             closed_editors: Vec::new(),
             resized_editors: Vec::new(),
             latencies: Vec::new(),
+            param_edits: Vec::new(),
             ara_notes: Vec::new(),
             ara_analysis: Vec::new(),
             ram: None,
@@ -455,6 +510,7 @@ impl Group {
         self.closed_editors.clear();
         self.resized_editors.clear();
         self.latencies.clear();
+        self.param_edits.clear();
         self.ara_notes.clear();
         self.ram = None;
     }
@@ -500,6 +556,14 @@ impl Group {
                     self.latencies.push((*instance, *latency));
                 }
             }
+            Message::ParamChanged { instance, id, value } => {
+                // The last value of a parameter wins; one that already moved a step keeps its
+                // latest.
+                self.param_edits.retain(|(i, other, _)| !(i == instance && other == id));
+                if self.param_edits.len() < MAX_CLOSED_EDITORS {
+                    self.param_edits.push((*instance, *id, *value));
+                }
+            }
             Message::AraNotes { instance, region, notes, .. } => {
                 self.ara_notes.retain(|(i, r, _)| !(i == instance && r == region));
                 if self.ara_notes.len() < protocol::MAX_ARA_OBJECTS {
@@ -512,7 +576,7 @@ impl Group {
                     self.ara_analysis.push((*instance, *progress));
                 }
             }
-            Message::TransportKey | Message::AraPlayback(_) => take_in_transport(message),
+            Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_) => take_in_transport(message),
             Message::Memory { bytes } => {
                 // Only a process that is still there reports; the host sends it once a second,
                 // so the latest is what the control bar adds.
@@ -571,6 +635,20 @@ impl Group {
     fn take_latency(&mut self, instance: u32) -> Option<u32> {
         let at = self.latencies.iter().position(|(i, _)| *i == instance)?;
         Some(self.latencies.swap_remove(at).1)
+    }
+
+    /// What the host said the user moved in `instance`'s editor since the last call (and
+    /// forgets it): each (id, value) once, the latest per id.
+    fn take_param_edits(&mut self, instance: u32) -> Vec<(u32, f64)> {
+        let mut taken = Vec::new();
+        self.param_edits.retain_mut(|(i, id, value)| {
+            if *i != instance {
+                return true;
+            }
+            taken.push((*id, *value));
+            false
+        });
+        taken
     }
 
     /// Sends `message` (about `instance`, or the process) and waits for the reply `wanted`
@@ -697,6 +775,8 @@ fn next_instance() -> u32 {
 
 /// The control half: one plug-in instance in a host process.
 pub struct Plugin {
+    /// Shared with the retained audio half so a later crash restart uses its current rate.
+    sample_rate: Arc<AtomicU64>,
     launch: Launch,
     group: Arc<Mutex<Group>>,
     instance: u32,
@@ -728,7 +808,10 @@ impl Plugin {
         let instance = next_instance();
         let (generation, latency, edits_clips, link) = lock(&group).load(&launch, instance)?;
         let unanswered = Arc::new(AtomicU32::new(0));
+        let sample_rate = Arc::new(AtomicU64::new(launch.sample_rate.to_bits()));
+        let audio_group = Arc::downgrade(&group);
         let plugin = Self {
+            sample_rate: Arc::clone(&sample_rate),
             launch,
             group,
             instance,
@@ -742,7 +825,7 @@ impl Plugin {
             editor_size: None,
             last_health: Health::Running,
         };
-        Ok((plugin, PluginAudio { link, unanswered, instance, process: generation }))
+        Ok((plugin, PluginAudio { link, unanswered, instance, process: generation, group: audio_group, sample_rate }))
     }
 
     /// Delay the plug-in adds, in frames, as it last reported: when it loaded, or since (see
@@ -770,6 +853,30 @@ impl Plugin {
             }
         }
         self.latency
+    }
+
+    /// What the user moved in the plug-in's editor since the last call, as (id, value) pairs
+    /// in the plug-in's own range (see [`ParamInfo`]): the session keeps the project's values
+    /// in step with them. Never waits: while the process is busy with another request,
+    /// nothing yet.
+    pub fn take_param_edits(&mut self) -> Vec<(u32, f64)> {
+        let Some(mut group) = try_lock(&self.group) else { return Vec::new() };
+        if group.generation != self.generation {
+            return Vec::new();
+        }
+        group.drain();
+        let taken = group.take_param_edits(self.instance);
+        // An edit the session keeps the project's values in step with is also a value set
+        // since the state was last read: a restart sets it again, the latest of a parameter
+        // winning (ADR 0006, decision 3). Kept only until the state is read again, which
+        // holds it.
+        for (id, value) in &taken {
+            self.params_since.retain(|(other, _)| *other != *id);
+            if self.params_since.len() < protocol::MAX_PARAMS {
+                self.params_since.push((*id, *value));
+            }
+        }
+        taken
     }
 
     /// The notes the ARA plug-in found in its regions since the last call, by region id
@@ -917,6 +1024,30 @@ impl Plugin {
     /// The plug-in's parameters with their current values.
     pub fn params(&mut self) -> Result<Vec<ParamInfo>, PluginError> {
         self.params_within(self.launch.timeout)
+    }
+
+    /// Changes the audio rate without replacing the instance or its editor. The caller
+    /// must stop submitting audio first. A failed request requires explicit recovery.
+    pub fn reconfigure(&mut self, sample_rate: f64, timeout: Duration) -> Result<u32, PluginError> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 || sample_rate > 768_000.0 {
+            return Err(PluginError::Protocol("invalid sample rate".into()));
+        }
+        let instance = self.instance;
+        let reply = self.request_within(
+            timeout,
+            &Message::Reconfigure { instance, sample_rate },
+            "reconfigure",
+            |m| matches!(m, Message::Reconfigured { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::Reconfigured { latency, .. } => {
+                self.launch.sample_rate = sample_rate;
+                self.sample_rate.store(sample_rate.to_bits(), Ordering::Release);
+                self.latency = latency;
+                Ok(latency)
+            }
+            _ => Err(PluginError::Protocol("expected reconfiguration acknowledgement".into())),
+        }
     }
 
     /// [`Plugin::params`], waiting at most `timeout` for the host's answer instead of the launch
@@ -1152,6 +1283,7 @@ impl Plugin {
     /// already replaced by another's restart is loaded into the new one. An instance with a
     /// process of its own always gets a new process.
     pub fn restart(&mut self) -> Result<PluginAudio, PluginError> {
+        self.launch.sample_rate = f64::from_bits(self.sample_rate.load(Ordering::Acquire));
         // The instance being replaced: if its audio thread is stuck in a shared process, that
         // process cannot let it go and is ended. Read before the counter is replaced below.
         let own_hung = self.unanswered.load(Ordering::Relaxed) >= HUNG_AFTER;
@@ -1192,7 +1324,14 @@ impl Plugin {
         // What `health` says while the group is busy (#188): the new instance, not the old one's
         // `Crashed` or `Hung`.
         self.last_health = Health::Running;
-        let audio = PluginAudio { link, unanswered: self.unanswered.clone(), instance, process: generation };
+        let audio = PluginAudio {
+            link,
+            unanswered: self.unanswered.clone(),
+            instance,
+            process: generation,
+            group: Arc::downgrade(&self.group),
+            sample_rate: Arc::clone(&self.sample_rate),
+        };
         let params = std::mem::take(&mut self.params_since);
         if let Some(state) = self.last_state.clone() {
             self.load_state(state)?;
@@ -1291,6 +1430,18 @@ static TRANSPORT_KEYS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU
 /// How many times Space was pressed in a plug-in's editor window since the last call: the window
 /// plays or stops that many times, as Space in its own window does. Takes in what the hosts sent
 /// without waiting for any of them.
+/// Keys the app's computer keyboard plays, pressed or let go in plug-in editor windows (their
+/// Windows virtual-key codes), oldest first.
+static TYPED_KEYS: Mutex<Vec<(u8, bool)>> = Mutex::new(Vec::new());
+/// At most this many wait; more are dropped (a stuck window would otherwise grow the list).
+const MAX_TYPED_KEYS: usize = 64;
+
+/// The keys pressed and let go in editor windows while the computer keyboard plays (#944).
+pub fn take_typed_keys() -> Vec<(u8, bool)> {
+    drain_groups();
+    std::mem::take(&mut *lock(&TYPED_KEYS))
+}
+
 pub fn take_transport_keys() -> u32 {
     drain_groups();
     TRANSPORT_KEYS.swap(0, std::sync::atomic::Ordering::Relaxed)
@@ -1353,11 +1504,24 @@ fn take_in_transport(message: &Message) {
         Message::TransportKey => {
             TRANSPORT_KEYS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        Message::TypedKey { key, pressed } => {
+            let mut keys = lock(&TYPED_KEYS);
+            if keys.len() < MAX_TYPED_KEYS {
+                keys.push((*key, *pressed));
+            }
+        }
         Message::AraPlayback(request) => {
             let mut requests = lock(&ARA_PLAYBACK);
-            // A newer position replaces one not taken yet; a few starts and stops are kept.
-            if let protocol::AraPlayback::Position(_) = request {
-                requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+            // A newer position or loop replaces one not taken yet (a loop dragged in the editor
+            // asks on every move); a few starts and stops are kept.
+            match request {
+                protocol::AraPlayback::Position(_) => {
+                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Position(_)));
+                }
+                protocol::AraPlayback::Cycle(..) => {
+                    requests.retain(|r| !matches!(r, protocol::AraPlayback::Cycle(..)));
+                }
+                _ => {}
             }
             if requests.len() < MAX_ARA_PLAYBACK {
                 requests.push(*request);
@@ -1389,12 +1553,14 @@ pub fn read_lines(stream: Stream) -> Receiver<Message> {
                         let shown = matches!(
                             message,
                             Message::TransportKey
+                                | Message::TypedKey { .. }
                                 | Message::AraPlayback(_)
                                 | Message::AraNotes { .. }
                                 | Message::AraAnalysis { .. }
                                 | Message::EditorClosed { .. }
                         );
-                        if matches!(message, Message::TransportKey | Message::AraPlayback(_)) {
+                        if matches!(message, Message::TransportKey | Message::TypedKey { .. } | Message::AraPlayback(_))
+                        {
                             take_in_transport(&message);
                             wake();
                             continue;

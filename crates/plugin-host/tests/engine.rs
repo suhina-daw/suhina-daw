@@ -69,6 +69,7 @@ fn plugin_device(id: &str) -> Device {
         state: None,
         params: Vec::new(),
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     }
 }
@@ -141,10 +142,12 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
                     follow_action: Default::default(),
                     launch: Default::default(),
                     color: None,
+                    ara: false,
                     extensions: Extensions::default(),
                 }],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -285,8 +288,8 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     let half: Vec<f32> = reference.iter().map(|s| s * 0.5).collect();
     assert!(max_diff(&out, &half) < 1e-6, "every block went through the plug-in: {}", max_diff(&out, &half));
 
-    // The same in real time, a block every 10 ms as a device asks for them: its slow blocks
-    // are late or refused, and those pass the sound; once settled it answers again.
+    // The same in real time. Its first blocks take 30 ms, five times the 6 ms a block's deadline
+    // allows: the ones it cannot take in time are late or refused, and those pass the sound.
     let (_control, hosted) = start("test:slow-start:5");
     let counts = hosted.counts();
     let mut plugins = suhina_engine::Plugins::new();
@@ -298,16 +301,22 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
         RenderOptions::PLAYING,
     )
     .unwrap();
-    let period = Duration::from_millis(10);
-    for _ in 0..40 {
-        let started = Instant::now();
-        play(&mut renderer, 1);
-        std::thread::sleep(period.saturating_sub(started.elapsed()));
-    }
+    play(&mut renderer, 3);
     let (given, late) = counts.read();
-    assert_eq!(given, 40);
-    assert!(late >= 1, "a 30 ms block misses a 10 ms block's deadline");
-    assert!(late < 40, "it answers again once settled ({late} late)");
+    assert_eq!(given, 3);
+    assert!(late >= 1, "a 30 ms block misses a 6 ms deadline ({late} late)");
+    // A block the host refuses does not count towards its slow start, so how many real-time
+    // blocks it takes to get past it depends on the scheduler. Wait for it explicitly: an offline
+    // render waits for the answer to every block, and ten of them take the host through all five.
+    renderer.set_offline(true);
+    play(&mut renderer, 10);
+    renderer.set_offline(false);
+    // Settled, it answers again: not every one of forty blocks is late.
+    let late_before = counts.read().1;
+    play(&mut renderer, 40);
+    let (given, late) = counts.read();
+    assert_eq!(given, 53);
+    assert!(late - late_before < 40, "it answers again once settled ({} late)", late - late_before);
 }
 
 #[test]
@@ -447,6 +456,122 @@ fn a_crashed_plug_in_is_reported_and_restarts_by_command() {
     assert!(error.message().to_owned().contains("crashed"), "{error}");
     session.execute("device.restart", &json!({ "track": 1, "device": 0 })).unwrap();
     until(&mut session, &mut renderer, "restarting", |s| s["status"] == "running");
+}
+
+/// The user turning a control in the plug-in's own editor reaches the session; and a
+/// parameter the session sets reaches the plug-in's controller, whose value the editor and
+/// the parameter listing read (#828). A VST3 plug-in reports its editor's edit through the
+/// host's handler, a CLAP one through its blocks' output parameter events.
+#[test]
+fn a_parameter_stays_in_step_between_the_session_and_the_editors() {
+    for id in ["vst3", "clap"] {
+        let p = project(8.0, false, vec![plugin_device(id)]);
+        let (mut session, mut renderer) = session(p, false);
+        until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
+        let device = json!({ "track": 1, "device": 0 });
+        let stored = |session: &Session, id: u32| {
+            session.project().channels[0].devices[0]
+                .params
+                .iter()
+                .find(|p| suhina_engine::param_id(&p.id) == Some(id))
+                .map(|p| p.value)
+        };
+        // The editor is not open yet: the plug-in runs with no values set.
+        assert_eq!(stored(&session, 0), None);
+        // Opening it makes the test plug-in's own editor turn its gain (EDITOR_GAIN); the
+        // session keeps the project's value in step with what the user now runs.
+        let editor_ok = cfg!(windows)
+            || cfg!(target_os = "macos")
+            || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()));
+        if editor_ok {
+            session.execute("device.openEditor", &device).unwrap();
+            let deadline = Instant::now() + PATIENT;
+            loop {
+                session.sync_plugins();
+                play(&mut renderer, 2);
+                if let Some(value) = stored(&session, 0) {
+                    assert_eq!(value, 0.125, "the editor's own edit took in");
+                    break;
+                }
+                assert!(Instant::now() < deadline, "the project never took the editor's edit in");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            session.execute("device.closeEditor", &device).unwrap();
+        }
+        // A value the session sets (a knob in the panel) reaches the plug-in's controller, whose
+        // value the parameter listing and the editor draw from.
+        session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "0", "value": 0.75 })).unwrap();
+        let deadline = Instant::now() + PATIENT;
+        loop {
+            session.sync_plugins();
+            play(&mut renderer, 2);
+            let list = session.execute("device.pluginParams", &json!({ "track": 1, "device": 0 })).unwrap();
+            let gain =
+                list.as_array().and_then(|list| list.iter().find(|p| p["id"] == json!(0))).map(|p| p["value"].clone());
+            if gain == Some(json!(0.75)) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the controller never followed the panel's set: {list}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+/// An editor edit the session took in is set again when the plug-in restarts, though its state
+/// was last read before the edit: the values set since the state's last read are kept for a
+/// restart, the latest of a parameter winning (ADR 0006, decision 3; #828).
+#[test]
+fn an_editor_edit_survives_a_restart() {
+    for id in ["vst3", "clap"] {
+        let p = project(8.0, false, vec![plugin_device(id)]);
+        let (mut session, mut renderer) = session(p, false);
+        // The state is never read again in this test: what carries the edit through the
+        // restart is the values set since the state was last read.
+        session.set_plugin_read_interval(Duration::from_secs(3600));
+        until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
+        let device = json!({ "track": 1, "device": 0 });
+        let editor_ok = cfg!(windows)
+            || cfg!(target_os = "macos")
+            || (cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty()));
+        if !editor_ok {
+            continue;
+        }
+        session.execute("device.openEditor", &device).unwrap();
+        let stored = |session: &Session| {
+            session.project().channels[0].devices[0]
+                .params
+                .iter()
+                .find(|p| suhina_engine::param_id(&p.id) == Some(0))
+                .map(|p| p.value)
+        };
+        let deadline = Instant::now() + PATIENT;
+        loop {
+            session.sync_plugins();
+            play(&mut renderer, 2);
+            if stored(&session) == Some(0.125) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the project never took the editor's edit in");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        session.execute("device.closeEditor", &device).unwrap();
+        session.execute("device.restart", &device).unwrap();
+        until(&mut session, &mut renderer, "restarting", |s| s["status"] == "running");
+        // The listing reads the plug-in's own value: the edit was set again.
+        let deadline = Instant::now() + PATIENT;
+        loop {
+            session.sync_plugins();
+            play(&mut renderer, 2);
+            let list = session.execute("device.pluginParams", &device).unwrap();
+            let gain =
+                list.as_array().and_then(|list| list.iter().find(|p| p["id"] == json!(0))).map(|p| p["value"].clone());
+            if gain == Some(json!(0.125)) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the restarted plug-in never got the edit back: {list}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 
 #[test]

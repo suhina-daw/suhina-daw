@@ -89,9 +89,10 @@
 Every crate in `Cargo.lock`, with all features on and for every platform, must have a licence
 that [`deny.toml`](deny.toml) allows: the list in AGENTS.md rule 10, plus a few exceptions, each
 named for one crate with the reason. Dependencies come from crates.io only, and a crate with an
-open RustSec advisory fails unless `deny.toml` ignores it with a reason. The **Dependencies**
-workflow (`.github/workflows/deny.yml`) runs this on every pull request. Run it locally with the
-version pinned in that workflow:
+open RustSec advisory fails unless `deny.toml` ignores it with a reason. The `ci` check runs this
+on every pull request and in the merge queue (`.github/workflows/deny.yml`, called from `ci.yml`),
+and `deny.toml` needs the owner's review like the workflows. Run it locally with the version pinned
+in that workflow:
 
 ```sh
 cargo install cargo-deny --version 0.20.2 --locked
@@ -101,9 +102,23 @@ cargo deny check
 **Dependabot** opens the updates: a security update as soon as a RustSec or GitHub advisory
 names a crate Suhina uses, and on Mondays the week's version updates
 ([`.github/dependabot.yml`](.github/dependabot.yml)): minor and patch updates of the Cargo
-workspace grouped in one pull request, a major update in a pull request of its own, and the GitHub
-Actions the workflows use. They go through CI and review like any other pull request; a major
-update that changes an API needs the code changed in the same pull request.
+workspace grouped in one pull request, the major updates (for a 0.x crate, 0.14 to 0.15) in a
+second one, and the GitHub Actions the workflows use. Every update rewrites `Cargo.lock`, so two
+of them in the merge queue at once conflict; queue one, and after it merges ask the other to rebase
+(`@dependabot rebase`). They go through CI and review like any other pull request; a major
+update that changes an API needs the code changed in the same pull request. One that cannot be
+fixed there goes in the `cargo-major` group's `exclude-patterns` in `.github/dependabot.yml`, so it
+comes in a pull request of its own and the rest of the group can merge.
+
+**GitHub Actions are pinned to a commit.** Every `uses:` line in `.github/workflows/` names the
+action's full commit SHA, with the version it is in a comment beside it
+(`actions/checkout@3d3c42e5… # v7.0.1`), never a tag or a branch: a tag such as `v7` or a branch
+such as `stable` can be moved to other code by whoever gets into the action's repository, and
+that code then runs with the job's secrets, or builds the nightly. Dependabot updates the SHA
+and the comment together. A new action is added the same way: the SHA of the release's commit
+from the action's own repository, not a fork (`git ls-remote https://github.com/<owner>/<repo>
+refs/tags/<tag>^{}`). Workflows of this repository (`uses: ./.github/workflows/…`) are not
+actions and need no SHA.
 
 When it rejects a licence, prefer another crate. Add an exception only for a licence that is
 GPLv3-compatible, for the crate that needs it, with a comment saying what the crate is for and
@@ -208,12 +223,27 @@ blocks nothing (`AGENTS.md` › Tasks has the commands). The rules in
 [AI-assisted contributions](#ai-assisted-contributions) apply to what the agent wrote.
 
 **No elevated access just to post.** These bot workflows require existing repository write
-access, not admin access. Without it, an agent uses the user's authenticated account to post
-ordinary issues and PR comments, within the user's authorization, and identifies agent-written
-feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
+access, not admin access. An agent checks that access first
+(`gh api repos/suhina-daw/suhina-daw --jq .permissions.push`, or
+[`scripts/agent_post.py`](scripts/agent_post.py), which checks and posts either way); without it,
+or when a dispatch is answered with a 403 (whose message wrongly asks for admin rights), it uses
+the user's authenticated account to post ordinary issues and PR comments, within the user's
+authorization, names in an issue's body the labels and parent it could not set, and identifies
+agent-written feedback as AI-assisted. Trusted contributors may use the comment commands below. Agents must
 not request admin/write access, broader token scopes or App secrets to follow the bot posting
 convention. Connector restrictions still apply: if no authorized posting route is available,
 explain the limit and give the user the prepared text.
+
+With triage access, the helper checks repository labels before creating an issue, applies only
+available labels and names missing ones in the body for a maintainer. A failed label lookup stops
+before creation; a failed create is never retried.
+
+The helper checks a supplied parent is an open epic before opening an issue under the user's
+account, and adds the AI-assisted note to both issues and comments. If a workflow posts but its
+successful completion cannot be confirmed, the helper reports an error with the created item's
+marker and the run id: inspect the run and finish any missing follow-up without posting again.
+If no marker can be read, the posting outcome is unknown and the workflow may still post;
+inspect the named run instead of starting another request.
 
 **Trusted bot actions.** Contributors listed in `TRUSTED_CONTRIBUTORS` may ask `suhina-bot`
 to create issues with `/open-issue`, close/reopen issues with `/close` and `/reopen`, and request
@@ -273,6 +303,11 @@ documentation is published in a separate job that does not execute them. Changes
 `scripts/parity/` therefore follow the usual review and `ready to merge` process. Keep parity
 code out of jobs that use environment secrets.
 
+**The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
+so the same approval applies to `crates/update/` and the updater's two files in `crates/ui`, and a
+check fails a pull request that changes where the updater downloads from
+([`docs/spec/updates.md` › Where builds come from](docs/spec/updates.md#where-builds-come-from)).
+
 ## Clean-room
 
 Suhina reimplements the *behaviour* of commercial DAWs, Ableton Live in particular, without
@@ -291,6 +326,15 @@ force a rewrite of everything built on it, so it is not something we clean up la
 - Open-source code under a licence compatible with GPL-3.0-or-later, ported with its notices
   kept. Code without a licence may not be copied, ported or translated; only its published
   description (a paper, a README) may be learnt from.
+- **One named exception for the VST2 interface: VeSTige.** The VeSTige header as Ardour
+  distributes it (`libs/ardour/ardour/vestige/vestige.h`, GPL-2.0-or-later, used under
+  GPL-3.0-or-later), at the commit [ADR 0022](docs/decisions/0022-vst2-interface-description.md)
+  pins, may be read and its interface definitions ported to Rust, with its copyright and licence
+  notice kept. It is a third-party reverse-engineering result, which the next list otherwise
+  forbids; the project accepts this one source on the record ADR 0022 keeps. The exception covers
+  that file only: not Steinberg's VST2 SDK, not leaked code, not FST, not `vst2sdk`, not any other
+  header or write-up, and not material from any other reverse engineering. VST2-enabled builds
+  may also be distributed, under ADR 0022 › 5 as amended on 2026-10-31.
 
 **Not allowed:**
 
@@ -308,7 +352,8 @@ force a rewrite of everything built on it, so it is not something we clean up la
   decompilation of a proprietary program, for example the notes and binary patches of projects
   that make a commercial DAW run on another operating system. An unmodified, licensed copy of
   the program may still be run on such a platform to observe it; the project's findings about
-  the program's internals, and its patched copies, may not be read or used.
+  the program's internals, and its patched copies, may not be read or used. The one exception is
+  the VeSTige header above.
 - Copying samples, presets, Packs, Core Library content, impulse responses, wavetables or demo
   projects from proprietary products, or committing them as test data.
 - Copying the visual design of a proprietary product: icons, artwork, interface text, colours,

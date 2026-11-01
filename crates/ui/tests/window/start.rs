@@ -111,7 +111,7 @@ fn at_start_the_start_panel_shows_unless_the_settings_say_otherwise() {
 
     let mut harness = started(at_start(AtStart::Blank), None);
     assert!(!harness.state().project_dialog_open());
-    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank));
+    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank { returns: true }));
 }
 
 #[test]
@@ -165,12 +165,12 @@ fn at_start_is_chosen_in_settings_and_template_asks_for_the_template() {
     let mut harness = window(demo_app());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
-    assert!(harness.query_by_label("Start template").is_none(), "only for a template");
-    harness.get_by_label("At start: Template").click();
+    assert!(harness.query_by_label("Startup template").is_none(), "only for a template");
+    harness.get_by_label("Startup project: Template").click();
     harness.run();
     assert_eq!(harness.state().settings().at_start, AtStart::Template);
-    assert!(harness.query_by_label("Start template").is_some());
-    harness.get_by_label("At start: Last").click();
+    assert!(harness.query_by_label("Startup template").is_some());
+    harness.get_by_label("Startup project: Last").click();
     harness.run();
     assert_eq!(harness.state().settings().at_start, AtStart::Last);
     let saved = harness.state_mut().take_changed_settings().map(|s| s.to_text()).unwrap_or_default();
@@ -206,7 +206,7 @@ fn the_start_panel_opens_recent_projects_forgets_them_and_comes_back_when_the_la
 
     harness.get_by_label("New project").click();
     harness.run();
-    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank));
+    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank { returns: true }));
 
     // With a project open the panel is gone; when the last one closes it is back, with its lists
     // read again.
@@ -230,7 +230,7 @@ fn the_start_panel_opens_recent_projects_forgets_them_and_comes_back_when_the_la
 #[test]
 fn browse_buttons_ask_for_the_systems_dialog_and_fill_their_fields() {
     use suhina_ui::interaction::pick::PickField;
-    // Settings › General: the folders and the start template.
+    // Settings › Projects and backups: the folders and the start template.
     let mut harness = window(demo_app());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
@@ -245,9 +245,9 @@ fn browse_buttons_ask_for_the_systems_dialog_and_fill_their_fields() {
     assert_eq!(harness.state().settings().projects_folder, "/music/projects");
     let saved = harness.state_mut().take_changed_settings().map(|s| s.to_text()).unwrap_or_default();
     assert!(saved.contains("projects_folder = /music/projects"), "{saved}");
-    harness.get_by_label("At start: Template").click();
+    harness.get_by_label("Startup project: Template").click();
     harness.run();
-    harness.get_by_label("Browse for Start template").click();
+    harness.get_by_label("Browse for Startup template").click();
     harness.run();
     let request = harness.state_mut().take_pick_request().unwrap_or_else(|| panic!("no dialog asked for"));
     assert_eq!(request.field, PickField::StartTemplate);

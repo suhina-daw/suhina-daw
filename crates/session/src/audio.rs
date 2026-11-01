@@ -393,6 +393,14 @@ impl OutputInfo {
 /// A playing output's live numbers, read from the main thread.
 pub trait LiveOutput: Send + Sync {
     fn info(&self) -> OutputInfo;
+    /// Whether a native panel request still owns the audio thread.
+    fn control_panel_open(&self) -> bool {
+        false
+    }
+    /// Requests the active driver's own panel without reopening the output.
+    fn open_control_panel(&self) -> Result<(), String> {
+        Err("this output has no native control panel".into())
+    }
 }
 
 /// A player on the output a choice names.
@@ -402,7 +410,7 @@ pub struct Opened {
     /// plays instead, or a part of the choice could not be had.
     pub notice: Option<String>,
     /// The previous player's plug-ins run on in the new one; when false the session starts
-    /// them again (a new sample rate, or the old output did not give them back).
+    /// them again (the old output did not give them back).
     pub plugins_kept: bool,
 }
 
@@ -415,7 +423,7 @@ pub trait AudioSystem: Send + Sync {
     /// Plays `project` with its transport stopped on the output `choice` names, or on the
     /// default one, with a notice, when that is not there. `previous` is the player it
     /// replaces: it is closed first (a device may only be open once), and its running plug-ins
-    /// carry over when the sample rate stays the same.
+    /// carry over after any required sample-rate reconfiguration has succeeded.
     fn open(
         &self,
         project: &Project,
@@ -435,6 +443,14 @@ pub trait AudioSystem: Send + Sync {
 }
 
 static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
+    CommandSpec {
+        id: "audio.openControlPanel",
+        label: "Open the active ASIO driver's native control panel",
+        params: &[],
+        kind: CommandKind::Audio,
+        run: open_control_panel,
+        policy: Policy::DEFAULT,
+    },
     CommandSpec {
         id: "audio.devices",
         label: "List the audio hosts (WASAPI, ASIO, ALSA…), each one's output devices with their sample rates and buffer sizes and its input devices with their channels, and the output chosen",
@@ -540,6 +556,7 @@ fn devices(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    projects.ensure_output_can_close()?;
     let choice = projects.output_choice().with_params(params)?;
     projects.set_output_choice(choice);
     let notice = projects.reopen_output()?;
@@ -549,6 +566,7 @@ fn set_output(projects: &mut Projects, params: &Value) -> Result<Value, CommandE
 }
 
 fn set_cue_pair(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    projects.ensure_output_can_close()?;
     if params.get("pair").is_none() {
         return Err("pair must be a whole number from 0 (the main output) to 31".into());
     }
@@ -590,6 +608,13 @@ fn info(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
         }
         None => json!({ "playing": false, "chosen": chosen }),
     })
+}
+
+fn open_control_panel(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
+    let session = projects.session_mut(None)?;
+    let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
+    player.open_control_panel().map_err(CommandError)?;
+    Ok(json!({ "requested": true }))
 }
 
 /// Where the transport was, to put it back on a new output: the play start marker, the
@@ -690,6 +715,14 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_panel_command_requires_an_active_output() {
+        let mut projects = Projects::new();
+        projects.add(crate::Session::new(crate::blank_project()), None).unwrap();
+        let error = projects.execute("audio.openControlPanel", &json!({})).unwrap_err();
+        assert_eq!(error.to_string(), "no audio output is open");
+    }
 
     #[test]
     fn a_choice_changes_only_what_is_given() {

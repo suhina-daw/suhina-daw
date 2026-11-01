@@ -3,7 +3,7 @@ description: How the sample map behaves: samples laid out by how they sound, col
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-10-23
+last_verified: 2026-10-29
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -72,19 +72,24 @@ Both play a sample as soon as the pointer is over it.
   results area into the map; a category button shows the list again. The sidebar, the category filters, search, tags and the preview strip stay as they
   are. The browser can be widened to half the window.
 - **Large.** The **Large** button at the map's corner (and View › Sample map,
-  **Ctrl+Alt+Shift+M**) shows the map in the main area in place of the Session or Arrangement view,
+  **Ctrl+Alt+Shift+M**) shows the map in the main area in place of the Launcher or Arrangement view,
   at full size; **Close**, Ctrl+Alt+Shift+M, Escape (when Show similar is not on) or the view
   switches go back. The browser stays beside it and shows its list meanwhile. While something is
   dragged from the large map, the main view shows instead, so the drop can land on a track.
 - **In a window of its own.** The **Window** button on the map's bar (and View › Sample map in a
   window, **Ctrl+Alt+M**) moves the map into a separate window, which can sit on another screen
-  while the arrangement or the Session view keeps the main window. The browser shows its list
+  while the arrangement or the Launcher view keeps the main window. The browser shows its list
   meanwhile, as for the large map. Everything works there as in the browser: pointing previews,
   Show similar, tags, pins, double-click adds to the selected track, and a drag from the map to
   a track, a slot or a device chain in the main window drops there (the map's window has the
   pointer while the button is down; the main window shows the drop label and takes the drop).
   The keymap's keys work in that window too, except while a dialog in the main window asks
-  something (as they do nothing in the main window then). **Dock**, Ctrl+Alt+M, closing the window, the
+  something (as they do nothing in the main window then). While Suhina is the program in use,
+  the map's window stays above the main window, so a click in the main window does not hide it;
+  when another program is in use it goes behind that program like any window, and it is
+  minimised and restored with the main window (#863). The window has no owner of its own (the
+  toolkit gives a second window none), so on every system it is kept above while either Suhina
+  window has the focus. **Dock**, Ctrl+Alt+M, closing the window, the
   browser's **Sample map** button or the large view put the map back. Whether the window is open, and where
   it is and how big (`map_window`, `map_window_rect` in `settings.txt`: left, top, width and
   height in points on the whole desktop, so a second screen counts), are kept for the next
@@ -106,7 +111,7 @@ Before an item can be placed, its audio is analysed. This happens in the backgro
   results are kept on disk, so a library is analysed once.
 - A sample is analysed from its onset (the first moment within 40 dB of its loudest, looked for
   in its first 4 seconds), for 4 seconds; leading silence is skipped. Samples longer than the **map length limit**
-  (Settings › Browser › Map: longest sample: 5, 10, 30 or 60 s, 10 by default;
+  (Settings › Browser › Map sample length limit: 5, 10, 30 or 60 s, 10 by default;
   `soundmap.layout` takes 1–60) are not shown: the map is for one-shots and short loops. The
   length is kept with the analysis, so changing the limit needs no new analysis.
 - The map's top bar says what it holds: "1 240 samples, analysing, 6 760 to go, 12 too long,
@@ -119,13 +124,13 @@ Before an item can be placed, its audio is analysed. This happens in the backgro
   ("Getting the map ready" before the first, and for a layout already kept). The card is only drawn: the map
   under it, its buttons and the rest of the window keep working.
 - **The top bar:** the controls in one row (**Cloud | Grid**, **+**, **−**, **Fit**, **Large**,
-  **Window**, **Size**, **Volume**), wrapping onto more rows when the map is narrow, never on top
+  **Window**, **Size**, **Labels**, **Volume**), wrapping onto more rows when the map is narrow, never on top
   of each other (a label stays with its field); under them, the status on a row of its own.
 - **Volume** (−48 to +6 dB) is the preview level the browser's previews use too (Options ›
   Settings › Browser › Preview volume), kept; moving it also changes the sample playing now
   (`preview.setGain`), gliding there without a click.
 - When the status does not fit its row, it is cut short with "…". Its tooltip has all of it and says why samples are missing, one part each:
-  still to analyse; too long (the limit, and Options › Settings › Browser › Map: longest sample
+  still to analyse; too long (the limit, and Options › Settings › Browser › Map sample length limit
   to change it); could not be read, by reason with the commonest first (the reason as the
   decoder gives it, such as "unsupported codec: …", "read error: …", "silent" or "larger than
   256 MiB", its count and the names of the first three files; at most 12 reasons, the rest
@@ -202,6 +207,11 @@ that sit in several places are named in each of them.
   place is free, it is left out for this zoom. Zooming in makes room, and smaller clusters appear. A label
   that would fall outside the map area is left out too.
 - Labels fade out when zoomed in far enough to read point names, as before.
+- **Labels** in the map's top bar (Off, 50 %, 75 %, 100 %; 100 % by default, kept as
+  `map_label_size` and in Options › Settings › Browser › Map labels) scales every label, so a
+  narrow docked map can keep its points visible under them (#864). The sizes between clusters
+  keep their proportions, and the placement that keeps labels apart works on the scaled sizes.
+  **Off** hides them; the legend under the map still names the kinds.
 
 **Kind toggles.** The legend works as before (click: only that kind; Ctrl+click: several). In
 the density view the dimmed kinds are drawn as faint grey, so the shown kinds stand out from
@@ -297,7 +307,7 @@ Every item has a kind. The kinds and the words in names that give them:
 
 | Input | Does |
 |---|---|
-| Pointer over a point | Highlights it and **previews it** (Settings › Browser › Map preview on hover, on by default). Moving across points plays each in turn; a new one stops the one before. A point is played only after the pointer has rested on it for 40 ms, so a fast sweep does not play everything it crosses. |
+| Pointer over a point | Highlights it and **previews it** (Settings › Browser › Preview on map hover, on by default). Moving across points plays each in turn; a new one stops the one before. A point is played only after the pointer has rested on it for 40 ms, so a fast sweep does not play everything it crosses. |
 | Pointer resting on a point | Its tooltip shows the name, the kind, the folder and, after 0.15 s, the file's waveform, read in the background ([waveforms](waveforms.md)). |
 | Click a point | Selects it and previews it (also with preview on hover off) as the button goes down, as in the list. |
 | Ctrl+click, Shift+drag on empty space | Adds to or removes from the selection; Shift+drag draws a rectangle and selects what is in it. |
@@ -307,7 +317,8 @@ Every item has a kind. The kinds and the words in names that give them:
 | Mouse wheel | Zooms around the pointer (Ctrl+wheel is not needed). |
 | Double-click empty space, the Fit button | Fits all points in view. |
 | Arrow keys | Moves the selection to the nearest point in that direction and previews it; with Show similar on, Up and Down step through the similar list instead. |
-| Right-click a point | Menu: **Show similar**, Pin or Unpin, Tag ▸, Kind ▸ (*Kinds and colours* › Set by hand), Show in folder (switches to the list with the item selected). |
+| Right-click a point | Menu: **Show similar**, Pin or Unpin, Tag ▸, Kind ▸ (*Kinds and colours* › Set by hand), Show in folder (switches to the list with the item selected), **Copy to folder…** (the point, or every selected point when it is one of them, copied into a folder the system's dialog picks: [`browser.md`](browser.md) › Copying samples out). |
+| Drag points out of every Suhina window | The samples become a drag of files that the file manager or the desktop copies where they are dropped; the originals stay. As from the list: [`browser.md`](browser.md) › Copying samples out. |
 
 **Show similar** rings the 16 items nearest to the clicked one by features (not by position on
 the map, which distorts distances), dims the rest and lists them in order in a strip at the map's

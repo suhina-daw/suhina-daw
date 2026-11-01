@@ -635,6 +635,25 @@ impl Library {
         Ok(changed)
     }
 
+    /// A file moved from `from` to `to` (#943): its pin, recent places and tags go with it, and
+    /// the folders that held it and hold it now are read again, so the index follows.
+    pub fn relocate(&mut self, from: &Path, to: &Path) -> Result<(), String> {
+        self.load();
+        if self.store.relocate(&Item::File(from.to_path_buf()).key(), &Item::File(to.to_path_buf()).key()) {
+            self.save()?;
+        }
+        let roots: Vec<PathBuf> = self
+            .folders
+            .iter()
+            .filter(|f| from.starts_with(&f.path) || to.starts_with(&f.path))
+            .map(|f| f.path.clone())
+            .collect();
+        for root in roots {
+            self.refresh(Some(&root))?;
+        }
+        Ok(())
+    }
+
     pub fn recent(&mut self, group: Group) -> Vec<String> {
         self.load();
         self.store.recent.get(&group).cloned().unwrap_or_default()

@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools column, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -44,7 +44,7 @@ lane, the grid and zoom, and the `note.*` commands.
   left of the detail area and the piano roll in the rest of it, in place of the track's devices.
   Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's
   properties). With the detail area stacked on the right, the piano roll sits under the properties.
-- **Later ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)):** a clip selected in a Session slot opens it too, once slot selection lands (open pull
+- **Later ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)):** a clip selected in a Launcher slot opens it too, once slot selection lands (open pull
   request #302); the piano roll then edits that slot's clip with the same commands (`scene`
   instead of `index`). A double-click on a clip opens the detail area if it is closed.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **Clip / Devices**
@@ -53,7 +53,10 @@ lane, the grid and zoom, and the `note.*` commands.
   row ends in a two-part switch, **Clip** and **Devices** ([components](../design/components.md)
   › Clip properties). **Devices** puts the track's device chain where the piano roll was: the clip
   column stays on the left (on top when stacked) with the switch in it, and the chain fills the
-  rest, as it does beside an audio clip; dropping an instrument, effect or plug-in there adds it to
+  rest. The MIDI clip retains its resizable detail area in both tabs. A device row alone has
+  two states: open at 200 logical pixels or closed. Dragging the splitter down past half that(
+  )height closes it, dragging it up opens it whole; no height in between cuts its panels.
+  Dropping an instrument, effect or plug-in there adds it to
   that track as it always does. **Clip** brings the piano roll back. **Ctrl+Shift+D** (the keymap
   action `view.devices`) and **View › Show devices** / **Show clip** do the same; they open the
   detail area first when it is hidden. An audio clip has no switch: its track's devices already
@@ -73,12 +76,16 @@ lane, the grid and zoom, and the `note.*` commands.
   clip, and selecting another clip on the track shows that one. The editor opens on its own the
   first time a clip is shown; closed, the area offers **Open editor**, and it stays closed for that
   clip until the clip is selected again. The clip column has the **Clip / Devices** switch, which
-  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The clip's
-  right-click menu has **Open in** and the plug-in's name, and **Alt+M** (`view.araEditor`)
-  does the same for the selected clip: it selects **Clip**, opens the detail area and the editor.
-  Both work on any audio clip in the Arrangement while such a plug-in is installed (Melodyne
-  first): on a track without it, it is added to the track first, and its editor opens in the
-  clip's place once it runs with the track's clips; the status bar says so meanwhile.
+  works as for a MIDI clip (Devices shows the chain, the plug-in's editor among it). The plug-in belongs to the clip (ADR 0028 › Amendment: the ARA plug-in belongs to the clip,
+  #990): the clip's right-click menu has **Edit with** and the plug-in's name for a clip that does
+  not play through it yet, **Open in** for one that does, and **Stop editing with** to take it off
+  (`clip.setAra`); **Alt+M** (`view.araEditor`) is Edit with or Open in for the selected clip: it
+  selects **Clip**, opens the detail area and the editor. They work on any audio clip in the
+  Arrangement while such a plug-in is installed (Melodyne first): on a track without it, it
+  becomes the track's clip host, first in its chain and not in its device lists, and its editor
+  opens in the clip's place once it runs with the clip; the status bar says so meanwhile. A
+  double-click on a clip that plays through it opens the editor; other clips on the track open
+  nothing there.
   Moving or trimming the clip changes it in the editor at once, the editor staying open; when the
   plug-in has to be loaded again (it was added to a track with no audio clips yet), an editor
   that was open opens again.
@@ -87,12 +94,12 @@ lane, the grid and zoom, and the `note.*` commands.
   lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or
   in a slot) shows its editor again, and in the Arrangement view so does a click on the clip
   already selected, so a single click on a clip keeps meaning "edit this clip". While the devices show, the piano roll's keys and Ctrl+U do nothing
-  (there are no notes on screen), the splitter's least height is the devices' 80 px, and nothing
+  (there are no notes on screen), the splitter's least height is the devices' 80 px (the height dragged freely is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, are open at a compact panel's height or closed, never between: a drag on the splitter past half that height closes or opens the area, and a double-click closes it; a plug-in's editor embedded in the chain gets its full height, taking the view's least room when it needs to), and nothing
   is pulled to the top.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **double-click on a
   track** shows its devices: on an Arrangement track header ([arrangement
-  editing](arrangement-editing.md) › Tracks), on a Session column's name, or on the
-  Session channel strip's own background ([Session view](ui-session-view.md) › Mixer). The track
+  editing](arrangement-editing.md) › Tracks), on a Launcher column's name, or on the
+  Launcher channel strip's own background ([Launcher view](ui-session-view.md) › Mixer). The track
   is selected (the first click of the two already does that), the detail area opens if it was
   hidden (Shift+Tab, View › Hide detail area, or the splitter), and it shows that track's device
   chain. A device's panel answers a click with its selection (a 1 px `selection` outline in the
@@ -104,7 +111,7 @@ lane, the grid and zoom, and the `note.*` commands.
   track without an instrument); either way its settings are kept and its name dims. On an Arrangement
   header or a channel strip, a clip selected on that track stays
   selected and the switch goes to **Devices**, and a clip selected on another track is no longer
-  selected; a click on a Session column's name clears the slot selection already, so there the
+  selected; a click on a Launcher column's name clears the slot selection already, so there the
   devices show on their own. A double-click on a
   control in the header or the strip (a button, a fader, a knob, a value) is that control's own,
   as before.
@@ -167,7 +174,7 @@ bottom:
    for Erase (the shape of the eraser button, not the no-entry sign it used before), a text cursor
    for Slice, an arrow for Select and Mute.
 
-   **Toolbar size** is a setting, Settings › Clip editor › Piano roll › **Toolbar size**: **Normal**
+   **Piano roll toolbar size** is a setting, Settings › Clip editor › Piano roll › **Piano roll toolbar size**: **Normal**
    (100 %), **Large** (125 %, the default) and **Larger** (150 %). It scales the toolbar's height,
    every button's box and the icon strokes inside it together, so the icons stay 1.1 px at Normal
    and grow with the box; the rest of the editor (grid, notes, ruler) does not change with it. The
@@ -272,7 +279,7 @@ comes back. It is window state, not a command, and not an undo step.
   own instead, one no other default uses.
 
 After the editor is closed one of these ways, **selecting a clip** (a click on a clip in the
-Arrangement view, another clip, or a slot's clip in the Session view) opens it again at the
+Arrangement view, another clip, or a slot's clip in the Launcher view) opens it again at the
 height it had. A detail area hidden with Shift+Tab stays hidden when a clip is selected, as
 before; Shift+Tab, View › Show detail area and the splitter open it either way. A click on an
 empty spot of the Arrangement view clears the clip selection (› [Arrangement
@@ -298,8 +305,8 @@ What stays above it is a setting, Settings › Clip editor › Piano roll › **
 - **Whole window**: the piano roll fills the whole area under the control bar.
 
 It stays pulled up while MIDI clips (or, with an ARA plug-in, audio clips) are edited; selecting
-something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Session view shows the view as before. With the
-device chain as a column beside the view (Settings › Detail area) there is nothing to
+something else (another kind of clip, a track, nothing), hiding the detail area (Shift+Tab) or the Launcher view shows the view as before. With the
+device chain as a column beside the view (Settings › Devices › Device panels) there is nothing to
 pull up.
 
 ## Grid and snapping
@@ -342,7 +349,7 @@ pull up.
   The keys work after a click in the piano roll, like its other keys (› Shortcuts). The grid value
   and its steps are the `piano_roll_grid` module of the `ui` crate (`crates/ui/src/detail/piano_roll_grid.rs`);
   the lines and snapping are the shared `TimelineGrid` (`crates/ui/src/interaction/timeline_grid.rs`).
-- **Built:** Settings › Clip editor › Piano roll › **Piano roll grid** set to **Control bar** makes the
+- **Built:** Settings › Clip editor › Piano roll › **Piano roll grid source** set to **Control bar** makes the
   piano roll use the control bar's value instead, and its menu and keys then set the control
   bar's (`launcher.setQuantization`). The control bar has no adaptive grid and no 1/32 triplet,
   so an entry whose result it cannot hold is greyed out and its key does nothing: the adaptive
@@ -361,7 +368,7 @@ pull up.
 ## Zoom and scroll
 
 - **Built:** the mouse wheel scrolls up and down through keys; **Shift**+wheel scrolls in time;
-  **Ctrl**+wheel zooms time around the pointer; **Ctrl+Shift**+wheel or **Alt**+wheel (Option on
+  **Ctrl**+wheel zooms time around the pointer, the beat under it staying put even past the clip's end (#910); **Ctrl+Shift**+wheel or **Alt**+wheel (Option on
   macOS, as in the Arrangement view) zooms key height around the pointer. Dragging with the middle mouse button pans both ways. A newly shown clip opens scrolled
   so its notes are in view (the middle of its lowest and highest note; C3 for an empty clip) and
   zoomed so the whole clip fits the width.
@@ -692,19 +699,37 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   column is the same column in every layout: Track, Start, Length, Loop and (for a MIDI clip)
   Notes, or the audio clip's Gain and fades. With the detail area stacked (a column at the right of
   the window) it is a block at the top and the piano roll sits under it, as before.
+- **Several clips picked** in the Arrangement: the column's title says how many ("2 selected")
+  and its rows are the last picked clip's; its Loop switch turns every picked clip's loop on or
+  off with it. With several MIDI clips picked (#1054) the piano roll edits one of them, the one
+  with the focus (the last picked); the others' notes are drawn faint where they play, as ghost
+  notes are, and the view runs on over them. The column lists the picked clips, the one being
+  edited marked **Editing**; a click on another gives it the focus. Not yet: a strip of the
+  clips over the piano roll and a click on a faint note to switch.
 - **Built ([#699](https://github.com/suhina-daw/suhina-daw/issues/699)):** the column edits the
   clip, each change one undo step:
   - **Loop** is a switch (`clip.setLoop`). An audio clip that loops has **Loop start** and **Loop
     end** rows too, dragged sideways by quarter beats, a quarter beat apart at least; a MIDI clip's
     loop is dragged on the piano roll's ruler instead, so its column keeps room for the selection.
+  - An audio clip has a **Start marker**, where in its audio it starts playing (`clip.setStart`),
+    and, when it does not loop, an **End marker**, where it stops (`clip.setLength` from the start
+    marker); both are dragged by quarter beats in content beats, a quarter beat apart at least.
+    A looping clip's end is its length, set on its edge.
   - An audio clip has **Gain** (dragged by tenths of a dB, a double-click puts it at 0 dB;
-    `clip.setGain`, arrangement clips only), **Warp** (a switch), **Mode** (a click steps through
+    `clip.setGain`, an arrangement clip's or a slot's), **Warp** (a switch), **Mode** (a click steps through
     Re-pitch, Rhythmic, Tonal, Texture, Smooth and High quality) and **Transpose** (dragged by
     semitones, -48 to +48, a double-click puts it at 0), all through `clip.setAudio`. Warp turned
     on for audio without warp markers gives it two, at its start and its end, so it plays as it did
     and then follows the tempo. Those markers fit the tempo where the clip plays, so a clip whose
     audio another clip plays where the tempo differs gets its own copy of it first, and the other
-    clip plays as it did ([#874](https://github.com/suhina-daw/suhina-daw/issues/874)).
+    clip plays as it did ([#874](https://github.com/suhina-daw/suhina-daw/issues/874)). Warp off
+    plays the file at its own speed whatever the tempo (a transpose repitches it): the clip then
+    spans what its seconds take at the song's tempo, and changing the tempo makes it span more or
+    fewer beats at once (a 4-beat file at 124 BPM is 1.935 s, 2.903 beats at 90 BPM; warped to
+    the song it is 4 beats). Whenever warp, a repitching transpose or the tempo changes what a
+    clip's beats mean in its file, every clip that plays it keeps its start and keeps playing the
+    same part of the file: its offset, length and loop are worked out again, so the waveform, the
+    end and the Length row agree with what is heard, and undo puts both back (#830).
   - A drag shows its value as it goes and sends one command when it is let go.
 - **Built ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** the **Notes** row reads
   **"N of M"** while notes are selected, where N is how many are selected and M how many the clip
@@ -782,7 +807,7 @@ written against another (a bass line against the chords).
   - **None**: no ghost notes.
   - **Playing together** (the default): the clips that play at the same time as the edited clip.
     For an arrangement clip, every other arrangement clip, on any track, that plays during the
-    edited clip's first pass (below); a clip that is turned off is left out. For a Session slot's
+    edited clip's first pass (below); a clip that is turned off is left out. For a Launcher slot's
     clip, the clips in the other slots of the same scene: launching the scene starts them
     together, so each is laid out from the same launch (a looping slot clip goes on for ever, one
     that does not loop stops after its length).
@@ -945,7 +970,7 @@ Later: Ctrl+G (glue), added to the keymap when built.
 works is a **mode**: one of the three presets below, or **Custom**. The **workflow menu** in the
 piano roll's toolbar, after the MIDI tools icon, shows the mode's name (its accessible label is
 "Workflow" and the name, such as "Workflow Select-first") and can be changed at any time, while
-editing; Settings › Shortcuts › **Preset** offers the same four modes. The menu lists the four
+editing; Settings › Keys › **Preset** offers the same four modes. The menu lists the four
 modes, ticked as chosen, and under a divider every **workflow setting** with its choices:
 
 | Setting | Choices | Select-first | Draw-first | Mouse-first |
@@ -959,7 +984,7 @@ modes, ticked as chosen, and under a divider every **workflow setting** with its
 | **Double-click on a note** (Select tool) | Deletes it, Does nothing | Deletes | Deletes | Deletes |
 
 - Choosing a preset fills in every setting with its column. Changing one setting, in the menu or
-  in Settings › Clip editor › Workflow (one row per setting), makes the mode **Custom**, with the
+  in Settings › Keys › Mouse and key behaviour (one row per setting), makes the mode **Custom**, with the
   other settings kept as they were. Choosing **Custom** itself changes no setting, so a preset's
   column can be the start of a mix. A Custom mix that happens to equal a preset's column stays
   Custom until the preset is chosen.
@@ -982,7 +1007,7 @@ modes, ticked as chosen, and under a divider every **workflow setting** with its
 ## Keymap presets
 
 - **Built ([#443](https://github.com/suhina-daw/suhina-daw/issues/443), Mouse-first
-  [#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** Settings › Shortcuts has
+  [#460](https://github.com/suhina-daw/suhina-daw/issues/460)):** Settings › Keys has
   a **Preset** menu with three choices, which set the keys of a few actions and the mouse's
   behaviour at once:
 
@@ -993,7 +1018,7 @@ modes, ticked as chosen, and under a divider every **workflow setting** with its
   | **Mouse-first** | the clicks of someone who works with the mouse: every switch below on, and the left button draws in the **Select** tool | duplicate is **Ctrl+D**; the four switches are on |
 
 - **Mouse-first gives the mouse the four jobs a pen and modifier keys would do**, each a switch of
-  its own under Settings › Clip editor › Workflow, so any of them can be turned off and the rest
+  its own under Settings › Keys › Mouse and key behaviour, so any of them can be turned off and the rest
   kept:
   - **Left click draws** (on by default with Mouse-first): in the **Select** tool, a press on an
     empty spot of the grid draws a note there and dragging sets its length, as the Draw tool does,

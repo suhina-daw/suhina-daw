@@ -5,6 +5,47 @@
 
 use super::*;
 
+/// Seconds between the tempo sent while the tempo field is dragged.
+const TEMPO_SEND: f64 = 0.1;
+
+/// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
+/// and the start), to a thousandth of a BPM, within the tempo's range (#829).
+pub(crate) fn snap_tempo(grab: Option<(f64, f64)>, bpm: f64) -> f64 {
+    let snapped = match grab {
+        Some((step, from)) if step > 0.0 => from + ((bpm - from) / step).round() * step,
+        _ => bpm,
+    };
+    ((snapped * 1000.0).round() / 1000.0).clamp(20.0, 999.0)
+}
+
+/// The step of the place in the tempo `text` (right-aligned at `right`, characters `width`
+/// apart) under `x`: 1 BPM for the integer part, 0.1, 0.01 or 0.001 for the decimals (#829).
+pub(crate) fn tempo_place(text: &str, right: f32, width: f32, x: f32) -> f64 {
+    let len = text.chars().count();
+    let Some(dot) = text.find('.') else { return 1.0 };
+    if width <= 0.0 {
+        return 1.0;
+    }
+    let from_right = ((right - x) / width).floor().max(0.0) as usize;
+    let index = len.saturating_sub(from_right + 1);
+    if index <= dot {
+        return 1.0;
+    }
+    let decimals = (index - dot).min(3);
+    10f64.powi(-(decimals as i32))
+}
+
+/// The characters of the tempo `text` the place of `step` covers, as a range of indices: the
+/// whole integer part for 1 BPM, one decimal otherwise.
+pub(crate) fn tempo_place_span(text: &str, step: f64) -> (usize, usize) {
+    let dot = text.find('.').unwrap_or(text.len());
+    if step >= 1.0 {
+        return (0, dot);
+    }
+    let decimals = (-step.log10()).round().max(1.0) as usize;
+    (dot + decimals, dot + decimals + 1)
+}
+
 impl App {
     pub(super) fn control_bar(
         &mut self,
@@ -51,29 +92,7 @@ impl App {
         x = tempo_rect.right() + PAD;
         let tempo_rect = native_styles.place(ui, "tempo", tempo_rect);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("sampler-tempo"), grid.tempo_bpm));
-        let tempo_shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
-        let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", format!("{tempo_shown:.2}"));
-        match widgets::drag_value(ui, &response, &mut self.tempo_drag, grid.tempo_bpm, 0.1, 1.0, (20.0, 999.0), 120.0) {
-            Drag::Done(bpm) => {
-                actions.push(Action::new("transport.setTempo", json!({ "bpm": (bpm * 100.0).round() / 100.0 })))
-            }
-            Drag::Moving(_) | Drag::None => {}
-        }
-        crate::kit::native_css::surface(
-            &painter,
-            tempo_rect,
-            0.0,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-        );
-        let mono = theme::mono_font(theme::TEXT);
-        widgets::text_in(
-            &painter,
-            tempo_rect.shrink2(Vec2::new(PAD, 0.0)),
-            Align2::RIGHT_CENTER,
-            &format!("{tempo_shown:.2}"),
-            mono.clone(),
-            theme::text_primary(),
-        );
+        self.tempo_field(ui, &painter, tempo_rect, grid.tempo_bpm, true, actions);
         // The time signature playing, like the tempo: a launched scene may have changed it.
         let ts = grid.time_signature();
         let signature =
@@ -89,6 +108,22 @@ impl App {
             theme::mono_font(theme::TEXT),
             theme::text_secondary(),
         );
+        // The computer keyboard: lit while its keys play notes, with the octave of A (#944).
+        let keys_rect = row(x, 44.0);
+        let label = if self.typing.on {
+            format!("Computer keyboard on, {}", self.typing.label())
+        } else {
+            "Computer keyboard".into()
+        };
+        let response = widgets::button_area(ui, keys_rect, Id::new("computer-keyboard"), label);
+        if response.clicked() {
+            self.toggle_typing_keys();
+        }
+        let (fill, ink) = widgets::toggle_colors(ui, &response, self.typing.on);
+        painter.rect_filled(keys_rect, 0.0, fill);
+        let text = if self.typing.on { self.typing.label() } else { "Keys".into() };
+        widgets::text_in(&painter, keys_rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
+        x = keys_rect.right() + PAD;
         // At narrow widths the captions go, then the count-in and the metronome (the main strip
         // has one too), so nothing runs under the transport in the middle.
         let transport_left = bar.center().x - (28.0 * 3.0 + 2.0 + PAD + 64.0) / 2.0 - PAD;
@@ -100,7 +135,7 @@ impl App {
                 &painter,
                 grid_caption,
                 Align2::LEFT_CENTER,
-                "Grid",
+                "Quantize",
                 theme::ui_font(theme::TEXT_SMALL),
                 theme::text_hint(),
             );
@@ -109,7 +144,7 @@ impl App {
         let quant_base = quant_rect;
         let quant_rect = native_styles.place(ui, "grid", quant_rect);
         let mono = theme::mono_font(theme::TEXT);
-        // One value for both: when launched clips start, and the Arrangement view's grid.
+        // When launched clips start; the Arrangement has a grid of its own (its toolbar, Ctrl+1 to 4).
         let current = self.session().map_or(DEFAULT_QUANTIZATION, |s| quantization_label(s.quantization()));
         let mut chosen = current;
         ui.scope_builder(egui::UiBuilder::new().max_rect(quant_rect), |ui| {
@@ -172,7 +207,7 @@ impl App {
             let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
             crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
             if response.clicked() {
-                actions.push(self.play_action(false));
+                actions.push(self.play_action());
             }
             let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
             let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
@@ -184,8 +219,17 @@ impl App {
                 motion::mix(hover, theme::control_active(), running),
                 0.0,
             );
-            let glyph =
-                crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), running));
+            // A seek from the ruler waiting for its boundary flashes the triangle (#657).
+            let pending = self.session().and_then(|s| s.player()).and_then(|p| p.monitor().pending_jump()).is_some();
+            let flash = pending && (ui.input(|i| i.time) * 4.0).floor() as i64 % 2 == 0;
+            if pending {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
+            }
+            let glyph = if flash {
+                theme::text_primary()
+            } else {
+                crate::kit::style_class::foreground(motion::mix(theme::text_primary(), theme::accent(), running))
+            };
             let c = play.center();
             if !crate::kit::skin::paint(
                 &painter,
@@ -264,7 +308,7 @@ impl App {
         let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
         let pointer = ui.ctx().pointer_latest_pos();
         let mut hovered_switch = None;
-        for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Session")] {
+        for (view, name) in [(View::Arrangement, "Arrangement"), (View::Session, "Launcher")] {
             native_styles.enter("views");
             let color = if self.shown == view { theme::text_primary() } else { theme::text_secondary() };
             let galley = widgets::fitted(&painter, name, theme::ui_font(theme::TEXT), color, 120.0);
@@ -486,7 +530,7 @@ impl App {
 }
 
 /// The control bar's value box, as screen readers and tests name it.
-pub(super) const QUANTIZATION_LABEL: &str = "Grid and launch quantisation";
+pub(super) const QUANTIZATION_LABEL: &str = "Launch quantisation";
 
 /// The control bar's text for `quantization`: the choice that parses to it.
 pub(super) fn quantization_label(quantization: suhina_engine::Quantization) -> &'static str {
@@ -500,4 +544,111 @@ pub(super) fn quantization_label(quantization: suhina_engine::Quantization) -> &
 pub(super) fn ram_text(bytes: u64) -> String {
     let mib = bytes as f64 / (1024.0 * 1024.0);
     if mib >= 1024.0 { format!("{:.1} GB", mib / 1024.0) } else { format!("{mib:.0} MB") }
+}
+
+impl App {
+    /// The tempo field, in the control bar or a theme's toolbar: its value with three decimals, a
+    /// drag steps the place under the pointer where it was pressed (the integer part 1 BPM, each
+    /// decimal a tenth of the one before, #829), and while it moves the project follows a few times
+    /// a second in one undo step (#916). `native` draws the field's surface, as the plain bar does.
+    pub(super) fn tempo_field(
+        &mut self,
+        ui: &mut Ui,
+        painter: &egui::Painter,
+        tempo_rect: Rect,
+        bpm_now: f64,
+        native: bool,
+        actions: &mut Vec<Action>,
+    ) {
+        let grab = self.tempo_grab;
+        let tempo_shown = self.tempo_drag.map_or(bpm_now, |bpm| snap_tempo(grab, bpm));
+        let tempo_text = format!("{tempo_shown:.3}");
+        let response = widgets::value_area(ui, tempo_rect, Id::new("tempo"), "Tempo", tempo_text.clone());
+        if native {
+            crate::kit::native_css::surface(
+                painter,
+                tempo_rect,
+                0.0,
+                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+            );
+        }
+        let mono = theme::mono_font(theme::TEXT);
+        let text_area = tempo_rect.shrink2(Vec2::new(PAD, 0.0));
+        let ink = if native { theme::text_primary() } else { theme::text_value() };
+        widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
+        // The place under the pointer, or the one the drag holds: the integer part steps 1 BPM,
+        // each decimal a tenth of the one before (#829).
+        let char_width = widgets::text_width(ui, "0", mono);
+        let place_at = |x: f32| tempo_place(&tempo_text, text_area.right(), char_width, x);
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        {
+            self.tempo_grab = Some((place_at(origin.x), bpm_now));
+        }
+        let held = self.tempo_grab.map(|(step, _)| step);
+        let shown_place = held.or_else(|| response.hover_pos().map(|p| place_at(p.x)));
+        if let Some(step) = shown_place {
+            let (from, to) = tempo_place_span(&tempo_text, step);
+            let right = text_area.right();
+            let len = tempo_text.chars().count() as f32;
+            let underline =
+                egui::Rangef::new(right - (len - from as f32) * char_width, right - (len - to as f32) * char_width);
+            let line = if held.is_some() { theme::accent() } else { theme::text_secondary() };
+            painter.hline(underline, tempo_rect.bottom() - 3.0, egui::Stroke::new(1.0, line));
+        }
+        // Four points of drag a step of the place grabbed; the arrow keys and the wheel 1 BPM.
+        let per_point = held.unwrap_or(1.0) / 4.0;
+        match widgets::drag_value(ui, &response, &mut self.tempo_drag, bpm_now, per_point, 1.0, (20.0, 999.0), 120.0) {
+            Drag::Done(bpm) => {
+                // The drag's last value joins the step its moves made.
+                let bpm = snap_tempo(self.tempo_grab, bpm);
+                self.tempo_grab = None;
+                let more = self.tempo_sent.take().is_some();
+                actions.push(Action::new("transport.setTempo", json!({ "bpm": bpm, "continue": more })));
+            }
+            // While it moves the project follows, a few times a second, in one undo step, so
+            // clips that follow the tempo change length as it moves (#916).
+            Drag::Moving(bpm) => {
+                let bpm = snap_tempo(self.tempo_grab, bpm);
+                let now = ui.input(|i| i.time);
+                if self.tempo_sent.is_none_or(|sent| now - sent >= TEMPO_SEND) {
+                    let more = self.tempo_sent.is_some();
+                    self.tempo_sent = Some(now);
+                    actions.push(Action::new("transport.setTempo", json!({ "bpm": bpm, "continue": more })));
+                }
+            }
+            Drag::None => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tempo_tests {
+    use super::{snap_tempo, tempo_place, tempo_place_span};
+
+    #[test]
+    fn the_place_under_the_pointer_picks_the_step_of_a_drag() {
+        // "124.567" right-aligned at x = 70, characters 10 wide: "7" spans 60..70.
+        let text = "124.567";
+        assert_eq!(tempo_place(text, 70.0, 10.0, 65.0), 0.001);
+        assert_eq!(tempo_place(text, 70.0, 10.0, 55.0), 0.01);
+        assert_eq!(tempo_place(text, 70.0, 10.0, 45.0), 0.1);
+        assert_eq!(tempo_place(text, 70.0, 10.0, 35.0), 1.0, "the point counts with the integer part");
+        assert_eq!(tempo_place(text, 70.0, 10.0, 5.0), 1.0);
+        assert_eq!(tempo_place_span(text, 1.0), (0, 3));
+        assert_eq!(tempo_place_span(text, 0.01), (5, 6));
+    }
+
+    #[test]
+    fn a_drag_moves_in_steps_of_its_place_and_keeps_the_rest() {
+        // The integer part: 124.567 stays .567 and carries across 125.
+        assert_eq!(snap_tempo(Some((1.0, 124.567)), 125.4), 125.567);
+        assert_eq!(snap_tempo(Some((1.0, 124.567)), 123.2), 123.567);
+        // A hundredth: 124.567 → 124.597 three steps up, across the tenth.
+        assert_eq!(snap_tempo(Some((0.01, 124.567)), 124.598), 124.597);
+        assert_eq!(snap_tempo(Some((0.01, 124.567)), 124.611), 124.607);
+        // Within the tempo's range, to a thousandth.
+        assert_eq!(snap_tempo(Some((1.0, 998.0)), 1005.0), 999.0);
+        assert_eq!(snap_tempo(None, 120.12345), 120.123);
+    }
 }

@@ -263,7 +263,7 @@ pub fn scene_as_arrangement(project: &Project, scene: usize) -> Result<Project, 
         })
         .collect();
     let mut project = project.clone();
-    project.arrangement = Arrangement { lanes, markers: Vec::new() };
+    project.arrangement = Arrangement { lanes, markers: Vec::new(), takes: Vec::new() };
     project.assign_ids().map_err(|e| e.to_string())?;
     Ok(project)
 }

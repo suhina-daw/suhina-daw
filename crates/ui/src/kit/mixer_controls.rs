@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Shared Session and Arrangement channel control faces; interaction belongs to each view.
+//! Shared Launcher and Arrangement channel control faces; interaction belongs to each view.
 use super::{motion, theme, widgets};
 use crate::kit::surface::Backgrounds as _;
 use egui::{Align2, Color32, Pos2, Rect, Vec2};

@@ -226,8 +226,8 @@ impl Updates {
         };
         fact(line(&mut y), "This build", VERSION);
         let channel_name = match channel {
-            Channel::Nightly => "Nightly (Settings › General › Updates)",
-            Channel::TestBuilds => "Test builds (Settings › General › Updates)",
+            Channel::Nightly => "Nightly (Settings › Agents and updates › Updates)",
+            Channel::TestBuilds => "Test builds (Settings › Agents and updates › Updates)",
         };
         fact(line(&mut y), "Channel", channel_name);
 

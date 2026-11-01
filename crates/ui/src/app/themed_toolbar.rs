@@ -334,28 +334,7 @@ impl App {
             "browser" => self.browser_toggle(ui, &painter, rect),
             "tempo" => {
                 ui.ctx().data_mut(|d| d.insert_temp(Id::new("sampler-tempo"), grid.tempo_bpm));
-                let shown = self.tempo_drag.unwrap_or(grid.tempo_bpm);
-                let response = widgets::value_area(ui, rect, Id::new("tempo"), "Tempo", format!("{shown:.2}"));
-                if let Drag::Done(bpm) = widgets::drag_value(
-                    ui,
-                    &response,
-                    &mut self.tempo_drag,
-                    grid.tempo_bpm,
-                    0.1,
-                    1.0,
-                    (20.0, 999.0),
-                    120.0,
-                ) {
-                    actions.push(Action::new("transport.setTempo", json!({"bpm":(bpm*100.0).round()/100.0})));
-                }
-                widgets::text_in(
-                    &painter,
-                    rect,
-                    Align2::CENTER_CENTER,
-                    &format!("{shown:.2}"),
-                    theme::mono_font(theme::TEXT),
-                    theme::text_value(),
-                );
+                self.tempo_field(ui, &painter, rect, grid.tempo_bpm, false, actions);
             }
             "signature" => {
                 let ts = grid.time_signature();
@@ -432,7 +411,7 @@ impl App {
                     let response = widgets::button_area(ui, at, Id::new(role), label);
                     let _style = crate::kit::style_class::enter_named_response("button", role, &response);
                     if response.clicked() {
-                        actions.push(if index == 0 { self.play_action(false) } else { self.stop_action() });
+                        actions.push(if index == 0 { self.play_action() } else { self.stop_action() });
                     }
                     let state = State::response(&response, on);
                     let ink =
@@ -493,7 +472,7 @@ impl App {
             }
             "views" => {
                 let carrying = self.carry.is_some() || self.arrangement.dragged_clip().is_some();
-                for (index, view, name) in [(0, View::Session, "Session"), (1, View::Arrangement, "Arrangement")] {
+                for (index, view, name) in [(0, View::Session, "Launcher"), (1, View::Arrangement, "Arrangement")] {
                     let at = middle(index as f32 * 86.0, 86.0);
                     if widgets::button(ui, &painter, at, name, &format!("{name} view")) {
                         self.shown = view;

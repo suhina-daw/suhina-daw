@@ -217,6 +217,15 @@ pub(crate) fn finish(
     for i in 0..chains.len() {
         let (done, later) = chains.split_at_mut(i + 1);
         let Some(chain) = done.last_mut() else { continue };
+        // The main channel's chain, last: what reached the main output so far is its input,
+        // and its output is the main output (#687).
+        if chain.track == suhina_model::TrackId::MAIN {
+            let input = chain.input(frames);
+            for (to, from) in input.iter_mut().zip(out.iter_mut()) {
+                *to += *from;
+                *from = 0.0;
+            }
+        }
         chain.complete(frames, context);
         // Whether chain `i` is inside the source node's subtree; every chain is, when there is
         // no capture (a normal render).

@@ -978,7 +978,7 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
     });
     let (fill, view) = seen.unwrap();
     assert_eq!(fill, egui::Color32::from_rgb(0xE8, 0x91, 0x3A));
-    assert_eq!(view, Some("mixer"), "a strip in the Session view is the mixer's");
+    assert_eq!(view, Some("mixer"), "a strip in the Launcher view is the mixer's");
     assert_eq!(hex(egui::Color32::from_rgba_unmultiplied(255, 0, 0, 128)), "#ff000080");
 }
 

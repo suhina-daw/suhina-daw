@@ -112,6 +112,19 @@ impl PianoGrid {
         }
     }
 
+    /// The grid a setting names: `adaptive narrow` and the other widths, or a fixed value as
+    /// [`PianoGrid::from_value`] reads it.
+    pub fn from_setting(value: &str) -> Self {
+        let normal = value.trim().to_ascii_lowercase();
+        match normal.strip_prefix("adaptive ") {
+            Some(width) => match Width::ALL.into_iter().find(|w| w.name().eq_ignore_ascii_case(width)) {
+                Some(width) => Self { snap: true, mode: GridMode::Adaptive(width), triplet: false },
+                None => Self::default(),
+            },
+            None => Self::from_value(&normal),
+        }
+    }
+
     /// The control bar's value for this grid: `none` when snap is off, else the fixed value.
     /// `None` when the control bar has no such value (an adaptive grid, a 1/32 triplet).
     pub fn control_bar_value(&self) -> Option<&'static str> {

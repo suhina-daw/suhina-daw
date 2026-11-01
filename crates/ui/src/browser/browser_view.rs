@@ -74,6 +74,9 @@ pub struct BrowserOut {
     pub pick_folder: bool,
     /// The preview strip's Auto switch was clicked: turn the automatic preview on or off.
     pub toggle_autoplay: bool,
+    /// Copy to folder… in a row's menu: these files, into a folder the system's dialog picks
+    /// (`library.copyTo`, #865).
+    pub copy_to: Vec<PathBuf>,
 }
 
 /// Draws the results area another way: the area, the browser's state and the projects.
@@ -320,13 +323,16 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         let provided = projects.preview_session_mut().map(|session| session.provide_audio(&path, data));
         let params = json!({ "path": path.display().to_string(), "from": from, "gain": settings.preview_volume });
         match provided.and_then(|()| projects.execute("preview.play", &params)) {
-            Ok(_) => state.previewing = Some(path.display().to_string()),
+            Ok(_) => state.preview_started(path.display().to_string()),
             Err(e) => out.status = Some(Status::Error(format!("Cannot preview: {}", e.message().to_owned()))),
         }
     }
     if let Some(e) = state.take_preview_error() {
         out.status = Some(Status::Error(format!("Cannot preview: {e}")));
     }
+    // Whether the preview voice still plays, wherever the control for it is shown.
+    let (sounding, started) = preview_sounding(projects);
+    state.observe_preview(sounding, started);
     // While a sample is being read for its preview, every frame looks for it, so it plays the
     // moment it is ready.
     if state.preview_pending() {
@@ -429,6 +435,44 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
 }
 
 /// Moves the selection `step` rows (from the search field's arrow keys).
+/// The arrow keys while a row of the list was pressed last: up and down move the selection (and
+/// its preview), right opens a folder or goes into an open one, left closes one or goes up to
+/// the folder it is in. Taken before the window's shortcuts see them.
+pub fn list_keys(ui: &Ui, state: &mut BrowserState) {
+    if !state.list_focused || state.search_focused {
+        return;
+    }
+    let (down, up, left, right) = ui.input_mut(|i| {
+        (
+            i.consume_key(Modifiers::NONE, Key::ArrowDown),
+            i.consume_key(Modifiers::NONE, Key::ArrowUp),
+            i.consume_key(Modifiers::NONE, Key::ArrowLeft),
+            i.consume_key(Modifiers::NONE, Key::ArrowRight),
+        )
+    });
+    if down || up {
+        move_selection(state, if down { 1 } else { -1 });
+    }
+    if !(left || right) {
+        return;
+    }
+    let rows = state.rows();
+    let Some(current) = state.selected.last().and_then(|s| rows.iter().position(|r| r.item.key == s.key)) else {
+        return;
+    };
+    let Some(row) = rows.get(current) else { return };
+    let (opens, open, depth, node) = (row.opens, row.open, row.depth, row.node().to_string());
+    if right && opens && !open {
+        state.toggle(&node);
+    } else if right && open {
+        move_selection(state, 1);
+    } else if left && open {
+        state.toggle(&node);
+    } else if left && let Some(parent) = rows.get(..current).and_then(|r| r.iter().rposition(|r| r.depth < depth)) {
+        move_selection(state, parent as isize - current as isize);
+    }
+}
+
 fn move_selection(state: &mut BrowserState, step: isize) {
     let rows = state.rows();
     if rows.is_empty() {
@@ -751,6 +795,10 @@ fn results_view(
     let mut double: Option<usize> = None;
     let mut drag: Option<usize> = None;
     let mut play: Option<usize> = None;
+    // Samples dragged over a folder row go into that folder when dropped (#943).
+    let dragging_samples = state.drag.as_ref().is_some_and(|items| items.iter().any(|i| i.kind == ItemKind::Sample));
+    let pointer = ui.input(|i| i.pointer.latest_pos());
+    state.drop_folder = None;
     for index in first..(first + visible).min(rows.len()) {
         let Some(row) = rows.get(index) else { continue };
         let top = area.top() + index as f32 * ROW - state.scroll;
@@ -767,7 +815,16 @@ fn results_view(
         // `.browser-row`, with `:hover`, `:active` and `:selected`; its `color` is the name's.
         let _row_style = crate::kit::style_class::enter_response("browser-row", &response);
         crate::kit::native_css::mark(crate::kit::native_css::HostState::Selected, selected);
-        let fill = if selected {
+        let drop_here = dragging_samples
+            && row.item.kind == ItemKind::Folder
+            && pointer.is_some_and(|p| shown.contains(p))
+            && row.item.path().is_some_and(|p| p.is_dir());
+        if drop_here {
+            state.drop_folder = row.item.path();
+        }
+        let fill = if drop_here {
+            theme::control_hover()
+        } else if selected {
             theme::control_active()
         } else {
             motion::mix(theme::panel_background(), theme::panel_hover(), widgets::hover(ui, &response))
@@ -785,7 +842,7 @@ fn results_view(
                 Id::new(("browser-play", row.node())),
                 format!("Preview {}", row.item.name),
             );
-            let playing = state.previewing.as_deref() == Some(row.item.key.as_str());
+            let playing = state.preview_active_for(&row.item.key);
             // `.browser-play`, `:checked` while it plays, `color` its glyph.
             let _play_style = crate::kit::style_class::enter_named_response("browser-play", "browser-play", &button);
             crate::kit::native_css::mark(crate::kit::native_css::HostState::Checked, playing);
@@ -918,6 +975,7 @@ fn results_view(
             click_row(state, &rows, index, modifiers);
             state.handled_press = Some(row.item.key.clone());
         }
+        state.list_focused = true;
     }
     if let Some((index, modifiers)) = clicked {
         let key = rows.get(index).map(|r| r.item.key.clone());
@@ -968,7 +1026,7 @@ fn results_view(
     if let Some(index) = play
         && let Some(row) = rows.get(index)
     {
-        if state.previewing.as_deref() == Some(row.item.key.as_str()) {
+        if state.preview_active_for(&row.item.key) {
             stop_preview(state, projects);
         } else {
             start_preview(state, projects, settings, selected_track, &row.item.clone(), 0.0, out);
@@ -1097,9 +1155,31 @@ fn row_menu(
         state.place = Some(Place::Folder(parent.to_path_buf()));
         ui.close();
     }
+    // The row's file, or every selected file when the row is one of them, copied into a
+    // folder; the originals stay (#865).
+    let files = copy_files(item, state.selected());
+    if !files.is_empty() && ui.button("Copy to folder…").clicked() {
+        out.copy_to = files;
+        ui.close();
+    }
     if item.kind == ItemKind::Folder && ui.button("Refresh").clicked() {
         state.relist();
         ui.close();
+    }
+}
+
+/// The files Copy to folder… copies from `item`'s menu: every selected sample when `item` is one
+/// of the selection, else `item` alone, when it is a sample.
+pub fn copy_files(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<PathBuf> {
+    let sample = |i: &BrowserItem| (i.kind == ItemKind::Sample).then(|| i.path()).flatten();
+    // Only a sample's menu copies: a MIDI file's would otherwise copy the samples picked with it.
+    if item.kind != ItemKind::Sample {
+        return Vec::new();
+    }
+    if selected.iter().any(|s| s.key == item.key) {
+        selected.iter().filter_map(sample).collect()
+    } else {
+        sample(item).into_iter().collect()
     }
 }
 
@@ -1165,7 +1245,7 @@ fn start_preview(
                 params["track"] = json!(track.0);
             }
             if run(projects, "preview.play", params, out) {
-                state.previewing = Some(item.key.clone());
+                state.preview_started(item.key.clone());
             }
         }
         _ => {}
@@ -1309,13 +1389,23 @@ pub fn preview_sample(state: &mut BrowserState, projects: &mut Projects, path: P
     state.want_preview(path, from);
 }
 
-/// Stops any preview.
+/// Stops any preview: the one waiting to be read, and whatever the preview voice plays, even
+/// when the browser has lost track of it (#836).
 pub fn stop_preview(state: &mut BrowserState, projects: &mut Projects) {
-    let was = state.previewing.is_some() || state.preview_pending();
+    let was = state.previewing.is_some() || state.preview_pending() || preview_sounding(projects).0;
     state.cancel_preview();
     if was {
         let _ = projects.execute("preview.stop", &json!({}));
     }
+}
+
+/// Whether the preview voice plays now.
+/// Whether the preview voice plays now, and how many previews it has started.
+fn preview_sounding(projects: &Projects) -> (bool, u64) {
+    projects
+        .preview_session()
+        .and_then(|s| s.player())
+        .map_or((false, 0), |p| (p.preview_monitor().playing(), p.preview_monitor().started()))
 }
 
 fn preview_strip(
@@ -1356,9 +1446,23 @@ fn preview_strip(
     let item = match state.selected.as_slice() {
         [one] if matches!(one.kind, ItemKind::Sample | ItemKind::Midi) => one.clone(),
         _ => {
+            // Nothing to preview picked, but a preview still sounding (its point was unpicked on
+            // the map): a Stop button for it, so a sounding preview always has one (#836).
+            let (sounding, _) = preview_sounding(projects);
+            let mut hint = area.shrink(PAD);
+            if sounding {
+                let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
+                let response = widgets::button_area(ui, stop, Id::new("browser-preview-play"), "Stop preview");
+                widgets::button_surface(&painter, stop, &response, true, theme::control_background(), 0.0);
+                play_glyph(&painter, stop.center(), true, theme::accent(), 7.0);
+                if response.clicked() {
+                    stop_preview(state, projects);
+                }
+                hint = Rect::from_min_max(Pos2::new(stop.right() + PAD, hint.top()), hint.max);
+            }
             widgets::text_in(
                 &painter,
-                area.shrink(PAD),
+                hint,
                 Align2::LEFT_CENTER,
                 "Select a sample or MIDI file to preview",
                 theme::ui_font(theme::TEXT_SMALL),
@@ -1372,13 +1476,9 @@ fn preview_strip(
         .preview_session()
         .and_then(|s| s.player())
         .map(|p| (p.preview_monitor().playing(), p.preview_monitor().seconds()));
-    let playing_this = state.previewing.as_deref() == Some(item.key.as_str()) && monitor.is_some_and(|m| m.0);
-    if state.previewing.as_deref() == Some(item.key.as_str())
-        && monitor.is_some_and(|m| !m.0)
-        && !state.preview_pending()
-    {
-        state.previewing = None;
-    }
+    // Stop shows while this item previews or waits to, and while any preview sounds, so a
+    // sounding preview always has a control that stops it (#836).
+    let playing_this = state.preview_active_for(&item.key) || monitor.is_some_and(|m| m.0);
     let info = state.info(&path, true).cloned().unwrap_or_default();
 
     // Top line: play, name, length, tempo, key.

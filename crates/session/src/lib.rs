@@ -7,9 +7,13 @@
 
 mod ara;
 pub mod audio;
+mod audio_timing;
 mod automation;
+mod automation_fit;
+mod automation_range;
 pub mod backup;
 mod blank;
+mod clip_ara;
 mod clip_color;
 mod clip_edges;
 mod clip_shape;
@@ -48,6 +52,8 @@ mod scales;
 mod sends;
 mod soundmap;
 mod tempo;
+mod track_copy;
+mod track_kind;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -58,7 +64,8 @@ use suhina_model::Project;
 
 pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
-pub use blank::blank_project;
+pub use automation_range::{SHAPES as AUTOMATION_SHAPES, shape_points as automation_shape};
+pub use blank::{blank_project, blank_project_with};
 pub use commands::{
     Agents, CommandKind, CommandSpec, Param, ParamType, PathKind, Policy, Run, commands, parse_quantization,
 };
@@ -77,7 +84,7 @@ pub use rack::{
     BlockCounts, Hosted, OfflinePlugins, PluginEnv, PluginProgress, PluginReport, PluginStatus, ProcessGroup,
     is_instrument, plugin_group, start_offline,
 };
-pub use recording::{COUNT_IN_BARS, RECORDED_FOLDER};
+pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
 pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
@@ -162,6 +169,9 @@ pub struct Session {
     /// When the project was last backed up and where (`backup.rs`).
     pub(crate) backup: backup::SessionBackups,
     pub(crate) live: live_input::LiveInput,
+    /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
+    /// index in `arrangement.takes`. Not saved, not an undo step.
+    pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
 }
 
 /// Files kept decoded ahead of the commands that use them.
@@ -187,7 +197,32 @@ impl Session {
             sync: player_sync::PlayerSync::default(),
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
+            take_solo: None,
         }
+    }
+
+    /// The take lane heard in place of its track's clips (`take.solo`), by its track and its
+    /// number on the track, from 1.
+    pub fn take_solo(&self) -> Option<(suhina_model::TrackId, usize)> {
+        let (track, index) = self.take_solo?;
+        let take = self.project.arrangement.takes.get(index).filter(|t| t.track == track)?;
+        let number = self.project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
+        Some((track, number))
+    }
+
+    /// The project as the engine plays it: with a soloed take lane's clips in place of its
+    /// track's (#989).
+    fn heard_project(&self) -> std::borrow::Cow<'_, Project> {
+        let Some((track, index)) = self.take_solo else { return std::borrow::Cow::Borrowed(&self.project) };
+        let Some(take) = self.project.arrangement.takes.get(index).filter(|t| t.track == track) else {
+            return std::borrow::Cow::Borrowed(&self.project);
+        };
+        let mut heard = self.project.clone();
+        if let Some(lane) = heard.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)) {
+            lane.clips = take.clips.clone();
+        }
+        let _ = heard.assign_ids();
+        std::borrow::Cow::Owned(heard)
     }
 
     /// Whether the clips copied for `clip.paste` play audio: `Some(true)` for audio, `Some(false)`
@@ -214,6 +249,16 @@ impl Session {
     /// How many devices `device.paste` would add.
     pub fn copied_devices(&self) -> usize {
         self.clipboards.devices.len()
+    }
+
+    /// Whether a range of automation is copied for `automation.paste`.
+    pub fn copied_automation(&self) -> bool {
+        self.clipboards.automation.is_some()
+    }
+
+    /// How many tracks `track.paste` would add (a group's tracks counted).
+    pub fn copied_tracks(&self) -> usize {
+        self.clipboards.whole_tracks.len()
     }
 
     pub fn copied_from_tracks(&self) -> bool {
@@ -422,6 +467,7 @@ impl Session {
     /// go to it from now on. Replaces (and so closes) any previous player. It should have been
     /// started with [`Session::audio`]; audio added later reaches it with the next edit.
     pub fn attach_player(&mut self, mut player: Player) {
+        self.sync.output_open_failed = false;
         // A new engine starts on its own default grid; it takes this session's instead. Its
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
@@ -546,6 +592,7 @@ impl Session {
                 Ok(())
             }
             Err(e) => {
+                self.sync.output_open_failed = true;
                 self.plugins.stop_all();
                 Err(e)
             }
@@ -558,9 +605,16 @@ impl Session {
         self.plugins.stop_all();
     }
 
+    pub(crate) fn retain_plugins_at_player_rate(&mut self) {
+        if let Some(player) = &self.sync.player {
+            self.plugins.retain_at_rate(player.sample_rate());
+        }
+    }
+
     /// Disconnects the audio engine; the project's plug-ins stop (each keeps its last state for
     /// when the project plays again).
     pub fn detach_player(&mut self) -> Option<Player> {
+        self.sync.output_open_failed = false;
         self.plugins.stop_all();
         self.end_takes_now();
         self.sync.player.take()
@@ -577,7 +631,9 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
-        self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut())
+        let notices = self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut());
+        crate::devices::keep_plugin_params_in_step(self);
+        notices
     }
 
     /// How often the state of each running plug-in is read for backups and the unsaved-changes
@@ -751,7 +807,7 @@ impl Session {
     pub(crate) fn player_mut(&mut self) -> Result<&mut Player, CommandError> {
         self.sync.player.as_mut().ok_or_else(|| {
             CommandError(
-                "no audio engine is playing this project: start one with `suhina-cli play --launcher`, or the MCP                  server with --audio"
+                "no audio engine is playing this project: choose an available device in Audio settings; headless sessions need audio enabled"
                     .into(),
             )
         })
@@ -1074,10 +1130,14 @@ impl Session {
     pub fn sync_device_files(&mut self) {
         // Paths still attached to devices, by kind.
         let mut need: HashMap<String, String> = HashMap::new();
-        for track in &self.project.tracks {
-            let Some(channel) = track.channel.and_then(|ch| self.project.channel(ch)) else {
-                continue;
-            };
+        // Every track's channel and Main's: a file-backed device on Main loads as one on a track.
+        let channels = self
+            .project
+            .tracks
+            .iter()
+            .filter_map(|track| track.channel.and_then(|ch| self.project.channel(ch)))
+            .chain(self.project.main_channel());
+        for channel in channels {
             for device in &channel.devices {
                 let suhina_model::DeviceKind::Builtin(id) = &device.kind else { continue };
                 if !suhina_device_registry::is_file_device(id) {
@@ -1176,7 +1236,9 @@ impl Session {
             player.set_device_assets(std::sync::Arc::new(self.device_files.assets.clone()));
             self.device_files.changed = false;
         }
-        player.update_with_scenes(&self.project, scenes).map_err(|e| {
+        let heard = self.take_solo.map(|_| self.heard_project().into_owned());
+        let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
+        player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| {
             CommandError(format!("the edit was made, but the playing engine could not follow it: {}", e.0))
         })
     }
@@ -1234,7 +1296,7 @@ pub(crate) fn plugin_key_at(project: &Project, track: suhina_model::TrackId, dev
 
 /// The key of the plug-in device at `path` on `track`'s channel, inside device groups too.
 pub(crate) fn plugin_key_at_path(project: &Project, track: suhina_model::TrackId, path: &[usize]) -> Option<u64> {
-    let channel = project.track(track)?.channel?;
+    let channel = project.channel_of_track(track)?.id;
     suhina_engine::plugin_devices(project).into_iter().find(|d| d.channel == channel && d.path == path).map(|d| d.key)
 }
 

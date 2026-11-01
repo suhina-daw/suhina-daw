@@ -28,7 +28,7 @@ fn lane_of(p: &mut Project, track: TrackId) -> Result<usize, CommandError> {
     if let Some(lane) = p.arrangement.lanes.iter().position(|l| l.track == Some(track)) {
         return Ok(lane);
     }
-    let name = p.track(track).map(|t| t.name.clone()).unwrap_or_default();
+    let name = p.shown_track_name(track);
     let id = p.new_lane_id()?;
     p.arrangement.lanes.push(ArrangementLane { id, name, track: Some(track), clips: Vec::new() });
     Ok(p.arrangement.lanes.len() - 1)
@@ -98,6 +98,7 @@ fn place(
         let at = clip.start + offset;
         let mut copy = Clip { id: p.new_clip_id()?, content: id, start: at, ..clip };
         copy.fit_fades();
+        let stack = stack && !p.takes_cover(track, at, at + copy.length);
         let lane = lane_of(p, track)?;
         let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
         if !stack {
@@ -268,6 +269,10 @@ pub(crate) fn copy_range(session: &mut Session, params: &Value) -> Result<Value,
         return Err("nothing plays in the selection".into());
     }
     let count = parts.len();
+    session.clipboards.under = parts
+        .iter()
+        .map(|(track, clip, _)| crate::automation_range::under(session, *track, clip.start, clip.start + clip.length))
+        .collect();
     session.clipboards.tracks = parts.iter().map(|(track, _, _)| *track).collect();
     session.clipboards.clips = parts.into_iter().map(|(_, clip, content)| (clip, content)).collect();
     Ok(json!({ "copied": count, "start": start, "end": end }))
@@ -289,7 +294,18 @@ pub(crate) fn duplicate_range(session: &mut Session, params: &Value) -> Result<V
     if parts.is_empty() {
         return Err("nothing plays in the selection".into());
     }
+    // The automation under each part goes under its copy (#916).
+    let carried: Vec<_> = parts
+        .iter()
+        .map(|(track, clip, _)| {
+            let lanes = crate::automation_range::under(session, *track, clip.start, clip.start + clip.length);
+            (*track, clip.start + (end - start), lanes)
+        })
+        .collect();
     let placed = place(&mut session.project, parts, end - start, stack)?;
+    for (track, at, lanes) in &carried {
+        crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
+    }
     Ok(json!({ "clips": placed, "start": end, "end": end + (end - start) }))
 }
 
@@ -308,7 +324,13 @@ pub(crate) fn paste_to_sources(session: &mut Session, start: f64, stack: bool) -
         .zip(session.clipboards.clips.iter())
         .map(|(track, (clip, content))| (*track, clip.clone(), content.clone()))
         .collect();
+    let starts: Vec<(TrackId, f64)> = parts.iter().map(|(track, clip, _)| (*track, clip.start + offset)).collect();
     let placed = place(&mut session.project, parts, offset, stack)?;
+    // The automation that was under each clip, under its copy on the same track.
+    let under = session.clipboards.under.clone();
+    for ((track, at), lanes) in starts.iter().zip(&under) {
+        crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
+    }
     Ok(json!({ "clips": placed }))
 }
 
@@ -411,6 +433,26 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     if to.is_some() && !new_track && chosen.iter().any(|(track, _)| *track != chosen[0].0) {
         return Err("toTrack moves clips of one track; these are on several".into());
     }
+    // An empty track of the other kind takes the clips' kind (#945).
+    if let Some(target) = to.filter(|t| !new_track && chosen.iter().all(|(track, _)| track != t))
+        && let Some(content) = chosen.first().and_then(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track));
+            lane.and_then(|l| l.clips.get(*index)).map(|c| c.content)
+        })
+    {
+        crate::track_kind::fit_empty_for(session, target, content)?;
+    }
+    // The automation under each clip, taken along (#916): from where it was (left there for a
+    // copy) to where the clip lands.
+    let carried: Vec<(TrackId, f64, f64, Vec<crate::automation_range::Under>)> = chosen
+        .iter()
+        .filter_map(|(track, index)| {
+            let lane = session.project.arrangement.lanes.iter().find(|l| l.track == Some(*track))?;
+            let clip = lane.clips.get(*index)?;
+            let end = clip.start + clip.length;
+            Some((*track, clip.start, end, crate::automation_range::under(session, *track, clip.start, end)))
+        })
+        .collect();
     let p = &mut session.project;
     // Taken out first, the highest index of each lane first so the others keep theirs.
     let mut taken: Vec<(TrackId, Clip)> = Vec::with_capacity(chosen.len());
@@ -463,6 +505,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
     came.reverse();
     for (track, mut clip) in taken.into_iter().rev() {
         clip.start = (clip.start + beats).max(0.0);
+        let stack = stack && !p.takes_cover(track, clip.start, clip.start + clip.length);
         let lane = lane_of(p, track)?;
         let lane = p.arrangement.lanes.get_mut(lane).ok_or("the lane is missing")?;
         if !stack {
@@ -471,6 +514,15 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
         lane.clips.push(clip.clone());
         lane.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         placed.push((track, clip));
+    }
+    if !copy {
+        for (track, start, end, lanes) in &carried {
+            crate::automation_range::clear_under(session, *track, *start, *end, lanes)?;
+        }
+    }
+    for (track, start, _, lanes) in &carried {
+        let goes = to.unwrap_or(moved_by(*track)?);
+        crate::automation_range::lay_under(session, goes, (start + beats).max(0.0), lanes, goes == *track)?;
     }
     // The edits of clips that left their plug-in's track go along (ADR 0028 step 6).
     let mut carried = 0;

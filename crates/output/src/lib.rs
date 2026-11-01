@@ -9,8 +9,8 @@
 //! [`engine_block`]) into a lock-free ring ([`rtrb`]); the device's callback only copies from
 //! the ring, converts samples and sets atomics: no allocation, locks or I/O on either thread
 //! (AGENTS.md rule 3). The plug-ins of a block get the time the frames queued before it play,
-//! less the device's buffer and a margin (ADR 0006), so a return's plug-ins, which run after the
-//! tracks that send to them, are not left a fraction of a block. The ring keeps two blocks
+//! counting complete device periods less a margin (ADR 0006), so a return's plug-ins, which run after the
+//! tracks that send to them, are not left a fraction of a block. The ring keeps four blocks
 //! ahead, or a device buffer and a block when the device asks for more at once; while a track
 //! is armed to play a MIDI controller, one block or a device buffer, so a key sounds sooner
 //! (ADR 0017). Launcher
@@ -59,9 +59,9 @@ pub(crate) const RING_CHANNELS: usize = 4;
 pub const ENGINE_BLOCK: usize = 1024;
 /// Blocks the ring keeps ahead of the device: the latency from the engine to the device is up
 /// to this many blocks (more when the device takes more than a block at once).
-const RING_BLOCKS: usize = 2;
-/// Blocks the ring keeps ahead while a track is armed (ADR 0017): a key pressed waits for one
-/// block less, and the render thread has one device buffer's time to fill the next.
+const RING_BLOCKS: usize = 4;
+/// Blocks the ring keeps ahead while a track is armed (ADR 0017): a key pressed waits for a
+/// shallow queue, and the render thread has one device buffer's time to fill the next.
 const LIVE_RING_BLOCKS: usize = 1;
 /// The largest device buffer the ring makes room for, in frames.
 const MAX_DEVICE_FRAMES: usize = 8192;
@@ -84,9 +84,12 @@ static PRIORITY_TOLD: AtomicBool = AtomicBool::new(false);
 /// The device's end of the ring.
 pub(crate) type Ring = rtrb::Consumer<f32>;
 
+mod transition;
+
 /// State the audio callback shares with the main thread.
 #[derive(Default)]
 pub struct Progress {
+    transition: transition::Control,
     frames: AtomicU64,
     underruns: AtomicU64,
     stream_error: AtomicBool,
@@ -201,6 +204,17 @@ pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
     progress.wake_render();
 }
 
+fn read_device_ring(
+    ring: &mut Ring,
+    out: &mut [f32],
+    progress: &Progress,
+    envelope: &mut transition::Envelope,
+    delay: Duration,
+) {
+    read_ring(ring, out, progress);
+    envelope.apply(out, &progress.transition, delay, progress.callback_frames());
+}
+
 /// The time from the engine to the speaker: the frames queued in the ring, played at
 /// `sample_rate`, and the device's own delay after the callback.
 pub(crate) fn measure_latency(queued_frames: usize, device: Duration, sample_rate: u32) -> Duration {
@@ -224,10 +238,18 @@ fn block_for(chosen: Option<u32>, overridden: Option<&str>) -> usize {
         .unwrap_or(ENGINE_BLOCK)
 }
 
-/// Frames the render thread keeps ahead in the ring: two blocks, or a device buffer and a
+/// Frames the render thread keeps ahead in the ring: four blocks, or a device buffer and a
 /// block when the device takes more at once. While someone may be playing live (`live`, a
 /// track armed), one block or one device buffer: the device's next callback is then all the
 /// render thread has to fill the ring again, so underruns tell when it is too little.
+///
+/// Four rather than two: a block's plug-in round trip is given a share of what is queued
+/// ahead of the device ([ADR 0006, decision 4]), and with two the 3 ms margin kept for the
+/// device left a heavy plug-in less than a quarter of a block's playing time — measured on an
+/// M3, Arturia-class synth blocks missed it from 3 % (three busy processes on the machine)
+/// to 81 % (the time-constraint policy deferred their work) of blocks, which is the crackle
+/// users hear with just a synth on a track. Four leave it near a whole block of room; the
+/// cost is two blocks more of output latency, which the measured latency reports anyway.
 fn ring_target(block: usize, device_frames: usize, live: bool) -> usize {
     let device = device_frames.min(MAX_DEVICE_FRAMES);
     if live { (LIVE_RING_BLOCKS * block).max(device) } else { (RING_BLOCKS * block).max(device + block) }
@@ -275,6 +297,16 @@ enum DeviceStream {
 }
 
 impl DeviceStream {
+    fn control_panel(&self) -> Result<(), String> {
+        #[cfg(all(windows, feature = "asio"))]
+        if let Self::Cpal(stream) = self
+            && let cpal::platform::StreamInner::Asio(stream) = stream.as_inner()
+        {
+            return stream.control_panel().map_err(|e| e.to_string());
+        }
+        Err("this output has no native ASIO control panel".into())
+    }
+
     fn play(&self) -> Result<(), String> {
         match self {
             Self::Cpal(stream) => stream.play().map_err(|e| e.to_string()),
@@ -300,6 +332,7 @@ impl DeviceStream {
 /// both.
 pub struct Stream {
     device: Option<DeviceStream>,
+    progress: Arc<Progress>,
     stop: Arc<AtomicBool>,
     render: Option<std::thread::JoinHandle<Renderer>>,
     asio: bool,
@@ -321,13 +354,16 @@ impl Stream {
         self.priority_notice.as_deref()
     }
 
-    /// Stops the device, then the render thread, and gives back the renderer, so its plug-ins
+    /// Fades and drains the device, then stops the render thread and returns the renderer, so its plug-ins
     /// can move to the next one ([`Renderer::into_plugins`]).
     pub fn close(mut self) -> Option<Renderer> {
         self.stop_all()
     }
 
     fn stop_all(&mut self) -> Option<Renderer> {
+        if self.device.is_some() {
+            let _drained = self.progress.transition.finish(Duration::from_millis(500), || self.progress.failed());
+        }
         drop(self.device.take());
         if self.asio {
             ASIO_OPEN.store(false, Ordering::Release);
@@ -405,8 +441,9 @@ impl Output {
         let host = cpal::host_from_id(host_id).map_err(|e| format!("audio host {}: {e}", host_id.name()))?;
         let host_name = host_id.name().to_string();
         let chosen = choice.device.as_ref().and_then(|name| {
-            let found =
-                host.output_devices().ok().and_then(|mut list| list.find(|d| devices::same_name(&d.to_string(), name)));
+            let found = devices::output_devices(&host)
+                .ok()
+                .and_then(|list| list.into_iter().find(|d| devices::same_name(&d.to_string(), name)));
             if found.is_none() {
                 notices.push(format!("the audio device {name} is not there; the default output plays"));
             }
@@ -414,7 +451,7 @@ impl Output {
         });
         let device = match chosen {
             Some(device) => device,
-            None => host.default_output_device().ok_or("no audio output device found")?,
+            None => devices::default_output(&host).ok_or("no audio output device found")?,
         };
         let device_name = device.to_string();
         let default = device.default_output_config().map_err(|e| format!("audio output {device_name}: {e}"))?;
@@ -610,7 +647,7 @@ impl Output {
         &self,
         device: DeviceStream,
         mut renderer: Renderer,
-        producer: rtrb::Producer<f32>,
+        mut producer: rtrb::Producer<f32>,
         progress: &Arc<Progress>,
     ) -> Result<Stream, String> {
         // The cue's volume, and whether it has outputs of its own, apply from the first block.
@@ -618,6 +655,9 @@ impl Output {
         if let Some(frames) = device.buffer_frames() {
             progress.set_callback_frames(frames as usize);
         }
+        // A driver may call back immediately in play(), before the render thread's
+        // first block. Begin with the normal queue lead, not an empty underrunning ring.
+        prime_ring(&mut producer, self.block, progress.callback_frames(), renderer.live_armed());
         let stop = Arc::new(AtomicBool::new(false));
         let (stopping, watching, block) = (Arc::clone(&stop), Arc::clone(progress), self.block);
         let (joined, priority) = mpsc::sync_channel(1);
@@ -634,7 +674,15 @@ impl Output {
         // refusal, before anything plays.
         let (priority, notice) = priority.recv_timeout(PRIORITY_WAIT).map_or((None, None), |(p, n)| (Some(p), n));
         let priority_notice = tell_once(&PRIORITY_TOLD, notice);
-        let stream = Stream { device: Some(device), stop, render: Some(render), asio, priority, priority_notice };
+        let stream = Stream {
+            device: Some(device),
+            progress: Arc::clone(progress),
+            stop,
+            render: Some(render),
+            asio,
+            priority,
+            priority_notice,
+        };
         stream
             .device
             .as_ref()
@@ -644,9 +692,21 @@ impl Output {
     }
 }
 
+/// Primes the queue before the first device callback can run.
+fn prime_ring(ring: &mut rtrb::Producer<f32>, block: usize, device: usize, live: bool) {
+    // ASIO can request both halves before hardware starts. Other backends may
+    // also burst initially; the extra reserve drains to the normal target.
+    let initial = ring_target(block, device, live).max(2 * device.min(MAX_DEVICE_FRAMES));
+    let samples = initial.saturating_mul(RING_CHANNELS).min(ring.slots());
+    if let Ok(chunk) = ring.write_chunk_uninit(samples) {
+        chunk.fill_from_iter(std::iter::repeat_n(0.0, samples));
+    }
+}
+
 /// A ring for blocks of `block` frames: room for the target and a device buffer more.
 fn ring(block: usize) -> (rtrb::Producer<f32>, Ring) {
-    rtrb::RingBuffer::<f32>::new((ring_target(block, MAX_DEVICE_FRAMES, false) + block) * RING_CHANNELS)
+    let target = ring_target(block, MAX_DEVICE_FRAMES, false).max(2 * MAX_DEVICE_FRAMES);
+    rtrb::RingBuffer::<f32>::new((target + block) * RING_CHANNELS)
 }
 
 /// The render thread: runs the engine a block at a time whenever the ring holds less than its
@@ -784,9 +844,14 @@ fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Pr
 /// What keeps a player's output open: closing it ends the stream on the owner's thread, which
 /// hands back the renderer's plug-ins.
 struct Owner {
-    close: mpsc::Sender<()>,
+    close: mpsc::Sender<OwnerRequest>,
     back: mpsc::Receiver<(u32, Option<Plugins>)>,
     thread: Option<std::thread::JoinHandle<()>>,
+}
+
+enum OwnerRequest {
+    Close,
+    ControlPanel,
 }
 
 impl suhina_session::OutputHandle for Owner {
@@ -799,7 +864,7 @@ impl Owner {
     /// Closes the stream and returns its sample rate and plug-ins, when they come back in
     /// time.
     fn close(mut self) -> Option<(u32, Plugins)> {
-        let _closed = self.close.send(());
+        let _closed = self.close.send(OwnerRequest::Close);
         let back = self.back.recv_timeout(CLOSE_TIMEOUT).ok();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -810,6 +875,8 @@ impl Owner {
 
 /// What a playing output runs with, for `audio.info`.
 struct Live {
+    owner: mpsc::Sender<OwnerRequest>,
+    panel_pending: Arc<AtomicBool>,
     progress: Arc<Progress>,
     host: String,
     device: String,
@@ -825,6 +892,24 @@ struct Live {
 }
 
 impl LiveOutput for Live {
+    fn control_panel_open(&self) -> bool {
+        self.panel_pending.load(Ordering::Acquire)
+    }
+
+    fn open_control_panel(&self) -> Result<(), String> {
+        if self.host != "ASIO" {
+            return Err("only the active ASIO output has a native control panel".into());
+        }
+        if self.panel_pending.swap(true, Ordering::AcqRel) {
+            return Err("the ASIO control panel is already open or requested".into());
+        }
+        if self.owner.send(OwnerRequest::ControlPanel).is_err() {
+            self.panel_pending.store(false, Ordering::Release);
+            return Err("the audio owner has stopped".into());
+        }
+        Ok(())
+    }
+
     fn info(&self) -> OutputInfo {
         OutputInfo {
             host: self.host.clone(),
@@ -862,7 +947,7 @@ pub fn open_player(project: &Project, audio: &AudioPool) -> Result<(Player, Stri
 
 /// Plays `project` with its transport stopped on the output `choice` names (see
 /// [`AudioSystem::open`]), from a thread that owns the stream. `previous` is closed first; its
-/// plug-ins carry over when the sample rate stays the same.
+/// plug-ins carry over, reconfigured while quiescent when the sample rate changes.
 pub fn open_chosen(
     project: &Project,
     audio: &AudioPool,
@@ -879,7 +964,8 @@ pub fn open_chosen(
     let (project, audio, assets, choice) =
         (project.clone(), audio.clone(), std::sync::Arc::new(assets.clone()), choice.clone());
     let (ready, opened) = mpsc::channel();
-    let (close, closed) = mpsc::channel::<()>();
+    let (close, closed) = mpsc::channel::<OwnerRequest>();
+    let owner_requests = close.clone();
     let (back_tx, back) = mpsc::channel();
     let thread = std::thread::Builder::new()
         .name("suhina-audio".into())
@@ -887,7 +973,12 @@ pub fn open_chosen(
             let started = (|| {
                 let (mut output, device, producer, progress) = open_fitting(&choice)?;
                 let (plugins, kept) = match carried {
-                    Some((rate, plugins)) if rate == output.sample_rate => (plugins, true),
+                    Some((rate, mut plugins)) => {
+                        if rate != output.sample_rate {
+                            plugins.reconfigure(output.sample_rate, std::time::Duration::from_secs(10))?;
+                        }
+                        (plugins, true)
+                    }
                     _ => (Plugins::new(), false),
                 };
                 let mut renderer = Renderer::build(
@@ -919,7 +1010,10 @@ pub fn open_chosen(
             })();
             match started {
                 Ok((output, controller, progress, stream, kept, input)) => {
+                    let panel_pending = Arc::new(AtomicBool::new(false));
                     let live = Live {
+                        owner: owner_requests,
+                        panel_pending: Arc::clone(&panel_pending),
                         progress,
                         host: output.host.clone(),
                         device: output.device_name.clone(),
@@ -934,7 +1028,19 @@ pub fn open_chosen(
                     let notice = (!output.notices.is_empty()).then(|| output.notices.join("; "));
                     if ready.send(Ok((controller, live, notice, kept))).is_ok() {
                         // Returns once the player, which holds `close`, closes or is dropped.
-                        let _closed = closed.recv();
+                        while let Ok(request) = closed.recv() {
+                            match request {
+                                OwnerRequest::Close => break,
+                                OwnerRequest::ControlPanel => {
+                                    if let Some(device) = &stream.device
+                                        && let Err(error) = device.control_panel()
+                                    {
+                                        eprintln!("ASIO control panel: {error}");
+                                    }
+                                    panel_pending.store(false, Ordering::Release);
+                                }
+                            }
+                        }
                     }
                     let plugins = stream.close().map(Renderer::into_plugins);
                     drop(input);
@@ -990,8 +1096,6 @@ struct Watch {
 /// and opening a project on the device chosen.
 #[derive(Default)]
 pub struct DeviceOutput {
-    /// The last listing, for the ASIO host while its driver is in use.
-    listed: std::sync::Mutex<Vec<HostInfo>>,
     watch: Arc<std::sync::Mutex<Watch>>,
 }
 
@@ -1003,17 +1107,7 @@ impl DeviceOutput {
 
 impl AudioSystem for DeviceOutput {
     fn hosts(&self) -> Vec<HostInfo> {
-        let mut hosts = devices::list_hosts();
-        let Ok(mut listed) = self.listed.lock() else { return hosts };
-        if ASIO_OPEN.load(Ordering::Acquire)
-            && let Some(before) = listed.iter().find(|h| h.name == "ASIO")
-            && let Some(now) = hosts.iter_mut().find(|h| h.name == "ASIO")
-            && now.devices.len() < before.devices.len()
-        {
-            *now = before.clone();
-        }
-        listed.clone_from(&hosts);
-        hosts
+        devices::list_hosts()
     }
 
     fn open(
@@ -1064,6 +1158,7 @@ where
     let mut scratch = vec![0.0f32; MAX_DEVICE_FRAMES * RING_CHANNELS];
     let on_data = Arc::clone(progress);
     let on_error = Arc::clone(progress);
+    let mut envelope = transition::Envelope::new(sample_rate);
 
     device
         .build_output_stream(
@@ -1077,7 +1172,7 @@ where
                 for block in data.chunks_mut(MAX_DEVICE_FRAMES * channels) {
                     let frames = block.len() / channels;
                     let Some(ringed) = scratch.get_mut(..frames * RING_CHANNELS) else { return };
-                    read_ring(&mut ring, ringed, &on_data);
+                    read_device_ring(&mut ring, ringed, &on_data, &mut envelope, device_delay);
                     write_frames(block, channels, ringed, cue);
                     on_data.add_frames(frames);
                 }

@@ -3,6 +3,18 @@
 
 use super::*;
 
+#[test]
+fn audio_device_history_rejects_malformed_and_bounds_input() {
+    for value in ["not-json".to_string(), "[]".to_string(), "x".repeat(32_769)] {
+        let (settings, warnings) = Settings::from_text(&format!("audio_devices = {value}\n"));
+        assert!(settings.audio_devices.is_empty());
+        assert!(!warnings.is_empty());
+    }
+    let history: std::collections::BTreeMap<_, _> = (0..70).map(|n| (format!("host{n}"), Some("Output"))).collect();
+    let (settings, _) = Settings::from_text(&format!("audio_devices = {}\n", serde_json::json!(history)));
+    assert_eq!(settings.audio_devices.len(), 64);
+}
+
 /// A settings file as Suhina wrote it before the Settings window was regrouped
 /// (`docs/spec/ui-settings.md`): moving a setting to another page never changes its key.
 const BEFORE_THE_REGROUPING: &str = "# Suhina settings; changed from Options > Settings.
@@ -34,6 +46,7 @@ map_layout = grid
 map_hover_preview = off
 map_max_seconds = 30
 map_dot_size = 150
+map_label_size = 50
 map_window = on
 map_window_rect = 10, 20, 640, 480
 audio_host = ASIO
@@ -91,6 +104,7 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
         map_hover_preview: false,
         map_max_seconds: 30,
         map_dot_size: 150,
+        map_label_size: 50,
         map_window: true,
         map_window_rect: Some([10, 20, 640, 480]),
         audio_host: "ASIO".into(),
@@ -120,6 +134,7 @@ fn a_settings_file_from_before_the_regrouping_loads_with_the_same_values() {
 fn settings_survive_a_round_trip() {
     let settings = Settings {
         animations: false,
+        setting_descriptions: crate::settings::Descriptions::Icon,
         track_headers: Some(Side::Left),
         graphics: Graphics::OpenGl,
         sample_stacking: true,
@@ -157,9 +172,11 @@ fn settings_survive_a_round_trip() {
         map_hover_preview: false,
         map_max_seconds: 30,
         map_dot_size: 250,
+        map_label_size: 100,
         waveform_db: true,
         audio_host: "ASIO".into(),
         audio_device: "Universal Audio Thunderbolt".into(),
+        audio_devices: [("asio".into(), Some("Interface".into())), ("wasapi".into(), None)].into(),
         audio_sample_rate: 48_000,
         audio_buffer: 256,
         audio_exclusive: true,
@@ -348,4 +365,15 @@ fn the_toolbar_size_round_trips_and_an_unknown_one_is_large() {
         "Normal, Large and Larger scale the toolbar"
     );
     assert_eq!(ToolbarSize::ALL.map(ToolbarSize::name), ["Normal", "Large", "Larger"]);
+}
+
+#[test]
+fn the_map_label_size_is_kept_and_only_its_steps_are_read() {
+    for (text, size) in
+        [("map_label_size = 0", 0), ("map_label_size = 75", 75), ("map_label_size = 60", MAP_LABEL_SIZE)]
+    {
+        assert_eq!(Settings::from_text(text).0.map_label_size, size, "{text}");
+    }
+    let settings = Settings { map_label_size: 50, ..Settings::default() };
+    assert_eq!(Settings::from_text(&settings.to_text()).0.map_label_size, 50);
 }

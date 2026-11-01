@@ -19,7 +19,7 @@ fn ctrl_n_asks_for_a_new_project_and_ctrl_s_saves_one() {
     assert_eq!(harness.state_mut().take_lists_wanted(), Some(dir.join("Templates")));
     harness.get_by_label("New blank project").click();
     harness.run();
-    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank));
+    assert_eq!(harness.state_mut().take_new_request(), Some(suhina_ui::NewProject::Blank { returns: true }));
     assert!(!harness.state().project_dialog_open());
 
     // Ctrl+S on a project without a .suhina file asks for a name, in the projects folder.
@@ -247,7 +247,7 @@ fn closing_or_quitting_with_unsaved_changes_asks_first() {
 }
 
 #[test]
-fn each_project_tab_keeps_its_own_grid() {
+fn each_project_tab_keeps_its_own_launch_quantisation() {
     let mut harness = two_projects();
     // The browser has tests of its own; the views get the whole width.
     harness.state_mut().set_browser_open(false);
@@ -256,27 +256,15 @@ fn each_project_tab_keeps_its_own_grid() {
     // The second project shows: 1/16 there.
     choose_grid(&mut harness, "1/16");
     assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(0.25)));
-
-    // The first keeps 1 bar: in its Arrangement a short drag at a fine zoom lands on a bar.
+    // The first keeps 1 bar.
     harness.get_by_label("Tab Untitled 1").click();
     harness.run();
     harness.run();
     assert_eq!(harness.state().projects().active(), ids.first().copied());
     assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Bars(1)));
-    harness.get_by_label("Arrangement view").click();
-    harness.run();
-    zoom_in_at_beat_b(&mut harness);
-    drag_beat_b(&mut harness, egui::vec2(160.0, 0.0));
-    assert_eq!(beat_b_start(&harness), Some(68.0));
-
-    // Back in the second, its 1/16 is still chosen and is its grid.
+    // Back in the second, its 1/16 is still chosen.
     harness.get_by_label("Tab Untitled 2").click();
     harness.run();
     harness.run();
     assert_eq!(grid_of(&harness), Some(suhina_engine::Quantization::Beats(0.25)));
-    harness.get_by_label("Arrangement view").click();
-    harness.run();
-    zoom_in_at_beat_b(&mut harness);
-    drag_beat_b(&mut harness, egui::vec2(83.2, 0.0));
-    assert_eq!(beat_b_start(&harness), Some(65.25));
 }

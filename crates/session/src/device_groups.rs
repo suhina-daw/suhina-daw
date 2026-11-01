@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use suhina_device_api::Role;
 use suhina_model::{Branch, Device, DeviceGroup, DeviceKind, MAX_BRANCHES, device_at, device_at_mut};
 
-use crate::commands::{channel_param, channel_read, number, track_id};
+use crate::commands::{device_channel, device_channel_read, number, track_or_main_id};
 use crate::{CommandError, Session};
 
 /// The longest path a command takes: a device inside four groups.
@@ -203,7 +203,7 @@ fn check_group(session: &Session, group: &DeviceGroup) -> Result<(), CommandErro
 
 /// Whether the track the parameters name plays notes.
 fn plays_notes(session: &Session, params: &Value) -> Result<bool, CommandError> {
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     Ok(session.project.track(track).is_some_and(|t| t.content.notes))
 }
 
@@ -215,7 +215,7 @@ pub(crate) fn edit_chain<T>(
     edit: impl FnOnce(&mut Vec<Device>) -> Result<T, CommandError>,
 ) -> Result<T, CommandError> {
     let notes = plays_notes(session, params)?;
-    let mut devices = channel_read(session, params)?.devices.clone();
+    let mut devices = device_channel_read(session, params)?.devices.clone();
     let out = edit(&mut devices)?;
     if suhina_model::count_devices(&devices) > suhina_model::MAX_DEVICES {
         return Err(
@@ -226,7 +226,7 @@ pub(crate) fn edit_chain<T>(
         return Err(format!("device groups nest at most {} deep", suhina_model::MAX_DEVICE_GROUP_DEPTH).into());
     }
     check_chain(session, &devices, notes)?;
-    channel_param(session, params)?.devices = devices;
+    device_channel(session, params)?.devices = devices;
     Ok(out)
 }
 
@@ -450,16 +450,10 @@ fn place_mappings(
 /// `device.duplicate {track, device}`: a copy of a device (a group with everything in it) next
 /// to it. A plug-in's copy starts with the state its project device has.
 pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_id(&session.project, params)?;
+    let track = track_or_main_id(&session.project, params)?;
     // A running plug-in's state as it is now, as device.copy takes it.
     let (heard, _) = session.heard();
-    let heard_devices = heard
-        .tracks
-        .iter()
-        .find(|t| t.id == track)
-        .and_then(|t| t.channel)
-        .and_then(|c| heard.channel(c))
-        .map(|c| c.devices.clone());
+    let heard_devices = heard.channel_of_track(track).map(|c| c.devices.clone());
     edit_chain(session, params, |devices| {
         let path = device_path(devices, params, "device")?;
         let copy = heard_devices

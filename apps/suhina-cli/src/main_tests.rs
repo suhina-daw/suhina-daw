@@ -34,6 +34,7 @@ fn a_project_files_device_params_reach_the_render() {
                     clips: vec![Clip::new(ContentId(1), 0.0, 2.0)],
                 }],
                 markers: Vec::new(),
+                takes: Vec::new(),
             },
             ..Project::default()
         }

@@ -10,6 +10,8 @@ use crate::{ParamEdit, Player};
 #[derive(Default)]
 pub(crate) struct PlayerSync {
     pub(crate) player: Option<Player>,
+    /// A failed replacement can be retried by an explicit output choice.
+    pub(crate) output_open_failed: bool,
     /// Set by an edit command whose changes are device parameters.
     pub(crate) param_edits: Vec<ParamEdit>,
     /// The fader moves of an edit that is only track volumes: sent to a playing engine as

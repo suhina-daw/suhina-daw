@@ -14,7 +14,7 @@ use crate::kit::theme::{self, PAD, Palette};
 use crate::kit::widgets;
 use crate::settings::keymap::{Keymap, Preset, Shortcut, actions};
 use crate::settings::workflow::Setting;
-use crate::settings::{Graphics, Settings};
+use crate::settings::{Descriptions, Graphics, Settings};
 
 const PAGE_WIDTH: f32 = 560.0;
 /// The list of pages on the left, and the gap between it and the page.
@@ -24,10 +24,18 @@ const SIDEBAR_ROW: f32 = 20.0;
 /// The search field over the list of pages.
 const SEARCH_FIELD: f32 = 18.0;
 const LABEL_WIDTH: f32 = 180.0;
+/// The width a row's note has: the page's width less the name column, one line of small text
+/// (a test guard measures the notes against it; a smaller window cuts a note).
+#[cfg(test)]
+pub(crate) const NOTE_WIDTH: f32 = PAGE_WIDTH - LABEL_WIDTH;
 const SETTING_ROW: f32 = 34.0;
+/// Where every setting's control starts: names in one column and controls in the next, lined
+/// up down the page, so the eye runs straight down either.
+const CONTROL_COLUMN: f32 = 240.0;
+/// A setting's row when it is its name and its control alone; its description is the name's
+/// tooltip.
+const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
-/// A folder field on the right of its row; empty shows the default folder.
-const FOLDER_FIELD: f32 = 300.0;
 /// The Browse… button at the end of a path field.
 const BROWSE_WIDTH: f32 = 60.0;
 /// A dropdown on the right of its row (Settings › Audio).
@@ -65,7 +73,7 @@ pub struct About {
     /// The NAM devices' folders ([docs/spec/nam-amp-and-cab.md]) the same way.
     pub nam_models_default: String,
     pub irs_default: String,
-    /// The active project's newest backup, as Settings › General shows it: when and where.
+    /// The active project's newest backup, as Settings › Projects and backups shows it: when and where.
     pub last_backup: String,
     /// The active project's implicit MCP write folder, displayed alongside explicit grants.
     pub mcp_project_folder: Option<String>,
@@ -156,6 +164,8 @@ pub enum PluginRequest {
         all: bool,
     },
     AddFolder(String, suhina_plugins::scan::FolderFormat),
+    /// The add row with nothing typed: the app shows the system's folder picker.
+    PickFolder,
     RemoveFolder(String),
     /// Switch a folder on or off for scans.
     SetFolderEnabled(String, bool),
@@ -256,40 +266,40 @@ pub enum ThemeRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
     #[default]
-    General,
-    Export,
+    Projects,
     Audio,
     Midi,
     Plugins,
+    Devices,
+    Importing,
     Arrangement,
     Session,
     ClipEditor,
-    Transport,
-    DetailArea,
     Browser,
+    Keys,
     Appearance,
     /// Appearance › Themes, a page of its own under Appearance in the list.
     Theme,
-    Shortcuts,
+    Agents,
 }
 
 impl Page {
     /// Every page with its name.
     pub const ALL: [(Page, &'static str); 14] = [
-        (Page::General, "General"),
-        (Page::Export, "Export"),
+        (Page::Projects, "Projects and backups"),
         (Page::Audio, "Audio"),
         (Page::Midi, "MIDI"),
         (Page::Plugins, "Plug-ins"),
+        (Page::Devices, "Devices"),
+        (Page::Importing, "Importing"),
         (Page::Arrangement, "Arrangement"),
-        (Page::Session, "Session and mixer"),
+        (Page::Session, "Launcher and mixer"),
         (Page::ClipEditor, "Clip editor"),
-        (Page::Transport, "Transport"),
-        (Page::DetailArea, "Detail area"),
         (Page::Browser, "Browser"),
+        (Page::Keys, "Keys"),
         (Page::Appearance, "Appearance"),
         (Page::Theme, "Themes"),
-        (Page::Shortcuts, "Shortcuts"),
+        (Page::Agents, "Agents and updates"),
     ];
 
     /// The page's name, as the list shows it.
@@ -300,7 +310,7 @@ impl Page {
 
 /// What the Settings page keeps between frames: the page shown, and the action whose keys are
 /// being set (the next key pressed becomes its key).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PageState {
     pub page: Page,
     /// Settings lives in a separate native viewport until Dock is chosen.
@@ -325,6 +335,8 @@ pub struct PageState {
     pub theme_colour_held: bool,
     /// The audio devices were listed since the Audio page was opened.
     pub audio_listed: Option<bool>,
+    /// A driver picked in the form, applied only once its device is chosen.
+    pub audio_pending: Option<suhina_session::OutputChoice>,
     /// What is typed in the search field: while it has text, the settings that match it are shown
     /// in place of a page.
     pub search: String,
@@ -334,6 +346,10 @@ pub struct PageState {
     pub focused: Option<Id>,
     /// What is typed in the Shortcuts page's own filter: only the actions it matches are listed.
     pub key_filter: String,
+    /// The pages whose Advanced group is unfolded.
+    pub advanced: Vec<Page>,
+    /// The Help dialog over the window is open: how the settings are explained.
+    pub help_open: bool,
 }
 
 impl PageState {
@@ -371,6 +387,8 @@ pub struct Outcome {
     pub audio_output: Option<suhina_session::OutputChoice>,
     /// The audio devices should be listed again.
     pub audio_refresh: bool,
+    /// Ask the active output's owner to open its native ASIO panel.
+    pub audio_control_panel: bool,
     /// A MIDI input port was turned on or off: the app runs `midi.setInput`.
     pub midi_input: Option<(String, bool)>,
     /// A field's Browse… was clicked: the app shows the system's dialog for it.
@@ -404,7 +422,23 @@ pub struct Entry {
     pub draw: Draw,
     /// Whether it is shown with these settings (most are always).
     pub shown: fn(&Settings) -> bool,
+    /// Whether it is a setting, a status readout or a row of commands.
+    pub role: Role,
 }
+
+/// What an entry is. Only settings sit among the settings; a status or a row of commands is set
+/// off at the top of its page (`docs/spec/ui-settings.md` › Adding a setting).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Setting,
+    /// Something the program reports; drawn in a panel.
+    Status,
+    /// Buttons that do something once.
+    Actions,
+}
+
+/// The heading of a page's folded group of rarely changed settings.
+pub const ADVANCED: &str = "Advanced";
 
 /// How an entry draws itself.
 #[derive(Clone, Copy)]
@@ -428,7 +462,7 @@ pub(crate) const fn row(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, Rect),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Row(draw), shown: always, role: Role::Setting }
 }
 
 /// A setting drawn as several rows or a list.
@@ -440,7 +474,7 @@ pub(crate) const fn block(
     keys: &'static [&'static str],
     draw: fn(&mut Cx<'_>, &mut f32),
 ) -> Entry {
-    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always }
+    Entry { page, section, name, note, keys, draw: Draw::Block(draw), shown: always, role: Role::Setting }
 }
 
 impl Entry {
@@ -449,11 +483,26 @@ impl Entry {
         Self { shown, ..self }
     }
 
+    /// A readout of what is happening, not a setting.
+    pub(crate) const fn status(self) -> Self {
+        Self { role: Role::Status, ..self }
+    }
+
+    /// A row of commands, not a setting.
+    pub(crate) const fn actions(self) -> Self {
+        Self { role: Role::Actions, ..self }
+    }
+
     /// Every word is in its name, note, section or page; for the shortcuts, in an action's too.
+    #[cfg(test)]
+    pub(crate) fn matches_words(&self, words: &[String]) -> bool {
+        self.matches(words)
+    }
+
     fn matches(&self, words: &[String]) -> bool {
         let text = format!("{} {} {} {}", self.name, self.note, self.section, self.page.name()).to_lowercase();
         words.iter().all(|word| text.contains(word.as_str()))
-            || (self.page == Page::Shortcuts
+            || (self.page == Page::Keys
                 && actions().iter().any(|a| action_matches(&a.label, &a.id, a.group, "", words)))
     }
 }
@@ -491,7 +540,7 @@ impl Cx<'_> {
     /// The person's explicit MCP write grants; each includes all its subfolders.
     pub fn mcp_write_folders(&mut self, y: &mut f32) {
         let row = setting_row(self.page, y);
-        label(self.painter, row, "MCP allowed write folders", "Each allowed folder includes its subfolders");
+        label(self.painter, row, "More agent write folders", "Each allowed folder includes its subfolders");
         let mut remove = None;
         for (index, folder) in self.settings.mcp_write_folders.iter().enumerate() {
             let row = setting_row(self.page, y);
@@ -535,7 +584,16 @@ impl Cx<'_> {
         field: impl FnOnce(&mut Settings) -> &mut T,
     ) {
         let value = field(self.settings);
-        let rect = control_rect(row, options.len());
+        // Option buttons for up to five choices that exclude each other, a drop-down beyond that.
+        if options.len() > MAX_BUTTONS {
+            let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
+            if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
+                *value = picked;
+                self.outcome.changed = true;
+            }
+            return;
+        }
+        let rect = options_rect(self.ui, row, options);
         if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
@@ -573,7 +631,7 @@ impl Cx<'_> {
             self.ui.add_enabled_ui(inherited, |ui| ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"))).inner;
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, inherited, self.name));
         if !crate::kit::liquid::available(self.ui.ctx()) {
-            response.clone().on_hover_text("Saved for later. To see liquid, select GPU in Appearance > Renderer, enable Animations and restart Suhina.");
+            response.clone().on_hover_text("Saved for later. To see liquid, select GPU in Appearance › Advanced › Graphics renderer, enable Animations and restart Suhina.");
         }
         self.outcome.adjusting |= response.dragged() || response.is_pointer_button_down_on();
         self.outcome.changed |= response.changed();
@@ -629,9 +687,13 @@ impl Cx<'_> {
         }
     }
 
-    /// On and Off for the setting `field` gives.
+    /// A switch for the yes/no setting `field` gives.
     pub fn on_off(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut bool) {
-        self.choose(row, &[("On", true), ("Off", false)], field);
+        let value = field(self.settings);
+        if let Some(on) = switch(self.ui, self.painter, row, self.name, *value) {
+            *value = on;
+            self.outcome.changed = true;
+        }
     }
 
     /// A dropdown on the right of `row` for the setting `field` gives.
@@ -652,9 +714,8 @@ impl Cx<'_> {
     /// in a Browse… button that asks the app for the system's dialog.
     pub fn folder(&mut self, row: Rect, hint: &str, pick: PickField, field: impl FnOnce(&mut Settings) -> &mut String) {
         let name = self.name;
-        // The note is cut where the field starts.
-        self.label =
-            Some(Rect::from_min_size(row.min, Vec2::new(row.width() - FOLDER_FIELD - 8.0 + LABEL_WIDTH, row.height())));
+        // The name is cut where the field starts.
+        self.label = Some(Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, row.height())));
         let browse = Rect::from_min_size(
             Pos2::new(row.right() - BROWSE_WIDTH, row.top() + 1.0),
             Vec2::new(BROWSE_WIDTH, SEGMENT),
@@ -663,8 +724,8 @@ impl Cx<'_> {
             self.outcome.pick = Some(pick);
         }
         let rect = Rect::from_min_size(
-            Pos2::new(row.right() - FOLDER_FIELD, row.top()),
-            Vec2::new(FOLDER_FIELD - BROWSE_WIDTH - 4.0, SEGMENT + 2.0),
+            Pos2::new(control_x(row), row.top()),
+            Vec2::new((row.right() - BROWSE_WIDTH - 4.0 - control_x(row)).max(40.0), SEGMENT + 2.0),
         );
         let value = field(self.settings);
         let edit = self.ui.put(
@@ -685,8 +746,8 @@ impl Cx<'_> {
     /// it changes only through Browse or Reset, each asking first.
     pub fn moved_folder(&mut self, row: Rect, hint: &str, pick: PickField, value: &str) {
         let name = self.name;
-        self.label =
-            Some(Rect::from_min_size(row.min, Vec2::new(row.width() - FOLDER_FIELD - 8.0 + LABEL_WIDTH, row.height())));
+        // The name is cut where the field starts.
+        self.label = Some(Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, row.height())));
         let browse = Rect::from_min_size(
             Pos2::new(row.right() - BROWSE_WIDTH, row.top() + 1.0),
             Vec2::new(BROWSE_WIDTH, SEGMENT),
@@ -711,8 +772,8 @@ impl Cx<'_> {
             self.outcome.folder_reset = Some(pick);
         }
         let rect = Rect::from_min_max(
-            Pos2::new(row.right() - FOLDER_FIELD, row.top()),
-            Pos2::new(reset.left() - 4.0, row.top() + SEGMENT + 2.0),
+            Pos2::new(control_x(row), row.top()),
+            Pos2::new((reset.left() - 4.0).max(control_x(row) + 40.0), row.top() + SEGMENT + 2.0),
         );
         let (text, color) = if value.is_empty() { (hint, theme::text_hint()) } else { (value, theme::text_value()) };
         self.painter.rect_stroke(rect, 2.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
@@ -730,7 +791,7 @@ impl Cx<'_> {
 
     /// The most colour tags the browser may have, kept by the library rather than the settings.
     pub fn tag_limit(&mut self, row: Rect, options: &[(&str, usize)]) {
-        let rect = control_rect(row, options.len());
+        let rect = options_rect(self.ui, row, options);
         if let Some(limit) = segmented(self.ui, self.painter, rect, self.name, options, self.tag_limit) {
             self.outcome.tag_limit = Some(limit);
         }
@@ -740,7 +801,7 @@ impl Cx<'_> {
     pub fn zoom(&mut self, row: Rect) {
         let actual = format!("{} %", self.settings.zoom);
         let options = [("-", Some(-1)), (actual.as_str(), Some(0)), ("+", Some(1))];
-        match segmented(self.ui, self.painter, control_rect(row, 3), self.name, &options, None) {
+        match segmented(self.ui, self.painter, options_rect(self.ui, row, &options), self.name, &options, None) {
             Some(Some(0)) if self.settings.zoom != crate::settings::ZOOM => {
                 self.settings.zoom = crate::settings::ZOOM;
                 self.outcome.changed = true;
@@ -799,6 +860,15 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         theme::text_primary(),
     );
     let close = Rect::from_min_max(Pos2::new(title.right() - 52.0, title.top()), title.max);
+    // Help, beside Close: how each setting's description is shown.
+    let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
+    let help_response = widgets::button_area(ui, help, Id::new("settings-help"), "Settings help");
+    let help_hover = widgets::hover(ui, &help_response);
+    painter.rect_filled(help, 0.0, motion::mix(theme::control_background(), theme::control_hover(), help_hover));
+    widgets::text_in(&painter, help, Align2::CENTER_CENTER, "Help", theme::ui_font(theme::TEXT), theme::text_primary());
+    if help_response.clicked() {
+        state.help_open = true;
+    }
     let response = widgets::button_area(ui, close, Id::new("settings-close"), "Close settings");
     let hover = widgets::hover(ui, &response);
     painter.fill_background(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
@@ -810,7 +880,8 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         theme::ui_font(theme::TEXT),
         theme::text_primary(),
     );
-    let toggle = Rect::from_min_max(pos2(title.right() - 170.0, title.top()), pos2(close.left() - 6.0, title.bottom()));
+    // Undock or dock, left of Help.
+    let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
     if ui.put(toggle, egui::Button::new(label)).clicked() {
         state.window = !state.window;
@@ -833,9 +904,15 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         state.search.clear();
     }
     let searching = !state.search.trim().is_empty();
-    // Escape closes the page, unless it is cancelling a key being set or a search.
-    if response.clicked() || (!escaped && state.capture.is_none() && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
+    // Escape closes the page, unless it is cancelling a key being set or a search, or closing Help.
+    let escape =
+        !escaped && state.capture.is_none() && !state.help_open && ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if response.clicked() || escape {
         outcome.close = true;
+        state.audio_pending = None;
+    }
+    if state.help_open {
+        help_dialog(ui, settings, state, &mut outcome);
     }
 
     // The pages down the left, the one shown beside them; none is lit while searching.
@@ -880,6 +957,40 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         });
     });
     outcome
+}
+
+/// The ways a setting's description can be shown, as the Help dialog offers them.
+const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
+    (Descriptions::Tooltip, "Tooltip: point at a setting's name to read what it does"),
+    (Descriptions::Icon, "? icon: point at the ? next to a setting to read what it does"),
+    (Descriptions::Shown, "Below the name: each setting's description is always shown"),
+];
+
+/// Help over the Settings window: what the names and descriptions are, and how a description is
+/// shown, one choice per line. Escape or Close closes it.
+fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
+    let modal = egui::Modal::new(Id::new("settings-help-dialog")).show(ui.ctx(), |ui| {
+        ui.set_width(360.0);
+        ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
+        ui.add_space(6.0);
+        let text = "Each setting's name says what it does. Choose how to see the longer description of each setting:";
+        ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(theme::text_secondary()));
+        ui.add_space(6.0);
+        for (choice, label) in DESCRIPTION_CHOICES {
+            let text = egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL));
+            if ui.radio(settings.setting_descriptions == choice, text).clicked()
+                && settings.setting_descriptions != choice
+            {
+                settings.setting_descriptions = choice;
+                outcome.changed = true;
+            }
+        }
+        ui.add_space(8.0);
+        ui.button(egui::RichText::new("Close").font(theme::ui_font(theme::TEXT))).clicked()
+    });
+    if modal.inner || modal.should_close() {
+        state.help_open = false;
+    }
 }
 
 /// A control that takes the keyboard focus (Tab) is scrolled into view.
@@ -928,16 +1039,21 @@ fn page_body(
     };
     let mut y = page.top();
     let mut heading: Option<(Page, &str)> = None;
-    // Size defaults, tuning and Advanced form one interdependent group in search results.
-    let sizes_match = !words.is_empty()
-        && entries().iter().any(|e| e.page == Page::Arrangement && e.section == "Track sizes" && e.matches(&words));
+    // Size defaults, tuning and the exact-heights switch under Advanced form one interdependent
+    // group in search results.
+    let sizes = |e: &Entry| {
+        e.page == Page::Arrangement && (e.section == "Track sizes" || e.keys == ["arrangement_sizes_advanced"])
+    };
+    let sizes_match = !words.is_empty() && entries().iter().any(|e| sizes(e) && e.matches(&words));
     for entry in entries() {
-        let listed = if words.is_empty() {
-            entry.page == shown
-        } else {
-            entry.matches(&words) || (sizes_match && entry.page == Page::Arrangement && entry.section == "Track sizes")
-        };
+        let listed =
+            if words.is_empty() { entry.page == shown } else { entry.matches(&words) || (sizes_match && sizes(entry)) };
         if !listed || !(entry.shown)(cx.settings) {
+            continue;
+        }
+        let advanced = entry.section == ADVANCED && words.is_empty();
+        let unfolded = cx.state.advanced.contains(&entry.page);
+        if advanced && !unfolded && heading == Some((entry.page, ADVANCED)) {
             continue;
         }
         // A section title over a hairline where the section changes; the first sits level with
@@ -951,8 +1067,31 @@ fn page_body(
             } else {
                 format!("{} › {}", entry.page.name(), entry.section)
             };
-            section_title(&painter, page, &mut y, &title);
+            if advanced {
+                // The group is folded until its heading is clicked.
+                let rect = Rect::from_min_size(Pos2::new(page.left(), y), Vec2::new(page.width(), SIDEBAR_ROW));
+                let text = if unfolded { "Hide advanced settings" } else { "Show advanced settings" };
+                let response =
+                    widgets::button_area(cx.ui, rect, Id::new(("settings-advanced", entry.page.name())), text);
+                let marker = if unfolded { "v  Advanced" } else { ">  Advanced" };
+                let color = motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(cx.ui, &response));
+                widgets::text_in(&painter, rect, Align2::LEFT_CENTER, marker, theme::ui_font(theme::TEXT_SMALL), color);
+                painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(theme::border()));
+                y = rect.bottom() + 8.0;
+                if response.clicked() {
+                    if unfolded {
+                        cx.state.advanced.retain(|p| *p != entry.page);
+                    } else {
+                        cx.state.advanced.push(entry.page);
+                    }
+                }
+            } else {
+                section_title(&painter, page, &mut y, &title);
+            }
             heading = Some((entry.page, entry.section));
+            if advanced && !unfolded {
+                continue;
+            }
         }
         cx.name = entry.name;
         cx.note = None;
@@ -961,8 +1100,30 @@ fn page_body(
             Draw::Row(draw) => {
                 let r = setting_row(page, &mut y);
                 draw(&mut cx, r);
-                let note = cx.note.take();
-                label(&painter, cx.label.take().unwrap_or(r), entry.name, note.as_deref().unwrap_or(entry.note));
+                let status = cx.note.take();
+                let name_rect = cx.label.take().unwrap_or(r);
+                let how = cx.settings.setting_descriptions;
+                // Shown under the name, the description is the row's second line, with what the
+                // setting reports now (the last backup) after it.
+                let second = match (how, status) {
+                    (Descriptions::Shown, Some(status)) => Some(format!("{}: {status}", entry.note)),
+                    (Descriptions::Shown, None) => Some(entry.note.to_string()),
+                    (_, status) => status,
+                };
+                let height = wrapped_label(&painter, r, name_rect, entry.name, second.as_deref());
+                describe(cx.ui, &painter, r, entry.name, entry.note, how);
+                y = r.top() + height;
+            }
+            Draw::Block(draw) if entry.role == Role::Status => {
+                // A readout in a panel of its own, set off from the settings below.
+                let backdrop = painter.add(egui::Shape::Noop);
+                let top = y;
+                y += 6.0;
+                draw(&mut cx, &mut y);
+                y += 6.0;
+                let panel = Rect::from_min_max(Pos2::new(page.left() - 6.0, top), Pos2::new(page.right(), y));
+                painter.set(backdrop, egui::Shape::rect_filled(panel, 0.0, theme::panel_background()));
+                y += 4.0;
             }
             Draw::Block(draw) => draw(&mut cx, &mut y),
         }
@@ -999,7 +1160,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
             painter.rect_filled(row, 0.0, theme::panel_hover().gamma_multiply(0.25 * hover));
             painter.rect_filled(row, 0.0, theme::control_background().gamma_multiply(0.8 * selected));
         }
-        // A page under another (Theme under Appearance) is stepped in.
+        // A page under another (Themes under Appearance) is stepped in.
         let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
         let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
         let color =
@@ -1025,7 +1186,16 @@ pub(crate) fn shortcuts_block(cx: &mut Cx<'_>, y: &mut f32) {
 /// Plug-ins › Library: folders, scanning and what was found.
 pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
     let bottom = cx.page.bottom();
-    cx.outcome.plugins = plugin_section(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins);
+    if let Some(request) = plugin_folders(cx.ui, cx.painter, cx.page, y, bottom, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
+}
+
+/// Plug-ins › Actions: scanning and the plug-in manager.
+pub(crate) fn plugin_buttons(cx: &mut Cx<'_>, y: &mut f32) {
+    if let Some(request) = plugin_actions(cx.ui, cx.painter, cx.page, y, cx.plugins) {
+        cx.outcome.plugins = Some(request);
+    }
 }
 
 /// Clip editor › Workflow: the workflow settings (the Mouse-first switches among them), their own
@@ -1033,25 +1203,25 @@ pub(crate) fn plugin_library(cx: &mut Cx<'_>, y: &mut f32) {
 pub(crate) fn mouse_switches(cx: &mut Cx<'_>, y: &mut f32) {
     for setting in Setting::ALL {
         let r = setting_row(cx.page, y);
-        label(cx.painter, r, setting.name(), setting.note());
         let options: Vec<(&str, usize)> = setting.short_choices().iter().enumerate().map(|(i, c)| (*c, i)).collect();
         let current = cx.keymap.workflow().get(setting);
-        let rect = control_rect(r, options.len());
+        let rect = options_rect(cx.ui, r, &options);
         if let Some(index) = segmented(cx.ui, cx.painter, rect, setting.name(), &options, current) {
             cx.keymap.set_workflow(setting, index);
             cx.outcome.keymap_changed = true;
         }
+        let how = cx.settings.setting_descriptions;
+        let second = (how == Descriptions::Shown).then(|| setting.note());
+        let height = wrapped_label(cx.painter, r, r, setting.name(), second);
+        describe(cx.ui, cx.painter, r, setting.name(), setting.note(), how);
+        *y = r.top() + height;
     }
-    let note = Rect::from_min_size(Pos2::new(cx.page.left(), *y), Vec2::new(cx.page.width(), 14.0));
-    widgets::text_in(
-        cx.painter,
-        note,
-        Align2::LEFT_CENTER,
-        "Kept in keymap.json with the keys; changing one makes the workflow Custom",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
-    *y = note.bottom();
+    let color = theme::text_secondary();
+    let text = "Kept in keymap.json with the keys. Changing any of these makes the workflow Custom.";
+    let galley = cx.painter.layout(text.to_string(), theme::ui_font(theme::TEXT_SMALL), color, cx.page.width() - 8.0);
+    let height = galley.size().y;
+    cx.painter.galley(Pos2::new(cx.page.left(), *y), galley, color);
+    *y += height + 8.0;
 }
 
 /// MIDI › MIDI inputs: each port with On and Off.
@@ -1750,9 +1920,8 @@ fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[Strin
     words.iter().all(|word| text.contains(word.as_str()))
 }
 
-/// Folders, scanning, what was found in a line, and the button that opens the plug-in manager,
-/// which lists it all. Returns what the user asked for.
-fn plugin_section(
+/// The plug-in folders, each on or off, and a field to add one. Returns what the user asked for.
+fn plugin_folders(
     ui: &mut Ui,
     painter: &egui::Painter,
     page: Rect,
@@ -1823,7 +1992,8 @@ fn plugin_section(
             }
         }
     }
-    // A folder to add, and the format it holds: VST2 shows, for when it is hosted.
+    // A folder to add, and the format it holds: VST2 shows, for when it is hosted. Add with
+    // nothing typed asks for the system's folder picker instead.
     *y += 4.0;
     let r = line(y, 20.0);
     let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
@@ -1881,11 +2051,35 @@ fn plugin_section(
     painter.fill_background(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if (response.clicked() || entered) && !plugins.new_folder.trim().is_empty() {
-        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string(), plugins.new_format));
+    if response.clicked() || entered {
+        // Nothing typed: the system's folder picker, so Add always does something.
+        let folder = plugins.new_folder.trim();
+        request = if folder.is_empty() {
+            Some(PluginRequest::PickFolder)
+        } else {
+            Some(PluginRequest::AddFolder(folder.to_string(), plugins.new_format))
+        };
     }
     *y += 8.0;
+    request
+}
 
+/// Scan, Rescan all, and the button that opens the plug-in manager, which lists it all. Returns
+/// what the user asked for.
+fn plugin_actions(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    page: Rect,
+    y: &mut f32,
+    plugins: &mut PluginsView,
+) -> Option<PluginRequest> {
+    let mut request = None;
+    let small = theme::ui_font(theme::TEXT_SMALL);
+    let line = |y: &mut f32, height: f32| {
+        let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), height));
+        *y += height;
+        rect
+    };
     // Scanning.
     let r = line(y, SETTING_ROW);
     let summary = if plugins.scanning {
@@ -1948,7 +2142,10 @@ struct Chosen<'a> {
 }
 
 fn chosen<'a>(settings: &Settings, about: &'a About) -> Chosen<'a> {
-    let choice = settings.output_choice();
+    chosen_output(settings.output_choice(), about)
+}
+
+fn chosen_output(choice: suhina_session::OutputChoice, about: &About) -> Chosen<'_> {
     let default_host = about.audio_hosts.iter().find(|h| h.default).or(about.audio_hosts.first());
     let host = match &choice.host {
         Some(name) => about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)),
@@ -1977,8 +2174,18 @@ pub(crate) fn audio_output(cx: &mut Cx<'_>, y: &mut f32) {
         cx.outcome.audio_refresh = true;
         cx.state.audio_listed = Some(true);
     }
-    let picked = output_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
-    use_output(cx, picked);
+    let active = cx.settings.output_choice();
+    let shown = cx.state.audio_pending.as_ref().unwrap_or(&active);
+    let picked = output_rows(cx.ui, cx.painter, cx.page, y, shown, cx.about, cx.state.audio_pending.is_some());
+    if let Some(picked) = picked {
+        if matches!(picked, OutputPick::ControlPanel) {
+            cx.outcome.audio_control_panel = true;
+            return;
+        }
+        let picked = restore_driver(picked, cx.settings, cx.about);
+        let apply = select_output(&mut cx.state.audio_pending, &active, picked);
+        use_output(cx, apply);
+    }
 }
 
 /// Audio › Cue: the cue's output pair and volume.
@@ -1992,16 +2199,106 @@ pub(crate) fn audio_now(cx: &mut Cx<'_>, y: &mut f32) {
     cx.outcome.audio_refresh |= now_rows(cx.ui, cx.painter, cx.page, y, cx.settings, cx.about);
 }
 
+fn native_panel_visible(
+    pending: bool,
+    host: Option<&str>,
+    device: Option<&str>,
+    live: Option<&suhina_session::OutputInfo>,
+) -> bool {
+    !pending
+        && host == Some("ASIO")
+        && live.is_some_and(|live| live.host == "ASIO" && device == Some(live.device.as_str()))
+}
+
+/// The native panel belongs beside the device it configures.
+fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
+    label(painter, r, "Device settings", "Open the active driver's buffer and hardware settings");
+    let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
+    let response =
+        widgets::button_area(ui, rect, Id::new("asio-control-panel"), "Open the active ASIO driver's control panel");
+    let hover = widgets::hover(ui, &response);
+    painter.fill_background(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
+    widgets::text_in(
+        painter,
+        rect,
+        Align2::CENTER_CENTER,
+        "Control panel…",
+        theme::ui_font(theme::TEXT_SMALL),
+        theme::text_primary(),
+    );
+    response.clicked()
+}
+
+/// Selecting a driver only changes the form. The device commits the pair through
+/// the same audio.setOutput command as every other output change.
+enum OutputPick {
+    ControlPanel,
+    Driver(suhina_session::OutputChoice),
+    Device(suhina_session::OutputChoice),
+    Setting(suhina_session::OutputChoice),
+}
+
+/// A remembered, available pair can be committed atomically; an unknown or missing
+/// device still requires an explicit choice, never an intermediate default open.
+fn restore_driver(picked: OutputPick, settings: &Settings, about: &About) -> OutputPick {
+    let OutputPick::Driver(mut choice) = picked else { return picked };
+    if choice.host == settings.output_choice().host {
+        return OutputPick::Driver(choice);
+    }
+    let default = about.audio_hosts.iter().find(|h| h.default);
+    let host = choice
+        .host
+        .as_ref()
+        .and_then(|name| about.audio_hosts.iter().find(|h| h.name.eq_ignore_ascii_case(name)))
+        .or_else(|| choice.host.is_none().then_some(default).flatten());
+    let remembered = settings.remembered_device(choice.host.as_deref(), default.map(|h| h.name.as_str()));
+    if let (Some(host), Some(device)) = (host, remembered) {
+        let available = match &device {
+            Some(name) => host.devices.iter().any(|d| &d.name == name),
+            None => host.devices.iter().any(|d| d.default),
+        };
+        if available {
+            choice.device = device;
+            return OutputPick::Device(choice);
+        }
+    }
+    OutputPick::Driver(choice)
+}
+
+fn select_output(
+    pending: &mut Option<suhina_session::OutputChoice>,
+    active: &suhina_session::OutputChoice,
+    picked: OutputPick,
+) -> Option<suhina_session::OutputChoice> {
+    match picked {
+        OutputPick::ControlPanel => None,
+        OutputPick::Driver(choice) => {
+            *pending = (choice.host != active.host).then_some(choice);
+            None
+        }
+        OutputPick::Device(choice) => {
+            *pending = None;
+            Some(choice)
+        }
+        OutputPick::Setting(choice) if pending.is_some() => {
+            *pending = Some(choice);
+            None
+        }
+        OutputPick::Setting(choice) => Some(choice),
+    }
+}
+
 /// The rows of Audio › Output; returns a new choice.
 fn output_rows(
     ui: &Ui,
     painter: &egui::Painter,
     page: Rect,
     y: &mut f32,
-    settings: &Settings,
+    choice: &suhina_session::OutputChoice,
     about: &About,
-) -> Option<suhina_session::OutputChoice> {
-    let Chosen { choice, default_host, host, device } = chosen(settings, about);
+    pending: bool,
+) -> Option<OutputPick> {
+    let Chosen { choice, default_host, host, device } = chosen_output(choice.clone(), about);
     let row = |y: &mut f32| setting_row(page, y);
     let mut picked: Option<suhina_session::OutputChoice> = None;
     // Host.
@@ -2011,13 +2308,20 @@ fn output_rows(
         vec![(format!("Default ({})", default_host.map_or("none", |h| h.name.as_str())), None)];
     options.extend(about.audio_hosts.iter().map(|h| (h.name.clone(), Some(h.name.clone()))));
     if let Some(host) = choice_dropdown(ui, painter, r, "Driver", &options, &choice.host) {
-        picked = choice.with_params(&serde_json::json!({ "host": host.unwrap_or_default() })).ok();
+        return choice
+            .with_params(&serde_json::json!({ "host": host.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Driver);
     }
     // Device.
     let r = row(y);
-    let note = match (&choice.device, device) {
-        (Some(name), None) => format!("{name} is not there; the default output plays"),
-        _ => "The output device on that driver".to_string(),
+    let note = if pending {
+        "Choose a device to apply the driver change".to_string()
+    } else {
+        match (&choice.device, device) {
+            (Some(name), None) => format!("{name} is not there; the default output plays"),
+            _ => "The output device on that driver".to_string(),
+        }
     };
     label(painter, r, "Device", &note);
     let default_device = host.and_then(|h| h.devices.iter().find(|d| d.default)).map_or("none", |d| d.name.as_str());
@@ -2025,8 +2329,28 @@ fn output_rows(
     if let Some(host) = host {
         options.extend(host.devices.iter().map(|d| (d.name.clone(), Some(d.name.clone()))));
     }
-    if let Some(name) = choice_dropdown(ui, painter, r, "Device", &options, &choice.device) {
-        picked = choice.with_params(&serde_json::json!({ "device": name.unwrap_or_default() })).ok();
+    let mut device_options: Vec<_> = options.into_iter().map(|(label, value)| (label, Some(value))).collect();
+    let selected = if pending {
+        device_options.insert(0, ("Choose a device…".into(), None));
+        None
+    } else {
+        Some(choice.device.clone())
+    };
+    if let Some(Some(name)) = choice_dropdown(ui, painter, r, "Device", &device_options, &selected) {
+        return choice
+            .with_params(&serde_json::json!({ "device": name.unwrap_or_default() }))
+            .ok()
+            .map(OutputPick::Device);
+    }
+    // Only expose the panel for the device actually running, never a pending choice.
+    if native_panel_visible(
+        pending,
+        host.map(|h| h.name.as_str()),
+        device.map(|d| d.name.as_str()),
+        about.audio_live.as_ref(),
+    ) && driver_panel_row(ui, painter, row(y))
+    {
+        return Some(OutputPick::ControlPanel);
     }
     // Sample rate.
     let r = row(y);
@@ -2065,9 +2389,9 @@ fn output_rows(
     } else if device_sets {
         let note = match declares {
             Some((min, max)) if min < max => {
-                format!("The device's own buffer, from its driver: {min} to {max} frames")
+                format!("Requested driver buffer: {min} to {max} frames")
             }
-            Some((min, _)) => format!("The device's own buffer; its driver allows {min} frames only"),
+            Some((min, _)) => format!("Requested driver buffer: {min} frames only"),
             None => "The device's own buffer; its driver sets the size".to_string(),
         };
         ("Buffer size", note)
@@ -2086,19 +2410,18 @@ fn output_rows(
     if let Some(frames) = choice_dropdown(ui, painter, r, name, &options, &choice.buffer_frames) {
         picked = choice.with_params(&serde_json::json!({ "bufferFrames": frames.unwrap_or(0) })).ok();
     }
-    // Exclusive mode, WASAPI only.
-    let r = row(y);
-    let note = if !wasapi {
-        "WASAPI only; ASIO always has the device to itself"
-    } else if device.is_some_and(|d| !d.exclusive) {
-        "This device does not allow it; it plays shared"
-    } else {
-        "The device plays only Suhina, with less delay; other programs are not heard on it"
-    };
-    label(painter, r, "Exclusive mode", note);
-    let on_off = [("On", true), ("Off", false)];
-    if let Some(on) = segmented(ui, painter, control_rect(r, 2), "Exclusive mode", &on_off, choice.exclusive) {
-        picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+    // Exclusive mode belongs to WASAPI, not to the ASIO driver panel.
+    if wasapi {
+        let r = row(y);
+        let note = if device.is_some_and(|d| !d.exclusive) {
+            "This device does not allow it; it plays shared"
+        } else {
+            "The device plays only Suhina; other programs are not heard on it"
+        };
+        label(painter, r, "Exclusive mode", note);
+        if let Some(on) = switch(ui, painter, r, "Exclusive mode", choice.exclusive) {
+            picked = choice.with_params(&serde_json::json!({ "exclusive": on })).ok();
+        }
     }
 
     // Input device (ADR 0017): off until chosen, so nothing opens a microphone unasked.
@@ -2126,7 +2449,7 @@ fn output_rows(
         picked = choice.with_params(&serde_json::json!({ "input": input.as_text() })).ok();
     }
 
-    picked
+    picked.map(OutputPick::Setting)
 }
 
 /// The rows of Audio › Cue; returns a new choice.
@@ -2194,9 +2517,9 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
                 if info.failed { "; the device reported an error" } else { "" }
             ),
         ),
-        None => ("None: no project is playing".to_string(), "-".to_string()),
+        None => ("No project is playing".to_string(), "Not playing".to_string()),
     };
-    label(painter, r, "Output", &output);
+    label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::new("audio-refresh"), "List the audio devices again");
     let hover = widgets::hover(ui, &response);
@@ -2210,7 +2533,13 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
         theme::text_primary(),
     );
     let r = row(y);
-    label(painter, r, "Latency", &format!("Engine to speaker, measured: {latency}"));
+    label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
+    let r = row(y);
+    let buffers = about.audio_live.as_ref().map_or_else(
+        || "No active output".to_string(),
+        |info| format!("Engine: {} frames · Driver callback: {} frames", info.engine_block, info.buffer_frames),
+    );
+    label(painter, r, "Active buffers", &buffers);
     // A key on a MIDI controller (ADR 0017): the engine keeps less ahead while a track is armed.
     let r = row(y);
     let key = match &about.audio_live {
@@ -2221,9 +2550,9 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
             "Up to {:.1} ms now; arming a track keeps one block ahead, so less. Smaller buffers are quicker",
             info.live_latency_ms
         ),
-        None => "-".to_string(),
+        None => "Not playing".to_string(),
     };
-    label(painter, r, "Key to sound", &key);
+    label(painter, r, "Delay when you play a key", &key);
     let r = row(y);
     let input = match &about.audio_live {
         Some(info) => match &info.input {
@@ -2236,9 +2565,9 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
             ),
             None => "None: no input device is open".to_string(),
         },
-        None => "-".to_string(),
+        None => "Not playing".to_string(),
     };
-    label(painter, r, "Input now", &input);
+    label(painter, r, "Recording input", &input);
     response.clicked()
 }
 
@@ -2288,7 +2617,7 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
     let ports = match &about.midi_inputs {
         Ok(ports) if ports.is_empty() => {
             let r = setting_row(page, y);
-            label(painter, r, "None", "No MIDI controller is connected; one plugged in is found within seconds");
+            label(painter, r, "No MIDI controller found", "Plug one in and it appears here within a few seconds");
             return None;
         }
         Ok(ports) => ports,
@@ -2307,9 +2636,8 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
             (_, false, _) => "Off".to_string(),
         };
         label(painter, r, &port.name, &note);
-        let on_off = [("On", true), ("Off", false)];
         let name = format!("MIDI input {}", port.name);
-        if let Some(on) = segmented(ui, painter, control_rect(r, 2), &name, &on_off, port.enabled) {
+        if let Some(on) = switch(ui, painter, r, &name, port.enabled) {
             picked = Some((port.name.clone(), on));
         }
     }
@@ -2341,10 +2669,8 @@ fn choice_dropdown<T: Clone + PartialEq>(
     options: &[(String, T)],
     current: &T,
 ) -> Option<T> {
-    let field = Rect::from_min_size(
-        Pos2::new(row.right() - DROPDOWN_FIELD, row.top() + 1.0),
-        Vec2::new(DROPDOWN_FIELD, SEGMENT + 2.0),
-    );
+    let left = control_x(row).min(row.right() - DROPDOWN_FIELD);
+    let field = Rect::from_min_size(Pos2::new(left, row.top() + 1.0), Vec2::new(row.right() - left, SEGMENT + 2.0));
     let shown = options.iter().find(|(_, v)| v == current).map_or("-", |(text, _)| text.as_str());
     let response = widgets::button_area(ui, field, Id::new(("audio-setting", name)), format!("{name}: {shown}"));
     widgets::form_dropdown(ui, painter, field, &response, shown);
@@ -2358,6 +2684,51 @@ fn choice_dropdown<T: Clone + PartialEq>(
         }
     });
     picked
+}
+
+/// A setting's name in the first column of `row`, cut to `name_rect`, and under it `status` when
+/// the setting reports one (the last backup, a folder that is missing). Returns the height the
+/// row needs. The setting's description is its name's tooltip (`describe`), not a line of its own.
+fn wrapped_label(painter: &egui::Painter, row: Rect, name_rect: Rect, name: &str, status: Option<&str>) -> f32 {
+    let width = name_rect.width().min(CONTROL_COLUMN - 8.0);
+    let top = Rect::from_min_size(name_rect.min, Vec2::new(width, 16.0));
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
+    let Some(status) = status.filter(|s| !s.is_empty()) else { return LINE_ROW };
+    let color = theme::text_secondary();
+    let galley =
+        painter.layout(status.to_string(), theme::ui_font(theme::TEXT_SMALL), color, (row.width() - 8.0).max(40.0));
+    let height = galley.size().y;
+    painter.galley(Pos2::new(row.left(), row.top() + 18.0), galley, color);
+    LINE_ROW.max(18.0 + height + 6.0)
+}
+
+/// The description of the setting named `name`, as Settings › Help
+/// asks: a tooltip on its name, or on a ? drawn after the name. (Shown under the name, it is the
+/// row's second line instead, drawn by [`wrapped_label`].)
+fn describe(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, description: &str, how: Descriptions) {
+    let font = theme::ui_font(theme::TEXT);
+    let name_width = widgets::text_width(ui, name, font).min(CONTROL_COLUMN - 26.0);
+    let area = match how {
+        Descriptions::Tooltip => Rect::from_min_size(row.min, Vec2::new(CONTROL_COLUMN - 8.0, LINE_ROW)),
+        Descriptions::Icon => {
+            let icon =
+                Rect::from_center_size(Pos2::new(row.left() + name_width + 12.0, row.top() + 8.0), Vec2::splat(12.0));
+            painter.circle_stroke(icon.center(), 5.5, egui::Stroke::new(1.0, theme::text_hint()));
+            widgets::text_in(
+                painter,
+                icon,
+                Align2::CENTER_CENTER,
+                "?",
+                theme::ui_font(theme::TEXT_TINY),
+                theme::text_secondary(),
+            );
+            icon.expand(3.0)
+        }
+        Descriptions::Shown => return,
+    };
+    let response = ui.interact(area, Id::new(("setting-description", name)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, description));
+    response.on_hover_text(description);
 }
 
 /// A setting's name and a note under it, on the left of its row.
@@ -2375,10 +2746,47 @@ fn label(painter: &egui::Painter, row: Rect, name: &str, note: &str) {
     );
 }
 
+/// The most choices shown as option buttons; more are a drop-down.
+const MAX_BUTTONS: usize = 5;
+/// The width of a switch.
+const SWITCH_WIDTH: f32 = 34.0;
+
+/// A switch on the right of `row` for a yes/no setting: one control, labelled with the setting's
+/// name. Returns the new value when it is clicked.
+fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> Option<bool> {
+    let track = Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
+    let response = ui.interact(track, Id::new(("setting-switch", name)), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, name));
+    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
+    let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+    painter.rect_filled(track, 0.0, motion::mix(idle, theme::text_value(), lit));
+    let knob_width = SEGMENT - 4.0;
+    let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
+    let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
+    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), theme::window_background(), lit));
+    response.clicked().then_some(!on)
+}
+
+/// Where a segmented control for `options` sits on the right of a row: every part wide enough
+/// for the longest text, so none is cut off.
+fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let widest = options.iter().map(|(text, _)| widgets::text_width(ui, text, font.clone())).fold(0.0_f32, f32::max);
+    let part = (widest + 16.0).max(48.0).ceil();
+    let count = options.len().max(1) as f32;
+    let width = part * count + (count - 1.0);
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
+}
+
+/// Where a setting's control starts in `row`: the second column.
+fn control_x(row: Rect) -> f32 {
+    row.left() + CONTROL_COLUMN
+}
+
 /// Where a segmented control with `parts` parts sits on the right of a row.
 fn control_rect(row: Rect, parts: usize) -> Rect {
     let width = 64.0 * parts as f32;
-    Rect::from_min_size(Pos2::new(row.right() - width, row.top() + 1.0), Vec2::new(width, SEGMENT))
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
 }
 
 /// A segmented control (components › Dropdown and segmented control). Returns the option
@@ -2456,55 +2864,5 @@ pub(super) fn edit_rgba(ui: &mut Ui, rgba: &mut [u8; 4], alpha: egui::color_pick
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_theme_search_matches_names_ids_and_variant_names() {
-        let variants = vec![("nord@frost".to_string(), "Frost".to_string())];
-        assert!(theme_matches("", "nord", "Nord", &variants));
-        assert!(theme_matches("nor", "nord", "Nord", &variants));
-        assert!(theme_matches("frost", "nord", "Nord", &variants));
-        assert!(!theme_matches("frost", "dracula", "Dracula", &variants));
-        assert!(theme_matches("test-new", "test-new-theme", "Kajo", &[]));
-    }
-
-    #[test]
-    fn settings_tree_does_not_cover_the_material_with_opaque_rows() {
-        let ctx = egui::Context::default();
-        motion::set_enabled(&ctx, false);
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            page_list(ui, ui.painter(), Rect::from_min_size(Pos2::ZERO, Vec2::new(140.0, 300.0)), Some(Page::General));
-        });
-        assert!(!output.shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(shape) if shape.fill.is_opaque())));
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn form_fields_have_transparent_fills() {
-        let ctx = egui::Context::default();
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            input_style(ui);
-            assert_eq!(ui.visuals().text_edit_bg_color(), egui::Color32::TRANSPARENT);
-        });
-        output.textures_delta.clear();
-    }
-
-    #[test]
-    fn the_output_now_says_which_chosen_device_it_waits_for() {
-        let info = suhina_session::OutputInfo {
-            host: "WASAPI".into(),
-            device: "Speakers".into(),
-            sample_rate: 48_000,
-            engine_block: 512,
-            ..Default::default()
-        };
-        let usb = suhina_session::OutputChoice { device: Some("USB Audio".into()), ..Default::default() };
-        assert_eq!(now_playing(&info, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames)");
-        let waiting = suhina_session::OutputInfo { fallback: true, ..info };
-        assert_eq!(now_playing(&waiting, &usb), "Speakers (WASAPI, 48000 Hz, 512 frames), until USB Audio is back");
-        let asio = suhina_session::OutputChoice { host: Some("ASIO".into()), ..Default::default() };
-        assert!(now_playing(&waiting, &asio).ends_with("until ASIO is back"));
-    }
-}
+#[path = "settings_view_tests.rs"]
+mod tests;

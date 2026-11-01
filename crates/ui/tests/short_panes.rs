@@ -382,7 +382,7 @@ fn the_x_at_the_end_of_the_toolbar_closes_the_editor() {
 }
 
 #[test]
-fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
+fn double_clicking_a_clip_opens_the_closed_editor_at_its_height() {
     let mut h = piano_app();
     let bottom = detail_bottom(&h);
     pull_to(&mut h, bottom - 250.0);
@@ -390,10 +390,25 @@ fn selecting_a_clip_opens_the_closed_editor_at_its_height() {
     let x = hide_button(&h).expect("a Hide editor button").center();
     click(&mut h, x);
     assert!(!piano_shows(&h));
-    // A click on the clip again opens it, as tall as it was.
+    // A click only selects the clip: the editor stays closed (#916).
     h.get_by_label(CLIP).click();
     h.run();
-    assert!(piano_shows(&h), "selecting the clip opens the editor");
+    assert!(!piano_shows(&h), "a click does not open the closed editor");
+    // A double-click opens it, as tall as it was.
+    let at = h.get_by_label(CLIP).rect().center();
+    // A second apart from the click before, so the two make a double-click of their own.
+    let ready = h.ctx.input(|i| i.time) + 1.0;
+    while h.ctx.input(|i| i.time) < ready {
+        h.step();
+    }
+    for _ in 0..2 {
+        h.hover_at(at);
+        h.drag_at(at);
+        h.drop_at(at);
+        h.step();
+    }
+    h.run();
+    assert!(piano_shows(&h), "double-clicking the clip opens the editor");
     let again = bottom - splitter(&h).bottom();
     assert!((again - height).abs() < 1.5, "at its height: {again}, was {height}");
 }
@@ -482,7 +497,7 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
 /// lets the detail area be dragged up to its default height: the cap that keeps the area no
 /// taller than its panels never holds it under that height (PR #727, a tester's report).
 #[test]
-fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
+fn a_device_row_alone_is_open_at_full_height_or_closed() {
     let mut project = demo_project();
     let keys = project.tracks.iter().find(|t| t.name == "Keys").and_then(|t| t.channel).expect("Keys has a channel");
     // Only a plug-in on the track, its editor not embedded: a short panel.
@@ -503,9 +518,25 @@ fn a_short_chain_does_not_hold_the_detail_area_under_its_default_height() {
     let bottom = detail_bottom(&h);
     let header = h.get_by_label("Track Keys").rect();
     click(&mut h, pos2(header.left() + 30.0, header.center().y));
-    // Down to a short area, then up past the default height.
-    pull_to(&mut h, bottom - 80.0);
+    // Down to a short area: the row stays whole, never cut to an in-between height.
+    pull_to(&mut h, bottom - 150.0);
+    let kept = bottom - splitter(&h).bottom();
+    assert!((kept - 200.0).abs() < 1.5, "the device row keeps its full height: {kept}");
     pull_to(&mut h, bottom - 400.0);
     let height = bottom - splitter(&h).bottom();
-    assert!(height >= 199.0, "the area goes up to its default height at least: {height}");
+    assert!((height - 200.0).abs() < 1.5, "the standalone device row stays at 200 px: {height}");
+    pull_to(&mut h, bottom - 20.0);
+    assert!(splitter(&h).bottom() >= bottom - 1.0, "dragging down collapses the device row");
+    pull_to(&mut h, bottom - 350.0);
+    assert!((bottom - splitter(&h).bottom() - 200.0).abs() < 2.0, "reopening retains the 200 px ceiling");
+}
+
+#[test]
+fn midi_clip_devices_keeps_the_resizable_editor_area() {
+    let mut h = piano_app();
+    h.get_by_label("Show Devices").click();
+    h.run();
+    let start = splitter(&h).top();
+    pull_to(&mut h, start - 100.0);
+    assert!(splitter(&h).top() < start - 80.0, "the MIDI clip Devices tab can still grow");
 }

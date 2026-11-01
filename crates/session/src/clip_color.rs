@@ -72,7 +72,7 @@ pub(crate) fn set_clip_color(session: &mut Session, params: &Value) -> Result<Va
 pub(crate) fn rename_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
     let p = &mut session.project;
-    let name = p.track(track).map(|t| t.name.clone()).ok_or("the track is missing")?;
+    let name = p.track(track).map(|_| p.shown_track_name(track)).ok_or("the track is missing")?;
     let mut contents: Vec<suhina_model::ContentId> = Vec::new();
     if let Some(lane) = p.arrangement.lanes.iter().find(|l| l.track == Some(track)) {
         contents.extend(lane.clips.iter().map(|c| c.content));

@@ -261,7 +261,47 @@ pub(crate) fn build(
             .collect();
         chain.set_sends(sends);
     }
+    // The main channel's chain comes last, after everything that plays into the main output; a
+    // node render stops below it.
+    if source.is_none()
+        && let Some(main) = main_chain(project, audio, sample_rate, plugins, assets)
+    {
+        chains.push(main);
+    }
     (chains, latency)
+}
+
+/// Whether the main channel runs a chain of its own (#687): it holds devices, or its volume,
+/// pan or mute follows a lane. Then its volume and mute apply after that chain, over the whole
+/// mix, rather than scaling every track as they otherwise do.
+pub(crate) fn main_runs_chain(project: &Project) -> bool {
+    project.main_channel().is_some_and(|main| {
+        !main.devices.is_empty() || suhina_model::automation::MIXER_PARAMS.iter().any(|p| main.automated(p))
+    })
+}
+
+/// The main channel's chain: its devices over the mix that reaches the main output (sources,
+/// tracks, groups and returns), then its volume, mute and lanes; `None` when it needs none
+/// ([`main_runs_chain`]). Allocates.
+fn main_chain(
+    project: &Project,
+    audio: &crate::AudioPool,
+    sample_rate: u32,
+    plugins: &mut Plugins,
+    assets: &crate::DeviceAssets,
+) -> Option<Chain> {
+    if !main_runs_chain(project) {
+        return None;
+    }
+    let main = project.main_channel()?;
+    let mut chain = Chain::build(project, audio, TrackId::MAIN, u32::MAX, (1.0, 1.0), sample_rate, plugins, assets)
+        .unwrap_or_else(|| Chain::passthrough(TrackId::MAIN, u32::MAX, sample_rate));
+    let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
+    chain.mix = MixLanes::new(main, frames_per_beat, true, f64::from(sample_rate));
+    let volume = if main.mute || !main.volume.is_finite() { 0.0 } else { main.volume.max(0.0) };
+    chain.set_main_post(volume as f32);
+    chain.is_bus = true;
+    Some(chain)
 }
 
 /// Whether `track` plays into `source`'s channel through the channel tree — the source node's
@@ -320,8 +360,14 @@ pub(crate) fn gains_until(
     let mut volume = 1.0;
     let mut visited = Vec::new();
     let mut next = Some(channel);
+    // A main channel with a chain applies its volume after it (#687).
+    let main_chain = main_runs_chain(project);
     while let Some(c) = next.take() {
-        if Some(c.id) == until || visited.len() > MAX_HOPS || visited.contains(&c.id) {
+        if Some(c.id) == until
+            || visited.len() > MAX_HOPS
+            || visited.contains(&c.id)
+            || (main_chain && c.role == ChannelRole::Master)
+        {
             break;
         }
         visited.push(c.id);
@@ -329,6 +375,7 @@ pub(crate) fn gains_until(
         next = c.output.and_then(|id| project.channel(id));
     }
     if until.is_none()
+        && !main_runs_chain(project)
         && let Some(master) =
             project.channels.iter().find(|c| c.role == ChannelRole::Master && !visited.contains(&c.id))
     {

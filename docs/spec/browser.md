@@ -3,7 +3,7 @@ description: How the browser behaves: places, categories, search, the tree, prev
 read_when: browser, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-10-30
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -24,7 +24,10 @@ covers:
 A single sample dropped on a Sampler waveform replaces that instrument's source
 through `device.loadSample`; it creates no clip or track. This applies to browser
 items and files dragged from the operating system. MIDI and multi-file drops are
-not accepted by the waveform. Other drop targets keep their existing behavior.
+not accepted by the waveform. A single sample dropped on the devices of a MIDI track that has
+none (the detail area showing its chain) adds a Sampler that plays it; dropped on that track's
+lane, header or slot it is a clip, as on any track, and the empty MIDI track becomes an audio
+track for it (#945). Other drop targets keep their existing behavior.
 
 The panel at the side of the main window where samples, MIDI files, presets, built-in
 instruments and effects and installed plug-ins are found, previewed and dragged into the
@@ -155,7 +158,7 @@ selected or under the pointer; clicking it previews the sample (a second click s
 
 **Double-click or Enter** (in the search field) on an item adds it to the selected track (see
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
-window does (Settings › General › When opening a project).
+window does (Settings › Projects and backups › Open projects in).
 
 **Right-click menu:** Pin or Unpin; Tag ▸ (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
 click anywhere on the entry sets or clears it; a *New tag…* field that
@@ -170,13 +173,18 @@ While the search field has the cursor: Up and Down move the selection in the res
 adds the selected item(s) to the selected track; Escape clears the search, a second Escape
 gives the keyboard back to the window.
 
+After a click on a row of the list (and until a click outside the browser), the arrow keys move
+through it before the window's shortcuts see them: Up and Down select the row above or below
+(previewing it as a click does), Right opens a closed folder or heading and goes into an open one,
+Left closes an open one or goes up to the folder or heading the row is in.
+
 ## Preview
 
 The preview strip shows the selected sample or MIDI file: a play button, the name, duration,
 tempo (BPM) and key when known, and a waveform (a sample) or a strip of the notes (a MIDI file),
 with the part played so far brighter and a playhead.
 
-- **Auto-play** (Settings › Browser › Auto-play, on by default): selecting a sample
+- **Preview selected file** (Settings › Browser › Preview selected file, on by default): selecting a sample
   or MIDI file previews it. Off, previewing takes the play button or a click on the waveform.
 - **Clicking the waveform** previews from there. The waveform is drawn as
   [waveforms](waveforms.md) says: the whole file across the strip, both channels when there is
@@ -188,6 +196,12 @@ with the part played so far brighter and a playhead.
 - Selecting something else, Escape in the search field, the play button again, or dropping
   items from the browser into the project stops it. Dragging does not: a press held still
   counts as the start of a drag, and the preview it started goes on.
+- **The play button follows what plays (#836).** It shows Stop from the click that starts a
+  preview, while the sample is still being read, until the sample has played to its end, and
+  whenever any preview sounds, even one started from another item: a sounding preview always has
+  a Stop to end it. A second click on a row's play button while its sample is still being read
+  stops it rather than starting it again. Stop silences whatever the preview voice plays, even a
+  preview the browser no longer knows it started.
 - **A MIDI file** previews through the selected track's instrument, a built-in one or a
   plug-in, when that track has one; otherwise through the FM synth with its first voice. All
   of the file's MIDI tracks sound together, at 120 BPM or the file's first tempo.
@@ -237,24 +251,28 @@ notes (in the file's order; a type 0 file gives one clip). The clip is named aft
 the MIDI track's name, when it has one: "groove – Hats").
 
 **Several files** (and a MIDI file's several clips) go onto **one track**, one after another:
-in the Arrangement each starts where the one before ends; in the Session they go down the
+in the Arrangement each starts where the one before ends; in the Launcher they go down the
 track's slots from the slot they were dropped on. With **Ctrl** held when releasing, they go
 onto **one track each**, side by side: in the Arrangement all at the dropped beat, in the
-Session all in the dropped scene, the first on the track it was dropped on and the others on
-new tracks after it. Settings › General › Dropping files › Several files flips this (one track each
-without Ctrl).
+Launcher all in the dropped scene, the first on the track it was dropped on and the others on
+new tracks after it. Settings › Importing › Dropping files › Several files flips this (one track each
+without Ctrl). While they hover, the label says which (`Add 3 clips, one track each: Bass and 2 new
+tracks`) and, in the Arrangement, the empty space below the tracks is outlined from the dropped
+beat, where the new tracks come. Files dragged in from the system (Explorer, Finder) show the same
+label and outline and land where the pointer is, as files from the browser do: on Windows, which
+sends the window no pointer moves during such a drag, the pointer is read from the screen.
 
 | Dropped on | Result |
 |---|---|
-| An Arrangement lane | Clips from the beat under the pointer, on the grid the control bar's value sets at that zoom ([arrangement editing](arrangement-editing.md) › The grid; Alt or `none`: no snap). The clips replace what they cover, unless the stacking settings allow it ([arrangement editing](arrangement-editing.md)). |
-| A Session slot (empty or not) | Clips into that slot and the ones below it; a clip already there is replaced. Scenes are added at the bottom when there are more clips than slots. |
+| An Arrangement lane | Clips from the beat under the pointer, on the Arrangement's grid at that zoom ([arrangement editing](arrangement-editing.md) › The grid; Alt or snap off: no snap). The clips replace what they cover, unless the stacking settings allow it ([arrangement editing](arrangement-editing.md)). |
+| A Launcher slot (empty or not) | Clips into that slot and the ones below it; a clip already there is replaced. Scenes are added at the bottom when there are more clips than slots. |
 | The empty area | New tracks, see below. |
 
 **A track takes the files it can play:** samples go to an audio track, MIDI files to a note
 track. Files the dropped-on track cannot take go onto a new track of their kind inserted after
 it (one track for all of them, or one each with Ctrl).
 
-**The empty area** is the space right of the last track in the Session (above the scenes, or
+**The empty area** is the space right of the last track in the Launcher (above the scenes, or
 in the scene row dropped on) and the space under the last lane in the Arrangement (at the
 dropped beat). Dropping there makes new tracks at the end of the regular tracks (before the
 returns): one audio track for the samples and one note track for the MIDI files, or with Ctrl
@@ -262,11 +280,11 @@ one track per clip. A new track made for one file is named after it; otherwise "
 "MIDI <n>".
 
 **The empty area shows two buttons**, **+ MIDI track** and **+ Audio track** (at its top in the
-Session, at its left in the Arrangement), which add an empty track of that kind. A drop on
+Launcher, at its left in the Arrangement), which add an empty track of that kind. A drop on
 either works like a drop on the empty area.
 
 **Warping.** A sample whose tempo is known (see *Tempo and key*) is warped: it plays at the
-project's tempo, stretched with the stretch mode in Settings › General › Warp mode (Rhythmic by
+project's tempo, stretched with the stretch mode in Settings › Importing › Warp mode (Rhythmic by
 default, the `rhythmic` stretch mode), and its length in beats comes from its own tempo. A
 sample without a known tempo is not warped: it plays at its own speed, and its length in beats
 is its duration at the project's tempo when it is dropped.
@@ -322,18 +340,57 @@ is added. Other files are an error in the status bar.
 
 | Dropped on | Result |
 |---|---|
-| A track (its header, an Arrangement lane, a Session slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track is refused with a message. A track plays one instrument: an instrument added to a track that has one takes its place (effects after it stay), as one undo step. |
+| A track (its header, an Arrangement lane, a Launcher slot, the detail area showing its chain) | The device is added to that track's chain: an instrument first, an effect last. An instrument on an audio track is refused with a message. A track plays one instrument: an instrument added to a track that has one takes its place (effects after it stay), as one undo step. |
 | The empty area | A new track with the device: a note track for an instrument, an audio track for an effect, named after the device. |
 
 A **preset** is its device with the preset's values: a DX7 voice is the FM synth playing that
 voice (a bank adds its first voice; a voice row inside the bank adds that voice). Several
 devices dropped together are added in the order they were selected.
 
+### Copying samples out
+
+Samples can be copied out of Suhina into a folder of one's own, for a collection of picked
+sounds (#865). The originals stay where they are; nothing is ever moved or overwritten.
+
+- **Copy to folder…** in a sample row's right-click menu (and a point's on the
+  [sample map](sample-map.md)) copies that sample, or every selected sample when the row is one
+  of them, into a folder the system's folder dialog picks (`library.copyTo`). A name taken in
+  that folder gets a number (`Kick 2.wav`, `Kick 3.wav`); a file that is gone is left out and the
+  status line says how many were not found.
+- **Dragging out:** samples dragged from the list or the map out of every Suhina window (not
+  over the main window, nor the map's own window) become a drag of files. Dropped on a folder in
+  the file manager, or on the desktop, they are copied there. The drag offers a copy only, so the
+  file manager's move key (Shift on Windows) still copies. A drag that stays in Suhina lands on
+  tracks, slots and devices as before. Windows and macOS; on Linux, where the window toolkit has
+  no drag of files out yet, the status line points to Copy to folder… instead.
+
+### Moving and copying samples between folders
+
+Samples dragged in the list and dropped on one of the browser's folders (an added folder or a
+folder inside one) go into that folder (#943). The folder row under the pointer lights up while
+it is a place to drop, and the status line says what a drop there does.
+
+- **Move or copy:** with Settings › Browser › *Dropping on a folder* at Ask (the default),
+  a question asks Move, Copy or Cancel. Its *Remember my choice* box sets the setting to the
+  answer, so the next drop does it without asking. The setting can also be Move or Copy. Ctrl
+  held at the drop always copies, Shift always moves, whatever the setting says.
+- **A name already taken:** when the folder has a file named as one of the samples, a warning
+  says so before anything moves: *Keep both* goes on, the new file getting a number; *Skip*
+  leaves out the samples whose name is taken; *Cancel* moves or copies nothing.
+- **Copy** is `library.copyTo`, as Copy to folder… does. **Move** is `library.moveTo`: each file
+  is renamed into the folder when both are on one drive, or copied and the original removed once
+  the copy is whole. A name taken in the folder gets a number (`Kick 2.wav`); nothing is
+  overwritten. The file's pin, its places among the recent items and its colour tags go with it,
+  and the folders that held it and hold it now are read again, so the list shows it in its new
+  place.
+- A file already in that folder, one that is gone, and one an open project plays (its audio
+  decoded from that path) is left where it is; the status line says how many.
+
 ### Adding without dragging
 
 Enter in the search field or a double-click on an item adds it to the selected track:
 a device to its chain; samples and MIDI files in the Arrangement at the play start marker, in
-the Session from the first empty slot down. With no track selected, a new track is made as for
+the Launcher from the first empty slot down. With no track selected, a new track is made as for
 the empty area.
 
 ## Colour tags
@@ -398,6 +455,8 @@ the CLI can do the same.
 | `library.removeTag` | `name` | removes a tag from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item |
 | `library.setPluginsView` | `view` | which plug-ins the Plug-ins category lists: `instruments` (default) or `effects` ([plug-in browsing](plugin-browsing.md)) |
+| `library.moveTo` | `items`, `folder` | moves files (at most 4096) into a folder that exists, named as `library.copyTo` names copies; their pins, recent places and tags go with them and the folders are read again; returns what was `moved` (from, to), what is `missing`, what was `kept` (in that folder already, or played by an open project) and what `failed`; not to an agent attached to the app (#943) |
+| `library.copyTo` | `items`, `folder` | copies files (at most 4096) into a folder that exists, under their own names or the first numbered one free (`Kick 2.wav`); never overwrites; returns what was `copied` (from, to), what is `missing` and what `failed` (#865) |
 | `library.findFiles` | `names`, `folder?` | finds files by name for missing files: in the folders' index and the active project's folder, or by walking `folder` ([missing files](missing-files.md)) |
 
 **Project** (on the active project, one undo step each):
@@ -405,7 +464,7 @@ the CLI can do the same.
 | Command | Params | Does |
 |---|---|---|
 | `track.add` | `kind?` (`audio`, `midi`), `name?`, `after?`, `device?`, `sd?`, `preset?`, `voice?` | adds a track with its mixer channel, clip slots for every scene and an Arrangement lane, after track `after` or at the end of the regular tracks; with `device` (a built-in id or a plug-in from `plugin.list`), `sd` or `preset`, the device too, and `kind` follows from it; `.sd` and built-in instruments and MIDI effects create MIDI tracks |
-| `clip.addFiles` | `paths`, `track?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group), from beat `start` in the Arrangement or from `scene` (1-based) in the Session (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
+| `clip.addFiles` | `paths`, `track?`, `start?`, `scene?`, `separate?`, `stack?`, `warp?` | places samples, MIDI files and Stems files as in *Files*: on `track` (or new tracks when it is missing; a Stems file's group goes into `track` when it is a group), from beat `start` in the Arrangement or from `scene` (1-based) in the Launcher (exactly one of the two); `separate` gives each clip a track; `warp` is the stretch mode for samples with a known tempo (`rhythmic` by default); returns the clips, the new tracks, the Stems groups (`groups`) and what was `skipped` |
 | `device.add` | adds `preset?` and `voice?` (1–32) | the built-in effect or instrument with a preset's values |
 
 **Preview** (Transport kind, on the active project's player): `preview.play {path, from?, track?, gain?}`
@@ -414,7 +473,8 @@ when it has none); `preview.stop`. `launcher.state` reports `preview` (`playing`
 
 Over MCP, every path a command reads (`paths`, `path`, `preset`, `folder`, a file `item`) must
 be inside the server's read root, and `library.addFolder` and `library.removeFolder` are refused:
-the user chooses the browser's folders ([`mcp.md`](../mcp.md)).
+the user chooses the browser's folders ([`mcp.md`](../mcp.md)). `library.copyTo` reads its
+`items` below the read root and writes only into a `folder` below the write root.
 
 ## Limits
 

@@ -42,6 +42,7 @@ fn sd_device() -> Device {
         state: graph.to_sd().ok().map(String::into_bytes),
         params: Vec::new(),
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     }
 }
@@ -587,6 +588,415 @@ fn malformed_point_lists_change_nothing() {
         assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params}");
     }
     assert_eq!(session.project(), &before);
+}
+
+fn pan_points(session: &Session) -> Vec<(f64, f64)> {
+    lanes(session).iter().find(|l| l.param == "pan").map_or_else(Vec::new, |l| {
+        l.points.iter().map(|p| ((p.beat * 1e6).round() / 1e6, (p.value * 1e6).round() / 1e6)).collect()
+    })
+}
+
+/// A range of a lane copies with its edge values and pastes anywhere, onto another parameter at
+/// the same heights; Ctrl+D's duplicate goes right after the range; a deleted range keeps the
+/// envelope outside it (#916).
+#[test]
+fn an_automation_range_copies_pastes_duplicates_and_deletes() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, -1.0), (4.0, 1.0)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    run(&mut session, "automation.copy", json!({ "track": 1, "param": "pan", "start": 0, "end": 4 })).unwrap();
+    // Pasted at beat 8: the rise again, the lane holding its last value up to there.
+    let done = run(&mut session, "automation.paste", json!({ "track": 1, "param": "pan", "start": 8 })).unwrap();
+    assert_eq!((done["start"].as_f64(), done["end"].as_f64()), (Some(8.0), Some(12.0)));
+    assert_eq!(pan_points(&session), [(0.0, -1.0), (4.0, 1.0), (8.0, 1.0), (8.0, -1.0), (12.0, 1.0)]);
+    // Onto the mute lane: the bottom is off, the top on.
+    run(&mut session, "automation.paste", json!({ "track": 1, "param": "mute", "start": 0 })).unwrap();
+    let mute = lanes(&session).iter().find(|l| l.param == "mute").unwrap();
+    assert_eq!(mute.points.first().map(|p| p.value), Some(0.0));
+    assert_eq!(mute.points.last().map(|p| p.value), Some(1.0));
+    // Duplicated right after itself, answering the copy's range.
+    let done = run(&mut session, "automation.duplicate", json!({ "track": 1, "param": "pan", "start": 8, "end": 12 }))
+        .unwrap();
+    assert_eq!((done["start"].as_f64(), done["end"].as_f64()), (Some(12.0), Some(16.0)));
+    let points = pan_points(&session);
+    assert!(points.contains(&(16.0, 1.0)) && points.contains(&(12.0, -1.0)), "{points:?}");
+    // Deleting 1 to 3 keeps the values at 1 and 3, so the line outside is as it was.
+    run(&mut session, "automation.deleteRange", json!({ "track": 1, "param": "pan", "start": 1, "end": 3 })).unwrap();
+    assert_eq!(pan_points(&session)[..4], [(0.0, -1.0), (1.0, -0.5), (3.0, 0.5), (4.0, 1.0)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(pan_points(&session)[..2], [(0.0, -1.0), (4.0, 1.0)]);
+}
+
+/// A shape fills a range over the parameter's whole travel, a repeating one as many times as
+/// asked; the envelope outside the range stays (#916).
+#[test]
+fn a_shape_fills_an_automation_range() {
+    let mut session = Session::new(project());
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "pan", "start": 4, "end": 8, "shape": "square", "cycles": 2 }),
+    )
+    .unwrap();
+    assert_eq!(
+        pan_points(&session),
+        [
+            (0.0, 0.0),
+            (4.0, 0.0),
+            (4.0, 1.0),
+            (5.0, 1.0),
+            (5.0, -1.0),
+            (6.0, -1.0),
+            (6.0, 1.0),
+            (7.0, 1.0),
+            (7.0, -1.0),
+            (8.0, -1.0),
+            (8.0, 0.0)
+        ]
+    );
+    // A shape on a lane with no automation makes the lane.
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "volume", "start": 0, "end": 4, "shape": "ramp_up" }),
+    )
+    .unwrap();
+    let volume = lanes(&session).iter().find(|l| l.param == "volume").unwrap();
+    assert_eq!(volume.points.first().map(|p| p.value), Some(0.0), "the bottom is silence");
+    assert!(volume.points.last().is_some_and(|p| (p.value - suhina_model::automation::MAX_VOLUME).abs() < 1e-9));
+    assert!(
+        run(
+            &mut session,
+            "automation.insertShape",
+            json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "spiral" })
+        )
+        .is_err()
+    );
+    assert!(run(&mut session, "automation.copy", json!({ "track": 1, "param": "pan", "start": 4, "end": 4 })).is_err());
+}
+
+/// With `point`, a shape fills the segment from the point before it, between the two points'
+/// heights; `automation.addPoint` with `shape` gives the new point's segment that shape (#916).
+#[test]
+fn a_shape_fills_a_points_segment_and_a_new_points_segment() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.0), (4.0, 1.0)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    run(&mut session, "automation.insertShape", json!({ "track": 1, "param": "pan", "point": 1, "shape": "square" }))
+        .unwrap();
+    let points = pan_points(&session);
+    assert_eq!(points.first(), Some(&(0.0, 0.0)));
+    assert_eq!(points.last(), Some(&(4.0, 1.0)));
+    assert!(points.iter().all(|&(b, v)| (0.0..=4.0).contains(&b) && (0.0..=1.0).contains(&v)), "{points:?}");
+    assert!(points.len() > 6, "a square once a beat: {points:?}");
+    // A new point at 8 with a falling curve: its segment from 4 takes the bent line.
+    run(
+        &mut session,
+        "automation.addPoint",
+        json!({ "track": 1, "param": "pan", "beat": 8, "value": -1, "shape": "curve_down" }),
+    )
+    .unwrap();
+    let after: Vec<(f64, f64)> = pan_points(&session).into_iter().filter(|(b, _)| *b >= 4.0).collect();
+    assert_eq!(after.last(), Some(&(8.0, -1.0)));
+    assert!(
+        lanes(&session)
+            .iter()
+            .find(|l| l.param == "pan")
+            .is_some_and(|l| l.points.iter().any(|p| p.curve.bend_of().is_some_and(|b| b > 0.5)))
+    );
+    assert!(
+        run(
+            &mut session,
+            "automation.insertShape",
+            json!({ "track": 1, "param": "pan", "point": 99, "shape": "sine" })
+        )
+        .is_err()
+    );
+}
+
+/// Less depth swings a shape around the lane's value where the range starts; a sine is a few bent
+/// segments a cycle; Smooth points thins dense points and keeps the line; Stretch scales the
+/// points around their middle (#916).
+#[test]
+fn shapes_take_a_depth_and_ranges_smooth_and_stretch() {
+    let mut session = Session::new(project());
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "square", "depth": 0.5 }),
+    )
+    .unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert!(values.iter().all(|v| (-0.5..=0.5).contains(v)), "half the travel around the middle: {values:?}");
+    assert!(values.contains(&0.5) && values.contains(&-0.5), "{values:?}");
+    // A sine over 4 beats, once a beat: five points a cycle at most, bent.
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "pan", "start": 8, "end": 12, "shape": "sine", "cycles": 4 }),
+    )
+    .unwrap();
+    let sine: Vec<(f64, f64)> = pan_points(&session).into_iter().filter(|(b, _)| (8.0..=12.0).contains(b)).collect();
+    assert!(sine.len() <= 18, "{sine:?}");
+    // Dense points along a straight rise thin to its two ends.
+    for i in 0..=20 {
+        let beat = 16.0 + f64::from(i) * 0.2;
+        let value = -1.0 + f64::from(i) * 0.1;
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let done = run(&mut session, "automation.simplify", json!({ "track": 1, "param": "pan", "start": 16, "end": 20 }))
+        .unwrap();
+    assert_eq!(done["removed"], json!(19));
+    let line: Vec<(f64, f64)> = pan_points(&session).into_iter().filter(|(b, _)| (16.0..=20.0).contains(b)).collect();
+    assert_eq!(line, [(16.0, -1.0), (20.0, 1.0)]);
+    // Stretch at a half: the square's swing halves around its middle.
+    run(
+        &mut session,
+        "automation.scaleRange",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "factor": 0.5 }),
+    )
+    .unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().filter(|p| p.0 <= 4.0).map(|p| p.1).collect();
+    assert!(values.iter().all(|v| (-0.25 - 1e-9..=0.25 + 1e-9).contains(v)), "{values:?}");
+    assert!(
+        run(
+            &mut session,
+            "automation.scaleRange",
+            json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "factor": 9 })
+        )
+        .is_err()
+    );
+}
+
+/// Stretch on picked points moves only them, around the middle of the line over their span: the
+/// troughs of a wave picked alone deepen and its peaks stay (#916).
+#[test]
+fn stretching_picked_points_moves_only_them() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5), (3.0, -0.5), (4.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    run(&mut session, "automation.scaleRange", json!({ "track": 1, "param": "pan", "points": [1, 3], "factor": 2 }))
+        .unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values, [0.5, -1.0, 0.5, -1.0, 0.5]);
+}
+
+/// Scale around the bottom of the lane takes a share of each place; a scaling that replaces the
+/// one before starts from the line as it was, so 200 % and back to 100 % puts back peaks the lane's
+/// edge had cut (#916).
+#[test]
+fn scaling_around_the_bottom_and_back_restores_the_line() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.0), (1.0, 0.8), (2.0, 0.0)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let scale = |factor: f64, again: bool| {
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": factor, "around": "middle",
+                "continue": again, "replace": again })
+    };
+    run(&mut session, "automation.scaleRange", scale(2.0, false)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| p.1).collect();
+    assert_eq!(values[1], 1.0, "the peak is cut at the lane's top: {values:?}");
+    run(&mut session, "automation.scaleRange", scale(1.0, true)).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| (p.1 * 1e9).round() / 1e9).collect();
+    assert_eq!(values, [0.0, 0.8, 0.0]);
+    // Around the bottom (full left), a half: each place halves toward it.
+    let bottom = json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 0.5, "around": "bottom" });
+    run(&mut session, "automation.scaleRange", bottom).unwrap();
+    let values: Vec<f64> = pan_points(&session).iter().map(|p| (p.1 * 1e9).round() / 1e9).collect();
+    assert_eq!(values, [-0.5, -0.1, -0.5]);
+}
+
+/// Smooth points keeps a sine a sine: the line after it stays within a few hundredths of the
+/// line before it everywhere, curves and all, with fewer points (#916).
+#[test]
+fn smoothing_a_sine_keeps_its_shape() {
+    use suhina_model::automation::{Plain, value_at};
+    let mut session = Session::new(project());
+    // A sine of 16 straight points a beat, over 4 beats.
+    for i in 0..=64 {
+        let beat = f64::from(i) / 16.0;
+        let value = (std::f64::consts::TAU * beat).sin() * 0.8;
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let lane = |s: &Session| lanes(s).iter().find(|l| l.param == "pan").unwrap().points.clone();
+    let before = lane(&session);
+    run(&mut session, "automation.simplify", json!({ "track": 1, "param": "pan", "start": 0, "end": 4 })).unwrap();
+    let after = lane(&session);
+    assert!(after.len() < before.len() / 2, "{} -> {}", before.len(), after.len());
+    for i in 0..=400 {
+        let beat = f64::from(i) / 100.0;
+        let (old, new) =
+            (value_at(&before, beat, false, &Plain).unwrap(), value_at(&after, beat, false, &Plain).unwrap());
+        // 2 % of the pan's travel (-1 to 1) is 0.04; a little more for the old straight pieces.
+        assert!((old - new).abs() < 0.06, "at beat {beat}: {old} -> {new}");
+    }
+}
+
+/// Smooth rounds a square's jumps into eased steps that pass the middle at the jump's beat, and a
+/// triangle's tip into a curve that stays under it; undo brings the sharp line back (#916).
+#[test]
+fn smooth_rounds_jumps_and_corners() {
+    use suhina_model::automation::{Plain, value_at};
+    let mut session = Session::new(project());
+    let lane = |s: &Session| lanes(s).iter().find(|l| l.param == "pan").unwrap().points.clone();
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "square", "cycles": 2 }),
+    )
+    .unwrap();
+    let square = lane(&session);
+    let jumps = |points: &[suhina_model::AutomationPoint]| {
+        points
+            .windows(2)
+            .filter(|w| w[0].beat > 0.01 && w[0].beat < 3.99 && (w[1].beat - w[0].beat).abs() < 1e-9)
+            .count()
+    };
+    assert!(jumps(&square) > 0, "{square:?}");
+    let done = run(
+        &mut session,
+        "automation.smooth",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "amount": 1 }),
+    )
+    .unwrap();
+    assert!(done["rounded"].as_u64().unwrap() > 0, "{done}");
+    let smooth = lane(&session);
+    assert_eq!(jumps(&smooth), 0, "{smooth:?}");
+    // At a jump's beat the eased step is halfway; just after it, it has not reached the top yet.
+    let jump = square.windows(2).find(|w| w[0].beat > 0.01 && (w[1].beat - w[0].beat).abs() < 1e-9).unwrap();
+    let (from, to, at) = (jump[0].value, jump[1].value, jump[0].beat);
+    let middle = value_at(&smooth, at, false, &Plain).unwrap();
+    assert!((middle - (from + to) / 2.0).abs() < 1e-6, "{middle} between {from} and {to}");
+    let soon = value_at(&smooth, at + 0.05, false, &Plain).unwrap();
+    assert!((soon - to).abs() > 1e-3 && (soon - from).abs() > (to - from).abs() / 2.0, "{soon}");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(lane(&session), square);
+
+    // A triangle's tip: the corner stays, the line on either side bends into it.
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, -1.0), (1.0, 1.0), (2.0, -1.0)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    run(&mut session, "automation.smooth", json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "amount": 0.5 }))
+        .unwrap();
+    let round = lane(&session);
+    assert_eq!(round.len(), 5, "{round:?}");
+    assert!(round.iter().any(|p| p.beat == 1.0 && p.value == 1.0), "{round:?}");
+    let near = value_at(&round, 0.9, false, &Plain).unwrap();
+    assert!(near > 0.6 && near < 1.0, "the straight line is at 0.6 there, the rounded one above it: {near}");
+}
+
+/// Scale steps that continue one another are one undo step, as a slider's drag is (#916).
+#[test]
+fn continued_scaling_is_one_undo_step() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, 0.5), (1.0, -0.5), (2.0, 0.5)] {
+        run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": beat, "value": value }))
+            .unwrap();
+    }
+    let before = pan_points(&session);
+    let scale = |continued: bool| json!({ "track": 1, "param": "pan", "start": 0, "end": 2, "factor": 1.2, "continue": continued });
+    run(&mut session, "automation.scaleRange", scale(false)).unwrap();
+    run(&mut session, "automation.scaleRange", scale(true)).unwrap();
+    run(&mut session, "automation.scaleRange", scale(true)).unwrap();
+    assert_ne!(pan_points(&session), before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(pan_points(&session), before);
+}
+
+/// A slider's live values replace one another (`continue` with `replace`): each runs on the line
+/// as the step found it, a value that changes nothing (Smooth on a sine) leaves the line and the
+/// history as they were, and one undo takes the whole drag back (#916).
+#[test]
+fn replacing_live_values_starts_from_the_line_as_it_was() {
+    let mut session = Session::new(project());
+    let lane = |s: &Session| lanes(s).iter().find(|l| l.param == "pan").unwrap().points.clone();
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    run(
+        &mut session,
+        "automation.insertShape",
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "sine", "cycles": 2 }),
+    )
+    .unwrap();
+    let sine = lane(&session);
+    let smooth = |amount: f64, continued: bool| {
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "amount": amount,
+                "continue": continued, "replace": continued })
+    };
+    // A sine's segments are bent already: Smooth leaves it, however often it is asked.
+    for (i, amount) in [0.2, 0.5, 0.9].into_iter().enumerate() {
+        run(&mut session, "automation.smooth", smooth(amount, i > 0)).unwrap();
+        assert_eq!(lane(&session), sine);
+    }
+    // Undo takes the sine back out, as nothing was smoothed in between.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_ne!(lane(&session), sine);
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(lane(&session), sine);
+
+    // Shapes put in again with replace: each from the line before the first, one undo for all.
+    let mut session = Session::new(project());
+    run(&mut session, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    let line = lane(&session);
+    let shape = |depth: f64, continued: bool| {
+        json!({ "track": 1, "param": "pan", "start": 0, "end": 4, "shape": "square", "depth": depth,
+                "center": 0.5, "continue": continued, "replace": continued })
+    };
+    run(&mut session, "automation.insertShape", shape(1.0, false)).unwrap();
+    run(&mut session, "automation.insertShape", shape(0.5, true)).unwrap();
+    run(&mut session, "automation.insertShape", shape(0.25, true)).unwrap();
+    let mut once = Session::new(project());
+    run(&mut once, "automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0 })).unwrap();
+    run(&mut once, "automation.insertShape", shape(0.25, false)).unwrap();
+    assert_eq!(lane(&session), lane(&once), "the last value, from the line as it was");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(lane(&session), line);
+}
+
+/// Volume points picked at the bottom of the lane (silent) rise with the rest when moved up
+/// together, from -70 dB; moved back down to the bottom they are silent again (#916).
+#[test]
+fn silent_volume_points_move_up_with_the_rest() {
+    let mut session = Session::new(project());
+    for (beat, value) in [(0.0, json!("-inf")), (1.0, json!(-6)), (2.0, json!("-inf"))] {
+        run(
+            &mut session,
+            "automation.addPoint",
+            json!({ "track": 1, "param": "volume", "beat": beat, "value": value }),
+        )
+        .unwrap();
+    }
+    let volume = |s: &Session| lanes(s).iter().find(|l| l.param == "volume").unwrap().points.clone();
+    run(
+        &mut session,
+        "automation.movePoints",
+        json!({ "track": 1, "param": "volume", "points": [0, 1, 2], "value": 40 }),
+    )
+    .unwrap();
+    let db: Vec<f64> = volume(&session).iter().map(|p| (20.0 * p.value.log10() * 100.0).round() / 100.0).collect();
+    assert_eq!(db, [-30.0, 6.0, -30.0]);
+    run(
+        &mut session,
+        "automation.movePoints",
+        json!({ "track": 1, "param": "volume", "points": [0, 2], "value": -40 }),
+    )
+    .unwrap();
+    let points = volume(&session);
+    assert_eq!((points[0].value, points[2].value), (0.0, 0.0));
 }
 
 /// A curve whose points lie beyond the box can overshoot its own points; two halves could not

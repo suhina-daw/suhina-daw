@@ -52,14 +52,17 @@ pub(crate) struct Layout {
 impl Layout {
     /// The layout for a plug-in on `track`: its enabled audio clips whose files the pool holds.
     pub(crate) fn of(project: &Project, audio: &AudioPool, track: TrackId) -> Self {
-        let name = project.track(track).map_or_else(String::new, |t| t.name.clone());
+        let name = project.shown_track_name(track);
         let order =
             project.tracks.iter().position(|t| t.id == track).map_or(0, |i| u32::try_from(i).unwrap_or(u32::MAX));
         let map = project.transport.tempo_map(1.0);
         let mut files: Vec<(String, String)> = Vec::new();
         let mut regions = Vec::new();
         let clips = project.arrangement.lanes.iter().filter(|l| l.track == Some(track)).flat_map(|l| &l.clips);
-        for clip in clips.filter(|c| c.enabled) {
+        // With a clip host only the clips that name it are its regions (#990); a track-wide ARA
+        // plug-in from before has every audio clip of its track.
+        let hosted = crate::clip_ara::has_host(project, track);
+        for clip in clips.filter(|c| c.enabled && (c.ara || !hosted)) {
             if regions.len() >= MAX_ARA_OBJECTS || files.len() >= MAX_ARA_OBJECTS {
                 break;
             }

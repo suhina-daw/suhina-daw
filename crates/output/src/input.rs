@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
 use suhina_engine::MAX_INPUT_CHANNELS;
 use suhina_session::InputChoice;
@@ -49,12 +49,11 @@ pub(crate) fn open(
         .ok_or_else(|| format!("the audio host {host_name} is gone"))?;
     let host = cpal::host_from_id(host_id).map_err(|e| e.to_string())?;
     let device = match choice {
-        InputChoice::Named(name) => host
-            .input_devices()
-            .map_err(|e| e.to_string())?
+        InputChoice::Named(name) => devices::input_devices(&host)?
+            .into_iter()
             .find(|d| devices::same_name(&d.to_string(), name))
             .ok_or_else(|| format!("the audio input {name} is not there"))?,
-        _ => host.default_input_device().ok_or("there is no audio input device")?,
+        _ => devices::default_input(&host).ok_or("there is no audio input device")?,
     };
     let name = device.to_string();
     // The device's own format at the output's rate: the engine takes no resampled input.

@@ -17,10 +17,10 @@
 //! | The control bar (transport, grid, CPU, view switch) | [`App::control_bar`] | [`App::do_action`] |
 //! | The status bar | [`App::status_bar`] | — |
 //! | Project tabs and Ctrl+Tab | [`App::tab_row`], [`App::tab_switcher_ui`] | [`App::do_action`] |
-//! | The Session view's slots and scenes | [`session::session_view::show`] | [`App::do_action`] |
+//! | The Launcher view's slots and scenes | [`session::session_view::show`] | [`App::do_action`] |
 //! | A slot's right-click menu | [`interaction::menus::slot_menu`] | [`App::do_action`] |
 //! | A scene's right-click menu | [`interaction::menus::scene_menu`] | [`App::do_action`] |
-//! | A channel strip (the Session view's mixer) | [`session::mixer_strip::show`] | [`App::do_action`] |
+//! | A channel strip (the Launcher view's mixer) | [`session::mixer_strip::show`] | [`App::do_action`] |
 //! | The Arrangement's lanes, ruler, markers and loop brace | [`arrangement::arrangement_view::show`] | [`App::do_action`] |
 //! | An arrangement clip's right-click menu | [`interaction::menus::clip_menu`] | [`App::do_action`] |
 //! | A track header and its right-click menu | [`interaction::menus::track_menu`] | [`App::do_action`] |

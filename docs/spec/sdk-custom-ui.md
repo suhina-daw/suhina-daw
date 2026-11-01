@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-01
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -25,9 +25,13 @@ covers:
 Every device has a compact panel in the device chain, at most 168 px high (the detail area's
 default 200 px less the 20 px header and 6 px padding above and below). Its width is the
 author's, 260 px by default. A device without a canvas shows its generated parameter list,
-always 260 px wide and as tall as its rows up to 168 px; a longer list scrolls. In a row a device
-is as wide as its canvas plus 12 px (220 px at least, 272 px for a generated list); the stacked
-column is 272 px wide by default. A smaller detail area or column scrolls the panel.
+in columns 260 px wide and up to 168 px tall: a list longer than two columns shows those two,
+with a line between columns, and a chevron beside the header's switch opens the rest (Settings ›
+Devices › Long parameter lists: further columns to the right, or scrolling down in the two). Stock controls a canvas leaves shown sit in the
+same columns to the canvas's right. In a row a device is as wide as its canvas and columns plus
+12 px (220 px at least, 272 px for one column); the stacked column is 272 px wide by default. A
+smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`
+and no canvas keeps one column that follows that width and scrolls.
 
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
@@ -165,7 +169,7 @@ Everything is stored in the single JSON `.sd` and then embedded in the project. 
 without a canvas use their existing controls. Built-in SDK widgets and stock parameter controls
 read the active Suhina theme at render time; authored drawing colours remain explicit. No external
 paths or executable UI code are read from a device file. Rust authors program panels by constructing the SDK's drawing expressions
-and input bindings. Normalized expressions can select logarithmic mapping explicitly. Standard controls remain available below the canvas.
+and input bindings. Normalized expressions can select logarithmic mapping explicitly. Standard controls remain available beside the canvas.
 
 Canvas `size: [width, height]` defaults to `[640, 240]`. Optional
 `viewport_size: [width, height]` sets the preferred scrollable device body independently of the

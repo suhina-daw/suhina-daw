@@ -41,21 +41,24 @@ COMMANDS = 190
 CHAPTERS = [
     (1, "Welcome to Live", 1, None, "n/a", "Front matter."),
     (2, "First Steps (installation, Learn/Info view, Settings)", 11, 0.52, "partial",
-     "Release and nightly packages for Windows, macOS and Linux; Help > About names the build "
+     "Release and nightly packages for Windows, macOS and Linux; Windows packages include installed ASIO driver support; Help > About names the build "
      "(version, nightly date and commit, platform). Settings pages, grouped by task in headed sections, scrolling and searchable: General, Export (MCP write folders), Arrangement, Session and mixer, Clip editor, Transport, Detail area, Browser, Appearance (zoom, theme, graphics), MIDI, Audio (driver/device/rate/buffer/exclusive/cue; "
      "a change or a device back after unplugging keeps playback and launched clips going; "
-     "input device, MIDI inputs on/off), "
+     "active ASIO driver's native control panel and separate engine/callback buffer readouts; input device, MIDI inputs on/off), "
      "Shortcuts, Plug-ins; the detail area beside the browser or across the full width. Missing Link, Tempo & MIDI, File & Folder, Library, Record/Warp/Launch, "
      "Learn view, Info view."),
     (3, "Live Concepts", 27, 0.50, "partial",
      "Control bar, browser, sets, arrangement/session, tracks, audio/MIDI clips, devices, mixer "
      "concepts exist. Routing, recording, racks, clip/device view and presets are missing or thin."),
-    (4, "Working with the Browser", 60, 0.49, "partial",
+    (4, "Working with the Browser", 60, 0.53, "partial",
      "Search, categories, folders watched on disk, pins, recent, colour tags, preview through the "
      "engine, sample map by sound similarity (smooth with 200 000 items, also while its window is resized) with kinds recognised from the sound and set by hand; samples and MIDI files dragged from the system's file "
      "manager land like a browser drag; dropping one sample on an empty MIDI track adds Sampler (exact placement waits for pointer positions from the "
      "windowing layer); installed plug-ins grouped by vendor in the tree, and in the Plug-ins "
      "category as the instruments or the effects by name and format, with pins and tags on them. "
+     "Samples copied out to a folder (Copy to folder…, library.copyTo) or dragged out to the file manager as copies; "
+     "samples dragged onto a browser folder moved or copied there (asked, or as a setting says; library.moveTo keeps their pins, recent places and tags). "
+     "The arrow keys move through the list after a click on a row, opening and closing folders. "
      "Missing collections/tag editor depth, packs, Splice, "
      "Cloud, Push transfer, filter groups, browser history."),
     (5, "Managing Files and Sets", 43, 0.40, "partial",
@@ -70,8 +73,11 @@ CHAPTERS = [
      "attached MCP exports prepare over frames and render off the window thread. "
      "Missing project folders/collect, unused files, packing, .asd, decoding cache, set "
      "merging, file-reference view, the export dialog's source and range rows."),
-    (6, "Arrangement View", 22, 0.60, "partial",
-     "Layout, zoom, transport, track headers with a band of the track colour that opens the colour palette, ruler/play start, play from the selected clip, clip drag+move, "
+    (6, "Arrangement View", 22, 0.66, "partial",
+     "Layout, zoom, transport, track headers with a band of the track colour that opens the colour palette, ruler/play start, a click in the tracks setting the next start without moving playback and a ruler seek quantized to the launch grid, play from the selected clip, clip drag+move, "
+     "whole tracks cut, copied, pasted (between project tabs too) and duplicated with their devices, automation and clips, "
+     "an optional toolbar of tools (Select, Range, Split, Erase, Draw, Mute) with keys while the view has the focus, "
+     "track names with # shown as the track's number, an empty track taking the kind of the clip dropped on it, several clips' edges dragged together, a MIDI clip's left edge drawn out before its notes, "
      "overlap replace/stack, fades and fade shapes, the control bar's grid value (bars to "
      "triplets, or none) drawn as lines that adapt to the zoom and snapping moves, drops, fades "
      "and ruler clicks (Alt for off the grid), nested groups folded and unfolded, "
@@ -97,14 +103,14 @@ CHAPTERS = [
      "scenes inserted, duplicated, deleted and renamed from a menu, with a tempo and time signature "
      "each. A launched clip is selected and the detail area shows its follow-action controls. "
      "Missing capture-and-insert scene, moving clips between slots, select-on-launch options."),
-    (8, "Clip View", 34, 0.22, "started",
+    (8, "Clip View", 34, 0.24, "started",
      "Detail area shows clip properties and, for a MIDI clip in the Arrangement, a first piano roll "
      "(docs/spec/ui-clip-editor.md): keys, ruler, note grid, velocity lane, zoom and scroll, a toolbar of "
      "tool icons with the note clipboard and a toolbar size, a MIDI tools column beside the notes, "
      "and the selection described in the clip column (count, span, pitch and velocity range); the "
      "editor keeps a least height with its notes in view and closes by its splitter, an x or View > "
      "Hide editor, opening again when a clip is selected. The clip column edits the clip: loop on "
-     "or off, an audio clip's loop start and end, gain, warp on or off, warp mode and transpose. "
+     "or off, an audio clip's loop start and end, start and end markers, gain (a slot's too), warp on or off, warp mode and transpose. "
      "No clip panels, no sample editor, no groove/scale panels."),
     (9, "Audio Clips, Tempo, and Warping", 18, 0.42, "partial",
      "Real-time time-stretching along warp markers read from Live Sets, clip gain, transpose, "
@@ -114,7 +120,7 @@ CHAPTERS = [
      "every mode except Re-pitch, so the mode names are not yet different algorithms, and rates "
      "outside 0.25x-4x fall back to Re-pitch. Tempo changes over the song (steps and ramps, a tempo "
      "map every clip follows, read from a set's tempo envelope; a scene tempo overrides it until "
-     "transport.followTempoMap or the next start). Missing tap tempo, tempo follower/leader, "
+     "transport.followTempoMap or the next start); the tempo field typed or dragged to a thousandth of a BPM by the place grabbed, clips following while it moves. Missing tap tempo, tempo follower/leader, "
      "auto-warp of long samples, warp-marker editing, quantise audio, drawing the tempo as an "
      "automation envelope."),
     (10, "Editing MIDI", 41, 0.44, "started",
@@ -169,24 +175,34 @@ CHAPTERS = [
      "device with a channel or pair per track and monitoring Auto / In / Off "
      "(track.setAudioInput). No MIDI out, external instrument, resampling, sidechain, "
      "multi-timbral."),
-    (18, "Mixing", 18, 0.59, "partial",
+    (18, "Mixing", 18, 0.62, "partial",
      "Faders (vertical in the Session view's channel strips), pan, mute, solo (exclusive/Ctrl), groups as buses nested up to 16 deep (solo and mute "
-     "through the levels), master, latency compensation, "
+     "through the levels), master with devices and plug-ins of its own over the whole mix and its volume, pan and mute lanes, latency compensation, "
      "sends pre or post fader into return tracks that run their device chains (track.setSend, "
      "track.setSendMode, return.add/remove/rename, send knobs in the Session mixer), level "
      "meters (peak, RMS, clip) per track, group, return and main, also over MCP, and a cue output "
      "on a second pair of the device (previews, per-track cue, cue volume); return tracks "
      "imported and drawn. Missing crossfader, track delay, send fields in the Arrangement headers."),
-    (19, "Recording New Clips", 13, 0.45, "partial",
+    (19, "Recording New Clips", 13, 0.54, "partial",
      "Independent record arm and Auto / In / Off input monitoring (MIDI controllers, audio inputs); MIDI and audio recording into "
      "an empty slot from the next launch boundary (ended on the next one, then played looped) or "
      "into the arrangement, several armed tracks at once, a count-in of 1, 2 or 4 bars, takes lined "
      "up with what was heard, audio written to WAV files off the audio thread, one undo step per "
-     "take. Missing overdub, punch in/out, recording automation, capture MIDI, session record button."),
+     "take; the take drawn growing with its notes or waveform while it records, every loop pass or "
+     "jump back kept as a take of its own; notes played from the computer keyboard (Ctrl+K). Missing overdub, punch in/out, recording automation, capture MIDI, session record button."),
     (20, "Bounce to Audio", 6, 0.15, "partial",
      "Whole-project offline render to 32-bit float WAV (CLI/MCP), from an open project with its "
      "running plug-ins' state as heard; no per-track or group bounce, no paste."),
-    (21, "Comping", 6, 0.00, "absent", "No take lanes, no comping."),
+    (21, "Comping", 6, 0.85, "partial",
+     "Take lanes made by recording into the arrangement (a lane per loop pass or jump back, the latest "
+     "copied to the track and playing), drawn under the track with the parts in use lit and the rest dimmed, "
+     "folded away from a button or a menu; a click copies a take's clip and a drag a part of it onto the track "
+     "(take.comp), the parts named and coloured after their takes; Alt+Up/Down swap a part's take, the cut "
+     "between two parts dragged (take.moveCut), Recolor lane and Recolor selected take, splits reaching the "
+     "takes, Delete take, take pieces picked with Ctrl and deleted; a take lane soloed in place of its track, "
+     "put whole on the track, unused takes deleted; short crossfades where parts of two takes meet; clips "
+     "not stacked over takes; saved with the project. Missing take lanes made by hand, renaming and "
+     "reordering them."),
     (22, "Stem Separation", 8, 0.00, "planned",
      "Roadmap item (Demucs candidate, weights unaudited). The pipeline around a model (chunking, "
      "resampling) exists in crates/separation with a test backend; no model and nothing a user "
@@ -202,15 +218,18 @@ CHAPTERS = [
      "SDK-authored .sd effects and instruments load onto tracks, embed in projects, expose parameters, "
      "graphs and custom panels, and support explicit revision updates. Missing A/B, "
      "hot-swap, preset browser depth, defaults, device delay review."),
-    (24, "Using Plug-Ins", 12, 0.74, "partial",
+    (24, "Using Plug-Ins", 12, 0.76, "partial",
      "CLAP and VST3 hosted out of process, sandboxed, VST3 bundles on Windows, macOS and Linux, "
      "editors (Windows/X11), scans that try failures again and settle files built for another "
      "processor, a plug-in manager (plug-ins switched off, several picked with Ctrl, Cmd or Shift and turned off or on from the right-click menu, folders per format and switched off), latency "
      "compensation (followed when a plug-in changes its latency while it plays), saved state "
      "(a change in an editor counts as unsaved), VST2 read and matched to VST3, parameters set "
-     "and automated from the engine and shown as a generated list in the device panel, the song's tempo, "
-     "transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins on audio "
-     "tracks (arrangement clips, edits saved, clip changes followed live, the editor in the clip's place, "
+     "and automated from the engine and shown as a generated list in the device panel, in step "
+     "both ways with a plug-in's own editor (VST3 through the host's handler, CLAP through its "
+     "blocks' output parameter events: an edit there becomes the panel's value with the next "
+     "block, and the editor follows the panel and automation), the song's tempo, "
+     "transport, position, bar, time signature and loop given to every plug-in, ARA plug-ins per audio "
+     "clip (Edit with, the clip's gain and fades after it, its track's other clips past it; edits saved, clip changes followed live, the editor in the clip's place, "
      "one document a plug-in and project so its editor shows every track; warped and looped clips not "
      "yet). Missing AU, VST2 hosting, "
      "configure mode, VST preset banks, sidechain parameters."),
@@ -218,32 +237,38 @@ CHAPTERS = [
      "Device groups: Ctrl+G groups picked devices, parallel branches with volume, pan, mute and "
      "solo in the group's panel, a mix against the dry signal and an output gain, instruments "
      "layered on the same notes, plug-ins inside, latency compensated, groups nested four deep, "
-     "moved and duplicated by command. No macros, key/velocity/chain zones, drum pads or group "
+     "moved and duplicated by command, devices inside groups picked and Ctrl+A picking a whole chain; "
+     "a Live Set's Audio Effect and Instrument Racks import as groups with their chains and devices, keeping the first eight macros' names and positions. No macro mappings, key/velocity/chain zones, drum pads or group "
      "presets."),
-    (26, "Automation and Editing Envelopes", 22, 0.48, "partial",
+    (26, "Automation and Editing Envelopes", 22, 0.58, "partial",
      "Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints "
      "with curved segments and jumps, saved, played in playback and renders (64-frame steps, ramped "
      "mixer gains), a manual change turning a lane off until re-enabled. Lanes under each track in "
      "the Arrangement: a parameter chooser with a search, the automated parameters first, devices and "
      "parameter groups folded under headings, points added, moved on the grid, selected and moved or "
      "deleted together, curves bent by dragging, re-enabled from the lane, a click near the line adding "
-     "a point on it, a faint line at the value of a lane without points. Missing recording, "
+     "a point on it, a faint line at the value of a lane without points; a time range painted on a lane "
+     "copied, pasted onto any lane, duplicated right after itself and deleted, and shapes inserted into it "
+     "(sine, triangle, saws, square, ramps, curves, swell) with a depth and cycles a bar, live while dragged, into a point's segment from its menu or as the "
+     "shape new points take; a curve handle half-way along each segment; a click adds a point on the line "
+     "(anywhere, as a setting); a range's points scaled live, their corners and jumps rounded into curves or thinned to fewer bent segments, the arrows moving "
+     "selected points; the automation under a clip moving, copying and duplicating with it, a box from a track picking its lanes' points. Missing recording, "
      "drawing with a pencil, plug-in lanes in the view, send, master and tempo automation, "
-     "locking, simplifying envelopes."),
+     "locking."),
     (27, "Clip Envelopes", 13, 0.00, "absent", "No clip envelopes."),
     (28, "Working with Video", 6, 0.00, "absent", "No video import or window."),
     (29, "Live Audio Effect Reference", 139, 0.23, "partial",
-     "Suhina has 11 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, "
-     "overdrive, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, "
-     "delay and reverb take every parameter of their counterparts, the multiband all but the side-chain, "
-     "several others are close in kind but far narrower in parameters and modes."),
+     "Suhina has 12 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, "
+     "overdrive, saturator, compressor, multiband, limiter, delay, reverb) against 42 documented audio effects; the EQ, "
+     "delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, the multiband all but the side-chain, several others are close in kind but far "
+     "narrower in parameters and modes."),
     (30, "Live MIDI Effect Reference", 13, 0.10, "started",
      "One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key "
      "window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect "
      "graphs run before the instrument too. The other 7 documented MIDI effects are missing."),
     (31, "Live Instrument Reference", 120, 0.12, "started",
      "FM synth and single-source sample/granular instrument against 13 instruments; "
-     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, "
+     "graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades, editable automatic slice boundaries with persistent corrections, source-tempo grid/snap and stereo waveform navigation, and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; Simpler and a one-sample Sampler from a Live Set import as the sampler with their sample, region, tuning, envelope, filter and slicing; no multisample zones, "
      "drum sampler, wavetable, subtractive or physical modelling yet."),
     (32, "Max for Live", 6, 0.05, "planned",
      "ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; "

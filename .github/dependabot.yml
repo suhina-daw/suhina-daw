@@ -10,14 +10,23 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # A version is taken a week after it is published, not the day of: a release made from a
+    # hijacked maintainer account is usually pulled within days, and nothing here needs a fix
+    # the same day. Security updates (an advisory) are not held back by this.
+    cooldown:
+      default-days: 7
     labels: [chore]
     commit-message:
       prefix: "Deps"
     groups:
-      # Minor and patch updates together; a major update gets a pull request of its own, since it
-      # can change an API.
+      # Minor and patch updates together, and the major ones together in a second pull request
+      # (for a 0.x crate, 0.14 to 0.15 is major). Every update rewrites Cargo.lock, so two pull
+      # requests in the merge queue at once conflict there; one per kind keeps it to two a week,
+      # and a major update that breaks the build is moved out of the group with exclude-patterns.
       cargo-minor:
         update-types: [minor, patch]
+      cargo-major:
+        update-types: [major]
   - package-ecosystem: github-actions
     directory: /
     schedule:

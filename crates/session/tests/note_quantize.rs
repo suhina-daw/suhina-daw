@@ -45,6 +45,7 @@ fn project_built(notes: Vec<Note>) -> Project {
                 clips: vec![clip(1), clip(2)],
             }],
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         launcher: Launcher {
             scenes: vec![Scene::default()],

@@ -238,15 +238,26 @@ pub(super) fn parameter_widget(
         // Edits clamping: the slider rounds a value to its step and decimals only when it is
         // edited, not every time it is drawn, so a value automation plays between steps is not
         // sent back as an edit (which turns the lane off).
-        control => ui.add(
-            egui::Slider::new(value, parameter.min..=parameter.max)
-                .clamping(egui::SliderClamping::Edits)
-                .show_value(false)
-                .trailing_fill(style.accent.is_some())
-                .max_decimals(style.decimals)
-                .logarithmic(control == ParameterControl::LogSlider)
-                .step_by(if control == ParameterControl::Integer { 1.0 } else { style.step }),
-        ),
+        control => {
+            let step = if control == ParameterControl::Integer { 1.0 } else { style.step };
+            let slider = ui.add(
+                egui::Slider::new(value, parameter.min..=parameter.max)
+                    .clamping(egui::SliderClamping::Edits)
+                    .show_value(false)
+                    .trailing_fill(style.accent.is_some())
+                    .max_decimals(style.decimals)
+                    .logarithmic(control == ParameterControl::LogSlider)
+                    .step_by(step),
+            );
+            // Over the slider, which only draws: a drag holds the pointer, as a knob's does.
+            let hit = ui.interact(slider.rect, slider.id.with("drag"), Sense::click_and_drag());
+            let log = control == ParameterControl::LogSlider && parameter.min > 0.0;
+            let mut slider = slider.union(hit.clone());
+            if slider_gesture(ui, &hit, slider.rect, slider.rect.height(), parameter, log, step, value) {
+                slider.mark_changed();
+            }
+            slider
+        }
     }
 }
 
@@ -254,6 +265,64 @@ pub(super) fn parameter_widget(
 pub(crate) fn slider_as_knob() -> bool {
     let _style = crate::kit::style_class::enter("slider");
     crate::kit::style_class::knob_preference(false)
+}
+
+/// A click or drag on a horizontal slider in `rect`, `handle` wide, as a fader's: a click sets the
+/// value there; a drag from the handle moves it as far as the pointer moves, the pointer hidden and
+/// held, so past either end it waits and turns back at once, and on release the pointer is on the
+/// handle (Shift: ten times finer). Whether the value changed.
+#[allow(clippy::too_many_arguments)]
+fn slider_gesture(
+    ui: &Ui,
+    hit: &egui::Response,
+    rect: Rect,
+    handle: f32,
+    parameter: &GraphParameter,
+    logarithmic: bool,
+    step: f64,
+    value: &mut f64,
+) -> bool {
+    let (min, max) = (parameter.min, parameter.max);
+    let travel = (rect.width() - handle).max(1.0);
+    let at_pointer = |x: f32| f64::from(((x - rect.left() - handle / 2.0) / travel).clamp(0.0, 1.0));
+    let held_id = hit.id.with("position");
+    let dragging = hit.dragged_by(egui::PointerButton::Primary);
+    let position = if dragging {
+        let current = if logarithmic {
+            (*value / min).ln() / (max / min).ln()
+        } else {
+            (*value - min) / (max - min).max(f64::EPSILON)
+        };
+        let held = ui.ctx().data(|d| d.get_temp::<f64>(held_id)).filter(|_| !hit.drag_started());
+        let from = held.unwrap_or_else(|| {
+            let press = ui.input(|i| i.pointer.press_origin()).map_or(rect.center().x, |p| p.x);
+            let on_handle = (f64::from(press - rect.left() - handle / 2.0) / f64::from(travel) - current).abs()
+                * f64::from(travel)
+                <= f64::from(handle);
+            if on_handle { current.clamp(0.0, 1.0) } else { at_pointer(press) }
+        });
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+        let moved = f64::from(widgets::value_drag_delta(ui, hit).x / travel) * fine;
+        let position = (from + moved).clamp(0.0, 1.0);
+        ui.ctx().data_mut(|d| d.insert_temp(held_id, position));
+        let back = rect.left() + handle / 2.0 + travel * position as f32;
+        widgets::value_drag_returns_to(ui.ctx(), Pos2::new(back, rect.center().y));
+        position
+    } else if hit.clicked() {
+        let Some(pointer) = hit.interact_pointer_pos() else {
+            return false;
+        };
+        at_pointer(pointer.x)
+    } else {
+        return false;
+    };
+    let mut next = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
+    if step > 0.0 {
+        next = (min + ((next - min) / step).round() * step).clamp(min, max);
+    }
+    let changed = next != *value;
+    *value = next;
+    changed
 }
 
 /// Whether the theme gives sliders parts of their own: `.slider-rail`, `.slider-fill` or
@@ -290,15 +359,8 @@ fn themed_slider_widget(
         crate::kit::style_class::computed().and_then(|c| c.width).unwrap_or(8.0).clamp(2.0, rect.width().max(2.0))
     };
     let travel = (rect.width() - handle_width).max(1.0);
-    if let Some(pointer) = response.interact_pointer_pos().filter(|_| response.dragged() || response.clicked()) {
-        let position = f64::from(((pointer.x - rect.left() - handle_width / 2.0) / travel).clamp(0.0, 1.0));
-        let mut next = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
-        let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
-        if step > 0.0 {
-            next = (min + ((next - min) / step).round() * step).clamp(min, max);
-        }
-        *value = next;
-    }
+    let step = if control == ParameterControl::Integer { 1.0 } else { parameter.ui.step };
+    slider_gesture(ui, &response, rect, handle_width, parameter, logarithmic, step, value);
     let position = to_position(*value).clamp(0.0, 1.0) as f32;
     let state = State::response(&response, false);
     let painter = ui.painter_at(rect);
@@ -374,10 +436,9 @@ pub(super) fn knob(
         *value = (*value + f64::from(direction) * step).clamp(min, max);
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
-    let held = widgets::held_drag_delta(ui, &response);
     if response.dragged() {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-        let delta = f64::from(held.y) / widgets::PARAMETER_DRAG_PIXELS * fine;
+        let delta = f64::from(widgets::value_drag_delta(ui, &response).y) / widgets::PARAMETER_DRAG_PIXELS * fine;
         position = (position - delta).clamp(0.0, 1.0);
         *value = if logarithmic { min * (max / min).powf(position) } else { min + position * (max - min) };
         response.mark_changed();
@@ -454,33 +515,99 @@ pub(super) fn parameter_height(parameter: &GraphParameter) -> f32 {
         }
 }
 
-pub(super) fn parameter_layout(parameters: &[GraphParameter], width: f32, hidden: &[String]) -> Vec<Rect> {
-    // The theme may lay the parameters a device places nowhere itself side by side, each cell as
-    // tall as it says (`--suhina-param-columns`, `--suhina-param-row`).
-    let (columns, row) = crate::kit::style_class::theme_param_grid();
-    let cell = width / columns as f32;
-    let mut bottom = 0.0f32;
-    let mut column = 0usize;
-    let mut line_top = 0.0f32;
-    parameters
-        .iter()
-        .filter(|p| !hidden.contains(&p.id) && !p.is_readout())
+/// Where each shown parameter's cell goes: at its own position, or under the one before in a
+/// column `width` wide. A cell that would end below `max_height` starts a new column to the
+/// right, so a long list widens the panel instead of scrolling (ADR 0021 › Amendment: device
+/// panels, 5); `f32::INFINITY` keeps one column. The theme may divide a column into cells side by
+/// side, each as tall as it says (`--suhina-param-columns`, `--suhina-param-row`).
+pub(super) fn parameter_layout(
+    parameters: &[GraphParameter],
+    width: f32,
+    max_height: f32,
+    hidden: &[String],
+) -> Vec<Rect> {
+    let (slots, row) = crate::kit::style_class::theme_param_grid();
+    let cell = width / slots as f32;
+    let shown = || parameters.iter().filter(|p| !hidden.contains(&p.id) && !p.is_readout());
+    let placed_size = |p: &GraphParameter| p.ui.size.unwrap_or([width, parameter_height(p)]);
+    // A placed cell pushes down the columns it reaches into, wherever it is in the list.
+    let placed: Vec<Rect> = shown()
+        .filter_map(|p| p.ui.position.map(|[x, y]| Rect::from_min_size(Pos2::new(x, y), placed_size(p).into())))
+        .collect();
+    let floor = |column: f32| {
+        placed.iter().filter(|r| r.right() > column && r.left() < column + width).fold(0.0f32, |b, r| b.max(r.bottom()))
+    };
+    let (mut column, mut right, mut bottom) = (0.0f32, 0.0f32, floor(0.0));
+    let (mut slot, mut line_top) = (0usize, 0.0f32);
+    shown()
         .map(|parameter| {
             if let Some([x, y]) = parameter.ui.position {
-                let [w, h] = parameter.ui.size.unwrap_or([width, parameter_height(parameter)]);
-                let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-                bottom = bottom.max(rect.bottom());
-                return rect;
+                return Rect::from_min_size(Pos2::new(x, y), placed_size(parameter).into());
             }
             let height = row.map_or_else(|| parameter_height(parameter), |row| row.max(parameter_height(parameter)));
             let [w, h] = parameter.ui.size.unwrap_or([cell, height]);
-            if column == 0 {
+            if slot == 0 {
                 line_top = bottom;
+                // Half a point of slack: heights summed in another order must not open a column.
+                // Past every placed cell the floor is zero, so this ends. A cell wider than its
+                // column keeps the next one clear of it.
+                while line_top > 0.0 && line_top + h > max_height + 0.5 {
+                    column = right.max(column + width);
+                    right = column;
+                    bottom = floor(column);
+                    line_top = bottom;
+                }
             }
-            let rect = Rect::from_min_size(Pos2::new(cell * column as f32, line_top), Vec2::new(w, h));
+            let rect = Rect::from_min_size(Pos2::new(column + cell * slot as f32, line_top), Vec2::new(w, h));
             bottom = bottom.max(rect.bottom());
-            column = (column + 1) % columns;
+            right = right.max(rect.right());
+            slot = (slot + 1) % slots;
             rect
+        })
+        .collect()
+}
+
+/// Which column of `width` a cell starting at `left` is in.
+fn column_of(left: f32, width: f32) -> f32 {
+    (left / width.max(1.0) + 0.001).floor()
+}
+
+/// Whether `graph`'s list gets room and a line between its columns: a generated list, not one with a
+/// canvas or cells it places itself, which keep their own positions.
+pub(super) fn list_spreads(graph: &GraphBox) -> bool {
+    graph.canvas.is_none() && graph.parameters.iter().all(|p| p.ui.position.is_none())
+}
+
+/// Moves each cell by the room before its column, a theme's cells inside a column staying together.
+/// Returns where the lines between the columns go.
+pub(super) fn spread_columns(cells: &mut [Rect], width: f32) -> Vec<f32> {
+    let mut columns = 0.0f32;
+    for cell in cells.iter_mut() {
+        let column = column_of(cell.left(), width);
+        columns = columns.max(column);
+        *cell = cell.translate(Vec2::new(column * super::LIST_GAP, 0.0));
+    }
+    (1..=columns as u32).map(|k| k as f32 * width + (k as f32 - 0.5) * super::LIST_GAP).collect()
+}
+
+/// The stock controls of `graph` from the top left of the part under its nodes. With a canvas, the
+/// list flows to the canvas's right and a cell the file places itself stays under the canvas, where
+/// its position has always been measured from.
+pub(super) fn list_cells(graph: &GraphBox, width: f32, max_height: f32) -> Vec<Rect> {
+    let Some(canvas) = &graph.canvas else {
+        return parameter_layout(&graph.parameters, width, max_height, &[]);
+    };
+    let shown = || graph.parameters.iter().filter(|p| !canvas.hidden_parameters.contains(&p.id) && !p.is_readout());
+    let mut skipped = canvas.hidden_parameters.clone();
+    skipped.extend(shown().filter(|p| p.ui.position.is_some()).map(|p| p.id.clone()));
+    let mut flow = parameter_layout(&graph.parameters, width, max_height, &skipped).into_iter();
+    shown()
+        .filter_map(|p| match p.ui.position {
+            Some([x, y]) => {
+                let size = p.ui.size.unwrap_or([width, parameter_height(p)]);
+                Some(Rect::from_min_size(Pos2::new(x, y + canvas.size[1]), size.into()))
+            }
+            None => flow.next().map(|cell| cell.translate(Vec2::new(canvas.size[0], 0.0))),
         })
         .collect()
 }

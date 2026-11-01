@@ -41,7 +41,7 @@ pub(crate) fn levels(session: &mut Session, _: &Value) -> Result<Value, CommandE
             let mut value = describe(*level);
             if let Some(object) = value.as_object_mut() {
                 object.insert("track".into(), json!(track.id.0));
-                object.insert("track_name".into(), json!(track.name));
+                object.insert("track_name".into(), json!(project.shown_track_name(track.id)));
             }
             Some(value)
         })

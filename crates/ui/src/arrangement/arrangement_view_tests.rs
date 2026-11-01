@@ -53,6 +53,8 @@ fn alt_and_the_wheel_zoom_every_lane_within_its_limits() {
     state.zoom_lanes(&timeline.lanes, 2.0, 0.0);
     assert_eq!(state.height(tracks[0]), 200.0);
     assert!(tracks[1..].iter().all(|l| state.height(l) == DEFAULT_LANE * 2.0));
+    // A track added after the zoom comes in as tall as the zoomed ones, not at the default.
+    assert_eq!(state.lane_height(TrackId(999)), DEFAULT_LANE * 2.0);
     // The content under the pointer stays put: what was 10 points down is now 20.
     state.scroll.y = 0.0;
     state.zoom_lanes(&timeline.lanes, 0.5, 10.0);
@@ -64,6 +66,7 @@ fn alt_and_the_wheel_zoom_every_lane_within_its_limits() {
         state.zoom_lanes(&timeline.lanes, 0.5, 0.0);
     }
     assert!(tracks.iter().all(|l| state.height(l) == MIN_LANE));
+    assert_eq!(state.lane_height(TrackId(999)), MIN_LANE);
     state.zoom_lanes(&timeline.lanes, f32::NAN, 0.0);
     assert!(tracks.iter().all(|l| state.height(l) == MIN_LANE));
 }
@@ -263,13 +266,12 @@ fn fade_lines_and_curve_handles_follow_the_shape() {
 
 /// A grid of `step` beats at a zoom where its lines are far enough apart, in 4/4.
 fn beats(step: f64) -> TimelineGrid {
-    arrangement_grid(Quantization::Beats(step), 1000.0, 4.0)
+    grid_of_step(step, 1000.0, 4.0)
 }
 
 /// The grid step for the control bar's `value`, at `beat_width` points a beat.
 fn step(value: &str, beat_width: f32, bar_beats: f64) -> f64 {
-    let chosen = suhina_session::parse_quantization(value).unwrap_or(Quantization::None);
-    arrangement_grid(chosen, beat_width, bar_beats).step
+    arrangement_grid(PianoGrid::from_value(value), beat_width, bar_beats).step
 }
 
 #[test]
@@ -295,7 +297,7 @@ fn each_choice_is_its_own_step_when_zoomed_in() {
     // Bars follow the time signature: a bar of 3/4 is three beats.
     assert_eq!(step("1 bar", 400.0, 3.0), 3.0);
     assert_eq!(step("2 bars", 400.0, 3.0), 6.0);
-    assert!(arrangement_grid(Quantization::Beats(0.25), 400.0, 4.0).snaps);
+    assert!(arrangement_grid(PianoGrid::from_value("1/16"), 400.0, 4.0).snaps);
 }
 
 #[test]
@@ -338,10 +340,27 @@ fn a_triplet_grid_coarsens_to_the_beat_so_lines_stay_on_the_bar() {
 }
 
 #[test]
-fn none_draws_beats_and_bars_by_the_zoom_and_does_not_snap() {
-    let grid = arrangement_grid(Quantization::None, 400.0, 4.0);
-    assert_eq!((grid.step, grid.snaps), (1.0, false));
-    assert_eq!(step("none", 7.0, 4.0), 4.0);
+fn an_adaptive_grid_follows_the_zoom_and_the_keys_change_it() {
+    let narrow = PianoGrid { snap: true, mode: GridMode::Adaptive(Width::Narrow), triplet: false };
+    // Zoomed in the lines are finer than zoomed out, and they snap.
+    let near = arrangement_grid(narrow, 400.0, 4.0);
+    let far = arrangement_grid(narrow, 10.0, 4.0);
+    assert!(near.step < far.step && near.snaps, "{} {}", near.step, far.step);
+    // Ctrl+1 narrows, Ctrl+2 widens, Ctrl+3 triplets, Ctrl+4 snap.
+    assert_eq!(grid_key("arrangement.gridNarrow", narrow), Some(narrow.narrower()));
+    assert_eq!(grid_key("arrangement.gridWiden", narrow), Some(narrow.wider()));
+    assert!(grid_key("arrangement.gridTriplet", narrow).is_some_and(|g| g.triplet));
+    let off = grid_key("arrangement.gridSnap", narrow).unwrap();
+    assert!(!arrangement_grid(off, 400.0, 4.0).snaps);
+    assert_eq!(grid_key("arrangement.tool1", narrow), None);
+}
+
+#[test]
+fn snap_off_draws_the_lines_and_does_not_snap() {
+    // Snap off keeps its value's lines (1/16 here), as the piano roll's grid does.
+    let grid = arrangement_grid(PianoGrid::from_value("none"), 400.0, 4.0);
+    assert_eq!((grid.step, grid.snaps), (0.25, false));
+    assert_eq!(grid_of_step(0.0, 7.0, 4.0).step, 4.0);
     assert_eq!(grid.place(2.1337, false, false), 2.1337);
     assert_eq!(ruler_beat(2.1337, grid, false), 2.134);
     let clip = audio_clip();
@@ -351,13 +370,186 @@ fn none_draws_beats_and_bars_by_the_zoom_and_does_not_snap() {
 #[test]
 fn a_ruler_click_lands_on_the_grid_unless_alt_is_held() {
     // 1 bar at 8 points a beat: the grid is a bar.
-    let bars = arrangement_grid(Quantization::Bars(1), 8.0, 4.0);
+    let bars = arrangement_grid(PianoGrid::from_value("1 bar"), 8.0, 4.0);
     assert_eq!(ruler_beat(17.9, bars, false), 16.0);
     assert_eq!(ruler_beat(18.1, bars, false), 20.0);
     // 1/16 at 60 points a beat: sixteenths.
-    let sixteenths = arrangement_grid(Quantization::Beats(0.25), 60.0, 4.0);
+    let sixteenths = arrangement_grid(PianoGrid::from_value("1/16"), 60.0, 4.0);
     assert_eq!(ruler_beat(2.13, sixteenths, false), 2.25);
     assert_eq!(ruler_beat(2.1337, sixteenths, true), 2.134);
     assert_eq!(ruler_beat(-3.0, bars, true), 0.0);
     assert_eq!(ruler_beat(f64::NAN, bars, false), 0.0);
+}
+
+#[test]
+fn a_zoom_at_the_pointer_keeps_its_beat_under_it_past_the_content_end() {
+    // A view 800 points wide at 20 points a beat, scrolled 400 in, the pointer 600 in: beat 50.
+    let (offset, view) = (600.0, 800.0);
+    let (mut width, mut scroll) = (20.0, 400.0);
+    for factor in [1.25, 1.25, 0.8, 0.5, 2.0] {
+        (width, scroll) = zoom_at(width, scroll, offset, factor);
+        let reach = f64::from((scroll + view) / width);
+        // A short project: 40 beats of content, less than the pointer's beat.
+        scroll = scroll.clamp(0.0, most_scroll_x(40.0, reach, width, view));
+        assert!(((offset + scroll) / width - 50.0).abs() < 1e-3, "beat 50 stays under the pointer at {width}");
+    }
+    assert_eq!(most_scroll_x(40.0, 0.0, 20.0, 800.0), 0.0, "without a zoom the content alone limits it");
+}
+
+#[test]
+fn a_tracks_take_lanes_show_under_it_and_fold_away() {
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
+    let (track, clip) = (lane.track.unwrap(), lane.clips[0].clone());
+    let take = |name: &str| suhina_engine::model::TakeLane {
+        track,
+        name: name.into(),
+        clips: vec![suhina_engine::model::Clip { id: ClipId::NONE, ..clip.clone() }],
+        color: None,
+    };
+    project.arrangement.takes = vec![take("Take 1"), take("Take 2")];
+    let timeline = Timeline::build(&project, None);
+    let rows: Vec<(usize, String)> = timeline.takes.iter().map(|t| (t.number, t.name.clone())).collect();
+    // Shown with their track's name, "Drums Take 1" (#989).
+    let shown = project.shown_track_name(track);
+    assert_eq!(
+        rows,
+        [(1, format!("{shown} Take 1")), (2, format!("{shown} Take 2"))],
+        "numbered as take.comp names them"
+    );
+    assert_eq!(timeline.takes[0].clips.len(), 1);
+    let mut state = ArrangementViewState::default();
+    let automation = state.automation.height(track, &timeline.automation);
+    assert_eq!(state.below(track, &timeline), 2.0 * (TAKE_ROW + 1.0) + automation);
+    state.takes_hidden.insert(track);
+    assert_eq!(state.below(track, &timeline), automation, "folded away");
+}
+
+#[test]
+fn alt_and_the_wheel_can_change_only_the_lane_under_the_pointer() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let tracks: Vec<&Lane> = timeline.lanes.iter().filter(|l| l.kind != ColumnKind::Return).collect();
+    let mut state = ArrangementViewState::default();
+    state.zoom_one = true;
+    // Halfway down the second track's lane.
+    let offset = state.height(tracks[0]) + 1.0 + state.height(tracks[1]) / 2.0;
+    state.zoom_wheel(&tracks, &timeline, 2.0, offset);
+    assert_eq!(state.height(tracks[1]), DEFAULT_LANE * 2.0);
+    assert!(tracks.iter().enumerate().filter(|(i, _)| *i != 1).all(|(_, l)| state.height(l) == DEFAULT_LANE));
+    // All lanes, as before, with the setting off.
+    state.zoom_one = false;
+    state.zoom_wheel(&tracks, &timeline, 2.0, 0.0);
+    assert_eq!(state.height(tracks[0]), DEFAULT_LANE * 2.0);
+}
+
+#[test]
+fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
+    use suhina_engine::model::{AudioRegion, ClipContent, ContentId, ContentLane, Extensions, LaneData};
+    let mut project = crate::demo::demo_project();
+    let audio = ContentId(900);
+    project.contents.push(ClipContent {
+        id: audio,
+        name: "Loop".into(),
+        length: 4.0,
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(AudioRegion::new("loop.wav")) }],
+        extensions: Extensions::default(),
+        scale: None,
+    });
+    let drums = project.tracks.first().map(|t| t.id).unwrap_or(TrackId(1));
+    if let Some(lane) = project.arrangement.lanes.iter_mut().find(|l| l.track == Some(drums)) {
+        lane.clips = vec![suhina_engine::model::Clip::new(audio, 100.0, 4.0)];
+    }
+    project.assign_ids().unwrap();
+    let timeline = Timeline::build(&project, None);
+    let clip = timeline.lanes.iter().find(|l| l.track == drums).and_then(|l| l.clips.first()).unwrap();
+    let grid = arrangement_grid(PianoGrid::from_value("1/4"), 24.0, 4.0);
+    let right = EdgeDrag { key: (drums, clip.id), grab: EdgeGrab::Right, raw: 112.0, from: 104.0, origin: 0.0 };
+    // A plain drag stops where the audio ends; a stretch goes on (#833).
+    assert_eq!(edge_extent(clip, right, &grid, false, false), (100.0, 104.0));
+    assert_eq!(edge_extent(clip, right, &grid, false, true), (100.0, 112.0));
+    let left = EdgeDrag { key: (drums, clip.id), grab: EdgeGrab::Left, raw: 96.0, from: 100.0, origin: 0.0 };
+    assert_eq!(edge_extent(clip, left, &grid, false, false).0, 100.0);
+    assert_eq!(edge_extent(clip, left, &grid, false, true).0, 96.0);
+    // A MIDI clip's left edge goes before its notes (#832).
+    let demo = Timeline::build(&crate::demo::demo_project(), None);
+    let midi = demo
+        .lanes
+        .iter()
+        .flat_map(|l| l.clips.iter().map(move |c| (l.track, c)))
+        .find(|(_, c)| !c.audio && c.start >= 4.0)
+        .unwrap();
+    let before = EdgeDrag {
+        key: (midi.0, midi.1.id),
+        grab: EdgeGrab::Left,
+        raw: midi.1.start - 2.0,
+        from: midi.1.start,
+        origin: 0.0,
+    };
+    assert_eq!(edge_extent(midi.1, before, &grid, false, false).0, midi.1.start - 2.0);
+}
+
+#[test]
+fn select_all_spans_every_track_from_the_first_clip_to_the_last() {
+    let mut state = ArrangementViewState::default();
+    let lanes = vec![
+        (TrackId(1), vec![(ClipId(1), 8.0, 12.0)]),
+        (TrackId(2), vec![(ClipId(2), 4.0, 6.0), (ClipId(3), 16.0, 20.0)]),
+        (TrackId(3), Vec::new()),
+    ];
+    state.select_all_clips(&lanes);
+    assert_eq!(state.selected.len(), 3);
+    let span = state.time_selection().expect("a time selection");
+    assert_eq!((span.start, span.end), (4.0, 20.0));
+    assert_eq!(span.tracks, vec![TrackId(1), TrackId(2), TrackId(3)]);
+    // An empty project leaves a selection already painted.
+    let painted = TimeSelection { tracks: vec![TrackId(1)], start: 1.0, end: 2.0, row: None };
+    state.set_time_selection(Some(painted));
+    state.select_all_clips(&[(TrackId(1), Vec::new())]);
+    assert_eq!(state.time_selection().map(|s| s.start), Some(1.0));
+}
+
+#[test]
+fn a_click_in_a_clip_body_stays_inside_the_clip() {
+    let bar = arrangement_grid(PianoGrid::from_value("1 bar"), 40.0, 4.0);
+    // Late in a bar-long clip: its start, not the next bar.
+    assert_eq!(clip_body_beat(7.5, 4.0, bar, false), 4.0);
+    // A clip starting inside the bar: never before its start.
+    assert_eq!(clip_body_beat(7.5, 6.0, bar, false), 6.0);
+    let sixteenth = arrangement_grid(PianoGrid::from_value("1/16"), 200.0, 4.0);
+    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, false), 5.25);
+    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, true), 5.3);
+}
+
+#[test]
+fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
+    let grid = arrangement_grid(PianoGrid::from_value("1/4"), 40.0, 4.0);
+    assert_eq!(clip::drag_place(5.3, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(6.2, 5.3, grid, false), 6.0);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, true), 5.6);
+}
+
+#[test]
+fn dragging_a_selected_track_resizes_every_selected_track() {
+    let mut state = ArrangementViewState::default();
+    state.set_lane_height(TrackId(1), 100.0);
+    state.set_lane_height(TrackId(2), 60.0);
+    state.set_lane_height(TrackId(3), 80.0);
+    state.selected_tracks = vec![TrackId(1), TrackId(2)];
+    state.resize_lanes(TrackId(1), 100.0, 20.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(2)), 80.0);
+    assert_eq!(state.lane_height(TrackId(3)), 80.0);
+    // A track not among them goes alone.
+    state.resize_lanes(TrackId(3), 80.0, 10.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(3)), 90.0);
+}
+
+#[test]
+fn a_drag_starts_from_the_height_drawn() {
+    // A return row drawn shorter than a track's kept height does not jump when dragged.
+    let mut state = ArrangementViewState::default();
+    state.resize_lanes(TrackId(9), 14.0, 2.0);
+    assert_eq!(state.lane_height(TrackId(9)), MIN_LANE.max(16.0));
 }

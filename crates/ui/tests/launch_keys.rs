@@ -3,7 +3,7 @@
 
 //! Launch keys in the window (`docs/spec/ui-session-view.md` › Launch keys): the mapping mode
 //! maps a key to the picked slot, scene or stop button, and the key then launches it while the
-//! Session view is shown, ahead of a shortcut on the same key.
+//! Launcher view is shown, ahead of a shortcut on the same key.
 
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
@@ -81,7 +81,7 @@ fn the_mapping_mode_maps_a_key_that_then_launches_the_slot() {
 #[test]
 fn a_mapped_key_wins_over_a_shortcut_only_in_the_session_view() {
     let (mut harness, _renderer) = window();
-    // Tab switches the views; mapped to scene 2, it launches the scene in the Session view.
+    // Tab switches the views; mapped to scene 2, it launches the scene in the Launcher view.
     harness.get_by_label("Map keys to slots and scenes").click();
     harness.run();
     harness.get_by_label("Launch scene 2 Groove").click();

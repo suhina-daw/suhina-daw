@@ -1,7 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Plug-in editor windows on Windows: a child of the host window, made with the Win32 API.
+//! Plug-in editor windows on Windows, made with the Win32 API: a window of its own, or one
+//! shown over the engine's window where its panel is (an embedded editor).
 
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -9,17 +10,19 @@ use std::sync::OnceLock;
 
 use std::time::Duration;
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows_sys::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetThreadDpiAwarenessContext};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GW_CHILD,
     GetWindow, HWND_TOP, IDC_ARROW, IsWindow, LoadCursorW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
     PM_REMOVE, PeekMessageW, PostThreadMessageW, QS_ALLINPUT, RegisterClassW, SW_HIDE, SW_SHOW, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ShowWindow, TranslateMessage, WM_APP, WM_CLOSE,
-    WM_SETFOCUS, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
+    WM_SETFOCUS, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
 };
 
 use super::{Placement, Size, WindowId};
@@ -60,9 +63,14 @@ struct State {
     size: Size,
     /// The window's style, for turning an inside size into a window size.
     style: u32,
-    /// An embedded editor's clip window, the one inside the engine's window; the window
-    /// itself (the view) is inside it.
+    /// An embedded editor's clip window, shown over the engine's window where the panel is;
+    /// the window itself (the view) is inside it.
     clip: Option<HWND>,
+    /// The engine's window an embedded editor is shown over (it owns the clip).
+    owner: Option<HWND>,
+    /// Where an embedded editor was last put, and the screen point the engine's window's
+    /// inside started at then: when that window moves, the editor moves with it.
+    placed: Option<(Placement, (i32, i32))>,
 }
 
 thread_local! {
@@ -198,7 +206,15 @@ impl Window {
         if hwnd.is_null() {
             return Err("could not open the editor's window".into());
         }
-        let state = State { id: WindowId(hwnd as usize), close_requested: false, size, style, clip: None };
+        let state = State {
+            id: WindowId(hwnd as usize),
+            close_requested: false,
+            size,
+            style,
+            clip: None,
+            owner: None,
+            placed: None,
+        };
         let kept = OPEN.with(|open| open.try_borrow_mut().map(|mut open| open.push(state)).is_ok());
         let window = Self { hwnd };
         if !kept {
@@ -213,6 +229,10 @@ impl Window {
     /// `parent` (a Win32 `HWND`, which may belong to another process), hidden until
     /// [`place`] puts it somewhere in it.
     pub(crate) fn open_embedded(parent: u64, size: Size) -> Result<Self, String> {
+        per_monitor(|| Self::open_embedded_now(parent, size))
+    }
+
+    fn open_embedded_now(parent: u64, size: Size) -> Result<Self, String> {
         if !register() {
             return Err("could not register the editor's window class".into());
         }
@@ -224,14 +244,18 @@ impl Window {
         let (class, title) = (wide(CLASS), wide(""));
         // SAFETY: as in `register`.
         let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
-        // The clip: a hidden, empty child of the engine's window, which `place` sizes to
-        // the panel's visible area and shows.
-        let clip_style = WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-        // SAFETY: a registered class and two strings that outlive the call; a parent
+        // The clip: a hidden, empty window without a frame that the engine's window owns,
+        // which `place` sizes to the panel's visible area and shows over it. Not a child of
+        // that window: a window that draws through DirectComposition (the engine's, for its
+        // see-through backgrounds) covers its child windows, so an embedded editor stayed
+        // invisible behind it. An owned window stays above its owner, minimises with it and
+        // leaves no button in the taskbar.
+        let clip_style = WS_POPUP | WS_CLIPCHILDREN;
+        // SAFETY: a registered class and two strings that outlive the call; an owner
         // window just checked; no menu or creation data.
         let clip = unsafe {
             CreateWindowExW(
-                0,
+                WS_EX_TOOLWINDOW,
                 class.as_ptr(),
                 title.as_ptr(),
                 clip_style,
@@ -273,7 +297,15 @@ impl Window {
             unsafe { DestroyWindow(clip) };
             return Err("could not open the editor's window in the engine's".into());
         }
-        let state = State { id: WindowId(hwnd as usize), close_requested: false, size, style, clip: Some(clip) };
+        let state = State {
+            id: WindowId(hwnd as usize),
+            close_requested: false,
+            size,
+            style,
+            clip: Some(clip),
+            owner: Some(parent),
+            placed: None,
+        };
         let kept = OPEN.with(|open| open.try_borrow_mut().map(|mut open| open.push(state)).is_ok());
         if !kept {
             // SAFETY: both windows this made, on this thread; the view first, as a child of
@@ -319,13 +351,22 @@ impl Drop for Window {
 /// engine's window. An empty visible area hides it. Nothing happens to a window that is
 /// not embedded.
 pub(crate) fn place(id: WindowId, placement: Placement) {
-    let Some(Some(clip)) = with_state(id, |s| s.clip) else { return };
+    per_monitor(|| place_now(id, placement));
+}
+
+fn place_now(id: WindowId, placement: Placement) {
+    let Some((Some(clip), owner)) = with_state(id, |s| (s.clip, s.owner)) else { return };
     let Placement { x, y, clip_x, clip_y, clip_width, clip_height } = placement;
     if clip_width == 0 || clip_height == 0 {
+        with_state(id, |s| s.placed = None);
         // SAFETY: an open window (it is in the list).
         unsafe { ShowWindow(clip, SW_HIDE) };
         return;
     }
+    // The clip is a window of its own over the engine's: its place is on the screen, from
+    // where the engine's window's inside starts.
+    let origin = owner.and_then(inside_origin).unwrap_or((0, 0));
+    with_state(id, |s| s.placed = Some((placement, origin)));
     let span = |n: u32| i32::try_from(n).unwrap_or(i32::MAX);
     // SAFETY: the view, an open window; only its place inside the clip changes.
     unsafe {
@@ -345,13 +386,58 @@ pub(crate) fn place(id: WindowId, placement: Placement) {
         SetWindowPos(
             clip,
             HWND_TOP,
-            clip_x,
-            clip_y,
+            origin.0.saturating_add(clip_x),
+            origin.1.saturating_add(clip_y),
             span(clip_width),
             span(clip_height),
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         )
     };
+}
+
+/// Runs `f` with this thread aware of each monitor's scale, as the engine's window is: an
+/// embedded editor's window is made, measured and moved in the screen's own pixels, the ones
+/// the engine places it in, and is not stretched by the system on a scaled monitor.
+fn per_monitor<R>(f: impl FnOnce() -> R) -> R {
+    // SAFETY: a documented constant; the call returns the thread's context before, or null
+    // where it is not supported (before Windows 10 1607), and then changes nothing.
+    let before = unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    let result = f();
+    if !before.is_null() {
+        // SAFETY: the context this thread had, given back.
+        unsafe { SetThreadDpiAwarenessContext(before) };
+    }
+    result
+}
+
+/// Where the inside of window `window` starts on the screen, if it is a window.
+fn inside_origin(window: HWND) -> Option<(i32, i32)> {
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: the call fills the point it is given; a handle that is no window makes it fail.
+    (unsafe { ClientToScreen(window, &mut point) } != 0).then_some((point.x, point.y))
+}
+
+/// Moves the embedded editors with the engine's window when it has moved since they were put,
+/// so they stay over their panels. Called from the host's main loop.
+fn follow_owners() {
+    let moved: Vec<(WindowId, Placement)> = per_monitor(moved_editors);
+    for (id, placement) in moved {
+        place(id, placement);
+    }
+}
+
+/// The embedded editors whose engine's window moved since they were put, and where they were.
+fn moved_editors() -> Vec<(WindowId, Placement)> {
+    let moved: Vec<(WindowId, Placement)> = OPEN.with(|open| {
+        let Ok(open) = open.try_borrow() else { return Vec::new() };
+        open.iter()
+            .filter_map(|s| {
+                let (placement, origin) = s.placed?;
+                (inside_origin(s.owner?)? != origin).then_some((s.id, placement))
+            })
+            .collect()
+    });
+    moved
 }
 
 /// Resizes window `id` so its inside is `size` (a plug-in asked for it).
@@ -452,6 +538,7 @@ thread_local! {
 /// Handles the window messages waiting for this thread's windows (the editors' and the
 /// plug-ins' own). Called from the host's main loop.
 pub(crate) fn pump() {
+    follow_owners();
     // SAFETY: a zeroed message is a valid value to be filled.
     let mut message: MSG = unsafe { std::mem::zeroed() };
     // SAFETY: the message is filled by the call; null asks for any window of this thread.
@@ -478,6 +565,27 @@ pub(crate) fn pump() {
             }
         } else if message.wParam == VK_SPACE && message.message == WM_KEYUP && SPACE_OURS.with(std::cell::Cell::get) {
             continue;
+        }
+        // While the app's computer keyboard plays notes, its keys go to the app as well, not to
+        // the plug-in (#944), unless a text field of the plug-in's has the keyboard or Ctrl, Alt
+        // or the Windows key is held. A held key's repeats are dropped.
+        if (message.message == WM_KEYDOWN || message.message == WM_KEYUP)
+            && suhina_plugins::keys_to_engine()
+            && let Ok(key) = u8::try_from(message.wParam)
+            && super::is_note_key(key)
+        {
+            let held = |key: u16| {
+                // SAFETY: reads this thread's keyboard state; no pointers.
+                unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(i32::from(key)) < 0 }
+            };
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN};
+            if !(held(VK_CONTROL) || held(VK_MENU) || held(VK_LWIN) || held(VK_RWIN) || typing(message.hwnd)) {
+                let pressed = message.message == WM_KEYDOWN;
+                if !(pressed && message.lParam & (1 << 30) != 0) {
+                    super::caught_key(key, pressed);
+                }
+                continue;
+            }
         }
         // SAFETY: a message just taken from the queue.
         unsafe { TranslateMessage(&message) };

@@ -11,9 +11,9 @@ primary platform; Windows and macOS are supported.
 | M3 | **Commands and agents:** command registry with undo; CLI and MCP server on the same commands | in progress: commands, undo, MCP, edits heard while playing, and saving projects in Suhina's own format (`.suhina`) work; more commands to come |
 | M4 | **Clip launching:** launch quantisation, scenes, stop buttons, follow actions | in progress: launching, scenes, stops, quantisation, follow actions, the metronome, launch modes, legato, per-clip quantisation and launch keys work; launching from live MIDI notes to come |
 | M5 | **Audio playback:** imported audio clips with gain, transpose, warping and time-stretching | done (verified by ear on a heavily warped set) |
-| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows and Linux X11; still to do: automation lanes in the UI, macOS and Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
+| M6 | **Plug-ins:** CLAP and VST3 hosting, sandboxed out of process (AGENTS.md rule 5, ADR 0006), and projects with VST2 plug-ins opened through their VST3 versions | in progress: CLAP and VST3 plug-ins load, play in the app and in renders with latency compensation, keep their state and survive crashes in their own process; editors on Windows, Linux X11 and macOS (there in a window of their own); still to do: automation lanes in the UI, Wayland editors ([#30](https://github.com/suhina-daw/suhina-daw/issues/30)) |
 | M7 | **More formats:** DAWproject import and export | not started |
-| M8 | **UI:** Session and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Session and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
+| M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
 How far this is from a full clip-launching DAW, and the order the gap is built in: the
 [parity report](docs/research/parity-live-12.md) and
@@ -94,6 +94,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | modulation delay | own delay lines | planned |
 | reverb: algorithmic, early reflections, damped feedback delay network, chorus, freeze | own | done |
 | convolution reverb | own convolution | planned |
+| saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
 | EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done; analyser, Audition and a curve display planned |
 | filter | own (`dsp` filters) | planned |
@@ -131,7 +132,7 @@ commands; plugdata is expected to load as an ordinary CLAP or VST3 plug-in now t
 but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), proposed).
 
 **ARA** after VST3 hosting works in the sandbox: Arrangement first, since looping, quantised
-Session clips do not fit ARA's linear timeline; Session view later. The design is
+Launcher clips do not fit ARA's linear timeline; Launcher view later. The design is
 [ADR 0028](docs/decisions/0028-ara-hosting.md) (proposed) and the stages are the epic
 [#587](https://github.com/suhina-daw/suhina-daw/issues/587): the document lives in the plug-in host,
 audio reaches it through shared memory, and an ARA clip that would overlap another audio clip is
@@ -139,10 +140,16 @@ refused or suspended, never by losing its edits.
 
 ## What works now
 
+- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
+  editable automatic boundaries with persistent corrections, stereo waveform lanes,
+  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+- Audio settings can open the active ASIO driver's native control panel, and
+  show the engine block separately from the measured driver callback size.
+
 - Theme skins: editable SVG/PNG controls with colour/state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts and native element placement, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid toolbar/workspace panel layout and persistent anchors between controls. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
 - Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's colour as `--track-colour`, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
-- Theme presentation: native Session column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
+- Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
 
 - Forest Amber, the green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
 
@@ -163,6 +170,11 @@ refused or suspended, never by losing its edits.
 
 - **Composable SDK sample source:** Rust-authored instrument graphs can bind PCM to
   independent polyphonic `sampler` nodes and process their audio with ordinary SDK nodes.
+- Windows release, nightly and test packages include ASIO support: choose ASIO in Settings ›
+  Audio › Driver, then an installed audio driver in Device. WASAPI remains available.
+
+- ASIO device choices remain available during playback. Late plug-in replies do not
+  mark a responsive host as hung, and obsolete starts unload away from the window.
 
 - **Device SDK authoring:** checked Rust graph handles, parameter-source helpers and standard
   panel-control constructors produce the same data-only `.sd` devices and use the existing runtime.
@@ -172,7 +184,7 @@ refused or suspended, never by losing its edits.
 
 - Every built-in effect, instrument and MIDI effect has editable controls in the device panel:
   its layout (in Rust, or as `devices/<name>/panel.json`: dials, buttons and band graphs in the compact panel, an expanded panel where a device has many parameters, and a generated list below the compact panel for parameters the compact layout does not place), or a parameter list generated from the device's own parameters,
-  260 px wide and at most 168 px high, scrolling past that. Each change is `device.setParam`, so it
+  in 260 px columns at most 168 px high, continuing in columns to the right rather than scrolling. Each change is `device.setParam`, so it
   is one undo step and an automation lane takes it over. Built-ins are native code with a layout
   loaded by their id, not `.sd` files ([ADR 0021](docs/decisions/0021-device-graph-files.md) ›
   Amendment: device panels).
@@ -180,8 +192,9 @@ refused or suspended, never by losing its edits.
   built-in's layout) has a button in its header that opens it over the main area; Escape or its
   close button closes it. Both panels change the same parameters.
 - A running plug-in's device panel lists its parameters under its editor button, as a generated
-  list that sets them by id (hidden and read-only ones left out), and follows changes made in
-  its own editor every two seconds.
+  list that sets them by id (hidden and read-only ones left out), and stays in step both ways
+  with the plug-in: what was changed in its own editor becomes the device's value with the
+  next block, and the plug-in's editor follows the panel and automation.
 
 - **Sampler:** single-source polyphonic sample and granular playback with an editable
   waveform, SDK controls, browser/system sample drops and recording from the armed
@@ -227,6 +240,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   linear mix law ([delay](docs/spec/delay.md), [reverb](docs/spec/reverb.md),
   [import](docs/spec/device-import.md))
 - the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
+- a saturator; a Live Set's Saturator comes in as it with its panel settings, Hi-Quality aside
+  (Suhina always oversamples) ([saturator](docs/spec/saturator.md))
 - an eight-band EQ; the matching device in a Live Set comes in as it with both curves of every
   band, its mode, Scale and Adaptive Q; its oversampling option is noted and not used
   ([EQ](docs/spec/eq.md), [import](docs/spec/device-import.md))
@@ -323,7 +338,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   critical operations (closing, quitting, relinking, adding files, loading a plug-in, deleting a
   track) or never, written on a background thread, the newest 20 kept; after a crash the
   next start offers the backup back, to open as an unsaved project tied to its file
-  (`project.autosave`, Settings › General › Backups, [spec](docs/spec/backups.md)).
+  (`project.autosave`, Settings › Projects and backups › Backups, [spec](docs/spec/backups.md)).
 - Clips, arrangement lanes and scenes have ids that stay the same when they are moved or edited and
   are never used twice; commands name a clip by its id (`clip`), so an agent's target does not move
   when other clips do, and the positional `index` is deprecated
@@ -358,7 +373,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Ctrl+V on the selected clip or slot (`clip.copy` and `clip.paste` take `scene`), or a drag held
   over the other view's name in the control bar until the view switches
   ([spec](docs/spec/clip-launching.md) › Clips between the arrangement and the slots). Within
-  the Session view a drag **moves** a clip to the slot under the pointer, swapping with what is
+  the Launcher view a drag **moves** a clip to the slot under the pointer, swapping with what is
   there (`clip.moveSlot`); Ctrl+drag copies.
 - A clip is renamed from its right-click menu, a slot's or an arrangement clip's: the name field
   at the menu's top, applied with Enter or **Rename** (`clip.rename`; an empty name clears it).
@@ -379,7 +394,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   its scene) and their chances, each change one undo step (`clip.setFollowAction`).
 - Launch modes (trigger, gate, toggle, repeat), legato and per-clip launch quantisation:
   `clip.setLaunchMode`, `clip.setLegato`, `clip.setQuantization`, and `clip.release` for the
-  release of a slot's launch button; in the Session view a slot launches as the mouse button goes
+  release of a slot's launch button; in the Launcher view a slot launches as the mouse button goes
   down, and right-clicking a clip sets its launch settings
   ([spec](docs/spec/clip-launching.md#launch-settings)).
 - Computer keys launch slots, scenes and stop buttons: Ctrl+M or **Map keys** in the title bar maps
@@ -413,7 +428,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   default one process per plug-in file, or per vendor, or one per instance
   (`plugin.setHosting`); a crash or hang costs that plug-in's sound, not the project
   ([ADR 0006](docs/decisions/0006-plug-in-hosting.md)). The host runs on Linux, Windows and
-  macOS (editors on macOS still to come).
+  macOS (there editors open in a window of their own).
 - An opened Live Set's plug-ins play in the app: each is found among the installed ones (a VST3
   version for a VST2 plug-in too) and started with the settings the project saved; instruments
   play their track's notes, effects process their track. Missing ones are named in the status
@@ -428,10 +443,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The device panel shows each plug-in's state (loading, running, missing, crashed) with Open
   editor, Close editor or Restart; the same commands work from the CLI and MCP. P opens or
   closes the shown track's plug-in's editor (the device the chain panel selects, else the
-  track's first running one; mappable, Settings › Shortcuts). Editors float
-  above Suhina's window, owned by it (Windows, X11), and respond at once; a setting
-  (Plug-ins › Editors › Device view) shows them inside the device panel instead, as part of
-  the chain. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
+  track's first running one; mappable, Settings › Keys). Editors float
+  above Suhina's window, owned by it (Windows, X11), and respond at once; on macOS they
+  float in a plain window of the host's own, since a view of another process's cannot attach
+  to Suhina's window (ADR 0006). A setting (Plug-ins › Editors › Device view) shows them
+  inside the device panel instead, as part of the chain, on Windows and X11; on macOS the
+  setting falls back to the window. On Linux the window is an X11 one whenever an X server (or XWayland) is there,
   so this works on Wayland desktops too.
 - Renders (`suhina-cli render`, MCP `project_render`) run the same plug-ins.
 - MCP `project_render` from an open project starts its plug-ins with the state the running ones
@@ -461,12 +478,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
-  macOS editors, VST2 hosting (not decided).
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland
+  editors, VST2 hosting (not decided).
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
-  stopped on the output chosen in Settings › Audio and shows the **Session view**: tracks as
+  stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
   columns, return tracks beside the scene column, clip slots with their state (stopped, queued,
   playing with progress), scene launch, stop buttons, and a mixer strip with pan, volume and
   track on/off
@@ -474,7 +491,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A **splash** while Suhina starts: a 300 × 200 px panel centred in the window with the logo and
   the version, shown while the browser's library, the sample map and the project asked for start,
   then fading into the ready window ([components](docs/design/components.md#splash)).
-- **At start** (Settings › General): with no project given, Suhina opens the start panel,
+- **At start** (Settings › Projects and backups): with no project given, Suhina opens the start panel,
   a new blank project, a new one from a chosen template, or the project opened last
   ([ADR 0010](docs/decisions/0010-project-files.md)).
 - A **start panel** while no project is open: New, a template or Open, the recent projects with
@@ -489,16 +506,16 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   notes (loops repeated), the playhead, track headers on the right that show volume and pan once
   a lane is tall enough (drag its lower edge), return and main rows along the bottom. Clips move
   by dragging (`clip.move`), snapped to the grid (Ctrl and the wheel zoom).
-- A track's pan and volume (the mixer strip in the Session view, the track headers in the
+- A track's pan and volume (the mixer strip in the Launcher view, the track headers in the
   Arrangement view) are heard while they are dragged, and one drag is one undo step
   (`track.setPan`, `track.setVolume` with `continue`;
   [#313](https://github.com/suhina-daw/suhina-daw/issues/313)).
 - A click on the ruler sets where playback starts (`transport.setPosition`, on the clip grid,
   Alt for free), shown as a marker; while playing, playback jumps there. Stop returns to the
-  marker, or stays where it stopped (Settings › Transport › Stop); a second Stop goes to the
+  marker, or stays where it stopped (Settings › Arrangement › Time and play › Stop); a second Stop goes to the
   beginning ([spec](docs/spec/arrangement-editing.md)).
 - **Play from the selected clip:** Shift+Space plays from the start of the clip selected in the
-  Arrangement view, and the setting Settings › Transport › Play from (**Marker** or **Selected
+  Arrangement view, and the setting Settings › Arrangement › Time and play › Play from (**Marker** or **Selected
   clip**) makes Play and Space do the same; the marker moves to the clip's start, so Stop returns
   there (`transport.play {from: "clip", track, index}`, `play <track> <i>` in
   `suhina-cli play --launcher`; [spec](docs/spec/arrangement-editing.md) › Play position).
@@ -524,7 +541,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Save as template writes a copy to the templates folder. The tab and window title mark unsaved
   changes with a dot, and closing a project, opening another in its place or quitting with
   unsaved changes asks whether to save them.
-- **MCP export permissions:** Settings › Export lists allowed write folders, including the
+- **MCP export permissions:** Settings › Agents and updates lists allowed write folders, including the
   optional project-folder grant. The person adds or revokes folders; agents cannot grant
   themselves permission. Attached exports prepare across frames and render off the window
   thread, including exports in batches.
@@ -605,7 +622,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([spec](docs/spec/sample-map.md) › Kinds and colours, #325).
 - A menu bar and a **Settings** dialog over the window (Options › Settings, Ctrl+,; Escape closes
   it) with its pages listed down the
-  left: General, Audio, MIDI, Plug-ins, Arrangement, Session and mixer, Clip editor, Transport,
+  left: General, Audio, MIDI, Plug-ins, Arrangement, Launcher and mixer, Clip editor, Transport,
   Detail area, Browser, Appearance and Shortcuts; saved in `settings.txt`.
 - Every Settings page scrolls (wheel, scroll bar, a control given the focus) at any window size,
   groups its settings under headings by what the user is doing, and a **Search settings** field
@@ -633,16 +650,16 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   memory, measured once a second, with every plug-in host process's own added, which each
   reports to the engine once a second); Space plays and stops, Ctrl+Z and Ctrl+Shift+Z undo and
   redo. Every click is a command, the same the CLI and MCP run.
-- Level meters for every track, group and return and the main output, in the Session mixer and
+- Level meters for every track, group and return and the main output, in the Launcher mixer and
   the Arrangement headers: peak and RMS per side on the volume's dB scale, a held peak line and a
   clip light a click turns off; `mixer.levels` reads them and `mixer.resetClip` resets them over
   the CLI and MCP ([spec](docs/spec/level-meters.md),
   [#397](https://github.com/suhina-daw/suhina-daw/issues/397)).
-- Solo buttons in the Session mixer and the Arrangement headers (`track.setSolo`): exclusive by
+- Solo buttons in the Launcher mixer and the Arrangement headers (`track.setSolo`): exclusive by
   default, Ctrl adds; the engine hears soloed tracks, their groups and the return tracks.
-- Send knobs in the Session mixer strip, one per return in the strip's sends row: drag for the level,
+- Send knobs in the Launcher mixer strip, one per return in the strip's sends row: drag for the level,
   double-click for off, right-click for before or after the fader.
-- **A channel strip per track in the Session view** ([#491](https://github.com/suhina-daw/suhina-daw/issues/491)):
+- **A channel strip per track in the Launcher view** ([#491](https://github.com/suhina-daw/suhina-daw/issues/491)):
   the mixer under the slots is resized from its top edge (46 px up to just under the last
   scene's stop row, 166 px by default, kept in Settings), and each strip shows more as it grows:
   a compact volume at the least height, then a volume fader with the meter beside it and its dB
@@ -662,7 +679,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   `track.adjustPan` move each track by the same amount, keeping what is between them, and
   `track.setMute`/`track.setSolo` take the whole list as one undo step. Dragging one header's
   volume or pan moves every selected track with it, the wheel over a value changes it (1 dB a
-  tick) instead of scrolling, and Settings › Session and mixer › Mixer controls draws the
+  tick) instead of scrolling, and Settings › Launcher and mixer › Mixer controls draws the
   volume and pan as fields or as knobs ([spec](docs/spec/arrangement-editing.md#volume-pan-mute-and-solo)).
 - A cue output for headphones: Settings › Audio › Cue puts browser previews and the tracks whose
   **C** button is on (`track.setCue`) on another output pair of the same device (outputs 3/4 and
@@ -671,7 +688,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([spec](docs/spec/cue-output.md)).
 - A track header 70 px or taller shows where the track plays: the main output or a group
   (`track.setOutput`, loops refused).
-- The Session view's channel strip shows where each track plays ("→ Main" or a group) once the
+- The Launcher view's channel strip shows where each track plays ("→ Main" or a group) once the
   mixer is 192 px or taller, and its dropdown routes the track (`track.setOutput`, one undo step).
 - A clip dropped over others replaces what it covers (shortens, splits or removes them), or
   stacks with them when Allow sample / MIDI stacking is on; stacked clips share the lane in
@@ -699,10 +716,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   the notes, audio by rendering the clips without devices to a WAV file next to the project
   (`clip.consolidate`, [spec](docs/spec/arrangement-editing.md#splitting)).
 - Tracks: click a header to select it (Ctrl adds), Ctrl+G groups the selection, drag a header
-  to move the track (a group moves with its tracks); right-click a header or a Session column for
+  to move the track (a group moves with its tracks); right-click a header or a Launcher column for
   name, colour, group, ungroup and delete. Clips: right-click or Delete and Ctrl+D.
 - Track colours show at a glance: an Arrangement header has a band of the track's colour down
-  its edge, a Session column's header and its channel strip's name are filled with it, and the
+  its edge, a Launcher column's header and its channel strip's name are filled with it, and the
   strip has a band down its left edge. A click on a band opens the colour palette (the theme's eight
   track colours, the same swatches as the track's menu and a colour tag's menu); a swatch sets the
   colour in one undo step (`track.setColor`, [spec](docs/spec/ui-session-view.md#track-colour)).
@@ -711,7 +728,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   nesting, and the fold triangle on a group's header hides its tracks in both views. Drag a header
   into a group, or use Move into group / Move out of group in its menu (`track.setGroup`); nested
   groups are saved and read from Live Sets ([spec](docs/spec/arrangement-editing.md#groups-inside-groups)).
-- A double-click on an empty Session slot or an empty spot of an Arrangement lane makes an empty
+- A double-click on an empty Launcher slot or an empty spot of an Arrangement lane makes an empty
   clip of the track's kind — MIDI on a notes track, an audio clip with no file yet on an audio
   track — a bar long and on the grid (`clip.create`, also over MCP); in the Arrangement it is
   selected ([spec](docs/spec/arrangement-editing.md#making-an-empty-clip)).
@@ -758,7 +775,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([#177](https://github.com/suhina-daw/suhina-daw/issues/177)).
 - **MIDI controllers** play the armed tracks' instruments, built in or plug-ins, with the
   transport running or stopped, and with the sustain pedal
-  ([ADR 0017](docs/decisions/0017-inputs-and-latency.md)): an arm button in the Session mixer
+  ([ADR 0017](docs/decisions/0017-inputs-and-latency.md)): an arm button in the Launcher mixer
   and the Arrangement headers (`track.setArm`; a click arms one track, Ctrl adds), every MIDI
   input port opened and Settings › MIDI to turn one off (`midi.inputs`,
   `midi.setInput`); a controller plugged in later is found within seconds. The latency follows
@@ -786,6 +803,18 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   time the driver stamped it with, at the frame where that falls, instead of on the next block's
   first frame, so fast playing no longer jitters by up to a block
   ([#269](https://github.com/suhina-daw/suhina-daw/issues/269), ADR 0017).
+- **Take lanes and comping:** recording into the arrangement draws the take as it grows, with
+  its notes or waveform, and keeps every pass over the same beats (the loop wrapping, a click back
+  on the ruler) as a take lane under the track, the latest on the track and playing; a click on a
+  take's clip, or a drag across part of a take, copies it onto the track (`take.comp`), and takes
+  can be deleted (`take.delete`) or folded away
+  ([#909](https://github.com/suhina-daw/suhina-daw/issues/909)).
+- **Copying samples out:** Copy to folder… in a sample's menu in the browser or the sample map
+  copies it, or every selected one, into a folder (`library.copyTo`, numbered names, nothing
+  overwritten), and samples dragged out of Suhina onto the file manager or the desktop are copied
+  there on Windows and macOS ([#865](https://github.com/suhina-daw/suhina-daw/issues/865)).
+- **Sample map labels:** a Labels control (Off, 50, 75, 100 %) beside Size scales or hides the
+  cluster names, kept as a setting ([#864](https://github.com/suhina-daw/suhina-daw/issues/864)).
 - **Recording:** an armed track records into an empty clip slot from the next launch boundary
   (the slot's record button, `clip.record`; a second click ends the take on the next boundary
   and plays it, looped) or into the arrangement (the control bar's record button,
@@ -805,7 +834,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   before anything falls back.
 - Settings › Plug-ins: the folders scanned (add with a format, remove, switch off), Scan and
   Rescan all in the background, and the plug-in manager.
-- Every key is the user's to change: Settings › Shortcuts and `keymap.json` bind any command
+- Every key is the user's to change: Settings › Keys and `keymap.json` bind any command
   that needs no parameters, the actions on the selection (copy, cut, paste, duplicate, delete,
   group) and the window's own ([shortcuts](docs/shortcuts.md)).
 - A first **piano roll** ([#200](https://github.com/suhina-daw/suhina-daw/issues/200),
@@ -843,7 +872,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   column on the left (nothing floats over the grid) and Ctrl+U still quantises at once; the key
   column plays through the track's instrument while a key is held (`preview.noteOn`,
   `preview.noteOff`), with Ctrl+click and Ctrl+drag selecting the notes of a pitch or a range of
-  them; and Settings › Shortcuts has the presets **Select-first** (Ctrl+D duplicates) and
+  them; and Settings › Keys has the presets **Select-first** (Ctrl+D duplicates) and
   **Draw-first** (Ctrl+B duplicates, a right-click in Draw and Paint deletes), kept in
   `keymap.json`.
 - **Piano roll, step 4** ([#460](https://github.com/suhina-daw/suhina-daw/issues/460)): the toolbar
@@ -856,7 +885,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   velocity Randomise and Ramp, each one command (`note.humanize`, `.fitToScale`, `.invert`,
   `.reverse`, `.legato`, `.stretch`, `.randomizeVelocity`, `.rampVelocity`) and one undo step; the
   clip column lists what is selected (Notes "N of M", From, To, Pitch, Velocity); and
-  Settings › Shortcuts gains the **Mouse-first** preset, which gives the mouse the four jobs
+  Settings › Keys gains the **Mouse-first** preset, which gives the mouse the four jobs
   (left draws, right deletes, Shift+right slices, Alt+right plays from the point) as switches of
   their own, kept in `keymap.json`.
 - **Piano roll workflow modes** ([#490](https://github.com/suhina-daw/suhina-daw/issues/490)): a
@@ -912,7 +941,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   splitter down, by the **×** at the end of its toolbar or by **View › Hide editor**
   (Ctrl+Shift+E), and selecting a clip opens it again. A click on an empty spot of the Arrangement
   view clears the clip selection, and a lane pulled up with the piano roll shows its clip's notes.
-- A **detail area** under the view (or a column beside it, Settings › Detail area) shows the selected
+- A **detail area** under the view (or a column beside it, Settings › Devices › Device panels) shows the selected
   clip's properties or the selected track's devices with their parameters, and each plug-in's
   state with a button that opens its editor or restarts it; Shift+Tab hides it.
   Every change from it is a device command (`device.add`, `device.remove`, `device.setParam`, …).
@@ -921,9 +950,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   device chain where the piano roll was and back, and a double-click on a track's header, a Session
   column's name or its channel strip shows that track's devices, opening the detail area if it was
   hidden ([spec](docs/spec/ui-clip-editor.md)).
-- In the Session view a click on a clip's name selects it and its mark launches it; the detail area
+- In the Launcher view a click on a clip's name selects it and its mark launches it; the detail area
   shows a slot's clip (scene, length, loop, gain, fades). Launching selects the clip too (Settings ›
-  Session and mixer › Select on launch), Enter launches the selected slot and the arrow keys
+  Launcher and mixer › Select on launch), Enter launches the selected slot and the arrow keys
   move through the slots ([spec](docs/spec/ui-session-view.md)).
 - Still to do: fades read from Live Sets ([#103](https://github.com/suhina-daw/suhina-daw/issues/103)),
   input routing, arm, level meters, device editing

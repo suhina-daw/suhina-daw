@@ -3,7 +3,7 @@ description: Planned device groups - several devices on a track as one unit, wit
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -86,7 +86,7 @@ running at their state, as a switched-off device does today.
   state and sounds again at once when unmuted, and a reverb tail is cut rather than restarted.
 - While any branch of a group is soloed, only the soloed branches add to the sum. Solo is local
   to its group: it does not touch other groups, other branches outside the group or the track
-  solo. Mute wins over solo, as on tracks.
+  solo. Mute wins over solo on a branch (on a track, the track's own solo outranks its mute).
 - Muting every branch leaves only the dry part of the mix.
 
 ### Instruments in a group
@@ -212,7 +212,12 @@ The group shows in a track's device panel ([ADR 0009](../decisions/0009-ui-toolk
   and **S** buttons, and a **+** to add a branch;
 - the devices of the selected branch to the right of the list, laid out as on a track.
 
-Selecting devices and pressing **Ctrl+G** (Cmd+G on macOS) groups them; **Ctrl+Shift+G**
+A click on a device's panel picks it, inside a group too: Ctrl (Cmd) adds one or takes it out,
+Shift takes the run from the one picked last in the same chain or branch, and **Ctrl+A** picks
+every device of the chain or branch of the one clicked last. Copy, cut, duplicate, Delete, the
+on/off key and grouping act on the picks, by their paths through the groups.
+Selecting devices and pressing **Ctrl+G** (Cmd+G on macOS) groups them (those of one chain or
+branch, next to each other); **Ctrl+Shift+G**
 ungroups a group of one branch. The context menu of a device has **Group**, and of a group
 **Ungroup**, **Add branch**, **Save as preset…**. Dragging a device between branches or into and
 out of a group moves it. While a parameter is being mapped, right-clicking it offers **Map to
@@ -429,8 +434,10 @@ For the maintainer; each has the choice this spec made, so work can start withou
     role is the first thing that would need one. It is a third kind with its own placement rules (MIDI
     effects only, on a track that plays notes); nothing here forecloses it, and it is not planned until
     MIDI effects exist.
-11. **Importing other formats' grouped devices** onto device groups: a section of
-    [device import](device-import.md) once the model lands, from our own test files.
+11. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
+    Effect Rack and Instrument Rack ([`als-format.md`](als-format.md) › Audio Effect Rack and
+    Instrument Rack), observed in the user's own sets; macro mappings wait for a set that shows
+    where Live stores them, and an Instrument Rack's zones for key ranges (9).
 
 ## Implementation plan
 

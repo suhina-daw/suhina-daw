@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Settings › General › Updates, in lines of their own in the settings file
+//! Settings › Agents and updates › Updates, in lines of their own in the settings file
 //! (`docs/spec/updates.md` › Settings).
 
 use suhina_update::{BuildKind, Channel};

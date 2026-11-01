@@ -71,6 +71,7 @@ fn tree(group_devices: Vec<Device>, premaster_devices: Vec<Device>, master_devic
                 })
                 .collect(),
             markers: Vec::new(),
+            takes: Vec::new(),
         },
         ..Project::default()
     }
@@ -300,4 +301,44 @@ fn a_node_of_the_plain_project_renders_what_grouped_tests_know() {
     let whole = render_offline(&project, SR, 512).unwrap();
     assert!(peak(&whole) > peak(&group) * 1.2);
     assert!((peak(&group) - 2.0 * peak(&single)).abs() < 1e-4);
+}
+
+/// The main channel's devices run over the whole mix (#687): a Utility at -6 dB on Main halves
+/// it, and Main's volume applies once, after them.
+#[test]
+fn the_main_channels_devices_run_over_the_whole_mix_and_its_volume_comes_after() {
+    let plain = render_offline(&tree(vec![], vec![], vec![]), SR, 512).unwrap_or_else(|e| panic!("{e}"));
+    let halved = tree(vec![], vec![], vec![device("utility", &[("gain", -6.0206)])]);
+    let halved = render_offline(&halved, SR, 512).unwrap_or_else(|e| panic!("{e}"));
+    assert!(peak(&plain) > 0.01);
+    assert!((peak(&halved) / peak(&plain) - 0.5).abs() < 0.01, "{} {}", peak(&halved), peak(&plain));
+    // A quarter of the volume with a Utility at 0 dB on Main sounds as a quarter without it.
+    let quiet = |devices: Vec<Device>| {
+        let mut project = tree(vec![], vec![], devices);
+        if let Some(main) = project.channels.iter_mut().find(|c| c.role == ChannelRole::Master) {
+            main.volume = 0.25;
+        }
+        render_offline(&project, SR, 512).unwrap_or_else(|e| panic!("{e}"))
+    };
+    let (without, with) = (quiet(vec![]), quiet(vec![device("utility", &[("gain", 0.0)])]));
+    assert!(max_diff(&without, &with) < 1e-3, "{}", max_diff(&without, &with));
+}
+
+/// The main channel's volume lane plays (#687): falling to silence over the note, the note's
+/// second half is quieter than its first.
+#[test]
+fn the_main_channels_volume_lane_plays() {
+    let mut project = tree(vec![], vec![], vec![]);
+    if let Some(main) = project.channels.iter_mut().find(|c| c.role == ChannelRole::Master) {
+        main.automation.push(AutomationLane {
+            param: "volume".into(),
+            points: vec![AutomationPoint::new(0.0, 1.0), AutomationPoint::new(1.0, 0.0)],
+            enabled: true,
+        });
+    }
+    let out = render_offline(&project, SR, 512).unwrap_or_else(|e| panic!("{e}"));
+    // 120 BPM: the note's beat is half a second, 24 000 frames.
+    let half = 12_000 * 2;
+    let (first, second) = (peak(&out[..half]), peak(&out[half..half * 2]));
+    assert!(first > 0.01 && second < first * 0.8, "{first} {second}");
 }

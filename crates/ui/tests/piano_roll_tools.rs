@@ -385,13 +385,13 @@ fn settings_clip_editor_has_both_piano_roll_settings_and_they_change_the_setting
     h.get_by_label("Settings page: Clip editor").click();
     h.run();
     // Both rows fit on the page, inside the window.
-    for name in ["Pulled to the top: Whole window", "Piano roll grid: Control bar"] {
+    for name in ["Full-height piano roll covers: Whole window", "Piano roll grid source: Control bar"] {
         let rect = h.get_by_label(name).rect();
         assert!(rect.bottom() < SIZE.1, "{name} at {rect:?}");
     }
-    h.get_by_label("Pulled to the top: Whole window").click();
+    h.get_by_label("Full-height piano roll covers: Whole window").click();
     h.run();
-    h.get_by_label("Piano roll grid: Control bar").click();
+    h.get_by_label("Piano roll grid source: Control bar").click();
     h.run();
     assert_eq!(h.state().settings().piano_roll_top, PianoRollTop::Window);
     assert!(h.state().settings().piano_grid_follows);
@@ -621,7 +621,7 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     assert!(notes(&h).len() < before_cut, "the toolbar's Cut deleted the selection");
 }
 
-/// The Settings › Shortcuts presets: Draw-first makes Ctrl+B duplicate notes and a right-click in
+/// The Settings › Keys presets: Draw-first makes Ctrl+B duplicate notes and a right-click in
 /// Draw delete one; Select-first, the default, keeps Ctrl+D and does nothing on a right-click.
 #[test]
 fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
@@ -639,7 +639,7 @@ fn the_shortcuts_presets_set_their_keys_and_the_right_click() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
     assert!(h.state().settings_open());
-    h.get_by_label("Settings page: Shortcuts").click();
+    h.get_by_label("Settings page: Keys").click();
     h.run();
     h.get_by_label("Preset: Draw-first").click();
     h.run();

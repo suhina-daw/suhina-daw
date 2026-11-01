@@ -29,16 +29,24 @@ def catalog(root=ROOT):
     source = (root / KEYMAP).read_text(encoding='utf-8')
     actions = {}
     bindings = {}
+    # A group is a string or one of the file's `const NAME: &str = "…";` names.
+    groups = dict(re.findall(r'const ([A-Z_]+): &str = "([^"\n]+)";', source))
     for name in ('WINDOW_ACTIONS', 'DETAIL_ACTIONS'):
         count, body = table(source, name)
-        pattern = r'\(\s*"([^"\n]+)",\s*"([^"\n]+)",\s*("[^"\n]+"|PIANO_ROLL),?\s*\)'
+        pattern = r'\(\s*"([^"\n]+)",\s*"([^"\n]+)",\s*("[^"\n]+"|[A-Z_]+),?\s*\)'
         rows = re.findall(pattern, body)
         if len(rows) != count:
             raise ValueError(f'Incomplete action table: {name}')
         for action_id, label, group in rows:
             if action_id in actions:
                 raise ValueError('Duplicate action: ' + action_id)
-            actions[action_id] = (label, 'Piano roll' if group == 'PIANO_ROLL' else json.loads(group))
+            if group.startswith('"'):
+                group = json.loads(group)
+            elif group in groups:
+                group = groups[group]
+            else:
+                raise ValueError(f'Unknown action group {group} in {name}')
+            actions[action_id] = (label, group)
     for name in ('DEFAULTS', 'DETAIL_DEFAULTS'):
         count, body = table(source, name)
         rows = re.findall(r'\(\s*"([^"\n]+)",\s*&\[([^\]]*)\]\s*\)', body)

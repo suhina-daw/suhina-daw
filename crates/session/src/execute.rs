@@ -25,6 +25,9 @@ struct Prepared<'a> {
     step: Option<(&'static str, TrackId)>,
     /// Whether this call asked to `continue` the step.
     continued: bool,
+    /// A `replace` call that continues the open step: it runs on the project as it was before
+    /// the step began.
+    replaces: bool,
 }
 
 impl Session {
@@ -55,6 +58,14 @@ impl Session {
             }
             CommandKind::Edit => {
                 let before = self.project.clone();
+                // A live value that replaces the last one runs on the project as the step found
+                // it (the top of the undo stack, which the open step pushed); `before` stays the
+                // project as shown, so the player hears the change.
+                if prepared.replaces
+                    && let Some(start) = self.history.undo.last()
+                {
+                    self.project = start.clone();
+                }
                 match self.apply(&prepared, params, &before) {
                     Ok(value) => self.commit(&prepared, before).map(|()| value),
                     Err(e) => {
@@ -86,7 +97,8 @@ impl Session {
         commands::check_params(id, spec.params, params)?;
         // A clip named by its id is found where it is now and handed to the command by position.
         let resolved = commands::resolve_clip_ids(&self.project, spec, params)?;
-        let mut prepared = Prepared { spec, resolved, gesture, continuous, step: None, continued: false };
+        let mut prepared =
+            Prepared { spec, resolved, gesture, continuous, step: None, continued: false, replaces: false };
         if spec.kind == CommandKind::Edit {
             let params = prepared.resolved.as_ref().unwrap_or(params);
             self.sync.param_edits.clear();
@@ -103,6 +115,8 @@ impl Session {
             prepared.continued = params.get("continue").and_then(Value::as_bool) == Some(true);
             if !prepared.continued || prepared.step != self.history.open_step {
                 self.history.open_step = None;
+            } else {
+                prepared.replaces = params.get("replace").and_then(Value::as_bool) == Some(true);
             }
         }
         Ok(prepared)
@@ -124,6 +138,10 @@ impl Session {
     /// fails when what is left does not validate. The caller puts `before` back on an error.
     fn apply(&mut self, prepared: &Prepared, params: &Value, before: &Project) -> Result<Value, CommandError> {
         let value = (prepared.spec.run)(self, params)?;
+        if prepared.spec.id.starts_with("device.") {
+            crate::devices::follow_instruments(self, before);
+            crate::clip_ara::keep_hosts_first(&mut self.project);
+        }
         // A lane, clip or scene the command added without an id gets one now.
         self.project.assign_ids()?;
         self.keep_track_colours(before);

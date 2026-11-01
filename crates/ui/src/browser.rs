@@ -272,16 +272,27 @@ pub struct BrowserState {
     pub select_search: bool,
     /// The search field had the keyboard last frame.
     pub search_focused: bool,
+    /// A row of the list was pressed last, not anything outside the browser: the arrow keys move
+    /// through the list.
+    pub list_focused: bool,
     /// Escape in the search field asked for the preview to stop.
     pub stop_preview: bool,
     /// The sidebar's field for a folder to add, while it shows.
     pub new_folder: Option<String>,
     /// Items being dragged into the project.
     pub drag: Option<Vec<BrowserItem>>,
+    /// The folder row under the pointer while samples are dragged, which a drop moves or
+    /// copies them into (#943); set as the rows are drawn.
+    pub drop_folder: Option<PathBuf>,
     /// The file previewing, by key.
     pub previewing: Option<String>,
     /// A sample waiting to be read whole before it previews.
     pending_preview: Option<(PathBuf, f64)>,
+    /// The preview voice has been seen playing since `previewing` was set: until then a voice
+    /// that is not playing yet has not started, not ended (#836).
+    preview_heard: bool,
+    /// How many previews the voice had started at the last look.
+    preview_seen: u64,
     /// The row a button press selected, so its release does not select it again.
     pub(crate) handled_press: Option<String>,
     /// Why the sample waiting to preview could not be read, to show once.
@@ -318,11 +329,15 @@ impl Default for BrowserState {
             focus_search: false,
             select_search: false,
             search_focused: false,
+            list_focused: false,
             stop_preview: false,
             new_folder: None,
             drag: None,
+            drop_folder: None,
             previewing: None,
             pending_preview: None,
+            preview_heard: false,
+            preview_seen: 0,
             preview_error: None,
             handled_press: None,
             scroll: 0.0,
@@ -845,6 +860,37 @@ impl BrowserState {
     pub fn cancel_preview(&mut self) {
         self.pending_preview = None;
         self.previewing = None;
+        self.preview_heard = false;
+    }
+
+    /// `key` was just sent to the preview voice to play.
+    pub fn preview_started(&mut self, key: String) {
+        self.previewing = Some(key);
+        self.preview_heard = false;
+    }
+
+    /// What the preview voice says this frame: once it has been heard playing, a voice that is
+    /// no longer playing has ended, and nothing previews. A voice not heard yet may still be
+    /// about to start, so the control keeps showing Stop for it.
+    /// `started` counts the previews the voice has begun: a new one since the last look means
+    /// it played, even when it started and ended between two looks.
+    pub fn observe_preview(&mut self, playing: bool, started: u64) {
+        let begun = started > self.preview_seen;
+        self.preview_seen = started;
+        if playing || begun {
+            self.preview_heard = self.previewing.is_some();
+        }
+        if !playing && self.preview_heard && !self.preview_pending() {
+            self.previewing = None;
+            self.preview_heard = false;
+        }
+    }
+
+    /// Whether `key` previews now or waits to be read before it does: its control shows Stop,
+    /// and a second click stops it rather than starting it again.
+    pub fn preview_active_for(&self, key: &str) -> bool {
+        self.previewing.as_deref() == Some(key)
+            || self.pending_preview.as_ref().is_some_and(|(path, _)| path.display().to_string() == key)
     }
 
     /// Whether a sample waits to be decoded before it previews.
@@ -866,6 +912,32 @@ pub fn duration_text(seconds: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_preview_not_heard_yet_keeps_its_stop_control_until_it_ends() {
+        let mut state = BrowserState::default();
+        // Waiting to be read: the row's control already stops it, a second click does not restart it.
+        state.want_preview(PathBuf::from("kick.wav"), 0.0);
+        assert!(state.preview_active_for(&PathBuf::from("kick.wav").display().to_string()));
+        state.pending_preview = None;
+        state.preview_started("kick.wav".into());
+        // The audio thread has not started it in the first frames: it has not ended.
+        state.observe_preview(false, 0);
+        assert!(state.preview_active_for("kick.wav"), "not dropped before the voice starts");
+        state.observe_preview(true, 1);
+        assert!(state.preview_active_for("kick.wav"));
+        state.observe_preview(false, 1);
+        assert!(!state.preview_active_for("kick.wav"), "ended at the sample's end");
+        assert_eq!(state.previewing, None);
+        // A short one that starts and ends between two looks: the count shows it played.
+        state.preview_started("hat.wav".into());
+        state.observe_preview(false, 2);
+        assert!(!state.preview_active_for("hat.wav"), "a preview over before it was seen playing");
+        // Stopping forgets it at once.
+        state.preview_started("snare.wav".into());
+        state.cancel_preview();
+        assert!(!state.preview_active_for("snare.wav"));
+    }
 
     #[test]
     fn durations_read_as_minutes_and_seconds() {

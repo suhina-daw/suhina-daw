@@ -67,7 +67,7 @@ impl App {
         let devices = self.detail_open && self.detail_showing == detail_view::Showing::Devices;
         let (zoom, limits) = (self.settings.zoom, crate::settings::ZOOMS);
         let view = vec![
-            item("view.session", "Session").enabled(has_project).into(),
+            item("view.session", "Launcher").enabled(has_project).into(),
             item("view.arrangement", "Arrangement").enabled(has_project).into(),
             item(
                 "view.sampleMapWindow",

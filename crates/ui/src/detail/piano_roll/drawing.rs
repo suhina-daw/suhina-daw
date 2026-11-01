@@ -68,6 +68,32 @@ pub(super) fn play_key(state: &mut PianoRollState, clip: &PianoClip, actions: &m
     }
 }
 
+/// The play start marker at content beat `beat`: a thin line through the ruler and the notes, as
+/// the Arrangement's start marker is (#951).
+pub(super) fn draw_start_marker(ui: &Ui, layout: &Layout, beat: f64) {
+    let x = layout.x_of(beat).round() + 0.5;
+    if !(layout.grid.left()..=layout.grid.right()).contains(&x) {
+        return;
+    }
+    let area = layout.ruler.union(layout.grid);
+    let painter = ui.painter_at(area);
+    painter.vline(x, area.y_range(), Stroke::new(1.0, theme::text_secondary().gamma_multiply(0.6)));
+    // A small flag on the ruler, so it reads as the start, not the playhead.
+    let top = layout.ruler.top();
+    painter.add(egui::Shape::convex_polygon(
+        vec![Pos2::new(x - 4.0, top), Pos2::new(x + 4.0, top), Pos2::new(x, top + 6.0)],
+        theme::text_secondary(),
+        Stroke::NONE,
+    ));
+    let response = ui.interact(
+        Rect::from_center_size(Pos2::new(x, layout.ruler.center().y), Vec2::new(3.0, layout.ruler.height())),
+        Id::new("piano-roll-start-marker"),
+        Sense::hover(),
+    );
+    let label = format!("Play start at beat {}", round_beat(beat));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, &label));
+}
+
 pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
     let x = layout.x_of(beat).round() + 0.5;
     let area = layout.ruler.union(layout.grid).union(layout.lane);

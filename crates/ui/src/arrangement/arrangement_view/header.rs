@@ -230,9 +230,11 @@ pub(super) fn track_header(
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
         state.pick_track(lane.track, shift, command, order.tracks);
-        // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected
-        // for the detail area.
+        // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
+        // and the detail area shows the track's devices (#950).
         state.track_focus = true;
+        state.devices_clicked = true;
+        state.automation.let_go();
     }
     // A double-click shows the track's devices in the detail area.
     if body.double_clicked() {
@@ -266,6 +268,7 @@ pub(super) fn track_header(
             out: nesting::out_of_group(nest.places, lane.track),
             midi: lane.plays_notes.then_some((&lane.midi_input, timeline.midi_ports.as_slice())),
             audio: lane.plays_audio.then_some((&lane.audio_input, timeline.input_channels)),
+            tracks_copied: state.tracks_copied,
         };
         menus::track_menu(ui, &menu, actions);
     });
@@ -437,12 +440,21 @@ pub(super) fn track_header(
         .armable
         .then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(solo_width, header_row)));
     let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
-    let monitor = lane.plays_notes.then(|| {
-        Rect::from_min_size(
-            Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
-            Vec2::new(monitor_width, header_row),
-        )
-    });
+    // A track with take lanes has a button beside it that hides and shows them (#953).
+    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track)
+        || timeline.live_takes.iter().any(|t| t.track == lane.track && t.finished);
+    // Only where it ends inside its row, before the take lanes' button when that ends the row
+    // (#876); a narrower or lower header leaves the monitoring to the MIDI input menu.
+    let monitor_end = if has_takes && !narrow { row.right() - solo_width - 4.0 } else { row.right() };
+    let monitor = lane
+        .plays_notes
+        .then(|| {
+            Rect::from_min_size(
+                Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
+                Vec2::new(monitor_width, header_row),
+            )
+        })
+        .filter(|at| at.right() <= monitor_end);
     let controls_end = monitor.unwrap_or(arm.unwrap_or(cue)).right();
     // A lane tall enough for two rows has its volume and pan beside the buttons, where the
     // other level controls are, and the automation button, the name and the sends on the row
@@ -483,12 +495,44 @@ pub(super) fn track_header(
             &timeline.automation,
         );
     }
+    // Beside the automation button below the buttons, left of it at a narrow header's right end,
+    // and at the right end of a one-row header, where the automation button starts the row.
+    let takes_button = has_takes.then(|| {
+        if side {
+            lanes_button.translate(Vec2::new(SOLO + 2.0, 0.0))
+        } else if narrow {
+            lanes_button.translate(Vec2::new(-(SOLO + 2.0), 0.0))
+        } else {
+            Rect::from_min_size(Pos2::new(row.right() - solo_width, row.top()), Vec2::new(solo_width, header_row))
+        }
+    });
+    if let Some(button) = takes_button.filter(|b| b.intersects(clip)) {
+        let hidden = state.takes_hidden.contains(&lane.track);
+        let label = if hidden {
+            format!("Show take lanes of {}", lane.name)
+        } else {
+            format!("Hide take lanes of {}", lane.name)
+        };
+        let response = widgets::button_area(ui, button.intersect(clip), id.with("takes"), label);
+        if response.clicked() && !state.takes_hidden.remove(&lane.track) {
+            state.takes_hidden.insert(lane.track);
+        }
+        let (fill, text) = widgets::toggle_colors(ui, &response, !hidden);
+        painter.rect_filled(button, 0.0, fill);
+        // Three stacked lines: the lanes under the track.
+        let glyph = button.shrink2(Vec2::new(4.0, 4.0));
+        for i in 0..3 {
+            let y = glyph.top() + glyph.height() * i as f32 / 2.0;
+            painter.hline(glyph.x_range(), y, egui::Stroke::new(1.0, text));
+        }
+    }
+    let lanes_right = takes_button.filter(|_| side).unwrap_or(lanes_button).right();
     // Two rows: the sends at the end of the lower row, as many as leave the name its room.
     let step = SEND_WIDTH + SEND_GAP;
     let stacked_pan =
         Rect::from_min_max(Pos2::new(below.right() - PAN_FIELD, below.top()), Pos2::new(below.right(), below.bottom()));
     let send_room = if side {
-        below.right() - lanes_button.right() - PAD - LEAST_NAME
+        below.right() - lanes_right - PAD - LEAST_NAME
     } else if stacked {
         stacked_pan.left() - 4.0 - below.left() - LEAST_VOLUME
     } else {
@@ -509,11 +553,13 @@ pub(super) fn track_header(
         )
     } else if side {
         Rect::from_min_max(
-            Pos2::new(lanes_button.right() + PAD, below.top()),
+            Pos2::new(lanes_right + PAD, below.top()),
             Pos2::new(sends_left - SEND_GAP - 4.0, below.top() + header_row),
         )
     } else {
-        Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), Pos2::new(row.right(), row.bottom()))
+        // The take lanes' button, when there is one, ends the row and the name stops before it.
+        let end = takes_button.map_or(row.right(), |b| b.left() - 4.0);
+        Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), Pos2::new(end, row.bottom()))
     };
     // Keep a usable level control even on a single-row lane. Reserve the name's
     // minimum first; sends and pan stay in the expanded layout.
@@ -560,28 +606,29 @@ pub(super) fn track_header(
         );
         name.min.x = (type_rect.right() + 3.0).min(name.right());
     }
+    let name_size = if tiny {
+        10.0
+    } else if spacious {
+        theme::TEXT + 2.0
+    } else {
+        theme::TEXT
+    };
     if name_visible {
-        widgets::text_in(
-            painter,
-            name,
-            Align2::LEFT_CENTER,
-            &lane.name,
-            theme::ui_font(if tiny {
-                10.0
-            } else if spacious {
-                theme::TEXT + 2.0
-            } else {
-                theme::TEXT
-            }),
-            name_color,
-        );
+        widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(name_size), name_color);
     }
     work_trace.mark("layout and name");
     // The name's place, for a rename in place (Ctrl+R, #696).
     drop(name_style);
     let pass = ui.ctx().cumulative_pass_nr();
     ui.ctx().data_mut(|d| {
-        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), (name.intersect(clip), pass));
+        let spot = crate::app::NameSpot {
+            rect: name.intersect(clip),
+            pass,
+            fill: header_fill,
+            text: name_color,
+            size: name_size,
+        };
+        d.insert_temp(Id::new((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), spot);
     });
     if solo.intersects(clip)
         && let Some(action) =
@@ -815,8 +862,7 @@ pub(super) fn track_header(
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         if response.dragged_by(egui::PointerButton::Primary) {
             let dy = response.drag_delta().y;
-            let height = (state.height(lane) + if upward { -dy } else { dy }).clamp(MIN_LANE, MAX_LANE);
-            state.heights.insert(lane.track, height);
+            state.resize_lanes(lane.track, state.height(lane), if upward { -dy } else { dy });
         }
     }
 }

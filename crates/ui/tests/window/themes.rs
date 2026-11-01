@@ -431,10 +431,10 @@ fn waveform_colour_changes_live_in_settings_without_changing_the_project() {
         let midi = h.get_by_label("Clip Beat A on Drums at bar 1").rect();
         assert!(h.output().shapes.iter().any(|s| has_ink(&s.shape, midi, colour)), "{name} also applies to MIDI notes");
     }
-    assert!(h.query_by_label("Custom waveform and note colour").is_some());
+    assert!(h.query_by_label("Custom waveform colour").is_some());
     h.get_by_label("Waveform and note colour: Auto").click();
     h.run();
-    assert!(h.query_by_label("Custom waveform and note colour").is_none());
+    assert!(h.query_by_label("Custom waveform colour").is_none());
     assert!(!h.state().session().unwrap().can_undo());
 }
 

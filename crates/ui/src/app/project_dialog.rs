@@ -43,13 +43,19 @@ pub struct Lists {
     pub saved: Vec<Option<std::time::SystemTime>>,
     pub templates: Vec<PathBuf>,
     pub templates_folder: String,
+    /// A new blank project gets the A and B returns (Settings › Arrangement › Returns in new
+    /// projects): the first New row follows it, the second offers the other (#898).
+    pub new_returns: bool,
 }
 
 /// What the user chose in the project dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Choice {
     Open(PathBuf),
-    NewBlank,
+    /// A blank project, with the A and B returns when `returns`.
+    NewBlank {
+        returns: bool,
+    },
     NewFromTemplate(PathBuf),
     /// Browse…: the system's dialog for a project to open.
     Browse,
@@ -85,11 +91,21 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
     // New: blank, or from a template.
     heading(&painter, left, "New");
     let mut y = left.top() + LINE;
+    // The first row as Settings › Arrangement › Returns in new projects says, the second the other
+    // way, for this project only (#898).
+    let detail =
+        |returns: bool| if returns { "4 tracks, 2 returns, 8 scenes" } else { "4 tracks, no returns, 8 scenes" };
     let blank = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(half, LINE));
-    if row(ui, &painter, blank, "New blank project", "4 tracks, 2 returns, 8 scenes", "New blank project").clicked() {
-        choice = Some(Choice::NewBlank);
+    let returns = lists.new_returns;
+    if row(ui, &painter, blank, "New blank project", detail(returns), "New blank project").clicked() {
+        choice = Some(Choice::NewBlank { returns });
     }
-    y = blank.bottom() + PAD;
+    let other = Rect::from_min_size(Pos2::new(left.left(), blank.bottom()), Vec2::new(half, LINE));
+    let other_name = if returns { "New blank project without returns" } else { "New blank project with returns" };
+    if row(ui, &painter, other, other_name, detail(!returns), other_name).clicked() {
+        choice = Some(Choice::NewBlank { returns: !returns });
+    }
+    y = other.bottom() + PAD;
     heading(&painter, Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(half, 0.0)), "From a template");
     y += LINE;
     let note = Rect::from_min_max(Pos2::new(left.left(), bottom - 28.0), Pos2::new(left.right(), bottom));
@@ -110,7 +126,8 @@ fn draw(ui: &mut Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Opti
             }
         });
     }
-    let folder = format!("Templates in {}; the folder is set in Settings › General", lists.templates_folder);
+    let folder =
+        format!("Templates in {}; the folder is set in Settings › Projects and backups", lists.templates_folder);
     let lines = widgets::fitted(&painter, &folder, small.clone(), theme::text_hint(), note.width());
     widgets::paint_text(
         &painter,
@@ -842,13 +859,18 @@ mod tests {
                 PathBuf::from("templates/Old.als"),
             ],
             templates_folder: "templates".into(),
+            new_returns: true,
             ..Lists::default()
         };
         let mut harness = dialog(lists);
         harness.run();
         harness.get_by_label("New blank project").click();
         harness.run();
-        assert_eq!(harness.state().1, Some(Choice::NewBlank));
+        assert_eq!(harness.state().1, Some(Choice::NewBlank { returns: true }));
+        // The other way, for this project only (#898).
+        harness.get_by_label("New blank project without returns").click();
+        harness.run();
+        assert_eq!(harness.state().1, Some(Choice::NewBlank { returns: false }));
         harness.get_by_label("Template Beat").click();
         harness.run();
         assert_eq!(harness.state().1, Some(Choice::NewFromTemplate("templates/Beat.suhina".into())));

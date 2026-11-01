@@ -40,7 +40,7 @@ jobs:
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       # A pull request is checked out as a merge commit, so its first parent is the current base.
@@ -67,13 +67,17 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A pull request is checked out as a merge commit; its first parent is the base.
           fetch-depth: 2
       # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml), not checked here.
       - name: Front matter and covered paths
         run: python3 scripts/docs.py check
+      # What the updater installs and runs comes from this repository (updater-source.yml runs the
+      # same check from main, where a pull request cannot edit it).
+      - name: The updater downloads from this repository
+        run: python3 scripts/updater_source.py
       - name: Script tests (release notes)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
       # The claim bot writes to the project board, so a wrong branch would not fail anything else:
@@ -139,7 +143,7 @@ jobs:
       # The generated files are rewritten on main after the merge, so a link they still hold to a
       # document a pull request deletes is mended there; the pull request may not edit them.
       - name: Links between repository files resolve
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --offline --no-progress --exclude-path third_party --exclude-path docs/INDEX.md --exclude-path docs/commands.md "**/*.md"
           fail: true
@@ -149,8 +153,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt
       - run: cargo fmt --all --check
@@ -165,23 +169,33 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install ALSA headers (cpal) and an X server for plug-in editors (Xvfb)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
       # Only main saves; pull requests and the merge queue restore main's cache. The repository's
       # caches share 10 GB, and a save from every pull request push (about 0.8 GB per system)
       # evicted main's, so about half the runs compiled every dependency again (7 to 8 minutes
       # more on Linux).
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: ASIO driver initialization contract
+        if: runner.os == 'Windows'
+        env:
+          LIBCLANG_PATH: C:/Program Files/LLVM/bin
+        run: cargo test --manifest-path third_party/asio-sys/Cargo.toml --lib driver_info
+      - name: ASIO callback cycle contract
+        if: runner.os == 'Windows'
+        run: |
+          rustc --test third_party/cpal/src/host/asio/callback_cycle.rs -o callback-cycle-tests.exe
+          ./callback-cycle-tests.exe
       # The documentation, warnings as errors: a rustdoc link to code that was renamed (the map
       # from the window to its code in crates/ui/src/lib.rs, #768 › 4) fails here. Private items
       # are documented, so links to them resolve.
@@ -202,12 +216,12 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
       # Only main saves, as in the job above.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
@@ -224,7 +238,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - env:
@@ -246,11 +260,31 @@ jobs:
           done
           exit $missing
 
+  # Checks that live in workflows of their own, called here so that `ci` goes red with them: main
+  # requires only `ci`, and a check from another workflow could fail without stopping a merge.
+  # Each keeps its file (its tests and documents read it) and its own run by hand.
+  deny:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/deny.yml
+    permissions:
+      contents: read
+  depends-on:
+    uses: ./.github/workflows/depends-on.yml
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+  settings-guide:
+    uses: ./.github/workflows/settings-guide.yml
+    permissions:
+      contents: read
+
   # The one check main requires. Fails if any job it depends on failed or was cancelled. It runs
   # on pull requests and in the merge queue alike, so the queue waits on the same check.
   ci:
     if: always()
-    needs: [changes, docs, fmt, check, dco]
+    needs: [changes, docs, fmt, check, dco, deny, depends-on, settings-guide]
     runs-on: ubuntu-latest
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')

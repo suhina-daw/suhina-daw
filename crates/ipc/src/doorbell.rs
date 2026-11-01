@@ -12,8 +12,14 @@
 //!   time rather than on the system timer's next tick (15.6 ms by default). Without a
 //!   high-resolution timer (Windows 10 before 1803) the event's own timeout is cut a tick short
 //!   and the rest is yielded the same way.
-//! - Elsewhere (macOS for now): yielding the thread until the deadline. A semaphore-based wait
-//!   comes with the macOS prototype (ADR 0006, not decided yet).
+//! - macOS: short naps between checks. A thread that waits by yielding alone never sleeps, so
+//!   the kernel's timeshare scheduler demotes it for burning a core and hands it to the
+//!   efficiency cores, where its round trip misses the block's deadline (measured: an idle
+//!   round trip of 138 µs, p50 651 µs and 11 % of blocks late on a machine with three busy
+//!   processes). A nap counts as waiting and keeps the thread in the scheduler's good books;
+//!   [`NAP`] caps the requested sleep; scheduling can delay the actual wake-up. A semaphore-based wait comes with the macOS
+//!   prototype (ADR 0006, not decided yet): Mach semaphores live in one task and cannot be
+//!   shared with another process by name.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -22,6 +28,17 @@ use crate::IpcError;
 
 /// Checks before going to sleep.
 const SPINS: u32 = 256;
+
+/// How long the macOS wait spins before it naps: a ring landing in the spin is noticed at once,
+/// so this bounds how often a wake must wait out a nap.
+#[cfg_attr(any(target_os = "linux", windows), allow(dead_code))]
+const SPIN_BEFORE_NAP: Duration = Duration::from_micros(40);
+
+/// Maximum requested sleep for the macOS wait; the scheduler may wake it later. It stays
+/// far inside a block's deadline (a quarter of a millisecond, next to a block's 0.67–2.7 ms;
+/// with the plug-in's own work of a few hundred microseconds the round trip keeps its room).
+#[cfg_attr(any(target_os = "linux", windows), allow(dead_code))]
+const NAP: Duration = Duration::from_micros(250);
 
 /// How long before the deadline a high-resolution timer wakes the wait; the rest is yielded.
 /// Such a timer wakes within about half a millisecond, so one millisecond keeps the deadline.
@@ -157,7 +174,25 @@ impl Doorbell {
         #[cfg(windows)]
         self.sleep_windows(left);
         #[cfg(not(any(target_os = "linux", windows)))]
-        std::thread::yield_now();
+        {
+            // A short spin (a ring in it is noticed at once), then a nap, which counts as
+            // waiting and keeps the thread out of the scheduler's demotion. The spin watches
+            // the word, and so does the moment before the nap: a response seen is not slept
+            // over. Cap the requested sleep to the remaining time; scheduling may overshoot.
+            // The caller re-checks the word and deadline.
+            let spin = left.min(SPIN_BEFORE_NAP);
+            let started = Instant::now();
+            while started.elapsed() < spin {
+                if word.load(Ordering::Acquire) != value {
+                    return;
+                }
+                std::hint::spin_loop();
+            }
+            let left = left.saturating_sub(started.elapsed());
+            if !left.is_zero() && word.load(Ordering::Acquire) == value {
+                std::thread::sleep(left.min(NAP));
+            }
+        }
     }
 
     /// [`Doorbell::sleep`] on Windows. A wait with a millisecond timeout ends on the system

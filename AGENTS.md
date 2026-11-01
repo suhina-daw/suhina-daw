@@ -16,7 +16,10 @@ the documents that match your task.
 1. **Clean-room (outranks everything).** Follow [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
    Never disassemble or decompile proprietary DAW or plug-in binaries, never use leaked code, never
    commit content from commercial products. Knowledge comes from observation, self-authored files
-   and public documentation, and is written down in `docs/spec/` before it is implemented.
+   and public documentation, and is written down in `docs/spec/` before it is implemented. The one
+   third-party reverse-engineering result allowed is the VeSTige header for the VST2 interface,
+   at the commit [ADR 0022](docs/decisions/0022-vst2-interface-description.md) pins; the
+   exception and its limits are in CONTRIBUTING › Clean-room.
 2. **Never crash.** Non-test code never panics: no `unwrap()`, `expect()`, `panic!`,
    `unreachable!`, `todo!` or `unimplemented!`. Return the crate's error type. Input-derived
    numbers are hostile: use `get()` and `checked_*`, cap allocations sized by input. No `unsafe`
@@ -41,7 +44,12 @@ the documents that match your task.
 6. **Everything is a command.** User-visible behaviour is a command in the engine with an id,
    params and tests. The UI, CLI and MCP all dispatch the same commands.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
-   formats, golden-file renders for DSP and engine behaviour.
+   formats, golden-file renders for DSP and engine behaviour. A test never depends on timing: no
+   `sleep` to give a thread time, no wall-clock deadline or elapsed-time bound, no polling loop
+   that waits for another thread, no result that depends on the order threads run in. CI runners
+   are slow and uneven, and such a test fails there once in a while and teaches everyone to
+   re-run the job. Render a fixed number of frames with `process`, use a fake clock, or wait
+   on an explicit signal (a barrier such as `Session::sync_recording`, a channel, a join).
 8. **Build every device's panel on the SDK, and its DSP from shared blocks.** Every built-in MIDI
    effect, instrument and audio effect is native code, never an `.sd` graph, and gets its panel
    from the `device-sdk` UI system: the generated parameter list, or a layout (the `.sd` UI part
@@ -70,8 +78,10 @@ the documents that match your task.
    import"), never as Suhina's own branding.
 10. **GPL-compatible dependencies only.** Suhina is GPL-3.0-or-later. Dependencies must be
    compatible with GPLv3: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0. Not GPL-2.0-only,
-   not proprietary or "non-commercial" licences. CI checks it with `cargo-deny`
-   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`); run `cargo deny check` before adding
+   not proprietary or "non-commercial" licences. The `ci` check runs `cargo-deny`
+   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`, called from `ci.yml`; `deny.toml` has a
+   code owner, so the pull request that adds a dependency is not the one that permits its
+   licence); run `cargo deny check` before adding
    or updating a dependency ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
 11. **No links to private agent sessions.** The repository is public. Never put a link to an
     agent's own session (such as `https://claude.ai/code/session_...`) in a commit message, a pull
@@ -133,6 +143,7 @@ devices/
   eq       eight bands (cuts, shelves, bells, notch) on state-variable filters, two curves: Stereo, L/R, M/S
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled
   overdrive  pedal-style: band, drive, tone, dynamics, dry/wet; oversampled
+  saturator  eight curves, Color filters and their inverse, post clip, waveshaper; oversampled
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet
   multiband three bands: above and below stages per band (downward and upward compression, expansion), Amount, Time
   fm-synth six operators, 32 algorithms, DX7 voice files; the engine is a port of MSFA (Apache-2.0)
@@ -163,7 +174,8 @@ third_party/  vendored source: the ASIO SDK's host part (GPL-3.0, built with `as
               encoder (LGPL, always built for MP3 export; Suhina's own fft.c, ADR 0029)
 scripts/   research helpers (e.g. extracting and diffing .als files), the parity measurement
            (parity/, reading a manual the user owns; its output is never committed), docs.py
-           (the docs index), release_notes.py and discord_post.py (release notes, Discord posts)
+           (the docs index), release_notes.py and discord_post.py (release notes, Discord posts),
+           agent_post.py (an agent's issue or PR comment, as the bot or as the person, § 3)
 ```
 
 A crate may depend only on crates in its own or a lower layer, never in a cycle. Nothing below
@@ -230,6 +242,25 @@ Several agents often run at once, so an agent never starts work that exists alre
 
 - **Before opening an issue**, search the open issues for the same problem; when one exists,
   comment there instead.
+- **Check access before posting as the bot.** The two bot workflows below can be started only by
+  an account with write access. Before either, check the person's account once:
+  `gh api repos/suhina-daw/suhina-daw --jq .permissions.push` (or the GitHub MCP's repository
+  permissions). `true`: use the workflow. `false`: post from the person's own account, as the next
+  bullets say, and tell the user it went out under their account and why. A dispatch answered
+  `HTTP 403: Must have admin rights to Repository` means the same as `false` (GitHub's message
+  names the wrong right): fall back, never retry it or try another token.
+  [`scripts/agent_post.py`](scripts/agent_post.py) makes the check and takes either path, from the
+  same `request.json` the workflows take, and prints `OPENED_ISSUE=#N <url>` or
+  `COMMENTED_PR=#N <url>` both ways:
+
+  ```sh
+  python scripts/agent_post.py issue request.json     # or: comment request.json
+  ```
+
+  If the workflow posted but its successful completion could not be confirmed, the helper exits
+  with an error that includes the created issue or comment's marker and the run id. Inspect that
+  run and complete any missing follow-up; do not post again.
+
 - **Open an issue as the bot.** An agent with write access to this repository opens issues
   through the [Open issue](.github/workflows/open-issue.yml) workflow, not as the person it runs
   for, so the issue's author is `suhina-bot[bot]`. Start it with the GitHub MCP's
@@ -254,6 +285,14 @@ Several agents often run at once, so an agent never starts work that exists alre
   and the issue type; `labels` are the area and platform labels; `parent` is an open epic. Set the
   board's Priority and Phase afterwards. A pull request itself — its branch, its description and
   its merge — stays under the person's account.
+
+  Without write access, open it with `gh issue create --body-file` under the person's account,
+  identifying it as AI-assisted. Before opening it, check that a supplied parent is an open issue
+  labelled `epic`, as the workflow does; if the parent cannot be checked, stop before posting.
+  With `triage` access (`.permissions.triage`) give it the type label and the area labels, set its
+  issue type and add it under the parent epic, as the workflow would. Without triage, leave the
+  labels out: the body ends with the labels a maintainer should add, and `Part of #N` names the
+  parent, since the account cannot link a sub-issue.
 - **Use the caller's existing access; do not request elevated access to post.** The two bot
   workflows require repository write access, not admin access. Their posting rules apply only
   when the caller already has the required access and the configured connector permits the action.
@@ -272,7 +311,9 @@ Several agents often run at once, so an agent never starts work that exists alre
   comment, not a GitHub review: it neither approves nor requests changes, and no merge rule sees
   it; approving stays the maintainer's `ready to merge` label. Start it the same way,
   with the inputs as JSON on stdin, and read `COMMENTED_PR=#N <url>` from the log of the run the
-  start returns. Re-running a failed run does not comment twice.
+  start returns. Re-running a failed run does not comment twice. Without write access, post it
+  with `gh pr comment <N> --body-file …` under the person's account, ending with a line that
+  says an agent wrote it.
 
   ```sh
   python -c "import json; print(json.dumps({'pr': '600', \
@@ -354,6 +395,10 @@ its layout, or the generated parameter list. Report the app's path. Do this auto
 waiting for a separate rebuild request.
 
 
+**A new or moved setting follows [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md) › Adding a setting**
+(page by task, groups of at most seven outside Advanced, no status or commands among settings, one
+sentence of description, one control per kind of choice, the stored key unchanged).
+
 **A change in what Suhina does comes with steps to check it.** When a pull request changes
 anything a user sees, hears or does, in the app or outside it (a view, a menu, a dialog, a
 shortcut, a setting, drag and drop, playback and sound, a file it opens, imports or writes, a
@@ -428,6 +473,7 @@ that no longer exists. [`docs/README.md`](docs/README.md) says what each kind of
 | MCP tools, or how agents use commands | [`docs/mcp.md`](docs/mcp.md) (the command list, [`docs/commands.md`](docs/commands.md), is generated) |
 | What works for users | [`ROADMAP.md`](ROADMAP.md) › What works now, and [`README.md`](README.md) if it shows it |
 | What the parity measurement says (a milestone that lands, a feature that appears or is dropped) | the coverage of the chapters it changes in `scripts/parity/score.py`; the marked parts of [`docs/research/parity-live-12.md`](docs/research/parity-live-12.md) are regenerated on `main`, and its prose is edited in that file like any other document |
+| A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`docs/spec/ui-settings.md`](docs/spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in this file | this file, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if it repeats it |
 
 A limit or a planned part that a change resolves is removed from the docs in the same change.

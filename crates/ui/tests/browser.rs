@@ -755,9 +755,7 @@ fn drop_groove_on_the_drums_lane(name: &str, modifiers: Modifiers) -> Vec<f64> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label("Grid and launch quantisation").click();
-    harness.run();
-    harness.get_by_label("1/8").click();
+    harness.state_mut().set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1/8"));
     harness.run();
     // Zoom in eight times around a point half a beat into Beat B: its start stays in view.
     let clip = harness.get_by_label("Clip Beat B on Drums at bar 17").rect();
@@ -1362,6 +1360,40 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
     harness.run();
     let tags = harness.state_mut().projects_mut().file_library_mut().item_tags(&item);
     assert!(!tags.contains(&"Red".to_string()) && tags.contains(&"Orange".to_string()), "{tags:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// After a click on a row the arrow keys move through the list: down and up step, left goes up
+/// to the folder or heading and closes it, right opens it again (#916).
+#[test]
+fn the_arrow_keys_move_through_the_list_after_a_click_on_a_row() {
+    let (settings, folder) = (temp("arrows-settings"), temp("arrows"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.get_by_label(&row("Instruments")).click();
+    harness.run();
+    harness.get_by_label(&row("FM Synth")).click();
+    harness.run();
+    let selected = |h: &Harness<'static, App>| h.state().browser.selected().first().map(|s| s.name.clone());
+    assert_eq!(selected(&harness).as_deref(), Some("FM Synth"));
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    let next = selected(&harness);
+    assert_ne!(next.as_deref(), Some("FM Synth"), "down steps to the next row");
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("FM Synth"));
+    // Left goes up to the heading, a second left closes it, right opens it again.
+    harness.key_press(Key::ArrowLeft);
+    harness.run();
+    assert_eq!(selected(&harness).as_deref(), Some("Instruments"));
+    harness.key_press(Key::ArrowLeft);
+    harness.run();
+    assert!(harness.query_by_label(&row("FM Synth")).is_none(), "the heading closed");
+    harness.key_press(Key::ArrowRight);
+    harness.run();
+    assert!(harness.query_by_label(&row("FM Synth")).is_some(), "the heading opened");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

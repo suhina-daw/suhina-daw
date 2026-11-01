@@ -157,3 +157,17 @@ fn a_saved_project_keeps_its_tempo_map() {
     let text = suhina_project_file::to_json(session.project());
     assert_eq!(suhina_project_file::from_json(&text).as_ref(), Ok(session.project()));
 }
+
+/// The tempo field sends the tempo while it is dragged, each call after the first with
+/// `continue`, and the drag undoes in one step (#916).
+#[test]
+fn a_tempo_drag_is_one_undo_step() {
+    let mut session = Session::new(suhina_test_support::ProjectBuilder::new().midi_track(1, "Keys").build());
+    let before = session.project().transport.tempo_bpm;
+    run(&mut session, "transport.setTempo", json!({ "bpm": 100.0, "continue": false })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 95.0, "continue": true })).unwrap();
+    run(&mut session, "transport.setTempo", json!({ "bpm": 90.0, "continue": true })).unwrap();
+    assert_eq!(session.project().transport.tempo_bpm, 90.0);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().transport.tempo_bpm, before);
+}

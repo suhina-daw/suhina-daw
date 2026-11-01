@@ -3,7 +3,7 @@ description: Automation envelopes - lanes of points over the arrangement for a t
 read_when: automation, envelope, curve family, Bezier, volume fader, fader law, volume taper, volume smoothing, Taper, VolumeTaper, Curve, CurveDrag, curve split, curve drag, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
 type: spec
 status: current
-last_verified: 2026-10-25
+last_verified: 2026-10-30
 covers:
   - crates/model/src/automation.rs
   - crates/engine/src/automation.rs
@@ -13,7 +13,9 @@ covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/buses.rs
   - crates/session/src/automation.rs
+  - crates/session/src/automation_fit.rs
   - crates/session/tests/automation.rs
+  - crates/session/tests/clip_automation.rs
   - crates/ui/src/arrangement/automation_lanes.rs
   - crates/ui/tests/automation_lanes.rs
   - crates/ui/src/kit/widgets.rs
@@ -162,6 +164,13 @@ transport runs, and the answer says `"automation": "off"`. The value set by hand
 `automation.setEnabled {enabled: true}` turns the lane on again; the lane's points are kept. Undo
 brings the lane back on with the old value.
 
+## What the controls show
+
+A control whose parameter follows an enabled lane (a track header's volume and pan, a mixer
+strip's, the returns' and Main's, a device's knob) shows the lane's value at the playhead,
+whether the transport runs, is paused or is stopped, and follows the playhead when it is moved
+while stopped (#706, #811). A lane turned off shows the value set by hand.
+
 ## How the engine plays them
 
 The engine runs one render path (offline renders and playback alike), turns lanes into
@@ -208,33 +217,78 @@ mixer) and `param`. Values are in the unit of the parameter's set command.
 
 | Command | What it does |
 |---|---|
-| `automation.addPoint {track, device?, param, beat, value?, curve?}` | adds a point, making the lane (enabled) if there is none; answers the point's index in beat order. Without `value` the point goes on the envelope and a bent segment is split so it plays as before ([above](#splitting-a-segment)); a lane without points needs a value |
+| `automation.addPoint {track, device?, param, beat, value?, curve?, shape?}` | adds a point, making the lane (enabled) if there is none; answers the point's index in beat order. Without `value` the point goes on the envelope and a bent segment is split so it plays as before ([above](#splitting-a-segment)); a lane without points needs a value. With `shape` (a name `automation.insertShape` takes), the segment from the point before to the new one takes that shape between their heights, a repeating one once a beat |
 | `automation.movePoint {track, device?, param, point, beat?, value?, curve?}` | changes a point; answers its new index |
 | `automation.deletePoint {track, device?, param, point}` | removes a point; the lane goes with its last point |
-| `automation.movePoints {track, device?, param, points, beats?, value?, curve?}` | moves several points of one lane together in one undo step: `beats` later (earlier below 0), `value` up or down in the set command's unit (dB for the volume), each value kept in the parameter's range (a silent volume point stays silent, a louder one stops at +6 dB), `curve` given to each; answers the points' new indices in the order given |
+| `automation.movePoints {track, device?, param, points, beats?, value?, curve?}` | moves several points of one lane together in one undo step: `beats` later (earlier below 0), `value` up or down in the set command's unit (dB for the volume), each value kept in the parameter's range (a silent volume point moves from the lane's bottom, -70 dB, so points at the bottom move with the rest; a level moved down to -70 dB or below is silent, a louder one stops at +6 dB), `curve` given to each; answers the points' new indices in the order given |
 | `automation.deletePoints {track, device?, param, points}` | removes several points in one undo step; the lane goes with its last point |
 | `automation.clear {track, device?, param?}` | removes a lane, or every lane of the mixer or the device |
 | `automation.setEnabled {track, device?, param, enabled}` | turns a lane off or on again |
+| `automation.copy {track, device?, param, start, end}` | copies the envelope of a time range, with its values at the range's edges, for `automation.paste` (or, with `points` in place of the range, those points as they are, from the first of them: pasted, they go in among the lane's points and replace only those between the first and the last); each value is kept as where it sits on its lane (0 at the bottom, 1 at the top), as the lanes place it |
+| `automation.paste {track, device?, param, start}` | pastes the copied range from `start` over what is there, making the lane if there is none; on another parameter each value goes to the same height of that lane (the bottom of a pan lane is full left, of a mute lane off); answers the range pasted |
+| `automation.duplicate {track, device?, param, start, end}` | copies a range right after itself, over what is there; answers the copy's range, so the next duplicate goes on from it; the clipboard stays as it was |
+| `automation.deleteRange {track, device?, param, start, end}` | removes the points inside a range |
+| `automation.simplify {track, device?, param, start, end, tolerance?, continue?, replace?}` | replaces the points inside a range with the fewest bent segments that stay within `tolerance` of the old line, curves included, everywhere (a share of the lane's height, 0 to 1, default 0.02): the old line is sampled (24 places a segment), cut at its jumps and at corners sharper than 45° (on a lane taken as four times wider than tall) that the line needs: a corner that one fit across follows within the tolerance, with no more segments than its two sides apart, is smoothed away, and each piece gets one cubic curve fitted by least squares along its end directions (each handle at most 0.45 of the segment's chord, so a bend spreads along it), split where it strays furthest until every part is close enough (Schneider's curve fitting); a part whose curve the lane cannot hold (one running back in time, or bending a segment with level ends) is split further. The range's first and last points stay, and the result never has more points than before (else the range is left). Answers how many points it removed |
+| `automation.scaleRange {track, device?, param, start, end, factor, around?, continue?, replace?}` | stretches the points inside a range up and down by `factor` (0 to 4) around `around`: `middle` (the default) is the middle of where they sit on the lane, kept inside the travel. With `points` in place of the range, only those points move, around the middle of the line over their span (the troughs of a wave picked alone deepen, its peaks stay). With `continue`, the change joins the scaling of the same track before it in the undo history, so a slider's drag is one undo step; `bottom` is the bottom of the lane, so 0.5 halves each place on it. With `continue` and `replace` each call starts from the line as it was before the step it continues, so scaling up then back to 1 puts back points the lane's edge had cut |
+| `automation.smooth {track, device?, param, start, end, amount, continue?, replace?}` | rounds the corners and jumps inside a range, `amount` (0 to 1) taking up to 0.45 of the room on each side: a jump (two points at one beat) becomes an eased step that leaves its first value slowly, passes the middle at the jump's beat and settles on its second; a corner between two straight segments whose slope changes gets a point on each side on the old line, the line bending into the corner and out of it. Bent segments, stepped lanes and the range's edges are left as they are; answers how many it rounded |
+| `continue` with `replace` on `automation.insertShape` and `automation.smooth` | runs on the project as it was before the undo step the call continues began, so each call of a slider's drag replaces the one before rather than adding to it; with no step open to continue (another edit came between, or the calls before changed nothing), it runs on the line as it is |
+| `automation.insertShape {track, device?, param, start, end, shape, cycles?, depth?, center?, continue?, replace?}` | fills a range with a shape over the parameter's whole travel: `sine`, `triangle`, `saw_up`, `saw_down` and `square` repeat `cycles` times (1 to 512, default 1); `ramp_up`, `ramp_down`, `curve_up`, `curve_down` and `swell` play once. A sine is four bent segments a cycle (its curves pass through a sine's value half-way along each quarter), so it needs few points. With `depth` (0 to 1, default 1) the shape swings over that much of the travel, around `center` (default where the lane's value is at the range's start), kept inside the travel. With `point` in place of `start` and `end`: the segment from the point before it to it (the first point's: to the next), between the two points' heights (the whole travel when they are level), a repeating shape once a beat unless `cycles` says |
 | `automation.list {track}` | the track's lanes: `mixer` and `devices` (index, name, lanes), each with `param`, `enabled` and `points` (`beat`, `value`, `curve` as `[x1, y1, x2, y2]`) |
 | `device.setAutomation {track, device, param, points}` | replaces a device lane with straight segments (`points` a flat list of beat and value; `[]` removes it), for built-in devices, `.sd` devices and plug-ins |
 
 A `curve` is `[x1, y1, x2, y2]`, each from -0.5 to 1.5 (from 0 to 1 but for a split's halves,
 which `automation.list` shows as they are), or one bend from -1 to 1 for the mirrored family.
 
-Refused, changing nothing: an unknown track, device or parameter; a beat below 0 or past the
+An edit of a range replaces the points inside it and keeps the envelope outside it: points at the
+range's edges hold the values the lane had there (left out where the new points already start or
+end with them).
+
+Refused, changing nothing: an unknown track, device or parameter; a range whose end is not after
+its start; a copy or duplicate of a lane with no points, a paste with nothing copied, an unknown
+shape; a beat below 0 or past the
 arrangement's limit; a value out of range for the mixer (a volume above +6 dB, a pan outside -1 to
 1, a mute other than 0 or 1); a curve that is not four numbers from -0.5 to 1.5 or a bend from -1 to 1; a point index the lane does not have; a lane
 of more than 65,536 points; a `movePoint` with nothing to change.
+
+## Automation under clips
+
+The automation of a track under an arrangement clip goes with the clip (#916), as it sits
+relative to the clip:
+
+- **Moved** (`clip.move`, `clip.moveMany`): every lane of the track's mixer and devices with a
+  point from the clip's start up to its end takes its envelope there along: from the clip's start
+  to its end, with its values at the two edges. Where the clip was, the lane is a straight line
+  between the values it had at those edges; where it lands, the envelope replaces what was there,
+  the values outside kept (points at the edges hold them, so a different value outside is a jump
+  at the clip's edge). A copy made by the move (`copy`) leaves the envelope where it was too.
+- **Copied** (`clip.copy`, `clip.cut`, `range.copy`): each clip's envelope goes on the clipboard
+  with it, and `clip.paste` lays it under the clip's copy, on the track pasted to.
+- **Duplicated** (`clip.duplicate`, `range.duplicate`): each copy gets the envelope under the clip
+  it copies.
+
+In the Arrangement view a time selection painted over tracks lights their take and automation
+lanes under them too, and a selection box begun on a track over no clip picks the automation points
+it covers on the lanes under the track (on the lane where it covers the most; a selection of points
+is on one lane).
+
+A lane with no point under the clip is a straight line there and stays as it is. On another
+track the mixer's lanes (volume, pan, mute) go along; a device's lanes only on the track the
+clip came from, whose devices they name. All of it is part of the clip's command, one undo step.
 
 ## In the Arrangement view
 
 Each track header has an envelope button at the end of its first row ("Show automation of
 Drums"); a click shows the track's automation lanes under it, and another hides them. Shown the
 first time, they are the lanes that have points, or the volume's. Which lanes are shown is the
-view's own state, like a lane's height: it is not saved and needs no command. Return tracks and
-the main track have no lanes yet.
+view's own state, like a lane's height: it is not saved and needs no command. Return tracks have
+no lanes yet; Main's are under its row ([arrangement editing](arrangement-editing.md), #687).
 
-A lane is 40 px tall across the timeline, with a header under the track's:
+A lane is 40 px tall across the timeline until it is given another height, with a header under
+the track's. Dragging the line under a lane makes it taller or shorter (24 to 240 px) and moves
+the lanes below; the envelope is drawn to the new height. A double-click on that line, or
+**Reset height** in the menu a right-click on the lane's header opens, puts it back to 40 px.
+Each lane keeps its height while the track's lanes are hidden, for as long as the project is
+open (#818). The header:
 
 - **The parameter**, a dropdown of the track's volume, pan and mute and each built-in or `.sd`
   device's parameters, grouped by device; a parameter with points is marked " •". Choosing one
@@ -278,15 +332,33 @@ the value set on the mixer or the device. Editing (every edit is one undo step):
 
 | Gesture | Command |
 |---|---|
-| Click the lane | `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height |
+| Point at the line (within 8 % of the lane's height above or below it, at least 6 points), or a lane's faint line | the pointer becomes a hand; a dot on the envelope marks where a click puts the point (on the grid), and the envelope's value there shows beside the pointer |
+| Click away from the line | no point is added: the play start marker moves there (`transport.setStart`, on the grid; Alt: free), as a click on a clip lane does, and the painted range and the selection of points end. With Settings › Arrangement › Automation › **Click anywhere adds** on (off by default), it is `automation.addPoint` at the beat under the pointer (on the nearest line the arrangement's grid draws at this zoom, [arrangement editing](arrangement-editing.md#the-grid); Alt, Option on macOS: free) and the value at its height |
+| Double-click away from the line (the setting off) | `automation.addPoint` at the pointer, as above |
 | Click on or near the line (within 6 points), or a lane's faint line | `automation.addPoint` without a value: on the envelope, a bent segment split exactly so it plays and draws as before ([Splitting a segment](#splitting-a-segment)); on the faint line, with the parameter's value |
-| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer; points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
+| Drag a point | `automation.movePoint`, its beat on the grid (Alt, Option on macOS: free) and its value following the pointer; with Shift only along the axis the pointer moved further on, and up or down at a quarter of the speed for a finer value. Points dragged past others keep beat order, and a point dragged onto another's beat stays on the side it came from, so the jump runs as drawn while dragging |
+| Right-click the line: **Add value** | `automation.addPoint` on the envelope at that beat, on the grid, as a click on the line does |
+| Right-click a point: **Edit value** | a field beside the point with its value selected (in the set command's unit: dB or `-inf` for the volume; a pan as -1 to 1 or `25L`, `C`, `25R`; `%` and `ms` read for such parameters); Enter or a click elsewhere runs `automation.movePoint` with it, Escape leaves it |
+| The lanes' menus: **Snap to grid** and **Grid** | Snap to grid off (on by default; the window's choice, not saved) places points and ranges where the pointer is, as Alt does; Grid sets the Arrangement's grid, and a fixed value or no snapping the control bar's grid box too (`launcher.setQuantization`; [arrangement editing](arrangement-editing.md#the-grid)) |
 | Click a point | selects it; Shift or Ctrl adds it to the selection or takes it out. Selecting a clip ends a selection of points |
-| Drag on the lane away from the line | draws a box that selects the points in it |
-| Drag a selected point | `automation.movePoints`: the whole selection moves by the same beats (none before beat 0) and the same change of value |
+| Press on the line and drag | the press runs `automation.addPoint` at once where the guide showed (on the grid, Alt: free), and the drag moves that point with the pointer (`automation.movePoint` when the button comes up), the envelope following it |
+| Drag on the lane's upper half away from the line (the pointer is the text cursor there) | paints a time range over the lane's whole height, its ends on the grid (Alt, Option on macOS: free), and selects the points in it. A click on the lane or a point, a clip or a track header ends it |
+| Drag on the lane's lower half away from the line | draws a box that selects the points in it, as the clips' lanes select with a box from below; no range |
+| Ctrl+C, Ctrl+X, Ctrl+D, Delete with a range painted | `automation.copy`; `automation.copy` and `automation.deleteRange`; `automation.duplicate`, the range moving onto the copy so the next Ctrl+D goes on; `automation.deleteRange`. They act on the range before anything else that is selected |
+| Ctrl+C, Ctrl+X with points selected and no range | `automation.copy` with `points`; Ctrl+X also `automation.deletePoints` |
+| Ctrl+V with no range, on the lane clicked last | `automation.paste` from the play start marker; points copied as points go in among the lane's from there |
+| Ctrl+V with a range painted | `automation.paste` from the range's start, on that lane: paint a range where the copy should go, then paste |
+| Right-click inside a painted range: **Insert shape** | how many bars the range holds, then ten small pictures of shapes; a click runs `automation.insertShape` on the range. Under them, **Depth** (0 to 100 %, the shape's `depth`: how far it swings around its middle) and **Rate** (how long one cycle of a repeating shape lasts: 4 bars, 2 bars, 1 bar, 1/2, 1/4, 1/8, 1/16 or 1/32 of a whole note; 1/4 by default, a beat in 4/4) apply to the next shape, and a change of either puts the shape put in that range last in again with them, around the same place on the lane, while the slider is dragged (at most 60 times a second) and when it is let go of (when nothing else changed since, it replaces the shape before with `continue` and `replace`, so the range's edges come from the line as it was, and the shape and its changes are one undo step). A Scale, Smooth or Simplify after it ends that: with no shape of the menu's in the range, a line under the two says they apply to the next shape inserted there. Under **Points in the range**, for whatever points the range holds, drawn or inserted: **Scale** (0 to 200 %) runs `automation.scaleRange` on the range while it is dragged and when it is let go of, each change replacing the one before (`continue` with `replace`), so the percentage is always of the line as it was when the range was picked and going back to 100 % puts it back whole, cut peaks included; it stays where it was let go of while the range stays the same. **Around** under it chooses what it scales around: *Middle* (the default), half-way between the lowest and highest point, worked out from the line before scaling, or *Bottom*, the bottom of the lane, where 50 % halves every value. While the slider is hovered or dragged a dashed line on the lane marks it. **Smooth** (0 to 100 %) runs `automation.smooth` on the range the same way, each change replacing the one before (`continue` with `replace`), so each amount rounds the line as it was; a line it does not change, a sine's, stays as it is. **Simplify** (0 to 100 %) runs `automation.simplify` on the range the same way, each change replacing the one before; its `tolerance` is 0.04 times the square of the amount, so 0 % changes nothing and 100 % lets the new line stray 4 % of the lane's height. A line under it counts the points in the range before and now (`206 → 67 points`), and while the menu is open the line from before Simplify is drawn faintly under the new one. Each of Scale, Smooth and Simplify starts again from 100 % or 0 % once another of them, or a shape, has changed the range. The lane's menus close on a command or a click outside them, not on Middle, Bottom or a slider. The sliders' values are the window's, not saved |
+| Right-click the lane elsewhere: **Shape for new points** | the same pictures; the one clicked is lit and draws nothing: every point added from then on gives the segment from the point before it that shape (`automation.addPoint` with `shape`). A click on the lit one, or **Straight lines for new points**, goes back to straight lines. It is the window's choice, not saved |
+| Right-click a point: **Shape to this point** | under Delete point, the same pictures: `automation.insertShape` with `point`, the segment from the point before to this one (the first point's: to the next) |
+| Drag the round handle half-way along a sloping segment (one at least 28 points wide) | bends it as an Alt-drag of the line does; a double-click on it straightens it (curve 0) |
+| Drag a selected point | `automation.movePoints`: the whole selection moves by the same beats (none before beat 0) and the same change of value, and stays selected where it went, so Delete or a second move acts on it |
 | Delete (or Backspace) | `automation.deletePoints` for the selection, before any selected clip |
+| Right-click the lane or a point with points of the lane selected | the menu also says how many are selected and has **Scale** (5 to 200 %): it runs `automation.scaleRange` with them while it is dragged and when it is let go of, one drag one undo step; it stays where it was let go of while the same points are selected, each change measured from where the scaling began |
+| Left, Right, Up, Down with points selected | `automation.movePoints`: a grid step earlier or later (the control bar's grid; a beat with none), or a step of value up or down (a decibel for the volume, 0.02 of a pan, one for a whole number or a choice, a hundredth of the range otherwise) |
 | Double-click a point, or its menu's Delete point | `automation.deletePoint` (the menu deletes the whole selection when the point is part of one) |
-| Drag the line between two points up or down | `automation.movePoint` with the first point's new curve, along the paths of [Dragging a curve](#dragging-a-curve): up bends the line up |
+| Shift-drag the line between two points up or down | `automation.movePoints` of the two points by the same change of value, their beats kept (finer than the pointer) |
+| Alt-drag the line between two points up or down (Option on macOS) | `automation.movePoint` with the first point's new curve, along the paths of [Dragging a curve](#dragging-a-curve): up bends the line up |
 
 ## In the project file
 

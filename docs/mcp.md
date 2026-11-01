@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
 type: system
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-11-01
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -26,7 +26,8 @@ armed track's selected audio input; `on:false` finishes and loads the take, as o
 undo step. Save the project and open an audio output before recording.
 
 Loading a sample initializes `source_bpm` from its metadata, filename or detected
-tempo, falling back to the current project/playback tempo; `device.loadSample`
+tempo, leaving it at zero when unknown (`warp_tempo` then holds the tempo of that moment, so
+Warp keeps the original speed); `device.loadSample`
 returns `source_bpm` too. Set `warp` to 1 to follow project BPM using that original
 tempo. Correct `source_bpm` explicitly when known, or set it to 0 to request fresh
 detection. The legacy `warp_beats` parameter remains readable; setting it explicitly
@@ -71,7 +72,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 - **Audio output.** With `--audio`, each opened project also plays on the chosen output device
   (the default one until `audio.setOutput` chooses another) with the transport stopped, and transport commands (`scene.launch`, `clip.launch`, `clip.release`, `track.stop`,
   `launcher.stopAll`, `launcher.setQuantization`, `launcher.backToArrangement`, `transport.play`, `transport.stop`,
-  `transport.setPosition`, `transport.setMetronome`,
+  `transport.setPosition`, `transport.setStart` (the marker alone), `transport.jump` (a seek at the next launch
+  boundary, #657), `transport.setMetronome`,
   `launcher.state`) are heard. Without it they return an error, except `launcher.setQuantization`,
   which the project's session keeps and hands to an engine attached later; launch scripts in
   `project_render` work either way. Edits and undo/redo are heard by the playing engine from its
@@ -110,6 +112,10 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   at, ADR 0017), `underruns`, `failed` and `fallback` (it plays in
   place of a chosen host or device that is not there), `channels` (opened) and `cue_pair`.
   Without `--audio`, `audio.devices` returns an error.
+  `audio.openControlPanel {}` requests the active ASIO stream's own native panel
+  on its owner thread and returns `requested: true`. It does not reopen the output
+  or load plugins. Other hosts or a missing output return an error; close a modal
+  driver panel before changing output or closing the project.
 
 - **The cue (headphones).** `output.setCuePair {pair}` plays previews and the tracks whose cue
   is on (`track.setCue {track, cue}`, an edit) on another pair of the same device's outputs
@@ -352,6 +358,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   arrangement, `points` a flat list of beat and value (`[0, 0.2, 4, 0.8]`), `[]` removing it.
   Values are kept in the parameter's range once `device.pluginParams` has listed them.
   `track.devices` gives a plug-in's set values and any device's lanes (`automation`).
+  The `device.*` and `automation.*` commands take `"main"` for `track` (and `toTrack`) to act on
+  the main channel, which has no track of its own: its devices run over the whole mix and its
+  volume, pan and mute lanes play (#687). Commands that change tracks themselves do not take it.
 
 - **Device groups.** A device inside a device group is named by a *device path*
   ([spec](spec/device-groups.md)): a whole number is a device on the track, as before, and text
@@ -377,7 +386,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Automation.** `automation.addPoint`, `automation.movePoint`, `automation.deletePoint`,
   `automation.movePoints`, `automation.deletePoints` (several points of one lane in one undo
-  step), `automation.clear`, `automation.setEnabled` and `automation.list` (through `command_run`) edit
+  step), `automation.copy`, `automation.paste`, `automation.duplicate`, `automation.deleteRange`
+  and `automation.insertShape` (a time range of a lane), `automation.scaleRange`,
+  `automation.smooth` (rounds the corners and jumps in a range) and `automation.simplify`
+  (fewer points), `automation.clear`,
+  `automation.setEnabled` and `automation.list` (through `command_run`) edit
   the envelopes of a track's `volume`, `pan` and `mute` (no `device`) and of any device
   parameter (`device` and its `param` id), point by point, each one undo step; values in the
   set command's unit (the volume in dB). `device.setAutomation` replaces a whole device lane, for
@@ -461,14 +474,14 @@ suhina-cli mcp --attach
   network port. Test builds in different folders do not meet. Starting a build's `suhina` while it
   runs opens the project as a tab in the running window instead (`suhina --new-instance` starts
   another window, which serves no agents).
-- **The person lets agents in.** Nothing listens until **Settings › General › Agents › Let agents
+- **The person lets agents in.** Nothing listens until **Settings › Agents and updates › Agents › Let agents
   work on open projects** is on. Each connection then waits: the window asks whether to allow the
   client (by the name it gives at `initialize`), and tool calls wait for the answer; Deny ends the
   connection. The control bar shows each agent let in with a **Disconnect** button.
 - **Tabs.** The agent works on the window's tabs: `project.list`, `project.switch` and the
   `project` argument act on them. `project_open` is refused (the person opens projects), and so is
   `project.close`: closing loses a tab's unsaved changes and its undo history.
-- **Files.** Settings › Export controls where attached agents may write (`project.save`,
+- **Files.** Settings › Agents and updates controls where attached agents may write (`project.save`,
   `project.export`, `project_render`, `project.autosave` with `now`). The project's folder is
   allowed by default; the person can turn that grant off and add or remove other folders.
   Each grant includes subfolders and persists across restarts. Relative write paths start in
@@ -521,6 +534,16 @@ empty list clears the map. Optional `continue` groups consecutive drag edits.
 
 `track.devices` includes `sample_slices` when a Sampler has an explicit manual map.
 
+For the visible Slice mode (`mode: 2`), `device.editSampleSlice` edits automatic
+and pinned boundaries without replacing the automatic analysis. It takes `track`,
+`device`, and `operation` (`add`, `move`, `delete`, `regenerate`); add/move take
+`point`, move/delete take `previous`, and automatic boundaries also take their
+integer `identity`. Positions are normalized source fractions strictly inside
+0..1, and `point` strictly between the sampler's `start` and `end`. Regenerate clears pins and suppressions for the current method. Every call
+is one undo step. `track.devices` includes `sample_edits` with its version, pins
+and method/identity suppressions. The method and source-axis controls remain
+ordinary `device.setParam` parameters, independent of project tempo.
+
 `device.updateSd` applies the same read-root confinement as `device.addSd` and
 `device.loadSample`, including symlink resolution.
 
@@ -545,6 +568,6 @@ does with it: reads a file, files or a folder, writes one, a library item or pla
 `confine()` checks every one by that type; the files commands write have each their own rule. A
 test gives every `Path` parameter a path outside the roots and fails when `confine()` lets it
 through, and fails for a text parameter named like a file or a folder (`path`, `paths`, `folder`,
-`file`, `to`, `item`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
+`file`, `to`, `item`, `items`, `preset`, `sd`, `output`, `place`) that is not a `Path`, so a new command
 cannot take a path unchecked. Which commands an agent may not run is on each command's spec
-(`Policy::agents`: denied, or not to an agent attached to the app).
+(`Policy::agents`: denied, or not to an agent attached to the app). `library.copyTo` reads every file of its `items` below the read root and copies them only into a `folder` below the write root (#865); `library.moveTo` is checked the same way and is not open to an agent attached to the app, since a moved file is gone from where it was (#943).

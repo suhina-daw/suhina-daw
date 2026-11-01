@@ -11,14 +11,16 @@
 //! `test:clap-mix` is the same plug-in, except that its first output channel is the mean of the
 //! port's first two, so it shows whether its second input was filled.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use clack_extensions::gui::{GuiConfiguration, GuiSize, PluginGui, PluginGuiImpl};
 use clack_extensions::latency::{PluginLatency, PluginLatencyImpl};
 use clack_extensions::params::{
     ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginAudioProcessorParams, PluginMainThreadParams,
     PluginParams,
 };
 use clack_extensions::state::{PluginState, PluginStateImpl};
+use clack_plugin::events::event_types::ParamValueEvent;
 use clack_plugin::events::io::{InputEvents, OutputEvents};
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
@@ -27,6 +29,9 @@ use clack_plugin::utils::Cookie;
 
 /// Latency the test plug-in reports, in frames.
 pub(crate) const LATENCY: u32 = 16;
+
+/// The gain its editor sets when it opens, as the VST3 test plug-in's does (`test_vst3.rs`).
+pub(crate) const EDITOR_GAIN: f64 = 0.125;
 
 pub(crate) type Entry = SinglePluginEntry<TestGain<false>>;
 
@@ -38,6 +43,8 @@ pub(crate) struct TestGain<const MIX: bool>;
 
 pub(crate) struct GainShared {
     gain: AtomicU32,
+    /// The editor turned the gain, and the processor has not told the host out with a block yet.
+    report: AtomicBool,
     mix: bool,
 }
 
@@ -55,7 +62,11 @@ impl<const MIX: bool> Plugin for TestGain<MIX> {
     type MainThread<'a> = GainMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&GainShared>) {
-        builder.register::<PluginState>().register::<PluginLatency>().register::<PluginParams>();
+        builder
+            .register::<PluginState>()
+            .register::<PluginLatency>()
+            .register::<PluginParams>()
+            .register::<PluginGui>();
     }
 }
 
@@ -69,7 +80,7 @@ impl<const MIX: bool> DefaultPluginFactory for TestGain<MIX> {
     }
 
     fn new_shared(_host: HostSharedHandle<'_>) -> Result<GainShared, PluginError> {
-        Ok(GainShared { gain: AtomicU32::new(0.5f32.to_bits()), mix: MIX })
+        Ok(GainShared { gain: AtomicU32::new(0.5f32.to_bits()), report: AtomicBool::new(false), mix: MIX })
     }
 
     fn new_main_thread<'a>(
@@ -103,6 +114,57 @@ impl PluginStateImpl for GainMainThread<'_> {
 impl PluginLatencyImpl for GainMainThread<'_> {
     fn get(&self) -> u32 {
         LATENCY
+    }
+}
+
+/// Its editor: a view that shows nothing, and as soon as the host gives it its window, the user
+/// turning the gain (as the VST3 test plug-in's editor does). CLAP has no call from an editor to
+/// the host: the change comes out with the next block as an output parameter event
+/// ([`GainProcessor::process`]), which the host reports to the session (#828).
+impl PluginGuiImpl for GainMainThread<'_> {
+    fn is_api_supported(&self, _configuration: GuiConfiguration) -> bool {
+        true
+    }
+
+    fn get_preferred_api(&self) -> Option<GuiConfiguration<'static>> {
+        None
+    }
+
+    fn create(&self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn destroy(&self) {}
+
+    fn set_scale(&self, _scale: f64) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn get_size(&self) -> Option<GuiSize> {
+        Some(GuiSize { width: 300, height: 200 })
+    }
+
+    fn set_size(&self, _size: GuiSize) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn set_parent(&self, _window: clack_extensions::gui::Window) -> Result<(), PluginError> {
+        // The user turns the gain as soon as the editor is open.
+        self.shared.gain.store((EDITOR_GAIN as f32).to_bits(), Ordering::Release);
+        self.shared.report.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn set_transient(&self, _window: clack_extensions::gui::Window) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn show(&self) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn hide(&self) -> Result<(), PluginError> {
+        Ok(())
     }
 }
 
@@ -201,6 +263,12 @@ impl<'a> PluginAudioProcessor<'a, GainShared, GainMainThread<'a>> for GainProces
             }
         }
         let gain = f32::from_bits(self.shared.gain.load(Ordering::Relaxed));
+        // What its editor turned (while the block ran or since) goes out as an output parameter
+        // event, CLAP's way of telling the host; the host reports it to the session (#828).
+        if self.shared.report.swap(false, Ordering::AcqRel) {
+            let event = ParamValueEvent::new(0, GAIN_PARAM, Pckn::match_all(), f64::from(gain));
+            let _ = events.output.try_push(event);
+        }
         for mut port in &mut audio {
             let Some(pairs) = port.channels()?.into_f32() else { continue };
             for pair in pairs {

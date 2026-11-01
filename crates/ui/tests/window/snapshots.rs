@@ -134,13 +134,13 @@ fn render_the_session_window() {
     harness.run();
     let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
     image.save(folder.join("settings-arrangement.png")).unwrap_or_else(|e| panic!("{e}"));
-    harness.get_by_label("Settings page: Shortcuts").click();
+    harness.get_by_label("Settings page: Keys").click();
     harness.run();
     harness.remove_cursor();
     harness.run();
     let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
     image.save(folder.join("shortcuts.png")).unwrap_or_else(|e| panic!("{e}"));
-    harness.get_by_label("Settings page: General").click();
+    harness.get_by_label("Settings page: Projects and backups").click();
     harness.run();
 
     let mut harness = Harness::builder()
@@ -189,7 +189,7 @@ fn render_the_session_window() {
     image.save(folder.join("drop.png")).unwrap_or_else(|e| panic!("{e}"));
 }
 
-/// Renders the Session and Arrangement views in every theme that comes with Suhina, to
+/// Renders the Launcher and Arrangement views in every theme that comes with Suhina, to
 /// `target/ui-snapshots/theme-<id>-session.png` and `-arrangement.png`, to look them over. Needs
 /// a GPU adapter: `cargo test -p suhina-ui -- --ignored`.
 #[test]

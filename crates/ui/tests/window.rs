@@ -85,7 +85,9 @@ pub(super) fn window(app: App) -> Harness<'static, App> {
 
 /// Like [`window`], with `step` seconds a frame (a double-click needs frames closer together),
 /// and a second of frames for animations to settle.
-pub(super) fn window_with_step(app: App, step: f32) -> Harness<'static, App> {
+pub(super) fn window_with_step(mut app: App, step: f32) -> Harness<'static, App> {
+    // The window's tests place clips, fades and markers on a bar grid.
+    app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_step_dt(step)
@@ -221,6 +223,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         follow_action: Default::default(),
         launch: Default::default(),
         color: None,
+        ara: false,
         extensions: Extensions::default(),
     };
     project.arrangement.lanes.push(ArrangementLane {
@@ -257,6 +260,7 @@ pub(super) fn project_with_a_device() -> suhina_engine::model::Project {
         state: None,
         params: vec![DeviceParam::new("gain", -3.5), DeviceParam::new("width", 1.2)],
         automation: Vec::new(),
+        clip_host: false,
         extensions: Extensions::default(),
     });
     project
@@ -344,9 +348,15 @@ pub(super) fn double_click_at(harness: &mut Harness<'static, App>, at: egui::Pos
 
 /// Picks `value` in the control bar's grid box, as a user does: open it, click the value.
 pub(super) fn choose_grid(harness: &mut Harness<'static, App>, value: &str) {
-    harness.get_by_label("Grid and launch quantisation").click();
+    harness.get_by_label("Launch quantisation").click();
     harness.run();
     harness.get_by_label(value).click();
+    harness.run();
+}
+
+/// Chooses the Arrangement's own grid value, a control bar value such as `1/16` or `1/8T`.
+pub(super) fn choose_arrangement_grid(harness: &mut Harness<'static, App>, value: &str) {
+    harness.state_mut().set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value(value));
     harness.run();
 }
 

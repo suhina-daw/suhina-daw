@@ -390,6 +390,33 @@ impl Store {
         true
     }
 
+    /// What an item carries goes with it when its file moves to `to` (#943): its pin, its
+    /// places among the recent items and its tags.
+    pub fn relocate(&mut self, from: &str, to: &str) -> bool {
+        if from == to || to.is_empty() || to.len() > MAX_KEY {
+            return false;
+        }
+        let mut changed = false;
+        for pin in self.pins.iter_mut().filter(|p| *p == from) {
+            *pin = to.to_string();
+            changed = true;
+        }
+        for list in self.recent.values_mut() {
+            if list.iter().any(|i| i == from) {
+                list.retain(|i| i != to);
+                for item in list.iter_mut().filter(|i| *i == from) {
+                    *item = to.to_string();
+                }
+                changed = true;
+            }
+        }
+        if let Some(tags) = self.tagged.remove(from) {
+            self.tagged.insert(to.to_string(), tags);
+            changed = true;
+        }
+        changed
+    }
+
     pub fn unpin(&mut self, item: &str) -> bool {
         let before = self.pins.len();
         self.pins.retain(|p| p != item);
@@ -616,5 +643,19 @@ mod tests {
         }
         assert_eq!(store.recent[&Group::Midi].len(), MAX_RECENT);
         assert_eq!(store.recent[&Group::Midi][0], "/m79");
+    }
+
+    #[test]
+    fn a_moved_files_pin_recent_place_and_tags_go_with_it() {
+        let mut store = Store::default();
+        store.pin("/a/kick.wav");
+        store.record(Group::Samples, "/a/kick.wav");
+        store.tagged.insert("/a/kick.wav".into(), vec!["Red".into()]);
+        assert!(store.relocate("/a/kick.wav", "/b/kick.wav"));
+        assert_eq!(store.pins, ["/b/kick.wav"]);
+        assert_eq!(store.recent.get(&Group::Samples).cloned().unwrap_or_default(), ["/b/kick.wav"]);
+        assert_eq!(store.tagged.get("/b/kick.wav").cloned().unwrap_or_default(), ["Red"]);
+        assert!(!store.tagged.contains_key("/a/kick.wav"));
+        assert!(!store.relocate("/a/kick.wav", "/c/kick.wav"), "nothing left to move");
     }
 }

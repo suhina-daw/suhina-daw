@@ -46,6 +46,11 @@ window-vibrancy = "0.8"  # MIT OR Apache-2.0
 # The system's menu bar on macOS (#650): AppKit's NSMenu, with no unsafe code here.
 muda = { version = "0.21", default-features = false }  # MIT OR Apache-2.0
 
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+# Samples dragged out of the window as files the file manager copies (#865): OLE DoDragDrop
+# with copy only on Windows, an NSDraggingSource on macOS; its unsafe stays in the crate.
+drag = "2.1"  # Apache-2.0 OR MIT
+
 [build-dependencies]
 winresource.workspace = true
 
