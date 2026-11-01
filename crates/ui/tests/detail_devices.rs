@@ -410,6 +410,34 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
             assert!(!ra.shrink(1.0).intersects(rb.shrink(1.0)), "{a} {ra:?} is drawn over {b} {rb:?}");
         }
     }
+    // A knob is a control one can see and turn: its cell is a knob's band wide and high, not
+    // the squeezed ring the first panels drew (a tester's screenshot). The amp's Mid Freq is
+    // a line of its own shape, and the buttons and the Volume slider their own — they get no
+    // floor.
+    let knobs: Vec<(&str, egui::Rect)> = [
+        "Amp Modeler: gain",
+        "Amp Modeler: bass",
+        "Amp Modeler: mid",
+        "Amp Modeler: treble",
+        "Amp Modeler: delay",
+        "Amp Modeler: volume",
+        "Cab Loader: bass",
+        "Cab Loader: mid",
+        "Cab Loader: treble",
+        "Cab Loader: mid freq",
+        "Cab Loader: delay",
+    ]
+    .into_iter()
+    .map(|label| (label, harness.get_by_label(label).rect()))
+    .collect();
+    for (label, rect) in knobs {
+        assert!(rect.width() >= 60.0 && rect.height() >= 90.0, "{label} {rect:?} is too small to read");
+    }
+    // How the panels of the day look, for the design to be compared against by hand.
+    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    image.save(out.join("nam-panels.png")).unwrap_or_else(|e| panic!("{e}"));
     for label in [
         "Cab Loader: pack",
         "Cab Loader: previous pack",
