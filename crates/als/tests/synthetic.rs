@@ -582,11 +582,11 @@ fn groups_that_contain_each_other_or_nest_too_deep_still_open() {
 
 #[test]
 fn leaves_out_time_signatures_past_a_sixteenth() {
-    // 3/16 from bar 2 (code 99 × 4 + 2), then 4/32 at beat 8 (code 99 × 5 + 3), which Suhina
-    // does not keep: the denominators stop at 16.
+    // 3/16 from bar 2 (code 99 × 4 + 2), then 4/32 at beat 4.75, the next bar line (code 99 × 5 + 3),
+    // which Suhina does not keep: the denominators stop at 16.
     let xml = with_envelopes(
         r#"<FloatEvent Id="3" Time="0" Value="120"/>"#,
-        r#"<EnumEvent Id="7" Time="4" Value="398"/><EnumEvent Id="8" Time="8" Value="498"/>"#,
+        r#"<EnumEvent Id="7" Time="4" Value="398"/><EnumEvent Id="8" Time="4.75" Value="498"/>"#,
     );
     let import = read_xml(&xml).unwrap();
     let ts = |numerator, denominator| TimeSignature { numerator, denominator };
