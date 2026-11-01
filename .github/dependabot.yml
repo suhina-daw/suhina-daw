@@ -10,6 +10,11 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # A version is taken a week after it is published, not the day of: a release made from a
+    # hijacked maintainer account is usually pulled within days, and nothing here needs a fix
+    # the same day. Security updates (an advisory) are not held back by this.
+    cooldown:
+      default-days: 7
     labels: [chore]
     commit-message:
       prefix: "Deps"
