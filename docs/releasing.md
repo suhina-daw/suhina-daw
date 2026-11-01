@@ -312,10 +312,12 @@ one build of `main` with all of them merged on, in that order.
 ## Release notes
 
 [`scripts/release_notes.py`](../scripts/release_notes.py) writes the notes from git alone (no
-network, no AI service). A change is one commit on `main`'s first-parent line, so one squash-merged
-pull request, listed by its title with a link to the pull request. Changes that touch only
-documentation, CI, scripts and tests are counted, not listed. Pull request titles are the release
-notes, so they say what changed for a user: "Clip fades: shapes and an adjustable curve".
+network, no AI service). A change is one commit on `main`'s first-parent line, so one merged pull
+request, listed by its title with a link to the pull request: a squash merge's subject, or for a
+merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
+request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
+listed. Pull request titles are the release notes, so they say what changed for a user: "Clip
+fades: shapes and an adjustable curve".
 
 - **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
