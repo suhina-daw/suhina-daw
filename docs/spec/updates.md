@@ -3,7 +3,7 @@ description: Checking for a newer build of Suhina and installing it from inside 
 read_when: update, updates, new version available, check for updates, download update, nightly update, auto update, test build, gh, github cli, developer mode
 type: spec
 status: draft
-last_verified: 2026-10-28
+last_verified: 2026-10-31
 covers:
   - crates/update/src/lib.rs
   - crates/update/src/version.rs
