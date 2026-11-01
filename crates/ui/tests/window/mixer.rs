@@ -497,6 +497,8 @@ fn ctrl_and_shift_on_a_channel_strip_select_as_on_a_header() {
         let at = egui::pos2(strip.right() - 2.0, strip.center().y);
         harness.hover_at(at);
         harness.run();
+        harness.event(egui::Event::ModifiersChanged(modifiers));
+        harness.step();
         for pressed in [true, false] {
             harness.input_mut().events.push(egui::Event::PointerButton {
                 pos: at,
@@ -504,9 +506,9 @@ fn ctrl_and_shift_on_a_channel_strip_select_as_on_a_header() {
                 pressed,
                 modifiers,
             });
-            harness.input_mut().modifiers = if pressed { modifiers } else { Modifiers::NONE };
             harness.step();
         }
+        harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
         harness.run();
     };
     let selected = |harness: &Harness<'static, App>| harness.state().selected_tracks().to_vec();
