@@ -332,7 +332,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         params: &[
             TRACK,
             RETURN,
-            param("level", ParamType::Decibels, "send level in dB, at most +6; \"-inf\" or below -150 is silence"),
+            param("level", ParamType::Decibels, "send level in dB, at most 0; \"-inf\" or below -150 is silence"),
             CONTINUE,
         ],
         kind: CommandKind::Edit,
@@ -348,7 +348,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param(
                 "values",
                 ParamType::Numbers,
-                "one per track: dB at most +6 for a volume or a send (below -150 is silence), -1 to 1 for a pan",
+                "one per track: dB, at most +6 for a volume and 0 for a send (below -150 is silence), -1 to 1 for a pan",
             ),
             optional("return", ParamType::Track, "with control send: the return track they send to"),
             CONTINUE,

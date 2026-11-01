@@ -4,7 +4,7 @@
 //! What the window does with the actions its views hand it: commands run on the active project, and the window's own actions.
 
 use super::*;
-use crate::kit::widgets::VOLUME_RANGE;
+use crate::kit::widgets::{SEND_RANGE, VOLUME_RANGE};
 
 impl App {
     /// Runs a window action (`settings::keymap::actions`) on the next frame, as its key would:
@@ -1068,7 +1068,7 @@ impl App {
             self.selection_drag = None;
             return None;
         }
-        let floor = VOLUME_RANGE.0;
+        let (floor, top) = if control == "send" { SEND_RANGE } else { VOLUME_RANGE };
         let continued = action.params["continue"].as_bool() == Some(true);
         let same = |d: &&SelectionDrag| d.control == control && d.moved == moved && d.target == target;
         let start = match self.selection_drag.as_ref().filter(same).filter(|_| continued) {
@@ -1093,7 +1093,7 @@ impl App {
             .map(|(_, was)| match control {
                 "pan" => ((was + to - from).clamp(-1.0, 1.0) * 100.0).round() / 100.0,
                 _ if to <= floor || was + to - from <= floor => SILENCE_DB,
-                _ => ((was + to - from).min(VOLUME_RANGE.1) * 10.0).round() / 10.0,
+                _ => ((was + to - from).min(top) * 10.0).round() / 10.0,
             })
             .collect();
         let tracks: Vec<u32> = start.iter().map(|(t, _)| t.0).collect();

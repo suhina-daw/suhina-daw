@@ -980,6 +980,8 @@ pub fn format_pan(pan: f64) -> String {
 }
 
 pub(crate) const VOLUME_RANGE: (f64, f64) = (-70.0, 6.0);
+/// What a send knob covers, in dB: it stops at all of the track's signal.
+pub(crate) const SEND_RANGE: (f64, f64) = (VOLUME_RANGE.0, 0.0);
 
 /// Where a volume sits on a field, 0 … 1, as the volume fader places it: 0 dB at 85 %, 40 dB
 /// per travel down to -18 dB, faster below (components › Value field;

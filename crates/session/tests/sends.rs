@@ -110,7 +110,7 @@ fn bad_send_parameters_change_nothing() {
     let cases = [
         ("track.setSend", json!({ "track": "Bass", "return": "Lead", "level": 0 })),
         ("track.setSend", json!({ "track": "Bass", "return": "nope", "level": 0 })),
-        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 7 })),
+        ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 0.5 })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return", "level": "loud" })),
         ("track.setSend", json!({ "track": "Bass", "return": "A Return" })),
         ("track.setSend", json!({ "track": 99, "return": "A Return", "level": 0 })),
@@ -239,6 +239,7 @@ fn several_tracks_take_their_own_values_in_one_undo_step() {
         json!({ "tracks": ["Bass"], "control": "width", "values": [0.0] }),
         json!({ "tracks": ["Bass"], "control": "send", "values": [0.0] }),
         json!({ "tracks": ["Bass"], "control": "volume", "values": [12.0] }),
+        json!({ "tracks": ["Bass"], "control": "send", "return": "A Return", "values": [0.5] }),
     ] {
         assert!(run(&mut session, "track.setMixerValues", bad.clone()).is_err(), "{bad}");
     }

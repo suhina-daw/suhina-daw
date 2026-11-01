@@ -487,6 +487,50 @@ fn a_send_dragged_on_a_selection_moves_every_track_s_send_in_one_undo_step() {
 }
 
 #[test]
+fn ctrl_and_shift_on_a_channel_strip_select_as_on_a_header() {
+    let mut harness = window(demo_app());
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let click_strip = |harness: &mut Harness<'static, App>, track: &str, modifiers: Modifiers| {
+        // The background padding beside the controls.
+        let strip = harness.get_by_label(&format!("{track} channel strip")).rect();
+        let at = egui::pos2(strip.right() - 2.0, strip.center().y);
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers,
+            });
+            harness.input_mut().modifiers = if pressed { modifiers } else { Modifiers::NONE };
+            harness.step();
+        }
+        harness.run();
+    };
+    let selected = |harness: &Harness<'static, App>| harness.state().selected_tracks().to_vec();
+    click_strip(&mut harness, "Bass", Modifiers::COMMAND);
+    assert_eq!(selected(&harness).len(), 2, "Ctrl adds");
+    click_strip(&mut harness, "Bass", Modifiers::COMMAND);
+    assert_eq!(selected(&harness).len(), 1, "and takes out");
+    click_strip(&mut harness, "Keys", Modifiers::SHIFT);
+    assert!(selected(&harness).len() > 2, "Shift takes the run of columns: {:?}", selected(&harness));
+    click_strip(&mut harness, "Bass", Modifiers::NONE);
+    assert_eq!(selected(&harness).len(), 1, "a plain click selects it alone");
+}
+
+#[test]
+fn a_send_knob_stops_at_0_db() {
+    let mut harness = window(demo_app());
+    let to = drag_up(&mut harness, "Bass send to A Reverb", 1000.0);
+    harness.drop_at(to);
+    harness.step();
+    harness.step();
+    assert!(levels(&harness, "Bass").1.abs() < 1e-9, "{}", levels(&harness, "Bass").1);
+}
+
+#[test]
 fn a_launcher_fader_dragged_on_a_selection_keeps_the_tracks_apart() {
     let mut harness = window(demo_app());
     harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -12.0 })));

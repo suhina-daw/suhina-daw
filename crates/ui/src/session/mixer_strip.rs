@@ -446,7 +446,8 @@ pub fn show(
         state.open_devices = Some(column.track);
     }
     // A click on the strip selects its track, a return's too; a slot selected on that track stays.
-    if strip.clicked() {
+    // With Ctrl or Shift the column does it, as on its header.
+    if strip.clicked() && !ui.input(|i| i.modifiers.command || i.modifiers.shift) {
         state.selected = Some(column.track);
         state.selected_tracks = vec![column.track];
         state.devices_clicked = true;
@@ -1427,11 +1428,20 @@ fn send_knobs(
             Some((t, c, v)) if t == track && c == control => Some(v),
             _ => None,
         };
-        let level = if send.level_db.is_finite() { send.level_db } else { VOLUME_RANGE.0 };
+        let level = if send.level_db.is_finite() { send.level_db } else { widgets::SEND_RANGE.0 };
         let mut committed = None;
         // Heard while it is dragged, every frame of it in one undo step, as the fader is (#705).
         let continued = preview.is_some();
-        match widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, VOLUME_RANGE, VOLUME_RANGE.0) {
+        match widgets::drag_value(
+            ui,
+            &response,
+            &mut preview,
+            level,
+            0.25,
+            1.0,
+            widgets::SEND_RANGE,
+            widgets::SEND_RANGE.0,
+        ) {
             Drag::Moving(v) => {
                 state.drag = Some((track, control, v));
                 actions.push(commands::set_send(track, send.target, v, continued));
@@ -1462,7 +1472,8 @@ fn send_knobs(
             }
             _ => committed.unwrap_or(level),
         };
-        let position = ((shown - VOLUME_RANGE.0) / (VOLUME_RANGE.1 - VOLUME_RANGE.0)) as f32;
+        let (low, high) = widgets::SEND_RANGE;
+        let position = ((shown - low) / (high - low)) as f32;
         // `.send` styles every send, `#mixer-send-N` one of them; `--suhina-appearance: knob`
         // draws it as a knob.
         let _style = crate::kit::style_class::enter_named_response("send", &name, &response);

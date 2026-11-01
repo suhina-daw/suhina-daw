@@ -57,7 +57,7 @@ track delays what it sends, once.
 
 | Command | Parameters | Does |
 |---|---|---|
-| `track.setSend` | `track`, `return`, `level` (dB, at most +6; `"-inf"` is silence) | Sets the level of the track's send to the return, making the send (after the fader) when there is none |
+| `track.setSend` | `track`, `return`, `level` (dB, at most 0; `"-inf"` is silence) | Sets the level of the track's send to the return, making the send (after the fader) when there is none |
 | `track.setMixerValues` | `tracks`, `control` (`volume`, `pan` or `send`), `values` (one per track), `return` with `send`, `continue` | Sets each track's volume, pan or send to the return to its own value, one undo step (a drag on a selection) |
 | `track.setSendMode` | `track`, `return`, `mode` (`pre` or `post`) | Takes the send before or after the track's volume and pan; makes a silent send when there is none |
 | `return.add` | `name` (optional) | Adds a return after every other track, playing into the main channel; named A Return, B Return and so on when no name is given |
@@ -65,7 +65,7 @@ track delays what it sends, once.
 | `return.rename` | `return`, `name` | Renames it |
 
 Each is one undo step. `return` names a return track (id or name); another kind of track is an
-error, as is a level above +6 dB. `project.tracks` lists every track's sends (return, level in
+error, as is a level above 0 dB. A project saved with a louder send keeps it until the send is moved. `project.tracks` lists every track's sends (return, level in
 dB, mode).
 
 ## In the window
@@ -73,7 +73,7 @@ dB, mode).
 The Launcher view's mixer strip has one knob per return beside the pan knob, as many as the row
 holds (three in a track column), with the return's letter in it
 ([components](../design/components.md) › Mixer strip). A vertical drag sets the level
-(`track.setSend`, 0.25 dB a point, Shift finer, −70 dB and below is off), a double-click turns
+(`track.setSend`, 0.25 dB a point, Shift finer, up to 0 dB, −70 dB and below is off), a double-click turns
 the send off, and a right-click opens a menu with **Before the fader (pre)** and **After the
 fader (post)** (`track.setSendMode`); a dot under the knob marks a send before the fader. While
 the knob is dragged, the strip's left value shows the return's letter and the level. Return
