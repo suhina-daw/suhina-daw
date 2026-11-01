@@ -51,7 +51,6 @@ describe a file. Read only the ones that match your task.
    manual). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
    their own names and neutral words, and other DAWs' product terms are not used as generic words
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
-   The `daw-compare` skill checks text before it is posted.
 10. **GPL-compatible dependencies only** (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL,
     GPL-3.0; not GPL-2.0-only or non-commercial). The `ci` check runs `cargo-deny`; `deny.toml` has a
     code owner, so the pull request that adds a dependency is not the one that permits its licence.
