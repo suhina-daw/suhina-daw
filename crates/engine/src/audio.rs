@@ -213,7 +213,7 @@ impl AudioEvent {
         {
             return None;
         }
-        let linear = TimeMap::Linear { seconds_per_beat: 60.0 / tempo_bpm };
+        let linear = TimeMap::Linear { seconds_per_beat: crate::tempo::seconds_per_beat(tempo_bpm) };
         let markers = warp_markers(region);
         let (map, rate) = if region.warped {
             (if markers.len() >= 2 { TimeMap::Warp(markers) } else { linear }, 1.0)

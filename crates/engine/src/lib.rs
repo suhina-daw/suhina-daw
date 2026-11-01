@@ -942,7 +942,8 @@ impl Renderer {
         // This block's audio input, and which tracks hear it: In always, Auto while armed.
         self.input.read(frames);
         // Where this block is, for what is recorded in it: the beats of its first frame.
-        let beats_per_frame = self.graph.launcher.tempo_bpm() / 60.0 / f64::from(self.sample_rate);
+        let beats_per_frame =
+            crate::tempo::beats_per_frame(self.graph.launcher.tempo_bpm(), f64::from(self.sample_rate));
         let arrangement_beat = crate::tempo::beat_at(&self.graph.tempo, self.time());
         self.recorder.begin(
             self.transport.running,

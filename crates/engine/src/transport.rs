@@ -241,7 +241,8 @@ impl Renderer {
     /// Frames until a pending jump's boundary, while one waits and the transport runs.
     pub(crate) fn frames_to_jump(&self) -> Option<usize> {
         let (_, at) = self.pending_jump.filter(|_| self.transport.running)?;
-        let per_frame = self.graph.launcher.tempo_bpm() / 60.0 / f64::from(self.sample_rate.max(1));
+        let per_frame =
+            crate::tempo::beats_per_frame(self.graph.launcher.tempo_bpm(), f64::from(self.sample_rate.max(1)));
         if !(per_frame.is_finite() && per_frame > 0.0) {
             return Some(0);
         }

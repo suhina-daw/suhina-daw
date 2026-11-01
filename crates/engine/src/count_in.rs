@@ -36,7 +36,7 @@ impl Renderer {
             return;
         }
         let beats = if beats.is_nan() { 0.0 } else { beats.clamp(0.0, MAX_COUNT_IN_BEATS) };
-        let step = self.graph.launcher.tempo_bpm() / 60.0 / f64::from(self.sample_rate);
+        let step = crate::tempo::beats_per_frame(self.graph.launcher.tempo_bpm(), f64::from(self.sample_rate));
         let frames = beats / step;
         if !(frames.is_finite() && frames >= 1.0) {
             self.start_transport();

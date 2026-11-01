@@ -720,7 +720,7 @@ impl Launcher {
         map: Arc<TempoMap>,
     ) -> Self {
         let tempo = project.transport.tempo_bpm;
-        let frames_per_beat = 60.0 / tempo * f64::from(sample_rate);
+        let frames_per_beat = crate::tempo::frames_per_beat(tempo, f64::from(sample_rate));
         let meter = project.transport.meter();
         let mut columns: Vec<Column> = project
             .launcher
@@ -1439,7 +1439,7 @@ impl Renderer {
         let launcher = &mut self.graph.launcher;
         let (tempo, project_tempo) = (launcher.tempo_bpm, launcher.project_tempo_bpm);
         let frames_per_beat = launcher.frames_per_beat_at_build;
-        let frames_per_beat_now = 60.0 / tempo * f64::from(self.sample_rate);
+        let frames_per_beat_now = crate::tempo::frames_per_beat(tempo, f64::from(self.sample_rate));
         let Some(target) = launcher.columns.get_mut(column) else { return };
         let playing = match slot {
             None => None,
@@ -1511,7 +1511,7 @@ impl Renderer {
         // The beats this frame moves on. On a changing tempo map the next beat is read from the
         // map at the next arrangement frame, so the clock never drifts from the arrangement;
         // otherwise the tempo is added up frame by frame, as it always was.
-        let beats_per_frame = self.graph.launcher.tempo_bpm / 60.0 / f64::from(self.sample_rate);
+        let beats_per_frame = crate::tempo::beats_per_frame(self.graph.launcher.tempo_bpm, f64::from(self.sample_rate));
         let on_map = self.transport.running && self.graph.launcher.on_map();
         let (step, next_beat) = if on_map {
             let next = crate::tempo::beat_at(&self.graph.tempo, self.time().saturating_add(1));

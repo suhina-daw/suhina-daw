@@ -259,7 +259,7 @@ impl Chain {
         // The main channel's chain is built for [`TrackId::MAIN`] (#687).
         let channel = project.channel_of_track(track)?;
         let keys = plugin_devices(project);
-        let frames_per_beat = 60.0 / project.transport.tempo_bpm * f64::from(sample_rate);
+        let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         let mut slots: Vec<Slot> = Vec::new();
         let mut positions = Vec::new();
         let mut ids = Vec::new();
