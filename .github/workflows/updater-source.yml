@@ -1,0 +1,41 @@
+name: Updater source
+
+# The updater installs and runs what it downloads, so a pull request that changes where it looks
+# turns red here with the lines that changed, however large the pull request is
+# (docs/spec/updates.md › Where builds come from).
+#
+# pull_request_target runs this file and the script as they are on main, so a pull request cannot
+# edit the check away, and it runs for a fork without waiting for a maintainer to start it. The pull
+# request's commit is fetched but never checked out or run: the script reads its files as text
+# through Git. There are no secrets here, and the token can only read.
+#
+# It is not a required check: pull_request_target does not run in the merge queue, which waits for
+# every required check. What blocks the merge is the same script in ci.yml's required `ci` job and
+# the code owner's review of these paths (.github/CODEOWNERS).
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: updater-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  updater-source:
+    runs-on: ubuntu-latest
+    steps:
+      # main's automation only.
+      - name: Check out default-branch automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: The pull request's updater downloads from this repository
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags --depth=1 "https://github.com/$GITHUB_REPOSITORY" "refs/pull/$NUMBER/head"
+          python3 scripts/updater_source.py --ref FETCH_HEAD

@@ -540,3 +540,69 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     };
     assert_eq!(edge_extent(midi.1, before, &grid, false, false).0, midi.1.start - 2.0);
 }
+
+#[test]
+fn select_all_spans_every_track_from_the_first_clip_to_the_last() {
+    let mut state = ArrangementViewState::default();
+    let lanes = vec![
+        (TrackId(1), vec![(ClipId(1), 8.0, 12.0)]),
+        (TrackId(2), vec![(ClipId(2), 4.0, 6.0), (ClipId(3), 16.0, 20.0)]),
+        (TrackId(3), Vec::new()),
+    ];
+    state.select_all_clips(&lanes);
+    assert_eq!(state.selected.len(), 3);
+    let span = state.time_selection().expect("a time selection");
+    assert_eq!((span.start, span.end), (4.0, 20.0));
+    assert_eq!(span.tracks, vec![TrackId(1), TrackId(2), TrackId(3)]);
+    // An empty project leaves a selection already painted.
+    let painted = TimeSelection { tracks: vec![TrackId(1)], start: 1.0, end: 2.0, row: None };
+    state.set_time_selection(Some(painted));
+    state.select_all_clips(&[(TrackId(1), Vec::new())]);
+    assert_eq!(state.time_selection().map(|s| s.start), Some(1.0));
+}
+
+#[test]
+fn a_click_in_a_clip_body_stays_inside_the_clip() {
+    let bar = arrangement_grid(PianoGrid::from_value("1 bar"), 40.0, 4.0);
+    // Late in a bar-long clip: its start, not the next bar.
+    assert_eq!(clip_body_beat(7.5, 4.0, bar, false), 4.0);
+    // A clip starting inside the bar: never before its start.
+    assert_eq!(clip_body_beat(7.5, 6.0, bar, false), 6.0);
+    let sixteenth = arrangement_grid(PianoGrid::from_value("1/16"), 200.0, 4.0);
+    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, false), 5.25);
+    assert_eq!(clip_body_beat(5.3, 4.0, sixteenth, true), 5.3);
+}
+
+#[test]
+fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
+    let grid = arrangement_grid(PianoGrid::from_value("1/4"), 40.0, 4.0);
+    assert_eq!(clip::drag_place(5.3, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, false), 5.3);
+    assert_eq!(clip::drag_place(6.2, 5.3, grid, false), 6.0);
+    assert_eq!(clip::drag_place(5.6, 5.3, grid, true), 5.6);
+}
+
+#[test]
+fn dragging_a_selected_track_resizes_every_selected_track() {
+    let mut state = ArrangementViewState::default();
+    state.set_lane_height(TrackId(1), 100.0);
+    state.set_lane_height(TrackId(2), 60.0);
+    state.set_lane_height(TrackId(3), 80.0);
+    state.selected_tracks = vec![TrackId(1), TrackId(2)];
+    state.resize_lanes(TrackId(1), 100.0, 20.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(2)), 80.0);
+    assert_eq!(state.lane_height(TrackId(3)), 80.0);
+    // A track not among them goes alone.
+    state.resize_lanes(TrackId(3), 80.0, 10.0);
+    assert_eq!(state.lane_height(TrackId(1)), 120.0);
+    assert_eq!(state.lane_height(TrackId(3)), 90.0);
+}
+
+#[test]
+fn a_drag_starts_from_the_height_drawn() {
+    // A return row drawn shorter than a track's kept height does not jump when dragged.
+    let mut state = ArrangementViewState::default();
+    state.resize_lanes(TrackId(9), 14.0, 2.0);
+    assert_eq!(state.lane_height(TrackId(9)), MIN_LANE.max(16.0));
+}

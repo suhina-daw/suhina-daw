@@ -125,6 +125,8 @@ fn chain_row(
     // A group's panel, then the devices of its shown branch, in the row as the chain's own.
     let mut entries = Vec::new();
     flattened(ui, chain.track, &chain.devices, &mut entries);
+    let limited: Vec<Option<DeviceBox>> = entries.iter().map(|d| limited_list(ui, chain.track, d)).collect();
+    let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     // Each panel's width and height first, so the scroll knows how wide the chain is.
     let boxes: Vec<(f32, f32)> = entries
         .iter()
@@ -142,16 +144,12 @@ fn chain_row(
             // not size it, or its controls are crowded over each other.
             let graph = device.graph.as_ref().filter(|_| device.file_device.is_none());
             let authored_width = graph.map_or(authored_base, |graph| {
+                // The stock controls in columns of a compact panel's width, right of the canvas
+                // when there is one; wider where an `.sd` file places its controls further out.
+                let list = list_right(device, graph);
                 graph.canvas.as_ref().map_or_else(
-                    || {
-                        // The generated list is a compact panel's width, wider only where an
-                        // `.sd` file places its controls further out.
-                        parameter_layout(&graph.parameters, COMPACT_WIDTH, &[])
-                            .iter()
-                            .map(|cell| cell.right() + PAD * 2.0)
-                            .fold(STACK_WIDTH, f32::max)
-                    },
-                    |c| c.viewport_size.map_or(DEVICE_WIDTH.max(c.size[0] + PAD * 2.0), |v| v[0] + PAD * 2.0),
+                    || STACK_WIDTH.max(list + PAD * 2.0),
+                    |c| c.viewport_size.map_or(DEVICE_WIDTH.max(c.size[0].max(list) + PAD * 2.0), |v| v[0] + PAD * 2.0),
                 )
             });
             let width = editor.map_or(authored_width, |e| authored_width.max(e.x + PAD * 2.0));
@@ -165,8 +163,7 @@ fn chain_row(
                     .map_or(width, |themed| width.max(themed.clamp(120.0, 1600.0)));
                 (width, computed.and_then(|c| c.height))
             };
-            let height = sdk_viewport(device)
-                .map_or_else(|| panel_height(device, width - PAD * 2.0, editor), |v| ROW + PAD * 2.0 + v[1]);
+            let height = sdk_viewport(device).map_or_else(|| panel_height(device, editor), |v| ROW + PAD * 2.0 + v[1]);
             // `.device { height }` or `#device-<id> { height }` sets the panel's height (60 to 1200
             // points); what does not fit scrolls. An embedded editor keeps its own room.
             let height = match (themed_height, editor) {
@@ -281,7 +278,7 @@ fn chain_row(
 
 /// How tall a device's panel is in a row or a stack: its header, then its parameters, its
 /// plug-in rows, its embedded editor, or a NAM panel's own height.
-fn panel_height(device: &DeviceBox, width: f32, editor: Option<Vec2>) -> f32 {
+fn panel_height(device: &DeviceBox, editor: Option<Vec2>) -> f32 {
     let rows =
         if device.plugin.is_some() { 2.0 + BUTTON_HEIGHT / PARAM_ROW } else { device.params.len().max(1) as f32 };
     match editor {
@@ -292,29 +289,146 @@ fn panel_height(device: &DeviceBox, width: f32, editor: Option<Vec2>) -> f32 {
         None if device.plugin.is_some() => {
             let rows = ROW + PAD * 2.0 + rows * PARAM_ROW;
             device.graph.as_ref().map_or(rows, |graph| {
-                rows.max((EDITOR_TOP + graph_body(graph, width) + PAD).min(ROW + PAD * 2.0 + COMPACT_HEIGHT))
+                rows.max((EDITOR_TOP + graph_body(device, graph) + PAD).min(ROW + PAD * 2.0 + COMPACT_HEIGHT))
             })
         }
-        None => ROW + PAD * 2.0 + device.graph.as_ref().map_or(rows * PARAM_ROW, |graph| graph_body(graph, width)),
+        None => ROW + PAD * 2.0 + device.graph.as_ref().map_or(rows * PARAM_ROW, |graph| graph_body(device, graph)),
     }
 }
 
-/// How tall a device's parameters, nodes and canvas are. A list without a canvas is at most a
-/// compact panel's height and scrolls past it (ADR 0021 › Amendment: device panels, 5).
-fn graph_body(graph: &GraphBox, width: f32) -> f32 {
-    let cells = parameter_layout(
-        &graph.parameters,
-        width,
-        graph.canvas.as_ref().map_or(&[], |c| c.hidden_parameters.as_slice()),
-    )
-    .iter()
-    .map(|r| r.bottom())
-    .fold(0.0f32, f32::max);
-    let height = cells + graph.nodes.len() as f32 * NODE_ROW;
-    match &graph.canvas {
-        Some(canvas) => height + canvas.size[1],
-        None => height.min(COMPACT_HEIGHT),
+/// The detail area's height while it shows a track's devices: always a compact panel's.
+pub fn device_row_height() -> f32 {
+    ROW + PAD * 2.0 + COMPACT_HEIGHT
+}
+
+/// How many columns of a long generated list a panel shows until the header's chevron opens the rest.
+const LIST_COLUMNS: f32 = 2.0;
+
+/// The state of a panel's list, for the chevron in its header: how many parameters are left out, or the same count
+/// and that they show.
+#[derive(Clone, Copy)]
+pub(super) struct ListFold {
+    pub(super) more: usize,
+    pub(super) open: bool,
+}
+
+/// A list's open state belongs to its project: another project's track and device may match.
+pub(super) fn list_fold_id(ui: &Ui, track: TrackId, at: &DeviceAt) -> Id {
+    let project = ui.data(|d| d.get_temp::<u32>(list_project_id())).unwrap_or(0);
+    Id::new(("list-fold", project, track.0, at))
+}
+
+fn list_project_id() -> Id {
+    Id::new("device-list-project")
+}
+
+/// The room between the columns of a generated list, with a line in its middle.
+pub(super) const LIST_GAP: f32 = 16.0;
+
+fn list_vertical_id() -> Id {
+    Id::new("device-list-vertical")
+}
+
+/// Whether an opened long list scrolls down rather than continuing to the right, for this frame's
+/// panels (Settings › Devices › Long parameter lists).
+pub fn set_list_vertical(ctx: &egui::Context, vertical: bool) {
+    ctx.data_mut(|d| d.insert_temp(list_vertical_id(), vertical));
+}
+
+/// The project whose panels this frame draws, whose lists keep their own open state.
+pub fn set_list_project(ctx: &egui::Context, project: u32) {
+    ctx.data_mut(|d| d.insert_temp(list_project_id(), project));
+}
+
+/// How tall a column is for `parameters` to fill the first columns, so the panel keeps its width.
+fn tall_list_height(parameters: &[GraphParameter]) -> f32 {
+    let height = |p: &GraphParameter| parameter_height(p);
+    let total: f32 = parameters.iter().map(height).sum();
+    total / LIST_COLUMNS + parameters.iter().map(height).fold(0.0, f32::max)
+}
+
+/// How many of `parameters` fit the first columns of a list `max_height` tall; `None` when all do.
+fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
+    let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
+    let cells = parameter_layout(parameters, COMPACT_WIDTH, max_height, &[]);
+    let fit = cells.iter().take_while(|c| c.left() < limit).count();
+    (fit < cells.len()).then_some(fit)
+}
+
+/// `device` with its long generated list cut to the first columns, unless the chevron opened it;
+/// `None` keeps it as it is. A canvas, a themed width and an embedded editor lay out their own way.
+fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox> {
+    let id = list_fold_id(ui, track, &device.at);
+    let open = ui.data(|d| d.get_temp::<ListFold>(id)).is_some_and(|f| f.open);
+    // Cells a file places itself are not in list order, so the list cannot be cut after a column.
+    let graph = device.graph.as_ref().filter(|g| list_spreads(g) && device.file_device.is_none());
+    let graph = graph.filter(|_| device.plugin.as_ref().is_none_or(|p| p.embedded.is_none()));
+    let fit = graph.and_then(|g| {
+        let height = list_height(device, g);
+        height.is_finite().then(|| list_fit(&g.parameters, height)).flatten().map(|fit| (g, fit))
+    });
+    let Some((graph, fit)) = fit else {
+        ui.ctx().data_mut(|d| d.remove::<ListFold>(id));
+        return None;
+    };
+    let more = graph.parameters.len().saturating_sub(fit);
+    ui.ctx().data_mut(|d| d.insert_temp(id, ListFold { more, open }));
+    let mut limited = device.clone();
+    if open {
+        if !ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false) {
+            return None;
+        }
+        limited.list_tall = true;
+        return Some(limited);
     }
+    if let Some(graph) = limited.graph.as_mut() {
+        graph.parameters.truncate(fit);
+    }
+    Some(limited)
+}
+
+/// How tall a device's nodes and, beside each other, its canvas and parameter list are. The list
+/// continues in columns to the right rather than below the compact panel (ADR 0021 › Amendment:
+/// device panels, 5).
+fn graph_body(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    let cells =
+        list_cells(graph, COMPACT_WIDTH, list_height(device, graph)).iter().map(|r| r.bottom()).fold(0.0f32, f32::max);
+    let canvas = graph.canvas.as_ref().map_or(0.0, |c| c.size[1]);
+    let body = graph.nodes.len() as f32 * NODE_ROW + cells.max(canvas);
+    // A list without a canvas scrolls past the compact panel when it cannot widen (a themed width).
+    if graph.canvas.is_none() { body.min(COMPACT_HEIGHT) } else { body }
+}
+
+/// How far right a device's stock-control list reaches. An embedded editor hides the list, so it
+/// takes no room in that panel.
+fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    if device.plugin.as_ref().is_some_and(|p| p.embedded.is_some()) {
+        return 0.0;
+    }
+    let mut cells = list_cells(graph, COMPACT_WIDTH, list_height(device, graph));
+    if list_spreads(graph) {
+        spread_columns(&mut cells, COMPACT_WIDTH);
+    }
+    cells.iter().fold(0.0f32, |right, c| right.max(c.right()))
+}
+
+/// How tall a device's stock-control list may grow before it continues in a new column: the
+/// compact panel's body less a plug-in's rows above the list and the graph's node rows, or a
+/// taller canvas beside it. A list in a panel the theme sizes (`.device { width }`) keeps one
+/// column that follows that width and scrolls.
+fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
+    if graph.canvas.is_none() {
+        let _style = crate::kit::style_class::enter_named("device", &format!("device-{}", device.theme_id));
+        if crate::kit::style_class::computed().is_some_and(|c| c.width.is_some()) {
+            return f32::INFINITY;
+        }
+    }
+    if device.list_tall {
+        return tall_list_height(&graph.parameters);
+    }
+    let above = if device.plugin.is_some() { EDITOR_TOP - ROW - PAD } else { 0.0 };
+    let room = COMPACT_HEIGHT - above - graph.nodes.len() as f32 * NODE_ROW;
+    graph.canvas.as_ref().map_or(room, |c| room.max(c.size[1]))
 }
 
 fn sdk_viewport(device: &DeviceBox) -> Option<[f32; 2]> {
@@ -402,6 +516,8 @@ fn chain_stack(
     let mut y = area.top();
     let mut entries = Vec::new();
     flattened(ui, chain.track, &chain.devices, &mut entries);
+    let limited: Vec<Option<DeviceBox>> = entries.iter().map(|d| limited_list(ui, chain.track, d)).collect();
+    let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     for device in entries {
         if let Some(group) = &device.group {
             let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
@@ -419,7 +535,7 @@ fn chain_stack(
             continue;
         }
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
-        let height = panel_height(device, area.width() - PAD * 2.0, editor);
+        let height = panel_height(device, editor);
         let height = sdk_viewport(device).map_or(height, |v| ROW + PAD * 2.0 + v[1]);
         let right = sdk_viewport(device).map_or(area.right(), |v| (area.left() + v[0] + PAD * 2.0).min(area.right()));
         let rect = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(right, y + height));
@@ -736,6 +852,22 @@ fn device_panel(
     } else {
         painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
     }
+    // Beside the switch, on a panel with more parameters than its columns show: opens the rest.
+    let fold_id = list_fold_id(ui, track, &device.at);
+    let mut name_left = switch.right() + PAD;
+    if let Some(fold) = ui.data(|d| d.get_temp::<ListFold>(fold_id)) {
+        let at = Rect::from_center_size(Pos2::new(switch.right() + 9.0, header.center().y), Vec2::splat(12.0));
+        name_left = at.right() + 2.0;
+        let label =
+            if fold.open { "Show fewer parameters".to_owned() } else { format!("Show {} more parameters", fold.more) };
+        let chevron = ui.interact(at, fold_id.with("chevron"), Sense::click()).on_hover_text(label.clone());
+        chevron.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone()));
+        if chevron.clicked() {
+            ui.ctx().data_mut(|d| d.insert_temp(fold_id, ListFold { open: !fold.open, ..fold }));
+        }
+        let ink = if chevron.hovered() { theme::text_primary() } else { theme::text_hint() };
+        widgets::chevron(painter, at.center(), fold.open, ink);
+    }
     let name_color = if device.enabled { theme::text_primary() } else { theme::text_hint() };
     // The X at the header's right end removes the device, as Remove device in its menu does.
     let close = Rect::from_center_size(Pos2::new(header.right() - PAD - 6.0, header.center().y), Vec2::splat(12.0));
@@ -784,8 +916,8 @@ fn device_panel(
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     let name = Rect::from_min_max(
-        Pos2::new(switch.right() + PAD, header.top()),
-        Pos2::new((kind_right - PAD - kind_width).max(switch.right() + PAD), header.bottom()),
+        Pos2::new(name_left, header.top()),
+        Pos2::new((kind_right - PAD - kind_width).max(name_left), header.bottom()),
     );
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &device.name, theme::ui_font(theme::TEXT), name_color);
     widgets::text_in(
@@ -834,7 +966,7 @@ fn device_panel(
         {
             let list = Rect::from_min_max(Pos2::new(body.left(), rect.top() + EDITOR_TOP), body.max);
             if list.height() >= PARAM_ROW {
-                graph_controls(ui, list, graph, track, &device.at, actions);
+                graph_controls(ui, list, graph, list_height(device, graph), track, &device.at, actions);
             }
         }
         outline(painter);
@@ -858,7 +990,7 @@ fn device_panel(
         return clicked;
     }
     if let Some(graph) = &device.graph {
-        graph_controls(ui, body, graph, track, &device.at, actions);
+        graph_controls(ui, body, graph, list_height(device, graph), track, &device.at, actions);
         outline(painter);
         return clicked;
     }

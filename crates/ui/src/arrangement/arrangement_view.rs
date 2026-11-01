@@ -309,6 +309,15 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 
+/// Where a click `raw` beats into a clip's body puts the play start marker: on the grid line at or
+/// before it, never before the clip's start, so a click on the clip never plays from past it.
+fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
+    let free = free || !grid.snaps;
+    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true) };
+    let beat = beat.max(clip_start);
+    if beat.is_finite() { beat.max(0.0) } else { 0.0 }
+}
+
 fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
     Color32::from_rgb(color.0, color.1, color.2)
 }
@@ -728,6 +737,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         state.set_time_selection((end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None }));
         if ui.input(|i| !i.pointer.primary_down()) {
             state.ruler_select = None;
+            play_from_selection(state, timeline, actions);
         }
     }
     let beat_at = |x: f32, free: bool, state: &ArrangementViewState| {
@@ -1324,6 +1334,7 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                     state.selected.clear();
                     state.anchor = None;
                 }
+                play_from_selection(state, timeline, actions);
             }
         } else {
             // A rectangle that picks the clips it touches, whole.
@@ -1712,6 +1723,17 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
                 }
             }
         }
+    }
+}
+
+/// A time selection just painted moves the play start marker to its start, so Play starts there
+/// (#937); while playing, playback goes on where it is and the next start begins there.
+fn play_from_selection(state: &ArrangementViewState, timeline: &Timeline, actions: &mut Vec<Action>) {
+    // The ruler reaches past the last beat a start may be on.
+    if let Some(start) = state.time_selection.as_ref().map(|s| s.start.min(suhina_engine::MAX_START_BEAT))
+        && (start - timeline.start_beat).abs() > 1e-9
+    {
+        actions.push(Action::new("transport.setStart", json!({ "beats": start })));
     }
 }
 

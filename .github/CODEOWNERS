@@ -5,6 +5,17 @@
 /.github/ @juhamikael
 /scripts/ @juhamikael
 
+# What `cargo deny` allows (AGENTS.md rule 10): a pull request that adds a dependency must not be
+# the one that permits its licence.
+/deny.toml @juhamikael
+
+# The updater installs and runs what it downloads, so where it looks needs the same approval
+# (docs/spec/updates.md › Where builds come from). Keep in step with WATCHED in
+# scripts/updater_source.py.
+/crates/update/ @juhamikael
+/crates/ui/src/app/updates.rs @juhamikael
+/crates/ui/src/settings/update_settings.rs @juhamikael
+
 # Parity runs without environment secrets; publishing its output is a separate job.
 # Leave owners empty so parity changes follow the usual review and `ready to merge`.
 /scripts/parity/

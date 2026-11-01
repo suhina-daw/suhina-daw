@@ -5,6 +5,12 @@
 
 use super::*;
 
+/// Where a dragged clip goes: where it started until it has moved half a grid step sideways, so a
+/// clip off the grid keeps its place going to another track; on the grid from there on.
+pub(super) fn drag_place(raw: f64, origin: f64, grid: TimelineGrid, free: bool) -> f64 {
+    if !free && grid.snaps && (raw - origin).abs() < grid.step / 2.0 { origin } else { grid.place(raw, free, false) }
+}
+
 /// The keys held over a clip's edge drag: Alt alone lets the edge off the grid, as Alt does for
 /// every other drag; Shift (or Ctrl and Alt) stretches an audio clip's audio with it (Settings ›
 /// Arrangement).
@@ -202,10 +208,10 @@ pub(super) fn clip_box<'a>(
     let free = ui.input(|i| i.modifiers.alt);
     let snapped = |raw: f64| grid.place(raw, free, false);
     let at = match state.clip_drag {
-        Some(drag) if mine(&drag) => snapped(drag.start),
+        Some(drag) if mine(&drag) => drag_place(drag.start, drag.origin, grid, free),
         // Another clip of the selection is dragged: this one moves by as much.
         Some(drag) if state.is_selected(key) && state.is_selected((drag.track, drag.clip)) => {
-            (clip.start + snapped(drag.start) - drag.origin).max(0.0)
+            (clip.start + drag_place(drag.start, drag.origin, grid, free) - drag.origin).max(0.0)
         }
         _ => clip.start,
     };
@@ -294,6 +300,7 @@ pub(super) fn clip_box<'a>(
     });
     let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
     let tool = state.tool;
+    let paints = tool == ArrangementTool::Range || response.interact_pointer_pos().is_some_and(|p| in_body(p.y));
     // A drag that selects time rather than moving the clip: with Ctrl held, or from the clip's
     // lower half on a lane tall enough to have one, as the setting says; with the Range tool,
     // from anywhere (#991).
@@ -354,10 +361,12 @@ pub(super) fn clip_box<'a>(
         // (Alt: free), as a click on an empty lane does, and play starts there however the clip
         // is picked; an ARA plug-in's editor follows it (#717).
         match response.interact_pointer_pos() {
-            Some(pointer) if !on_bar(pointer.y) => {
+            // The painting part of the clip (or the Range tool); where the clip is picked or moved,
+            // it is picked whole, however its start lies on the grid.
+            Some(pointer) if paints => {
                 let free = ui.input(|i| i.modifiers.alt);
                 let raw = f64::from((pointer.x - x_of(0.0)) / state.beat_width);
-                let beat = ruler_beat(raw, grid, free);
+                let beat = clip_body_beat(raw, clip.start, grid, free);
                 state.picked_whole = false;
                 state.insert = Some((lane.track, beat));
                 // The next start begins there; playback is not moved (#657).
@@ -365,6 +374,7 @@ pub(super) fn clip_box<'a>(
             }
             _ => {
                 state.picked_whole = true;
+                state.whole_clip_clicked = true;
                 state.insert = None;
             }
         }
@@ -421,7 +431,7 @@ pub(super) fn clip_box<'a>(
         && let Some(drag) = state.clip_drag.take()
         && (drag.track, drag.clip) == key
     {
-        let start = snapped(drag.start);
+        let start = drag_place(drag.start, drag.origin, grid, free);
         let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
         let moved = drag.new_track || drag.target != lane.track || (start - clip.start).abs() > 1e-9;
         // How many tracks down the drop is from this clip's own, among the tracks that hold clips:
@@ -966,7 +976,7 @@ pub(super) fn clip_box<'a>(
             if drag.copy || copy_key {
                 paint_at(clip.start);
             }
-            Some((lane, clip, snapped(drag.start)))
+            Some((lane, clip, drag_place(drag.start, drag.origin, grid, free)))
         }
         _ if copying => {
             paint_at(clip.start);

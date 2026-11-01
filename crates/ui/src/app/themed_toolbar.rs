@@ -411,7 +411,7 @@ impl App {
                     let response = widgets::button_area(ui, at, Id::new(role), label);
                     let _style = crate::kit::style_class::enter_named_response("button", role, &response);
                     if response.clicked() {
-                        actions.push(if index == 0 { self.play_action(false) } else { self.stop_action() });
+                        actions.push(if index == 0 { self.play_action() } else { self.stop_action() });
                     }
                     let state = State::response(&response, on);
                     let ink =

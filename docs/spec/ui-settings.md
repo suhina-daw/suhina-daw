@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-01
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/gradient_editor.rs
@@ -15,9 +15,12 @@ covers:
 
 # The Settings window
 
-Options › Settings (Ctrl+,) opens the Settings window over the main window. How it is drawn
-(sizes, colours, the controls) is in [components](../design/components.md) › Settings; this spec
-says what is on each page, how the pages scroll and how a setting finds its place.
+Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
+bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
+it is open; moved into its own window, Settings has a status bar of its own at the bottom. How it
+is drawn (sizes, colours, the controls) is in
+[components](../design/components.md) › Settings; this spec says what is on each page, how the
+pages scroll and how a setting finds its place.
 
 The title's Open in window button moves Settings into a separate native, resizable
 window that can be moved to another monitor. Dock returns it to the main-window
@@ -82,10 +85,10 @@ what is inside it).
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
-| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, remove) |
-| Plug-ins | Editors | Plug-in editors open in (Window, Device view) |
+| Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
+| Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
-| Devices | Device panels | Device chain layout, Detail area width |
+| Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |

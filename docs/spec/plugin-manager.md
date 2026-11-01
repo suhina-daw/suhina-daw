@@ -3,7 +3,7 @@ description: The plug-in manager and the plug-in folders: every plug-in and ever
 read_when: plug-in manager, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
 type: spec
 status: current
-last_verified: 2026-10-24
+last_verified: 2026-10-30
 covers:
   - crates/ui/src/settings/plugin_manager.rs
   - crates/ui/src/settings/settings_view.rs
@@ -90,9 +90,11 @@ replaces the library, so a change made meanwhile would be lost.
 Each folder is for a format: a standard one for the format its name says (`…/VST3`, `…/CLAP`),
 an added one for both CLAP and VST3 (**Both**, the default), **VST3** or **CLAP**, chosen beside
 the field that adds it (`plugin.addFolder { folder, format }`, `suhina-cli plugins add-folder
-<dir> --format vst3`). Adding a folder already there with another format changes its format. A
-folder for one format gives only that format's files, so a folder of mixed plug-ins can be split
-between formats.
+<dir> --format vst3`). **Add** with nothing typed shows the system's folder picker instead, and
+what it brings back goes in with the format the row has chosen; a folder typed as `~` or
+starting `~/` is the one under the home folder. Adding a folder already there with another format changes
+its format. A folder for one format gives only that format's files, so a folder of mixed
+plug-ins can be split between formats.
 
 **VST2** is a format already (shown, not choosable): VST2 plug-ins are not hosted yet, and a
 VST2 plug-in is a plain library file that only its folder marks as one, so VST2 folders will be
