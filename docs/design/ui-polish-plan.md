@@ -95,7 +95,7 @@ Build and inspect the native application at common and high display scales, narr
 both themes. Exercise transport, theme switching, selection, mute/solo/arm, editing, undo and
 repeated editor maximize/restore. Record actual observations before claiming visual QA passed.
 Run repository-required formatting, clippy and workspace tests before delivery of a finished
-application change. Parity: no change for the initial palette-only slice.
+application change.
 
 ## Track-color surface follow-up
 

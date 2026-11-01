@@ -15,30 +15,37 @@ primary platform; Windows and macOS are supported.
 | M7 | **More formats:** DAWproject import and export | not started |
 | M8 | **UI:** Launcher and Arrangement views on top of the commands; familiar workflow, Suhina's own look; installers (AppImage, deb, Flatpak, MSI) and signed macOS and Windows builds | in progress: Launcher and Arrangement views, browser, sample map, settings, themes and a nightly build work; installers and signed builds to come ([#180](https://github.com/suhina-daw/suhina-daw/issues/180)) |
 
-How far this is from a full clip-launching DAW, and the order the gap is built in: the
-[parity report](docs/research/parity-live-12.md) and
-[ADR 0016](docs/decisions/0016-parity-target.md) (proposed).
+What Suhina aims at, what it leaves out and the order the missing parts are built in:
+[ADR 0016](docs/decisions/0016-scope.md) (proposed). [`docs/features.md`](docs/features.md),
+written from [`docs/features.json`](docs/features.json), lists what is done in each area.
 
 ## Next (order proposed in ADR 0016)
 
-The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-parity-target.md) proposes
+The gaps that matter most, in the order [ADR 0016](docs/decisions/0016-scope.md) proposes
 (its build order has the reasons and sizes):
 
-1. **MIDI note editing:** the piano roll in the detail area and note commands (add, move, resize,
-   velocity, deactivate), quantise ([#200](https://github.com/suhina-daw/suhina-daw/issues/200),
-   [spec](docs/spec/ui-clip-editor.md)).
-2. **Automation:** device, plug-in and mixer parameters first, then tempo
-   ([#109](https://github.com/suhina-daw/suhina-daw/issues/109) for plug-in parameters).
-3. **Recording and inputs:** audio and MIDI recording, audio inputs, monitoring, count-in
-   ([#263](https://github.com/suhina-daw/suhina-daw/issues/263); arming and playing from MIDI
-   controllers work).
+1. **MIDI note editing, the rest:** the piano roll works; still to do are note commands for the
+   command line and agents ([#200](https://github.com/suhina-daw/suhina-daw/issues/200)), MIDI tools
+   ([#349](https://github.com/suhina-daw/suhina-daw/issues/349)), chords, strum and arpeggiate
+   ([#350](https://github.com/suhina-daw/suhina-daw/issues/350)), editing a slot clip's notes
+   ([#343](https://github.com/suhina-daw/suhina-daw/issues/343)) and per-note expression
+   ([#921](https://github.com/suhina-daw/suhina-daw/issues/921); [spec](docs/spec/ui-clip-editor.md)).
+2. **Automation, the rest:** envelopes for the mixer, devices and plug-ins work; still to do are an
+   automation view over the clips ([#819](https://github.com/suhina-daw/suhina-daw/issues/819)),
+   painting ranges and shapes ([#1005](https://github.com/suhina-daw/suhina-daw/issues/1005)),
+   recording automation from the controls and editing tempo automation.
+3. **Recording, the rest:** audio and MIDI recording, inputs, monitoring and count-in work; still to
+   do are take lanes and comping ([#989](https://github.com/suhina-daw/suhina-daw/issues/989)),
+   resampling ([#987](https://github.com/suhina-daw/suhina-daw/issues/987)), overdubbing MIDI and
+   capturing what was played.
 4. **The crossfader and track delay:** sends and return tracks play, level meters are done and
    the cue output works.
-5. **Arrangement editing:** the loop brace ([#98](https://github.com/suhina-daw/suhina-daw/issues/98)),
-   locators ([#99](https://github.com/suhina-daw/suhina-daw/issues/99)).
-6. **EQ and filter**, then bus compressor and a modulation delay (see the devices below; the delay
-   and reverb are done).
-7. **Launching from live MIDI notes** (the rest of M4, [#264](https://github.com/suhina-daw/suhina-daw/issues/264)).
+5. **Arrangement editing:** inserting and deleting time
+   ([#713](https://github.com/suhina-daw/suhina-daw/issues/713)) and resizing several clips together
+   ([#956](https://github.com/suhina-daw/suhina-daw/issues/956)); the loop brace and markers are done.
+6. **Filter** ([#382](https://github.com/suhina-daw/suhina-daw/issues/382)), then bus compressor and a
+   modulation delay (see the devices below; the EQ, delay and reverb are done).
+7. **Launching from live MIDI notes** (the rest of M4).
 
 Finishing what is in flight (M3's commands, M6's automation and editors, M7, M8's installers and
 detail area) goes alongside this list, not after it.
@@ -70,7 +77,7 @@ its copyright notices kept and credited in [`ATTRIBUTION.md`](ATTRIBUTION.md).
 - **Order:** EQ and filter first, then bus compressor and the modulation delay (the delay and
   reverb are done); multiband dynamics,
   saturation, the sampler and drum sampler later
-  ([ADR 0016](docs/decisions/0016-parity-target.md)).
+  ([ADR 0016](docs/decisions/0016-scope.md)).
 
 ### The devices
 
@@ -124,7 +131,7 @@ command with undo. Behaviour, detectors and tests: [`docs/spec/audio-to-midi.md`
 ## Later, not ordered
 
 FL Studio projects (`.flp`), MIDI controllers and remote mapping (hardware controllers: scope in
-[ADR 0016](docs/decisions/0016-parity-target.md)), devices of an imported project that
+[ADR 0016](docs/decisions/0016-scope.md)), devices of an imported project that
 Suhina cannot run kept as placeholders and copied along with the project
 ([device import](docs/spec/device-import.md)), bridging Windows plug-ins.
 

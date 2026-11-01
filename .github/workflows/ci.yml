@@ -93,30 +93,27 @@ jobs:
       - name: Documents that describe the changed code
         if: github.event_name == 'pull_request'
         run: python3 scripts/docs.py impact HEAD^1
-      # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml). A pull
-      # request that edits one of them would have the edit overwritten on the next merge, silently,
-      # so it is refused here instead and sent to the source of the file. The parity report is not
-      # in this list: it is a normal document whose prose pull requests edit (see the step below).
+      # docs/INDEX.md, docs/commands.md, docs/features.md and the two feature figures are generated
+      # on main (docs-generated.yml). A pull request that edits one of them would have the edit
+      # overwritten on the next merge, silently, so it is refused here instead and sent to the
+      # source of the file. Adding one (the pull request that introduces it) is not an edit.
       - name: Generated files are not edited by hand
         if: github.event_name == 'pull_request'
         env:
           BASE: HEAD^1
         run: |
-          edited=$(git diff --name-only "$BASE" HEAD -- docs/INDEX.md docs/commands.md || true)
+          edited=$(git diff --name-only --diff-filter=a "$BASE" HEAD -- docs/INDEX.md docs/commands.md             docs/features.md docs/features-by-area.svg docs/features-by-area-dark.svg || true)
           if [ -z "$edited" ]; then
             echo "No generated file is touched."
             exit 0
           fi
           echo "::error::These files are generated on main and an edit here would be overwritten:"
           printf '%s\n' "$edited"
-          echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md."
+          echo "::error::Edit their source instead: the command registry for docs/commands.md, the documents' front matter for docs/INDEX.md, docs/features.json and the issues' area: labels for docs/features.md and the feature figures."
           exit 1
-      # The parity report's marked parts are written on main after every merge
-      # (docs-generated.yml), so a pull request changes only their inputs (score.py,
-      # devices.json). This checks that the inputs render and the markers are whole; it passes
-      # whether the marked parts are stale or were regenerated in the pull request (issue #462).
-      - name: The parity report's inputs render
-        run: python3 scripts/parity/update_report.py --check-inputs
+      # The feature map is valid; its list and figures are written on main (docs-generated.yml).
+      - name: The feature map
+        run: python3 scripts/features.py --check
       - name: No hidden or bidirectional Unicode characters
         run: |
           if git grep -nIP '[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]' -- . ':!*.lock'; then

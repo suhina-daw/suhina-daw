@@ -63,6 +63,7 @@ INDEX = DOCS / "INDEX.md"
 GENERATED = (
     (INDEX, "This index"),
     (DOCS / "commands.md", "Every command with its kind and parameters, from the command registry"),
+    (DOCS / "features.md", "What Suhina does today, area by area, from docs/features.json"),
 )
 REQUIRED = ("description", "read_when", "type", "status", "last_verified")
 TYPES = ("system", "decision", "spec", "howto", "plan")
