@@ -571,8 +571,8 @@ impl Default for Rack {
 }
 
 impl Rack {
-    /// What plug-ins are started with. A new one (after a scan, or another hosting choice)
-    /// makes the plug-ins that were not found, or could not start, be looked for again.
+    /// Lets the session start the project's plug-ins: the catalog to find them in and how to
+    /// host them (ADR 0006). Without it plug-in devices pass the sound through.
     pub fn set_env(&mut self, env: std::sync::Arc<PluginEnv>) {
         if self.env.as_ref().is_some_and(|old| std::sync::Arc::ptr_eq(old, &env)) {
             return;
@@ -581,8 +581,8 @@ impl Rack {
         self.env = Some(env);
     }
 
-    /// The plug-ins (by spec) found to edit clips over ARA since the last call, although the
-    /// catalog did not say so: for the catalog to remember.
+    /// The plug-ins (by spec) found to edit clips over ARA since the last call although the
+    /// catalog did not say so .
     pub fn take_ara_learned(&mut self) -> Vec<String> {
         std::mem::take(&mut self.ara_learned)
     }
@@ -657,19 +657,19 @@ impl Rack {
         self.notices.extend(notices);
     }
 
-    /// Reads every running plug-in twice before asking whether to save: processing and MIDI
-    /// can change state without an editor or a host dirty notification. Both rounds share one
-    /// deadline, so a busy host cannot add a second wait to leaving the project. Reads run on
-    /// control workers concurrently; stopped plug-ins keep their last state.
-    pub(crate) fn check_edits(&mut self) {
+    /// Reads the running plug-ins' states now, so a change made in a plug-in's editor since
+    /// the last read shows in [`crate::Session::has_unsaved_changes`]: before asking whether to save
+    /// on close or quit. Waits at most one second for plug-ins that do not answer.
+    pub fn check_edits(&mut self) {
         while !self.poll_edits() {
             std::thread::sleep(Duration::from_millis(2));
         }
     }
 
-    /// Advances the quit check without waiting for any host. The caller pumps frames until
-    /// true; every project can make progress together under its own one-second deadline.
-    pub(crate) fn poll_edits(&mut self) -> bool {
+    /// Advances a two-read check of all running plug-ins without waiting. Call each frame
+    /// until true before deciding whether to offer saving; processing and MIDI count too.
+    /// All rounds share one second, after which the last known states are used.
+    pub fn poll_edits(&mut self) -> bool {
         let mut notices = Vec::new();
         self.take_returned(&mut notices);
         self.notices.extend(notices);
@@ -1060,7 +1060,7 @@ impl Rack {
         })
     }
 
-    /// How far the plug-ins have got with starting.
+    /// How far the project's plug-ins have got with starting (all zero while it does not play).
     pub fn progress(&self) -> PluginProgress {
         let mut progress = PluginProgress::default();
         let name = |i: &Instance| i.plugin.as_ref().map_or_else(String::new, |p| p.0.clone());
@@ -1214,8 +1214,9 @@ impl Rack {
         });
     }
 
-    /// The clips' edits on their way: whether any is still waiting.
-    pub(crate) fn carrying(&self) -> bool {
+    /// Whether clips' edits are still on their way to another track's plug-in (ADR 0033 step 6):
+    /// a clip moved there with its edits kept, waiting for that plug-in to run with it.
+    pub fn carrying(&self) -> bool {
         !self.carries.is_empty()
     }
 
@@ -1562,9 +1563,9 @@ impl Rack {
         self.ara_notes_hidden = self.ara_notes.keys().filter(|clip| !has(&shown, clip)).copied().collect();
     }
 
-    /// What an ARA plug-in on `track` is doing with its audio clips that they should show: its
-    /// name and how far its analysis has come (`None` while it loads).
-    pub(crate) fn ara_activity(&self, track: suhina_model::TrackId) -> Option<(String, Option<f32>)> {
+    /// What an ARA plug-in on `track` is doing with its audio clips: its name, and how far its
+    /// analysis has come, or `None` while it loads. `None` when it is doing neither.
+    pub fn ara_activity(&self, track: suhina_model::TrackId) -> Option<(String, Option<f32>)> {
         self.instances.values().filter(|i| i.track == Some(track)).find_map(|i| {
             let name = i.plugin.as_ref().map_or_else(|| "The plug-in".to_string(), |p| p.0.clone());
             match &i.status {
@@ -1575,8 +1576,9 @@ impl Rack {
         })
     }
 
-    /// The notes an ARA plug-in found in `clip`, if any (#720).
-    pub(crate) fn clip_notes(&self, clip: suhina_model::ClipId) -> Option<&crate::ara::ClipNotes> {
+    /// The notes the ARA plug-in that edits `clip` found in it, for the arrangement to draw
+    /// (#720): `None` when it has none, or its plug-in is bypassed or not running.
+    pub fn clip_notes(&self, clip: suhina_model::ClipId) -> Option<&crate::ara::ClipNotes> {
         if self.ara_notes_hidden.contains(&clip) {
             return None;
         }
@@ -1662,20 +1664,20 @@ impl Rack {
         spawned.map(|_| ()).map_err(|e| CommandError(format!("could not restart the plug-in: {e}")))
     }
 
-    /// How often each running plug-in's state is read from now on (every [`SAVE_EVERY`] unless
-    /// set), so a test of those reads need not wait half a minute.
+    /// How often the state of each running plug-in is read for backups and the unsaved-changes
+    /// check (every 30 seconds unless set). For tests, which need not wait that long.
     pub fn set_save_every(&mut self, every: Duration) {
         self.save_every = every;
     }
 
-    /// The window editors open over from now on: a Win32 `HWND` or an X11 window id.
+    /// The window plug-in editors open over, owned by it (a Win32 `HWND`, an X11 window id):
+    /// they float above it, have no taskbar entry of their own and go with it.
     pub fn set_owner(&mut self, owner: Option<u64>) {
         self.owner = owner;
     }
 
-    /// Whether editors open embedded in the owner window's device panel from now on, rather
-    /// than in windows of their own (nothing without an owner window). An editor open the
-    /// other way is closed and opened again the new way.
+    /// Whether plug-in editors open embedded in the owner window's device panel rather than
+    /// in windows of their own (the window's setting; nothing without an owner window).
     pub fn set_embedding(&mut self, embed: bool) {
         let embed = embed && self.owner.is_some();
         if self.embed == embed {

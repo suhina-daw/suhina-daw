@@ -148,7 +148,7 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
@@ -183,6 +183,6 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     // project is as it was. The change made in the editor is unsaved all the same (issue #362).
     assert!(!session.can_undo());
     assert_eq!(session.project(), &opened);
-    session.check_plugin_edits();
+    session.rack_mut().check_edits();
     assert!(session.has_unsaved_changes());
 }

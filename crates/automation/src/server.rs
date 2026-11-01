@@ -719,7 +719,7 @@ impl ExportRequest {
         self.params = confine(&workspace, "project.export", self.params.clone(), None)?;
         let env = projects.plugin_env();
         let session = projects.get_mut(id).ok_or("the export's project was closed")?;
-        session.set_plugin_env(env);
+        session.rack_mut().set_env(env);
         let gathered = if let Some((_, deadline)) = self.pending {
             session.gather_export_data(deadline)
         } else {

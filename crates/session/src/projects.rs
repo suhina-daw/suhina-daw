@@ -693,13 +693,13 @@ impl Projects {
         let env = self.plugin_env();
         let (owner, embed) = (self.plugin_host.editor_owner, self.plugin_host.editor_embed);
         let Some(session) = self.get_mut(active) else { return Vec::new() };
-        session.set_plugin_env(env);
-        session.set_editor_owner(owner);
-        session.set_editor_embedding(embed);
+        session.rack_mut().set_env(env);
+        session.rack_mut().set_owner(owner);
+        session.rack_mut().set_embedding(embed);
         let notices = session.sync_plugins();
         // A plug-in that turned out to edit clips is remembered, so it starts with them from
         // now on (in every project) instead of loading twice.
-        let learned = session.take_ara_learned();
+        let learned = session.rack_mut().take_ara_learned();
         for spec in learned {
             if let Ok(true) = self.plugin_host.library.mark_ara(&spec) {
                 self.plugin_host.env = None;

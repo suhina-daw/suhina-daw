@@ -117,7 +117,7 @@ impl App {
             return;
         }
         let Some(id) = self.projects.active() else { return };
-        let Some(progress) = self.projects.get(id).map(Session::plugin_progress) else { return };
+        let Some(progress) = self.projects.get(id).map(|s| s.rack().progress()) else { return };
         if progress.loading.is_empty() {
             return;
         }

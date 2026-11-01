@@ -280,7 +280,7 @@ fn keeping_ara_edits_moves_plain_clips_as_ever() {
             .unwrap();
     assert_eq!(moved["edits_carried"], 0, "no plug-in edits these clips");
     assert!(spans(&session, 1).is_empty());
-    assert!(!session.carrying_ara_edits());
+    assert!(!session.rack().carrying());
     let back = json!([{ "track": 2, "index": 0 }]);
     assert!(
         run(&mut session, "clip.moveMany", json!({ "clips": back, "beats": 0.0, "toTrack": 1, "araEdits": "maybe" }))

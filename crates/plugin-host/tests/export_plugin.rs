@@ -189,7 +189,7 @@ fn an_export_gathers_its_states_over_frames_without_the_window_waiting() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     let deadline = Instant::now() + Duration::from_secs(30);
 
@@ -244,7 +244,7 @@ fn a_gather_keeps_the_reads_across_a_project_switch() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let device = json!({ "track": 1, "device": 0 });
     projects.get_mut(id).unwrap().attach_player(Player::new(renderer.controller(), None));
-    projects.get_mut(id).unwrap().set_plugin_env(env());
+    projects.get_mut(id).unwrap().rack_mut().set_env(env());
     projects.get_mut(id).unwrap().sync_plugins();
     until_with_projects(&mut projects, id, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"
@@ -327,7 +327,7 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     let device = json!({ "track": 1, "device": 0 });
@@ -365,7 +365,7 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     session.sync_plugins();
@@ -465,7 +465,7 @@ fn an_export_plays_the_running_plug_ins_state_without_a_project_change() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
     until(&mut session, &mut renderer, "starting", |s| {
         s.execute("device.plugin", &device).unwrap()["status"] == "running"

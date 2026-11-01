@@ -85,7 +85,7 @@ fn a_plug_in_in_a_group_runs_saves_and_restarts_by_its_path() {
     let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR).unwrap();
     let mut session = Session::new(p);
     session.attach_player(Player::new(renderer.controller(), None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": "0/0/0" });
     wait_running(&mut session, &mut renderer, &device);
     let listed = session.execute("track.devices", &json!({ "track": 1 })).unwrap();

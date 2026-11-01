@@ -519,7 +519,7 @@ unasked). A plug-in that is not installed is *missing*: it has no slot and its
 state stays in the project untouched. Offline renders start the plug-ins first and run the same
 renderer without a deadline.
 
-Before quitting, the window advances `Session::poll_plugin_edits` each frame for every open
+Before quitting, the window advances `Rack::poll_edits` (`Session::rack_mut`) each frame for every open
 project together. Two background state reads cover processing and MIDI changes without an
 editor or dirty notification. Each project's check shares one second across both rounds;
 the window keeps handling events while hosts work, then uses the last known states on timeout.

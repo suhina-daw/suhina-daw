@@ -336,7 +336,7 @@ fn nothing_goes_before_the_midi_effects_but_a_midi_effect() {
     std::fs::write(&instrument_path, instrument.to_sd().expect("valid instrument")).expect("write test file");
 
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "pitch" })).unwrap();
     let before = session.project().clone();
     // Without an instrument, an effect still goes after the MIDI effects.
@@ -457,7 +457,7 @@ fn installed_plug_ins_are_added_from_the_catalog() {
     // Without a catalog there is nothing to add from.
     let error = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Verb" })).unwrap_err();
     assert!(error.contains("catalog"), "{error}");
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     let verb = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "verb" })).unwrap();
     assert_eq!(
@@ -481,7 +481,7 @@ fn installed_plug_ins_are_added_from_the_catalog() {
 fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
     let mut session = Session::new(project());
     assert_eq!(session.ara_plugin(), None, "no catalog");
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     let (name, spec) = session.ara_plugin().unwrap();
     assert_eq!(name, "Tune");
     assert!(spec.starts_with("vst3:"), "{spec}");
@@ -500,14 +500,14 @@ fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
     };
     let mut catalog = Catalog::new();
     catalog.insert(melodyne.path.clone(), vec![melodyne]);
-    session.set_plugin_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    session.rack_mut().set_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
     assert_eq!(session.ara_plugin().map(|(name, _)| name).as_deref(), Some("Melodyne"));
 }
 
 #[test]
 fn a_plug_in_that_edits_clips_goes_first() {
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     // Asked for after the utility, it goes before it, as it plays the clips from their files.
     let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune", "position": 1 })).unwrap();
@@ -526,7 +526,7 @@ fn a_plug_in_that_edits_clips_goes_first() {
 #[test]
 fn plug_in_commands_need_a_plug_in_and_a_playing_project() {
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Verb" })).unwrap();
     let device = json!({ "track": 1, "device": 1 });
@@ -1036,7 +1036,7 @@ fn an_added_instrument_replaces_the_one_on_the_track() {
         session.project().channels[0].devices.iter().map(|d| d.name.clone()).collect()
     };
     let mut session = Session::new(project());
-    session.set_plugin_env(plugin_env());
+    session.rack_mut().set_env(plugin_env());
     run(&mut session, "device.add", json!({ "track": 1, "id": "pitch" })).unwrap();
     run(&mut session, "device.add", json!({ "track": 1, "id": "sampler" })).unwrap();
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();

@@ -389,7 +389,7 @@ fn session(project: Project, offline: bool) -> (Session, Renderer) {
     let controller = renderer.controller();
     let mut session = Session::new(project);
     session.attach_player(Player::new(controller, None));
-    session.set_plugin_env(env());
+    session.rack_mut().set_env(env());
     (session, renderer)
 }
 
@@ -527,7 +527,7 @@ fn an_editor_edit_survives_a_restart() {
         let (mut session, mut renderer) = session(p, false);
         // The state is never read again in this test: what carries the edit through the
         // restart is the values set since the state was last read.
-        session.set_plugin_read_interval(Duration::from_secs(3600));
+        session.rack_mut().set_save_every(Duration::from_secs(3600));
         until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
         let device = json!({ "track": 1, "device": 0 });
         let editor_ok = cfg!(windows)
@@ -693,8 +693,8 @@ fn an_editor_embeds_in_the_engines_window_when_the_setting_says_so() {
     let parent = ParentWindow::open();
     let p = project(8.0, false, vec![plugin_device("vst3")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_editor_owner(Some(parent.id()));
-    session.set_editor_embedding(true);
+    session.rack_mut().set_owner(Some(parent.id()));
+    session.rack_mut().set_embedding(true);
     until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
     let device = json!({ "track": 1, "device": 0 });
     assert_eq!(session.execute("device.openEditor", &device).unwrap()["editor_open"], "opening");
@@ -717,7 +717,7 @@ fn an_editor_embeds_in_the_engines_window_when_the_setting_says_so() {
         );
     }
     // Embedding off: the editor closes and opens again in a window of its own.
-    session.set_editor_embedding(false);
+    session.rack_mut().set_embedding(false);
     assert!(
         soon(PATIENT, || {
             session.sync_plugins();
@@ -756,7 +756,7 @@ fn a_plug_in_that_could_not_start_starts_again_on_restart() {
     catalog.insert(path, vec![info]);
     let p = project(8.0, false, vec![plugin_device("broken")]);
     let (mut session, mut renderer) = session(p, false);
-    session.set_plugin_env(Arc::new(PluginEnv::new(catalog, host())));
+    session.rack_mut().set_env(Arc::new(PluginEnv::new(catalog, host())));
     until(&mut session, &mut renderer, "failing", |s| s["status"] == "failed");
     session.execute("device.restart", &json!({ "track": 1, "device": 0 })).unwrap();
     let status = session.execute("device.plugin", &json!({ "track": 1, "device": 0 })).unwrap();
