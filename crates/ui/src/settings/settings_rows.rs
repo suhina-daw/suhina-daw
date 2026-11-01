@@ -256,6 +256,16 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Devices,
         "Device panels",
+        "Long parameter lists",
+        "Whether a list opened from its device's arrow continues to the right or scrolls down",
+        &["device_list_scroll"],
+        |cx, r| {
+            cx.choose(r, &[("Horizontal", false), ("Vertical", true)], |s| &mut s.view.device_list_vertical);
+        },
+    ),
+    row(
+        Page::Devices,
+        "Device panels",
         "Detail area width",
         "Whether the area under the view stops at the browser or spans the whole window",
         &["detail_layout"],

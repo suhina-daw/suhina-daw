@@ -567,6 +567,7 @@ impl App {
         let start_marker = (self.shown == View::Arrangement)
             .then(|| self.session().and_then(|s| s.player()).map(|p| p.monitor().start_beat()))
             .flatten();
+        detail_view::set_list_vertical(ui.ctx(), self.settings.view.device_list_vertical);
         let picks = self.device_picks();
         let piano_roll = &mut self.piano_roll;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {

@@ -88,7 +88,7 @@ what is inside it).
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
 | Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
-| Devices | Device panels | Device chain layout, Detail area width |
+| Devices | Device panels | Device chain layout, Long parameter lists, Detail area width |
 | Importing | Dropping files | Tracks for dropped files, Warp mode for samples |
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |

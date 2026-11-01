@@ -405,6 +405,27 @@
       "docs/design/components.md"
     ]
   },
+  "Devices/Device panels/device_list_scroll": {
+    "sourceFingerprint": "b947a93ea09d2a21cd2096c7f69879c6c7eeb71663e069600099538d7c8c1e71",
+    "summary": "Choose how a device's long parameter list continues once it is opened.",
+    "description": "A device with more parameters than fit in two columns shows those two and an arrow beside its on switch in its header. The arrow opens the rest. This setting decides where they go; it changes neither the parameters nor the sound.",
+    "options": [
+      {
+        "name": "Horizontal (default)",
+        "description": "The list continues in further columns to the right, so the device's panel grows wider and the other devices move along the chain."
+      },
+      {
+        "name": "Vertical",
+        "description": "The list stays in two columns and scrolls down inside the panel, so the other devices stay where they are."
+      }
+    ],
+    "whenToChange": "Choose Vertical if opening a plug-in with many parameters pushes the rest of the chain too far away.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/detail_view.rs"
+    ]
+  },
   "Devices/Device panels/detail_layout": {
     "sourceFingerprint": "e9b6d8f79d8ba7fc6e715309f971f844d0096e4ae5a01f7b30a506a8f1c76b5d",
     "summary": "Let the bottom editing panel extend underneath the browser, or keep the browser full height beside it.",

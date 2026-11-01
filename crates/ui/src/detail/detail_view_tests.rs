@@ -923,3 +923,18 @@ fn a_long_list_shows_its_first_two_columns() {
     assert!(cells[..fit].iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
     assert!(cells[fit].left() >= COMPACT_WIDTH * 2.0, "{cells:?}");
 }
+
+#[test]
+fn a_tall_list_stays_in_two_columns() {
+    let mut project = demo_project();
+    project.channels[0].devices = vec![Device::new("Utility", DeviceKind::Builtin("utility".into()))];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let graph = chain.devices[0].graph.as_ref().unwrap();
+    let mut parameters = graph.parameters.clone();
+    for _ in 0..5 {
+        parameters.extend_from_slice(&graph.parameters);
+    }
+    let cells = parameter_layout(&parameters, COMPACT_WIDTH, tall_list_height(&parameters), &[]);
+    assert!(cells.iter().all(|c| c.left() < COMPACT_WIDTH * 2.0), "{cells:?}");
+    assert!(cells.iter().any(|c| c.left() >= COMPACT_WIDTH), "{cells:?}");
+}

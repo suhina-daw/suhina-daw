@@ -316,6 +316,23 @@ pub(super) fn list_fold_id(track: TrackId, at: &DeviceAt) -> Id {
     Id::new(("list-fold", track.0, at))
 }
 
+fn list_vertical_id() -> Id {
+    Id::new("device-list-vertical")
+}
+
+/// Whether an opened long list scrolls down rather than continuing to the right, for this frame's
+/// panels (Settings › Devices › Long parameter lists).
+pub fn set_list_vertical(ctx: &egui::Context, vertical: bool) {
+    ctx.data_mut(|d| d.insert_temp(list_vertical_id(), vertical));
+}
+
+/// How tall a column is for `parameters` to fill the first columns, so the panel keeps its width.
+fn tall_list_height(parameters: &[GraphParameter]) -> f32 {
+    let height = |p: &GraphParameter| parameter_height(p);
+    let total: f32 = parameters.iter().map(height).sum();
+    total / LIST_COLUMNS + parameters.iter().map(height).fold(0.0, f32::max)
+}
+
 /// How many of `parameters` fit the first columns of a list `max_height` tall; `None` when all do.
 fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
     let limit = COMPACT_WIDTH * LIST_COLUMNS - 0.5;
@@ -341,10 +358,14 @@ fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox
     };
     let more = graph.parameters.len().saturating_sub(fit);
     ui.ctx().data_mut(|d| d.insert_temp(id, ListFold { more, open }));
-    if open {
-        return None;
-    }
     let mut limited = device.clone();
+    if open {
+        if !ui.data(|d| d.get_temp::<bool>(list_vertical_id())).unwrap_or(false) {
+            return None;
+        }
+        limited.list_tall = true;
+        return Some(limited);
+    }
     if let Some(graph) = limited.graph.as_mut() {
         graph.parameters.truncate(fit);
     }
@@ -382,6 +403,9 @@ fn list_height(device: &DeviceBox, graph: &GraphBox) -> f32 {
         if crate::kit::style_class::computed().is_some_and(|c| c.width.is_some()) {
             return f32::INFINITY;
         }
+    }
+    if device.list_tall {
+        return tall_list_height(&graph.parameters);
     }
     let above = if device.plugin.is_some() { EDITOR_TOP - ROW - PAD } else { 0.0 };
     let room = COMPACT_HEIGHT - above - graph.nodes.len() as f32 * NODE_ROW;

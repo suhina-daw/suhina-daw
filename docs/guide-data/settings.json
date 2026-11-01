@@ -485,6 +485,31 @@
       "workInProgress": false
     },
     {
+      "id": "Devices/Device panels/device_list_scroll",
+      "page": "Devices",
+      "section": "Device panels",
+      "name": "Long parameter lists",
+      "note": "Choose how a device's long parameter list continues once it is opened.",
+      "keys": [
+        "device_list_scroll"
+      ],
+      "sourceFingerprint": "b947a93ea09d2a21cd2096c7f69879c6c7eeb71663e069600099538d7c8c1e71",
+      "helpStatus": "reviewed",
+      "description": "A device with more parameters than fit in two columns shows those two and an arrow beside its on switch in its header. The arrow opens the rest. This setting decides where they go; it changes neither the parameters nor the sound.",
+      "options": [
+        {
+          "name": "Horizontal (default)",
+          "description": "The list continues in further columns to the right, so the device's panel grows wider and the other devices move along the chain."
+        },
+        {
+          "name": "Vertical",
+          "description": "The list stays in two columns and scrolls down inside the panel, so the other devices stay where they are."
+        }
+      ],
+      "whenToChange": "Choose Vertical if opening a plug-in with many parameters pushes the rest of the chain too far away.",
+      "workInProgress": false
+    },
+    {
       "id": "Devices/Device panels/detail_layout",
       "page": "Devices",
       "section": "Device panels",
