@@ -631,7 +631,7 @@ pub(crate) struct Vst3Plugin {
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
-    /// When it was loaded: let go of soon after, it is released later (`Loaded::unload`).
+    /// When it was loaded: let go of soon after, it is released later (`HostedPlugin::unload`).
     loaded_at: std::time::Instant,
     module: Module,
 }
@@ -938,7 +938,7 @@ impl Vst3Plugin {
     }
 
     /// Leaves its ARA document now, with its processing stopped: an instance released later
-    /// (`Loaded::unload`) must not keep its track's regions in the document the other tracks
+    /// (`HostedPlugin::unload`) must not keep its track's regions in the document the other tracks
     /// share, where the instance loaded in its place puts them again.
     pub(crate) fn leave_document(&mut self) {
         if self.ara.is_none() {
