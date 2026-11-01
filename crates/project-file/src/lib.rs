@@ -83,18 +83,8 @@ pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
 /// Writes `project` to `path`: to a file beside it first, then moved over it, so a failed save
 /// never leaves half a project.
 pub fn write_file(path: &Path, project: &Project) -> Result<(), ProjectFileError> {
-    let failed = |e: std::io::Error| ProjectFileError(format!("could not save {}: {e}", path.display()));
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).map_err(failed)?;
-    }
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".saving");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, to_json(project)).map_err(failed)?;
-    std::fs::rename(&temporary, path).map_err(|e| {
-        let _gone = std::fs::remove_file(&temporary);
-        failed(e)
-    })
+    suhina_fs::write_atomic(path, to_json(project))
+        .map_err(|e| ProjectFileError(format!("could not save {}: {e}", path.display())))
 }
 
 /// The project as the text of a `.suhina` file.

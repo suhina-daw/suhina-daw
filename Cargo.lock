@@ -5218,6 +5218,7 @@ dependencies = [
  "serde_json",
  "suhina-automation",
  "suhina-engine",
+ "suhina-fs",
  "suhina-library",
  "suhina-media",
  "suhina-midi",
@@ -5440,6 +5441,7 @@ dependencies = [
  "serde_json",
  "suhina-device-api",
  "suhina-dsp",
+ "suhina-fs",
  "suhina-stretch",
 ]
 
@@ -5482,6 +5484,10 @@ dependencies = [
 
 [[package]]
 name = "suhina-flp"
+version = "0.0.1"
+
+[[package]]
+name = "suhina-fs"
 version = "0.0.1"
 
 [[package]]
@@ -5598,6 +5604,7 @@ version = "0.0.1"
 dependencies = [
  "base64",
  "serde_json",
+ "suhina-fs",
  "suhina-model",
  "suhina-test-support",
 ]
@@ -5636,6 +5643,7 @@ dependencies = [
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",
+ "suhina-fs",
  "suhina-library",
  "suhina-media",
  "suhina-model",

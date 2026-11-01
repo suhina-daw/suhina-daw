@@ -1145,13 +1145,7 @@ fn save_file(name: &str, text: &str) -> Result<(), String> {
 /// crash or a full disk while writing never leaves the settings half written (they would then be
 /// read as defaults).
 fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
-    let temporary = PathBuf::from(temporary);
-    std::fs::write(&temporary, text)?;
-    std::fs::rename(&temporary, path).inspect_err(|_| {
-        let _removed = std::fs::remove_file(&temporary);
-    })
+    suhina_fs::write_atomic(path, text)
 }
 
 #[cfg(test)]
