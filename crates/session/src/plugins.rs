@@ -13,7 +13,7 @@ use suhina_plugins::SavedState;
 use suhina_plugins::matching::Match;
 use suhina_plugins::scan::{Catalog, FolderFormat, NO_PLUGINS, Report};
 
-use crate::commands::{CommandKind, CommandSpec, Param, ParamType, optional, param};
+use crate::commands::{Args, CommandKind, CommandSpec, Param, ParamType, optional, param};
 use crate::projects::project_param;
 use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
@@ -136,7 +136,7 @@ fn paths(list: &[std::path::PathBuf]) -> Vec<String> {
 }
 
 fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let ignored = bool_param(params, "ignored")?;
+    let ignored = Args::new(params).flag("ignored")?;
     let library = projects.library_mut();
     let specs: Vec<String> = library.catalog().plugins().map(|p| p.spec()).collect();
     let hosting: std::collections::HashMap<String, suhina_plugins::library::Hosting> =
@@ -172,12 +172,6 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
     Ok(listed)
 }
 
-/// The optional true-or-false parameter `name` (default false).
-fn bool_param(params: &Value, name: &str) -> Result<bool, CommandError> {
-    let value = params.get(name).map(|v| v.as_bool().ok_or_else(|| format!("{name} must be true or false")));
-    Ok(value.transpose()?.unwrap_or(false))
-}
-
 fn report(report: &Report, found: usize) -> Value {
     json!({
         "plugins": found,
@@ -202,7 +196,7 @@ fn reasons(list: &[(std::path::PathBuf, String)]) -> Vec<Value> {
 }
 
 fn scan(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let all = bool_param(params, "all")?;
+    let all = Args::new(params).flag("all")?;
     let library = projects.library_mut();
     let done = library.scan(all)?;
     let found = library.catalog().plugins().count();
@@ -228,7 +222,7 @@ fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 }
 
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let format = match params.get("format") {
+    let format = match Args::new(params).value("format") {
         None => FolderFormat::Any,
         Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3 or clap")?,
     };
@@ -240,14 +234,14 @@ fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandE
 }
 
 fn set_folder_enabled(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let changed = projects.library_mut().set_folder_enabled(folder_param(params)?, enabled)?;
     Ok(json!({ "changed": changed, "enabled": enabled }))
 }
 
 fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("plugin").and_then(Value::as_str).ok_or("plugin must be a plug-in name, id or spec")?;
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or spec")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let library = projects.library_mut();
     let catalog = library.catalog();
     let plugin = catalog
@@ -261,7 +255,7 @@ fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, Command
 }
 
 fn scan_file(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let file = params.get("file").and_then(Value::as_str).filter(|f| !f.is_empty()).ok_or("file must be a path")?;
+    let file = Args::new(params).raw_str("file").filter(|f| !f.is_empty()).ok_or("file must be a path")?;
     let library = projects.library_mut();
     let done = library.scan_file_again(Path::new(file))?;
     let found = library.catalog().plugins().count();
@@ -270,7 +264,7 @@ fn scan_file(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
 
 fn set_hosting(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     use suhina_plugins::library::Hosting;
-    let name = params.get("plugin").and_then(Value::as_str).ok_or("plugin must be a plug-in name, id or file")?;
+    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or file")?;
     let hosting = params
         .get("hosting")
         .and_then(Value::as_str)
@@ -333,7 +327,7 @@ fn device_format(kind: &DeviceKind) -> (&'static str, String) {
 }
 
 fn check(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let id = params.get("project").map(|_| project_param(params)).transpose()?;
+    let id = Args::new(params).value("project").map(|_| project_param(params)).transpose()?;
     let devices: Vec<(String, suhina_model::Device)> = projects
         .session_mut(id)?
         .project()

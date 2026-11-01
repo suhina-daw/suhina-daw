@@ -12,6 +12,7 @@
 use serde_json::{Map, Value, json};
 use suhina_model::{Clip, LoopRange, Project};
 
+use crate::commands::Args;
 use crate::notes::{ClipAt, MAX_BEAT, clip_mut, locate};
 use crate::{CommandError, Session};
 
@@ -20,8 +21,8 @@ const EPSILON: f64 = 1e-6;
 
 /// An optional beat in `params`: a finite number from 0 to [`MAX_BEAT`], or `None` when left out.
 fn beat(params: &Value, key: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(key) {
-        None | Some(Value::Null) => Ok(None),
+    match Args::new(params).value(key) {
+        None => Ok(None),
         Some(v) => {
             let beat = v.as_f64().filter(|b| b.is_finite()).ok_or_else(|| format!("{key} must be a number"))?;
             if !(0.0..=MAX_BEAT).contains(&beat) {
@@ -90,8 +91,8 @@ fn named<'a>(session: &'a mut Session, params: &Value) -> Result<(ClipAt, &'a mu
 /// or its loop set to `start` … `end` (which turns it on). An arrangement clip or a slot's clip
 /// (`docs/spec/clip-launching.md` › Loop switch).
 pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let on = match params.get("loop") {
-        None | Some(Value::Null) => None,
+    let on = match Args::new(params).value("loop") {
+        None => None,
         Some(v) => Some(v.as_bool().ok_or("loop must be true or false")?),
     };
     let (start, end) = (beat(params, "start")?, beat(params, "end")?);
@@ -130,7 +131,7 @@ pub(crate) fn set_loop(session: &mut Session, params: &Value) -> Result<Value, C
 /// `clip.setLength`: how long a clip plays, in beats. An arrangement clip keeps its start and
 /// may not run into the next clip on its lane; fades are shortened to fit.
 pub(crate) fn set_length(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let length = length(params.get("length"), "length")?;
+    let length = length(Args::new(params).value("length"), "length")?;
     let (at, _, _) = locate(&session.project, params)?;
     check_room(&session.project, at, length)?;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
@@ -202,12 +203,12 @@ pub(crate) fn mode_name(mode: suhina_model::StretchMode) -> &'static str {
 /// markers gets two, its start and its end, so it plays as it did and then follows the tempo; when another clip plays that audio where the tempo differs,
 /// this clip gets its own copy first (#874).
 pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let warp = match params.get("warp") {
-        None | Some(Value::Null) => None,
+    let warp = match Args::new(params).value("warp") {
+        None => None,
         Some(v) => Some(v.as_bool().ok_or("warp must be true or false")?),
     };
-    let mode = match params.get("mode") {
-        None | Some(Value::Null) => None,
+    let mode = match Args::new(params).value("mode") {
+        None => None,
         Some(v) => {
             let text = v.as_str().ok_or("mode must be a warp mode's name")?;
             let names = MODES.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ");
@@ -220,8 +221,8 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
             )
         }
     };
-    let transpose = match params.get("transpose") {
-        None | Some(Value::Null) => None,
+    let transpose = match Args::new(params).value("transpose") {
+        None => None,
         Some(v) => {
             let t = v.as_f64().filter(|t| t.is_finite()).ok_or("transpose must be a number of semitones")?;
             if !(-48.0..=48.0).contains(&t) {

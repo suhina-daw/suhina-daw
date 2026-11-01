@@ -17,7 +17,7 @@ use suhina_model::{
     WarpMarker,
 };
 
-use crate::commands::{make_room, number, track_at};
+use crate::commands::{Args, make_room, track_at};
 use crate::{CommandError, Session};
 
 /// Files one command places at most.
@@ -176,27 +176,11 @@ fn numbered_name(kind: TrackKind) -> String {
     suhina_model::names::new_track_name(kind.default_name())
 }
 
-fn text<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => Ok(Some(
-            v.as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| format!("{name} must be a text"))?,
-        )),
-    }
-}
-
-fn flag(params: &Value, name: &str) -> Result<bool, CommandError> {
-    match params.get(name) {
-        None | Some(Value::Null) => Ok(false),
-        Some(v) => v.as_bool().ok_or_else(|| format!("{name} must be true or false").into()),
-    }
-}
-
 /// `track.add`: a new audio or MIDI track, with a device when one is named.
 pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let device = text(params, "device")?;
-    let preset = text(params, "preset")?;
-    let sd = text(params, "sd")?;
+    let device = Args::new(params).opt_text("device")?;
+    let preset = Args::new(params).opt_text("preset")?;
+    let sd = Args::new(params).opt_text("sd")?;
     // What the device is decides the kind when none is given.
     let device_role = match (device, preset, sd) {
         (_, Some(_), _) => Some(Role::Instrument),
@@ -227,7 +211,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         }
         (None, None, None) => None,
     };
-    let kind = match text(params, "kind")? {
+    let kind = match Args::new(params).opt_text("kind")? {
         Some(k) => TrackKind::parse(k).ok_or("kind must be audio or midi")?,
         None => match device_role {
             Some(Role::Instrument | Role::MidiEffect) => TrackKind::Midi,
@@ -241,11 +225,11 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     if kind == TrackKind::Audio && device_role == Some(Role::MidiEffect) {
         return Err("a MIDI effect goes on a MIDI track".into());
     }
-    let after = match params.get("after") {
-        None | Some(Value::Null) => None,
+    let after = match Args::new(params).value("after") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "after")?),
     };
-    let name = match text(params, "name")? {
+    let name = match Args::new(params).opt_text("name")? {
         Some(n) => n.to_string(),
         None => match (device, preset, sd) {
             (_, Some(path), _) | (_, _, Some(path)) => file_stem(Path::new(path)),
@@ -258,8 +242,8 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
     };
     let name = if name.trim().is_empty() { numbered_name(kind) } else { name };
     // Several empty tracks at once, one after another, in one undo step (Insert multiple, #947).
-    let count = match params.get("count") {
-        None | Some(Value::Null) => 1,
+    let count = match Args::new(params).value("count") {
+        None => 1,
         Some(v) => v
             .as_u64()
             .filter(|n| (1..=MAX_INSERT).contains(n))
@@ -289,7 +273,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
         let mut device_params = json!({ "track": track.0 });
         if let Some(path) = preset {
             device_params["preset"] = json!(path);
-            if let Some(voice) = params.get("voice") {
+            if let Some(voice) = Args::new(params).value("voice") {
                 device_params["voice"] = voice.clone();
             }
         }
@@ -297,7 +281,7 @@ pub(crate) fn add_track(session: &mut Session, params: &Value) -> Result<Value, 
             device_params["path"] = json!(path);
         }
         if sd.is_some()
-            && let Some(sample) = text(params, "sample")?
+            && let Some(sample) = Args::new(params).opt_text("sample")?
         {
             device_params["sample"] = json!(sample);
         }
@@ -350,12 +334,12 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
     if paths.is_empty() {
         return Err("paths is empty".into());
     }
-    let start = match params.get("start") {
-        None | Some(Value::Null) => None,
-        Some(_) => Some(number(params, "start")?),
+    let start = match Args::new(params).value("start") {
+        None => None,
+        Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let scene = match params.get("scene") {
-        None | Some(Value::Null) => None,
+    let scene = match Args::new(params).value("scene") {
+        None => None,
         Some(v) => Some(
             v.as_u64()
                 .and_then(|n| usize::try_from(n).ok())
@@ -373,16 +357,16 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
         (None, Some(s)) if s >= MAX_SCENES => return Err(format!("scene must be at most {MAX_SCENES}").into()),
         _ => {}
     }
-    let separate = flag(params, "separate")?;
-    let stack = flag(params, "stack")?;
-    let stretch = match text(params, "warp")? {
+    let separate = Args::new(params).flag("separate")?;
+    let stack = Args::new(params).flag("stack")?;
+    let stretch = match Args::new(params).opt_text("warp")? {
         None => StretchMode::Rhythmic,
         Some(mode) => {
             stretch_mode(mode).ok_or("warp must be repitch, rhythmic, tonal, texture, smooth or high-quality")?
         }
     };
-    let target = match params.get("track") {
-        None | Some(Value::Null) => None,
+    let target = match Args::new(params).value("track") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "track")?),
     };
     // A Stems file may be dropped on a group (its tracks go into it); other files need a track
@@ -552,9 +536,9 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
     } else {
         return Err(format!("track {:?} holds no clips (a group or a return)", target.name).into());
     };
-    let length = match params.get("length") {
-        None | Some(Value::Null) => bar_beats(p),
-        Some(_) => number(params, "length")?,
+    let length = match Args::new(params).value("length") {
+        None => bar_beats(p),
+        Some(_) => Args::new(params).f64("length")?,
     };
     if !(length > 0.0 && length <= suhina_engine::MAX_START_BEAT) {
         return Err(format!("length must be more than 0 and at most {} beats", suhina_engine::MAX_START_BEAT).into());
@@ -589,12 +573,12 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
             loops: true,
         },
     };
-    let start = match params.get("start") {
-        None | Some(Value::Null) => None,
-        Some(_) => Some(number(params, "start")?),
+    let start = match Args::new(params).value("start") {
+        None => None,
+        Some(_) => Some(Args::new(params).f64("start")?),
     };
-    let scene = match params.get("scene") {
-        None | Some(Value::Null) => None,
+    let scene = match Args::new(params).value("scene") {
+        None => None,
         Some(v) => Some(
             v.as_u64()
                 .and_then(|n| usize::try_from(n).ok())
@@ -602,7 +586,7 @@ pub(crate) fn create_clip(session: &mut Session, params: &Value) -> Result<Value
                 .ok_or("scene must be a whole number from 1")?,
         ),
     };
-    let stack = flag(params, "stack")?;
+    let stack = Args::new(params).flag("stack")?;
     match (start, scene) {
         (Some(_), Some(_)) | (None, None) => {
             return Err("give either start (a beat in the arrangement) or scene (a row of clip slots)".into());

@@ -10,7 +10,7 @@ use suhina_device_api::{DeviceInfo, ParamKind, Role, Unit};
 use suhina_engine::param_id;
 use suhina_model::{AutomationLane, AutomationPoint, Device, DeviceKind, DeviceParam, Project};
 
-use crate::commands::{device_channel, device_channel_read, number, track_or_main_id, with_override};
+use crate::commands::{Args, device_channel, device_channel_read, track_or_main_id, with_override};
 use crate::device_groups::{device_path, path_value};
 use crate::{CommandError, ParamEdit, Session};
 use suhina_model::{MAX_DEVICES, device_at, device_at_mut};
@@ -50,7 +50,7 @@ fn initial_sampler_tempo(session: &mut Session, params: &Value, detect: bool) ->
 }
 
 pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let path = params.get("path").and_then(Value::as_str).ok_or("path must be an audio file")?;
+    let path = Args::new(params).raw_str("path").ok_or("path must be an audio file")?;
     let path = crate::files::absolute(std::path::Path::new(path));
     let channel = device_channel(session, params)?;
     let index = device_index(channel.devices.len(), params)?;
@@ -110,8 +110,10 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
 }
 
 pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let values =
-        params.get("points").and_then(Value::as_array).ok_or("points must be a list of normalized positions")?;
+    let values = Args::new(params)
+        .value("points")
+        .and_then(Value::as_array)
+        .ok_or("points must be a list of normalized positions")?;
     if values.len() > suhina_model::MAX_SAMPLE_SLICES {
         return Err("slice map exceeds the input memory budget".into());
     }
@@ -141,7 +143,7 @@ pub(crate) fn set_sample_slices(session: &mut Session, params: &Value) -> Result
 
 pub(crate) fn edit_sample_slice(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     use suhina_device_api::sample_edits::SampleEdits;
-    let operation = params.get("operation").and_then(Value::as_str).ok_or("operation is required")?;
+    let operation = Args::new(params).raw_str("operation").ok_or("operation is required")?;
     if !matches!(operation, "add" | "move" | "delete" | "regenerate") {
         return Err("unknown slice operation".into());
     }
@@ -191,7 +193,7 @@ pub(crate) fn edit_sample_slice(session: &mut Session, params: &Value) -> Result
     } else {
         if matches!(operation, "move" | "delete") {
             let previous = position("previous")?;
-            if let Some(identity) = params.get("identity") {
+            if let Some(identity) = Args::new(params).value("identity") {
                 let identity = identity.as_i64().ok_or("candidate identity must be an integer")?;
                 if method > 2 {
                     return Err("manual boundaries do not have automatic identities".into());
@@ -564,12 +566,12 @@ pub(crate) fn device_index(len: usize, params: &Value) -> Result<usize, CommandE
 }
 
 pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let preset = match params.get("preset") {
-        None | Some(Value::Null) => None,
+    let preset = match Args::new(params).value("preset") {
+        None => None,
         Some(v) => {
             let path = v.as_str().ok_or("preset must be a preset file's path")?;
-            let voice = match params.get("voice") {
-                None | Some(Value::Null) => 1,
+            let voice = match Args::new(params).value("voice") {
+                None => 1,
                 Some(v) => v
                     .as_u64()
                     .and_then(|n| usize::try_from(n).ok())
@@ -579,7 +581,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             Some(read_preset(std::path::Path::new(path), voice)?)
         }
     };
-    let id = match (params.get("id").and_then(Value::as_str), &preset) {
+    let id = match (Args::new(params).raw_str("id"), &preset) {
         (Some(id), Some(p)) if id != p.device => {
             return Err(format!("the preset is for {:?}, not {id:?}", p.device).into());
         }
@@ -614,7 +616,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
         return Err(format!("a track holds at most {MAX_DEVICES} devices").into());
     }
     let midi_prefix = midi_prefix(&channel.devices);
-    let position = match params.get("position") {
+    let position = match Args::new(params).value("position") {
         None => {
             if instrument || midi_effect {
                 midi_prefix
@@ -649,11 +651,11 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
 }
 
 pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let path = params.get("path").and_then(Value::as_str).ok_or("path must be a .sd file path")?;
+    let path = Args::new(params).raw_str("path").ok_or("path must be a .sd file path")?;
     let graph = suhina_device_sdk::DeviceGraph::read_file(std::path::Path::new(path)).map_err(|e| e.to_string())?;
     let mut samples = suhina_device_sdk::sample_resource::PreparedSamples::default();
     let sample_path =
-        params.get("sample").and_then(Value::as_str).map(|path| crate::files::absolute(std::path::Path::new(path)));
+        Args::new(params).raw_str("sample").map(|path| crate::files::absolute(std::path::Path::new(path)));
     if let Some(path) = &sample_path {
         let audio = session.decoded_audio(path)?;
         let asset =
@@ -692,7 +694,7 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
     // A MIDI effect or an instrument goes right after the MIDI effects that lead the chain, an
     // effect at the end.
     let midi_prefix = midi_prefix(&channel.devices);
-    let position = match params.get("position") {
+    let position = match Args::new(params).value("position") {
         None if graph.role == suhina_device_sdk::DeviceRole::Effect => channel.devices.len(),
         None => midi_prefix,
         Some(value) => value
@@ -726,7 +728,7 @@ pub(crate) fn add_sd(session: &mut Session, params: &Value) -> Result<Value, Com
 }
 
 pub(crate) fn update_sd(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let path = params.get("path").and_then(Value::as_str).ok_or("path must be the newer .sd device file")?;
+    let path = Args::new(params).raw_str("path").ok_or("path must be the newer .sd device file")?;
     let channel = device_channel(session, params)?;
     let at = device_path(&channel.devices, params, "device")?;
     let index = path_value(&at);
@@ -783,7 +785,8 @@ pub(crate) fn remove(session: &mut Session, params: &Value) -> Result<Value, Com
 /// The device paths `params.devices` names among `devices`, each once and none inside another
 /// one named, last first (so removing them in this order keeps the others' paths).
 fn device_list(devices: &[Device], params: &Value) -> Result<Vec<Vec<usize>>, CommandError> {
-    let list = params.get("devices").and_then(Value::as_array).ok_or("devices must be a list of device paths")?;
+    let list =
+        Args::new(params).value("devices").and_then(Value::as_array).ok_or("devices must be a list of device paths")?;
     let mut out: Vec<Vec<usize>> = Vec::with_capacity(list.len());
     for value in list {
         let path = crate::device_groups::parse_path(value)
@@ -884,8 +887,8 @@ pub(crate) fn move_to_track(session: &mut Session, params: &Value) -> Result<Val
     if from == to {
         return Err("the device is on that track already; device.move moves it along the chain".into());
     }
-    let copy = match params.get("copy") {
-        None | Some(Value::Null) => false,
+    let copy = match Args::new(params).value("copy") {
+        None => false,
         Some(v) => v.as_bool().ok_or("copy must be true or false")?,
     };
     let channel_of = |p: &suhina_model::Project, track| {
@@ -982,7 +985,7 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -993,7 +996,7 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
 /// `device.setEnabledMany {track, devices, enabled}`: several devices of a track on or off, one
 /// undo step (0 or an on/off button with several devices picked, #948).
 pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let enabled = params.get("enabled").and_then(Value::as_bool).ok_or("enabled must be true or false")?;
+    let enabled = Args::new(params).bool("enabled")?;
     let channel = device_channel(session, params)?;
     let paths = device_list(&channel.devices, params)?;
     for path in &paths {
@@ -1072,8 +1075,8 @@ pub(crate) fn device_file(session: &mut Session, params: &Value) -> Result<Value
 }
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id, from device.list")?;
-    let mut value = number(params, "value")?;
+    let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id, from device.list")?;
+    let mut value = Args::new(params).f64("value")?;
     let source_tempo =
         if param == "warp" && value > 0. { initial_sampler_tempo(session, params, false)? } else { None };
     if param == "source_bpm" && value == 0. {
@@ -1256,8 +1259,8 @@ const MAX_POINTS: usize = 65_536;
 /// a built-in or `.sd` device's by its stable id (#395).
 pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     const POINTS: &str = "points must be a list of numbers, a beat then a value for each point: [0, 0.2, 4, 0.8]";
-    let param = params.get("param").and_then(Value::as_str).ok_or("param must be a parameter id")?;
-    let numbers = params.get("points").and_then(Value::as_array).ok_or(POINTS)?;
+    let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id")?;
+    let numbers = Args::new(params).value("points").and_then(Value::as_array).ok_or(POINTS)?;
     if numbers.len() % 2 != 0 {
         return Err(POINTS.into());
     }
@@ -1378,7 +1381,7 @@ fn plugin_key(session: &Session, params: &Value) -> Result<u64, CommandError> {
 
 /// Adds an installed plug-in from the catalog to a track.
 pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("plugin").and_then(Value::as_str).ok_or("plugin must be a plug-in name, id or file")?;
+    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or file")?;
     let env = session.plugins.env().ok_or("no plug-in catalog is open; plugin.scan looks for installed ones")?;
     let plugin = env
         .catalog
@@ -1409,7 +1412,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     // An instrument goes right after the MIDI effects that lead the chain, first when there are
     // none.
     let midi_prefix = midi_prefix(&channel.devices);
-    let position = match params.get("position") {
+    let position = match Args::new(params).value("position") {
         None if instrument => midi_prefix,
         None => channel.devices.len(),
         Some(v) => v
@@ -1429,7 +1432,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     }
     // A plug-in that edits clips (ARA, ADR 0033) plays the clips from their files, so a device
     // before it would not be heard: it goes first, wherever it was asked for.
-    let moved_first = plugin.ara && params.get("position").is_some() && position != 0;
+    let moved_first = plugin.ara && Args::new(params).has("position") && position != 0;
     let position = if plugin.ara { 0 } else { position };
     let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
@@ -1447,7 +1450,7 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     // put on a track, it plays every audio clip of the track, as before.
     if plugin.ara {
         let track = track_or_main_id(&session.project, params)?;
-        if params.get("clip_host").and_then(Value::as_bool) == Some(true) {
+        if Args::new(params).value("clip_host").and_then(Value::as_bool) == Some(true) {
             if let Some(first) = session.project.channel_of_track_mut(track).and_then(|c| c.devices.first_mut()) {
                 first.clip_host = true;
             }

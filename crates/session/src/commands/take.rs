@@ -118,8 +118,11 @@ pub(crate) fn take_number(name: &str) -> Option<usize> {
 
 /// The index in `project.arrangement.takes` of take number `take` (from 1) of `track`.
 fn take_index(p: &Project, track: TrackId, params: &Value) -> Result<usize, CommandError> {
-    let number =
-        params.get("take").and_then(Value::as_u64).filter(|n| *n >= 1).ok_or("take must be a number from 1")?;
+    let number = Args::new(params)
+        .value("take")
+        .and_then(Value::as_u64)
+        .filter(|n| *n >= 1)
+        .ok_or("take must be a number from 1")?;
     let number = usize::try_from(number).map_err(|_| "take is out of range")?;
     // The number the lane shows ("Take 3" is 3), which stays the take's after others are
     // deleted; a take named otherwise is found by its place among the track's takes.
@@ -142,8 +145,8 @@ fn comp_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     let last = take.clips.iter().map(|c| c.start + c.length).fold(f64::NEG_INFINITY, f64::max);
     let name = take.name.clone();
     let bound = |key: &str, default: f64| -> Result<f64, CommandError> {
-        match params.get(key) {
-            None | Some(Value::Null) => Ok(default),
+        match Args::new(params).value(key) {
+            None => Ok(default),
             Some(v) => v
                 .as_f64()
                 .filter(|b| b.is_finite() && (0.0..=MAX_START_BEAT).contains(b))
@@ -154,8 +157,8 @@ fn comp_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if to.partial_cmp(&from) != Some(std::cmp::Ordering::Greater) {
         return Err("end must be after start".into());
     }
-    let color = match params.get("color") {
-        None | Some(Value::Null) => None,
+    let color = match Args::new(params).value("color") {
+        None => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,
     };
     let clips = comp_part(p, track, index, from, to, color)?;
@@ -223,8 +226,8 @@ fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, Comman
     let track = track_id(p, params)?;
     let index = take_index(p, track, params)?;
     let color = crate::clip_color::parse_color(params, "color")?;
-    let piece = match params.get("piece") {
-        None | Some(Value::Null) => None,
+    let piece = match Args::new(params).value("piece") {
+        None => None,
         Some(v) => {
             let n = v.as_u64().filter(|n| *n >= 1).ok_or("piece must be a number from 1")?;
             let n = usize::try_from(n - 1).map_err(|_| "piece is out of range")?;
@@ -273,14 +276,14 @@ fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, Comman
 /// there (#989).
 fn swap_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
-    let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
+    let id = Args::new(params).value("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
     let (track, clip) = p
         .arrangement
         .lanes
         .iter()
         .find_map(|l| Some((l.track?, l.clips.iter().find(|c| u64::from(c.id.0) == id)?.clone())))
         .ok_or_else(|| format!("clip {id} is not on the arrangement"))?;
-    let up = match params.get("direction").and_then(Value::as_str) {
+    let up = match Args::new(params).raw_str("direction") {
         Some("up") => true,
         Some("down") => false,
         _ => return Err("direction must be up or down".into()),
@@ -310,8 +313,9 @@ fn swap_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 /// `take.moveCut {clip, to}`: the cut between comped part `clip` and the part right after it moves
 /// to `to`: one gets longer, the other shorter, each playing its own take (#989).
 fn move_cut(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let id = params.get("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
-    let to = params.get("to").and_then(Value::as_f64).filter(|t| t.is_finite()).ok_or("to must be a beat")?;
+    let id = Args::new(params).value("clip").and_then(Value::as_u64).ok_or("clip must be a clip id")?;
+    let to =
+        Args::new(params).value("to").and_then(Value::as_f64).filter(|t| t.is_finite()).ok_or("to must be a beat")?;
     let p = &session.project;
     let (track, left, right) = p
         .arrangement
@@ -362,7 +366,7 @@ fn move_cut(session: &mut Session, params: &Value) -> Result<Value, CommandError
 /// `take.solo {track, take}`: the take lane heard in place of its track's clips, or none with 0.
 fn solo_take(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
-    let none = params.get("take").and_then(Value::as_u64) == Some(0);
+    let none = Args::new(params).value("take").and_then(Value::as_u64) == Some(0);
     session.take_solo = if none { None } else { Some((track, take_index(&session.project, track, params)?)) };
     session.update_player(None)?;
     Ok(json!({ "track": track.0, "take": session.take_solo().map_or(0, |(_, n)| n) }))
@@ -406,7 +410,7 @@ fn delete_pieces(session: &mut Session, params: &Value) -> Result<Value, Command
     let p = &mut session.project;
     let track = track_id(p, params)?;
     let index = take_index(p, track, params)?;
-    let list = params.get("pieces").and_then(Value::as_array).ok_or("pieces must be a list")?;
+    let list = Args::new(params).value("pieces").and_then(Value::as_array).ok_or("pieces must be a list")?;
     let count = p.arrangement.takes.get(index).map_or(0, |t| t.clips.len());
     let mut doomed: Vec<usize> = Vec::new();
     for entry in list {

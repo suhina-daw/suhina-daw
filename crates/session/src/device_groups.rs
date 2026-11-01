@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use suhina_device_api::Role;
 use suhina_model::{Branch, Device, DeviceGroup, DeviceKind, MAX_BRANCHES, device_at, device_at_mut};
 
-use crate::commands::{device_channel, device_channel_read, number, track_or_main_id};
+use crate::commands::{Args, device_channel, device_channel_read, track_or_main_id};
 use crate::{CommandError, Session};
 
 /// The longest path a command takes: a device inside four groups.
@@ -43,7 +43,7 @@ const PATH_HELP: &str =
 
 /// The device path in `params[key]`, checked against `devices`.
 pub(crate) fn device_path(devices: &[Device], params: &Value, key: &str) -> Result<Vec<usize>, CommandError> {
-    let path = params.get(key).and_then(parse_path).ok_or_else(|| format!("{key} must be {PATH_HELP}"))?;
+    let path = Args::new(params).value(key).and_then(parse_path).ok_or_else(|| format!("{key} must be {PATH_HELP}"))?;
     if path.len() % 2 == 0 || device_at(devices, &path).is_none() {
         let shown = path.iter().map(ToString::to_string).collect::<Vec<_>>().join("/");
         return Err(format!("the track has no device {shown}; track.devices lists them").into());
@@ -72,7 +72,7 @@ pub(crate) fn position_path(
     params: &Value,
     key: &str,
 ) -> Result<Option<(Vec<usize>, usize)>, CommandError> {
-    let Some(value) = params.get(key).filter(|v| !v.is_null()) else { return Ok(None) };
+    let Some(value) = Args::new(params).value(key).filter(|v| !v.is_null()) else { return Ok(None) };
     let path =
         parse_path(value).ok_or_else(|| format!("{key} must be a position from 0, or a path such as \"2/1/3\""))?;
     let Some((&index, parent)) = path.split_last() else { return Err(format!("{key} is empty").into()) };
@@ -238,7 +238,7 @@ pub(crate) fn insert_into_group(
     params: &Value,
     device: Device,
 ) -> Result<Option<Value>, CommandError> {
-    if params.get("position").and_then(parse_path).is_none_or(|p| p.len() < 2) {
+    if Args::new(params).value("position").and_then(parse_path).is_none_or(|p| p.len() < 2) {
         return Ok(None);
     }
     edit_chain(session, params, |devices| {
@@ -253,15 +253,15 @@ pub(crate) fn insert_into_group(
 /// `device.group {track, device, count?, name?}`: puts `count` consecutive devices from the
 /// one at `device` into a new group of one branch, in the place of the first.
 pub(crate) fn group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let count = match params.get("count") {
-        None | Some(Value::Null) => 1,
+    let count = match Args::new(params).value("count") {
+        None => 1,
         Some(v) => v
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
             .filter(|&n| n >= 1)
             .ok_or("count must be a whole number from 1")?,
     };
-    let name = params.get("name").and_then(Value::as_str).map(str::to_owned);
+    let name = Args::new(params).raw_str("name").map(str::to_owned);
     edit_chain(session, params, |devices| {
         let path = device_path(devices, params, "device")?;
         let (&first, parent) = path.split_last().ok_or("the device path is empty")?;
@@ -304,7 +304,7 @@ pub(crate) fn ungroup(session: &mut Session, params: &Value) -> Result<Value, Co
 
 /// `device.addGroup {track, position?, name?}`: an empty effect group with one empty branch.
 pub(crate) fn add_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).unwrap_or("Group").to_owned();
+    let name = Args::new(params).raw_str("name").unwrap_or("Group").to_owned();
     edit_chain(session, params, |devices| {
         let (parent, index) = match position_path(devices, params, "position")? {
             Some(at) => at,
@@ -487,13 +487,13 @@ fn edit_group<T>(
 
 /// `branch.add {track, device, position?, name?}`: an empty branch.
 pub(crate) fn branch_add(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).map(str::to_owned);
+    let name = Args::new(params).raw_str("name").map(str::to_owned);
     edit_group(session, params, |group| {
         if group.branches.len() >= MAX_BRANCHES {
             return Err(format!("a device group holds at most {MAX_BRANCHES} branches").into());
         }
-        let position = match params.get("position") {
-            None | Some(Value::Null) => group.branches.len(),
+        let position = match Args::new(params).value("position") {
+            None => group.branches.len(),
             Some(v) => v
                 .as_u64()
                 .and_then(|n| usize::try_from(n).ok())
@@ -555,7 +555,7 @@ pub(crate) fn branch_duplicate(session: &mut Session, params: &Value) -> Result<
 
 /// `branch.rename {track, device, branch, name}`.
 pub(crate) fn branch_rename(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).ok_or("name must be text")?.to_owned();
+    let name = Args::new(params).raw_str("name").ok_or("name must be text")?.to_owned();
     edit_group(session, params, |group| {
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
@@ -566,7 +566,7 @@ pub(crate) fn branch_rename(session: &mut Session, params: &Value) -> Result<Val
 
 /// `branch.setVolume {track, device, branch, db}`: as `track.setVolume`, in decibels.
 pub(crate) fn branch_set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = crate::commands::number_or_neg_infinity(params, "db")?;
+    let db = Args::new(params).f64_or_neg_infinity("db")?;
     if db > crate::commands::MAX_VOLUME_DB {
         return Err(format!("db must be at most +{}, got {db}", crate::commands::MAX_VOLUME_DB).into());
     }
@@ -581,7 +581,7 @@ pub(crate) fn branch_set_volume(session: &mut Session, params: &Value) -> Result
 
 /// `branch.setPan {track, device, branch, pan}`.
 pub(crate) fn branch_set_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let pan = number(params, "pan")?;
+    let pan = Args::new(params).f64("pan")?;
     if !(-1.0..=1.0).contains(&pan) {
         return Err("pan must be from -1 to 1".into());
     }
@@ -595,7 +595,7 @@ pub(crate) fn branch_set_pan(session: &mut Session, params: &Value) -> Result<Va
 
 /// `branch.setMute {track, device, branch, mute}`: its devices keep running.
 pub(crate) fn branch_set_mute(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let mute = params.get("mute").and_then(Value::as_bool).ok_or("mute must be true or false")?;
+    let mute = Args::new(params).bool("mute")?;
     edit_group(session, params, |group| {
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;
@@ -606,7 +606,7 @@ pub(crate) fn branch_set_mute(session: &mut Session, params: &Value) -> Result<V
 
 /// `branch.setSolo {track, device, branch, solo}`: solo within its group.
 pub(crate) fn branch_set_solo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let solo = params.get("solo").and_then(Value::as_bool).ok_or("solo must be true or false")?;
+    let solo = Args::new(params).bool("solo")?;
     edit_group(session, params, |group| {
         let index = branch_index(group, params)?;
         let branch = group.branches.get_mut(index).ok_or("the branch is missing")?;

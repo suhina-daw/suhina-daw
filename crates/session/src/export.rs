@@ -17,7 +17,7 @@ use suhina_engine::model::{Project, TrackId};
 use suhina_media::write::{self, AudioFileSpec, AudioFormat, BitDepth};
 use suhina_mp3::Mp3Rate;
 
-use crate::commands::{number, track_at};
+use crate::commands::{Args, track_at};
 use crate::{CommandError, Session};
 
 /// The render's frames per call, and the export's defaults.
@@ -65,7 +65,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     let path_text = params
         .get("path")
         .filter(|value| !value.is_null())
-        .or_else(|| params.get("output").filter(|value| !value.is_null()))
+        .or_else(|| Args::new(params).value("output").filter(|value| !value.is_null()))
         .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
         .ok_or("pass the file to write as path")?;
@@ -73,7 +73,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
 
     // The format: the parameter's, else the file name's extension's; they agree when both name
     // one. A format the command does not know is refused, never passed over for the extension.
-    let asked = match params.get("format").filter(|value| !value.is_null()).and_then(Value::as_str) {
+    let asked = match Args::new(params).value("format").filter(|value| !value.is_null()).and_then(Value::as_str) {
         None => None,
         Some(name) => Some(
             AudioFormat::from_extension(name)
@@ -91,14 +91,14 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         }
     };
 
-    let sample_rate = match params.get("sampleRate") {
-        None | Some(Value::Null) => 48_000u64,
+    let sample_rate = match Args::new(params).value("sampleRate") {
+        None => 48_000u64,
         Some(n) => {
             n.as_u64().filter(|rate| (8_000..=384_000).contains(rate)).ok_or("sampleRate must be 8000 to 384000")?
         }
     } as u32;
 
-    let depth = match params.get("bitDepth").filter(|value| !value.is_null()).and_then(Value::as_str) {
+    let depth = match Args::new(params).value("bitDepth").filter(|value| !value.is_null()).and_then(Value::as_str) {
         Some(name) => BitDepth::from_name(name).ok_or_else(|| format!("{name} is not a bit depth; 32f, 24 or 16"))?,
         None => match format {
             AudioFormat::Wav => BitDepth::Float32,
@@ -106,7 +106,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
             AudioFormat::Ogg | AudioFormat::Mp3 => BitDepth::Float32,
         },
     };
-    if !format.has_depth() && params.get("bitDepth").filter(|value| !value.is_null()).is_some() {
+    if !format.has_depth() && Args::new(params).value("bitDepth").filter(|value| !value.is_null()).is_some() {
         return Err(format!("bitDepth does not apply to {}", format.name()).into());
     }
     if format == AudioFormat::Flac && depth == BitDepth::Float32 {
@@ -114,7 +114,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     }
 
     // The MP3 rate, the constant kbps or the variable quality; asked for only with mp3.
-    let mp3_rate = match params.get("mp3Rate").filter(|value| !value.is_null()).and_then(Value::as_str) {
+    let mp3_rate = match Args::new(params).value("mp3Rate").filter(|value| !value.is_null()).and_then(Value::as_str) {
         Some(name) => {
             if format != AudioFormat::Mp3 {
                 return Err("mp3Rate goes with mp3".into());
@@ -125,9 +125,9 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         None => Mp3Rate::default(),
     };
 
-    let overwrite = params.get("overwrite").and_then(Value::as_bool).unwrap_or(false);
+    let overwrite = Args::new(params).flag("overwrite")?;
     // Dither: on for a reduced depth unless the job says otherwise; not a thing at 32f.
-    let dither = match params.get("dither") {
+    let dither = match Args::new(params).value("dither") {
         Some(Value::Bool(d)) => *d,
         None => depth.is_reduced(),
         Some(_) => return Err("dither must be a bool".into()),
@@ -135,14 +135,14 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     if !depth.is_reduced() && dither {
         return Err("dither does not apply at 32f".into());
     }
-    let normalize = params.get("normalize").and_then(Value::as_bool).unwrap_or(false);
+    let normalize = Args::new(params).flag("normalize")?;
 
     // The tail, in beats: extra rendered after the range's end. It goes with a range, which
     // is also where a negative one is refused.
     let tail = tail_beats(params)?;
 
     // The range, in beats from the arrangement's start; left out, the whole arrangement.
-    let range = match params.get("range").filter(|value| !value.is_null()) {
+    let range = match Args::new(params).value("range").filter(|value| !value.is_null()) {
         None => {
             if tail != 0.0 {
                 return Err("tail goes with range".into());
@@ -150,8 +150,8 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
             None
         }
         Some(object) => {
-            let start = number(object, "start")?;
-            let end = number(object, "end")?;
+            let start = Args::new(object).f64("start")?;
+            let end = Args::new(object).f64("end")?;
             if start < 0.0 || end > suhina_engine::MAX_START_BEAT {
                 return Err(format!("start and end must be from 0 to {}", suhina_engine::MAX_START_BEAT).into());
             }
@@ -176,7 +176,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
 
     // The node to render, when the job names one: a track or a group of the track tree, by id
     // or name. Left out, the whole mix is rendered.
-    let source = match params.get("source").filter(|value| !value.is_null()) {
+    let source = match Args::new(params).value("source").filter(|value| !value.is_null()) {
         None => None,
         Some(_) => Some(track_at(&data.project, params, "source")?),
     };
@@ -289,7 +289,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
 /// from the render's own parameters — the file's name and place are not among them, so the
 /// same render makes the same noise in any file.
 fn export_seed(params: &Value) -> u64 {
-    if let Some(seed) = params.get("seed").filter(|value| !value.is_null()).and_then(Value::as_u64) {
+    if let Some(seed) = Args::new(params).value("seed").filter(|value| !value.is_null()).and_then(Value::as_u64) {
         return seed;
     }
     let mut render = params.clone();
@@ -310,10 +310,10 @@ fn export_seed(params: &Value) -> u64 {
 
 /// The tail, in beats, the job names; 0 when it does not.
 fn tail_beats(params: &Value) -> Result<f64, CommandError> {
-    match params.get("tail").filter(|value| !value.is_null()) {
+    match Args::new(params).value("tail").filter(|value| !value.is_null()) {
         None => Ok(0.0),
         Some(_) => {
-            let beats = number(params, "tail")?;
+            let beats = Args::new(params).f64("tail")?;
             if beats < 0.0 {
                 return Err("tail must be at least 0 beats".into());
             }

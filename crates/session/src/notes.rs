@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 use suhina_engine::{MAX_START_BEAT, Quantization};
 use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, Project, TrackId};
 
-use crate::commands::{parse_quantization, track_id};
+use crate::commands::{Args, parse_quantization, track_id};
 use crate::{CommandError, Session};
 
 /// The most notes one command may name or add.
@@ -40,8 +40,8 @@ pub(crate) enum ClipAt {
 pub(crate) fn locate(p: &Project, params: &Value) -> Result<(ClipAt, ContentId, TrackId), CommandError> {
     let track = track_id(p, params)?;
     let whole = |key: &str| -> Result<Option<u64>, CommandError> {
-        match params.get(key) {
-            None | Some(Value::Null) => Ok(None),
+        match Args::new(params).value(key) {
+            None => Ok(None),
             Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("{key} must be a whole number").into()),
         }
     };
@@ -199,7 +199,8 @@ fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Vec<Note>
 
 /// The note indices in `params.notes`, each once, in rising order; every one must exist.
 pub(crate) fn indices(params: &Value, count: usize) -> Result<Vec<usize>, CommandError> {
-    let list = params.get("notes").and_then(Value::as_array).ok_or("notes must be a list of note indices")?;
+    let list =
+        Args::new(params).value("notes").and_then(Value::as_array).ok_or("notes must be a list of note indices")?;
     if list.is_empty() {
         return Err("notes is empty; give the indices of the notes, from note.list".into());
     }
@@ -218,16 +219,6 @@ pub(crate) fn indices(params: &Value, count: usize) -> Result<Vec<usize>, Comman
     out.sort_unstable();
     out.dedup();
     Ok(out)
-}
-
-/// An optional finite number.
-pub(crate) fn optional_number(params: &Value, key: &str) -> Result<Option<f64>, CommandError> {
-    match params.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => {
-            v.as_f64().filter(|n| n.is_finite()).map(Some).ok_or_else(|| format!("{key} must be a number").into())
-        }
-    }
 }
 
 /// MIDI velocity 1 … 127 to the model's 0 … 1.
@@ -296,7 +287,10 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
 }
 
 pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let list = params.get("notes").and_then(Value::as_array).ok_or("notes must be a list of {time, length, key}")?;
+    let list = Args::new(params)
+        .value("notes")
+        .and_then(Value::as_array)
+        .ok_or("notes must be a list of {time, length, key}")?;
     if list.is_empty() {
         return Err("notes is empty; give at least one {time, length, key}".into());
     }
@@ -319,14 +313,14 @@ pub(crate) fn delete(session: &mut Session, params: &Value) -> Result<Value, Com
 }
 
 pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = optional_number(params, "beats")?.unwrap_or(0.0);
-    let semitones = match params.get("semitones") {
-        None | Some(Value::Null) => 0,
+    let beats = Args::new(params).opt_f64("beats")?.unwrap_or(0.0);
+    let semitones = match Args::new(params).value("semitones") {
+        None => 0,
         Some(v) => {
             v.as_i64().filter(|s| (-127..=127).contains(s)).ok_or("semitones must be a whole number, -127 to 127")?
         }
     };
-    if params.get("beats").is_none() && params.get("semitones").is_none() {
+    if !Args::new(params).has("beats") && !Args::new(params).has("semitones") {
         return Err("give beats (in time) or semitones (in pitch)".into());
     }
     if beats.abs() > MAX_BEAT {
@@ -356,7 +350,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
             }
         }
         // A moved note landing on another, the same key from the same start, takes its place.
-        let replace = params.get("replace").and_then(Value::as_bool) == Some(true);
+        let replace = Args::new(params).value("replace").and_then(Value::as_bool) == Some(true);
         let covered: Vec<usize> = if replace {
             (0..notes.len())
                 .filter(|i| !moved.contains(i))
@@ -379,7 +373,7 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
 
 pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (length, by, start_by) =
-        (optional_number(params, "length")?, optional_number(params, "by")?, optional_number(params, "startBy")?);
+        (Args::new(params).opt_f64("length")?, Args::new(params).opt_f64("by")?, Args::new(params).opt_f64("startBy")?);
     if [length.is_some(), by.is_some(), start_by.is_some()].iter().filter(|given| **given).count() != 1 {
         return Err(
             "give length (beats), by (beats to add) or startBy (beats to move the starts by), one of them".into()
@@ -425,7 +419,7 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
 }
 
 pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (velocity, by) = (optional_number(params, "velocity")?, optional_number(params, "by")?);
+    let (velocity, by) = (Args::new(params).opt_f64("velocity")?, Args::new(params).opt_f64("by")?);
     let each = velocity_list(params)?;
     match (velocity, by, &each) {
         (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) | (None, None, None) => {
@@ -441,7 +435,7 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
         let changed = indices(params, notes.len())?;
         if let Some(each) = &each {
             // One value per entry of `notes`, in the order given; a repeated index takes its last.
-            let given = params.get("notes").and_then(Value::as_array).map_or(0, Vec::len);
+            let given = Args::new(params).value("notes").and_then(Value::as_array).map_or(0, Vec::len);
             if each.len() != given {
                 return Err(format!(
                     "velocities must have one value per note: {given} notes, {} velocities",
@@ -449,7 +443,10 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
                 )
                 .into());
             }
-            let named = params.get("notes").and_then(Value::as_array).ok_or("notes must be a list of note indices")?;
+            let named = Args::new(params)
+                .value("notes")
+                .and_then(Value::as_array)
+                .ok_or("notes must be a list of note indices")?;
             for (value, midi) in named.iter().zip(each) {
                 let note = value.as_u64().and_then(|i| usize::try_from(i).ok()).and_then(|i| notes.get_mut(i));
                 if let Some(note) = note {
@@ -470,8 +467,8 @@ pub(crate) fn set_velocity(session: &mut Session, params: &Value) -> Result<Valu
 
 /// `params.velocities`: one velocity, 1 to 127, per entry of `notes`; `None` when left out.
 fn velocity_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
-    let list = match params.get("velocities") {
-        None | Some(Value::Null) => return Ok(None),
+    let list = match Args::new(params).value("velocities") {
+        None => return Ok(None),
         Some(v) => v.as_array().ok_or("velocities must be a list of velocities, 1 to 127, one per note")?,
     };
     if list.len() > MAX_NOTES_PER_COMMAND {
@@ -490,7 +487,7 @@ fn velocity_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
 /// The quantise grid `params.grid` names, in beats: a value as `launcher.setQuantization` takes it,
 /// with bars as long as the project's time signature makes them.
 fn quantize_step(p: &Project, params: &Value) -> Result<f64, CommandError> {
-    let text = params.get("grid").and_then(Value::as_str).ok_or("grid must be a text such as \"1/16\" or \"1/8T\"")?;
+    let text = Args::new(params).raw_str("grid").ok_or("grid must be a text such as \"1/16\" or \"1/8T\"")?;
     let step = match parse_quantization(text)? {
         Quantization::None => return Err("grid none has no lines to quantise to; give a value such as \"1/16\"".into()),
         Quantization::Bars(bars) => {
@@ -521,16 +518,16 @@ fn towards(from: f64, to: f64, amount: f64) -> f64 {
 
 pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let step = quantize_step(&session.project, params)?;
-    let amount = optional_number(params, "amount")?.unwrap_or(100.0);
+    let amount = Args::new(params).opt_f64("amount")?.unwrap_or(100.0);
     if !(0.0..=100.0).contains(&amount) {
         return Err(format!("amount must be 0 to 100 percent, got {amount}").into());
     }
     let amount = amount / 100.0;
-    let ends = match params.get("ends") {
-        None | Some(Value::Null) => false,
+    let ends = match Args::new(params).value("ends") {
+        None => false,
         Some(v) => v.as_bool().ok_or("ends must be true or false")?,
     };
-    let all = matches!(params.get("notes"), None | Some(Value::Null));
+    let all = !Args::new(params).has("notes");
     // Every note of an empty clip is none: nothing to change, and no note lane to add.
     if all && notes_of(&session.project, params)?.is_empty() {
         return Ok(json!({ "notes": [], "moved": 0 }));
@@ -653,7 +650,7 @@ pub(crate) fn cut(session: &mut Session, params: &Value) -> Result<Value, Comman
 
 pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let clipboard = session.clipboards.notes.as_ref().ok_or("no notes have been copied; run note.copy first")?;
-    let time = match optional_number(params, "time")? {
+    let time = match Args::new(params).opt_f64("time")? {
         Some(time) if !(0.0..=MAX_BEAT).contains(&time) => {
             return Err(format!("time must be 0 to {MAX_BEAT} beats, got {time}").into());
         }
@@ -665,9 +662,9 @@ pub(crate) fn paste(session: &mut Session, params: &Value) -> Result<Value, Comm
 }
 
 pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let beats = optional_number(params, "beats")?;
-    let semitones = match params.get("semitones") {
-        None | Some(Value::Null) => None,
+    let beats = Args::new(params).opt_f64("beats")?;
+    let semitones = match Args::new(params).value("semitones") {
+        None => None,
         Some(v) => Some(
             v.as_i64().filter(|s| (-127..=127).contains(s)).ok_or("semitones must be a whole number, -127 to 127")?,
         ),
@@ -708,7 +705,7 @@ fn spans(note: &Note, at: f64) -> bool {
 /// keeping its start and the second its end. One command, one undo step; the halves are appended,
 /// so the indices of the notes the command did not split stay valid.
 pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let at = optional_number(params, "at")?.ok_or("give at, the beat to split the notes at")?;
+    let at = Args::new(params).opt_f64("at")?.ok_or("give at, the beat to split the notes at")?;
     if !(0.0..=MAX_BEAT).contains(&at) {
         return Err(format!("at must be 0 to {MAX_BEAT} beats, got {at}").into());
     }

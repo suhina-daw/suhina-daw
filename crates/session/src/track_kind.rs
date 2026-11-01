@@ -8,6 +8,7 @@
 use serde_json::{Value, json};
 use suhina_model::{ContentId, LaneData, Project, TrackId};
 
+use crate::commands::Args;
 use crate::commands::track_id;
 use crate::{CommandError, Session};
 
@@ -82,7 +83,7 @@ fn set_kind_of(session: &mut Session, track: TrackId, notes: bool) -> Result<(),
 /// `track.setKind {track, kind}`: an empty track becomes a MIDI or an audio track (#945).
 pub(crate) fn set_kind(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let track = track_id(&session.project, params)?;
-    let notes = match params.get("kind").and_then(Value::as_str) {
+    let notes = match Args::new(params).raw_str("kind") {
         Some("midi") => true,
         Some("audio") => false,
         _ => return Err("kind must be midi or audio".into()),

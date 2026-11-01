@@ -9,6 +9,7 @@
 use serde_json::Value;
 use suhina_model::{Project, TrackId};
 
+use crate::commands::Args;
 use crate::commands::{self, CommandKind, CommandSpec, commands};
 use crate::{CommandError, Session, unknown_command};
 
@@ -84,7 +85,7 @@ impl Session {
         // A command that takes `gesture` and `continuous` makes one undo step of a drag that way.
         let drags = spec.params.iter().any(|p| p.name == "gesture");
         let gesture = if drags {
-            match params.get("gesture") {
+            match Args::new(params).value("gesture") {
                 None => None,
                 Some(Value::String(s)) if !s.is_empty() && s.len() <= 128 => Some(s.as_str()),
                 Some(_) => return Err("gesture must be 1..128 bytes of text".into()),
@@ -92,7 +93,7 @@ impl Session {
         } else {
             None
         };
-        let continuous = drags && params.get("continuous").and_then(Value::as_bool) == Some(true);
+        let continuous = drags && Args::new(params).value("continuous").and_then(Value::as_bool) == Some(true);
         if (spec.kind == CommandKind::Edit && !continuous && gesture.is_none()) || spec.kind == CommandKind::History {
             self.history.param_gesture = None;
         }
@@ -114,11 +115,11 @@ impl Session {
                 .then(|| self.step_track(params))
                 .flatten()
                 .map(|track| (spec.id, track));
-            prepared.continued = params.get("continue").and_then(Value::as_bool) == Some(true);
+            prepared.continued = Args::new(params).value("continue").and_then(Value::as_bool) == Some(true);
             if !prepared.continued || prepared.step != self.history.open_step {
                 self.history.open_step = None;
             } else {
-                prepared.replaces = params.get("replace").and_then(Value::as_bool) == Some(true);
+                prepared.replaces = Args::new(params).value("replace").and_then(Value::as_bool) == Some(true);
             }
         }
         Ok(prepared)

@@ -350,7 +350,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 ];
 
 fn set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = number_or_neg_infinity(params, "db")?;
+    let db = Args::new(params).f64_or_neg_infinity("db")?;
     if db > MAX_VOLUME_DB {
         return Err(format!("db must be at most +{MAX_VOLUME_DB}, got {db}").into());
     }
@@ -385,7 +385,7 @@ fn set_volume(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 }
 
 fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let db = number(params, "db")?;
+    let db = Args::new(params).f64("db")?;
     let channels = channel_ids(&session.project, params)?;
     let mut volumes = Vec::with_capacity(channels.len());
     let mut off = false;
@@ -402,7 +402,7 @@ fn adjust_volume(session: &mut Session, params: &Value) -> Result<Value, Command
 }
 
 fn set_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let pan = number(params, "pan")?;
+    let pan = Args::new(params).f64("pan")?;
     if !(-1.0..=1.0).contains(&pan) {
         return Err(format!("pan must be between -1 and 1, got {pan}").into());
     }
@@ -433,7 +433,7 @@ fn set_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError>
 }
 
 fn adjust_pan(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let pan = number(params, "pan")?;
+    let pan = Args::new(params).f64("pan")?;
     if !(-1.0..=1.0).contains(&pan) {
         return Err(format!("pan must be between -1 and 1, got {pan}").into());
     }
@@ -462,7 +462,7 @@ fn adjust_pan(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 }
 
 fn set_mute(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let mute = params.get("mute").and_then(Value::as_bool).ok_or("mute must be true or false")?;
+    let mute = Args::new(params).bool("mute")?;
     let channels = channel_ids(&session.project, params)?;
     let mut off = false;
     for (_, id) in &channels {
@@ -520,12 +520,12 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if matches!(role_of(p, track), Some(ChannelRole::Effect | ChannelRole::Master)) {
         return Err("a return track cannot go into a group".into());
     }
-    let group = match params.get("group") {
+    let group = match Args::new(params).value("group") {
         Some(Value::String(none)) if none.eq_ignore_ascii_case("none") => None,
         Some(_) => Some(track_at(p, params, "group")?),
         None => return Err("group must be a group track or \"none\"".into()),
     };
-    let index = match params.get("index") {
+    let index = match Args::new(params).value("index") {
         None => None,
         Some(v) => Some(v.as_u64().ok_or("index must be a whole number from 0")?),
     };
@@ -584,7 +584,7 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 fn move_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;
-    let to = params.get("to").and_then(Value::as_u64).ok_or("to must be a whole number from 0")?;
+    let to = Args::new(params).value("to").and_then(Value::as_u64).ok_or("to must be a whole number from 0")?;
     let family = p.with_descendants(track);
     let block: Vec<Track> = p.tracks.iter().filter(|t| family.contains(&t.id)).cloned().collect();
     p.tracks.retain(|t| !family.contains(&t.id));
@@ -594,7 +594,7 @@ fn move_track(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 }
 
 fn rename_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let name = params.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty());
+    let name = Args::new(params).raw_str("name").map(str::trim).filter(|n| !n.is_empty());
     let name = name.ok_or("name must be a text, not empty")?.to_string();
     let track = track_id(&session.project, params)?;
     if let Some(t) = session.project.track_mut(track) {
@@ -613,8 +613,8 @@ fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     let group = track_id(&session.project, params)?;
     let p = &mut session.project;
     let own = p.track(group).map(|t| t.color).ok_or("the track is missing")?;
-    let colour = match params.get("color") {
-        None | Some(Value::Null) => own,
+    let colour = match Args::new(params).value("color") {
+        None => own,
         Some(_) => crate::clip_color::parse_color(params, "color")?.or(own),
     };
     let parent_of =
@@ -647,7 +647,7 @@ fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandEr
     }
     // Their clips follow the tracks' colour again, the group's own too.
     let mut clips = 0usize;
-    if params.get("clips").and_then(Value::as_bool) == Some(true) {
+    if Args::new(params).value("clips").and_then(Value::as_bool) == Some(true) {
         let held = |track: Option<TrackId>| track.is_some_and(|t| t == group || inside.contains(&t));
         for lane in p.arrangement.lanes.iter_mut().filter(|l| held(l.track)) {
             for clip in &mut lane.clips {
@@ -666,7 +666,7 @@ fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 }
 
 fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let text = params.get("color").and_then(Value::as_str).ok_or("color must be \"#rrggbb\" or \"none\"")?;
+    let text = Args::new(params).raw_str("color").ok_or("color must be \"#rrggbb\" or \"none\"")?;
     let color = if text.eq_ignore_ascii_case("none") {
         None
     } else {
@@ -712,8 +712,8 @@ fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 const COPY_SUFFIX: &str = "how a copy of a taken name reads: wrapped (\"Bass (2)\", default) or hash (\"Bass #2\"); a name with # (the track's number) stays as it is";
 
 fn paste_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let after = match params.get("after") {
-        None | Some(Value::Null) => None,
+    let after = match Args::new(params).value("after") {
+        None => None,
         Some(_) => Some(track_at(&session.project, params, "after")?),
     };
     let clipboard = session.clipboards.whole_tracks.clone();
@@ -730,7 +730,7 @@ fn duplicate_tracks(session: &mut Session, params: &Value) -> Result<Value, Comm
 /// The `suffix` parameter of `track.paste` and `track.duplicate`: how a taken name says it is a
 /// copy ("wrapped": "Bass (2)", "hash": "Bass #2"); wrapped when it is left out.
 fn suffix(params: &Value) -> Result<crate::track_copy::Suffix, CommandError> {
-    match params.get("suffix").and_then(Value::as_str) {
+    match Args::new(params).raw_str("suffix") {
         None => Ok(crate::track_copy::Suffix::default()),
         Some(name) => crate::track_copy::Suffix::parse(name)
             .ok_or_else(|| format!("suffix is \"wrapped\" or \"hash\", not {name:?}").into()),
@@ -762,7 +762,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
 fn set_output(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let from = channel_param(session, params)?.id;
     let p = &session.project;
-    let to = match params.get("to") {
+    let to = match Args::new(params).value("to") {
         Some(Value::String(main)) if main.eq_ignore_ascii_case("main") => None,
         Some(_) => {
             let track = track_at(p, params, "to")?;
@@ -800,8 +800,8 @@ fn set_output(session: &mut Session, params: &Value) -> Result<Value, CommandErr
 }
 
 fn set_solo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let solo = params.get("solo").and_then(Value::as_bool).ok_or("solo must be true or false")?;
-    let exclusive = match params.get("exclusive") {
+    let solo = Args::new(params).bool("solo")?;
+    let exclusive = match Args::new(params).value("exclusive") {
         None => false,
         Some(v) => v.as_bool().ok_or("exclusive must be true or false")?,
     };
@@ -818,14 +818,14 @@ fn set_solo(session: &mut Session, params: &Value) -> Result<Value, CommandError
 }
 
 fn set_cue(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let cue = params.get("cue").and_then(Value::as_bool).ok_or("cue must be true or false")?;
+    let cue = Args::new(params).bool("cue")?;
     channel_param(session, params)?.cue = cue;
     Ok(json!({ "cue": cue }))
 }
 
 fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let id = track_id(&session.project, params)?;
-    let port = match params.get("port") {
+    let port = match Args::new(params).value("port") {
         None => None,
         Some(Value::String(s)) => Some(match s.trim() {
             "" => return Err("port must be \"all\", \"none\" or a port's name".into()),
@@ -835,7 +835,7 @@ fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, Comman
         }),
         Some(_) => return Err("port must be a text".into()),
     };
-    let channel = match params.get("channel") {
+    let channel = match Args::new(params).value("channel") {
         None => None,
         Some(v) => match v.as_u64() {
             Some(0) => Some(None),
@@ -843,7 +843,7 @@ fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, Comman
             _ => return Err("channel must be 0 (every channel) or 1 to 16".into()),
         },
     };
-    let monitor = match params.get("monitor") {
+    let monitor = match Args::new(params).value("monitor") {
         None => None,
         Some(v) => Some(match v.as_str() {
             Some("auto") => suhina_model::Monitor::Auto,
@@ -872,7 +872,7 @@ fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, Comma
         CommandError(format!("input must be \"none\", a channel from 1 to {MAX_INPUT_CHANNEL} or a pair like \"1/2\""))
     };
     let channel = |text: &str| text.trim().parse::<u16>().ok().filter(|c| (1..=MAX_INPUT_CHANNEL).contains(c));
-    let channels = match params.get("input") {
+    let channels = match Args::new(params).value("input") {
         None => None,
         Some(Value::String(text)) => Some(match text.trim() {
             "none" => InputChannels::None,
@@ -888,7 +888,7 @@ fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, Comma
         }),
         Some(_) => return Err(bad()),
     };
-    let monitor = match params.get("monitor") {
+    let monitor = match Args::new(params).value("monitor") {
         None => None,
         Some(v) => Some(match v.as_str() {
             Some("auto") => Monitor::Auto,
@@ -908,8 +908,8 @@ fn set_audio_input(session: &mut Session, params: &Value) -> Result<Value, Comma
 }
 
 fn set_arm(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let armed = params.get("armed").and_then(Value::as_bool).ok_or("armed must be true or false")?;
-    let exclusive = match params.get("exclusive") {
+    let armed = Args::new(params).bool("armed")?;
+    let exclusive = match Args::new(params).value("exclusive") {
         None => false,
         Some(v) => v.as_bool().ok_or("exclusive must be true or false")?,
     };

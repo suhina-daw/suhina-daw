@@ -13,6 +13,7 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::{Value, json};
 use suhina_model::Project;
 
+use crate::commands::Args;
 use crate::commands::{CommandKind, CommandSpec, ParamType, optional};
 use crate::{CommandError, Policy, ProjectId, Projects};
 
@@ -702,13 +703,13 @@ static BACKUP_COMMANDS: &[CommandSpec<Projects>] = &[CommandSpec {
 }];
 
 fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let flag = |name: &str| match params.get(name) {
-        None | Some(Value::Null) => Ok(None),
+    let flag = |name: &str| match Args::new(params).value(name) {
+        None => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => Err(CommandError(format!("{name} must be true or false"))),
     };
-    let interval = match params.get("interval") {
-        None | Some(Value::Null) => None,
+    let interval = match Args::new(params).value("interval") {
+        None => None,
         Some(Value::String(text)) => Some(Interval::parse(text).ok_or_else(|| {
             let names: Vec<String> = Interval::ALL.iter().map(|i| i.name()).collect();
             CommandError(format!("interval must be one of {}", names.join(", ")))
