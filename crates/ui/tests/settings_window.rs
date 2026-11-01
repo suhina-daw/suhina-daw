@@ -645,7 +645,8 @@ fn settle(harness: &mut Harness<'static, App>) {
 fn shown(harness: &Harness<'static, App>, label: &str) -> bool {
     let title = harness.get_by_label("Close settings").rect();
     let rect = harness.get_by_label(label).rect();
-    rect.top() > title.bottom() && rect.bottom() < SHORT.1
+    // The panel ends above the status bar.
+    rect.top() > title.bottom() && rect.bottom() < SHORT.1 - theme::STATUS_BAR - theme::PAD
 }
 
 /// Turns the wheel over the page until `label` shows, at most `turns` times; returns how often.

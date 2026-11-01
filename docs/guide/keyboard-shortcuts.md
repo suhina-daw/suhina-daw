@@ -66,7 +66,6 @@ The project you leave stops playing.
 | Key | Action | Where | What it does |
 |---|---|---|---|
 | Space | `transport.toggle` | Anywhere | Starts playback, or stops it when it is playing. Where playback starts and where the playhead goes when it stops are set in Settings › Arrangement › Time and play › **Play from** and **Stop**. |
-| Shift+Space | `transport.playFromSelection` | Anywhere | Plays from the start of the clip selected in the Arrangement view, whatever the Play from setting says. With no clip selected it plays from the play start marker. |
 | Ctrl+L | `transport.setLoopEnabled` | Anywhere | Turns looping on or off. While looping is on, the arrangement plays the loop region over and over. If there is no loop region yet, turning it on makes one over the first 4 bars. |
 | M | `marker.addAtPlayhead` | Anywhere | Adds a marker (a named point in the arrangement) where the playhead is. While stopped, it adds the marker at the play start marker. |
 
