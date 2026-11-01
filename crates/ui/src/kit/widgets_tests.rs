@@ -205,7 +205,7 @@ fn raw_motion_locks_the_pointer_and_is_scaled_to_points() {
 fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
     let ctx = egui::Context::default();
     let run = |hold: bool, after: bool| {
-        ctx.run_ui(egui::RawInput::default(), |ui| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             if hold {
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { raw: true, back: None, released: false }));
@@ -214,9 +214,9 @@ fn a_view_drawn_after_a_value_drag_does_not_show_the_pointer_again() {
             if after {
                 hide_pointer_during_value_drag(ui.ctx());
             }
-        })
-        .platform_output
-        .cursor_icon
+        });
+        output.textures_delta.clear();
+        output.platform_output.cursor_icon
     };
     assert_eq!(run(true, true), egui::CursorIcon::None);
     ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
