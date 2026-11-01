@@ -159,7 +159,7 @@ fn knob(
             change = Some((parameter.clamp(next), false));
         }
     }
-    let circle = (cell.height() - 28.0).clamp(20.0, KNOB);
+    let circle = (cell.height() - 28.0).min(cell.width()).clamp(20.0, KNOB);
     let circle_center = egui::pos2(cell.center().x, cell.top() + 12.0 + circle / 2.0);
     widgets::dial(ui.painter(), circle_center, circle, at as f32, Some(&response));
     widgets::text_in(
@@ -205,7 +205,7 @@ fn mid_freq_line(
     // and the three sit centred in it as one control.
     widgets::text_in(
         painter,
-        Rect::from_min_max(under.left_top(), egui::pos2(under.left() + 56.0, under.top() + 10.0)),
+        Rect::from_min_max(under.left_top(), egui::pos2(under.left() + 56.0, under.bottom())),
         Align2::LEFT_CENTER,
         parameter.name,
         theme::ui_font(theme::TEXT_TINY),
@@ -677,7 +677,12 @@ pub(crate) fn show_amp(
     // One row of knobs under, left to right: Gain, the EQ's trio, Delay, Volume last, each
     // cell as wide (6 across the whole panel). No control is drawn over another.
     let rows_top = controls.top() + ROW_HEIGHT + 2.0;
-    let row = Rect::from_min_max(egui::pos2(controls.left(), rows_top), egui::pos2(controls.right(), rows_top + 96.0));
+    // The row ends at the controls area's bottom: a themed pane can set the panel lower than
+    // the layout asks, and the knobs must never draw over the file row under the area.
+    let row = Rect::from_min_max(
+        egui::pos2(controls.left(), rows_top),
+        egui::pos2(controls.right(), (rows_top + 96.0).min(controls.bottom())),
+    );
     let cells = split(row, 6);
     for (cell, id) in cells.iter().zip(["inputGain", "eqBass", "eqMid", "eqTreble", "delay", "outputVolume"]) {
         let parameter = amp_parameter(id);
@@ -754,9 +759,10 @@ pub(crate) fn show_cab(
         );
     }
     // One row of knobs under, each cell as wide: Delay at the left, the cuts' trio, Mid Freq.
+    // Its bottom bound as the amp's is: never over the file row however short the pane is.
     let row = Rect::from_min_max(
         egui::pos2(rest.left(), toggles.bottom() + 2.0),
-        egui::pos2(rest.right(), toggles.bottom() + 98.0),
+        egui::pos2(rest.right(), (toggles.bottom() + 98.0).min(controls.bottom())),
     );
     let cells = split(row, 5);
     for (cell, id) in cells.iter().zip(["delay", "cutBass", "cutMid", "cutTreble", "cutMidFreq"]) {
