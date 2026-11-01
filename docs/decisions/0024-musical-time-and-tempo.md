@@ -2,7 +2,8 @@
 description: Musical time (beats) is the model's only time base; tempo and time signature over the song are a start value plus lists of changes edited in place (tempo points with steps and ramps, signature changes on bar lines), and two maps merge three-way by beat and by bar
 read_when: tempo map, tempo change, tempo ramp, time signature change, musical time, beats, tick, frames_per_beat, transport, scene tempo, warp markers, tempo point, merge, issue 402
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-18
 covers:
   - crates/model/src/lib.rs
@@ -16,7 +17,6 @@ covers:
 
 # 0024: Musical time and tempo over the song
 
-- **Status:** accepted
 - **Date:** 2026-10-15; amended and accepted 2026-10-17 to describe the tempo map that landed in
   [#474](https://github.com/suhina-daw/suhina-daw/pull/474) (see *Amendment*)
 - **Task:** tempo and time-signature changes over the song

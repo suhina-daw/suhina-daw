@@ -2,7 +2,8 @@
 description: How edits reach an engine that is already playing — a new graph built off the audio thread and swapped in at an exact frame
 read_when: edit while playing, graph swap, renderer rebuild, Controller::update, live edits, volume change not heard, LOOP-26
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-28
 covers:
   - crates/engine/src/lib.rs

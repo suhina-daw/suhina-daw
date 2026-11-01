@@ -2,7 +2,8 @@
 description: How third-party plug-ins are hosted out of process (process model, IPC, deadline, crashes), the unsafe exception, formats and the VST2 policy
 read_when: plug-in, plugin host, CLAP, VST3, VST2, sandbox, out of process, IPC, shared memory, unsafe, plug-in crash, scanning, plug-in editor
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-31
 covers:
   - crates/ipc/**
@@ -18,7 +19,6 @@ covers:
 
 # 0006: Plug-in hosting
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 - **Issue:** [#30](https://github.com/suhina-daw/suhina-daw/issues/30)
 

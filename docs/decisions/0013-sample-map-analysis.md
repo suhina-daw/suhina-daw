@@ -2,7 +2,8 @@
 description: How the sample map analyses samples (features), lays them out (PCA and t-SNE, grid assignment), finds similar ones (a linear scan), caches the results, and which crates it uses
 read_when: sample map, soundmap crate, audio features, MFCC, spectral centroid, band energy, onset, pitch glide, t-SNE, bhtsne, PCA, UMAP, grid layout, RasterFairy, nearest neighbours, feature cache, kinds, classifier, kind set by hand
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-21
 covers:
   - crates/soundmap/**
@@ -11,7 +12,6 @@ covers:
 
 # 0013: The sample map: features, layout and cache
 
-- **Status:** accepted
 - **Date:** 2026-10-12
 
 ## Context

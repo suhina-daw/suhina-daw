@@ -143,7 +143,8 @@ the speed of a shared CI runner.
 Consider realistic project sizes, not only the smallest fixture. Look for:
 
 - blocking calls, I/O or expensive preparation on the window thread;
-- allocation, freeing, locks, logging or blocking reachable from the audio callback;
+- allocation, freeing, locks, logging or blocking reachable from the audio callback (a wait for
+  a plug-in host's answer within the block's deadline is the one allowed block, ADR 0006 › 4);
 - rebuilding graphs, restarting hosts or recomputing unchanged data;
 - work repeated per frame, block, sample, parameter step, track or clip;
 - needless copies and simultaneous whole-project or whole-file representations;

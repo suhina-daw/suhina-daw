@@ -2,7 +2,8 @@
 description: Why clips, arrangement lanes and scenes gain an id, what an id is, why ids need not be globally unique, and the four steps that make every command address objects by id instead of by position
 read_when: object id, ClipId, clip identity, positional addressing, clip.move, duplicated clips, make unique, project file version, ParamType::Clip, merge, version diff
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-18
 covers:
   - crates/model/src/lib.rs
@@ -15,8 +16,7 @@ covers:
 
 # 0025: Object identity in the model
 
-- **Status:** accepted (2026-10-17, implemented in [#568](https://github.com/suhina-daw/suhina-daw/issues/568))
-- **Date:** 2026-10-15
+- **Date:** 2026-10-15; accepted 2026-10-17, built in [#568](https://github.com/suhina-daw/suhina-daw/issues/568)
 
 ## Context
 

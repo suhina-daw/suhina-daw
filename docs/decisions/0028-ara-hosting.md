@@ -2,7 +2,8 @@
 description: How ARA plug-ins (audio editors such as pitch editors) are hosted out of process, how Suhina's clips map onto an ARA document, how audio reaches the plug-in, and the first version's overlap policy, which never loses edits
 read_when: ARA, ARA2, Melodyne, pitch editor, audio random access, playback region, audio source, audio modification, region sequence, document controller, overlapping audio clips, audio overlap, arrangement.audioOverlaps, stacked clips and ARA
 type: decision
-status: draft
+status: proposed
+built: partly
 last_verified: 2026-10-31
 covers:
   - crates/model/src/overlap.rs
@@ -24,7 +25,6 @@ covers:
 
 # 0028: ARA hosting
 
-- **Status:** proposed
 - **Date:** 2026-10-17
 - **Epic:** [#587](https://github.com/suhina-daw/suhina-daw/issues/587), under plug-in hosting
   ([#30](https://github.com/suhina-daw/suhina-daw/issues/30))

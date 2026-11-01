@@ -2,13 +2,13 @@
 description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions
 read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output
 type: decision
-status: draft
+status: proposed
+built: partly
 last_verified: 2026-10-28
 ---
 
 # 0019: MIDI controllers and mapping
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** [#403](https://github.com/suhina-daw/suhina-daw/issues/403). Behaviour spec:
   [`docs/spec/midi-mapping.md`](../spec/midi-mapping.md).

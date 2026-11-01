@@ -110,4 +110,6 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 
 A project saved to another folder gets each audio path written relative to its new file (with
 `..` where needed, on the same drive) and the file's absolute path; opening it looks for the
-relative path first, then the absolute one. The audio is not copied.
+relative path first, then the absolute one, and reads it only within the
+[project file boundaries](missing-files.md#project-file-boundaries)
+([ADR 0011](../decisions/0011-preview-and-added-audio.md) › 11). The audio is not copied.

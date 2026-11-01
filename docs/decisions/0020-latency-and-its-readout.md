@@ -2,7 +2,8 @@
 description: What Suhina's latency number is and what it includes, where it is shown, how output and round-trip latency are established, and when a readout warns
 read_when: latency, output latency, round-trip latency, monitoring latency, buffer size, engine block, control bar, performance readout, CPU load, RAM, underruns, xruns, audio.info, device buffer, WASAPI shared period, live playing, live input latency
 type: decision
-status: draft
+status: proposed
+built: no
 last_verified: 2026-10-15
 covers:
   - crates/output/src/lib.rs
@@ -14,7 +15,6 @@ covers:
 
 # 0020: Latency: what the number is, and where it is shown
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Issue:** [#449](https://github.com/suhina-daw/suhina-daw/issues/449) — this ADR is its decision
   step; the issue stays open until the readout itself is built.

@@ -2,13 +2,13 @@
 description: How Suhina uses optional components it does not ship — separate programs with a manifest, a licence and declared permissions, never libraries linked into the process, and never downloaded by Suhina
 read_when: extension, add-on, optional component, model weights, model licence, inference runtime, non-free, plug-in host boundary, extension manifest, third-party model, ONNX, separation
 type: decision
-status: draft
+status: proposed
+built: no
 last_verified: 2026-10-19
 ---
 
 # 0015: Extensions: optional components outside the tree
 
-- **Status:** proposed
 - **Date:** 2026-10-13
 - **Task:** stem separation ([#146](https://github.com/suhina-daw/suhina-daw/issues/146)) needs an
   inference runtime and model weights Suhina may not distribute. The shape decided here is general,

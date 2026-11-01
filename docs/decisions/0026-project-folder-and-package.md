@@ -2,7 +2,8 @@
 description: A project becomes a folder holding a document, a manifest of each asset's path and BLAKE3 hash, and only when collected its audio; the shareable package is a zip with its own extension; derived analysis stays out of the project; the .locr compatibility path is removed
 read_when: project folder, manifest, asset hash, BLAKE3, collect, packaged project, zip, sharing a project, analysis sidecar, asd, hand-set kind, .locr, old extension, git and audio, git-lfs, project package
 type: decision
-status: draft
+status: proposed
+built: partly
 last_verified: 2026-10-24
 covers:
   - crates/project-file/src/lib.rs
@@ -12,7 +13,6 @@ covers:
 
 # 0026: The project folder, the manifest and the package
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** the collaboration and project-version work
   ([ADR 0023](0023-collaboration-and-project-versions.md)) needs a project that can be shipped,

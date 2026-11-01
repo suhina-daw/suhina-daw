@@ -2,7 +2,8 @@
 description: The interface of built-in effects and instruments (Device trait, parameters, real-time rules, contract tests) and the dsp crate
 read_when: device, built-in effect or instrument, effect, instrument, dsp, filter, parameter, automation, utility, device-api, conformance
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-30
 covers:
   - crates/dsp/**
@@ -17,7 +18,6 @@ covers:
 
 # 0004: Built-in effects and instruments
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 - **Task:** LOOP-33
 
@@ -168,11 +168,6 @@ decision 9.
    the slowest path, as in 10. A graph swap hands a send's delay line over when the chain sends
    to the same return with the same delay (`crates/engine/src/sends.rs`).
 
-11. **Data-only community effects** use the separate `suhina-device-sdk` and `.sd` format
-    ([ADR 0021](0021-device-graph-files.md)). Unlike built-in Rust devices, these graphs contain
-    only supported node data; the engine prepares them off-thread and runs them in the same
-    real-time-safe chain. Their parameter declarations generate UI controls.
-
 13. **A device group is one slot of a chain** (added 2026-10-18, #147; behaviour in the
     [device groups spec](../spec/device-groups.md)). `Slot::Group` holds its branches, each a
     list of slots with a buffer of its own, all made when the graph is built
@@ -226,6 +221,10 @@ decision 9.
     the same chain code offline and in real time (golden rule 4): `render_offline`, the player
     and the launcher all start notes through it, so the offline renders in
     `crates/engine/src/midi_effect_tests.rs` are the oracle for playback as well.
+15. **Data-only community effects** use the separate `suhina-device-sdk` and `.sd` format
+    ([ADR 0021](0021-device-graph-files.md)). Unlike built-in Rust devices, these graphs contain
+    only supported node data; the engine prepares them off-thread and runs them in the same
+    real-time-safe chain. Their parameter declarations generate UI controls.
 
 ## Amendment: a chain on the main channel (2026-10-25, #687)
 

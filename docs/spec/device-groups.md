@@ -434,7 +434,7 @@ For the maintainer; each has the choice this spec made, so work can start withou
     role is the first thing that would need one. It is a third kind with its own placement rules (MIDI
     effects only, on a track that plays notes); nothing here forecloses it, and it is not planned until
     MIDI effects exist.
-11. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
+12. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
     Effect Rack and Instrument Rack ([`als-format.md`](als-format.md) › Audio Effect Rack and
     Instrument Rack), observed in the user's own sets; macro mappings wait for a set that shows
     where Live stores them, and an Instrument Rack's zones for key ranges (9).

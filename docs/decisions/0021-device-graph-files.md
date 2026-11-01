@@ -2,7 +2,8 @@
 description: A data-only versioned graph format and Rust SDK for community-authored Suhina effects
 read_when: .sd, Suhina device SDK, device graph, community device, graph effect
 type: decision
-status: current
+status: accepted
+built: partly
 last_verified: 2026-11-01
 covers:
   - crates/device-sdk/src/builtin.rs
@@ -18,7 +19,6 @@ covers:
 
 # 0021: Data-only device graphs
 
-- **Status:** accepted
 - **Date:** 2026-10-15
 - **Tasks:** #300, #406, #679 (device panels)
 

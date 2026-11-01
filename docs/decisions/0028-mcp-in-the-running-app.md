@@ -2,7 +2,8 @@
 description: Why the desktop app serves MCP for the projects it has open, how an agent reaches it (a local pipe or socket per build, bridged by suhina-cli mcp --attach), who may connect, what an attached agent may read, write and run, and why each build runs once
 read_when: MCP in the app, attach, suhina-cli mcp --attach, live agent edits, agent and window share a project, shared undo, agent connection, allow agent, consent, named pipe, unix socket, control channel, single instance, one instance per build, --new-instance, open file in running app, agent roots
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-28
 covers:
   - crates/automation/src/attach.rs
@@ -16,7 +17,6 @@ covers:
 
 # 0028: MCP in the running app
 
-- **Status:** accepted
 - **Date:** 2026-10-17
 - **Issue:** [#605](https://github.com/suhina-daw/suhina-daw/issues/605)
 

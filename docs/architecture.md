@@ -290,7 +290,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    carries its clip's scale for them; MIDI effects without an instrument after them get the
    engine's sine tones as one, `sine.rs`, ADR 0004 › 14); a
    group with devices is a bus that sums the chains of its tracks before its own run (ADR 0004
-   › 10, `buses.rs`), a return track a chain that sums the sends into it (ADR 0004 › 11,
+   › 10, `buses.rs`), a return track a chain that sums the sends into it (ADR 0004 › 12,
    `sends.rs`), with
    a slot for each plug-in device the session knows of (ADR 0006), and the delay lines of
    latency compensation. Every buffer the renderer will ever need
