@@ -146,7 +146,7 @@ fn chain_row(
             let authored_width = graph.map_or(authored_base, |graph| {
                 // The stock controls in columns of a compact panel's width, right of the canvas
                 // when there is one; wider where an `.sd` file places its controls further out.
-                let list = list_right(device, graph) + if device.list_tall { LIST_GAP } else { 0.0 };
+                let list = list_right(device, graph);
                 graph.canvas.as_ref().map_or_else(
                     || STACK_WIDTH.max(list + PAD * 2.0),
                     |c| c.viewport_size.map_or(DEVICE_WIDTH.max(c.size[0].max(list) + PAD * 2.0), |v| v[0] + PAD * 2.0),
@@ -316,7 +316,7 @@ pub(super) fn list_fold_id(track: TrackId, at: &DeviceAt) -> Id {
     Id::new(("list-fold", track.0, at))
 }
 
-/// The room between the columns of a list scrolling down, with a line in its middle.
+/// The room between the columns of a generated list, with a line in its middle.
 pub(super) const LIST_GAP: f32 = 16.0;
 
 fn list_vertical_id() -> Id {
@@ -393,7 +393,15 @@ fn list_right(device: &DeviceBox, graph: &GraphBox) -> f32 {
     if device.plugin.as_ref().is_some_and(|p| p.embedded.is_some()) {
         return 0.0;
     }
-    list_cells(graph, COMPACT_WIDTH, list_height(device, graph)).iter().fold(0.0f32, |right, c| right.max(c.right()))
+    let cells = list_cells(graph, COMPACT_WIDTH, list_height(device, graph));
+    let right = cells.iter().fold(0.0f32, |right, c| right.max(c.right()));
+    // A generated list has room and a line between its columns.
+    if graph.canvas.is_some() {
+        return right;
+    }
+    let mut lefts: Vec<u32> = cells.iter().map(|c| c.left() as u32).filter(|x| *x > 0).collect();
+    lefts.dedup();
+    right + lefts.len() as f32 * LIST_GAP
 }
 
 /// How tall a device's stock-control list may grow before it continues in a new column: the

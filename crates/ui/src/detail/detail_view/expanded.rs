@@ -149,11 +149,9 @@ pub(super) fn graph_controls(
             let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
-            // A list scrolling down has its columns side by side all the way: a line keeps them apart.
-            let scrolls = graph.canvas.is_none() && extent.y + nodes_height > body.height() + 0.5;
             // Its columns' left edges, with room between them.
             let mut separators: Vec<f32> = Vec::new();
-            if scrolls {
+            if graph.canvas.is_none() {
                 for cell in &mut cells {
                     if cell.left() > 0.0 {
                         if separators.last().is_none_or(|x| *x < cell.left()) {
