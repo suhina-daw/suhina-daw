@@ -149,6 +149,8 @@ pub(super) fn graph_controls(
             let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
+            // A list scrolling down has its columns side by side all the way: a line keeps them apart.
+            let scrolls = graph.canvas.is_none() && extent.y + nodes_height > body.height() + 0.5;
             let (_, body) = ui.allocate_space(Vec2::new(extent.x, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
             node_rows(painter, body, graph);
@@ -157,6 +159,16 @@ pub(super) fn graph_controls(
                 crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
+            if scrolls {
+                let lines = cells.iter().map(|c| c.left()).filter(|x| *x > 0.0);
+                let mut drawn = f32::NEG_INFINITY;
+                for x in lines {
+                    if x > drawn {
+                        drawn = x;
+                        painter.vline(origin.x + x - 3.0, body.y_range(), theme::hairline(theme::border_strong()));
+                    }
+                }
+            }
             for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);
             }
