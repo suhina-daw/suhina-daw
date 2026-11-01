@@ -572,8 +572,7 @@ marker, on the grid (Alt: free), and never moves playback while it plays; a clic
 a seek, which while playing waits for the next launch boundary (`transport.jump`).
 
 **A painted time selection** (over the lanes or along the ruler) moves the marker to its start when
-the button goes up, so Play starts there (#937), even with a clip still picked whole; playing from
-the selected clip (Shift+Space) still starts at the clip. While playing, the marker moves too and playback
+the button goes up, so Play starts there (#937), even with a clip still picked whole. While playing, the marker moves too and playback
 goes on where it is (`transport.setStart`), so Stop returns to the selection's start.
 
 **Where other DAWs stand** (their public manuals, October 2026): every one starts playback from a
@@ -650,7 +649,7 @@ from the marker.
 Playing from a clip **moves the marker** to the clip's start rather than leaving it where it was.
 The marker is where the playhead rests while stopped and where Stop returns, so moving it keeps
 what is seen and what is heard the same: Stop goes back to the clip's start, the next Play
-(with either setting) starts there again, and auditioning one clip over and over is Shift+Space
+(with either setting) starts there again, and auditioning one clip over and over is Space
 and Space in turn. Leaving the marker behind would make Stop jump to a place the user did not
 start from.
 

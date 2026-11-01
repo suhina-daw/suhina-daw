@@ -86,7 +86,10 @@ pub fn value_drag_delta(ui: &Ui, response: &Response) -> Vec2 {
         drag.raw = true;
     }
     ctx.data_mut(|d| d.insert_temp(value_drag_id(), drag));
-    if drag.raw {
+    if drag.raw && response.drag_started() {
+        // This frame's raw motion may be from before the press.
+        Vec2::ZERO
+    } else if drag.raw {
         // Raw motion is in the mouse's counts, not in points: scaled like the pointer on a display.
         motion.unwrap_or(Vec2::ZERO) / per_point
     } else {
@@ -106,7 +109,8 @@ pub fn release_value_drag(ctx: &egui::Context) {
         ctx.data_mut(|d| d.remove::<ValueDrag>(value_drag_id()));
     } else if !ctx.input(|i| i.pointer.any_down() && i.focused) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
-        if let Some(at) = drag.back {
+        // Only in a window with focus: a pointer gone to another window stays there.
+        if let Some(at) = drag.back.filter(|_| ctx.input(|i| i.focused)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(at));
         }
         ctx.data_mut(|d| d.insert_temp(value_drag_id(), ValueDrag { released: true, ..drag }));
@@ -702,7 +706,7 @@ pub fn value_active(ctx: &egui::Context) -> bool {
 /// The keys an active value control takes this frame: arrow steps (up is +1), and Enter with
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.
-fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
+pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
     let ctx = ui.ctx();
     let key = egui::Id::new(ACTIVE_VALUE);
     let typed_id = response.id.with("typed");

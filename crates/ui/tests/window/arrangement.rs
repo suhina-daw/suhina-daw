@@ -339,7 +339,7 @@ fn a_click_on_the_ruler_moves_the_play_start_marker_on_the_grid() {
 }
 
 #[test]
-fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
+fn play_starts_from_the_selected_clip_as_the_setting_says() {
     let mut renderer =
         suhina_engine::Renderer::stopped(&demo_project(), &suhina_engine::AudioPool::new(), 48_000).unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
@@ -357,17 +357,6 @@ fn play_starts_from_the_selected_clip_with_shift_space_or_the_setting() {
     render_a_block(&mut renderer);
     assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
     stop(&mut harness, &mut renderer);
-
-    // Shift+Space plays from the selected clip's start (bar 17, beat 64), and Stop returns there.
-    harness.key_press_modifiers(Modifiers::SHIFT, Key::Space);
-    harness.run_steps(2);
-    render_a_block(&mut renderer);
-    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
-    for _ in 0..100 {
-        render_a_block(&mut renderer);
-    }
-    stop(&mut harness, &mut renderer);
-    assert_eq!((monitor.running(), monitor.beat()), (false, 64.0));
 
     // With Play from set to the selected clip, Space and the Play button start there too.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);

@@ -3239,16 +3239,17 @@ impl App {
                             let picked = self.arrangement.selected_clips();
                             // Not by itself for a clip an ARA plug-in edits, whose editor sets the
                             // position; a click on its name bar asks for its start all the same.
-                            let ara = !clicked && picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
+                            let keeps = |track: TrackId| clicked || session.ara_device(track).is_none();
                             // Nor for a clip picked by a click in its body: play starts where
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
                             let changed = clicked || picked != self.clips_before.as_slice();
-                            if changed && (!self.settings.view.play_from_clip || ara || body) {
+                            if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
                             } else if changed {
                                 let first = picked
                                     .iter()
+                                    .filter(|(track, _)| keeps(*track))
                                     .filter_map(|(track, id)| {
                                         timeline
                                             .lanes

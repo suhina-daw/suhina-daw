@@ -25,8 +25,9 @@ covers:
 Every device has a compact panel in the device chain, at most 168 px high (the detail area's
 default 200 px less the 20 px header and 6 px padding above and below). Its width is the
 author's, 260 px by default. A device without a canvas shows its generated parameter list,
-in columns 260 px wide and up to 168 px tall: a longer list continues in another column to the
-right, and the panel widens rather than scrolls. Stock controls a canvas leaves shown sit in the
+in columns 260 px wide and up to 168 px tall: a list longer than two columns shows those two,
+with a line between columns, and a chevron beside the header's switch opens the rest (Settings ›
+Devices › Long parameter lists: further columns to the right, or scrolling down in the two). Stock controls a canvas leaves shown sit in the
 same columns to the canvas's right. In a row a device is as wide as its canvas and columns plus
 12 px (220 px at least, 272 px for one column); the stacked column is 272 px wide by default. A
 smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`

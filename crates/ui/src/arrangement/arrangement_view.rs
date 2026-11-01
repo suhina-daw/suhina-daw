@@ -315,7 +315,8 @@ fn ruler_beat(raw: f64, grid: TimelineGrid, free: bool) -> f64 {
 /// before it, never before the clip's start, so a click on the clip never plays from past it.
 fn clip_body_beat(raw: f64, clip_start: f64, grid: TimelineGrid, free: bool) -> f64 {
     let free = free || !grid.snaps;
-    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true).max(clip_start) };
+    let beat = if free { (raw * 1000.0).round() / 1000.0 } else { grid.place(raw, false, true) };
+    let beat = beat.max(clip_start);
     if beat.is_finite() { beat.max(0.0) } else { 0.0 }
 }
 

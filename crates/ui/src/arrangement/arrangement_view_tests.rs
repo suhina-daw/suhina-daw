@@ -536,12 +536,20 @@ fn dragging_a_selected_track_resizes_every_selected_track() {
     state.set_lane_height(TrackId(2), 60.0);
     state.set_lane_height(TrackId(3), 80.0);
     state.selected_tracks = vec![TrackId(1), TrackId(2)];
-    state.resize_lanes(TrackId(1), 20.0);
+    state.resize_lanes(TrackId(1), 100.0, 20.0);
     assert_eq!(state.lane_height(TrackId(1)), 120.0);
     assert_eq!(state.lane_height(TrackId(2)), 80.0);
     assert_eq!(state.lane_height(TrackId(3)), 80.0);
     // A track not among them goes alone.
-    state.resize_lanes(TrackId(3), 10.0);
+    state.resize_lanes(TrackId(3), 80.0, 10.0);
     assert_eq!(state.lane_height(TrackId(1)), 120.0);
     assert_eq!(state.lane_height(TrackId(3)), 90.0);
+}
+
+#[test]
+fn a_drag_starts_from_the_height_drawn() {
+    // A return row drawn shorter than a track's kept height does not jump when dragged.
+    let mut state = ArrangementViewState::default();
+    state.resize_lanes(TrackId(9), 14.0, 2.0);
+    assert_eq!(state.lane_height(TrackId(9)), MIN_LANE.max(16.0));
 }

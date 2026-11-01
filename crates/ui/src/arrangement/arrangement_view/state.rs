@@ -660,13 +660,15 @@ impl ArrangementViewState {
         self.heights.insert(track, height.clamp(MIN_LANE, MAX_LANE));
     }
 
-    /// Changes `track`'s height by `by` as dragging its edge does; a track among the selected ones
-    /// takes them all with it, each from its own height.
-    pub(super) fn resize_lanes(&mut self, track: TrackId, by: f32) {
-        let tracks = if self.selected_tracks.contains(&track) { self.selected_tracks.clone() } else { vec![track] };
-        for track in tracks {
-            self.set_lane_height(track, self.kept_height(track) + by);
+    /// Changes `track`'s height from the `drawn` one by `by` as dragging its edge does; a track among
+    /// the selected ones takes the others with it, each from its own height.
+    pub(super) fn resize_lanes(&mut self, track: TrackId, drawn: f32, by: f32) {
+        if self.selected_tracks.contains(&track) {
+            for other in self.selected_tracks.clone().into_iter().filter(|other| *other != track) {
+                self.set_lane_height(other, self.kept_height(other) + by);
+            }
         }
+        self.set_lane_height(track, drawn + by);
     }
 
     /// Scales every track lane's height by `factor`, keeping the content `anchor` points below

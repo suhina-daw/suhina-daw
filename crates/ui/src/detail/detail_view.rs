@@ -312,8 +312,14 @@ pub(super) struct ListFold {
     pub(super) open: bool,
 }
 
-pub(super) fn list_fold_id(track: TrackId, at: &DeviceAt) -> Id {
-    Id::new(("list-fold", track.0, at))
+/// A list's open state belongs to its project: another project's track and device may match.
+pub(super) fn list_fold_id(ui: &Ui, track: TrackId, at: &DeviceAt) -> Id {
+    let project = ui.data(|d| d.get_temp::<u32>(list_project_id())).unwrap_or(0);
+    Id::new(("list-fold", project, track.0, at))
+}
+
+fn list_project_id() -> Id {
+    Id::new("device-list-project")
 }
 
 /// The room between the columns of a generated list, with a line in its middle.
@@ -327,6 +333,11 @@ fn list_vertical_id() -> Id {
 /// panels (Settings › Devices › Long parameter lists).
 pub fn set_list_vertical(ctx: &egui::Context, vertical: bool) {
     ctx.data_mut(|d| d.insert_temp(list_vertical_id(), vertical));
+}
+
+/// The project whose panels this frame draws, whose lists keep their own open state.
+pub fn set_list_project(ctx: &egui::Context, project: u32) {
+    ctx.data_mut(|d| d.insert_temp(list_project_id(), project));
 }
 
 /// How tall a column is for `parameters` to fill the first columns, so the panel keeps its width.
@@ -347,9 +358,10 @@ fn list_fit(parameters: &[GraphParameter], max_height: f32) -> Option<usize> {
 /// `device` with its long generated list cut to the first columns, unless the chevron opened it;
 /// `None` keeps it as it is. A canvas, a themed width and an embedded editor lay out their own way.
 fn limited_list(ui: &Ui, track: TrackId, device: &DeviceBox) -> Option<DeviceBox> {
-    let id = list_fold_id(track, &device.at);
+    let id = list_fold_id(ui, track, &device.at);
     let open = ui.data(|d| d.get_temp::<ListFold>(id)).is_some_and(|f| f.open);
-    let graph = device.graph.as_ref().filter(|g| g.canvas.is_none() && device.file_device.is_none());
+    // Cells a file places itself are not in list order, so the list cannot be cut after a column.
+    let graph = device.graph.as_ref().filter(|g| list_spreads(g) && device.file_device.is_none());
     let graph = graph.filter(|_| device.plugin.as_ref().is_none_or(|p| p.embedded.is_none()));
     let fit = graph.and_then(|g| {
         let height = list_height(device, g);
@@ -841,7 +853,7 @@ fn device_panel(
         painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
     }
     // Beside the switch, on a panel with more parameters than its columns show: opens the rest.
-    let fold_id = list_fold_id(track, &device.at);
+    let fold_id = list_fold_id(ui, track, &device.at);
     let mut name_left = switch.right() + PAD;
     if let Some(fold) = ui.data(|d| d.get_temp::<ListFold>(fold_id)) {
         let at = Rect::from_center_size(Pos2::new(switch.right() + 9.0, header.center().y), Vec2::splat(12.0));
