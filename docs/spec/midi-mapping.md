@@ -26,7 +26,7 @@ last_verified: 2026-10-28
 - A **mapping** joins one control to one target, with the settings in *Shaping the value*.
 - A **profile** describes one controller model and holds the mappings that work in any project.
 
-## Sources
+## Message sources
 
 | Kind | Message | Value | Notes |
 |---|---|---|---|
@@ -207,7 +207,7 @@ empty:
 ```json
 "controller_mappings": [
   { "profile": "knob-box", "source": "cc:1:23", "target": { "command": "device.setParam", "track": 4, "device": 1, "param": "cutoff" }, "takeover": "jump" },
-  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 0 } }
+  { "port": "USB MIDI 1", "source": "note:1:60", "target": { "command": "clip.launch", "track": 2, "scene": 1 } }
 ]
 ```
 

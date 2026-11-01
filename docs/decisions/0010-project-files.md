@@ -179,5 +179,6 @@ project too. A project that has returns always shows them, whatever the setting.
 
 ## Not decided yet
 
-- A packaged format that carries its audio, and "collect and save".
-- A system file dialog for Open and Save as.
+- A packaged format that carries its audio ([ADR 0026](0026-project-folder-and-package.md),
+  proposed). Collect and save is built ([missing files](../spec/missing-files.md) › Collect and
+  save), and Open and Save as use the system's file dialog (9).

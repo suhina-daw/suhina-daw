@@ -47,7 +47,8 @@ Two facts decide the shape of this:
   speaker. It includes the ring Suhina keeps ahead of the device and the device's own delay.
 - It does **not** include the time the engine spends rendering a block: that is what the CPU load
   measures, and what a block's deadline is about.
-- It does **not** include input, because there is none yet (#267).
+- It does **not** include input. Audio input came later ([#267](https://github.com/suhina-daw/suhina-daw/issues/267),
+  [ADR 0017](0017-inputs-and-latency.md) › 9); its half is not in this number.
 - It follows the block size: a larger block is more frames queued, and so a larger number. That is
   the trade the buffer setting exists for.
 
@@ -75,7 +76,8 @@ Two facts decide the shape of this:
 
 ## The round trip (deferred, and what it needs)
 
-- Input does not exist (#267), and a round trip needs one; measuring it is asked for in #265.
+- A round trip needs input, which exists since #267 ([ADR 0017](0017-inputs-and-latency.md) › 9);
+  measuring it is asked for in #265.
 - There are two honest ways to state a round trip. **Summed**: what the driver and the plug-ins
   report, which is what the chain claims. **Measured**: a signal that leaves and comes back, which
   is what happens. They answer different questions and will disagree.

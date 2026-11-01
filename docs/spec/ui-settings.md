@@ -59,15 +59,6 @@ ASIO instance. Exclusive mode is shown only for WASAPI. Audio status reports the
 engine block and measured driver callback separately from total output latency;
 internal driver buffers are configured through the native panel.
 
-## Sources
-
-Suhina's own layout, shaped by public design guidance on settings screens (Apple's and Microsoft's
-settings guidelines, and articles on settings UX; the wording rule in *Adding a setting* follows [Microsoft's guidelines for app settings](https://learn.microsoft.com/windows/apps/design/app-settings/guidelines-for-app-settings) and [Toptal's settings UX article](https://www.toptal.com/designers/ux/settings-ux)) and by how three other programs arrange theirs,
-all summarised in [#868](https://github.com/suhina-daw/suhina-daw/issues/868) in our own words: group by what the
-user is doing, small groups, the most used first, no status or commands among settings, a change
-applies at once. The grouping follows what the user is doing when they look for a setting (setting
-up audio, editing clips, browsing samples), not which part of the code reads it.
-
 ## Pages and groups
 
 The list on the left shows the pages in this order. Each page has headed groups; every setting is
@@ -124,7 +115,7 @@ wrap under the setting's name. A yes/no setting is a switch; a choice of up to f
 option buttons, each as wide as its text needs; more than five is a drop-down.
 
 Where a setting is shown never changes how it is saved: each keeps the key it has in
-`settings.json` (or `keymap.json` for keys and the mouse switches), so a settings file written
+`settings.txt` (or `keymap.json` for keys and the mouse switches), so a settings file written
 before a setting moved loads with the same values.
 
 Export permissions apply to attached MCP writes only. The person adds a folder through the
@@ -303,7 +294,7 @@ checks the ones a machine can check and names this section when one fails.
 5. **One control per kind of choice:** a switch (`cx.on_off`) for yes/no, option buttons
    (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that
    (`cx.choose` switches by itself). No text is cut off.
-6. **The stored key never changes** when a setting moves: it keeps its key in `settings.json`
+6. **The stored key never changes** when a setting moves: it keeps its key in `settings.txt`
    (`keymap.json` for keys and the mouse switches). A new setting gets a new key, listed in the
    entry's keys.
 7. **Application settings apart from project settings.** What belongs to one project (its tempo,
@@ -415,3 +406,12 @@ Holding the Background blur slider keeps the Settings live preview active even w
 Global liquid strength sliders are disabled while the active theme supplies liquid overrides. Their notes explain how to enable Use global liquid settings in the theme editor. Stored global values remain unchanged and become editable again when inheritance is restored.
 
 The gradient editor uses a single horizontal colour ramp with numbered draggable stops. Selecting a stop exposes only its colour, position and opacity; Add inserts and selects a midpoint in the largest gap, and Remove acts on the selected stop (at least two remain). Stops cannot cross their neighbours. Surface direction is a separate control below the stop editor. Colour-picker popups use an opaque readable surface even when Settings uses liquid transparency.
+
+## Sources
+
+Suhina's own layout, shaped by public design guidance on settings screens (Apple's and Microsoft's
+settings guidelines, and articles on settings UX; the wording rule in *Adding a setting* follows [Microsoft's guidelines for app settings](https://learn.microsoft.com/windows/apps/design/app-settings/guidelines-for-app-settings) and [Toptal's settings UX article](https://www.toptal.com/designers/ux/settings-ux)) and by how three other programs arrange theirs,
+all summarised in [#868](https://github.com/suhina-daw/suhina-daw/issues/868) in our own words: group by what the
+user is doing, small groups, the most used first, no status or commands among settings, a change
+applies at once. The grouping follows what the user is doing when they look for a setting (setting
+up audio, editing clips, browsing samples), not which part of the code reads it.

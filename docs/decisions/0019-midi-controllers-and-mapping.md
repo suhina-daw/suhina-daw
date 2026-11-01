@@ -33,8 +33,9 @@ What exists, or is in review:
 - **Edits while playing** ([ADR 0005](0005-edits-while-playing.md)): an edit rebuilds the
   engine's graph, except a device parameter, which has a cheap path
   (`Player::set_device_param`) that changes one value from the next block.
-- **The window's drags**: a volume drag in the Launcher view shows the moving value locally and
-  runs `track.setVolume` once, when the mouse is released (`crates/ui/src/session/session_view.rs`).
+- **The window's drags**: a volume or pan drag runs `track.setVolume` or `track.setPan` on every
+  frame, with `continue` so the drag is one undo step ([ADR 0002](0002-commands.md) › Amendment:
+  one drag, one undo step).
 - **Settings and keymap**: the window keeps `settings.txt` and `keymap.json` in its storage
   folder; the keymap maps keys to commands that take no parameters.
 - **Extensions** ([ADR 0015](0015-extensions.md)): an optional component is a separate program

@@ -42,8 +42,8 @@ authoring fields are accepted.
    device metadata, role, parameters, processing nodes and graph connections. It contains no
    executable code. Suhina's built-in devices are not `.sd` graphs (item 3).
 2. `suhina-device-sdk` is a Rust crate that builds, validates, reads and writes this format and
-   prepares supported graphs for processing. Authors can create graphs with the Rust SDK or the
-   visual editor; both preserve the same graph and editor data.
+   prepares supported graphs for processing. Authors create graphs with the Rust SDK; a visual editor, when there is one, keeps the same
+   graph and `editor` data (the format carries it already; interactive editing is deferred).
 3. Heavy DSP is provided by shared native Rust blocks used by graphs. Built-in devices remain
    native implementations with a layout (the `.sd` format's UI part only, no graph); they are not
    rewritten as primitive graphs and not wrapped in one. Shared node implementations live under `crates/device-sdk/src/nodes/` and use
@@ -114,7 +114,8 @@ image textures, performs decoding with allocation limits, and sends edits throug
 
 ## Amendment: device panels for built-in devices (2026-10-19)
 
-Item 3 said built-in devices are wrapped by `.sd` graphs. This amendment decides that a built-in
+Item 3 first said built-in devices are wrapped by `.sd` graphs; it now says what this amendment
+decided. This amendment decides that a built-in
 gets only a **layout**, the `.sd` format's UI part, and how layouts are made, stored and shown
 (#679). It was first written in terms of generated `.sd` wrappers; that was narrowed on
 Discord to the layout part, with no graph and no `native_device` node, before any wrapper was
