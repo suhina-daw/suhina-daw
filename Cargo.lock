@@ -5513,9 +5513,8 @@ dependencies = [
  "serde_json",
  "suhina-device-compressor",
  "suhina-device-limiter",
- "suhina-engine",
+ "suhina-model",
  "suhina-mp3",
- "suhina-project-file",
  "symphonia",
  "vorbis_rs",
 ]

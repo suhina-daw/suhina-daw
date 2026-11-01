@@ -32,7 +32,7 @@ use suhina_model::{
 };
 
 /// The file extension, without the dot.
-pub const EXTENSION: &str = "suhina";
+pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
 /// The `format` every file names.
 const FORMAT: &str = "suhina";
 /// The version every file is written as, and the newest this crate reads. It rises with every
@@ -67,10 +67,7 @@ impl From<&str> for ProjectFileError {
     }
 }
 
-/// Whether `path` names a project file by its extension, `.suhina` in either case.
-pub fn is_project_file(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))
-}
+pub use suhina_model::is_project_file;
 
 /// Reads a project file.
 pub fn read_file(path: &Path) -> Result<Project, ProjectFileError> {
