@@ -2065,8 +2065,7 @@ pub(crate) fn show(
                     }
                 }
                 UiGesture::Drag if response.dragged() => {
-                    let delta = response.drag_delta();
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                    let delta = crate::kit::widgets::value_drag_delta(ui, &response);
                     // A discrete value is rounded when it is written, so a drag that moves less than half
                     // a step in a frame would be lost: the unrounded position is kept while the drag lasts.
                     let position_id = response.id.with(("drag-position", axis));

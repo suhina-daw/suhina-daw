@@ -52,6 +52,8 @@ pub struct DeviceBox {
     /// The id of a device that runs a file ([docs/spec/nam-amp-and-cab.md]); the file is the
     /// state's path.
     pub file_device: Option<&'static str>,
+    /// Its opened long list scrolls down in two columns, as Settings › Devices says.
+    pub list_tall: bool,
     /// The file's path, when the device runs one.
     pub file: Option<String>,
     pub graph: Option<GraphBox>,
@@ -702,6 +704,7 @@ pub(super) fn device_box(
         } else {
             Vec::new()
         },
+        list_tall: false,
         file_device: match &d.kind {
             DeviceKind::Builtin(id) if suhina_device_registry::is_file_device(id) => {
                 suhina_device_registry::info(id).map(|info| info.id)

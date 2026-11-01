@@ -95,6 +95,8 @@ const RECENT_IN_MENU: usize = 10;
 /// The projects a closing window is letting go of: their names and threads.
 type LettingGo = Vec<(String, std::thread::JoinHandle<()>)>;
 
+/// How long frames keep coming after a transport command, for the audio thread to take it at a large buffer.
+const ACTION_SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 /// How long a closing window waits for its projects' plug-ins to be let go of before it closes
 /// anyway ([`closing_dialog`]).
 const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -343,6 +345,8 @@ pub struct App {
     quit_now: bool,
     /// Projects whose state checks are still on control workers before the save prompt.
     quit_checks: Option<Vec<ProjectId>>,
+    /// Until when frames keep coming after the last transport command ran.
+    actions_settle: Option<std::time::Instant>,
     /// The window is closing: the projects being let go of and since when; it closes once they
     /// are, or after [`QUIT_WAIT`].
     quitting: Option<(std::time::Instant, LettingGo)>,
@@ -612,6 +616,7 @@ impl App {
             quit_confirmed: false,
             quit_now: false,
             quit_checks: None,
+            actions_settle: None,
             quitting: None,
             missing: crate::app::missing_files::MissingFiles::default(),
             remember_choice: false,
@@ -1082,12 +1087,15 @@ impl App {
     /// Play as the Play button and the play/stop key start it: from the start of the clip
     /// selected in the Arrangement view when the setting **Play from** says so (or `selected`
     /// asks for it whatever the setting), from the play start marker otherwise.
-    fn play_action(&self, selected: bool) -> Action {
+    fn play_action(&self) -> Action {
         // A clip an ARA plug-in edits plays from where its editor and a click set the position,
         // never from the clip's start (the plug-in's timeline is where the user points).
         // A click in the clip's body set where play starts; only a clip picked whole plays from
         // its start.
-        let clip = (selected || self.settings.play_from == PlayFrom::Clip)
+        // Picking clips clears the time selection, so one there now was painted after the pick:
+        // Play starts at it (#937).
+        let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1601,6 +1609,7 @@ impl App {
             PickField::BrowserFolder
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
+            | PickField::PluginFolder
             | PickField::BackgroundImage => None,
         };
         self.pick_request = Some(PickRequest { field, start });
@@ -1613,7 +1622,7 @@ impl App {
     }
 
     /// Puts a path chosen in the system's dialog where it was asked for: a setting, the save
-    /// prompt's folder, a project to open, or a folder for the browser.
+    /// prompt's folder, a project to open, a folder for the browser, or a plug-in folder.
     pub fn set_picked(&mut self, field: PickField, path: PathBuf) {
         let text = path.display().to_string();
         match field {
@@ -1626,6 +1635,12 @@ impl App {
                 if !self.settings.mcp_write_folders.contains(&text) {
                     self.settings.mcp_write_folders.push(text);
                 }
+            }
+            PickField::PluginFolder => {
+                // The folder goes in with the format the add row has chosen (Both, VST3 or CLAP).
+                let format = self.plugins.new_format;
+                self.plugin_request(PluginRequest::AddFolder(text, format));
+                return;
             }
             PickField::NamModelsFolder => self.settings.nam_models_folder = text,
             // A folder whose files move with it asks first.
@@ -2548,6 +2563,7 @@ impl App {
         // The frame's placed controls, for anchors between them (`--suhina-anchor-*`).
         let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
+        crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
     }
 
     fn ui_content(&mut self, ui: &mut Ui) {
@@ -2581,6 +2597,7 @@ impl App {
         );
         self.frame_trace.start();
         self.frame_trace.causes(ui.ctx());
+        crate::kit::widgets::release_value_drag(ui.ctx());
         // Closing: the dialog alone, so nothing of the window without its projects shows behind.
         if let Some((_, going)) = &self.quitting {
             let waiting: Vec<String> =
@@ -3214,22 +3231,24 @@ impl App {
                                     if rebuilt { "rebuilt" } else { "kept" },
                                 )
                             });
-                            // Clips picked while stopped, however (a click, a rectangle, Ctrl+A, a
+                            // Clips picked, however (a click, a rectangle, Ctrl+A, a
                             // paste): play starts from the first of them, as the setting says (#721).
+                            // A click on a name bar counts even when the clip was picked already.
+                            let clicked = std::mem::take(&mut self.arrangement.whole_clip_clicked);
                             let picked = self.arrangement.selected_clips();
-                            // Never for a clip an ARA plug-in edits: its editor and a click on
-                            // the clip set the position there.
-                            let ara = picked.iter().any(|(track, _)| session.ara_device(*track).is_some());
+                            // Not by itself for a clip an ARA plug-in edits, whose editor sets the
+                            // position; a click on its name bar asks for its start all the same.
+                            let keeps = |track: TrackId| clicked || session.ara_device(track).is_none();
                             // Nor for a clip picked by a click in its body: play starts where
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
-                            if picked != self.clips_before.as_slice()
-                                && (!self.settings.view.play_from_clip || ara || body)
-                            {
+                            let changed = clicked || picked != self.clips_before.as_slice();
+                            if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
-                            } else if picked != self.clips_before.as_slice() {
+                            } else if changed {
                                 let first = picked
                                     .iter()
+                                    .filter(|(track, _)| keeps(*track))
                                     .filter_map(|(track, id)| {
                                         timeline
                                             .lanes
@@ -3241,9 +3260,11 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
-                                if !timeline.running && first.is_finite() && (first - timeline.start_beat).abs() > 1e-9
-                                {
-                                    actions.push(Action::new("transport.setPosition", json!({ "beats": first })));
+                                if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
+                                    // While playing, playback goes on and the next start begins there.
+                                    let id =
+                                        if timeline.running { "transport.setStart" } else { "transport.setPosition" };
+                                    actions.push(Action::new(id, json!({ "beats": first })));
                                 }
                                 self.clips_before = picked.to_vec();
                             }
@@ -3424,6 +3445,18 @@ impl App {
         // is on screen without waiting for another click or pointer move.
         if self.revision != revision {
             ui.ctx().request_repaint();
+        }
+        // A transport command changes no revision, and the audio thread takes it at its next block:
+        // frames keep coming until then, so the play start marker it moved shows without waiting
+        // for the pointer to move.
+        let plays = self.session().and_then(Session::player).and_then(suhina_session::Player::output_info).is_some();
+        if plays && actions.iter().any(|action| action.id.starts_with("transport.")) {
+            self.actions_settle = Some(std::time::Instant::now() + ACTION_SETTLE);
+        }
+        if self.actions_settle.is_some_and(|until| std::time::Instant::now() < until) {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        } else {
+            self.actions_settle = None;
         }
         if grid.is_some_and(|g| {
             g.running || g.columns.iter().any(|c| c.stop_queued || c.slots.iter().any(|s| s.state == SlotState::Queued))

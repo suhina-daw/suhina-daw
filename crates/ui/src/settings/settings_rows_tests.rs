@@ -158,3 +158,34 @@ fn a_search_finds_a_setting_by_a_word_of_its_description_or_its_group() {
     assert!(by("headphones").contains(&"Headphone output"), "a word of the description");
     assert!(by("previews").contains(&"Preview selected file"), "the group's name");
 }
+
+/// The note under Editors is the one for this system; a system that can embed needs none.
+#[test]
+fn the_editors_note_is_the_one_for_this_system() {
+    assert_eq!(editors_note(true), None);
+    let expected = if cfg!(target_os = "macos") { EDITORS_NOTE_EMBED } else { EDITORS_NOTE_NONE };
+    assert_eq!(editors_note(false), Some(expected));
+}
+
+/// Both notes under Editors fit the row's one line, measured in the window's own fonts:
+/// a longer note is cut mid-word and read by nobody (the macOS note was, #999).
+#[test]
+fn the_editors_notes_fit_the_one_line_the_row_gives_them() {
+    let ctx = egui::Context::default();
+    crate::kit::theme::install(&ctx);
+    let font = crate::kit::theme::ui_font(crate::kit::theme::TEXT_SMALL);
+    let budget = crate::settings::settings_view::NOTE_WIDTH;
+    let mut over = Vec::new();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        for note in [EDITORS_NOTE_EMBED, EDITORS_NOTE_NONE] {
+            let width =
+                ui.fonts_mut(|f| f.layout_no_wrap(note.to_string(), font.clone(), egui::Color32::WHITE).size().x);
+            if width > budget {
+                over.push(format!("{note} — {width:.0} px of {budget:.0}"));
+            }
+        }
+    });
+    // No renderer here to apply the font texture the pass made.
+    out.textures_delta.clear();
+    assert!(over.is_empty(), "a note longer than the row's one line: {}", over.join("; "));
+}

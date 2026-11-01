@@ -1254,7 +1254,7 @@ fn slice_and_marker_edits_name_a_device_inside_a_group_by_its_path() {
     let from = Pos2::new(SampleView::default().x(0.25, field), 80.);
     let to = Pos2::new(SampleView::default().x(0.3, field), 80.);
     // A manual boundary moved.
-    let manual = with(&[("mode", 2.), ("slice_by", 3.), ("slice_1", 0.25)]);
+    let manual = with(&[("mode", 0.), ("playback", 3.), ("slice_by", 3.), ("slice_1", 0.25)]);
     let actions = pointer_gesture_at(&canvas, &manual, &at, from, Some(to), 1);
     assert!(actions.iter().any(|a| a.id == "device.setSampleSlices" && a.params["device"] == "2/0"), "{actions:?}");
     // The S marker dragged, then double-clicked back to its default.

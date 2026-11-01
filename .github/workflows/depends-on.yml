@@ -11,13 +11,15 @@ name: Depends on
 # this repository (`gh stack`) are ordered by their base branches instead and need no line; the line
 # is for a pull request from a fork, which cannot be stacked, or one that builds on an issue.
 #
-# It runs again when the description is edited, when commits are pushed (a stack is rebased after
-# the pull request below it merges), and in the merge queue, where it reads the description of the
-# pull request the queue is testing.
+# It is called from ci.yml as its `depends-on` job, so the `ci` check main requires goes red with it
+# on every push and in the merge queue, where it reads the description of the pull request the queue
+# is testing. A check of its own, which main did not require, could fail without stopping a merge.
+# It also runs on its own when the description is edited, so a `Depends on` line added or removed
+# shows at once; `ci` reads it again on the next push, and the queue always does.
 on:
+  workflow_call:
   pull_request:
-    types: [opened, edited, reopened, synchronize, ready_for_review]
-  merge_group:
+    types: [edited]
 
 permissions:
   contents: read
@@ -28,7 +30,7 @@ jobs:
   depends-on:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v9
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             // At most this many lines are read: more is a mistake, not a plan.

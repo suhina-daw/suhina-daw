@@ -120,15 +120,16 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     );
 }
 
-/// A graph's parameter list, its node list and its canvas in `body`, scrolled when they do not
-/// fit: a `.sd` device's, a built-in's (its layout or the generated list) and a plug-in's
-/// generated list. A list without a canvas is a compact panel's width wherever it is, and a
-/// narrower `body` scrolls it (ADR 0021 › Amendment: device panels, 5); stock controls under a
-/// canvas take `body`'s width. Every change is one `device.setParam`.
+/// A graph's node list, then its canvas and parameter list side by side in `body`: a `.sd`
+/// device's, a built-in's (its layout or the generated list) and a plug-in's generated list. The
+/// list fills columns a compact panel wide, `list_height` tall, right of the canvas (ADR 0021 ›
+/// Amendment: device panels, 5); a `body` smaller than that scrolls. Every change is one
+/// `device.setParam`.
 pub(super) fn graph_controls(
     ui: &mut Ui,
     body: Rect,
     graph: &GraphBox,
+    list_height: f32,
     track: TrackId,
     at: &DeviceAt,
     actions: &mut Vec<Action>,
@@ -138,31 +139,32 @@ pub(super) fn graph_controls(
         ui.set_clip_rect(ui.clip_rect().intersect(body));
         egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("sd-controls", track.0, at)).show(ui, |ui| {
             let hidden = graph.canvas.as_ref().map_or(&[][..], |c| c.hidden_parameters.as_slice());
-            // The generated list keeps its own width in any column, unless the theme sizes the
-            // panel (`.device { width }`): then it follows the panel, its scroll bar aside.
+            // A list keeps a compact panel's width unless the theme sizes the panel
+            // (`.device { width }`): then it follows the panel, its scroll bar aside.
             let themed = crate::kit::style_class::computed().is_some_and(|c| c.width.is_some());
-            let width = match (&graph.canvas, themed) {
-                (Some(_), _) => body.width(),
-                (None, true) => (body.width() - 8.0).max(120.0),
-                (None, false) => COMPACT_WIDTH,
-            };
-            let cells = parameter_layout(&graph.parameters, width, hidden);
+            let width = if graph.canvas.is_none() && themed { (body.width() - 8.0).max(120.0) } else { COMPACT_WIDTH };
+            let mut cells = list_cells(graph, width, list_height);
             let custom_size = graph
                 .canvas
                 .as_ref()
                 .map_or(Vec2::ZERO, |c| crate::detail::device_canvas::fitted_size(c, body.height()));
             let nodes_height = graph.nodes.len() as f32 * NODE_ROW;
-            let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), 0.0), |size, rect| {
+            let extent = cells.iter().fold(Vec2::new(body.width().max(custom_size.x), custom_size.y), |size, rect| {
                 Vec2::new(size.x.max(rect.right()), size.y.max(rect.bottom()))
             });
-            let (_, body) = ui.allocate_space(Vec2::new(extent.x, extent.y + nodes_height + custom_size.y));
+            let separators = if list_spreads(graph) { spread_columns(&mut cells, width) } else { Vec::new() };
+            let gaps = separators.len() as f32 * super::LIST_GAP;
+            let (_, body) = ui.allocate_space(Vec2::new(extent.x + gaps, extent.y + nodes_height));
             let painter = &ui.painter_at(body.intersect(ui.clip_rect()));
             node_rows(painter, body, graph);
             if let Some(canvas) = &graph.canvas {
                 let rect = Rect::from_min_size(body.min + Vec2::new(0.0, nodes_height), custom_size);
                 crate::detail::device_canvas::show(ui, rect, canvas, &graph.parameters, track, at, actions);
             }
-            let origin = Vec2::new(body.left(), body.top() + nodes_height + custom_size.y);
+            let origin = Vec2::new(body.left(), body.top() + nodes_height);
+            for x in &separators {
+                painter.vline(origin.x + x, body.y_range(), theme::hairline(theme::border_strong()));
+            }
             for (parameter, cell) in graph.parameters.iter().filter(|p| !hidden.contains(&p.id)).zip(&cells) {
                 parameter_cell(ui, painter, cell.translate(origin), parameter, track, at, actions);
             }

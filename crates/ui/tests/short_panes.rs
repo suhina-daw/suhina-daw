@@ -519,7 +519,7 @@ fn a_device_row_alone_is_open_at_full_height_or_closed() {
     let header = h.get_by_label("Track Keys").rect();
     click(&mut h, pos2(header.left() + 30.0, header.center().y));
     // Down to a short area: the row stays whole, never cut to an in-between height.
-    pull_to(&mut h, bottom - 80.0);
+    pull_to(&mut h, bottom - 150.0);
     let kept = bottom - splitter(&h).bottom();
     assert!((kept - 200.0).abs() < 1.5, "the device row keeps its full height: {kept}");
     pull_to(&mut h, bottom - 400.0);
