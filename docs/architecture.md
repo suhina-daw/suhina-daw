@@ -72,7 +72,8 @@ Within layer 2, `session` uses `library`, `soundmap` and `media`; `library` and 
 `media`; and `media` uses neither. `separation` sits beside them and uses none of them yet; the
 session will hold it and `media` will write its stems (planned, #146). The built-in effects and instruments sit apart: `dsp`,
 `device-api` and `device-sdk` depend on no Suhina runtime crate, and each device crate under
-`devices/` depends only on `dsp` and `device-api` ([ADR 0004](decisions/0004-built-in-devices.md)).
+`devices/` depends only on `dsp`, `device-api` and, for the SDK's widgets and runtimes,
+`device-sdk` ([ADR 0004](decisions/0004-built-in-devices.md) › 1).
 The engine runs them in chains on tracks, made through `device-registry`.
 
 The sampler in `devices/sampler` uses the shared SDK sample runtime and SDK UI
