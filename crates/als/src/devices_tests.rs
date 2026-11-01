@@ -242,6 +242,71 @@ fn delay_steps_outside_their_lists_are_left_out() {
     assert_eq!(warnings.len(), 1, "{warnings:?}");
 }
 
+/// Live's Saturator with every value away from its default, as the calibration set of the
+/// device notes stores it.
+const SATURATOR_CHANGED: [(&str, &str); 18] = [
+    ("PreDrive", "-14.4"),
+    ("PreDcFilter", "true"),
+    ("Type", "1"),
+    ("ColorOn", "false"),
+    ("BaseDrive", "-14.4"),
+    ("ColorFrequency", "206.1277004"),
+    ("ColorWidth", "0.7"),
+    ("ColorDepth", "1"),
+    ("PostClip", "1"),
+    ("PostDrive", "-1"),
+    ("DryWet", "0"),
+    ("BassShaperThreshold", "-49"),
+    ("WsDrive", "0"),
+    ("WsLin", "0.3"),
+    ("WsCurve", "0.7"),
+    ("WsDamp", "1"),
+    ("WsPeriod", "1"),
+    ("WsDepth", "1"),
+];
+
+#[test]
+fn saturator_takes_every_parameter_in_our_units() {
+    let xml: String = SATURATOR_CHANGED.iter().map(|(name, value)| manual_xml(name, value)).collect();
+    let (id, params, warnings) = mapped("Saturator", &xml);
+    assert_eq!(id, "saturator");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(params.len(), 18);
+    let expected = [
+        ("drive", -14.4),
+        ("dcFilter", 1.0),
+        ("type", 1.0),
+        ("color", 0.0),
+        // -14.4 dB of the shelf's 36 is -40 %; 1 dB of the bell's 24 is about 4.2 %.
+        ("colorLow", -0.4),
+        ("colorFrequency", 206.1277004),
+        ("colorWidth", 0.7),
+        ("colorHigh", 1.0 / 24.0),
+        ("postClip", 1.0),
+        ("output", -1.0),
+        ("mix", 0.0),
+        ("threshold", -49.0),
+        ("shaperDrive", 0.0),
+        ("shaperLinear", 0.3),
+        ("shaperCurve", 0.7),
+        ("shaperDamp", 1.0),
+        ("shaperPeriod", 1.0),
+        ("shaperDepth", 1.0),
+    ];
+    for (id, value) in expected {
+        let got = param(&params, id);
+        assert!((got - value).abs() < 1e-9, "{id}: {got} against {value}");
+    }
+}
+
+#[test]
+fn saturator_steps_outside_their_lists_are_left_out() {
+    let xml = manual_xml("Type", "8") + &manual_xml("PostClip", "-1") + &manual_xml("PreDrive", "loud");
+    let (_, params, warnings) = mapped("Saturator", &xml);
+    assert!(params.is_empty(), "{params:?}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+}
+
 /// The parameters and warnings `builtin` maps from a `MidiPitcher` element holding `inner`,
 /// checked to land on Suhina's pitch effect.
 fn pitch_from(inner: &str) -> (Vec<DeviceParam>, Vec<String>) {

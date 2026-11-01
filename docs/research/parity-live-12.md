@@ -75,7 +75,7 @@ documentation and UI). The scope decision it leads to is
 | Same, over the scope the roadmap aims at (also without accessibility) | **about 32 %** |
 | Weighting each chapter by its numbered sections instead of its pages | **17 %** (the two weightings agree) |
 | Numbered manual sections | **344**, of which **111 (32 %)** sit in chapters Suhina has not started at all |
-| Built-in devices | **11** (9 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
+| Built-in devices | **12** (10 effects, 1 MIDI effect, 1 instrument) against Live's 63 (42 audio effects, 8 MIDI effects, 13 instruments) |
 | Commands | **273**, every one reachable from the UI, the CLI and MCP |
 | Still absent as whole features | MPE, Grooves, Tuning, Comping, Racks, Clip Envelopes, Push, Link, video, accessibility |
 <!-- parity:end -->
@@ -155,7 +155,7 @@ documented behaviour that exists today.
 | 26 | Automation and Editing Envelopes | 22 | 58 % | partial | Envelopes for track volume, pan and mute, built-in, .sd and plug-in device parameters: breakpoints with curved segments and jumps, saved, played in playback and renders (64-frame steps, ramped mixer gains), a manual change turning a lane off until re-enabled. Lanes under each track in the Arrangement: a parameter chooser with a search, the automated parameters first, devices and parameter groups folded under headings, points added, moved on the grid, selected and moved or deleted together, curves bent by dragging, re-enabled from the lane, a click near the line adding a point on it, a faint line at the value of a lane without points; a time range painted on a lane copied, pasted onto any lane, duplicated right after itself and deleted, and shapes inserted into it (sine, triangle, saws, square, ramps, curves, swell) with a depth and cycles a bar, live while dragged, into a point's segment from its menu or as the shape new points take; a curve handle half-way along each segment; a click adds a point on the line (anywhere, as a setting); a range's points scaled live, their corners and jumps rounded into curves or thinned to fewer bent segments, the arrows moving selected points; the automation under a clip moving, copying and duplicating with it, a box from a track picking its lanes' points. Missing recording, drawing with a pencil, plug-in lanes in the view, send, master and tempo automation, locking. |
 | 27 | Clip Envelopes | 13 | 0 % | absent | No clip envelopes. |
 | 28 | Working with Video | 6 | 0 % | absent | No video import or window. |
-| 29 | Live Audio Effect Reference | 139 | 21 % | partial | Suhina has 10 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, compressor, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, several others are close in kind but far narrower in parameters and modes. |
+| 29 | Live Audio Effect Reference | 139 | 21 % | partial | Suhina has 11 effects (utility, auto-pan, eight-band EQ, three-band DJ EQ, vinyl distortion, overdrive, saturator, compressor, limiter, delay, reverb) against 42 documented audio effects; the EQ, delay and reverb take every parameter of their counterparts, the saturator all but Hi-Quality, several others are close in kind but far narrower in parameters and modes. |
 | 30 | Live MIDI Effect Reference | 13 | 10 % | started | One built-in MIDI effect, pitch: semitones or scale degrees with the clip's scale, and a key window that blocks, folds or limits notes; its step buttons are planned. SDK MIDI-effect graphs run before the instrument too. The other 7 documented MIDI effects are missing. |
 | 31 | Live Instrument Reference | 120 | 12 % | started | FM synth and single-source sample/granular instrument against 13 instruments; graphical envelope stages with cumulative timing and directly draggable points, persistent waveform with grouped granular controls and a shared six-shape pitch/filter/volume/pan LFO with Random, Hz/time/beat-synced rates, independent source and loop-edge fades and tempo-synchronised sample Warp using editable original BPM; five pitch-preserving modes currently share one stretcher; no multisample zones, drum sampler, wavetable, subtractive or physical modelling yet. |
 | 32 | Max for Live | 6 | 5 % | planned | ADR 0021 defines data-only .sd graphs with a Rust SDK, DSP runtime and custom UI nodes; typed sample resources, polyphonic voice/grain subgraphs, slicing, stretch and versioned components are executable through the Rust host API; visual graph editing is planned. Imported Max devices remain placeholders; no Max runtime. |
@@ -197,10 +197,10 @@ last table in this section.
 <!-- parity:begin device-counts -->
 | | Live 12 | Suhina equivalent exists | Suhina plans one (ROADMAP) | No counterpart named |
 |---|---|---|---|---|
-| Audio effects | 42 | 12 | 7 | 23 |
+| Audio effects | 42 | 13 | 6 | 23 |
 | MIDI effects | 8 | 1 | 0 | 7 |
 | Instruments | 13 | 2 | 8 | 3 |
-| **All** | **63** | **15** | **15** | **33** |
+| **All** | **63** | **16** | **14** | **33** |
 <!-- parity:end -->
 
 <!-- parity:begin device-none -->
@@ -226,7 +226,7 @@ does not name (Meld, Electric, Impulse, External Instrument).
 | Chorus-Ensemble | 29.8 | chorus and ensemble | none |  |
 | Compressor | 29.9 | compressor | equivalent | Suhina compressor (stereo-linked, soft knee, side-chain high-pass, dry/wet) |
 | Corpus | 29.10 | resonant body | none |  |
-| Delay | 29.11 | delay | equivalent | Suhina delay takes every panel parameter (sync, offsets, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze) |
+| Delay | 29.11 | delay | equivalent | Suhina delay takes every panel parameter except Hi-Quality (sync, offsets, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze) |
 | Drum Buss | 29.12 | drum bus processor | none | the compressor is a plain compressor; ROADMAP's bus compressor is a different device |
 | Dynamic Tube | 29.13 | tube saturation | none |  |
 | Echo | 29.14 | modulation delay | planned | ROADMAP: delays |
@@ -249,7 +249,7 @@ does not name (Meld, Electric, Impulse, External Instrument).
 | Resonators | 29.31 | tuned resonators | none | the planned physical-modelling work is an instrument, not this effect |
 | Reverb | 29.32 | algorithmic reverb | equivalent | Suhina reverb takes every panel parameter (input band, early reflections, damped network, chorus, freeze, stereo) |
 | Roar | 29.33 | multistage saturation | planned | ROADMAP: multi-stage saturation |
-| Saturator | 29.34 | waveshaping saturation | planned | ROADMAP: multi-stage saturation; Suhina's overdrive is a single stage |
+| Saturator | 29.34 | waveshaping saturation | equivalent | Suhina saturator takes every panel parameter (eight curves, Bass Threshold, Color low and high bells with their inverse, post clip, waveshaper, DC filter); always oversampled four times |
 | Shifter | 29.35 | pitch and frequency shifter | none |  |
 | Spectral Resonator | 29.36 | spectral resonator | none |  |
 | Spectral Time | 29.37 | spectral delay | none |  |
@@ -312,6 +312,7 @@ placeholders. None of them run today.
 | eq | effect | eight bands, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q (84 parameters) |
 | vinyl-distortion | effect | tracing, pinch, crackle, oversampled (12 parameters) |
 | overdrive | effect | pedal-style: band, drive, tone, dynamics, dry/wet (7 parameters) |
+| saturator | effect | eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet; oversampled (18 parameters) |
 | compressor | effect | stereo-linked, soft knee, side-chain high-pass, dry/wet (9 parameters) |
 | limiter | effect | brickwall, 1.5 ms lookahead (3 parameters) |
 | delay | effect | stereo, synced or free, filter in the loop, LFO, Repitch/Fade/Jump, ping-pong, freeze (27 parameters) |

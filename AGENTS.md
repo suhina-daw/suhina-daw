@@ -44,7 +44,12 @@ the documents that match your task.
 6. **Everything is a command.** User-visible behaviour is a command in the engine with an id,
    params and tests. The UI, CLI and MCP all dispatch the same commands.
 7. **Tests are the gate.** Every change comes with tests: round-trip and malformed-input tests for
-   formats, golden-file renders for DSP and engine behaviour.
+   formats, golden-file renders for DSP and engine behaviour. A test never depends on timing: no
+   `sleep` to give a thread time, no wall-clock deadline or elapsed-time bound, no polling loop
+   that waits for another thread, no result that depends on the order threads run in. CI runners
+   are slow and uneven, and such a test fails there once in a while and teaches everyone to
+   re-run the job. Render a fixed number of frames with `process`, use a fake clock, or wait
+   on an explicit signal (a barrier such as `Session::sync_recording`, a channel, a join).
 8. **Build every device's panel on the SDK, and its DSP from shared blocks.** Every built-in MIDI
    effect, instrument and audio effect is native code, never an `.sd` graph, and gets its panel
    from the `device-sdk` UI system: the generated parameter list, or a layout (the `.sd` UI part
@@ -73,8 +78,10 @@ the documents that match your task.
    import"), never as Suhina's own branding.
 10. **GPL-compatible dependencies only.** Suhina is GPL-3.0-or-later. Dependencies must be
    compatible with GPLv3: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0. Not GPL-2.0-only,
-   not proprietary or "non-commercial" licences. CI checks it with `cargo-deny`
-   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`); run `cargo deny check` before adding
+   not proprietary or "non-commercial" licences. The `ci` check runs `cargo-deny`
+   ([`deny.toml`](deny.toml), `.github/workflows/deny.yml`, called from `ci.yml`; `deny.toml` has a
+   code owner, so the pull request that adds a dependency is not the one that permits its
+   licence); run `cargo deny check` before adding
    or updating a dependency ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
 11. **No links to private agent sessions.** The repository is public. Never put a link to an
     agent's own session (such as `https://claude.ai/code/session_...`) in a commit message, a pull
@@ -136,6 +143,7 @@ devices/
   eq       eight bands (cuts, shelves, bells, notch) on state-variable filters, two curves: Stereo, L/R, M/S
   vinyl-distortion  tracing (even), pinch (odd, out of phase) and crackle, oversampled
   overdrive  pedal-style: band, drive, tone, dynamics, dry/wet; oversampled
+  saturator  eight curves, Color filters and their inverse, post clip, waveshaper; oversampled
   compressor stereo-linked, soft knee, side-chain high-pass, attack/release, dry/wet
   fm-synth six operators, 32 algorithms, DX7 voice files; the engine is a port of MSFA (Apache-2.0)
   limiter  brickwall peak limiter with 1.5 ms lookahead; never over the ceiling

@@ -180,19 +180,27 @@ fn running(pid: u32) -> bool {
     sent == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
 }
 
+/// Windows keeps an exited process's object, and `OpenProcess` still opens it, while any handle
+/// to it is open (its parent's, a tool's, an antivirus'), so an open handle alone does not mean
+/// it runs: its exit code must still be `STILL_ACTIVE` (#958). A process that ended with exit code
+/// 259 itself reads as running, which only keeps its files a while longer.
 #[cfg(windows)]
 fn running(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, GetLastError};
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
     // SAFETY: asks for a handle with the least access; nothing is passed by pointer.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
         // SAFETY: reads this thread's last error, set by the call above.
         return unsafe { GetLastError() } != ERROR_INVALID_PARAMETER;
     }
+    let mut code = 0u32;
+    // SAFETY: a handle with PROCESS_QUERY_LIMITED_INFORMATION, which GetExitCodeProcess needs, and
+    // a pointer to a local it writes once.
+    let read = unsafe { GetExitCodeProcess(handle, &mut code) } != 0;
     // SAFETY: the handle OpenProcess returned, closed once.
     unsafe { CloseHandle(handle) };
-    true
+    !read || code == STILL_ACTIVE as u32
 }
 
 #[cfg(not(any(unix, windows)))]
