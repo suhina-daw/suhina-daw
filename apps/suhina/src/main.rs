@@ -496,7 +496,7 @@ impl Window {
             self.remember(&path);
         }
         if let Some(request) = self.app.take_pick_request()
-            && let Some(path) = pick(&request)
+            && let Some(path) = pick(&request, frame)
         {
             self.app.set_picked(request.field, path);
         }
@@ -861,9 +861,9 @@ impl Window {
 
 /// `"<what> <file>"`, and the file shown in the file manager.
 /// Shows the system's file or folder dialog `request` asks for; `None` when it was cancelled.
-/// It waits on the main thread, as macOS requires, while the window stays behind it.
-fn pick(request: &suhina_ui::interaction::pick::PickRequest) -> Option<PathBuf> {
-    let mut dialog = rfd::FileDialog::new().set_title(request.field.title());
+/// It waits on the main thread, as macOS requires, and stays above the window, which owns it.
+fn pick(request: &suhina_ui::interaction::pick::PickRequest, frame: &eframe::Frame) -> Option<PathBuf> {
+    let mut dialog = rfd::FileDialog::new().set_title(request.field.title()).set_parent(frame);
     if let Some(start) = request.start.as_ref().filter(|s| s.is_dir()) {
         dialog = dialog.set_directory(start);
     }

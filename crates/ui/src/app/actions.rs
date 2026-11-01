@@ -158,9 +158,8 @@ impl App {
             }
             "transport.toggle" => {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
-                actions.push(if running { self.stop_action() } else { self.play_action(false) });
+                actions.push(if running { self.stop_action() } else { self.play_action() });
             }
-            "transport.playFromSelection" => actions.push(self.play_action(true)),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
                 let clip = match self.shown {
@@ -653,7 +652,7 @@ impl App {
                 }
             }
             "selection.selectAll" => {
-                let clips: Vec<(TrackId, ClipId)> = self
+                let lanes: Vec<arrangement_view::LaneClips> = self
                     .session()
                     .map(|session| {
                         session
@@ -661,12 +660,14 @@ impl App {
                             .arrangement
                             .lanes
                             .iter()
-                            .filter_map(|lane| lane.track.map(|track| (track, &lane.clips)))
-                            .flat_map(|(track, clips)| clips.iter().map(move |clip| (track, clip.id)))
+                            .filter_map(|lane| {
+                                let clips = lane.clips.iter().map(|c| (c.id, c.start, c.start + c.length)).collect();
+                                lane.track.map(|track| (track, clips))
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
-                self.arrangement.select_clips(clips);
+                self.arrangement.select_all_clips(&lanes);
             }
             "selection.paste"
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>

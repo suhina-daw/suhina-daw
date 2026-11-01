@@ -286,6 +286,67 @@ fn settings_add_and_remove_plugin_folders_and_scan_in_the_background() {
 }
 
 #[test]
+fn add_plugin_folder_opens_the_pickers_dialog_when_nothing_is_typed() {
+    use suhina_ui::interaction::pick::PickField;
+    let base = std::env::temp_dir().join(format!("suhina-ui-plugin-pick-{}", std::process::id()));
+    let folder = base.join("picked plug-ins");
+    std::fs::create_dir_all(&folder).unwrap_or_else(|e| panic!("{e}"));
+    let library = suhina_plugins::library::Library::new(Some(base.join("settings")), base.join("no-such-host"))
+        .without_standard_folders();
+    let mut app = App::with_library(library);
+    app.set_session(Session::new(demo_project()), &[]);
+    let mut harness = window(app);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: Plug-ins").click();
+    harness.run();
+
+    // Nothing typed: Add asks for the system's folder dialog instead of doing nothing. The
+    // format the row has chosen (CLAP here) goes with what the picker brings back.
+    harness.get_by_label("Folder format: CLAP").click();
+    harness.run();
+    harness.get_by_label("Add plug-in folder").click();
+    harness.run();
+    assert_eq!(harness.state_mut().take_pick_request().map(|r| r.field), Some(PickField::PluginFolder));
+    assert!(harness.query_all_by_label_contains("Remove ").count() == 0, "nothing was added yet");
+
+    // What the picker brings back is added through `plugin.addFolder` with the format chosen.
+    harness.state_mut().set_picked(PickField::PluginFolder, folder.clone());
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 1, "the picked folder is listed");
+    match harness.state().status() {
+        Status::Hint(message) => assert!(message.contains(&folder.display().to_string()), "{message}"),
+        other => panic!("expected the added folder to be confirmed, got {other:?}"),
+    }
+    use suhina_plugins::scan::FolderFormat;
+    let list = harness.state_mut().projects_mut().library_mut().folder_list();
+    let added: Vec<(std::path::PathBuf, FolderFormat)> =
+        list.iter().filter(|f| !f.standard).map(|f| (f.path.clone(), f.format)).collect();
+    // The library keeps the folder canonical, so `/var/…` is `/private/var/…` on macOS, and
+    // without Windows' extended-length prefix (Library::add_folder_as keeps it the same way).
+    let kept = folder.canonicalize().map(suhina_plugins::library::plain).unwrap_or_else(|_| folder.clone());
+    assert_eq!(added, [(kept, FolderFormat::Clap)], "the picked folder keeps the format chosen");
+
+    // The same folder with the same format again adds nothing, and the status says so.
+    harness.state_mut().set_picked(PickField::PluginFolder, folder.clone());
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 1, "no second row");
+    match harness.state().status() {
+        Status::Hint(message) => assert!(message.contains("already in the list"), "{message}"),
+        other => panic!("expected the folder to be named as there already, got {other:?}"),
+    }
+
+    // And it can be removed again.
+    harness.get_by_label_contains("Remove ").click();
+    harness.run();
+    harness.run();
+    assert_eq!(harness.query_all_by_label_contains("Remove ").count(), 0);
+    let _cleanup = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn a_key_set_in_settings_runs_its_action_and_is_saved() {
     let mut harness = window(demo_app());
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);

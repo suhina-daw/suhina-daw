@@ -74,6 +74,10 @@ jobs:
       # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml), not checked here.
       - name: Front matter and covered paths
         run: python3 scripts/docs.py check
+      # What the updater installs and runs comes from this repository (updater-source.yml runs the
+      # same check from main, where a pull request cannot edit it).
+      - name: The updater downloads from this repository
+        run: python3 scripts/updater_source.py
       - name: Script tests (release notes)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
       # The claim bot writes to the project board, so a wrong branch would not fail anything else:

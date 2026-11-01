@@ -24,6 +24,10 @@ const SIDEBAR_ROW: f32 = 20.0;
 /// The search field over the list of pages.
 const SEARCH_FIELD: f32 = 18.0;
 const LABEL_WIDTH: f32 = 180.0;
+/// The width a row's note has: the page's width less the name column, one line of small text
+/// (a test guard measures the notes against it; a smaller window cuts a note).
+#[cfg(test)]
+pub(crate) const NOTE_WIDTH: f32 = PAGE_WIDTH - LABEL_WIDTH;
 const SETTING_ROW: f32 = 34.0;
 /// Where every setting's control starts: names in one column and controls in the next, lined
 /// up down the page, so the eye runs straight down either.
@@ -160,6 +164,8 @@ pub enum PluginRequest {
         all: bool,
     },
     AddFolder(String, suhina_plugins::scan::FolderFormat),
+    /// The add row with nothing typed: the app shows the system's folder picker.
+    PickFolder,
     RemoveFolder(String),
     /// Switch a folder on or off for scans.
     SetFolderEnabled(String, bool),
@@ -1986,7 +1992,8 @@ fn plugin_folders(
             }
         }
     }
-    // A folder to add, and the format it holds: VST2 shows, for when it is hosted.
+    // A folder to add, and the format it holds: VST2 shows, for when it is hosted. Add with
+    // nothing typed asks for the system's folder picker instead.
     *y += 4.0;
     let r = line(y, 20.0);
     let add = Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top()), r.max);
@@ -2044,8 +2051,14 @@ fn plugin_folders(
     painter.fill_background(add, 0.0, fill);
     widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if (response.clicked() || entered) && !plugins.new_folder.trim().is_empty() {
-        request = Some(PluginRequest::AddFolder(plugins.new_folder.trim().to_string(), plugins.new_format));
+    if response.clicked() || entered {
+        // Nothing typed: the system's folder picker, so Add always does something.
+        let folder = plugins.new_folder.trim();
+        request = if folder.is_empty() {
+            Some(PluginRequest::PickFolder)
+        } else {
+            Some(PluginRequest::AddFolder(folder.to_string(), plugins.new_format))
+        };
     }
     *y += 8.0;
     request

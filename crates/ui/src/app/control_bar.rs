@@ -207,7 +207,7 @@ impl App {
             let play_style = crate::kit::style_class::enter_named_response("button", "play", &response);
             crate::kit::native_css::mark(crate::kit::native_css::HostState::Playing, grid.running);
             if response.clicked() {
-                actions.push(self.play_action(false));
+                actions.push(self.play_action());
             }
             let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
             let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
