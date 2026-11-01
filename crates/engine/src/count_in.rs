@@ -32,7 +32,7 @@ impl Renderer {
     /// Counts `beats` beats (bars of `bar_beats`) before the transport starts; a transport that
     /// runs already keeps running, and a count of nothing starts it at once.
     pub(crate) fn start_count_in(&mut self, beats: f64, bar_beats: f64) {
-        if self.running {
+        if self.transport.running {
             return;
         }
         let beats = if beats.is_nan() { 0.0 } else { beats.clamp(0.0, MAX_COUNT_IN_BEATS) };
@@ -45,19 +45,19 @@ impl Renderer {
         let mut click = Metronome::new(self.sample_rate);
         click.set(true, Some(self.metronome.gain()));
         let bar_beats = if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 };
-        self.count_in = Some(CountIn { left: frames.round() as u64, beat: -beats, step, bar_beats, click });
+        self.transport.count_in = Some(CountIn { left: frames.round() as u64, beat: -beats, step, bar_beats, click });
         self.publish_count_in();
     }
 
     /// Frames until a count-in that counts starts the transport.
     pub(crate) fn frames_to_count_in_end(&self) -> Option<usize> {
-        self.count_in.map(|c| usize::try_from(c.left).unwrap_or(usize::MAX))
+        self.transport.count_in.map(|c| usize::try_from(c.left).unwrap_or(usize::MAX))
     }
 
     /// Starts the transport when the count-in has counted its last frame.
     pub(crate) fn end_count_in(&mut self) {
-        if self.count_in.is_some_and(|c| c.left == 0) {
-            self.count_in = None;
+        if self.transport.count_in.is_some_and(|c| c.left == 0) {
+            self.transport.count_in = None;
             self.start_transport();
         }
         self.publish_count_in();
@@ -65,7 +65,7 @@ impl Renderer {
 
     /// The count-in's click for this frame, moving the count on; 0 when none counts.
     pub(crate) fn count_in_frame(&mut self) -> f32 {
-        let Some(count) = self.count_in.as_mut().filter(|c| c.left > 0) else { return 0.0 };
+        let Some(count) = self.transport.count_in.as_mut().filter(|c| c.left > 0) else { return 0.0 };
         let bar = count.bar_beats;
         let sample = count.click.frame(true, count.beat, |index| {
             let into = (index as f64).rem_euclid(bar);
@@ -78,13 +78,13 @@ impl Renderer {
 
     /// Ends a count-in without starting anything (the transport stopped or started).
     pub(crate) fn cancel_count_in(&mut self) {
-        self.count_in = None;
+        self.transport.count_in = None;
         self.publish_count_in();
     }
 
     /// Tells the controller the beats the count-in still counts.
     pub(crate) fn publish_count_in(&self) {
-        let left = self.count_in.map_or(0.0, |c| c.left as f64 * c.step);
+        let left = self.transport.count_in.map_or(0.0, |c| c.left as f64 * c.step);
         self.graph.launcher.monitor.count_in.store(left.to_bits(), Ordering::Relaxed);
     }
 }

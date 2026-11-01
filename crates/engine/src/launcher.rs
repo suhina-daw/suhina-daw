@@ -640,14 +640,14 @@ struct SlotPlan {
 
 /// A clip that is playing or fading out.
 #[derive(Debug, Clone, Copy)]
-struct Playing {
+pub(crate) struct Playing {
     slot: usize,
     elapsed_beats: f64,
     elapsed_frames: f64,
     last_clip_beat: f64,
     next_note: usize,
     /// Frames of fade-out left, while stopping.
-    fade_left: f64,
+    pub(crate) fade_left: f64,
     /// Whether this playback uses the clip's stretch voices; it stops using them for good when
     /// the tempo changes.
     stretched: bool,
@@ -656,19 +656,19 @@ struct Playing {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Pending {
-    at_beat: f64,
+pub(crate) struct Pending {
+    pub(crate) at_beat: f64,
     action: Queued,
     /// The next launch of a clip in repeat mode while its button is held, which the release
     /// takes back.
     repeat: bool,
 }
 
-struct Column {
+pub(crate) struct Column {
     slots: Vec<SlotPlan>,
-    playing: Option<Playing>,
-    fading: Option<Playing>,
-    pending: Option<Pending>,
+    pub(crate) playing: Option<Playing>,
+    pub(crate) fading: Option<Playing>,
+    pub(crate) pending: Option<Pending>,
     /// The slot whose launch button is held down, when its clip listens for the release (gate
     /// and repeat modes).
     held: Option<usize>,
@@ -677,7 +677,7 @@ struct Column {
 }
 
 pub(crate) struct Launcher {
-    columns: Vec<Column>,
+    pub(crate) columns: Vec<Column>,
     scene_tempos: Vec<Option<f64>>,
     scene_signatures: Vec<Option<TimeSignature>>,
     quantization: Quantization,
@@ -687,12 +687,12 @@ pub(crate) struct Launcher {
     project_signature: TimeSignature,
     bar_beats: f64,
     /// The beat bars are counted from: where a scene last changed the time signature.
-    bar_origin: f64,
+    pub(crate) bar_origin: f64,
     /// Bars played before `bar_origin`.
-    bars_before: f64,
+    pub(crate) bars_before: f64,
     /// A scene's time signature waiting for its launch beat.
-    pending_signature: Option<(f64, TimeSignature)>,
-    beat: f64,
+    pub(crate) pending_signature: Option<(f64, TimeSignature)>,
+    pub(crate) beat: f64,
     tempo_bpm: f64,
     /// The project's start tempo, which stretch voices are prepared for.
     project_tempo_bpm: f64,
@@ -700,10 +700,10 @@ pub(crate) struct Launcher {
     map: Arc<TempoMap>,
     meter: Meter,
     /// The clock runs on the map; a scene tempo takes it off the map until the map is edited.
-    follows_map: bool,
-    pending_tempo: Option<(f64, f64)>,
+    pub(crate) follows_map: bool,
+    pub(crate) pending_tempo: Option<(f64, f64)>,
     frames_per_beat_at_build: f64,
-    stop_fade_frames: f64,
+    pub(crate) stop_fade_frames: f64,
     pub(crate) monitor: Arc<LauncherMonitor>,
     control: Option<rtrb::Consumer<LaunchCommand>>,
     random: Random,
@@ -881,7 +881,7 @@ impl Launcher {
     }
 
     /// Puts the tempo at the clock's beat, when the clock follows the map.
-    fn tempo_from_map(&mut self) {
+    pub(crate) fn tempo_from_map(&mut self) {
         if self.follows_map {
             self.tempo_bpm = self.map.bpm_at(self.beat);
         }
@@ -926,7 +926,7 @@ impl Launcher {
 
     /// Puts the clock back on the tempo map: the tempo and the bars are the map's again, and a
     /// scene's tempo or time signature still waiting for its beat is dropped. Never allocates.
-    fn follow_map(&mut self) {
+    pub(crate) fn follow_map(&mut self) {
         self.follows_map = true;
         self.pending_tempo = None;
         self.pending_signature = None;
@@ -939,7 +939,7 @@ impl Launcher {
 
     /// The beat a launch issued now happens at. Bars are counted from where the time signature
     /// last changed; note values from beat 0.
-    fn launch_beat(&self) -> f64 {
+    pub(crate) fn launch_beat(&self) -> f64 {
         self.launch_beat_on(self.quantization)
     }
 
@@ -1034,7 +1034,7 @@ impl Launcher {
         }
     }
 
-    fn publish(&self) {
+    pub(crate) fn publish(&self) {
         let m = &self.monitor;
         m.beat.store(self.beat.to_bits(), Ordering::Relaxed);
         m.tempo.store(self.tempo_bpm.to_bits(), Ordering::Relaxed);
@@ -1251,19 +1251,21 @@ impl Renderer {
     pub fn handle(&mut self, command: LaunchCommand) {
         match command {
             LaunchCommand::Play => {
-                if !self.running && self.start_waiting.is_none() {
+                if !self.transport.running && self.transport.start_waiting.is_none() {
                     self.start_when_ready();
                 }
             }
             // A stop during the count-in only ends the count: the transport never started, so
             // the play start marker stays where it is.
-            LaunchCommand::Stop | LaunchCommand::StopHere if self.count_in.is_some() => self.cancel_count_in(),
+            LaunchCommand::Stop | LaunchCommand::StopHere if self.transport.count_in.is_some() => {
+                self.cancel_count_in()
+            }
             // A stop before the waiting start rolled: it never did.
-            LaunchCommand::Stop | LaunchCommand::StopHere if self.start_waiting.is_some() => {
-                self.start_waiting = None;
+            LaunchCommand::Stop | LaunchCommand::StopHere if self.transport.start_waiting.is_some() => {
+                self.transport.start_waiting = None;
                 self.start_target = None;
                 self.pending_jump = None;
-                let marker = self.start_beat;
+                let marker = self.transport.start_beat;
                 self.stop_transport(false);
                 self.set_position(marker);
             }
@@ -1286,14 +1288,14 @@ impl Renderer {
             LaunchCommand::Locate { beat } => {
                 if beat.is_finite() {
                     let beat = beat.clamp(0.0, MAX_START_BEAT);
-                    if self.running {
+                    if self.transport.running {
                         self.jump_to(beat);
-                        self.chase = true;
-                    } else if self.start_waiting.is_some() {
+                        self.transport.chase = true;
+                    } else if self.transport.start_waiting.is_some() {
                         // Play may still be waiting for read-ahead. Restore the playhead
                         // there too, or a device/block change restarts at the old marker.
                         self.start_target = Some(beat);
-                        self.start_waiting = Some(0);
+                        self.transport.start_waiting = Some(0);
                         self.graph.ahead.move_to(self.frame_of_beat(beat));
                         self.graph.launcher.beat = beat;
                         self.graph.launcher.tempo_from_map();
@@ -1337,7 +1339,7 @@ impl Renderer {
                     (None, false, true) => Queued::Stop,
                     (None, _, _) => return,
                 };
-                if matches!(action, Queued::Stop) && !self.running {
+                if matches!(action, Queued::Stop) && !self.transport.running {
                     return;
                 }
                 self.ensure_running();
@@ -1347,7 +1349,7 @@ impl Renderer {
                 }
             }
             LaunchCommand::ReleaseClip { column, slot } => {
-                if self.running {
+                if self.transport.running {
                     self.graph.launcher.release(column, slot);
                 } else if let Some(c) = self.graph.launcher.columns.get_mut(column) {
                     c.held = None;
@@ -1375,12 +1377,12 @@ impl Renderer {
                 }
             }
             LaunchCommand::StopColumn { column } => {
-                if self.running {
+                if self.transport.running {
                     self.graph.launcher.queue(column, Queued::Stop);
                 }
             }
             LaunchCommand::StopScene { scene } => {
-                if self.running {
+                if self.transport.running {
                     for column in 0..self.graph.launcher.columns.len() {
                         // Only the tracks whose slot in the row has a clip: an empty slot has
                         // nothing to stop, and its track may be playing from somewhere else.
@@ -1393,7 +1395,7 @@ impl Renderer {
                 }
             }
             LaunchCommand::StopAll => {
-                if self.running {
+                if self.transport.running {
                     for column in 0..self.graph.launcher.columns.len() {
                         self.graph.launcher.queue(column, Queued::Stop);
                     }
@@ -1422,320 +1424,12 @@ impl Renderer {
         self.graph.launcher.publish();
     }
 
-    fn ensure_running(&mut self) {
-        if !self.running {
-            self.start_transport();
-        }
-    }
-
-    /// Starts the transport once the stretched clips at the marker are rendered ahead (at once
-    /// when they are, offline, or without any), so their beginnings are not lost to a worker
-    /// still filling their rings.
-    fn start_when_ready(&mut self) {
-        if !self.stretch_fresh {
-            self.graph.ahead.move_to(self.start_frame());
-            self.stretch_fresh = true;
-        }
-        if self.graph.ahead.ready_at(self.start_frame()) {
-            self.start_transport();
-        } else {
-            self.start_waiting = Some(0);
-        }
-    }
-
-    /// Moves a waiting start along before a block of `frames`: rolls when the stretched clips
-    /// are ready or it has waited [`crate::START_WAIT_SECONDS`].
-    pub(crate) fn wait_to_start(&mut self, frames: u64) {
-        let Some(waited) = self.start_waiting else { return };
-        self.graph.ahead.service();
-        let limit = (crate::START_WAIT_SECONDS * f64::from(self.sample_rate)) as u64;
-        let target = self.frame_of_beat(self.start_target.unwrap_or(self.start_beat));
-        if waited >= limit || self.graph.ahead.ready_at(target) {
-            self.start_waiting = None;
-            self.start_transport();
-        } else {
-            self.start_waiting = Some(waited + frames);
-        }
-    }
-
-    pub(crate) fn start_transport(&mut self) {
-        // Native clip readers already guard their starts. Hosted processors may
-        // produce an immediate step (including ARA or a chased instrument note).
-        if !self.plugin_info.is_empty() {
-            self.start_guard.begin(self.graph.latency);
-        }
-        let resumed = self.start_target.take();
-        let target = resumed.unwrap_or(self.start_beat);
-        self.start_waiting = None;
-        self.running = true;
-        self.count_in = None;
-        // A start plays the arrangement's tempo and bars again; a scene launched with it takes
-        // the clock off the map again at its launch beat.
-        if resumed.is_none() {
-            self.graph.launcher.follow_map();
-        }
-        // The stretch voices are moved to the marker when the transport stops or the marker
-        // moves, so the worker has them ready by the next start; only a start without either
-        // before it moves them here.
-        if !self.stretch_fresh {
-            self.graph.ahead.move_to(self.start_frame());
-            self.stretch_fresh = true;
-        }
-        self.locate(target);
-        self.chase = true;
-        self.graph.launcher.monitor.running.store(true, Ordering::Relaxed);
-    }
-
-    /// Plays the arrangement from `beat` from the next frame on: notes that start there or
-    /// later, audio clips from wherever they are at that beat. A start or a jump also chases the
-    /// notes that started before it and still sound (`Renderer::chase_notes`); a loop's wrap does
-    /// not (`docs/spec/arrangement-editing.md` › Play position).
-    fn locate(&mut self, beat: f64) {
-        self.origin = self.position;
-        self.time_at_origin = self.frame_of_beat(beat);
-        let time = self.time_at_origin;
-        self.next_event = self.graph.events.partition_point(|e| e.start < time);
-        // Audio clips that started before `time` and are still playing there start mid-clip.
-        self.next_audio = 0;
-        self.active_audio_count = 0;
-        self.metronome.reset_at(beat);
-        self.graph.launcher.beat = beat;
-        self.graph.launcher.tempo_from_map();
-    }
-
-    /// The arrangement frame of `beat`, through the playing graph's tempo map.
-    pub(crate) fn frame_of_beat(&self, beat: f64) -> u64 {
-        crate::tempo::frame_of(&self.graph.tempo, beat)
-    }
-
-    /// The play start marker's arrangement frame.
-    pub(crate) fn start_frame(&self) -> u64 {
-        self.frame_of_beat(self.start_beat)
-    }
-
-    /// The arrangement beat playing now.
-    fn playhead_beat(&self) -> f64 {
-        crate::tempo::beat_at(&self.graph.tempo, self.time())
-    }
-
-    /// Ends every sounding note and device tail that the transport stopping or jumping cuts.
-    fn release_sounding(&mut self) {
-        for voice in self.voices.iter_mut().filter(|v| v.active) {
-            voice.end = voice.end.min(self.position);
-        }
-        let frame = self.block_frame;
-        for chain in &mut self.graph.chains {
-            chain.release_all(frame);
-        }
-        self.active_audio_count = 0;
-    }
-
-    /// Stops the transport; the playhead goes back to the marker, or, with `here`, the marker
-    /// moves to the playhead. Stopping while stopped moves the marker to beat 0.
-    fn stop_transport(&mut self, here: bool) {
-        // Hosted instruments fade their continuing waveform before reporting stopped,
-        // ahead of downstream effects and delay compensation. A second output ramp would
-        // replace the start of that waveform with a held sample. Keep the legacy fallback
-        // for processors that do not provide that contract.
-        let mut has_instrument = false;
-        let mut needs_guard = false;
-        for slot in self.graph.chains.iter_mut().flat_map(|chain| chain.plugin_slots()).filter(|s| s.instrument) {
-            has_instrument = true;
-            needs_guard |= !slot.processor.as_ref().is_some_and(|p| p.smooth_transport_stop());
-        }
-        if self.running && !self.plugin_info.is_empty() && (!has_instrument || needs_guard) {
-            self.start_guard.begin(self.graph.latency);
-        }
-        self.start_beat = if !self.running {
-            0.0
-        } else if here {
-            self.playhead_beat().clamp(0.0, MAX_START_BEAT)
-        } else {
-            self.start_beat
-        };
-        self.running = false;
-        self.metronome.reset();
-        self.release_sounding();
-        // Ready for the next start, at the marker.
-        self.graph.ahead.move_to(self.start_frame());
-        self.stretch_fresh = true;
-        let launcher = &mut self.graph.launcher;
-        for column in &mut launcher.columns {
-            column.pending = None;
-            if let Some(mut playing) = column.playing.take() {
-                playing.fade_left = launcher.stop_fade_frames;
-                column.fading = Some(playing);
-            }
-        }
-        launcher.pending_tempo = None;
-        launcher.pending_signature = None;
-        // A scene's time signature stays while stopped, its bars counted from the start again;
-        // the next start puts the clock back on the tempo map.
-        launcher.bar_origin = 0.0;
-        launcher.bars_before = 0.0;
-        launcher.beat = self.start_beat;
-        launcher.tempo_from_map();
-        launcher.monitor.running.store(false, Ordering::Relaxed);
-    }
-
-    /// Moves the play start marker without moving playback (#657).
-    fn set_start(&mut self, beat: f64) {
-        if !beat.is_finite() {
-            return;
-        }
-        if self.running {
-            self.start_beat = beat.clamp(0.0, MAX_START_BEAT);
-        } else {
-            self.set_position(beat);
-        }
-    }
-
-    /// A seek at the next global launch boundary while playing, at once with no quantisation
-    /// or while stopped (#657).
-    fn jump_on_grid(&mut self, beat: f64) {
-        if !beat.is_finite() {
-            return;
-        }
-        let at = self.graph.launcher.launch_beat();
-        if !self.running || at <= self.graph.launcher.beat() + 1e-9 {
-            self.pending_jump = None;
-            self.set_position(beat);
-            return;
-        }
-        self.pending_jump = Some((beat.clamp(0.0, MAX_START_BEAT), at));
-    }
-
-    /// Frames until a pending jump's boundary, while one waits and the transport runs.
-    pub(crate) fn frames_to_jump(&self) -> Option<usize> {
-        let (_, at) = self.pending_jump.filter(|_| self.running)?;
-        let per_frame = self.graph.launcher.tempo_bpm() / 60.0 / f64::from(self.sample_rate.max(1));
-        if !(per_frame.is_finite() && per_frame > 0.0) {
-            return Some(0);
-        }
-        let frames = ((at - self.graph.launcher.beat()) / per_frame).ceil();
-        Some(if frames.is_finite() && frames > 0.0 { frames.min(usize::MAX as f64) as usize } else { 0 })
-    }
-
-    /// Makes a pending jump whose boundary has come.
-    pub(crate) fn jump_if_due(&mut self) {
-        if let Some((beat, at)) = self.pending_jump
-            && self.running
-            && self.graph.launcher.beat() >= at - 1e-9
-        {
-            self.pending_jump = None;
-            self.set_position(beat);
-        }
-    }
-
-    /// Moves the play start marker to `beat`; while running, playback jumps there. Launches and
-    /// a scene tempo still waiting are queued again for the next boundary from the new beat.
-    fn set_position(&mut self, beat: f64) {
-        if !beat.is_finite() {
-            return;
-        }
-        self.start_target = None;
-        self.start_beat = beat.clamp(0.0, MAX_START_BEAT);
-        if !self.running {
-            self.graph.ahead.move_to(self.start_frame());
-            self.stretch_fresh = true;
-            self.graph.launcher.beat = self.start_beat;
-            self.graph.launcher.tempo_from_map();
-            return;
-        }
-        self.jump_to(self.start_beat);
-        // A click on the ruler is a jump like `Locate`: the notes sounding there play.
-        self.chase = true;
-    }
-
-    /// The loop region as arrangement frames, while playback repeats it: the region is on and
-    /// at least one frame long.
-    fn loop_frames(&self) -> Option<(u64, u64)> {
-        if !self.follow_loop {
-            return None;
-        }
-        let (start, end) = self.graph.loop_beats?;
-        let (start, end) = (self.frame_of_beat(start), self.frame_of_beat(end));
-        (end > start).then_some((start, end))
-    }
-
-    /// Frames until the playhead reaches the loop end, while it is running before it. A
-    /// playhead past the loop end (moved there) plays on without wrapping.
-    pub(crate) fn frames_to_loop_end(&self) -> Option<usize> {
-        if !self.running {
-            return None;
-        }
-        let (_, end) = self.loop_frames()?;
-        let to_end = end.checked_sub(self.time()).filter(|frames| *frames > 0)?;
-        Some(usize::try_from(to_end).unwrap_or(usize::MAX))
-    }
-
-    /// At the loop end, playback jumps back to the loop start, as a jump while playing does:
-    /// notes sounding are released, notes and audio clips play on from the loop start
-    /// (`docs/spec/arrangement-editing.md` › Loop region). The play start marker stays.
-    pub(crate) fn wrap_loop(&mut self) {
-        if !self.running {
-            return;
-        }
-        let Some((_, end)) = self.loop_frames() else { return };
-        if self.time() != end {
-            return;
-        }
-        if let Some((start, _)) = self.graph.loop_beats {
-            self.jump_to(start);
-        }
-        self.graph.launcher.publish();
-    }
-
-    /// Brings the launcher clock, back on the tempo map, to the arrangement: while running its
-    /// beat becomes the playhead's (a scene tempo had let it drift), launched clips play on from
-    /// where they are, and launches still waiting are queued again for the next boundary from
-    /// there, as after a jump. Never allocates.
-    pub(crate) fn clock_to_map(&mut self) {
-        if !self.graph.launcher.follows_map {
-            return;
-        }
-        if self.running {
-            let beat = self.playhead_beat();
-            self.metronome.reset_at(beat);
-            let launcher = &mut self.graph.launcher;
-            launcher.beat = beat;
-            let at_beat = launcher.launch_beat();
-            for column in &mut launcher.columns {
-                if let Some(pending) = column.pending.as_mut() {
-                    pending.at_beat = at_beat;
-                }
-            }
-        }
-        self.graph.launcher.tempo_from_map();
-        self.graph.launcher.publish();
-    }
-
-    /// While running, playback continues from `beat` from the next frame on.
-    fn jump_to(&mut self, beat: f64) {
-        self.release_sounding();
-        self.locate(beat);
-        // Read from the new place; until the worker gets there, stretched clips are silent.
-        self.graph.ahead.move_to(self.time_at_origin);
-        self.stretch_fresh = false;
-        let launcher = &mut self.graph.launcher;
-        let at_beat = launcher.launch_beat();
-        for column in &mut launcher.columns {
-            if let Some(pending) = column.pending.as_mut() {
-                pending.at_beat = at_beat;
-            }
-        }
-        if let Some((at, _)) = launcher.pending_tempo.as_mut() {
-            *at = at_beat;
-        }
-        if let Some((at, _)) = launcher.pending_signature.as_mut() {
-            *at = at_beat;
-        }
-    }
-
     /// [`LaunchCommand::ResumeColumn`]: the column plays `slot`'s clip as if launched
     /// `elapsed_beats` ago, or nothing, and its track no longer plays its arrangement.
     fn resume_column(&mut self, column: usize, slot: Option<usize>, elapsed_beats: f64) {
-        if (!self.running && self.start_waiting.is_none()) || column >= self.graph.launcher.columns.len() {
+        if (!self.transport.running && self.transport.start_waiting.is_none())
+            || column >= self.graph.launcher.columns.len()
+        {
             return;
         }
         let elapsed = if elapsed_beats.is_finite() { elapsed_beats.clamp(0.0, ENDLESS_BEATS) } else { 0.0 };
@@ -1776,7 +1470,7 @@ impl Renderer {
         target.pending = None;
         target.fading = None;
         target.playing = playing;
-        target.overrides_since = Some(self.position);
+        target.overrides_since = Some(self.transport.position);
         self.release_column(column);
     }
 
@@ -1810,7 +1504,7 @@ impl Renderer {
     pub(crate) fn launcher_frame(&mut self) -> (f32, f32) {
         let mut out = (0.0f32, 0.0f32);
         let frame = self.block_frame;
-        if self.running {
+        if self.transport.running {
             self.graph.launcher.follow_up();
             self.apply_due();
         }
@@ -1818,7 +1512,7 @@ impl Renderer {
         // map at the next arrangement frame, so the clock never drifts from the arrangement;
         // otherwise the tempo is added up frame by frame, as it always was.
         let beats_per_frame = self.graph.launcher.tempo_bpm / 60.0 / f64::from(self.sample_rate);
-        let on_map = self.running && self.graph.launcher.on_map();
+        let on_map = self.transport.running && self.graph.launcher.on_map();
         let (step, next_beat) = if on_map {
             let next = crate::tempo::beat_at(&self.graph.tempo, self.time().saturating_add(1));
             let next = next.max(self.graph.launcher.beat);
@@ -1827,7 +1521,7 @@ impl Renderer {
             (beats_per_frame, self.graph.launcher.beat + beats_per_frame)
         };
         for index in 0..self.graph.launcher.columns.len() {
-            if self.running {
+            if self.transport.running {
                 self.play_notes(index, beats_per_frame, on_map);
             }
             let launcher = &mut self.graph.launcher;
@@ -1892,7 +1586,7 @@ impl Renderer {
                 self.graph.launcher.publish();
             }
         }
-        if self.running {
+        if self.transport.running {
             self.graph.launcher.beat = next_beat;
             if on_map {
                 self.graph.launcher.tempo_from_map();
@@ -1972,7 +1666,7 @@ impl Renderer {
                     }
                 }
                 column.playing = Some(playing);
-                column.overrides_since = Some(self.position);
+                column.overrides_since = Some(self.transport.position);
                 self.graph.launcher.launched(index, slot, pending.at_beat);
             }
             self.release_column(index);
@@ -1985,7 +1679,7 @@ impl Renderer {
     /// Releases the notes a column is sounding, launched or from the arrangement.
     fn release_column(&mut self, column: usize) {
         let Ok(column) = u32::try_from(column) else { return };
-        let position = self.position;
+        let position = self.transport.position;
         for voice in self.voices.iter_mut().filter(|v| v.active && v.column == column) {
             voice.end = voice.end.min(position);
         }
@@ -1999,7 +1693,14 @@ impl Renderer {
     /// Starts the notes of a column's playing clip that are due at this frame.
     fn play_notes(&mut self, index: usize, beats_per_frame: f64, on_map: bool) {
         let time = self.time();
-        let Self { graph, voices, position, sample_rate, block_frame, .. } = self;
+        let Self {
+            graph,
+            voices,
+            transport: crate::transport::Transport { position, .. },
+            sample_rate,
+            block_frame,
+            ..
+        } = self;
         let map = &graph.tempo;
         let frame = *block_frame;
         let launcher = &mut graph.launcher;
