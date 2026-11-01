@@ -297,7 +297,8 @@ is its peak in each 5 ms; its rise is in decibels over its loudest level of the 
 a low note's cycles (down to 20 Hz) and a decaying tail never count, and a hit's strength is the
 sum of its bands' rises. Only the strongest hit within 50 ms is kept, none closer than 50 ms to
 Start or End, and none more than 45 dB under the source's loudest level. A boundary sits one
-reading before the rise begins. Sensitivity sets the strength needed: 40 dB at 0, 13.75 dB at
+reading before the hit's own rise begins, at most 50 ms back; rises under a tenth of the hit's
+belong to something slower under it, such as a fade. Sensitivity sets the strength needed: 40 dB at 0, 13.75 dB at
 0.5 and 5 dB at 1; at 1, a dense 93-second loop gave about as many boundaries as another
 sampler's analysis at full sensitivity, three quarters of them within 20 ms of its own.
 A single held or decaying note is one slice at any sensitivity.
