@@ -310,7 +310,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
             key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
         } else if black {
             // The white keys either side run on past the black key's tip, each to the row's middle.
-            let middle = (row.center().y).round();
+            let middle = row.center().y.round();
             let above = Rect::from_min_max(Pos2::new(black_right, row.top()), Pos2::new(row.right(), middle));
             let below = Rect::from_min_max(Pos2::new(black_right, middle), row.max);
             key_painter.rect_filled(above, 0.0, states.white(key.saturating_add(1).min(127)));

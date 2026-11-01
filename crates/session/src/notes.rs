@@ -121,11 +121,10 @@ pub(crate) fn replace_under(notes: &mut Vec<Note>, placed: &[usize]) -> Vec<usiz
         }
         row.push((note.time, note.time + note.duration, index));
     }
-    for index in 0..notes.len() {
+    for (index, note) in notes.iter_mut().enumerate() {
         if sorted.binary_search(&index).is_ok() {
             continue;
         }
-        let note = notes[index];
         let Some(row) = by_key.get(usize::from(note.key)) else { continue };
         let end = note.time + note.duration;
         let mut start = note.time;
@@ -144,13 +143,13 @@ pub(crate) fn replace_under(notes: &mut Vec<Note>, placed: &[usize]) -> Vec<usiz
             start = p.1;
         }
         if let Some(cut) = head {
-            notes[index].time = start;
-            notes[index].duration = cut - start;
+            note.time = start;
+            note.duration = cut - start;
         } else if start >= end - EPSILON {
             removed.push(index);
         } else if start != note.time {
-            notes[index].time = start;
-            notes[index].duration = end - start;
+            note.time = start;
+            note.duration = end - start;
         }
     }
     removed.sort_unstable();
