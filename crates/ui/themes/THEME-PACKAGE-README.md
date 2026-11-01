@@ -455,7 +455,7 @@ Classes, each the native element it styles:
 | `.value-handle`, `.fader-rail` | the handle where a level bar's fill ends; a fader's rail |
 | `.piano-grid`, `.piano-row`, `.piano-row-black`, `.piano-key`, `.piano-key-black`, `.piano-note`, `.velocity` | the piano roll's grid, its rows, its keys (with `:selected` and `:playing`), the notes and their velocity stems |
 | `.piano-key-c`, `.piano-key-hover`, `.piano-key-black-hover`, `.piano-key-line`, `.piano-scale-mark` | a C key, a key under the pointer, the line between white keys, the mark on a key in the clip's scale |
-| `.piano-scale-strip`, `.piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and a range selected from the keys |
+| `.piano-scale-strip`, `.piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and the range a drag on the keys is selecting |
 | `.piano-tool`, `.midi-tools`, `.clip-info`, `.editor-tab` | the piano roll's tool buttons, the MIDI tools column, the clip's column and the **Clip** / **Devices** tabs |
 | `.device`, `.device-header` | a device's panel in the device chain, and its header row |
 

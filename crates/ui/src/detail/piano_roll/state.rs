@@ -149,14 +149,14 @@ pub struct PianoRollState {
     pub key_names: crate::settings::PianoKeyNames,
     /// A choice made in the corner's menu this frame, for the window to keep.
     pub view_picked: Option<ViewPick>,
-    /// The ranges of keys chosen from the key column, the range a drag is still choosing, what the
-    /// selection was when the drag began, and the notes the chosen ranges selected.
-    pub(super) key_ranges: Vec<(u8, u8)>,
+    /// The range of keys a drag in the key column is choosing, and what the selection was when the
+    /// drag began.
     pub(super) key_live: Option<(u8, u8)>,
     pub(super) key_base: BTreeSet<usize>,
-    pub(super) key_range_notes: Vec<(usize, u8)>,
     /// A drag in the scale strip: where it began, the row height then and the row at the press.
     pub(super) strip_drag: Option<(f32, f32, f32)>,
+    /// The pointer is where a drag zooms (the strip, the ruler) this frame.
+    pub(crate) magnifier: bool,
     /// The length (0: one grid step) and velocity a new note takes: those of the note last
     /// drawn or clicked.
     pub(super) last_length: f64,
@@ -246,11 +246,10 @@ impl Default for PianoRollState {
             key_style: crate::settings::PianoKeyStyle::default(),
             key_names: crate::settings::PianoKeyNames::default(),
             view_picked: None,
-            key_ranges: Vec::new(),
             key_live: None,
             key_base: BTreeSet::new(),
-            key_range_notes: Vec::new(),
             strip_drag: None,
+            magnifier: false,
             last_length: 0.0,
             last_velocity: NEW_VELOCITY,
             stroke: Vec::new(),
@@ -485,7 +484,6 @@ impl PianoRollState {
         self.erasing.clear();
         self.audition_pending.clear();
         self.audition_queue.clear();
-        self.key_ranges.clear();
         self.key_live = None;
     }
 

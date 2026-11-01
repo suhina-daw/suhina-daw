@@ -3,7 +3,8 @@
 
 //! The left of the piano roll (`docs/spec/ui-clip-editor.md` › Key column and scale strip): the keys
 //! drawn as a keyboard in a key style the theme can override, the scale strip that names the row
-//! under the pointer and zooms the rows, the ranges selected from the keys, and the corner's menu.
+//! under the pointer and zooms the rows, the range a drag on the keys is selecting, and the corner's
+//! menu.
 
 use super::*;
 use crate::kit::native_css::HostState;
@@ -20,6 +21,8 @@ const LEAST_NAMED_ROW: f32 = 8.0;
 const POINTER_NAME: Vec2 = Vec2::new(23.0, 13.0);
 /// How much one point of a drag in the scale strip scales the rows, down making them taller.
 const STRIP_ZOOM_PER_POINT: f32 = 0.012;
+/// The size of the magnifier drawn for the pointer where a drag zooms.
+const MAGNIFIER_RADIUS: f32 = 5.0;
 /// How much of the accent a selected range lays over the note rows.
 const RANGE_TINT: f32 = 0.11;
 
@@ -230,7 +233,7 @@ impl KeyStates<'_> {
             c.white_hover
         } else if self.selected(key) {
             c.white_selected
-        } else if key % 12 == 0 {
+        } else if key.is_multiple_of(12) {
             c.white_c
         } else {
             c.white
@@ -273,7 +276,7 @@ pub(super) fn named(key: u8, names: PianoKeyNames, folded: bool, height: f32) ->
     }
     folded
         || match names {
-            PianoKeyNames::OnlyC => key % 12 == 0,
+            PianoKeyNames::OnlyC => key.is_multiple_of(12),
             PianoKeyNames::White => !is_black(key),
             PianoKeyNames::All => true,
         }
@@ -289,7 +292,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
         colours: &colours,
         playing: state.playing_key(),
         hover: if selecting { None } else { state.hover_key() },
-        ranges: state.key_ranges.iter().copied().chain(state.key_live).collect(),
+        ranges: state.key_live.into_iter().collect(),
     };
     let folded = layout.rows.folded();
     let (white_gradient, black_gradient) = (has_gradient("piano-key"), has_gradient("piano-key-black"));
@@ -348,7 +351,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
                 );
             }
             // White keys meet only between E and F and between B and C.
-            if key % 12 == 0 || key % 12 == 5 {
+            if matches!(key % 12, 0 | 5) {
                 key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
             }
         }
@@ -381,7 +384,7 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     let first = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
     let pointer = state.hover_key();
-    for key in (first..=last).filter(|k| k % 12 == 0 && layout.rows.shows(*k) && pointer != Some(*k)) {
+    for key in (first..=last).filter(|k| k.is_multiple_of(12) && layout.rows.shows(*k) && pointer != Some(*k)) {
         let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         painter.text(centre, Align2::CENTER_CENTER, key_name(key), font.clone(), text);
     }
@@ -407,7 +410,7 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
     let response = ui.interact(strip, Id::new("piano-roll-scale-strip"), Sense::drag());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Row height strip"));
     if response.hovered() || response.dragged() {
-        ui.ctx().set_cursor_icon(CursorIcon::ZoomIn);
+        state.magnifier = true;
     }
     if response.drag_started() {
         let from = ui.input(|i| i.pointer.press_origin()).map_or(strip.center().y, |p| p.y);
@@ -426,32 +429,40 @@ pub(super) fn strip_zoom(ui: &Ui, strip: Rect, grid: Rect, state: &mut PianoRoll
     }
 }
 
-/// The selected ranges across the note rows: a tint with an edge at the top and the bottom, dashed
-/// while the drag is still choosing it.
+/// The pointer where a drag zooms: the windowing layer has no magnifier cursor on every system, so
+/// the pointer is hidden and a magnifier is drawn where it is, as the eraser is.
+pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
+    ui.ctx().set_cursor_icon(CursorIcon::None);
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::new("piano-roll-magnifier")));
+    let (halo, line) = (theme::window_background(), theme::text_primary());
+    let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
+    painter.line_segment(handle, Stroke::new(4.0, halo));
+    painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(3.5, halo));
+    painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(1.5, line));
+    painter.line_segment(handle, Stroke::new(2.0, line));
+    let cross = MAGNIFIER_RADIUS * 0.5;
+    painter.hline(pos.x - cross..=pos.x + cross, pos.y, Stroke::new(1.0, line));
+    painter.vline(pos.x, pos.y - cross..=pos.y + cross, Stroke::new(1.0, line));
+}
+
+/// The range a drag on the keys is selecting, across the note rows: a tint with dashed edges at its
+/// top and bottom. Once let go it is the notes that show what is selected.
 pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &PianoRollState) {
+    let Some((low, high)) = state.key_live else { return };
     let style = part_style("piano-range", &[]);
     let edge = style.border.unwrap_or_else(theme::accent);
     let tint = style.background.unwrap_or_else(|| theme::accent().gamma_multiply(RANGE_TINT));
-    let live = state.key_live.map(|range| (range, true));
-    for ((low, high), dashed) in state.key_ranges.iter().map(|range| (*range, false)).chain(live) {
-        let shown = (low..=high).filter(|k| layout.rows.shows(*k));
-        let tops = shown.map(|k| layout.y_of(k));
-        let (top, bottom) = tops.fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), y| (a.min(y), b.max(y)));
-        if !top.is_finite() {
-            continue;
-        }
-        let bottom = bottom + layout.key_height;
-        let rect = Rect::from_min_max(Pos2::new(layout.grid.left(), top), Pos2::new(layout.grid.right(), bottom));
-        painter.rect_filled(rect, 0.0, tint);
-        let stroke = Stroke::new(1.0, edge);
-        for y in [top + 0.5, bottom - 0.5] {
-            let line = [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)];
-            if dashed {
-                painter.extend(egui::Shape::dashed_line(&line, stroke, 4.0, 3.0));
-            } else {
-                painter.line_segment(line, stroke);
-            }
-        }
+    let tops = (low..=high).filter(|k| layout.rows.shows(*k)).map(|k| layout.y_of(k));
+    let (top, bottom) = tops.fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), y| (a.min(y), b.max(y)));
+    if !top.is_finite() {
+        return;
+    }
+    let bottom = bottom + layout.key_height;
+    let rect = Rect::from_min_max(Pos2::new(layout.grid.left(), top), Pos2::new(layout.grid.right(), bottom));
+    painter.rect_filled(rect, 0.0, tint);
+    for y in [top + 0.5, bottom - 0.5] {
+        let line = [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)];
+        painter.extend(egui::Shape::dashed_line(&line, Stroke::new(1.0, edge), 4.0, 3.0));
     }
 }
 
@@ -524,13 +535,9 @@ pub(super) fn view_menu(ui: &mut Ui, corner: Rect, state: &mut PianoRollState) {
 }
 
 impl PianoRollState {
-    /// Starts a selection from the key column at `key`: `add` keeps what is selected, with the
-    /// ranges chosen so far.
+    /// Starts a selection from the key column at `key`: `add` keeps what is selected.
     pub(super) fn begin_key_selection(&mut self, key: u8, add: bool) {
         self.key_base = if add { self.selected.clone() } else { BTreeSet::new() };
-        if !add {
-            self.key_ranges.clear();
-        }
         self.key_live = Some((key, key));
     }
 
@@ -547,37 +554,12 @@ impl PianoRollState {
         }
     }
 
-    /// Ends a drag in the key column: the range joins the ranges chosen so far (touching ones
-    /// become one), and the notes it added sound in time order.
+    /// Ends a drag in the key column: what it selected stays selected, to add to, and the notes it
+    /// added sound in time order.
     pub(super) fn end_key_selection(&mut self, clip: &PianoClip) {
-        let Some(range) = self.key_live.take() else { return };
-        self.key_ranges.push(range);
-        self.key_ranges.sort_unstable();
-        let mut merged: Vec<(u8, u8)> = Vec::with_capacity(self.key_ranges.len());
-        for (low, high) in std::mem::take(&mut self.key_ranges) {
-            match merged.last_mut() {
-                Some(last) if u16::from(low) <= u16::from(last.1) + 1 => last.1 = last.1.max(high),
-                _ => merged.push((low, high)),
-            }
-        }
-        self.key_ranges = merged;
-        self.key_range_notes = self.selected_keys(clip);
+        self.key_live = None;
         let added: Vec<usize> = self.selected.difference(&self.key_base).copied().collect();
         self.audition_in_time_order(clip, &added);
-    }
-
-    /// The selected notes and their keys: while they stay as they were, the ranges chosen from the
-    /// key column still say what is selected.
-    fn selected_keys(&self, clip: &PianoClip) -> Vec<(usize, u8)> {
-        self.selected.iter().filter_map(|i| clip.notes.get(*i).map(|n| (*i, n.key))).collect()
-    }
-
-    /// Forgets the ranges once the selection is no longer what they chose.
-    pub(super) fn check_key_ranges(&mut self, clip: &PianoClip) {
-        if !self.key_ranges.is_empty() && self.key_live.is_none() && self.key_range_notes != self.selected_keys(clip) {
-            self.key_ranges.clear();
-            self.key_range_notes.clear();
-        }
     }
 
     /// The notes at `indices` sound one after the other, in time order, each key once.

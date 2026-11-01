@@ -26,8 +26,9 @@ pub(super) fn key_column(
         return;
     }
     let response = ui.interact(*keys, Id::new("piano-roll-keys"), Sense::click_and_drag());
-    // The key under the pointer anywhere along the rows: the strip names it and the keys light it.
-    let rows = layout.strip.union(*keys).union(layout.grid);
+    // The key under the pointer along the keys and the grid: the strip names it and the keys light
+    // it. Over the strip itself the pointer is zooming, not reading a row.
+    let rows = keys.union(layout.grid);
     let hovered = ui.ctx().pointer_hover_pos().filter(|p| rows.contains(*p)).and_then(|p| layout.key_at(p.y));
     let down = ui.input(|i| i.pointer.primary_down());
     let pressed = response.interact_pointer_pos().and_then(|p| key_at_height(layout, p.y));
@@ -49,8 +50,8 @@ pub(super) fn key_column(
             play_key(state, clip, actions, key);
         }
     }
-    // Let go: the note goes off and the range joins the selection's ranges. A gesture that belongs
-    // to another part of the piano roll (the grid's) is left alone.
+    // Let go: the note goes off and the notes stay selected. A gesture that belongs to another part
+    // of the piano roll (the grid's) is left alone.
     if matches!(state.gesture, Some(Gesture::KeySelect { .. })) && !down {
         state.gesture = None;
         if let Some(action) = state.key_release(clip) {

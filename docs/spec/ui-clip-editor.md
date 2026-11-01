@@ -196,7 +196,7 @@ bottom:
    snapping); the quantise
    controls are in the clip's properties column (› Quantise).
 2. **Ruler** (built, the loop row and the markers [#353](https://github.com/suhina-daw/suhina-daw/issues/353)):
-   24 px tall. On top an 8 px **loop row**: a bar from the clip's loop start to its loop end with
+   36 px tall. On top a 14 px **loop row**: a bar from the clip's loop start to its loop end with
    a **handle** at each end (named "Loop start" and "Loop end" for readers and tests), bright while
    the clip loops; while it does not, the bar is drawn dim where turning the loop on would put it
    (from 0 over the clip's length, as `clip.setLoop` with `loop: true` makes it). Under it the bar
@@ -508,8 +508,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   pointer, the range growing and shrinking with the drag and skipping no key, however fast it is
   (in a folded view, the keys it shows). **Shift** adds another range to the selection, so two ranges
   with a gap between them can be selected; **Ctrl** selects without sounding anything. These change
-  only the window's selection (› Selecting). A selected range shows on the keys and across the note
-  rows, with a dashed edge during the drag and a solid one after it, until the selection changes.
+  only the window's selection (› Selecting). The range shows on the keys and across the note rows,
+  with a dashed edge, while the drag lasts; once let go the notes alone show what is selected, ready
+  for another range or Shift+click.
 - **Audition (built, [#351](https://github.com/suhina-daw/suhina-daw/issues/351),
   [#939](https://github.com/suhina-daw/suhina-daw/issues/939),
   [#1116](https://github.com/suhina-daw/suhina-daw/issues/1116)):** with the toolbar's **Audition**
@@ -543,9 +544,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Key style:** Bone (light, the default), Stone (mid) and Night (dark). A theme's sheet sets
   anything about the keys over the chosen style (`docs/spec/theme-skins.md`); when it sets their
   colours, the menu shows **Theme** in place of a choice.
-- The **scale strip** always names the octaves. The name of the row under the pointer, anywhere in
-  the grid or the keys, shows at that row, the row itself a little lighter in the grid. The pointer
-  is a magnifier over the strip, and a drag changes the row height (› Zoom and scroll).
+- The **scale strip** always names the octaves. The name of the row under the pointer, in the grid
+  or on the keys, shows at that row, the row itself a little lighter in the grid. Over the strip the
+  pointer is a magnifier and no row is named, and a drag changes the row height (› Zoom and scroll).
+  The ruler shows the same magnifier where a drag on it zooms.
 - The **View** menu in the corner over the keys holds the key style, the key names and **Allow
   stacked notes**, and keeps them in the settings, where the same choices are on the Clip editor
   page.

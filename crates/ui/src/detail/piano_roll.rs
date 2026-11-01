@@ -60,7 +60,7 @@ const TOOLBAR: f32 = 22.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
 const TOOLBAR_INSET: f32 = 32.0;
-const RULER: f32 = 24.0;
+const RULER: f32 = 36.0;
 const VELOCITY_LANE: f32 = 72.0;
 /// The velocity lane is left out under this height, and leaves at least this many key rows.
 const LEAST_LANE: f32 = 12.0;
@@ -195,7 +195,6 @@ pub fn show(
         state.selected.clear();
         state.gesture = None;
         state.playing_key = None;
-        state.key_ranges.clear();
         state.key_live = None;
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
@@ -254,8 +253,8 @@ pub fn show(
         state.right_stepped = false;
     }
     scroll_and_zoom(ui, state, area, grid_rect, inputs);
+    state.magnifier = false;
     strip_zoom(ui, strip, grid_rect, state);
-    state.check_key_ranges(clip);
     // The ruler: its loop handles and markers, and dragging it to zoom and scroll time.
     let shape = ruler_view::interact(ui, ruler, grid_rect.left(), clip, state, inputs.alt, seeks, actions);
     state.view_width = grid_rect.width();
@@ -594,6 +593,11 @@ pub fn show(
             theme::text_primary(),
             scale,
         );
+    }
+    if state.magnifier
+        && let Some(pos) = ui.input(|i| i.pointer.latest_pos())
+    {
+        draw_magnifier(ui, pos);
     }
     // The playhead: where playback is in the clip's content (through its start, offset and loop),
     // over the ruler, the grid and the velocity lane, as the other views show it.
