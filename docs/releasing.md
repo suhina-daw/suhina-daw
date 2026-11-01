@@ -71,7 +71,8 @@ becomes the latest.
 5. For the next candidate, or the final release, repeat from step 1 with `0.1.0-rc.2` or `0.1.0`.
 
 Running the workflow by hand (Actions › Release › Run workflow) builds the same packages as
-workflow artifacts without creating a release, to test the pipeline.
+workflow artifacts without creating a release, to test the pipeline. Every run's artifacts are
+kept for 7 days; a nightly or a release keeps its packages on its release page.
 
 On Windows the three executables carry version information, which the file's Properties ›
 Details and Task Manager show: the product name Suhina, what each program is (Suhina, Suhina
