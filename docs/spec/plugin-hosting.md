@@ -283,7 +283,7 @@ ports and stereo side ports); `SUHINA_TEST_CLAP` runs them against a real file t
 VST3 goes through the `vst3` bindings to the SDK: the component and controller on the main
 thread (connected through their connection points, the controller given the component's
 state; the host makes the messages and attribute lists they send each other,
-`IHostApplication::createInstance` in `crates/plugin-host/src/vst3_message.rs`, without which
+`IHostApplication::createInstance` in `crates/plugin-host/src/vst3/message.rs`, without which
 some plug-ins crash as soon as they are connected and others when given a state), `setProcessing` and `process` on the audio thread, the link on the main buses (by the rule above) and
 silent buffers for any other bus. A plug-in is named `vst3:<bundle or file>[#<class id>]`;
 in a bundle, the executable is looked up per system: `Contents/<arch>-win/<name>` on Windows,
@@ -339,7 +339,7 @@ settings); a third takes a parameter bank (`FxBk`) in `setState` without applyin
 parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps from its VST2
 one, but only when the plug-in has every id from 0 to the last value's: on the controller
 (`setParamNormalized`) and on the processor through the next block's parameter changes
-(`crates/plugin-host/src/vst3_params.rs`). With that the third plays with the project's settings.
+(`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
 A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a

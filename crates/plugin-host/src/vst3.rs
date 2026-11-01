@@ -20,6 +20,11 @@
 //! built into the host for tests ([`crate::test_vst3`]), and `test:vst3-mix` the same gain mixing
 //! its first two channels into the first.
 
+mod editor;
+mod events;
+mod message;
+mod params;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, c_void};
@@ -34,8 +39,8 @@ use suhina_plugins::ParamInfo;
 use suhina_plugins::scan::PluginInfo;
 
 use crate::param_notes::{Notes, ParamNotes, Reads};
-use crate::vst3_events::{BlockEvents, MidiMapping, Shown};
-use crate::vst3_params::{BlockChanges, Pending};
+use crate::vst3::events::{BlockEvents, MidiMapping, Shown};
+use crate::vst3::params::{BlockChanges, Pending};
 use vst3::Steinberg::Vst::*;
 use vst3::Steinberg::*;
 use vst3::{Class, ComPtr, ComWrapper, Interface};
@@ -424,13 +429,13 @@ impl IHostApplicationTrait for HostApplication {
         kResultOk
     }
 
-    /// Makes a message or an attribute list for the plug-in (`crate::vst3_message`), as the
+    /// Makes a message or an attribute list for the plug-in (`crate::vst3::message`), as the
     /// SDK's hosts do; component and controller talk with them, and many plug-ins crash when
     /// the host makes none.
     unsafe fn createInstance(&self, cid: *mut TUID, iid: *mut TUID, obj: *mut *mut c_void) -> tresult {
         // SAFETY: the plug-in passes a pointer to its own pointer to fill (or null).
         let Some(obj) = (unsafe { obj.as_mut() }) else { return kInvalidArgument };
-        *obj = crate::vst3_message::create(cid, iid);
+        *obj = crate::vst3::message::create(cid, iid);
         if obj.is_null() { kResultFalse } else { kResultOk }
     }
 }
@@ -622,7 +627,7 @@ pub(crate) struct Vst3Plugin {
     midi_watch: Option<Arc<MidiWatch>>,
     /// The plug-in's name, for its editor's window.
     name: String,
-    editor: Option<crate::vst3_editor::Editor>,
+    editor: Option<crate::vst3::editor::Editor>,
     /// The ARA document it is bound to, when it was loaded with one (ADR 0033); let go of
     /// before the component is terminated.
     ara: Option<Box<crate::ara::Document>>,
@@ -1029,7 +1034,7 @@ impl Vst3Plugin {
             return Ok(editor.size());
         }
         let controller = self.controller.as_ref().ok_or("the plug-in has no editor")?;
-        let editor = crate::vst3_editor::Editor::open(controller, mode, &self.name)?;
+        let editor = crate::vst3::editor::Editor::open(controller, mode, &self.name)?;
         let size = editor.size();
         self.editor = Some(editor);
         Ok(size)
@@ -1179,7 +1184,7 @@ impl Vst3Plugin {
 
     /// Keeps the editor in step with its window; returns whether the user closed it.
     pub(crate) fn editor_tick(&mut self) -> bool {
-        let closed = self.editor.as_mut().is_some_and(crate::vst3_editor::Editor::tick);
+        let closed = self.editor.as_mut().is_some_and(crate::vst3::editor::Editor::tick);
         if closed {
             self.close_editor();
         }
@@ -1188,7 +1193,7 @@ impl Vst3Plugin {
 
     /// A size the editor got since this was last asked.
     pub(crate) fn editor_resized(&mut self) -> Option<crate::window::Size> {
-        self.editor.as_mut().and_then(crate::vst3_editor::Editor::take_resized)
+        self.editor.as_mut().and_then(crate::vst3::editor::Editor::take_resized)
     }
 
     /// What a MIDI controller moved goes to the controller as well, which the editor draws
