@@ -581,6 +581,22 @@ fn groups_that_contain_each_other_or_nest_too_deep_still_open() {
 }
 
 #[test]
+fn leaves_out_time_signatures_past_a_sixteenth() {
+    // 3/16 from bar 2 (code 99 × 4 + 2), then 4/32 at beat 8 (code 99 × 5 + 3), which Suhina
+    // does not keep: the denominators stop at 16.
+    let xml = with_envelopes(
+        r#"<FloatEvent Id="3" Time="0" Value="120"/>"#,
+        r#"<EnumEvent Id="7" Time="4" Value="398"/><EnumEvent Id="8" Time="8" Value="498"/>"#,
+    );
+    let import = read_xml(&xml).unwrap();
+    let ts = |numerator, denominator| TimeSignature { numerator, denominator };
+    assert_eq!(
+        import.project.transport.time_signature_changes,
+        [TimeSignatureChange { bar: 1, time_signature: ts(3, 16) }]
+    );
+}
+
+#[test]
 fn reads_tempo_and_time_signature_changes() {
     // 120 at bar 1, a glide to 140 at bar 3, a jump to 90 at bar 5; 3/4 from bar 2, 7/8 from
     // beat 10 (bar 4 in 3/4).

@@ -70,7 +70,7 @@ or frames at the sample rate. Nothing converts with the start tempo alone.
   beat 120 000, a tempo outside 1 to 999 bpm, more than 10 000 changes. Of two changes on one beat
   the later in the list wins, except a ramp followed by a step: the ramp arrives at its tempo,
   then the tempo jumps (a Live Set's glide that ends in a jump reads this way). The same for signature changes at bar 0, with an invalid signature
-  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8, 16, 32 or 64) or more than
+  (a numerator outside 1 to 99, a denominator that is not 1, 2, 4, 8 or 16) or more than
   10 000. (The project file refuses these, so they come only from an importer or a hand-edited
   model.)
 
@@ -155,7 +155,7 @@ All are edits with one undo step. Tempo points are numbered from 1 in beat order
 | `tempo.addPoint` | `beat` (> 0), `bpm` (20–999), `ramp?` (default false) | adds a change; one of the same kind (step or ramp) already on that beat is replaced |
 | `tempo.movePoint` | `point`, `beat?`, `bpm?`, `ramp?` | changes a point; moved onto a beat with a point of the same kind, it replaces that one |
 | `tempo.deletePoint` | `point` | removes a point |
-| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16, 32, 64) | adds a change at the start of the bar; one already there is replaced |
+| `timeSignature.add` | `bar` (≥ 2), `numerator` (1–99), `denominator` (1, 2, 4, 8, 16) | adds a change at the start of the bar; one already there is replaced |
 | `timeSignature.move` | `bar`, `to?`, `numerator?`, `denominator?` | moves a change to bar `to` or changes its signature |
 | `timeSignature.delete` | `bar` | removes the change at that bar |
 | `transport.followTempoMap` | | puts the launcher clock back on the map after a scene took it off (not an edit) |
