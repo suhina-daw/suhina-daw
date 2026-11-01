@@ -1,10 +1,10 @@
 name: Settings guide export
 
+# The settings and shortcuts guide exports are current (docs/spec/settings-guide-export.md). Called
+# from ci.yml as its `settings-guide` job, so the `ci` check main requires goes red with it: a check
+# of its own, which main did not require, could fail without stopping a merge.
 on:
-  pull_request:
-  push:
-    branches: [main]
-  merge_group:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
