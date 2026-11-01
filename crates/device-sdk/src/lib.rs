@@ -7,6 +7,16 @@
 //! optional expanded panel; version 6 a panel style sheet. A validated graph compiles off the
 //! audio thread into a processor whose `process` method performs no allocation. File versions
 //! 1 through 6 remain readable.
+//!
+//! In detail: Builds, validates, serializes and prepares data-only `.sd` audio-effect, MIDI-effect
+//! and instrument graphs; stereo DSP graphs support branching, modulation and delayed feedback,
+//! MIDI effects preserve event frame offsets, and private polyphonic voice/grain graphs turn routed
+//! MIDI controls into audio, with a shared node catalog, generated parameter UI and embedded custom
+//! canvases. Audio graphs execute acyclic regions node by node over bounded 64-frame buffers
+//! allocated at preparation. Feedback components preserve frame-by-frame evaluation and delayed
+//! commits; graphs whose only acyclic nodes are input and output retain the original frame schedule
+//! to avoid unnecessary buffer copies. Parameter timelines and MIDI span boundaries preserve sample
+//! timing. It contains no executable Rust in `.sd` files.
 
 use std::fmt;
 use std::io::Read;

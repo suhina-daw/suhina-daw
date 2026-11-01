@@ -4,6 +4,27 @@
 //! A Suhina session: an open project, where it came from, and its undo history. Every change
 //! goes through a command (see `docs/decisions/0002-commands.md`), so the CLI, the MCP server and
 //! later the UI all drive the project the same way.
+//!
+//! In detail: An open project with its undo history (`Session`) and its decoded audio (ADR 0011),
+//! the open projects with one active, like tabs (`Projects`, ADR 0007), the command registry (ADR
+//! 0002), the `Player` that connects a session to a running engine, the audio output chosen and the
+//! `audio.*` commands (`audio`: the `AudioSystem` the output layer implements, reopening the active
+//! project's output with the transport where it was), the MIDI inputs and the `midi.*` commands
+//! (`midi`: the `MidiSystem` the MIDI layer implements, the ports turned off, and the `LiveInput`
+//! that hands their notes to the engine that plays; ADR 0017), the armed tracks (`track.setArm`,
+//! kept beside the project), the project's running plug-ins (`rack`: each plug-in device found in
+//! the catalog, started with its saved state off the audio thread, handed to the engine, watched
+//! and restarted; `start_offline` for renders; the states it reads compared with the ones last
+//! saved, `plugin_edits`, so a change in a plug-in's editor is an unsaved change), adding tracks
+//! and placing files (`files`: `track.add`, `clip.addFiles`), splitting and consolidating clips
+//! (`editing`: `clip.split`, `clip.consolidate`, which renders audio with the engine's
+//! `render_track` and writes it as a WAV file with hound), previews (`preview.*`) and the browser's
+//! commands (`library.*`, on the `Library` `Projects` holds) and the sample map's (`soundmap.*`, on
+//! its `SoundMap`), missing files (`relink`: `project.missingFiles`, `project.relinkFiles`), the
+//! device commands (`devices`), sends and return tracks (`sends`: `track.setSend`,
+//! `track.setSendMode`, `return.*`) the blank project (`blank`) and backups (`backup`: when each
+//! project is copied, the backup thread that writes the copies and cleans up, the journal the offer
+//! after a crash reads, `project.autosave`; spec (`docs/spec/backups.md`)).
 
 mod ara;
 pub mod audio;

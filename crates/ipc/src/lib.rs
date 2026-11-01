@@ -23,6 +23,21 @@
 //!
 //! This crate is one of the two allowed to use `unsafe` (ADR 0006): memory shared with another
 //! process and waiting on it need it. Everything it exports is safe to use.
+//!
+//! In detail: Audio blocks between the engine and a plug-in host process (ADR 0006): a
+//! shared-memory region with each block's notes and controllers (`Event`, up to 1024 a block) and
+//! the instances of the host process that run the block after the link's own (up to 63,
+//! `Link::send_joint`), one block in flight, a doorbell per direction (a futex on Linux, events
+//! with a high-resolution timer on Windows, yielding elsewhere for now) and a deadline; a crashed
+//! or hung host costs missed blocks, never a stall. `AudioSource`: a file's decoded samples in a
+//! region of their own, written once and mapped read only by the host, for an ARA plug-in to read
+//! (ADR 0033). Both are memory the operating system frees when the last process holding it ends,
+//! however it ends (`shm`): a page-file mapping named `Local\suhina-…` on Windows, a `memfd` opened
+//! through `/proc/<pid>/fd/<n>` on Linux, and on macOS a file in the temporary folder whose name
+//! goes once the host has opened a link or the engine drops a source; the first one a process makes
+//! removes the macOS files of processes that crashed before that, and earlier versions' leftover
+//! files on every system (`sweep`, ADR 0006 › The boundary). One of the two crates allowed
+//! `unsafe`. Linked into the engine's process through `plugins`.
 
 mod doorbell;
 mod events;
