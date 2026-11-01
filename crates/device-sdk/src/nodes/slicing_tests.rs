@@ -106,7 +106,7 @@ fn hits_over_a_slow_fade_start_at_the_hit() {
         let mut x = fade * (t * 100. * std::f64::consts::TAU).sin();
         for hit in [0.4, 0.8] {
             if (0. ..0.003).contains(&(t - hit)) {
-                let sign = if ((t - hit) * 16000.) as usize % 2 == 0 { 1. } else { -1. };
+                let sign = if (((t - hit) * 16000.) as usize).is_multiple_of(2) { 1. } else { -1. };
                 x += 0.06 * (-(t - hit) / 0.0008).exp() * sign;
             }
         }
