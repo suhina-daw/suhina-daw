@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Regenerates crates/plugin-host/src/ara_sys/{x86,arm}.rs, the Rust form of the ARA C API, from
-# the vendored headers in third_party/ara-api (ADR 0028). The headers pack structs to 1 byte on
+# the vendored headers in third_party/ara-api (ADR 0033). The headers pack structs to 1 byte on
 # x86 and to 8 on ARM, so each CPU gets a file of its own; crates/plugin-host/src/main.rs picks
 # one by target_arch. Needs bindgen-cli (`cargo install bindgen-cli`) and libclang. The output
 # carries bindgen's layout checks, which fail to compile where a struct's size or a field's offset

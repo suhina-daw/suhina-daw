@@ -119,4 +119,5 @@ file is the same with or without `--cue`, and the same whether tracks are cued o
 - A cue on a second, different device (a separate headphone dongle): two devices mean two
   clocks to keep in step.
 - A crossfader between cue and main, or splitting cue and main into the two ears of one pair.
-- Level meters for the cue (they come with the mixer's meters).
+- Level meters for the cue output: the mixer's meters do not measure it yet
+  ([level meters](level-meters.md) › Limits).

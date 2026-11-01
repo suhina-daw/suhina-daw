@@ -2,7 +2,8 @@
 description: Whether Suhina should build and ship a low-latency Windows audio driver of its own, what that would take (user or kernel mode, signing, licences, the ASIO name, upkeep), what the output crate already gives, and what reaches the same goals instead
 read_when: own ASIO driver, custom audio driver, universal ASIO driver, FlexASIO, low latency on Windows, non-exclusive ASIO, shared audio device, several audio interfaces at once, aggregate device, virtual audio device, driver signing, WHQL, attestation signing, kernel mode driver, IAudioClient3, WASAPI low latency shared mode
 type: decision
-status: draft
+status: proposed
+built: no
 last_verified: 2026-10-15
 covers:
   - crates/output/src/exclusive.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0018: A Windows audio driver of Suhina's own
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Issue:** [#307](https://github.com/suhina-daw/suhina-daw/issues/307) (this ADR is its research
   step; the issue stays open until the maintainer decides)

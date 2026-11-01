@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The host side of ARA ([ADR 0028]): a document controller per plug-in and project, which the
+//! The host side of ARA ([ADR 0033]): a document controller per plug-in and project, which the
 //! VST3 instances on the project's tracks share, each its track as a region sequence, built from
 //! the [`AraDocument`] the engine sends with `load`, with the host's interfaces the plug-in calls
 //! back (audio access, archiving, content access, model updates, playback control).
@@ -13,7 +13,7 @@
 //! The three VST3 interfaces of `ARAVST3.h` (`IMainFactory`, `IPlugInEntryPoint`,
 //! `IPlugInEntryPoint2`) are declared here by hand; the C API comes from [`crate::ara_sys`].
 //!
-//! [ADR 0028]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0028-ara-hosting.md
+//! [ADR 0033]: https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0033-ara-hosting.md
 
 use std::cell::{Cell, RefCell};
 use std::ffi::{CString, c_void};
@@ -290,7 +290,7 @@ const ANALYSIS_QUIET: Duration = Duration::from_secs(3);
 thread_local! {
     /// The documents this process holds, by the plug-in's factory and the engine's document
     /// key ([`AraDocument::document`]): the instances of one plug-in in one project share one
-    /// (ADR 0028 decision 2), each track a region sequence of it, so the plug-in sees every
+    /// (ADR 0033 decision 2), each track a region sequence of it, so the plug-in sees every
     /// track. Weak: a document goes with the last instance bound to it.
     static SHARED: RefCell<Vec<Weak<RefCell<Shared>>>> = const { RefCell::new(Vec::new()) };
 }
@@ -584,7 +584,7 @@ impl Shared {
             name: self.text(&region.name),
             persistentID: self.text(&region.modification),
         };
-        // A copy of a modification this document has starts with its edits (ADR 0028 decision
+        // A copy of a modification this document has starts with its edits (ADR 0033 decision
         // 5): a pasted or split clip, or one that got its own content. A plug-in that cannot
         // clone, or a clone it refuses, gets a new modification instead.
         let original = region
@@ -614,7 +614,7 @@ impl Shared {
     }
 
     /// Asks the plug-in to find the notes of each source it has not analysed yet, once, when it
-    /// says it can (ADR 0028): the notes then show on the clips without the editor being opened.
+    /// says it can (ADR 0033): the notes then show on the clips without the editor being opened.
     /// The work is the plug-in's, in this process; it says when it is done with a content change.
     fn ask_for_notes(&self, dc: &Controller) {
         let started = Instant::now();
@@ -1225,7 +1225,7 @@ impl Document {
     }
 
     /// The edits of one modification (`content-<id>`) and its source (the pool key), stored on
-    /// their own (a partial archive, ADR 0028 step 6): to give another track's plug-in when a
+    /// their own (a partial archive, ADR 0033 step 6): to give another track's plug-in when a
     /// clip goes there with its edits kept. The plug-in's document archive id and the bytes.
     pub(crate) fn export(&self, modification: &str, source: &str) -> Result<(String, Vec<u8>), String> {
         let shared = self.shared.borrow();

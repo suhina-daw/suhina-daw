@@ -1,5 +1,5 @@
 ---
-description: Planned device groups - several devices on a track as one unit, with parallel branches, per-branch volume, pan, mute and solo, a mix, macros, group presets, latency compensation, the model and the commands
+description: Device groups - several devices on a track as one unit, with parallel branches, per-branch volume, pan, mute and solo, a mix, macros, group presets, latency compensation, the model and the commands
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
@@ -22,7 +22,7 @@ covers:
   ([ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10), plug-in hosting
   ([ADR 0006](../decisions/0006-plug-in-hosting.md)) and the model
   ([ADR 0001](../decisions/0001-daw-neutral-model.md)). Nothing here is observed from another
-  program; nothing is implemented yet.
+  program.
 - **Status:** steps 1 to 6 of the *Implementation plan* are built (#147): the model and file,
   groups in the engine with latency compensation, the commands, plug-ins inside groups and the
   panel with Ctrl+G. Macros (7), group presets (8) and key ranges (9) are still planned; the model
@@ -161,9 +161,9 @@ Applying a macro:
   macro's value and the mapped parameters' resulting values, so a project opened without macro
   support still sounds the same.
 - **Plug-ins:** the session sends the computed value as `set_param` (ADR 0006 › 3), which reaches
-  the processor at the start of the next block. That is block-accurate, not sample-accurate, until
-  the engine automates plug-in parameters (ADR 0006 › Consequences, *Not built yet*); then a macro
-  becomes parameter events at their frames like any automation. Mapping a plug-in parameter needs
+  the processor at the start of the next block. That is block-accurate. Automation reaches a plug-in as
+  parameter events at their frames ([plug-in hosting](plugin-hosting.md) › Events in a block,
+  #109), and a macro can take the same path once it is built. Mapping a plug-in parameter needs
   the plug-in running (its parameter list comes from `get_params`); a mapping to a plug-in that is
   missing is kept and does nothing.
 
@@ -434,7 +434,7 @@ For the maintainer; each has the choice this spec made, so work can start withou
     role is the first thing that would need one. It is a third kind with its own placement rules (MIDI
     effects only, on a track that plays notes); nothing here forecloses it, and it is not planned until
     MIDI effects exist.
-11. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
+12. **Importing other formats' grouped devices** onto device groups: done for Live's Audio
     Effect Rack and Instrument Rack ([`als-format.md`](als-format.md) › Audio Effect Rack and
     Instrument Rack), observed in the user's own sets; macro mappings wait for a set that shows
     where Live stores them, and an Instrument Rack's zones for key ranges (9).

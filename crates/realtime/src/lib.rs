@@ -27,6 +27,15 @@
 //! [`RealTime::notice`] says why, for the caller to tell the user once. The work is done when
 //! the thread starts, before it renders anything; none of it runs inside an audio callback.
 //! `SUHINA_NO_REALTIME=1` leaves the thread at its normal priority, to compare.
+//!
+//! In detail: Real-time priority for the threads that make sound, the render thread and the plug-in
+//! hosts' audio threads (`RealTime::join`): MMCSS "Pro Audio" on Windows; on Linux `SCHED_FIFO`
+//! where the user has real-time rights, otherwise rtkit over the system D-Bus (`zbus`, pure Rust,
+//! so no libdbus), otherwise the highest normal priority; the highest priority elsewhere. Says what
+//! it got, and why real-time scheduling was refused; never fails. Under rtkit, whose grant ends the
+//! process when a thread runs `RLIMIT_RTTIME` without waiting, it paces a rendering thread
+//! (`waited`, `worked`): a short rest before the limit, and normal priority after a block that
+//! takes a quarter of it. No `unsafe`.
 
 use std::time::Duration;
 

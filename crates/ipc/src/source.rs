@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! An audio source in shared memory, for an ARA plug-in to read (ADR 0028 decision 4): the
+//! An audio source in shared memory, for an ARA plug-in to read (ADR 0033 decision 4): the
 //! engine side writes a file's decoded samples once, the host process maps them read only and
 //! serves the plug-in's reads from them, with no round trip and no file I/O.
 //!

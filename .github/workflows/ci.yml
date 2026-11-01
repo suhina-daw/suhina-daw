@@ -80,6 +80,9 @@ jobs:
         run: python3 scripts/updater_source.py
       - name: Script tests (release notes)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      # Each file is a ROADMAP bullet that docs-generated.yml folds in on main.
+      - name: docs/works-now files
+        run: python3 scripts/works_now.py check
       # The claim bot writes to the project board, so a wrong branch would not fail anything else:
       # its commands are run here against mocked API clients, on the runner's Node.js.
       - name: The claim bot's commands answer as intended
@@ -133,9 +136,9 @@ jobs:
             echo "::error::Live files are not committed; test sets stay in corpus/ (see CONTRIBUTING.md)."
             exit 1
           fi
-      - name: No old project name (AGENTS.md › Crate names)
+      - name: No old project name (docs/architecture.md › Crate names)
         run: python3 scripts/rename_suhina.py --check
-      - name: Licence header in every source file (AGENTS.md › Licence header)
+      - name: Licence header in every source file (docs/architecture.md › Licence header)
         run: python3 scripts/license_header.py --check
       - name: No long test modules inside source files (scripts/inline_tests.py)
         run: python3 scripts/inline_tests.py --check
@@ -186,6 +189,12 @@ jobs:
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The VST2 interface layer is behind the `vst2` feature (ADR 0022), off by default
+      # because nothing ships VST2 hosting yet: it is clippy-checked and its tests run with
+      # the feature on, so the gated code cannot rot unseen. Its tests are pure computation,
+      # so the one job is enough (the macOS job mirrors the workspace steps only).
+      - run: cargo clippy -p suhina-plugin-host --all-targets --features vst2 -- -D warnings
+      - run: cargo test -p suhina-plugin-host --features vst2 vst2
       - name: ASIO driver initialization contract
         if: runner.os == 'Windows'
         env:
