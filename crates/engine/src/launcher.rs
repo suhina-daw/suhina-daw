@@ -8,6 +8,30 @@
 //! and counters, so [`Renderer::handle`] and the per-frame work never allocate. Other threads
 //! send [`LaunchCommand`]s through a [`Controller`] (a lock-free queue) and read the state back
 //! from a [`LauncherMonitor`] (atomics).
+//!
+//! # Time bases
+//!
+//! - **The launcher's beat** (`Launcher::beat`) is the clock launches are quantised on: beats
+//!   are quarter notes, counted from the song's start. It moves on once per frame by the frame's
+//!   step: read from the arrangement's tempo map at the next arrangement frame while the clock
+//!   follows a changing map (`Launcher::on_map`), so it never drifts from the arrangement, or
+//!   `tempo_bpm / 60 / sample_rate` otherwise (a scene's tempo takes it off the map).
+//! - **The arrangement's frames** (`Renderer::time`) are sample frames from the song's start.
+//!   The launcher reads them only to look up the map, and to note the frame from which a track
+//!   plays launched clips instead of its arrangement (`Column::overrides_since`).
+//! - **A clip's elapsed beats and frames** (`Playing::elapsed_beats`, `elapsed_frames`) count
+//!   from its launch: the beats by the same step as the launcher's beat, the frames by one. The
+//!   beats place the clip's notes and its position in its content (`ClipPlan::clip_beat`, with
+//!   its loop) and end it at its end marker; audio that follows the tempo is read at the elapsed
+//!   beats times the frames per beat the graph was built at, audio that does not at the elapsed
+//!   frames.
+//!
+//! **Which one decides when a launch is heard:** the launcher's beat. A launch, a stop or a
+//! scene's tempo or time signature waits as a pending action at the beat of the next boundary of
+//! its quantisation (`Launcher::launch_beat_on`: whole bars from where the time signature last
+//! changed, or note values within the bar), and it applies in the first frame whose launcher beat
+//! has reached it (`Renderer::apply_due`). Its clip's elapsed beats and frames start from zero
+//! there.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};

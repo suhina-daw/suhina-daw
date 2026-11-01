@@ -3,7 +3,7 @@ description: How the cue output works: a second output pair on the same audio de
 read_when: cue, cue output, headphones, pre-listen, solo in place, preview output, cue volume, cue pair, outputs 3/4, track.setCue, output.setCuePair, output.setCueVolume, headphones button, cue button, render --cue, multi-channel device
 type: spec
 status: current
-last_verified: 2026-10-20
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/cue.rs
   - crates/engine/src/cue_tests.rs
@@ -119,4 +119,5 @@ file is the same with or without `--cue`, and the same whether tracks are cued o
 - A cue on a second, different device (a separate headphone dongle): two devices mean two
   clocks to keep in step.
 - A crossfader between cue and main, or splitting cue and main into the two ears of one pair.
-- Level meters for the cue (they come with the mixer's meters).
+- Level meters for the cue output: the mixer's meters do not measure it yet
+  ([level meters](level-meters.md) › Limits).

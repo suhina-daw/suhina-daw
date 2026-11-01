@@ -2,8 +2,9 @@
 description: Advanced native CSS theming, the style and layout engines to evaluate, and preservation of authored rules in JSON
 read_when: modern CSS, Stylo, Taffy, Lightning CSS, Blitz, native CSS architecture, CSS JSON synchronization
 type: decision
-status: draft
-last_verified: 2026-10-28
+status: proposed
+built: partly
+last_verified: 2026-11-02
 covers:
   - crates/ui/src/kit/native_css.rs
   - crates/ui/src/kit/native_css/paint.rs

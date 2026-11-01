@@ -3,7 +3,7 @@ description: How launching clips and scenes behaves: quantisation, stop buttons,
 read_when: clip launching, scenes, launch quantisation, stop, launcher view, launcher commands, fades on launched clips, follow actions, launch modes, gate, toggle, repeat, legato, per-clip quantisation, launch keys, MIDI notes, mappings, launcher.addMapping
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-02
 covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/follow.rs
@@ -244,10 +244,11 @@ profiles) are planned separately and can take these over.
    while the Launcher view is shown and nothing else has the keyboard
    ([Launcher view](ui-session-view.md#launch-keys)).
 5. **MIDI notes.** **Suhina:** a mapped note launches and does not also play on a track. The
-   mappings, the commands and the press and release logic for notes are in place; Suhina reads no
-   live MIDI input yet ([#264](https://github.com/suhina-daw/suhina-daw/issues/264)). When live
-   input lands, its notes go through the same lookup (`suhina_session::mapped_command`) as keys,
-   and the window's mapping mode learns notes as it learns keys.
+   mappings, the commands and the press and release logic for notes are in place, but live MIDI
+   input ([ADR 0017](../decisions/0017-inputs-and-latency.md)) plays the armed tracks and does not
+   reach the mappings yet, so only computer keys launch from the window. Wired up, its notes go
+   through the same lookup (`suhina_session::mapped_command`) as keys, and the window's mapping
+   mode learns notes as it learns keys.
 
 **Commands.** `launcher.addMapping {source, target, track?, scene?}` (`target` slot, scene or
 stop; a slot needs `track` and `scene`, a scene `scene`, a stop button `track`) and
@@ -340,8 +341,8 @@ the arrangement, by copying ([Launcher view](ui-session-view.md) › Between the
   paste).
 - In the window: Copy and Paste in a slot's or a clip's right-click menu, Ctrl+C and Ctrl+V on the
   selected slot or clip, and dragging a clip over the other view's name in the control bar.
-- A slot clip's fades are kept, but launched clips do not play them yet (Suhina decisions ›
-  Fades above).
+- A slot clip's fades are kept, and launched clips play them (Suhina decisions › Clip fades
+  above).
 
 ## To observe
 

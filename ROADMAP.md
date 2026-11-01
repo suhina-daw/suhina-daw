@@ -133,16 +133,15 @@ but has not been tried yet ([ADR 0008](docs/decisions/0008-patch-devices.md), pr
 
 **ARA** after VST3 hosting works in the sandbox: Arrangement first, since looping, quantised
 Launcher clips do not fit ARA's linear timeline; Launcher view later. The design is
-[ADR 0028](docs/decisions/0028-ara-hosting.md) (proposed) and the stages are the epic
+[ADR 0033](docs/decisions/0033-ara-hosting.md) (proposed) and the stages are the epic
 [#587](https://github.com/suhina-daw/suhina-daw/issues/587): the document lives in the plug-in host,
 audio reaches it through shared memory, and an ARA clip that would overlap another audio clip is
 refused or suspended, never by losing its edits.
 
 ## What works now
 
-- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
-  editable automatic boundaries with persistent corrections, stereo waveform lanes,
-  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
+<!-- A new bullet goes in a file of its own under docs/works-now/ (its README says how), not here. -->
+
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
 
@@ -200,6 +199,10 @@ refused or suspended, never by losing its edits.
   waveform, SDK controls, browser/system sample drops and recording from the armed
   track's selected audio input. Sample replacement is undoable; missing sources can
   be relinked. Multisample zones remain planned.
+
+- Sampler has visible Sample/Slice/Grain modes, a source-tempo grid with snap,
+  editable automatic boundaries with persistent corrections, stereo waveform lanes,
+  pointer-anchored zoom, slice selection and audition, and separate slice overlap/release controls.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
@@ -478,8 +481,13 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   about one heavy plug-in, and a slow or hung plug-in holds up only its own track
   ([#151](https://github.com/suhina-daw/suhina-daw/issues/151)).
 - Still to do: checking an imported Live Set
-  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland
-  editors, VST2 hosting (not decided).
+  with real plug-ins ([#112](https://github.com/suhina-daw/suhina-daw/issues/112)), Wayland and
+  macOS editors, VST2 hosting — decided in
+  [ADR 0022](docs/decisions/0022-vst2-interface-description.md) (VeSTige, pinned; the
+  2026-10-31 amendment allows shipping) and begun
+  with the interface layer, the mock and the probe
+  ([#1066](https://github.com/suhina-daw/suhina-daw/issues/1066),
+  [spec](docs/spec/plugin-vst2.md)).
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
@@ -695,13 +703,13 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   sub-rows ([spec](docs/spec/arrangement-editing.md)).
 - A plug-in scan notes which VST3 plug-ins support ARA (`plugin.list` shows `ara`), and such a
   plug-in is never given a host process of its own, since its document and every instance
-  editing it share one ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  editing it share one ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - A plug-in that edits clips (ARA, such as a pitch editor) on an audio track is loaded with the
   track's arrangement audio clips: its editor shows them and it plays its edited version of them
   in time with the song. Its edits are saved with the project, and it follows the clips as they
   are moved, trimmed, added or deleted while it plays, without loading again; an undo brings a
   deleted clip back with its edits. Warped and looped
-  clips and the overlap guard come later ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  clips and the overlap guard come later ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - Selecting an audio clip on such a track shows the plug-in's editor in the detail area, where a
   MIDI clip has its piano roll, with that clip shown in it; the clip's menu (**Open in** the
   plug-in) and Alt+M open it, adding the installed one (Melodyne first) to the track when it has
@@ -709,7 +717,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([clip editor](docs/spec/ui-clip-editor.md) › Where it opens).
 - `arrangement.audioOverlaps` lists the audio clips that sound together on one track because their
   spans overlap, clips that only touch left out, for agents and the CLI; the first step towards ARA
-  ([ADR 0028](docs/decisions/0028-ara-hosting.md)).
+  ([ADR 0033](docs/decisions/0033-ara-hosting.md)).
 - Arrangement clips split and consolidate: Ctrl+E cuts the selected clip at the playhead and
   a clip's right-click menu has Split here (`clip.split`, the second part playing on from where
   the clip was); Ctrl+J or Consolidate turns a range of one track into one clip, MIDI by joining

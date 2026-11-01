@@ -2,8 +2,9 @@
 description: Why tracks and mixer channels are separate and clips place shared contents, so several DAWs' projects fit
 read_when: changing the model, track, channel, clip content, lane, pattern, importing another format, clip scale, default scale
 type: decision
-status: current
-last_verified: 2026-10-30
+status: accepted
+built: yes
+last_verified: 2026-11-02
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/scale.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0001: A DAW-neutral project model
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 
 ## Context

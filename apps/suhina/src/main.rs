@@ -3,6 +3,31 @@
 
 //! Suhina, the desktop app: opens a project, plays it on the default audio output and shows it
 //! in the main window (`suhina-ui`).
+//!
+//! In detail: The desktop app: opens a project (argument, a dropped `.suhina` or `.als`, or the
+//! project dialog), makes new ones (blank or from a template), keeps the recent projects, decodes
+//! its audio into the session, plays it stopped through `output` and runs `ui` in an eframe window;
+//! starts the browser's library (`browser.json` and its indexes in the app-data folder) and records
+//! opened projects among its recent ones; folders dropped on the window join the browser, and
+//! samples and MIDI files dropped on it land like a drag from the browser; shows the system's file
+//! and folder dialogs (`rfd`) that the window's **Browse…** buttons ask for and hands back the path
+//! chosen, and forgets a recent project the start panel takes off the list; loads and saves the
+//! settings, keymap and theme files (a theme file saved elsewhere is read again; theme backups and
+//! the theme template are zips in `exports/`, and theme files or zips dropped on the window are
+//! added); opens the MIDI inputs the settings leave on. On macOS `mac_menu.rs` builds the system's
+//! menu bar from the window's menus (`ui::app::menus`) and keeps it in step every frame; a pick
+//! runs the same item as the window's bar. With the GPU renderer the window is asked to be
+//! transparent; on the first frame `surface.rs` asks the GPU whether the swapchain hands alpha to
+//! the compositor (macOS always, DX12 through a DirectComposition visual on Windows, a probe
+//! surface for Vulkan and OpenGL). Where it does, `surface.rs` draws `kit::surface`'s backgrounds
+//! with a wgpu pipeline that writes their colour and alpha unblended, and the system blurs what is
+//! behind while the theme has a see-through background (winit's blur on macOS and Wayland, DWM
+//! acrylic through `window-vibrancy` on Windows); on macOS the content runs under the title bar.
+//! Starting, it reads the settings, keymap and themes, opens the window and shows the splash
+//! (`docs/design/components.md` › Splash); only once the splash is on screen does it start the
+//! library and the sample map and open the project asked for, so nothing slow runs before the
+//! window. Once the window is up it checks for updates (Settings › Agents and updates › Updates),
+//! and after *Restart now* starts the updated build as it closes.
 
 // Release builds on Windows start without a console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]

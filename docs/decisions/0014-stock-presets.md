@@ -2,8 +2,9 @@
 description: Presets for built-in and SDK-authored devices - where stock presets live, their licence (CC0), contribution rules and the shared format
 read_when: preset, stock preset, factory preset, preset contribution, CC0, presets folder, preset format, preset licence, DX7 bank, .sd preset
 type: decision
-status: current
-last_verified: 2026-10-16
+status: accepted
+built: partly
+last_verified: 2026-11-02
 covers:
   - presets/**
   - .github/PULL_REQUEST_TEMPLATE/preset.md
@@ -13,8 +14,6 @@ covers:
 
 # 0014: Presets for devices
 
-- **Status:** accepted (location, licence, contribution rules and shared format); loading and
-  saving presets are not implemented
 - **Date:** 2026-10-16
 
 ## Context

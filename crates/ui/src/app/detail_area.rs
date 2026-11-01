@@ -63,7 +63,7 @@ impl App {
         self.show_editor();
     }
 
-    /// The shown clip when its editor is a plug-in that edits clips (ARA, ADR 0028): an
+    /// The shown clip when its editor is a plug-in that edits clips (ARA, ADR 0033): an
     /// arrangement audio clip whose track runs such a plug-in. Its track, id and the plug-in's
     /// index in the track's chain.
     pub(super) fn ara_clip(&mut self) -> Option<(TrackId, ClipId, usize)> {

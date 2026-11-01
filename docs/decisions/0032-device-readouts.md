@@ -2,7 +2,8 @@
 description: How a built-in device hands live values (levels, gain change, a spectrum) to its panel - Device::readouts, a fixed table of atomics per track beside the meters, #rN values a canvas reads, and the real-time rules it keeps
 read_when: readouts, live values, device meter, gain reduction display, spectrum on a panel, signal in a device panel, #r0, readout expression, device to panel data, sample position
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-29
 covers:
   - crates/device-api/src/lib.rs

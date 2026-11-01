@@ -2,13 +2,13 @@
 description: What Suhina measures itself against in another DAW, what it deliberately leaves out, and how the parity measurement is kept honest and free of the manual's content
 read_when: parity, feature comparison, how far are we from Live, scope of the project, what Suhina does not aim at, milestone for recording, automation, MIDI editing, MIDI effects, devices
 type: decision
-status: draft
-last_verified: 2026-10-28
+status: proposed
+built: partly
+last_verified: 2026-11-02
 ---
 
 # 0016: Parity target: what Suhina compares itself to, and what it leaves out
 
-- **Status:** proposed
 - **Date:** 2026-10-13
 - **Task:** the parity measurement in
   [`docs/research/parity-live-12.md`](../research/parity-live-12.md), produced by `scripts/parity/`.

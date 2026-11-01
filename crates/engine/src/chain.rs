@@ -164,7 +164,7 @@ pub(crate) struct Chain {
     /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
     scale: Option<Option<MusicalScale>>,
     /// When its first slot is the channel's clip host, the ARA plug-in its clips play through
-    /// (ADR 0028 › Amendment: the ARA plug-in belongs to the clip, #990): what scales the host's
+    /// (ADR 0033 › 2, #990): what scales the host's
     /// output frame by frame and the other clips' sound, added after it.
     pub(crate) ara: Option<AraHost>,
 }
