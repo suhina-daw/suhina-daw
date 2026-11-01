@@ -172,13 +172,9 @@ by hand opens; a command never writes a value the file reader refuses.
 | Value | The commands set | A project file holds |
 |---|---|---|
 | Tempo | 20 to 999 bpm (`transport.setTempo`, `tempo.addPoint`, `scene.setTempo`) | 1 to 999 bpm, for the start tempo and every change |
-| Time signature change | numerator 1 to 99, denominator 1, 2, 4 … 64 (`timeSignature.add`) | the same |
-| Start time signature | as a change | each part 1 to 255 ([project file](suhina-format.md)) |
-| A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | each part from 1 ([project file](suhina-format.md)) |
-
-Open: whether the start and scene time signatures in a file should follow the rule of a change
-(a denominator that is a power of two up to 64), as the commands already do; the file reader
-accepts any whole number from 1 there today.
+| Time signature change | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`timeSignature.add`) | the same |
+| Start time signature | as a change | numerator 1 to 255, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
+| A scene's time signature | numerator 1 to 99, denominator 1, 2, 4, 8 or 16 (`scene.setTimeSignature`) | numerator from 1, denominator 1, 2, 4, 8 or 16 ([project file](suhina-format.md)) |
 
 ## The Arrangement
 
