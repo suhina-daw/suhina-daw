@@ -38,7 +38,7 @@ or full of odd names.
    (`library.setPluginsView`, `plugins_view` in `browser.json`;
    [the plug-in browsing spec](../spec/plugin-browsing.md)).
 2. **The index lists names, not contents.** Per file: its path below the folder, kind, size
-   and modification time; per sub-folder: its modification time. Searching runs over this list
+   and modification time; per sub-folder: its modification time. Searching runs over this list, on a thread of its own when it holds more than 4096 files, so typing never waits for it
    in memory on the calling thread (a linear scan over at most 200 000 entries per folder takes
    milliseconds).
 3. **Kept on disk**, in `library/index-<n>.tsv` beside `browser.json` (one file per folder,
