@@ -2,7 +2,8 @@
 description: Several projects open at once like tabs, one active; where commands go, which project plays, and what is left for later
 read_when: tabs, several projects, open projects, switch project, Ctrl+Tab, project.list, project.switch, Projects, ProjectId
 type: decision
-status: current
+status: accepted
+built: yes
 last_verified: 2026-10-24
 covers:
   - crates/session/src/projects.rs
@@ -11,7 +12,6 @@ covers:
 
 # 0007: Several open projects
 
-- **Status:** accepted
 - **Date:** 2026-10-11
 - **Task:** [#36](https://github.com/suhina-daw/suhina-daw/issues/36)
 

@@ -269,7 +269,7 @@ fn clips_move_by_tracks_or_to_a_new_track() {
     assert_eq!(session.project().tracks.len(), tracks);
 }
 
-/// `ara_edits` (ADR 0028 step 6): keep carries the edits of clips a plug-in edits; clips no
+/// `ara_edits` (ADR 0033 step 6): keep carries the edits of clips a plug-in edits; clips no
 /// plug-in edits move as ever and carry nothing; anything but keep or new is refused.
 #[test]
 fn keeping_ara_edits_moves_plain_clips_as_ever() {

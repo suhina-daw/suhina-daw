@@ -2,13 +2,13 @@
 description: How hardware MIDI controllers drive Suhina - MIDI learn onto any command that takes a value, controller profiles in the user's settings, mappings to one project's tracks and devices saved in that project, gestures that make one undo step, and surface programs as extensions
 read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob, CC, control change, fader, encoder, relative encoder, takeover, pick up, controller profile, control surface, mapping mode, controller feedback, LED, MIDI output
 type: decision
-status: draft
+status: proposed
+built: partly
 last_verified: 2026-10-28
 ---
 
 # 0019: MIDI controllers and mapping
 
-- **Status:** proposed
 - **Date:** 2026-10-15
 - **Task:** [#403](https://github.com/suhina-daw/suhina-daw/issues/403). Behaviour spec:
   [`docs/spec/midi-mapping.md`](../spec/midi-mapping.md).
@@ -33,8 +33,8 @@ What exists, or is in review:
 - **Edits while playing** ([ADR 0005](0005-edits-while-playing.md)): an edit rebuilds the
   engine's graph, except a device parameter, which has a cheap path
   (`Player::set_device_param`) that changes one value from the next block.
-- **The window's drags**: a volume drag in the Launcher view shows the moving value locally and
-  runs `track.setVolume` once, when the mouse is released (`crates/ui/src/session/session_view.rs`).
+- **The window's drags**: a volume or pan drag runs `track.setVolume` or `track.setPan` on every
+  frame, with `continue` so the drag is one undo step ([ADR 0002](0002-commands.md) › 9).
 - **Settings and keymap**: the window keeps `settings.txt` and `keymap.json` in its storage
   folder; the keymap maps keys to commands that take no parameters.
 - **Extensions** ([ADR 0015](0015-extensions.md)): an optional component is a separate program

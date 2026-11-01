@@ -21,14 +21,6 @@ covers:
 
 # Browser
 
-A single sample dropped on a Sampler waveform replaces that instrument's source
-through `device.loadSample`; it creates no clip or track. This applies to browser
-items and files dragged from the operating system. MIDI and multi-file drops are
-not accepted by the waveform. A single sample dropped on the devices of a MIDI track that has
-none (the detail area showing its chain) adds a Sampler that plays it; dropped on that track's
-lane, header or slot it is a clip, as on any track, and the empty MIDI track becomes an audio
-track for it (#945). Other drop targets keep their existing behavior.
-
 The panel at the side of the main window where samples, MIDI files, presets, built-in
 instruments and effects and installed plug-ins are found, previewed and dragged into the
 project.
@@ -250,6 +242,14 @@ A sample becomes an audio clip; a MIDI file becomes one note clip per MIDI track
 notes (in the file's order; a type 0 file gives one clip). The clip is named after the file (and
 the MIDI track's name, when it has one: "groove – Hats").
 
+A single sample dropped on a Sampler's waveform replaces that instrument's source
+(`device.loadSample`) and creates no clip or track, from the browser or from the operating
+system; the waveform takes no MIDI file and no several files at once. Dropped on the devices of
+a MIDI track that has none (the detail area showing its chain), a sample adds a Sampler that
+plays it; dropped on that track's lane, header or slot it is a clip, as on any track, and the
+empty MIDI track becomes an audio track for it (#945). A sample still being dropped when another
+project becomes active is cancelled.
+
 **Several files** (and a MIDI file's several clips) go onto **one track**, one after another:
 in the Arrangement each starts where the one before ends; in the Launcher they go down the
 track's slots from the slot they were dropped on. With **Ctrl** held when releasing, they go
@@ -337,6 +337,11 @@ not a drag into the project: a folder joins the browser (*Sidebar*), a project o
 is added. Other files are an error in the status bar.
 
 ### Built-in effects and instruments, presets and plug-ins
+
+Built-in instrument, effect and MIDI effect entries come from the device registry, under the
+key `device:<id>`; they are not `.sd` files, and nothing beside the executable is needed for
+them. Their panels are loaded by id ([ADR 0021](../decisions/0021-device-graph-files.md) ›
+Amendment: device panels for built-in devices).
 
 | Dropped on | Result |
 |---|---|
@@ -505,13 +510,4 @@ the user chooses the browser's folders ([`mcp.md`](../mcp.md)). `library.copyTo`
 - Presets of plug-ins (CLAP preset discovery, VST3 presets).
 - Previewing in time with the project, and hot-swapping a device or sample by double-click.
 - Key detection by analysis.
-- A system file dialog for adding a folder (today a path is typed or a folder dropped).
 
-Built-in instrument, effect and MIDI effect entries come from the device registry, under the
-key `device:<id>`; they are not `.sd` files, and nothing beside the executable is needed for
-them. Their panels are loaded by id ([ADR 0021](../decisions/0021-device-graph-files.md) ›
-Amendment: device panels for built-in devices).
-
-A single audio file dropped onto an empty MIDI track (header, slot, arrangement lane or empty device area)
-adds Sampler and loads its source without creating an audio clip. Tracks with devices
-are left intact. A pending file drop is cancelled when another project is active.

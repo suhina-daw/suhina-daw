@@ -30,6 +30,23 @@
 //! size outside the range it reports; where the device's own buffer is not ours to set (WASAPI
 //! shared mode, where Windows plays the period it gives the device) the number is the engine's
 //! block alone, and `audio.info` reports the device's measured buffer next to it.
+//!
+//! In detail: The audio device: lists the hosts and their output devices (`devices`: cpal's WASAPI,
+//! ASIO with the `asio` feature, ALSA, JACK, CoreAudio; sample rates and the buffer sizes the
+//! driver allows, and a driver is never asked for a size outside the range it declared: a range
+//! holding no size the engine renders in leaves the driver its own buffer size, with a notice) and
+//! plays a `Renderer` on the output an `OutputChoice` names, or the default one, falling back with
+//! a notice when it is gone. The engine renders ahead on a real-time render thread in blocks of the
+//! chosen buffer size (64 … 4096 frames, 1024 when none is chosen) into a lock-free ring the
+//! device's callback reads, four blocks ahead, or one while a track is armed (ADR 0017), four
+//! samples a frame: the main pair, written to outputs 1 and 2, and the cue, written to the cue pair
+//! the choice names when the device has it (cue spec (`docs/spec/cue-output.md`)). Where the
+//! device's own buffer is not Suhina's to set (WASAPI shared mode, which plays the period Windows
+//! gives the device) that size is the engine's block alone, and `audio.info` reports the device's
+//! measured buffer next to it. WASAPI exclusive mode goes through the `wasapi` crate (`exclusive`),
+//! since cpal opens WASAPI shared only. The input device chosen is opened beside it on the same
+//! host (`input`, ADR 0017). `open_chosen` gives a `Player` whose stream lives on its own thread;
+//! `DeviceOutput` is the session's `AudioSystem`. The only code that opens an audio device.
 
 pub mod devices;
 #[cfg(windows)]

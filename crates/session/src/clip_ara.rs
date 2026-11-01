@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A clip's ARA plug-in (ADR 0028 › Amendment: the ARA plug-in belongs to the clip, #990): the
+//! A clip's ARA plug-in (ADR 0033 › 2, #990): the
 //! channel's clip host, its first device, which the device lists do not show, and the clips that
 //! play through it (`Clip::ara`).
 

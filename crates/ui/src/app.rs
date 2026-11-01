@@ -328,7 +328,7 @@ pub struct App {
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
-    /// new (ADR 0028 step 6): the move, and the plug-in's name.
+    /// new (ADR 0033 step 6): the move, and the plug-in's name.
     ara_prompt: Option<(Action, String)>,
     /// Samples dropped on a browser folder, waiting for Move or Copy (#943), and the dialog's
     /// Remember my choice box.
@@ -1106,7 +1106,7 @@ impl App {
         }
     }
 
-    /// Whether `track` has a plug-in that edits its clips (ARA, ADR 0028): the play-from-clip
+    /// Whether `track` has a plug-in that edits its clips (ARA, ADR 0033): the play-from-clip
     /// rules give way there, always.
     fn ara_track(&self, track: TrackId) -> bool {
         self.session().is_some_and(|s| s.ara_device(track).is_some())
@@ -2128,7 +2128,7 @@ impl App {
     }
 
     /// The name of the plug-in that edits clips which `action` moves or copies to another track
-    /// (ADR 0028 step 6), so Keep edits or Copy as new is asked first; `None` otherwise, and for
+    /// (ADR 0033 step 6), so Keep edits or Copy as new is asked first; `None` otherwise, and for
     /// a move that already says (`ara_edits`).
     fn ara_clips_leaving(&self, action: &Action) -> Option<String> {
         if !matches!(action.id, "clip.move" | "clip.moveMany") || !action.params["araEdits"].is_null() {

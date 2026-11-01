@@ -2,7 +2,8 @@
 description: Themes become style sheets in a CSS dialect of Suhina's own (elements, states, properties from one registry), the window becomes a grid of named areas on taffy, control artwork and meter styles are properties, and glass is a materials model whose renderer is chosen by measurement
 read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taffy, glass, blur, transparent window, artwork, SVG controls, meter style, edit interface, theme package
 type: decision
-status: draft
+status: proposed
+built: partly
 last_verified: 2026-10-29
 covers:
   - crates/style/
@@ -15,7 +16,6 @@ covers:
 
 # 0031: Style sheets for the whole UI
 
-- **Status:** proposed
 - **Date:** 2026-10-22
 - **Amends:** [ADR 0009](0009-ui-toolkit-and-look.md) decision 6 (themes are style sheets; JSON
   colour themes are dropped). Decision 1 (the window is drawn by eframe) is amended only if
