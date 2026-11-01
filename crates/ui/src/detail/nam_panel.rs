@@ -159,7 +159,7 @@ fn knob(
             change = Some((parameter.clamp(next), false));
         }
     }
-    let circle = (cell.height() - 28.0).min(cell.width()).clamp(20.0, KNOB);
+    let circle = (cell.height() - 28.0).min(cell.width()).clamp(12.0, KNOB);
     let circle_center = egui::pos2(cell.center().x, cell.top() + 12.0 + circle / 2.0);
     widgets::dial(ui.painter(), circle_center, circle, at as f32, Some(&response));
     widgets::text_in(
@@ -201,19 +201,29 @@ fn mid_freq_line(
 ) -> egui::Response {
     let publisher = format!("{}: {}", prefix, parameter.name.to_lowercase());
     let painter = ui.painter();
-    // The name at the left, the line's middle, the value at the right: the row is 22 high,
-    // and the three sit centred in it as one control.
-    widgets::text_in(
-        painter,
-        Rect::from_min_max(under.left_top(), egui::pos2(under.left() + 56.0, under.bottom())),
-        Align2::LEFT_CENTER,
-        parameter.name,
-        theme::ui_font(theme::TEXT_TINY),
-        theme::text_secondary(),
-    );
+    // The row is 22 high, and the three of it sit centred as one control: the name at the
+    // left, the line's middle, the value at the right. What a narrow stacked column gives
+    // the row decides who keeps theirs: below 112 points the value's band goes (its text is
+    // the longest), below 100 the name's; the line keeps the rest, never less than 8
+    // points, so the drag stays live at any width.
+    let width = under.width();
+    let name_shown = width >= 100.0;
+    let value_shown = width >= 112.0;
+    if name_shown {
+        widgets::text_in(
+            painter,
+            Rect::from_min_max(under.left_top(), egui::pos2(under.left() + 44.0, under.bottom())),
+            Align2::LEFT_CENTER,
+            parameter.name,
+            theme::ui_font(theme::TEXT_TINY),
+            theme::text_secondary(),
+        );
+    }
+    let line_left = under.left() + if name_shown { 48.0 } else { 4.0 };
+    let line_right = if value_shown { under.right() - 48.0 } else { under.right() - 2.0 };
     let line = Rect::from_min_max(
-        egui::pos2(under.left() + 62.0, under.center().y - 1.0),
-        egui::pos2(under.right() - 66.0, under.center().y + 1.0),
+        egui::pos2(line_left, under.center().y - 1.0),
+        egui::pos2(line_right.max(line_left + 8.0), under.center().y + 1.0),
     );
     painter.fill_background(line, 1.0, theme::control_background());
     let response = ui.interact(
@@ -255,14 +265,19 @@ fn mid_freq_line(
         theme::text_value(),
         egui::Stroke::NONE,
     ));
-    widgets::text_in(
-        painter,
-        Rect::from_min_max(egui::pos2(line.right() + 6.0, under.top()), egui::pos2(under.right(), under.bottom())),
-        Align2::LEFT_CENTER,
-        &shown_value(parameter, change.as_ref().map_or(value, |(v, _)| *v)),
-        theme::mono_font(theme::TEXT_TINY),
-        theme::text_value(),
-    );
+    if value_shown {
+        widgets::text_in(
+            painter,
+            Rect::from_min_max(
+                egui::pos2(under.right() - 44.0, under.top()),
+                egui::pos2(under.right(), under.bottom()),
+            ),
+            Align2::LEFT_CENTER,
+            &shown_value(parameter, change.as_ref().map_or(value, |(v, _)| *v)),
+            theme::mono_font(theme::TEXT_TINY),
+            theme::text_value(),
+        );
+    }
     if let Some((next, continuous)) = change {
         set_param(actions, track, device_index, parameter, next, continuous);
     }
@@ -655,16 +670,23 @@ pub(crate) fn show_amp(
     // EQ and HQ beside the On button, on its row; the Mid Freq's line right of them in the
     // same row — the name beside the line, the value past it — so the knobs' row keeps its
     // whole height (a detail area of the default height fits nothing under).
-    for (n, id) in [(1.0, "eqOn"), (2.0, "hq")] {
-        let at =
-            Rect::from_min_size(egui::pos2(controls.left() + n * 54.0, controls.top()), egui::vec2(48.0, ROW_HEIGHT));
+    for (at_left, id) in [(52.0, "eqOn"), (96.0, "hq")] {
         let parameter = amp_parameter(id);
-        toggle(ui, at, track, &device.at, &prefix, parameter, on_of(device, parameter), actions);
+        toggle(
+            ui,
+            Rect::from_min_size(egui::pos2(controls.left() + at_left, controls.top()), egui::vec2(40.0, ROW_HEIGHT)),
+            track,
+            &device.at,
+            &prefix,
+            parameter,
+            on_of(device, parameter),
+            actions,
+        );
     }
     mid_freq_line(
         ui,
         Rect::from_min_max(
-            egui::pos2(controls.left() + 168.0, controls.top()),
+            egui::pos2(controls.left() + 142.0, controls.top()),
             egui::pos2(controls.right() - 2.0, controls.top() + ROW_HEIGHT),
         ),
         track,
