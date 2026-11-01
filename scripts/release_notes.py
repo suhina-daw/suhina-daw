@@ -70,19 +70,19 @@ def changes(base: str | None, head: str) -> list[tuple[str, list[str]]]:
     """(title, changed paths) of each change from `base` (excluded) to `head`, newest first."""
     span = f"{base}..{head}" if base else head
     out = []
-    # Bodies span lines, so records end with \x1e and fields with \x00.
-    log = git("log", "--first-parent", "--format=%H%x00%P%x00%s%x00%b%x1e", span)
-    for record in log.split("\x1e"):
-        record = record.strip("\n")
-        if not record:
-            continue
-        sha, parents, subject, body = record.split("\x00", 3)
-        first = parents.split(" ")[0] if parents else ""
+    for line in git("log", "--first-parent", "--format=%H%x00%P%x00%s", span).splitlines():
+        sha, parents, title = line.split("\x00", 2)
+        parent_list = parents.split()
+        first = parent_list[0] if parent_list else ""
         if first:
             paths = git("diff", "--name-only", first, sha).splitlines()
         else:
             paths = git("show", "--name-only", "--format=", sha).splitlines()
-        out.append((title_of(subject, body), paths))
+        # Only a merge commit (two parents or more) takes its pull request's title from the body,
+        # read on its own so nothing in a body can break the parsing of the log.
+        if len(parent_list) > 1 and MERGE.match(title):
+            title = title_of(title, git("log", "-1", "--format=%b", sha))
+        out.append((title, paths))
     return out
 
 

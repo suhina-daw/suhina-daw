@@ -3,6 +3,9 @@
 
 """Tests for release_notes.py: python3 -m unittest discover -s scripts -p 'test_*.py'"""
 
+import os
+import subprocess
+import tempfile
 import unittest
 
 import release_notes as rn
@@ -163,6 +166,44 @@ class Titles(unittest.TestCase):
     def test_other_merges_keep_their_subject(self):
         subject = "Merge branch 'main' into feature/x"
         self.assertEqual(rn.title_of(subject, "Body"), subject)
+
+
+class History(unittest.TestCase):
+    """changes() on a small repository: a merge commit, and a plain commit that only looks like one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = os.getcwd()
+        os.chdir(self.tmp.name)
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        self.env = {**os.environ, **env}
+        self.run_git("init", "-q", "-b", "main")
+
+    def tearDown(self):
+        os.chdir(self.old)
+        self.tmp.cleanup()
+
+    def run_git(self, *args):
+        subprocess.run(["git", *args], check=True, capture_output=True, env=self.env)
+
+    def commit(self, name, message):
+        with open(name, "w", encoding="utf-8") as f:
+            f.write(name)
+        self.run_git("add", name)
+        self.run_git("commit", "-q", "-m", message)
+
+    def test_merge_and_lookalike(self):
+        self.commit("base.rs", "Base")
+        self.commit("plain.rs", "Merge pull request #7 from o/x\n\nNot a merge\x1e body")
+        self.run_git("checkout", "-q", "-b", "feature")
+        self.commit("feature.rs", "Work")
+        self.run_git("checkout", "-q", "main")
+        self.run_git("merge", "-q", "--no-ff", "feature",
+                     "-m", "Merge pull request #8 from o/feature", "-m", "Sampler: slices")
+        titles = [t for t, _ in rn.changes(None, "HEAD")]
+        self.assertEqual(
+            titles, ["Sampler: slices (#8)", "Merge pull request #7 from o/x", "Base"])
 
 
 class Nightly(unittest.TestCase):
