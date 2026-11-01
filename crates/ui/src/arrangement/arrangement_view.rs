@@ -1650,6 +1650,12 @@ fn show_lanes(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState
         for row in rows.iter() {
             let Some(lane) = timeline.lanes.iter().find(|l| l.track == row.track) else { continue };
             if lane.kind != ColumnKind::Track {
+                // Devices alone land on a group or a return too, on its header or its lane, as
+                // on its column in the Launcher view.
+                if probe.devices && !probe.files && !probe.clip {
+                    let whole = Rect::from_x_y_ranges(area.x_range(), row.clip.y_range());
+                    probe.offer(whole, DropTarget::Track(row.track));
+                }
                 continue;
             }
             if !probe.clip {

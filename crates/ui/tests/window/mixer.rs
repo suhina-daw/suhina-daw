@@ -418,6 +418,13 @@ fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     harness.step();
     harness.hover_at(at + egui::vec2(0.0, 20.0));
     harness.step();
+    harness.step();
+    // While it is dragged each field shows its own value moved, not the one being dragged.
+    for (track, was) in ["Drums", "Bass"].iter().zip(&before) {
+        let shown = harness.get_by_label(&format!("{track} volume")).value();
+        let wanted = format!("{:.1}", 20.0 * was.log10() - 5.0);
+        assert_eq!(shown.as_deref(), Some(wanted.as_str()), "{track}");
+    }
     harness.drop_at(at + egui::vec2(0.0, 20.0));
     harness.run();
     let after = volumes(&harness);
@@ -426,6 +433,77 @@ fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     for (track, (was, now)) in ["Drums", "Bass"].iter().zip(before.iter().zip(&after)) {
         assert!((now / was - quieter).abs() < 1e-3, "{track}: {was} -> {now}");
     }
+}
+
+/// A track's volume and its send to A Reverb in dB, the bottom of the range for none.
+fn levels(harness: &Harness<'static, App>, track: &str) -> (f64, f64) {
+    let db = |gain: f64| if gain > 0.0 { (20.0 * gain.log10()).max(-70.0) } else { -70.0 };
+    let Some(project) = harness.state().session().map(Session::project) else { return (-70.0, -70.0) };
+    let channel_of = |name: &str| project.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel);
+    let Some(channel) = channel_of(track).and_then(|c| project.channel(c)) else { return (-70.0, -70.0) };
+    let send = channel.sends.iter().find(|s| Some(s.target) == channel_of("A Reverb"));
+    (db(channel.volume), send.map_or(-70.0, |s| db(s.level)))
+}
+
+/// Drags `label` up by `points` in steps, the pointer still held at the end.
+fn drag_up(harness: &mut Harness<'static, App>, label: &str, points: f32) -> egui::Pos2 {
+    let at = harness.get_by_label(label).rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.step();
+    let to = at - egui::vec2(0.0, points);
+    harness.hover_at(to);
+    harness.step();
+    to
+}
+
+#[test]
+fn a_send_dragged_on_a_selection_moves_every_track_s_send_in_one_undo_step() {
+    let mut harness = window(demo_app());
+    let tracks = ["Drums", "Bass"];
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let before = tracks.map(|t| levels(&harness, t).1);
+
+    let to = drag_up(&mut harness, "Bass send to A Reverb", 20.0);
+    // Heard while it is dragged, on both.
+    let during = tracks.map(|t| levels(&harness, t).1);
+    for (was, now) in before.iter().zip(&during) {
+        assert!(now > was, "louder while dragged: {was} to {now}");
+    }
+    harness.drop_at(to);
+    harness.step();
+    harness.step();
+    for (track, was) in tracks.iter().zip(&before) {
+        let now = levels(&harness, track).1;
+        assert!((now - was - 5.0).abs() < 0.11, "{track}: {was} to {now}");
+    }
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(tracks.map(|t| levels(&harness, t).1), before, "one undo takes the whole drag back");
+}
+
+#[test]
+fn a_launcher_fader_dragged_on_a_selection_keeps_the_tracks_apart() {
+    let mut harness = window(demo_app());
+    harness.state_mut().run(&Action::new("track.setVolume", json!({ "tracks": [1], "db": -12.0 })));
+    harness.run();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    let apart = |h: &Harness<'static, App>| levels(h, "Bass").0 - levels(h, "Drums").0;
+    let before = apart(&harness);
+    assert!(before.abs() > 1.0, "{before}");
+    let to = drag_up(&mut harness, "Bass volume", 10.0);
+    assert!((apart(&harness) - before).abs() < 0.11, "while dragged: {before} to {}", apart(&harness));
+    harness.drop_at(to);
+    harness.step();
+    harness.step();
+    assert!((apart(&harness) - before).abs() < 0.11, "after: {before} to {}", apart(&harness));
 }
 
 #[test]
@@ -560,4 +638,25 @@ fn a_send_knob_sets_the_send_level_and_its_menu_the_mode() {
     harness.run();
     let undone = bass_send(&harness).map(|(level, pre)| (20.0 * level.log10(), pre));
     assert!(undone.is_some_and(|(db, pre)| (db - before).abs() < 1e-9 && !pre), "{undone:?}");
+}
+
+#[test]
+fn a_group_s_menu_recolors_the_tracks_inside_it() {
+    let mut harness = window(demo_app());
+    harness.state_mut().run(&Action::new("track.group", json!({ "tracks": ["Drums", "Bass"] })));
+    harness.run();
+    let track = |h: &Harness<'static, App>, name: &str| {
+        h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name).cloned())
+    };
+    let group = track(&harness, "Drums").and_then(|t| t.parent).unwrap();
+    let (name, colour) =
+        harness.state().session().and_then(|s| s.project().track(group).map(|t| (t.name.clone(), t.color))).unwrap();
+    assert_ne!(track(&harness, "Drums").and_then(|t| t.color), colour);
+    harness.get_by_label(&format!("Track {name}")).click_secondary();
+    harness.run();
+    harness.get_by_label("Recolor group").click();
+    harness.run();
+    for inside in ["Drums", "Bass"] {
+        assert_eq!(track(&harness, inside).and_then(|t| t.color), colour, "{inside}");
+    }
 }

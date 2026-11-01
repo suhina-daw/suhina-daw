@@ -144,11 +144,12 @@ pub(super) fn value_control(
     let mut preview = state.value_drag.as_ref().filter(|d| d.track == track && d.control == control).map(|d| d.now);
     // Another track of the same selection moves with the drag, by the same amount: what it shows
     // is its own value moved by the drag's offset, before the command lands.
-    let dragged = match state.value_drag.as_ref() {
-        Some(drag) if drag.control == control && drag.tracks.contains(&track) => value + (drag.now - drag.start),
-        _ => value,
-    };
-    let shown = preview.unwrap_or(dragged);
+    let moved = state
+        .value_drag
+        .as_ref()
+        .filter(|d| d.control == control && d.tracks.contains(&track))
+        .map(|d| moved_by_drag(value, d, range));
+    let shown = preview.or(moved).unwrap_or(value);
     let mut hover = 0.0;
     let mut control_response = None;
     let mut committed = None;
@@ -203,7 +204,9 @@ pub(super) fn value_control(
     // there, so nothing glides back afterwards; other changes (an undo, say) glide.
     let anim = id.with(("shown", control as u8));
     let dragged = match state.value_drag.as_ref() {
-        Some(drag) if drag.control == control && drag.tracks.contains(&track) => Some(drag.now),
+        Some(drag) if drag.control == control && drag.tracks.contains(&track) => {
+            Some(moved_by_drag(value, drag, range))
+        }
         _ => committed,
     };
     let shown = match dragged {
@@ -252,6 +255,18 @@ pub(super) fn pan_knob(painter: &egui::Painter, rect: Rect, pan: f64, response: 
     let (pointer, ink) = (theme::text_primary(), theme::text_secondary());
     let right = widgets::ValuePosition::Right;
     widgets::knob_with_value(painter, rect, position, pointer, response, &text, ink, right, theme::TEXT_SMALL);
+}
+
+/// What a track whose value is `value` shows while `drag` moves its selection: the dragged track
+/// shows what the drag reached and the others keep their distance from it, as [`value_action`]
+/// will leave them. A drag to silence, or from it, is set on them all outright.
+pub(super) fn moved_by_drag(value: f64, drag: &ValueDrag, range: (f64, f64)) -> f64 {
+    let delta = drag.now - drag.start;
+    let silenced = drag.control == Control::Volume && drag.now <= range.0;
+    if value == drag.start || silenced || !delta.is_finite() {
+        return drag.now;
+    }
+    if value.is_finite() { (value + delta).clamp(range.0, range.1) } else { value }
 }
 
 /// The command a finished volume or pan drag runs: one track is set to the value the drag reached,

@@ -807,7 +807,7 @@ own band last. Bands narrow with depth: 6, 4, 3, then 2 px at every deeper level
 bands. Descendants keep each ancestor's band aligned with its header, so a group reads as one
 block without deep nesting crowding the controls. Every header keeps the fold triangle's room.
 A group's menu
-has **Assign track color to all tracks and clips**, which gives every track inside it, at any depth,
+has **Recolor group**, which gives every track inside it, at any depth,
 the colour the group shows, and turns the clips of the group and of those tracks back to their
 track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
 shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has

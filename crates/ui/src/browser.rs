@@ -14,6 +14,7 @@ pub mod sample_map_panel;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
 use suhina_device_api::Role;
@@ -244,6 +245,37 @@ fn read_info(path: &Path, whole: bool) -> FileInfo {
     info
 }
 
+/// The rows of a search's or a place's items.
+fn flat_rows(found: Vec<Found>) -> Vec<Row> {
+    found
+        .into_iter()
+        .map(|f| {
+            let context = f.folder.as_ref().and_then(|folder| {
+                let path = match &f.item {
+                    Item::File(p) => p.parent().map(Path::to_path_buf),
+                    _ => None,
+                }?;
+                let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
+                Some(below.display().to_string())
+            });
+            let context = context.or_else(|| f.detail.clone());
+            let item = BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
+            Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
+        })
+        .collect()
+}
+
+/// A search looking through more files than this runs on a thread of its own, so typing never
+/// waits for it; a smaller one takes less than a frame and answers at once.
+const SEARCH_ON_THE_WINDOW_THREAD: usize = 4096;
+
+/// A search running on its thread: its answer comes through `answer`, and `cancel` ends it when
+/// the search field has changed since.
+struct SearchJob {
+    cancel: Arc<AtomicBool>,
+    answer: Receiver<Vec<Found>>,
+}
+
 /// The browser panel's state. One for the window: it is the same whichever project shows.
 pub struct BrowserState {
     pub mode: ResultsMode,
@@ -300,6 +332,10 @@ pub struct BrowserState {
     pub scroll: f32,
     rows: Vec<Row>,
     rows_key: Option<String>,
+    /// The search whose rows are still to come; the rows before it stay until they do.
+    search_job: Option<SearchJob>,
+    /// How many files a search looks through on the window's thread.
+    search_inline_files: usize,
     listings: HashMap<PathBuf, Arc<Vec<Listing>>>,
     voices: HashMap<PathBuf, Arc<Vec<(usize, String)>>>,
     info: HashMap<PathBuf, FileInfo>,
@@ -343,6 +379,8 @@ impl Default for BrowserState {
             scroll: 0.0,
             rows: Vec::new(),
             rows_key: None,
+            search_job: None,
+            search_inline_files: SEARCH_ON_THE_WINDOW_THREAD,
             listings: HashMap::new(),
             voices: HashMap::new(),
             info: HashMap::new(),
@@ -438,13 +476,73 @@ impl BrowserState {
             self.plugin_sort
         );
         if self.rows_key.as_deref() == Some(key.as_str()) {
+            self.take_search_answer(false);
             return Ok(());
         }
         self.rows_key = Some(key);
+        if let Some(stale) = self.search_job.take() {
+            stale.cancel.store(true, Ordering::Relaxed);
+        }
         let flat = !self.search.trim().is_empty()
             || !self.tag_filter.is_empty()
             || matches!(self.place, Some(Place::Pinned | Place::Recent(_)));
-        self.rows = if flat { self.flat_rows(projects)? } else { self.tree_rows(projects) };
+        let rows = if flat {
+            let place = self.place.as_ref().map(Place::param);
+            let search = suhina_session::prepare_search(
+                projects,
+                &self.search,
+                self.category,
+                place.as_deref(),
+                &self.tag_filter,
+                0,
+            )
+            .map_err(String::from)?;
+            if search.files() > self.search_inline_files {
+                return self.start_search(search);
+            }
+            flat_rows(search.run(&AtomicBool::new(false)))
+        } else {
+            self.tree_rows(projects)
+        };
+        self.set_rows(rows);
+        Ok(())
+    }
+
+    /// Whether a search is still looking, so the window looks again for its answer.
+    pub fn searching(&self) -> bool {
+        self.search_job.is_some()
+    }
+
+    /// Looks through a large library on a thread of its own; the rows come when it answers.
+    fn start_search(&mut self, search: suhina_session::PreparedSearch) -> Result<(), String> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (send, answer) = std::sync::mpsc::channel();
+        let looking = Arc::clone(&cancel);
+        std::thread::Builder::new()
+            .name("browser search".into())
+            .spawn(move || {
+                let found = search.run(&looking);
+                if !looking.load(Ordering::Relaxed) {
+                    let _ = send.send(found);
+                }
+            })
+            .map_err(|e| format!("could not start the search: {e}"))?;
+        self.search_job = Some(SearchJob { cancel, answer });
+        Ok(())
+    }
+
+    /// Shows what the running search found once it has answered; with `wait`, waits for that.
+    fn take_search_answer(&mut self, wait: bool) {
+        let Some(job) = &self.search_job else { return };
+        let found = if wait { job.answer.recv().ok() } else { job.answer.try_recv().ok() };
+        if let Some(found) = found {
+            self.search_job = None;
+            self.set_rows(flat_rows(found));
+        }
+    }
+
+    fn set_rows(&mut self, rows: Vec<Row>) {
+        self.rows = rows;
         // What is no longer listed is no longer selected.
         let listed: HashSet<&str> = self.rows.iter().map(|r| r.item.key.as_str()).collect();
         let before = self.selected.len();
@@ -452,31 +550,6 @@ impl BrowserState {
         if before != self.selected.len() {
             self.selection_changed = true;
         }
-        Ok(())
-    }
-
-    fn flat_rows(&mut self, projects: &mut Projects) -> Result<Vec<Row>, String> {
-        let place = self.place.as_ref().map(Place::param);
-        let found =
-            suhina_session::search_items(projects, &self.search, self.category, place.as_deref(), &self.tag_filter, 0)
-                .map_err(String::from)?;
-        Ok(found
-            .into_iter()
-            .map(|f| {
-                let context = f.folder.as_ref().and_then(|folder| {
-                    let path = match &f.item {
-                        Item::File(p) => p.parent().map(Path::to_path_buf),
-                        _ => None,
-                    }?;
-                    let below = path.strip_prefix(folder.parent().unwrap_or(folder)).ok()?;
-                    Some(below.display().to_string())
-                });
-                let context = context.or_else(|| f.detail.clone());
-                let item =
-                    BrowserItem { key: f.item.key(), name: f.name.clone(), kind: item_kind(&f), plugin: f.plugin };
-                Row { item, depth: 0, opens: false, open: false, context, columns: None, node: None }
-            })
-            .collect())
     }
 
     fn tree_rows(&mut self, projects: &mut Projects) -> Vec<Row> {
@@ -912,6 +985,46 @@ pub fn duration_text(seconds: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_large_search_answers_from_its_own_thread_and_the_next_key_replaces_it() {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let folder = std::env::temp_dir().join(format!("suhina-browser-search-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        for name in ["kick one.wav", "kick two.wav", "hat.wav"] {
+            std::fs::write(folder.join(name), b"x").unwrap();
+        }
+        let mut projects = Projects::new();
+        projects.file_library_mut().add_folder(&folder).unwrap();
+        let names = |state: &BrowserState| -> Vec<String> {
+            state.rows.iter().filter(|r| r.item.name.ends_with(".wav")).map(|r| r.item.name.clone()).collect()
+        };
+
+        // Small enough: there at once.
+        let mut state = BrowserState { search: "hat".into(), ..BrowserState::default() };
+        state.refresh_rows(&mut projects).unwrap();
+        assert!(!state.searching());
+        assert_eq!(names(&state), ["hat.wav"]);
+
+        // Large: what was listed stays until the search answers.
+        state.search_inline_files = 0;
+        state.search = "kick".into();
+        state.refresh_rows(&mut projects).unwrap();
+        assert!(state.searching());
+        assert_eq!(names(&state), ["hat.wav"]);
+        state.take_search_answer(true);
+        assert!(!state.searching());
+        assert_eq!(names(&state), ["kick one.wav", "kick two.wav"]);
+
+        // A search overtaken by the next key never shows.
+        state.search = "hat".into();
+        state.refresh_rows(&mut projects).unwrap();
+        state.search = "kick two".into();
+        state.refresh_rows(&mut projects).unwrap();
+        state.take_search_answer(true);
+        assert_eq!(names(&state), ["kick two.wav"]);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 
     #[test]
     fn a_preview_not_heard_yet_keeps_its_stop_control_until_it_ends() {

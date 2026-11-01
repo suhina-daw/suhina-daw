@@ -58,6 +58,7 @@ track delays what it sends, once.
 | Command | Parameters | Does |
 |---|---|---|
 | `track.setSend` | `track`, `return`, `level` (dB, at most +6; `"-inf"` is silence) | Sets the level of the track's send to the return, making the send (after the fader) when there is none |
+| `track.setMixerValues` | `tracks`, `control` (`volume`, `pan` or `send`), `values` (one per track), `return` with `send`, `continue` | Sets each track's volume, pan or send to the return to its own value, one undo step (a drag on a selection) |
 | `track.setSendMode` | `track`, `return`, `mode` (`pre` or `post`) | Takes the send before or after the track's volume and pan; makes a silent send when there is none |
 | `return.add` | `name` (optional) | Adds a return after every other track, playing into the main channel; named A Return, B Return and so on when no name is given |
 | `return.remove` | `return` | Removes the return and every send to it |
@@ -77,6 +78,12 @@ the send off, and a right-click opens a menu with **Before the fader (pre)** and
 fader (post)** (`track.setSendMode`); a dot under the knob marks a send before the fader. While
 the knob is dragged, the strip's left value shows the return's letter and the level. Return
 columns have no send knobs.
+
+A send knob dragged on one of several selected tracks, in either view, moves the same send of them
+all by the same amount while it is dragged (`track.setMixerValues`, one undo step), each keeping
+its distance from the others; a send at silence counts as −70 dB, so sends not used yet come up
+together, and a drag down to silence silences them all. A fader or a pan knob in the Launcher
+view's strip moves its selection the same way.
 
 ## Not decided yet
 

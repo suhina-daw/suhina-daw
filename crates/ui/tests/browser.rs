@@ -817,6 +817,38 @@ fn a_device_dragged_onto_a_track_header_joins_its_chain_and_becomes_recent() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// A return's and a group's rows in the Arrangement take devices as a track's do, on the header
+/// and on the lane.
+#[test]
+fn a_device_dragged_onto_a_return_in_the_arrangement_joins_its_chain() {
+    let (settings, folder) = (temp("return-device-settings"), temp("return-device"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    harness.state_mut().do_action("view.toggle", &mut Vec::new());
+    harness.run();
+    harness.get_by_label(&row("Effects")).click();
+    harness.run();
+    let devices = |app: &App| {
+        app.session().map_or(0, |s| {
+            let p = s.project();
+            let channel =
+                p.tracks.iter().find(|t| t.name == "A Reverb").and_then(|t| t.channel).unwrap_or(ChannelId(0));
+            p.channel(channel).map_or(0, |c| c.devices.len())
+        })
+    };
+    let before = devices(harness.state());
+    let header = harness.get_by_label("Turn A Reverb off").rect();
+    // On the header, then on the lane beside it, on the side away from the window's edge.
+    let lane = if header.center().x < SIZE.0 / 2.0 { header.right() + 300.0 } else { header.left() - 300.0 };
+    for (added, at) in [(1, header.center()), (2, Pos2::new(lane, header.center().y))] {
+        let from = harness.get_by_label(&row("Overdrive")).rect().center();
+        drag(&mut harness, from, at);
+        assert!(until(&mut harness, |app| devices(app) == before + added), "{added} added at {at:?}");
+    }
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// The browser lists MIDI effects under a heading of their own, and an instrument dragged onto a
 /// track lands after the MIDI effect dragged there first.
 #[test]

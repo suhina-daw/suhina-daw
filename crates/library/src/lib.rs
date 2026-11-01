@@ -14,6 +14,7 @@ mod worker;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -151,6 +152,74 @@ pub struct Query {
     /// Only items carrying any of these tags.
     pub tags: Vec<String>,
     pub limit: usize,
+}
+
+/// A search taken from a [`Library`] as it is now, to run away from it: the window's thread must
+/// not walk a large library at every key (`docs/spec/browser.md` › Results).
+pub struct FileSearch {
+    folders: Vec<(PathBuf, Arc<index::FolderIndex>)>,
+    tagged: std::collections::BTreeMap<String, Vec<String>>,
+    query: Query,
+}
+
+impl FileSearch {
+    /// How many files it looks through, whatever matches.
+    pub fn files(&self) -> usize {
+        self.folders.iter().map(|(_, index)| index.files.len()).sum()
+    }
+
+    /// The files matching the query, best first; nothing once `cancel` is set, which it looks at
+    /// as it goes, so a search the next key made stale ends soon.
+    pub fn run(&self, cancel: &AtomicBool) -> Vec<IndexedFile> {
+        let query = &self.query;
+        let words = words(&query.text);
+        let limit = if query.limit == 0 { MAX_RESULTS } else { query.limit.min(MAX_RESULTS) };
+        let tagged = |key: &str| {
+            query.tags.is_empty()
+                || self.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
+        };
+        let mut hits: Vec<(u8, IndexedFile)> = Vec::new();
+        for (folder, index) in &self.folders {
+            for (seen, (rel, entry)) in index.files.iter().enumerate() {
+                if seen % 1024 == 0 && cancel.load(AtomicOrdering::Relaxed) {
+                    return Vec::new();
+                }
+                if !query.kinds.is_empty() && !query.kinds.contains(&entry.kind) {
+                    continue;
+                }
+                let name = rel.rsplit('/').next().unwrap_or(rel);
+                let Some(rank) = rank(&words, name, rel) else { continue };
+                let path = index::path_of(folder, rel);
+                if query.within.as_ref().is_some_and(|w| !path.starts_with(w)) {
+                    continue;
+                }
+                if !tagged(&path.display().to_string()) {
+                    continue;
+                }
+                hits.push((
+                    rank,
+                    IndexedFile {
+                        folder: folder.clone(),
+                        path,
+                        rel: rel.clone(),
+                        kind: entry.kind,
+                        size: entry.size,
+                        modified: entry.modified,
+                    },
+                ));
+            }
+        }
+        let order = |a: &(u8, IndexedFile), b: &(u8, IndexedFile)| {
+            a.0.cmp(&b.0).then(a.1.name().len().cmp(&b.1.name().len())).then(natural_cmp(a.1.name(), b.1.name()))
+        };
+        // Only what is shown needs its order: a short word matches most of a large library.
+        if limit > 0 && hits.len() > limit {
+            hits.select_nth_unstable_by(limit - 1, order);
+            hits.truncate(limit);
+        }
+        hits.sort_by(order);
+        hits.into_iter().map(|(_, f)| f).collect()
+    }
 }
 
 struct Folder {
@@ -487,46 +556,15 @@ impl Library {
 
     /// The files matching `query`, best first (`docs/spec/browser.md` › Results).
     pub fn search(&mut self, query: &Query) -> Vec<IndexedFile> {
+        self.prepare_search(query).run(&AtomicBool::new(false))
+    }
+
+    /// The search for `query` over the index as it is now, for a thread of its own.
+    pub fn prepare_search(&mut self, query: &Query) -> FileSearch {
         self.load();
-        let words = words(&query.text);
-        let limit = if query.limit == 0 { MAX_RESULTS } else { query.limit.min(MAX_RESULTS) };
-        let tagged = |key: &str| {
-            query.tags.is_empty()
-                || self.store.tagged.get(key).is_some_and(|names| names.iter().any(|n| query.tags.contains(n)))
-        };
-        let mut hits: Vec<(u8, IndexedFile)> = Vec::new();
-        for folder in &self.folders {
-            for (rel, entry) in &folder.index.files {
-                if !query.kinds.is_empty() && !query.kinds.contains(&entry.kind) {
-                    continue;
-                }
-                let path = index::path_of(&folder.path, rel);
-                if query.within.as_ref().is_some_and(|w| !path.starts_with(w)) {
-                    continue;
-                }
-                let name = rel.rsplit('/').next().unwrap_or(rel);
-                let Some(rank) = rank(&words, name, rel) else { continue };
-                if !tagged(&path.display().to_string()) {
-                    continue;
-                }
-                hits.push((
-                    rank,
-                    IndexedFile {
-                        folder: folder.path.clone(),
-                        path,
-                        rel: rel.clone(),
-                        kind: entry.kind,
-                        size: entry.size,
-                        modified: entry.modified,
-                    },
-                ));
-            }
-        }
-        hits.sort_by(|a, b| {
-            a.0.cmp(&b.0).then(a.1.name().len().cmp(&b.1.name().len())).then(natural_cmp(a.1.name(), b.1.name()))
-        });
-        hits.truncate(limit);
-        hits.into_iter().map(|(_, f)| f).collect()
+        let folders = self.folders.iter().map(|f| (f.path.clone(), Arc::clone(&f.index))).collect();
+        let tagged = if query.tags.is_empty() { Default::default() } else { self.store.tagged.clone() };
+        FileSearch { folders, tagged, query: query.clone() }
     }
 
     /// What is directly in the folder `path` on disk: sub-folders first, then files of the

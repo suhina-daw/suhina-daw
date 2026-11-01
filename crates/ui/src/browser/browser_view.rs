@@ -340,6 +340,10 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     } else if state.previewing.is_some() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
     }
+    // A search on its own thread answers without an input to wake the window.
+    if state.searching() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    }
     out
 }
 
