@@ -288,8 +288,8 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
     let half: Vec<f32> = reference.iter().map(|s| s * 0.5).collect();
     assert!(max_diff(&out, &half) < 1e-6, "every block went through the plug-in: {}", max_diff(&out, &half));
 
-    // The same in real time, a block every 10 ms as a device asks for them: its slow blocks
-    // are late or refused, and those pass the sound; once settled it answers again.
+    // The same in real time. Its first blocks take 30 ms, five times the 6 ms a block's deadline
+    // allows: the ones it cannot take in time are late or refused, and those pass the sound.
     let (_control, hosted) = start("test:slow-start:5");
     let counts = hosted.counts();
     let mut plugins = suhina_engine::Plugins::new();
@@ -301,16 +301,22 @@ fn a_busy_plug_in_loses_no_block_offline_and_passes_the_sound_in_real_time() {
         RenderOptions::PLAYING,
     )
     .unwrap();
-    let period = Duration::from_millis(10);
-    for _ in 0..40 {
-        let started = Instant::now();
-        play(&mut renderer, 1);
-        std::thread::sleep(period.saturating_sub(started.elapsed()));
-    }
+    play(&mut renderer, 3);
     let (given, late) = counts.read();
-    assert_eq!(given, 40);
-    assert!(late >= 1, "a 30 ms block misses a 10 ms block's deadline");
-    assert!(late < 40, "it answers again once settled ({late} late)");
+    assert_eq!(given, 3);
+    assert!(late >= 1, "a 30 ms block misses a 6 ms deadline ({late} late)");
+    // A block the host refuses does not count towards its slow start, so how many real-time
+    // blocks it takes to get past it depends on the scheduler. Wait for it explicitly: an offline
+    // render waits for the answer to every block, and ten of them take the host through all five.
+    renderer.set_offline(true);
+    play(&mut renderer, 10);
+    renderer.set_offline(false);
+    // Settled, it answers again: not every one of forty blocks is late.
+    let late_before = counts.read().1;
+    play(&mut renderer, 40);
+    let (given, late) = counts.read();
+    assert_eq!(given, 53);
+    assert!(late - late_before < 40, "it answers again once settled ({} late)", late - late_before);
 }
 
 #[test]

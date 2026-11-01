@@ -405,8 +405,8 @@ impl PluginSlot {
         if !self.enabled || span.is_empty() {
             return;
         }
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
-        let started = Instant::now();
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
+        let started = crate::clock::now();
         let answered = match self.processor.as_mut() {
             Some(processor) => processor.process(span, events, timeout),
             None => false,
@@ -440,7 +440,7 @@ impl PluginSlot {
         let sent = processor.send(span, events, patience);
         if deadline.is_some() {
             self.sent_at = match sent {
-                Sent::Out => Some(Instant::now()),
+                Sent::Out => Some(crate::clock::now()),
                 Sent::Refused => {
                     self.busy += 1;
                     None
@@ -462,7 +462,7 @@ impl PluginSlot {
     /// Returns whether it was answered.
     pub(crate) fn finish(&mut self, span: &mut [f32], deadline: Option<Instant>) -> bool {
         let sent_at = deadline.is_some().then(|| self.sent_at.take()).flatten();
-        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(Instant::now()));
+        let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
         let answered = self.processor.as_mut().is_some_and(|processor| processor.wait(span, timeout));
         if let Some(sent_at) = sent_at
             && answered
@@ -528,7 +528,7 @@ impl PluginSlot {
         // timed (`finish`), and a refused one counts as busy.
         if deadline.is_some() {
             self.sent_at = match sent {
-                Sent::Out => Some(Instant::now()),
+                Sent::Out => Some(crate::clock::now()),
                 Sent::Refused => {
                     self.busy += 1;
                     None

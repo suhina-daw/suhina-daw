@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-10-30
+last_verified: 2026-11-01
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -215,6 +215,11 @@ The render thread never writes a file: it copies the input into a lock-free ring
 recording started, and a writer thread empties the ring into the file as it goes, so a take is
 on disk before it ends. The file is finished when the take ends; the clip is made from the
 file's frames.
+
+An offline render or a test cannot let the writer thread run at its own pace and expect the same
+result on every machine. `Session::sync_recording` waits until the thread has emptied the rings
+and reported what it found, and with `finish` set (no more audio is coming) it ends the takes that
+were ended, without the wait the thread gives a device for frames still on their way.
 
 - **A full disk, or a file that cannot be written**, ends that take: what was written so far is
   kept and becomes the clip when the take ends, and the reason is reported (a notice in the

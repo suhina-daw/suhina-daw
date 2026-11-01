@@ -745,7 +745,7 @@ impl Chain {
                 Slot::Plugin(plugin) => {
                     // A plug-in still at a block it was late with is waited for like an answer,
                     // until this block's deadline, while the other chains go on (#506).
-                    if deadline.is_some() && *caught_up != Some(*stage) && !plugin.ready(Instant::now()) {
+                    if deadline.is_some() && *caught_up != Some(*stage) && !plugin.ready(crate::clock::now()) {
                         *behind = Some(*stage);
                         *waiting = Some(*stage);
                         return true;
@@ -763,7 +763,7 @@ impl Chain {
                     match sent {
                         Sent::Out => {
                             *waiting = Some(*stage);
-                            *sent_at = Some(Instant::now());
+                            *sent_at = Some(crate::clock::now());
                             return true;
                         }
                         // A miss already counted: running it again would count it twice.
@@ -800,13 +800,13 @@ impl Chain {
     pub(crate) fn answered(&mut self, until: Instant) -> bool {
         let Some(index) = self.waiting else { return true };
         let Some(limit) = self.limit() else { return true };
-        if Instant::now() >= limit {
+        if crate::clock::now() >= limit {
             return true;
         }
         let behind = self.behind == Some(index);
         match self.slots.get_mut(index) {
-            Some(Slot::Plugin(plugin)) if behind => plugin.ready(until.min(limit)) || Instant::now() >= limit,
-            Some(Slot::Plugin(plugin)) => plugin.poll(until.min(limit)) || Instant::now() >= limit,
+            Some(Slot::Plugin(plugin)) if behind => plugin.ready(until.min(limit)) || crate::clock::now() >= limit,
+            Some(Slot::Plugin(plugin)) => plugin.poll(until.min(limit)) || crate::clock::now() >= limit,
             _ => true,
         }
     }
@@ -1328,7 +1328,7 @@ pub(crate) const ANSWER_SLICE: Duration = Duration::from_micros(50);
 /// [`OFFLINE_TIMEOUT`].
 pub(crate) fn run_as_answered(chains: &mut [Chain], frames: usize, context: &ProcessContext) {
     loop {
-        let now = Instant::now();
+        let now = crate::clock::now();
         let mut out = false;
         let mut moved = false;
         for chain in chains.iter_mut().filter(|chain| chain.is_waiting()) {
