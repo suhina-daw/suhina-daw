@@ -433,11 +433,6 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     for (label, rect) in knobs {
         assert!(rect.width() >= 60.0 && rect.height() >= 90.0, "{label} {rect:?} is too small to read");
     }
-    // How the panels of the day look, for the design to be compared against by hand.
-    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
-    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
-    image.save(out.join("nam-panels.png")).unwrap_or_else(|e| panic!("{e}"));
     for label in [
         "Cab Loader: pack",
         "Cab Loader: previous pack",
@@ -480,6 +475,37 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
     harness.key_combination_modifiers(Modifiers::COMMAND, &[Key::Z]);
     harness.run();
     assert_eq!(channel_device_state(&harness, 0), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Renders the two NAM panels to `target/ui-snapshots/nam-panels.png`, for looking at:
+/// `cargo test -p suhina-ui --test main -- --ignored a_nam_panels_render_for_the_hand_check`.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn a_nam_panels_render_for_the_hand_check() {
+    let dir = std::env::temp_dir().join(format!("suhina-ui-nam-snap-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (models, irs) = (dir.join("NAM models"), dir.join("IRs"));
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::create_dir_all(&irs).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(nam_project()), &[]);
+    app.set_nam_default_folders(models.clone(), irs.clone());
+    let mut harness = Harness::builder()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    image.save(out.join("nam-panels.png")).unwrap_or_else(|e| panic!("{e}"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

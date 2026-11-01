@@ -943,6 +943,36 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
     }
 }
 
+/// A dial as an `.sd` control's dial draws it, the built-in canvases' wheels (the reverb's and
+/// the delay's): the rim arc, the ring's disc, the inner disc, the pointer line to 72 % of the
+/// radius, 270° with the gap under. The colours are the tokens the `.knob` scope gives — the
+/// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
+/// no artwork stands for the face, as a canvas has none.
+pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
+    let _style = response
+        .map(|response| crate::kit::style_class::enter_response("knob", response))
+        .unwrap_or_else(|| crate::kit::style_class::enter("knob"));
+    let radius = (size * 0.5).max(1.0);
+    // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
+    // over the top), the ring disc inside it, the inner disc — the theme's tokens.
+    let points: Vec<Pos2> = (0..=48)
+        .map(|i| {
+            let a = (-135.0 + 270.0 * i as f32 / 48.0).to_radians();
+            center + Vec2::new(a.sin(), -a.cos()) * (radius - 2.0).max(0.0)
+        })
+        .collect();
+    painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
+    painter.circle_filled(center, (radius - 4.0).max(0.0), theme::panel_background());
+    painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
+    // The pointer: a quarter in, three quarters to the rim, in the accent token.
+    let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
+    let dir = Vec2::new(angle.sin(), -angle.cos());
+    painter.line_segment(
+        [center + dir * (radius * 0.25), center + dir * (radius * 0.72)],
+        Stroke::new(2.0, theme::accent()),
+    );
+}
+
 /// A volume in dB as the mixer shows it.
 pub fn format_db(db: f64) -> String {
     if db.is_finite() && db > -70.0 { format!("{db:.1}") } else { "-inf".into() }
