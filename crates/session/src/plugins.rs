@@ -53,7 +53,10 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugin.addFolder",
         label: "Add a folder for scans to look in, besides the standard ones, for one plug-in format or every one Suhina hosts",
-        params: &[FOLDER, optional("format", ParamType::Text, "any (default: CLAP and VST3), vst3 or clap")],
+        params: &[
+            FOLDER,
+            optional("format", ParamType::Text, "any (default: every format Suhina hosts), vst3, clap or vst2"),
+        ],
         kind: CommandKind::Plugins,
         run: add_folder,
         policy: Policy {
@@ -230,11 +233,8 @@ fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let format = match params.get("format") {
         None => FolderFormat::Any,
-        Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3 or clap")?,
+        Some(v) => v.as_str().and_then(FolderFormat::parse).ok_or("format must be any, vst3, clap or vst2")?,
     };
-    if !format.hosted() {
-        return Err("VST2 plug-ins are not hosted yet, so a VST2 folder cannot be added yet".into());
-    }
     let added = projects.library_mut().add_folder_as(folder_param(params)?, format)?;
     Ok(json!({ "added": added, "folders": paths(&projects.library_mut().custom_folders()) }))
 }

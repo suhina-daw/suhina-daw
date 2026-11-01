@@ -164,7 +164,7 @@ static REGISTRY: Mutex<Vec<(usize, Arc<HostState>)>> = Mutex::new(Vec::new());
 /// The audio-master callback the probe hands the plug-in: records every call and answers as
 /// a host would. Which argument carries what, and what an answer means, is *assumed* per
 /// op-code (the spec lists each); the value of an answer is the host's own choice.
-unsafe extern "C" fn host_callback(
+pub(crate) unsafe extern "C" fn host_callback(
     effect: *mut AEffect,
     opcode: i32,
     index: i32,
@@ -173,14 +173,56 @@ unsafe extern "C" fn host_callback(
     opt: f32,
 ) -> isize {
     let key = effect as usize;
-    let state = REGISTRY
-        .lock()
-        .ok()
-        .and_then(|registry| registry.iter().find(|(effect, _)| *effect == key).map(|(_, state)| state.clone()));
-    let Some(state) = state else { return 0 };
-    let answer = answer(effect, opcode, index, value, ptr, opt, &state);
-    state.record(Call { op: opcode, index, value, opt, answer: Some(answer) });
+    let state = if effect.is_null() {
+        // A call from a plug-in's entry, before the effect exists: the probe's host answers
+        // its identity, as a real host does (observed against installed plug-ins).
+        None
+    } else {
+        REGISTRY
+            .lock()
+            .ok()
+            .and_then(|registry| registry.iter().find(|(effect, _)| *effect == key).map(|(_, state)| state.clone()))
+    };
+    let answer = match &state {
+        Some(state) => answer(effect, opcode, index, value, ptr, opt, state),
+        None => answer_at_entry(opcode, index, value, ptr, opt),
+    };
+    // An entry's call has no instance to record in; the report shows the entry's answers by
+    // the plug-in, whose own records carry them.
+    if let Some(state) = &state {
+        state.record(Call { op: opcode, index, value, opt, answer: Some(answer) });
+    }
     answer
+}
+
+/// What the probe answers while a plug-in's entry runs, before the effect exists: its
+/// identity and what it can do, and nothing an instance has a part in.
+fn answer_at_entry(opcode: i32, index: i32, value: isize, ptr: *mut c_void, opt: f32) -> isize {
+    let _ = (index, value, opt);
+    match HostOp::from_value(opcode) {
+        Some(HostOp::Version) => HOST_VERSION,
+        Some(HostOp::CanDo) => {
+            // SAFETY: the plug-in's C string, read with a bound.
+            let asked = unsafe { c_str(ptr, 128) }.unwrap_or_default();
+            isize::from(matches!(
+                asked.as_str(),
+                can_do::HOST_SENDS_EVENTS | can_do::HOST_SENDS_MIDI | can_do::HOST_SENDS_TIME
+            ))
+        }
+        Some(HostOp::GetLanguage) => vestige::kVstLangEnglish as isize,
+        Some(HostOp::GetVendorString) => {
+            // SAFETY: the caller's buffer, of the size the op-code is assumed to give.
+            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina") };
+            1
+        }
+        Some(HostOp::GetProductString) => {
+            // SAFETY: as above.
+            unsafe { write_text(ptr, vestige::VestigeMaxLabelLen, "Suhina VST2 probe") };
+            1
+        }
+        Some(HostOp::GetVendorVersion) => 1,
+        _ => 0,
+    }
 }
 
 /// What the probe answers for one call of the plug-in.
@@ -329,15 +371,14 @@ impl Probe {
     /// The probe over the VST2 file at `path`: the library is loaded, its entry called with
     /// the probe's callback, and the effect it returned checked for VeSTige's magic. The
     /// callback serves the effect from the registry once it exists; a call a plug-in makes
-    /// from inside its entry, before the effect does, is answered 0 and recorded nowhere
+    /// the plug-in's entry calls, before the effect exists, are answered as a host's
     /// (see [`REGISTRY`]).
     pub(crate) fn file(path: &std::path::Path) -> Result<Self, String> {
         let state = HostState::new();
-        // SAFETY: loading the library runs its initialisation code, which Rust cannot check;
-        // that is what this disposable process is for (ADR 0006). The library stays loaded
-        // while the probe holds it, which outlives every call on the effect.
-        let library =
-            unsafe { libloading::Library::new(path) }.map_err(|e| format!("could not load {}: {e}", path.display()))?;
+        // The library, and the executable that is loaded for a bundle path — the resolution
+        // the host's own load uses ([`crate::vst2::host::load_library`]), so a probe and a
+        // host never disagree about where a plug-in's code is.
+        let library = crate::vst2::host::load_library(path)?;
         let mut answered_by = "";
         let mut effect = std::ptr::null_mut();
         for name in ENTRY_NAMES {
@@ -702,8 +743,10 @@ impl Probe {
             Err(e) => self.line(format!("  {e}")),
         }
         // The block itself: `processReplacing` where the flag says so, the deprecated
-        // `process` otherwise. The channels are what the plug-in declared (a plug-in reads
-        // its own count against the arrays it is handed), capped; one over the cap is
+        // `process` otherwise; and a flag that says so with no replacing call falls back on
+        // the deprecated one too, over the buffers zeroed (its outputs add), as the
+        // production host chooses. The channels are what the plug-in declared (a plug-in
+        // reads its own count against the arrays it is handed), capped; one over the cap is
         // refused the block rather than read past the arrays.
         // SAFETY: the effect the probe holds, read by value.
         let info = unsafe { EffectInfo::of(self.effect()) };
@@ -723,23 +766,24 @@ impl Probe {
         let mut in_pointers: Vec<*mut f32> = channels.iter().map(|c| c.as_ptr() as *mut f32).collect();
         let mut out_pointers: Vec<*mut f32> = outs.iter_mut().map(|c| c.as_mut_ptr()).collect();
         let effect = self.effect();
-        let sent = if replacing {
+        let (process, what) = if replacing {
             // SAFETY: the effect the probe holds; one field read.
-            let process = unsafe { (*effect).processReplacing };
-            process.map(|process| {
-                // SAFETY: the plug-in's own call, with the buffers and frames given.
-                unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
-                "processReplacing"
-            })
+            match unsafe { (*effect).processReplacing } {
+                Some(call) => (Some(call), "processReplacing"),
+                None => {
+                    // SAFETY: as above, for the deprecated call.
+                    (unsafe { (*effect).process }, "process (deprecated; the flag said replacing and it had none)")
+                }
+            }
         } else {
             // SAFETY: as above, for the deprecated call.
-            let process = unsafe { (*effect).process };
-            process.map(|process| {
-                // SAFETY: the plug-in's own call, with the buffers and frames given.
-                unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
-                "process (deprecated; the flag said no replacing)"
-            })
+            (unsafe { (*effect).process }, "process (deprecated; the flag said no replacing)")
         };
+        let sent = process.map(|process| {
+            // SAFETY: the plug-in's own call, with the buffers and frames given.
+            unsafe { process(effect, in_pointers.as_mut_ptr(), out_pointers.as_mut_ptr(), frames as i32) };
+            what
+        });
         match sent {
             Some(what) => self.line(format!(
                 "  {what} of {frames} frames ({ins} in, {outs_declared} out): in[0][0] {:.3} -> out[0][0] {:.3}, out[0][last] {:.3}",

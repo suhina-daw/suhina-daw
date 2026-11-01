@@ -124,7 +124,7 @@ fn binary(path: &Path) -> Result<PathBuf, String> {
 /// The executable in a macOS bundle's `MacOS` folder: the one named after the bundle without
 /// its extension, as most bundles have, or else the first non-hidden file (the bundle format
 /// allows any name; a hidden one, such as a stray `.DS_Store`, is not an executable).
-fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
+pub(crate) fn macos_binary(macos: &Path, stem: &OsStr) -> Option<PathBuf> {
     let named = macos.join(stem);
     if named.is_file() {
         return Some(named);

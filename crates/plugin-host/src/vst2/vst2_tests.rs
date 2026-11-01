@@ -282,9 +282,12 @@ fn the_mock_and_the_probe_agree_on_the_conversation() {
     let answers: Vec<Option<isize>> =
         asks.iter().filter(|call| call.op == HostOp::CanDo.value()).map(|call| call.answer).collect();
     assert_eq!(answers, vec![Some(1), Some(1), Some(1)], "the host said yes to all three");
-    // The knob the mock turned: the gesture's three calls, the value in the automate call.
-    let automate = asks.iter().find(|call| call.op == HostOp::Automate.value());
-    assert_eq!(automate.map(|call| call.opt), Some(EDIT_GAIN));
+    // The gestures the mock made: the restored state reported as an edit (the chunk hand-back
+    // put 0.25 in), then the knob on the edit-idle. Each gesture is the three calls, the
+    // value in the automate call's float.
+    let automates: Vec<f32> =
+        asks.iter().filter(|call| call.op == HostOp::Automate.value()).map(|call| call.opt).collect();
+    assert_eq!(automates, vec![0.25, EDIT_GAIN]);
     assert!(asks.iter().any(|call| call.op == HostOp::BeginEdit.value()));
     assert!(asks.iter().any(|call| call.op == HostOp::EndEdit.value()));
     // The time information: the answer is assumed to be a pointer to it, and the mock read
@@ -384,4 +387,22 @@ fn a_plug_in_without_calls_is_refused_not_called() {
     // No effect at all reads as none.
     // SAFETY: a null pointer, which the reader refuses.
     assert_eq!(unsafe { EffectInfo::of(std::ptr::null()) }, None);
+}
+
+/// A flag that says it replaces with no replacing call takes the deprecated call for its
+/// block, over the buffers zeroed first (its outputs add to what the host left there): what
+/// the production host does, and what the probe reports it went by.
+#[test]
+fn a_block_whose_replacing_is_gone_takes_the_deprecated_call() {
+    let (mut effect, mock) = test_vst2::mock(Some(super::probe::host_callback));
+    // The flag stays; the replacing call is gone.
+    effect.processReplacing = None;
+    let probe = Probe::over_mock(effect, mock);
+    let report = probe.run();
+    assert!(
+        report.contains("process (deprecated; the flag said replacing and it had none)"),
+        "the fallback is what the report names\n{report}"
+    );
+    // The sound went through: the mock's gain (0.5) applied to the ramp the block carries.
+    assert!(!report.contains("the plug-in has no process call"));
 }

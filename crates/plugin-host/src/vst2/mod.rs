@@ -22,6 +22,7 @@
 //! and `--vst2-probe`. The host through the engine's boundary (step 4 of #1066) comes after,
 //! on the same interface.
 
+pub(crate) mod host;
 pub(crate) mod probe;
 pub(crate) mod test_vst2;
 #[allow(
@@ -535,6 +536,8 @@ pub(crate) mod can_do {
     pub(crate) const ASK_RECEIVES_MIDI: &str = "receiveVstMidiEvent";
     /// The host asks the plug-in whether it reads time information.
     pub(crate) const ASK_RECEIVES_TIME: &str = "receiveVstTimeInfo";
+    /// The plug-in asks the host whether it takes the MIDI events the plug-in sends.
+    pub(crate) const HOST_RECEIVES_MIDI: &str = "receiveVstMidiEvent";
 }
 
 /// A `CanDo` name as the call carries it: a C string, terminated. The names are this layer's
@@ -720,8 +723,9 @@ impl<const N: usize> EventList<N> {
     }
 }
 
-/// A zeroed MIDI event, the base of [`EventList`]'s unused places.
-const fn blank_midi() -> vestige::VstMidiEvent {
+/// A zeroed MIDI event: the base of an event list's unused places and of the time
+/// information's per-thread buffer.
+pub(crate) const fn blank_midi() -> vestige::VstMidiEvent {
     vestige::VstMidiEvent {
         r#type: 0,
         byteSize: 0,
