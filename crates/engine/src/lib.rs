@@ -82,6 +82,7 @@ mod sends;
 #[cfg(test)]
 mod sends_tests;
 mod sine;
+mod slot_factory;
 mod stretch;
 mod swap;
 mod tempo;

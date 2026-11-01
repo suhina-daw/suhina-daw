@@ -179,8 +179,8 @@ Nothing about a device changes when it moves into a group.
 
 - **Built-in devices** run in the engine as they do now (ADR 0004): made, prepared and given their
   parameters when the graph is built, real-time safe on the audio thread.
-  A device in a branch is built as one on a track is (`group::Builder` and `Chain::build` give the
-  same results, #766): a Sampler gets its decoded sample and its manual slices, a parameter that
+  A device in a branch is built as one on a track is, by the same `SlotFactory`
+  (`crates/engine/src/slot_factory.rs`, #766, #764 › 4): a Sampler gets its decoded sample and its manual slices, a parameter that
   follows an automation lane starts where the lane starts and follows it while playing (each
   branch keeps the lanes of its devices, planned for every block with the chain's), and a device
   that holds a file is known by a hash of its state, so a changed file is a new device.
